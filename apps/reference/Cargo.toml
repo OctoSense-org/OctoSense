@@ -1,0 +1,8 @@
+[package]
+name = "makeos-reference"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
