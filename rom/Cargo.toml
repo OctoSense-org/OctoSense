@@ -1,0 +1,61 @@
+# wm — makepad window manager. An Omarchy-behaving tiling window manager
+# built as a Makepad app.
+#
+# Nested mode (this crate, all desktop OSes): wm owns one OS window,
+# fullscreen it and it is the desktop. Tiles host other Makepad apps as
+# child processes through the Studio runview mechanism: a tiny in-process
+# websocket hub accepts `--stdin-loop` clients, each tile shares a GPU
+# swapchain (IOSurface / DXGI handle / DMA-BUF) with its child and forwards
+# input over the studio protocol.
+#
+# Session mode (later, Linux only): the same layout/chrome/protocol with a
+# Wayland compositor display backend instead of a Makepad window. The
+# layout tree, keybindings, theming and client management are kept free of
+# nested-mode assumptions for that reason.
+
+[package]
+name = "makeos"
+version = "0.1.0"
+edition = "2021"
+default-run = "makeos"
+
+[[bin]]
+name = "makeos"
+path = "src/main.rs"
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-studio-protocol = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-network = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-wm-api = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+# The AI services wire only: the WM relays frames between the aichat child and the apps.
+makepad-ai-services = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-strict-json = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+# In-process hosting (aicontrol §3): the module contract, the palette applied
+# into each instance's isolate, and the modules this build links.
+makepad-app-module = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-wm-theme = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84" }
+makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84", default-features = false, optional = true }
+makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84", default-features = false, optional = true }
+# The assistant as a module, seated in the pane in-process: the web build's
+# only chat, a desktop option. Without the engine feature: no model runtime,
+# NoModel and the tool console (the child process keeps the real models).
+makepad-aichat = { git = "https://github.com/makepad/makepad.git", rev = "83a00d2801e4864c42c3a40e85186a8b1743fd84", default-features = false, optional = true }
+
+[features]
+default = []
+# Sheets linked in as a module (hosting is still Process unless switched).
+app-sheets = ["dep:makepad-sheets"]
+# Photos (the picture wall) linked in as a module, the same way.
+app-photos = ["dep:makepad-photos"]
+# The aichat module linked in (the pane seats it in-process where there are
+# no processes, or when `aichat` is switched to module hosting).
+app-aichat = ["dep:makepad-aichat"]
+
+[workspace]
+members = [".", "apps/reference"]
+default-members = ["."]
+resolver = "2"
+
+[profile.dev]
+opt-level = 1
