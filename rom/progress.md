@@ -42,3 +42,11 @@
 - Full real verifier passed on an isolated source copy with seeded compilation caches: metadata, workspace check, 163 Rust tests, 40 script tests, release/debug builds, and both native GUI smoke modes. Captured frames and host/client logs were copied into the run's report.
 - Actual source HEAD remains at the pinned baseline. Live CLI sync correctly returned a no-op and reported these uncommitted automation edits separately. No upstream revision or Git history was changed.
 - Updated daily usage and recovery docs. Automation changes remain uncommitted for user review.
+
+## 2026-09-08 — Resolve upstream sync conflicts
+- Synced from the local Makepad commit ae20efc5 in a disposable candidate; the live main branch stayed clean during resolution and verification.
+- Resolved catalog, Cargo progress/diagnostics, startup style, and menu overlaps while retaining MakeOS policies.
+- Independent review caught unavailable mobile app shortcuts and background tile launches; fixed and covered catalog menu/layout regressions.
+- Adapted the WM-owned rendering cache to missing View APIs in the pinned external widgets crate, preserving the minimal source footprint.
+- Locked workspace check, 191 Rust tests, 40 Python tests, release/debug builds, and both native smoke modes passed. Artifacts and compatibility details are recorded in docs/validation.md.
+- Additional native style checks passed across desktop and phone layouts; the reference process/state survived with no background launches. Reviewed rendered frames for desktop, macOS, iOS, and Android.

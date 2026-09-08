@@ -1,3 +1,24 @@
+# Upstream sync validation — 2026-09-08
+
+Target: `ae20efc51e6db2ad083d65b40a9beec726582f56`, read from the local sibling Makepad checkout. Previous baseline: `83a00d2801e4864c42c3a40e85186a8b1743fd84`.
+
+The three conflicts were resolved as follows:
+- `clients.rs`: retain the MakeOS catalog and its tests; include upstream Cargo progress parsing and its tests, plus the process-reaping wait.
+- `main.rs`: keep raw child diagnostics separately from upstream's filtered build progress; initialize MakeOS state paths before upstream desktop styles.
+- `shell/menu.rs`: keep supported operations and Quit MakeOS, include desktop styles and alternate menus, and filter their app shortcuts through the catalog.
+
+Further integration fixes use named dependency fonts in the mobile surface, gate mobile tile background launches on the existing prewarming setting, and prevent missing catalog apps from appearing in mobile home/dock UI. The pinned widgets crate lacks two View methods called by upstream WM; `scene.rs` therefore owns its framebuffer cache, and `desk.rs` redraws the wallpaper's public quad while preserving its geometry. No framework source was copied or patched.
+
+Verified in the isolated candidate: Cargo metadata, locked workspace check, **191 Rust tests**, **40 Python tests**, and locked release/debug workspace builds. Both native smoke modes passed: release host and exact `cargo run` with the shipped catalog. They covered startup without child apps, forwarded pointer/text input, workspace movement, fullscreen geometry, independent instances, closing individual apps, and shutdown cleanup. The release mode also covered a failed app launch and shutdown during an unfinished Cargo build.
+
+Additional native checks switched through macOS, Windows, NeXTSTEP, Omarchy, iOS and Android styles, including repeated desktop transitions and the phone-size/desktop-size changes. Captured frames showed the new rendering path, named fonts, and catalog-only mobile home correctly; the same reference process and its state survived, and no extra apps launched. NeXTSTEP and mobile use their own menu/picker controls, which the supplemental check follows.
+
+The import remains scoped to **86 files under `apps/wm/` plus the upstream MIT license**. Makepad dependencies and the reference app pin the same revision; other application source is not copied. Optional linked apps remain disabled by default.
+
+Retained report: `target/makepad-sync/reports/20260908T180743Z-83mualj1/` (ignored), including `verification.log`, `comparison.txt`, native frames/logs, and the reviewed conflict candidate. The upgrade is left uncommitted for review.
+
+---
+
 # Initial extraction validation
 
 Validated on macOS with Rust/Cargo 1.98.1 against Makepad commit
