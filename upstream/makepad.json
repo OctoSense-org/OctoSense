@@ -1,14 +1,24 @@
 {
   "schema_version": 1,
   "repository": "https://github.com/makepad/makepad.git",
-  "revision": "83a00d2801e4864c42c3a40e85186a8b1743fd84",
-  "dependency_revision": "83a00d2801e4864c42c3a40e85186a8b1743fd84",
+  "revision": "ae20efc51e6db2ad083d65b40a9beec726582f56",
+  "dependency_revision": "ae20efc51e6db2ad083d65b40a9beec726582f56",
   "source_prefix": "apps/wm/",
   "files": [
+    {
+      "source": "LICENSE",
+      "destination": "LICENSES/Makepad-MIT.txt",
+      "sha256": "3855d73a873244ec424ac5781d5d8fc8e2a789ff9d2f1cb804bec585a64ea88f"
+    },
     {
       "source": "apps/wm/Cargo.toml",
       "destination": "Cargo.toml",
       "sha256": "95783bedb659049df2fe8f8633dc50a53ca49b2a8d970817a314b1a7d97d7dcf"
+    },
+    {
+      "source": "apps/wm/KEYBINDINGS.md",
+      "destination": "KEYBINDINGS.md",
+      "sha256": "ffb1698a4f382939444735de5556f2d2896a5f395da6011167f5923965ba1e48"
     },
     {
       "source": "apps/wm/resources/icons/battery.svg",
@@ -89,6 +99,16 @@
       "source": "apps/wm/resources/icons/headphone.svg",
       "destination": "resources/icons/headphone.svg",
       "sha256": "93ae38ddea8d974a93ef729126ae4b690d70437b8b5ee8db06d47b2020e1d7d9"
+    },
+    {
+      "source": "apps/wm/resources/icons/key-backspace.svg",
+      "destination": "resources/icons/key-backspace.svg",
+      "sha256": "1355b9a436d8d777c4ca57c0f80b7a7ca48c5fadabe39fcdc407237c1f1e4885"
+    },
+    {
+      "source": "apps/wm/resources/icons/key-shift.svg",
+      "destination": "resources/icons/key-shift.svg",
+      "sha256": "93e0d8f92d18fba2d4afb8671bf0dee62597a009fd367718b8be8a33d15a08c7"
     },
     {
       "source": "apps/wm/resources/icons/keyboard.svg",
@@ -216,6 +236,11 @@
       "sha256": "de04732fb6f655e260e221a4f7144e2b817015c31d7cda29100b4d94f2ce4fb3"
     },
     {
+      "source": "apps/wm/resources/startup.splash",
+      "destination": "resources/startup.splash",
+      "sha256": "e08cb962ba825370b2fec6e11d1e9008420d7662ab15e435564c16b9a2b9bffc"
+    },
+    {
       "source": "apps/wm/src/ai_bus.rs",
       "destination": "src/ai_bus.rs",
       "sha256": "76f3c8cede2ee600ad1e9e7df7562f78e531aea31eaed306c874ecfa5c1ec8ed"
@@ -233,7 +258,7 @@
     {
       "source": "apps/wm/src/clients.rs",
       "destination": "src/clients.rs",
-      "sha256": "36df47ecfd1eb99f0640a2ba3f2e752e24cfe51cff5547d29e9e3b835e4df0df"
+      "sha256": "f9794ecfd8c0da988544641d099e253cca354e5b068f1440c2ba2f77585922c5"
     },
     {
       "source": "apps/wm/src/demo_home.rs",
@@ -243,7 +268,32 @@
     {
       "source": "apps/wm/src/desk.rs",
       "destination": "src/desk.rs",
-      "sha256": "ab10eea8b2d23933a4ffbd2b2c5f0d53fabaa5860a99349a3c8c903af784ccf9"
+      "sha256": "297bfebbbcc5f82b253ffb8b3e0284d70fa610ab38a23cc28ada4e662cb25d81"
+    },
+    {
+      "source": "apps/wm/src/desk/phone.rs",
+      "destination": "src/desk/phone.rs",
+      "sha256": "3316dc7593b34eb58570424122a4e0d8d4474e8ab4211ef6dd842d8cefa30cca"
+    },
+    {
+      "source": "apps/wm/src/desktop.rs",
+      "destination": "src/desktop.rs",
+      "sha256": "3a3b2f58b642cd7f3910925ea4e5223857e1c2c7c60333bbca1d15665be51375"
+    },
+    {
+      "source": "apps/wm/src/desktop_app.rs",
+      "destination": "src/desktop_app.rs",
+      "sha256": "441654d8662ec59fca6066c34e126abadf678056929965ce6d9ad28d8b3b82cd"
+    },
+    {
+      "source": "apps/wm/src/desktop_layout.rs",
+      "destination": "src/desktop_layout.rs",
+      "sha256": "6ee0020526980da6ff63510e2aa0ce1d8ee31a74869b682ce38f8afe8cd5cc7c"
+    },
+    {
+      "source": "apps/wm/src/dock_warp.rs",
+      "destination": "src/dock_warp.rs",
+      "sha256": "52cf3dceeb8b3774c78eb02beb58bdbdce7e3cc8acd283674a617bfe3fa2a556"
     },
     {
       "source": "apps/wm/src/host.rs",
@@ -258,17 +308,42 @@
     {
       "source": "apps/wm/src/layout.rs",
       "destination": "src/layout.rs",
-      "sha256": "e74edd413eadc547c734d6bcbeebe2643e13444a7a144ea5485b52ae988783d2"
+      "sha256": "1f96ca32191d528c60ccaf649b129f0ad5ca711e4033e00540bd40c2296a96e3"
     },
     {
       "source": "apps/wm/src/main.rs",
       "destination": "src/main.rs",
-      "sha256": "87dc0d701c3b26919807f48f2c4699c517680c3ead5f1f84b9c3d822ad343722"
+      "sha256": "8b8d4cc63573a38c1e5427bc1949ed8ab307dd1763bd7fc7f8969cf9df346e56"
+    },
+    {
+      "source": "apps/wm/src/mobile.rs",
+      "destination": "src/mobile.rs",
+      "sha256": "16826996b41b234906598956d5c89d6f56402b6dd8ca1e9f8a3835b9e4636800"
+    },
+    {
+      "source": "apps/wm/src/mobile_app.rs",
+      "destination": "src/mobile_app.rs",
+      "sha256": "fdddd4a36f2024d86676dce5c37f53129278582132db4d7eff809c6597ff9af2"
+    },
+    {
+      "source": "apps/wm/src/mobile_surface.rs",
+      "destination": "src/mobile_surface.rs",
+      "sha256": "b37af0e76d7ccedb39263d3633f3ab93678171fc59b395f803eb1b9ad17516f0"
+    },
+    {
+      "source": "apps/wm/src/mobile_surface/search.rs",
+      "destination": "src/mobile_surface/search.rs",
+      "sha256": "bfc50b900737133e73923a9452e2790ac1d7f0fef7870c8cc6bedb22baef0f32"
+    },
+    {
+      "source": "apps/wm/src/mobile_tiles.rs",
+      "destination": "src/mobile_tiles.rs",
+      "sha256": "fe4d9d598afa913873107ae46e4a0cd147694a991d0e0b08b2491ae9e5a1f82e"
     },
     {
       "source": "apps/wm/src/module_host.rs",
       "destination": "src/module_host.rs",
-      "sha256": "93f45c47c4b92f35229aa6c588d50ff87657f3594f9e3b1d1083c335dafd0ca0"
+      "sha256": "275fbf670061dfb0aca1621063c33e46e9e2ec3e21c15a033e5c315136d6837c"
     },
     {
       "source": "apps/wm/src/module_view.rs",
@@ -283,12 +358,17 @@
     {
       "source": "apps/wm/src/preview.rs",
       "destination": "src/preview.rs",
-      "sha256": "00e42037713934e439052abb29e0d478f87368e29aa21296d8b54230e5e0b23b"
+      "sha256": "875cd047bd242e900233e376b33dbaca120792e986cad6dac28c91b44af12872"
     },
     {
       "source": "apps/wm/src/run_view.rs",
       "destination": "src/run_view.rs",
-      "sha256": "d6fe9052caaf2300519fcb1f6e0bb5f7c2dff78f1c79e31e2f121847993fd3af"
+      "sha256": "b6ac52b22098fe1b51c1cdbf71cb0007543e0f4fe1ec73de94101dd9c4a3a8f3"
+    },
+    {
+      "source": "apps/wm/src/scene.rs",
+      "destination": "src/scene.rs",
+      "sha256": "3fb2d822f079fcdada67501822b5f0202b82b1a15998b80a6385e22808d9f040"
     },
     {
       "source": "apps/wm/src/shell/ai_pane.rs",
@@ -298,7 +378,7 @@
     {
       "source": "apps/wm/src/shell/bar.rs",
       "destination": "src/shell/bar.rs",
-      "sha256": "8258db2f3ad39fc16d86e49f8b9777763501153a91ba009d6e745fecd95a1adc"
+      "sha256": "46ca5c335faf8bc3bda1c9fbeb98d5d0c62c766a05462f86dd7dc4e885d0dc71"
     },
     {
       "source": "apps/wm/src/shell/gallery.rs",
@@ -308,12 +388,17 @@
     {
       "source": "apps/wm/src/shell/launcher.rs",
       "destination": "src/shell/launcher.rs",
-      "sha256": "d7a392970705169fdeea186d928c87ca1e93d19367b2b44eb41ea821b28a7d13"
+      "sha256": "3e6eef43390808f1bf63cdbcfba8ebc1ada0d7a9495bfa4dafc05f4e5e3da613"
     },
     {
       "source": "apps/wm/src/shell/menu.rs",
       "destination": "src/shell/menu.rs",
-      "sha256": "0cfe8a14a30bf3d20b3d1ec4ba7b8d40ef6e9221d37e27628df98fcff981038b"
+      "sha256": "db4e60acb1e0b96489cf06cb4e85191c70c369d871247d40f8d8fd3913a48e84"
+    },
+    {
+      "source": "apps/wm/src/shell/menu/nextstep.rs",
+      "destination": "src/shell/menu/nextstep.rs",
+      "sha256": "fb846e4b04d30c418f1377d4cf459eb3f8992aba4b2a869d45b106b25c8f4604"
     },
     {
       "source": "apps/wm/src/shell/mod.rs",
@@ -338,7 +423,12 @@
     {
       "source": "apps/wm/src/shell/ui.rs",
       "destination": "src/shell/ui.rs",
-      "sha256": "05543c36e06514e3cb4bb014b18ecbaba40a91dcfc95b755eca145bf3ccdb4a7"
+      "sha256": "00966215a845176a39a14b1592779e3168f412bb862fc55fc8f0a4043778c543"
+    },
+    {
+      "source": "apps/wm/src/snap.rs",
+      "destination": "src/snap.rs",
+      "sha256": "dfe9f6c2523cbccb92307973024943f1447f13176a2ac7d54db7e8e6b70f7b3c"
     },
     {
       "source": "apps/wm/src/theme.rs",
@@ -349,11 +439,6 @@
       "source": "apps/wm/src/tile.rs",
       "destination": "src/tile.rs",
       "sha256": "a956d6aac298b688fcf9b83b3adbe0797821790e24aeedb06b87b1f1665560cc"
-    },
-    {
-      "source": "LICENSE",
-      "destination": "LICENSES/Makepad-MIT.txt",
-      "sha256": "3855d73a873244ec424ac5781d5d8fc8e2a789ff9d2f1cb804bec585a64ea88f"
     }
   ],
   "adaptations": [
@@ -362,7 +447,9 @@
     "MakeOS owns app registration, state paths, and opt-in startup behavior.",
     "User-facing branding is MakeOS; wire protocol identifiers remain compatible.",
     "Client lifecycle reports failed builds and synchronously terminates/reaps process groups on host shutdown.",
-    "Run-view widget geometry follows the presented surface after its startup background disappears."
+    "Run-view widget geometry follows the presented surface after its startup background disappears.",
+    "Desktop and mobile launch surfaces only expose available catalog apps; mobile tile background launches honor prewarming opt-in.",
+    "WM owns transition framebuffers and reuses the wallpaper quad because the pinned widgets View lacks the snapshot/redraw methods called by upstream WM."
   ],
   "omissions": []
 }

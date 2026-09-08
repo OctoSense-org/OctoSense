@@ -17,6 +17,8 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 11. Add regression tests and implement cached staging, automatic verification, reports, and review-branch handoff — complete.
 12. Verify no-op, success, conflict, failed-check, and concurrent-edit behavior; document the daily command — complete; 40 script tests and full native verifier passed.
 
+13. Resolve upstream ae20efc5 conflicts and verify the standalone upgrade — complete; all checks passed and the verified candidate is ready for the review-branch handoff.
+
 ## Daily sync requirements (2026-09-06)
 - User performs the source Git pull/fetch; the command uses local HEAD by default and never pulls or commits.
 - Automate comparison, safe staged merging, coordinated pins/lockfile, compile/tests, release build, and both native smoke modes.

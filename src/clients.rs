@@ -28,7 +28,7 @@ use crate::host;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use makepad_widgets::makepad_platform::thread::{CancellationToken, Lane, SignalToUI, TaskPool};
+use makepad_widgets::makepad_platform::thread::{CancellationToken, Lane, SignalToUI, TaskPool, ThreadSpawner, ThreadOptions};
 use makepad_widgets::Cx;
 
 use crate::hub::ClientId;
@@ -260,6 +260,9 @@ pub struct WarmStatus {
 #[derive(Debug)]
 pub struct WarmPool {
     enabled: bool,
+    /// Appearance in which browser pages were warmed. A loaded page may
+    /// choose its theme only once, so a media-query update is not sufficient.
+    browser_dark: Option<bool>,
     /// app id -> the warm clients of that app, oldest first.
     ready: HashMap<String, Vec<ClientId>>,
     /// app id -> when (platform seconds) its warm instances died unexpectedly, newest last.
@@ -291,6 +294,7 @@ impl WarmPool {
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
+            browser_dark: None,
             ready: HashMap::new(),
             crashes: HashMap::new(),
         }
@@ -317,6 +321,18 @@ impl WarmPool {
     /// How many instances of this app are currently held.
     pub fn held(&self, app: &str) -> usize {
         self.ready.get(app).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// Retire only unused browsers on a light/dark change. Removing them
+    /// from the adoption pool is immediate; the host closes their processes
+    /// and refills after they exit. Deliberate retirement is not a crash.
+    pub fn set_browser_appearance(&mut self, dark: bool) -> Vec<ClientId> {
+        let previous = self.browser_dark.replace(dark);
+        if previous.is_some_and(|previous| previous != dark) {
+            self.ready.remove("browser").unwrap_or_default()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Every warm client, whatever the app — the shutdown / close-all
@@ -750,13 +766,19 @@ pub fn strip_ansi(s: &str) -> String {
 
 /// Read a child stream line by line into the log file and the UI channel.
 fn pump<R: std::io::Read + Send + 'static>(
-    pool: &TaskPool,
+    spawner: &ThreadSpawner,
     client: ClientId,
     stream: R,
     mut log: Option<std::fs::File>,
     lines: Sender<ClientLine>,
 ) {
-    let submitted = pool.submit(Lane::Heavy, move || {
+    // Each pipe lives for the child's entire lifetime. A blocking reader
+    // must not occupy a finite pool worker: enough open apps would starve
+    // new compile logs and even process cleanup.
+    let submitted = spawner.spawn_worker(ThreadOptions {
+        name: Some(format!("wm-client-{client}-output").into()),
+        ..Default::default()
+    }, move || {
         use std::io::{BufRead, BufReader, Write};
         let reader = BufReader::new(stream);
         for line in reader.lines() {
@@ -777,6 +799,24 @@ fn pump<R: std::io::Read + Send + 'static>(
     match submitted {
         Ok(task) => task.detach(),
         Err(error) => makepad_widgets::log!("wm: could not queue client output pump: {error}"),
+    }
+}
+
+/// Cargo output that changes the launch panel. Compiler diagnostics stay in
+/// the client log and do not overwrite a useful build stage with source text.
+pub fn cargo_progress(raw: &str) -> Option<(String, bool)> {
+    let raw = raw.trim();
+    if raw.starts_with("Blocking waiting for file lock") {
+        Some(("waiting for another build…".into(), false))
+    } else if raw.starts_with("Running ") || raw.starts_with("Finished ") {
+        Some(("launching…".into(), true))
+    } else if let Some(rest) = raw.strip_prefix("Compiling ") {
+        let package = rest.split(" (").next().unwrap_or(rest).trim();
+        Some((format!("compiling {package}…"), false))
+    } else if raw.starts_with("error:") || raw.starts_with("error[") {
+        Some(("build failed — see the app log".into(), false))
+    } else {
+        None
     }
 }
 
@@ -822,6 +862,7 @@ pub fn launch_argv(
 /// Spawn an app as a hub client.
 pub fn spawn_client(
     pool: &TaskPool,
+    spawner: &ThreadSpawner,
     app: &AppDef,
     id: ClientId,
     hub_port: u16,
@@ -880,7 +921,7 @@ pub fn spawn_client(
         // its window rule alone, 0.985/0.96, reads as opaque).
         // "focused unfocused"; MAKEPAD_WM_TERM_OPACITY overrides.
         let opacity = std::env::var("MAKEPAD_WM_TERM_OPACITY")
-            .unwrap_or_else(|_| "0.88 0.84".to_string());
+            .unwrap_or_else(|_| "0.78 0.70".to_string());
         cmd.env("MAKEPAD_TERMINAL_OPACITY", opacity);
     }
     // Every Makepad app styles itself from the WM's theme.splash.
@@ -900,10 +941,10 @@ pub fn spawn_client(
     makepad_widgets::log!("makeos: client {id} log: {}", log_path.display());
     let log = std::fs::File::create(&log_path).ok();
     if let Some(out) = child.stdout.take() {
-        pump(pool, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
+        pump(spawner, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
     }
     if let Some(err) = child.stderr.take() {
-        pump(pool, id, err, log, lines);
+        pump(spawner, id, err, log, lines);
     }
     Ok(ClientSlot {
         id,
@@ -957,6 +998,18 @@ mod tests {
     fn the_default_catalog_has_only_the_reference_app() {
         let apps = crate::makeos::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
         assert_eq!(apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["reference"]);
+    }
+
+    #[test]
+    fn cargo_progress_keeps_the_build_stage_readable() {
+        assert_eq!(cargo_progress("   Compiling makepad-photos v0.1.0 (/a/checkout)"), Some(("compiling makepad-photos v0.1.0…".into(), false)));
+        assert_eq!(cargo_progress("Blocking waiting for file lock on build directory"), Some(("waiting for another build…".into(), false)));
+        assert_eq!(cargo_progress("    Finished `release` profile in 2s"), Some(("launching…".into(), true)));
+        assert_eq!(cargo_progress("     Running `/a/checkout/target/release/photos`"), Some(("launching…".into(), true)));
+        assert!(cargo_progress("warning: unused variable").is_none());
+        assert!(cargo_progress(" --> /a/checkout/src/main.rs:2").is_none());
+        assert!(cargo_progress("app: first frame").is_none());
+        assert_eq!(cargo_progress("error[E0308]: type mismatch"), Some(("build failed — see the app log".into(), false)));
     }
 
     #[test]
@@ -1075,6 +1128,33 @@ mod tests {
             })
             .collect();
         (pool, status)
+    }
+
+    #[test]
+    fn appearance_retires_only_unused_browsers_and_never_counts_as_a_crash() {
+        let (mut pool,status)=pool_with("browser", &[40,41]);
+        pool.note_spawned("files",42);
+        assert!(pool.set_browser_appearance(true).is_empty());
+        assert_eq!(pool.adopt("browser",false,&status),Some(40));
+        assert!(pool.set_browser_appearance(true).is_empty());
+        assert_eq!(pool.set_browser_appearance(false),vec![41]);
+        assert_eq!(pool.adopt("browser",false,&status),None);
+        assert!(pool.holds(42));
+        // Reaping intentional retirements cannot charge the crash budget.
+        assert_eq!(pool.forget(41),None);
+        for dark in [true,false,true,false] {assert!(pool.set_browser_appearance(dark).is_empty());}
+        assert!(pool.wants("browser",0.0));
+        pool.note_spawned("browser",43);
+        assert!(pool.set_browser_appearance(false).is_empty());
+        assert!(pool.holds(43));
+    }
+
+    #[test]
+    fn appearance_changes_do_not_enable_a_disabled_pool() {
+        let mut pool=WarmPool::new(false);
+        pool.set_browser_appearance(true);
+        pool.set_browser_appearance(false);
+        assert!(!pool.wants("browser",0.0));
     }
 
     #[test]
@@ -1417,9 +1497,11 @@ mod tests {
         // Past the SIGTERM->SIGKILL escalation: nothing in the group is
         // still standing, wrapper or grandchild.
         let _ = child.wait();
+        // The wrapper can exit before the asynchronous escalation and before
+        // launchd reaps the orphan. Wait only in this test, never on the UI.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         while unsafe { kill(grandchild_pid, 0) } == 0 && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert_eq!(
             unsafe { kill(grandchild_pid, 0) },
