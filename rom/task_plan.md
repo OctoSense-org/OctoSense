@@ -13,6 +13,17 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 7. Implement and test upstream maintenance workflow — complete; 24 maintenance fixtures passed.
 8. Run relevant tests and verify plain cargo run plus hosted app interaction — complete; root and independent-copy smoke checks passed.
 9. Review, document, and finalize runnable project — complete; final inventory and whitespace check passed.
+10. Design one-command daily sync using the updated local Makepad HEAD — complete.
+11. Add regression tests and implement cached staging, automatic verification, reports, and review-branch handoff — complete.
+12. Verify no-op, success, conflict, failed-check, and concurrent-edit behavior; document the daily command — complete; 40 script tests and full native verifier passed.
+
+## Daily sync requirements (2026-09-06)
+- User performs the source Git pull/fetch; the command uses local HEAD by default and never pulls or commits.
+- Automate comparison, safe staged merging, coordinated pins/lockfile, compile/tests, release build, and both native smoke modes.
+- No new revision means a fast no-op. Real updates require a clean MakeOS tree.
+- Reuse an ignored staging build cache; serialize syncs to prevent cache interference.
+- Retain comparison, verification logs, smoke artifacts, and failure candidates for review.
+- Create a dedicated review branch only after successful checks. User owns review, commit, merge, and push.
 
 ## Constraints
 - Minimize copied code; prefer external crate dependencies where practical.

@@ -56,3 +56,19 @@ Source development on macOS is verified. Linux/Windows code and optional linked
 app modules are retained but untested in this milestone. Fonts and other
 framework assets remain in Cargo's dependency checkout; executable-only or
 installer distribution needs separate resource packaging.
+
+## Daily sync automation — 2026-09-06
+
+The new `sync` command was verified with 40 script tests, including local Git
+revision transitions, review-branch handoff, cache reuse, conflicts, failed GUI
+verification, concurrent edits, interruption cleanup, and failed report writes.
+No-op behavior was also exercised against the real Makepad checkout, whose HEAD
+still matched the recorded baseline.
+
+The complete runtime verifier passed on an isolated source copy: metadata,
+workspace check, 163 Rust tests, 40 script tests, both profile builds, release
+hosting smoke, and `cargo run` with the default catalog. Its target directory
+was seeded from existing compiled artifacts; both native test modes used that
+copy's executables and retained PNG frames and host/client logs in the report.
+This validates the orchestration at the current revision; it does not establish
+compatibility with a newer upstream commit that has not yet been pulled.

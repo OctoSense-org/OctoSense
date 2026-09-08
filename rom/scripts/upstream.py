@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import difflib
 import hashlib
 import json
@@ -17,6 +19,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -343,20 +346,65 @@ def put(root, name, data, mode=0o644):
             os.unlink(temporary)
 
 
-def verify_stage(stage):
-    log = stage.parent / "verification.log"
+def run_verification(command, stage, env, output):
+    # Own the command's group so Ctrl-C can be forwarded once. In particular,
+    # smoke.py needs time to close its separately hosted app/build processes.
+    process = subprocess.Popen(command, cwd=stage, env=env, stdout=output,
+                               stderr=subprocess.STDOUT, start_new_session=os.name == "posix")
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        print("Interrupted; waiting for verification process cleanup...", flush=True)
+        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        def send(sig):
+            try:
+                if os.name == "posix":
+                    os.killpg(process.pid, sig)
+                else:
+                    process.send_signal(sig)
+            except ProcessLookupError:
+                pass
+        try:
+            send(signal.SIGINT)
+            try:
+                process.wait(timeout=45)
+            except subprocess.TimeoutExpired:
+                send(signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    send(signal.SIGKILL)
+                    process.wait(timeout=5)
+        finally:
+            signal.signal(signal.SIGINT, previous)
+        raise
+
+
+def verify_stage(stage, *, runtime=False, report=None):
+    report = report or stage.parent
+    log = report / "verification.log"
     commands = [["cargo", "metadata", "--format-version", "1"],
                 ["cargo", "check", "--locked", "--workspace"],
                 ["cargo", "test", "--locked", "--workspace", "--quiet"]]
     if (stage / "scripts/test_upstream.py").exists():
         commands.append([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_*.py"])
+    if runtime:
+        commands.extend([
+            ["cargo", "build", "--release", "--locked", "--workspace"],
+            ["cargo", "build", "--locked", "--workspace"],
+            [sys.executable, "scripts/smoke.py", "--artifacts-dir", str(report / "smoke-release")],
+            [sys.executable, "scripts/smoke.py", "--cargo-run", "--default-catalog",
+             "--artifacts-dir", str(report / "smoke-default")],
+        ])
+    # The candidate owns its binaries, so resource/catalog discovery cannot
+    # accidentally climb from a shared build directory into the live project.
+    env = dict(os.environ, CARGO_TARGET_DIR=str(stage / "target"))
     with log.open("wb") as output:
         for command in commands:
             print(f"Verifying staged project: {' '.join(command)}", flush=True)
             output.write(("\n$ " + " ".join(command) + "\n").encode())
             output.flush()
-            result = subprocess.run(command, cwd=stage, stdout=output, stderr=subprocess.STDOUT)
-            if result.returncode:
+            if run_verification(command, stage, env, output):
                 raise SyncError(f"{' '.join(command)} failed; see {log}")
 
 
@@ -389,7 +437,7 @@ def apply(root, stage, original, names):
         raise
 
 
-def update(root, source, to, verify=None):
+def update(root, source, to, verify=None, *, work_dir=None, report=None, before_apply=None):
     root, source = Path(root).resolve(), Path(source).resolve()
     original = clean_snapshot(root)
     comparison = compare(root, source, to)
@@ -398,10 +446,20 @@ def update(root, source, to, verify=None):
     for change in comparison.changes:
         if change.base is not None and change.local is not None and change.destination not in original:
             raise SyncError(f"import destination must be tracked before updating: {change.destination}")
-    temporary = Path(tempfile.mkdtemp(prefix="makeos-upstream-"))
+    temporary = work_dir or Path(tempfile.mkdtemp(prefix="makeos-upstream-"))
+    report = report or temporary
     stage = temporary / "project"
-    stage.mkdir()
+    stage.mkdir(parents=True, exist_ok=True)
     try:
+        # Only compiled artifacts survive between daily sync attempts. Removed
+        # or generated source files from the previous candidate must not leak in.
+        for child in stage.iterdir():
+            if child.name == "target" and child.is_dir() and not child.is_symlink():
+                continue
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
         for name, (data, mode) in original.items():
             put(stage, name, data, mode)
         names = {BASELINE, "Cargo.lock"}
@@ -412,18 +470,11 @@ def update(root, source, to, verify=None):
             elif change.merged is not None and change.local is not None:
                 # Preserve conflict markers only in the disposable copy.
                 put(stage, change.destination, change.merged, change.mode)
-        (temporary / "comparison.txt").write_text(format_comparison(comparison, show_diff=True))
+        (report / "comparison.txt").write_text(format_comparison(comparison, show_diff=True))
         if comparison.conflicts:
             raise SyncError("merge conflict(s): " + ", ".join(change.destination for change in comparison.conflicts))
         rewrite_pins(stage, comparison.manifest["repository"], comparison.manifest["dependency_revision"], comparison.revision)
         names.update(str(path.relative_to(stage)) for path in manifest_paths(stage))
-        try:
-            (verify or verify_stage)(stage)
-            problems = pin_problems(stage, comparison.manifest["repository"], comparison.revision)
-            if problems:
-                raise SyncError("\n".join(problems))
-        except Exception as error:
-            raise SyncError(f"staged verification failed: {error}") from error
         manifest = copy.deepcopy(comparison.manifest)
         manifest["revision"] = manifest["dependency_revision"] = comparison.revision
         manifest["files"] = [
@@ -433,12 +484,129 @@ def update(root, source, to, verify=None):
             if change.upstream is not None
         ]
         put(stage, BASELINE, (json.dumps(manifest, indent=2) + "\n").encode())
+        try:
+            (verify or verify_stage)(stage)
+            problems = pin_problems(stage, comparison.manifest["repository"], comparison.revision)
+            if problems:
+                raise SyncError("\n".join(problems))
+        except Exception as error:
+            raise SyncError(f"staged verification failed: {error}") from error
+        if before_apply:
+            before_apply()
         apply(root, stage, original, names)
     except Exception as error:
         state = "Live files may differ from the starting commit." if isinstance(error, RecoveryError) else "Live import and baseline were not advanced."
         raise SyncError(f"{error}\n{state} Review retained stage: {temporary}") from error
-    shutil.rmtree(temporary)
+    if work_dir is None:
+        shutil.rmtree(temporary)
     return comparison
+
+
+@contextmanager
+def sync_lock(cache):
+    # Native smoke automation currently targets macOS/POSIX. flock also releases
+    # on an interrupted process, unlike a marker directory that can go stale.
+    import fcntl
+    cache.mkdir(parents=True, exist_ok=True)
+    with (cache / "sync.lock").open("a") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise SyncError("another MakeOS sync is running; wait for it to finish") from error
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def sync(root, source=None, to=None, verify=None):
+    root = Path(root).resolve()
+    source = Path(source).resolve() if source is not None else root.parent / "makepad"
+    # Freeze a moving ref once. Later fetches/pulls cannot change this attempt.
+    target = resolve(source, to or "HEAD")
+    comparison = compare(root, source, target)
+    if comparison.problems:
+        raise SyncError("cannot sync:\n" + "\n".join(comparison.problems))
+    if comparison.manifest["revision"] == target:
+        print(f"Already at Makepad {target}; no update or checks needed.")
+        if git(root, "status", "--porcelain", "--untracked-files=all"):
+            print("MakeOS has uncommitted changes; review/commit them separately.")
+        return None
+
+    original = clean_snapshot(root)
+    cache = checked_path(root, "target/makepad-sync")
+    ignored = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", "--", "target/makepad-sync"])
+    if ignored.returncode:
+        raise SyncError("target/makepad-sync must be Git-ignored before running sync")
+    with sync_lock(cache):
+        if clean_snapshot(root) != original:
+            raise SyncError("MakeOS changed while starting sync; retry from a clean tree")
+        head = git(root, "rev-parse", "HEAD").decode().strip()
+        starting_branch = git(root, "branch", "--show-current").decode().strip()
+        reports = cache / "reports"
+        reports.mkdir(exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-")
+        report = Path(tempfile.mkdtemp(prefix=stamp, dir=reports))
+        (report / "comparison.txt").write_text(format_comparison(comparison, show_diff=True))
+        print(f"Syncing Makepad {comparison.manifest['revision']} -> {target}\nReport: {report}", flush=True)
+        branch = None
+
+        def review_branch():
+            nonlocal branch
+            if (git(root, "rev-parse", "HEAD").decode().strip() != head or
+                    git(root, "branch", "--show-current").decode().strip() != starting_branch or
+                    clean_snapshot(root) != original):
+                raise SyncError("MakeOS HEAD, branch, or files changed during verification; refusing to apply")
+            existing = set(git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads/").decode().splitlines())
+            base = candidate = f"sync/makepad-{target[:12]}"
+            suffix = 2
+            while candidate in existing:
+                candidate = f"{base}-{suffix}"
+                suffix += 1
+            git(root, "switch", "-c", candidate)
+            branch = candidate
+
+        try:
+            update(root, source, target, verify=verify or (lambda stage: verify_stage(stage, runtime=True, report=report)),
+                   work_dir=cache, report=report, before_apply=review_branch)
+        except BaseException as error:
+            secondary = []
+            # An apply failure normally rolls files back. Remove only our empty
+            # branch, and only when no subsequent user edit or Git change exists.
+            try:
+                if branch and git(root, "branch", "--show-current").decode().strip() == branch:
+                    if git(root, "rev-parse", "HEAD").decode().strip() == head and clean_snapshot(root) == original:
+                        git(root, "switch", starting_branch) if starting_branch else git(root, "switch", "--detach", head)
+                        git(root, "branch", "-d", branch)
+            except (SyncError, OSError) as cleanup_error:
+                secondary.append(f"Review branch retained: {cleanup_error}")
+            # Reporting failures must not mask the original error or prevent
+            # Git cleanup, especially when the original failure was disk I/O.
+            candidate = cache / "project"
+            try:
+                if candidate.exists():
+                    shutil.copytree(candidate, report / "project", ignore=shutil.ignore_patterns("target", "__pycache__"))
+                    candidate = report / "project"
+            except OSError as archive_error:
+                secondary.append(f"Could not archive candidate: {archive_error}; cache retained at {candidate}")
+            detail = f"FAILED: {type(error).__name__}: {error}\nCandidate: {candidate}\n" + "\n".join(secondary)
+            try:
+                (report / "summary.txt").write_text(detail + "\n")
+            except OSError as report_error:
+                detail += f"\nCould not write summary: {report_error}"
+            if isinstance(error, (KeyboardInterrupt, SystemExit)):
+                print(f"{detail}\nSync interrupted. Failure report: {report}", file=sys.stderr)
+                raise
+            raise SyncError(f"{detail}\nFailure report: {report}") from error
+
+        summary = (f"READY FOR REVIEW\nMakepad: {comparison.manifest['revision']} -> {target}\n"
+                   f"Starting branch: {starting_branch or '(detached)'}\nStarting commit: {head}\n"
+                   f"Review branch: {branch}\nChecks passed; changes are unstaged and uncommitted.\n"
+                   f"Report: {report}\n\nNext: git status --short; git diff --stat; git diff\n"
+                   "Review the comparison and smoke frames, then commit/merge when satisfied.\n")
+        (report / "summary.txt").write_text(summary)
+        print(summary, end="")
+        return report
 
 
 def format_comparison(comparison, show_diff=False):
@@ -472,19 +640,26 @@ def format_comparison(comparison, show_diff=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["status", "diff", "update"])
-    parser.add_argument("--source", type=Path, required=True, help="existing Makepad Git clone (never written)")
-    parser.add_argument("--to", help="explicit target commit or local ref; defaults to baseline for status/diff")
+    parser.add_argument("command", choices=["sync", "status", "diff", "update"])
+    parser.add_argument("--source", type=Path, help="existing Makepad Git clone (default: sibling makepad; never written)")
+    parser.add_argument("--to", help="target commit/ref; sync defaults to source HEAD, status/diff to baseline; required for update")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1], help="MakeOS repository root")
     args = parser.parse_args(argv)
     if args.command == "update" and not args.to:
         parser.error("update requires --to")
+    source = args.source or args.root.resolve().parent / "makepad"
     try:
-        comparison = update(args.root, args.source, args.to) if args.command == "update" else compare(args.root, args.source, args.to)
+        if args.command == "sync":
+            sync(args.root, source, args.to)
+            return 0
+        comparison = update(args.root, source, args.to) if args.command == "update" else compare(args.root, source, args.to)
         print(format_comparison(comparison, show_diff=args.command == "diff"), end="")
         if args.command == "update":
             print("Verified update applied. Review git diff, run host/client GUI smoke tests, then commit the files and baseline together.")
         return 1 if comparison.problems or comparison.conflicts else 0
+    except KeyboardInterrupt:
+        print("upstream: interrupted", file=sys.stderr)
+        return 130
     except (SyncError, OSError, ValueError, KeyError) as error:
         print(f"upstream: {error}", file=sys.stderr)
         return 2

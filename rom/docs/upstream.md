@@ -6,6 +6,82 @@ full Makepad commit. The hashes describe **pristine upstream content**, so local
 MakeOS adaptations do not require changing them. Framework and hosted-app
 dependencies use that same commit. Do not independently change their revisions.
 
+## Daily command
+
+After updating the Makepad checkout, run from MakeOS:
+
+```sh
+git -C ../makepad pull --ff-only
+python3 scripts/upstream.py sync
+```
+
+Run this at least daily during active development, or more often after upstream
+changes. The first command is your source-repository Git step; `sync` performs
+the remaining comparison, preparation, and verification without prompts. No
+scheduled job is installed.
+
+Defaults are the sibling `../makepad` checkout and its current local `HEAD`.
+The command resolves the target once, so another pull during verification does
+not change the candidate. `--source /path/to/makepad` and `--to <commit-or-ref>`
+override those defaults. The chosen commit must be fetchable from the pinned
+Makepad Git dependency URL; local unpublished commits cannot form a portable
+MakeOS upgrade. Cargo will report a resolution failure for an unavailable pin.
+
+An unchanged revision is a fast successful no-op, including when MakeOS has
+uncommitted work; it reports that work separately. If upstream has advanced,
+MakeOS must have a clean working tree first. Complete review/commit of the
+previous update before applying another one. A nonzero result means the new
+candidate has not passed the workflow.
+
+For an actual update, the command:
+
+1. Saves the source comparison and resolves the three-way merge in
+   `target/makepad-sync/project`. Only that candidate's `target/` build cache
+   survives between attempts; its source is rebuilt from tracked MakeOS files.
+2. Advances the candidate's provenance, all Makepad dependency pins, and lockfile
+   together. Runs Cargo metadata, locked workspace check/tests, and the Python
+   maintenance tests.
+3. Builds release and debug workspace binaries, then runs the release hosting
+   smoke test and the exact `cargo run` test with the shipped catalog. Tests
+   open and close their own windows and isolate user state. The command needs
+   native GUI access and is currently validated on macOS.
+4. Rechecks the starting MakeOS HEAD, branch, and files. Only after verification
+   passes, creates `sync/makepad-<12-character-revision>` (with a numeric suffix
+   if necessary) and applies the candidate. Existing branches are never reused
+   or overwritten.
+5. Prints `READY FOR REVIEW` and the report directory. Changes remain unstaged
+   and uncommitted; review, commit, merge, and push belong to you.
+
+Use the printed review branch and report to finish:
+
+```sh
+git status --short
+git diff --stat
+git diff
+```
+
+`git status` also shows new upstream files that an unstaged `git diff` does not
+include. Review `comparison.txt`, `verification.log`, and the PNGs/logs in
+`smoke-release/` and `smoke-default/`, then commit the complete upgrade. The
+runtime checks verify interaction and lifecycle behavior; the captured frames
+remain available for your visual review.
+
+Each attempt retains a unique report under `target/makepad-sync/reports/`.
+A failed merge/check preserves the live import and original branch, with a
+candidate source snapshot under the report's `project/`. Review that snapshot
+before rerunning; it is separate from the reusable staging area. If storage
+errors prevent archiving, the error identifies the retained cache location.
+An ordinary apply failure rolls back files and restores the original branch
+when no concurrent user changes intervene. Recovery failures are reported.
+
+A process lock serializes syncs using the same cache. Ctrl-C forwards one
+interrupt to the active verification command and waits for its cleanup before
+releasing that lock. Reports and the build cache are Git-ignored; keep useful
+reports for review and remove old ones when no sync is running. The first sync
+build may take longer; subsequent syncs reuse Cargo's incremental artifacts.
+
+## Manual comparison and update
+
 The maintenance script needs Python 3.11+, Git, Cargo, and an existing Makepad
 clone containing both commits. Obtain new commits in that clone separately.
 The script reads Git objects; it never checks out files, fetches, or changes the
@@ -49,14 +125,15 @@ cargo run --locked
    `apps/wm/` map to the same relative path in MakeOS; deletions remove unchanged
    imported files. Renames appear as additions and deletions.
 3. Change matching Makepad Git revisions in all staged Cargo manifests,
-   including the reference app. Run `cargo metadata --format-version 1` to
+   including the reference app, and generate the candidate provenance baseline.
+   Run `cargo metadata --format-version 1` to
    resolve the staged lockfile, then `cargo check --locked --workspace`,
    `cargo test --locked --workspace --quiet`, and the Python maintenance tests.
    Check the resulting manifest and lock revisions
    again. Cargo may download dependencies; all compilation happens in the
    staging directory. The ordinary Cargo cache is shared.
-4. After verification succeeds, generate the new provenance baseline and check
-   that MakeOS has not changed during verification. Apply the staged source,
+4. After verification succeeds, check that MakeOS has not changed during
+   verification. Apply the staged source,
    Cargo manifests, and lockfile, writing the baseline last. Files are replaced
    atomically; an ordinary write failure rolls back previous writes. The Git
    index is unchanged so the result remains available for review.

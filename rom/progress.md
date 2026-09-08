@@ -31,3 +31,14 @@
 - Maintenance suite: 24 passed. Baseline status verified all 70 imports and Cargo pins: 11 adapted, 59 unchanged. Source checkout retains only its four pre-existing untracked example directories.
 - Added README, runtime smoke script, validation record, and maintenance/conflict-recovery documentation.
 - Final inventory: 90 project files, including the 70 mapped upstream imports. Git whitespace check passed. Both final smoke modes passed; implementation and validation are complete.
+
+## 2026-09-06 — Daily sync automation
+- User requested one command after their source Git update, automating steps 2–4 and leaving step 5 to them.
+- Source HEAD still equals the imported baseline; the live checkout can exercise the fast no-op path.
+- Existing updater stages safely but discards build artifacts and requires separate smoke commands. Extending it with a cached sync workflow and retained review reports.
+- Added `python3 scripts/upstream.py sync`, using sibling HEAD, fast no-op, persistent candidate build cache, per-attempt reports, and unique review branches created only after checks pass. No automatic Git commits or source fetches.
+- New regressions cover cache reuse, branch collisions, conflicts, failed checks, concurrent branch changes, lock contention, and CLI defaults. Full suite: 40 script tests passed.
+- Review caught interruption cleanup and failure-archive errors bypassing branch restoration. Both regressions failed before fixes and passed afterward; bounded follow-up review found no additional material defects.
+- Full real verifier passed on an isolated source copy with seeded compilation caches: metadata, workspace check, 163 Rust tests, 40 script tests, release/debug builds, and both native GUI smoke modes. Captured frames and host/client logs were copied into the run's report.
+- Actual source HEAD remains at the pinned baseline. Live CLI sync correctly returned a no-op and reported these uncommitted automation edits separately. No upstream revision or Git history was changed.
+- Updated daily usage and recovery docs. Automation changes remain uncommitted for user review.
