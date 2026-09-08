@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -54,13 +55,30 @@ def alive(pid):
         return False
 
 
+def save_grab(artifacts, name, grab):
+    """Keep frames with the report rather than relying on remote temp files."""
+    paths = grab["png"] if isinstance(grab["png"], list) else [grab["png"]]
+    saved = []
+    for index, source in enumerate(paths):
+        destination = artifacts / f"{name}-{index}.png"
+        shutil.copyfile(source, destination)
+        saved.append(str(destination))
+    metadata = dict(grab, png=saved if isinstance(grab["png"], list) else saved[0])
+    (artifacts / f"{name}.json").write_text(json.dumps(metadata))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cargo-run", action="store_true")
     parser.add_argument("--default-catalog", action="store_true", help="Use the shipped catalog; skip injected failure/build fixtures")
+    parser.add_argument("--artifacts-dir", type=Path, help="New directory for retained logs, state, and frames")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    artifacts = Path(tempfile.mkdtemp(prefix="makeos-smoke-"))
+    if args.artifacts_dir:
+        artifacts = args.artifacts_dir.resolve()
+        artifacts.mkdir(parents=True, exist_ok=False)
+    else:
+        artifacts = Path(tempfile.mkdtemp(prefix="makeos-smoke-"))
     state = artifacts / "state"
     state.mkdir()
     manifest = str(root / "apps/reference/Cargo.toml")
@@ -137,7 +155,7 @@ def main():
         # Let the shell's arrival animation finish before recording a frame.
         time.sleep(0.6)
         grab = get(port, "g", scale=0.5)
-        (artifacts / "frame.json").write_text(json.dumps(grab))
+        save_grab(artifacts, "frame", grab)
 
         # Workspace movement goes through the WM's own keyboard handler.
         get(port, "k", c="Key2", cmd=1, shift=1, wait=1)
@@ -175,7 +193,7 @@ def main():
             slow_group = os.getpgid(slow_pid)
             owned_groups.append(slow_group)
         final = get(port, "gq", scale=0.5)
-        (artifacts / "final-frame.json").write_text(json.dumps(final))
+        save_grab(artifacts, "final-frame", final)
         process.wait(timeout=10)
         port = None
         for pid in child_pids:
@@ -189,7 +207,11 @@ def main():
         if port:
             for route, params in [("snap", {"all": 1}), ("g", {"scale": 0.5})]:
                 try:
-                    (artifacts / f"failure-{route}.json").write_text(json.dumps(get(port, route, **params)))
+                    result = get(port, route, **params)
+                    if route == "g":
+                        save_grab(artifacts, "failure-g", result)
+                    else:
+                        (artifacts / f"failure-{route}.json").write_text(json.dumps(result))
                 except (OSError, ValueError):
                     pass
         raise
@@ -197,7 +219,7 @@ def main():
         if port and process.poll() is None:
             try:
                 get(port, "quit")
-            except OSError:
+            except (OSError, ValueError):
                 pass
         try:
             process.wait(timeout=10)
@@ -214,6 +236,12 @@ def main():
         for group in owned_groups:
             if alive(-group):
                 os.killpg(group, 9)
+        # Client logs are created by the host in its normal temporary location.
+        # Copy this test host's logs before handing the report to the caller.
+        host_remote = remote(log)
+        if host_remote:
+            for path in Path(tempfile.gettempdir()).glob(f"makeos-{host_remote[1]}-client-*.log"):
+                shutil.copyfile(path, artifacts / path.name)
         print(f"Logs and app-provided frames: {artifacts}", flush=True)
 
 

@@ -73,15 +73,31 @@ Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-ph
 
 [upstream/makepad.json](upstream/makepad.json) records every imported file, its original path/hash, and the matching framework revision. The source baseline is `83a00d2801e4864c42c3a40e85186a8b1743fd84`.
 
-With Python 3.11+ and a local clone containing the relevant upstream commits:
+Run this daily, or after any upstream pull. With Python 3.11+, update the Makepad
+checkout using your normal Git workflow, then run one command from MakeOS:
 
 ```sh
-python3 scripts/upstream.py status --source ../makepad
-python3 scripts/upstream.py diff --source ../makepad --to <commit>
-python3 scripts/upstream.py update --source ../makepad --to <commit>
+git -C ../makepad pull --ff-only
+python3 scripts/upstream.py sync
 ```
 
-Read the [update and conflict-recovery workflow](docs/upstream.md) before applying an upgrade. Status/diff are read-only. Update requires a clean MakeOS repository, merges in a temporary directory, updates dependency pins and the lockfile, and verifies the result before applying it. It never modifies the source Makepad checkout. Run the desktop/hosting smoke checks before committing an upgrade.
+`sync` defaults to the sibling checkout's current `HEAD`. When that matches the
+recorded revision, it exits without building. Otherwise it requires a clean
+MakeOS tree, saves comparison diffs, stages the merge, updates all dependency
+pins and the lockfile, runs compile/Rust/Python checks, builds both profiles,
+and runs both native smoke modes. It reuses an ignored staging build cache.
+
+After every check passes, it creates a unique `sync/makepad-<revision>` branch
+and applies the verified changes, leaving them unstaged and uncommitted. You
+then review the diff and report, commit, and merge. Conflicts or failed checks
+stop with diagnostics and preserve the live import. The command never pulls,
+commits, merges branches, or pushes. Full sync currently requires macOS GUI
+access; a headless session cannot pass its native runtime checks.
+
+Reports and captured frames are under `target/makepad-sync/reports/`; the command
+prints the exact directory. Use `--source /path/to/makepad` or `--to <commit>`
+when needed. See the [full workflow and conflict recovery](docs/upstream.md) for
+manual commands and how to investigate a failed candidate.
 
 ## Verification and scope
 

@@ -49,3 +49,8 @@
 - Makepad's resource resolver supports named crate references and development-time files in dependency checkout paths. Fix copied WM font references to identify the widgets crate; packaged distribution requires a separate resource staging check.
 - WM launcher currently treats a linked module as available even when default hosting is Process. If a module is bundled, availability and actual selected launch mode must agree; otherwise a visible row can still lead to a missing process binary.
 - Upstream source and Cargo.lock remained unchanged by inspection.
+
+## Daily sync automation findings
+- The existing update verifier runs Cargo metadata/check/tests and Python fixtures, but no release build or GUI smoke tests.
+- A fixed ignored candidate directory can preserve its own `target/` cache and keep runtime resource/catalog discovery rooted in the candidate. A shared target outside it could make the app discover the live project instead.
+- The source checkout remains at the current baseline on 2026-09-06; use local Git fixtures to verify actual revision transitions.

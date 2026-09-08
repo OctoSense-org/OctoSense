@@ -1,9 +1,15 @@
 """Local-only Git fixtures for the Makepad import maintenance tool."""
 import hashlib
+import contextlib
+import io
 import json
+import os
 from pathlib import Path
 import subprocess
+import signal
+import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -30,7 +36,7 @@ def commit(root):
     return git(root, "rev-parse", "HEAD")
 
 
-class SyncTests(unittest.TestCase):
+class RepoFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -102,6 +108,8 @@ class SyncTests(unittest.TestCase):
         return {str(path.relative_to(self.root)): path.read_bytes()
                 for path in self.root.rglob("*") if path.is_file() and ".git" not in path.parts}
 
+
+class SyncTests(RepoFixture):
     def test_unchanged_and_local_only(self):
         self.assertFalse(self.compare().problems)
         self.assertEqual(self.change(self.compare()).status, "unchanged")
@@ -337,6 +345,211 @@ class SyncTests(unittest.TestCase):
             "metadata --format-version 1", "check --locked --workspace",
             "test --locked --workspace --quiet",
         ])
+
+
+class DailySyncTests(RepoFixture):
+    def setUp(self):
+        super().setUp()
+        write(self.root, ".gitignore", "/target/\n")
+        commit(self.root)
+
+    def snapshot(self):
+        return {name: data for name, data in super().snapshot().items()
+                if not name.startswith("target/")}
+
+    def sync(self, target=None, verify=None):
+        self.next_revision = target or git(self.source, "rev-parse", "HEAD")
+        self.live_baseline = (self.root / upstream.BASELINE).read_text()
+        return upstream.sync(self.root, to=target, verify=verify or self.fake_verify)
+
+    def test_cli_sync_defaults_to_sibling_head_and_noops(self):
+        result = subprocess.run([sys.executable, upstream.__file__, "sync", "--root", str(self.root)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Already", result.stdout)
+        self.assertIn(self.base, result.stdout)
+        self.assertFalse((self.root / "target").exists())
+
+    def test_noop_keeps_uncommitted_work_and_does_not_verify(self):
+        write(self.root, "src/main.rs", "work in progress\n")
+        before = self.snapshot()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertIsNone(self.sync(verify=lambda _: self.fail("no-op must not build")))
+        self.assertIn("uncommitted", output.getvalue())
+        self.assertEqual(self.snapshot(), before)
+
+    def test_success_leaves_unstaged_upgrade_on_new_branch_with_report(self):
+        target = self.target(ORIGINAL.replace("one", "upstream"))
+        starting_head = git(self.root, "rev-parse", "HEAD")
+        source_before = git(self.source, "status", "--porcelain")
+        report = self.sync()
+        self.assertEqual(git(self.root, "branch", "--show-current"), f"sync/makepad-{target[:12]}")
+        self.assertEqual(git(self.root, "rev-parse", "HEAD"), starting_head, "sync must not commit")
+        self.assertEqual(git(self.root, "diff", "--cached"), "")
+        self.assertEqual(json.loads((self.root / upstream.BASELINE).read_text())["revision"], target)
+        self.assertIn("upstream changes", (report / "comparison.txt").read_text())
+        self.assertIn("READY", (report / "summary.txt").read_text())
+        self.assertEqual(git(self.source, "status", "--porcelain"), source_before)
+
+    def test_new_revision_requires_clean_makeos(self):
+        self.target()
+        write(self.root, "src/main.rs", "unfinished local edit\n")
+        before = self.snapshot()
+        with self.assertRaisesRegex(upstream.SyncError, "clean"):
+            self.sync()
+        self.assertEqual(self.snapshot(), before)
+
+    def test_failed_runtime_verification_keeps_original_branch_and_candidate(self):
+        self.target()
+        before = self.snapshot()
+        branch = git(self.root, "branch", "--show-current")
+        def fail_smoke(stage):
+            self.fake_verify(stage)
+            raise upstream.SyncError("GUI smoke failed")
+        with self.assertRaisesRegex(upstream.SyncError, "GUI smoke failed"):
+            self.sync(verify=fail_smoke)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(git(self.root, "branch", "--show-current"), branch)
+        reports = list((self.root / "target/makepad-sync/reports").iterdir())
+        self.assertEqual(len(reports), 1)
+        self.assertIn("FAILED", (reports[0] / "summary.txt").read_text())
+        self.assertTrue((reports[0] / "project/Cargo.toml").is_file())
+
+    def test_conflict_is_reported_without_creating_branch_or_running_checks(self):
+        write(self.root, "src/main.rs", ORIGINAL.replace("one", "local"))
+        commit(self.root)
+        self.target(ORIGINAL.replace("one", "upstream"))
+        branches = git(self.root, "branch")
+        before = self.snapshot()
+        with self.assertRaisesRegex(upstream.SyncError, "conflict"):
+            self.sync(verify=lambda _: self.fail("conflicts must stop before checks"))
+        self.assertEqual(git(self.root, "branch"), branches)
+        self.assertEqual(self.snapshot(), before)
+        candidates = list((self.root / "target/makepad-sync/reports").glob("*/project/src/main.rs"))
+        self.assertIn("<<<<<<< MakeOS", candidates[0].read_text())
+
+    def test_cache_reused_but_stale_candidate_source_removed(self):
+        self.target("first update\n")
+        def first(stage):
+            self.fake_verify(stage)
+            write(stage, "target/cache-marker", "cached build\n")
+            write(stage, "stale-candidate-file", "must disappear\n")
+        first_report = self.sync(verify=first)
+        commit(self.root)
+        self.target("second update\n")
+        def second(stage):
+            self.assertEqual((stage / "target/cache-marker").read_text(), "cached build\n")
+            self.assertFalse((stage / "stale-candidate-file").exists())
+            self.fake_verify(stage)
+        second_report = self.sync(verify=second)
+        self.assertNotEqual(first_report, second_report)
+        self.assertTrue((first_report / "comparison.txt").exists())
+
+    def test_existing_branch_is_not_reused_or_overwritten(self):
+        target = self.target()
+        branch = f"sync/makepad-{target[:12]}"
+        git(self.root, "branch", branch)
+        original = git(self.root, "rev-parse", branch)
+        self.sync()
+        self.assertEqual(git(self.root, "branch", "--show-current"), branch + "-2")
+        self.assertEqual(git(self.root, "rev-parse", branch), original)
+
+    def test_concurrent_branch_switch_stops_apply_even_if_files_match(self):
+        self.target()
+        before = self.snapshot()
+        def switched(stage):
+            self.fake_verify(stage)
+            git(self.root, "switch", "-c", "human-branch")
+        with self.assertRaisesRegex(upstream.SyncError, "HEAD|branch|changed"):
+            self.sync(verify=switched)
+        self.assertEqual(git(self.root, "branch", "--show-current"), "human-branch")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_sync_lock_rejects_overlap_and_releases_on_exit(self):
+        self.target()
+        with upstream.sync_lock(self.root / "target/makepad-sync"):
+            with self.assertRaisesRegex(upstream.SyncError, "running"):
+                self.sync()
+        self.assertIsNotNone(self.sync())
+
+    def test_archiving_failure_preserves_original_error_and_restores_branch(self):
+        self.target()
+        branch = git(self.root, "branch", "--show-current")
+        before = self.snapshot()
+        with patch.object(upstream, "apply", side_effect=upstream.SyncError("fixture apply failed")):
+            with patch.object(upstream.shutil, "copytree", side_effect=OSError("snapshot unavailable")):
+                with self.assertRaises(upstream.SyncError) as caught:
+                    self.sync()
+        self.assertIn("fixture apply failed", str(caught.exception))
+        self.assertIn("snapshot unavailable", str(caught.exception))
+        self.assertEqual(git(self.root, "branch", "--show-current"), branch)
+        self.assertEqual(self.snapshot(), before)
+
+    @unittest.skipUnless(os.name == "posix", "native sync uses POSIX process groups")
+    def test_interrupted_verifier_waits_for_smoke_cleanup(self):
+        stage = Path(self.temp.name) / "interrupt-stage"
+        stage.mkdir()
+        bin_dir = Path(self.temp.name) / "interrupt-bin"
+        bin_dir.mkdir()
+        cargo = bin_dir / "cargo"
+        cargo.write_text("#!/bin/sh\nexit 0\n")
+        cargo.chmod(0o755)
+        write(stage, "scripts/smoke.py", 'import subprocess, sys, time\nfrom pathlib import Path\n'
+              'child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)\n'
+              'Path("sleeper.pid").write_text(str(child.pid))\n'
+              'try:\n    time.sleep(60)\n'
+              'finally:\n    time.sleep(1)\n    child.terminate()\n    child.wait(timeout=3)\n    Path("cleanup-done").touch()\n')
+        driver = ('import sys\nfrom pathlib import Path\n'
+                  f'sys.path.insert(0, {str(Path(upstream.__file__).parent)!r})\n'
+                  f'import upstream\nupstream.verify_stage(Path({str(stage)!r}), runtime=True)\n')
+        env = dict(os.environ, PATH=str(bin_dir))
+        with (stage / "driver.log").open("wb") as output:
+            process = subprocess.Popen([sys.executable, "-c", driver], env=env,
+                                       stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+        child_pid = None
+        try:
+            deadline = time.monotonic() + 10
+            while not (stage / "sleeper.pid").exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue((stage / "sleeper.pid").exists(), (stage / "driver.log").read_text())
+            child_pid = int((stage / "sleeper.pid").read_text())
+            os.killpg(process.pid, signal.SIGINT)
+            process.wait(timeout=10)
+            self.assertTrue((stage / "cleanup-done").exists(), "supervisor returned before smoke cleanup completed")
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid, 0)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=3)
+            if child_pid:
+                try:
+                    os.killpg(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    def test_runtime_verification_builds_both_profiles_before_both_smokes(self):
+        stage = Path(self.temp.name) / "stage"
+        stage.mkdir()
+        bin_dir = Path(self.temp.name) / "bin"
+        bin_dir.mkdir()
+        cargo = bin_dir / "cargo"
+        cargo.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> commands.log\n')
+        cargo.chmod(0o755)
+        write(stage, "scripts/smoke.py", 'import json, os, sys\nfrom pathlib import Path\n'
+              'with Path("smokes.jsonl").open("a") as out: out.write(json.dumps([sys.argv[1:], os.environ["CARGO_TARGET_DIR"]]) + "\\n")\n')
+        report = Path(self.temp.name) / "report"
+        report.mkdir()
+        with patch.dict("os.environ", {"PATH": str(bin_dir), "CARGO_TARGET_DIR": "/unrelated/build"}):
+            upstream.verify_stage(stage, runtime=True, report=report)
+        self.assertEqual((stage / "commands.log").read_text().splitlines(), [
+            "metadata --format-version 1", "check --locked --workspace", "test --locked --workspace --quiet",
+            "build --release --locked --workspace", "build --locked --workspace",
+        ])
+        smokes = [json.loads(line) for line in (stage / "smokes.jsonl").read_text().splitlines()]
+        self.assertEqual(smokes[0], [["--artifacts-dir", str(report / "smoke-release")], str(stage / "target")])
+        self.assertEqual(smokes[1], [["--cargo-run", "--default-catalog", "--artifacts-dir", str(report / "smoke-default")], str(stage / "target")])
 
 
 if __name__ == "__main__":
