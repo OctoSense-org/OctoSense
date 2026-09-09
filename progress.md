@@ -50,3 +50,12 @@
 - Adapted the WM-owned rendering cache to missing View APIs in the pinned external widgets crate, preserving the minimal source footprint.
 - Locked workspace check, 191 Rust tests, 40 Python tests, release/debug builds, and both native smoke modes passed. Artifacts and compatibility details are recorded in docs/validation.md.
 - Additional native style checks passed across desktop and phone layouts; the reference process/state survived with no background launches. Reviewed rendered frames for desktop, macOS, iOS, and Android.
+
+## 2026-09-08 — Adopt fork WM features
+- Fast-forwarded local main from f157660 to 8b2dc9c before feature work; only one completed sync branch needed integration.
+- Imported WM changes at published fork beb3857a through a conflict-free three-way merge, retaining standalone policies and moving all external Makepad pins together.
+- Added StyleSpec, MakeOS Liquid Glass, theme/material parsing, rounded process surfaces and bundled wallpaper. Replaced local rendering workarounds with the now-available widgets APIs.
+- Recorded the fork baseline/default checkout; daily sync retains the same review handoff and now exercises all styles. Added regressions for source selection, nested worktree exclusion and runtime error detection.
+- Native glass input validation exposed inherited desk geometry/dynamic-child discovery issues; fixed with explicit WidgetNode enumeration and a regression test.
+- Verification passed: 205 Rust tests, 44 Python tests, both profile builds, all-style release smoke and exact cargo run smoke. Frames reviewed for glass windows, dock, bar, menus, calendar and notifications. See docs/validation.md.
+- Preparing the verified import commit and local main integration; no pushes or source-checkout changes.

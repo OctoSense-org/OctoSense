@@ -24,23 +24,23 @@ name = "makeos"
 path = "src/main.rs"
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-studio-protocol = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-network = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-wm-api = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
+makepad-widgets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-studio-protocol = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-network = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-wm-api = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
 # The AI services wire only: the WM relays frames between the aichat child and the apps.
-makepad-ai-services = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-strict-json = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
+makepad-ai-services = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-strict-json = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
 # In-process hosting (aicontrol §3): the module contract, the palette applied
 # into each instance's isolate, and the modules this build links.
-makepad-app-module = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-wm-theme = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
-makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56", default-features = false, optional = true }
-makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56", default-features = false, optional = true }
+makepad-app-module = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-wm-theme = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-sheets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-photos = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
-makepad-aichat = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56", default-features = false, optional = true }
+makepad-aichat = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
 
 [features]
 default = []

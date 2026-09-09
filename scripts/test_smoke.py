@@ -11,6 +11,17 @@ import smoke
 
 
 class ArtifactTests(unittest.TestCase):
+    def test_runtime_errors_cannot_pass_with_a_successful_frame(self):
+        for message in [
+            "draw shader 'DrawShellGlass' failed to compile and will NOT be drawn",
+            "[E] platform/src/os/apple/metal.rs:2640:21 - Metal compilation failed",
+            "thread 'main' panicked at 'draw list mismatch'",
+        ]:
+            with self.subTest(message=message), self.assertRaises(AssertionError):
+                smoke.assert_no_runtime_errors(message)
+        smoke.assert_no_runtime_errors("[I] wm: desktop style makeos applied\n"
+                                       "error: package(s) `makeos-package-does-not-exist` not found\n")
+
     def test_smoke_accepts_explicit_artifact_directory(self):
         result = subprocess.run([sys.executable, smoke.__file__, "--help"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

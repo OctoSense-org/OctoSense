@@ -454,6 +454,73 @@ impl Default for ShellTokens {
     }
 }
 
+/// `mod.theme.material` — the MATERIAL every shell surface and window frame
+/// paints with. `glass` 0 is the flat look, the default every style sheet
+/// without a material block gets; 1 is Liquid Glass, refracting the
+/// window's blur pyramid (widgets/src/gauss_view.rs). Radii are visual
+/// pixels; shaders that go through `Sdf2d.box` are handed half of them.
+/// Scanned out of the style sheet by `theme::scan_material`, never read
+/// from the DSL, so it stays a plain struct.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MaterialTokens {
+    pub glass: f64,
+    /// Card and bar-popup corner radius.
+    pub corner_radius: f64,
+    pub blur_level: f64,
+    pub lensing_effect: f64,
+    pub lensing_strength: f64,
+    pub lensing_width: f64,
+    pub diffraction_strength: f64,
+    pub tint_color: Vec4f,
+    pub tint_alpha: f32,
+    pub border_color: Vec4f,
+    pub border_alpha: f32,
+    pub border_width: f64,
+    pub specular_strength: f32,
+    pub noise_strength: f32,
+    pub shadow_color: Vec4f,
+    pub shadow_alpha: f32,
+    pub shadow_radius: f64,
+    pub shadow_offset_y: f64,
+    /// What a glass surface shows on the one frame before the pyramid
+    /// exists, and with MAKEPAD_NO_GAUSS=1.
+    pub fallback_color: Vec4f,
+}
+
+impl MaterialTokens {
+    /// A theme writes 0.0 or 1.0; anything from 0.5 up reads as glass.
+    pub fn is_glass(&self) -> bool {
+        self.glass >= 0.5
+    }
+}
+
+/// The flat material: what a sheet without a material block gets.
+impl Default for MaterialTokens {
+    fn default() -> Self {
+        Self {
+            glass: 0.0,
+            corner_radius: 0.0,
+            blur_level: 5.2,
+            lensing_effect: 0.94,
+            lensing_strength: 28.0,
+            lensing_width: 20.0,
+            diffraction_strength: 4.4,
+            tint_color: rgb(0x00, 0x00, 0x00),
+            tint_alpha: 0.40,
+            border_color: rgb(0xff, 0xff, 0xff),
+            border_alpha: 0.40,
+            border_width: 1.0,
+            specular_strength: 0.14,
+            noise_strength: 0.004,
+            shadow_color: rgb(0x00, 0x00, 0x00),
+            shadow_alpha: 0.44,
+            shadow_radius: 13.0,
+            shadow_offset_y: 5.0,
+            fallback_color: rgb(0x33, 0x41, 0x56),
+        }
+    }
+}
+
 // ----------------------------------------------------------------------
 // Color helpers (`Commons/Util.qml` alpha + `Color.composed`)
 // ----------------------------------------------------------------------

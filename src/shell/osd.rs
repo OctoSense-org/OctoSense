@@ -14,7 +14,7 @@
 use makepad_widgets::*;
 
 use super::ui::{rect, DrawShellFill, Ico, ShellDraw};
-use super::{alpha, ShellTokens};
+use super::{alpha, MaterialTokens, ShellTokens};
 
 /// `Osd.qml` numbers.
 const PAD: f64 = 16.0;
@@ -176,7 +176,19 @@ impl ShellOsd {
         (rect(x, y, w, h), text_w)
     }
 
+    /// The material the kit paints the OSD with; the next draw reads it.
+    pub fn set_material(&mut self, m: MaterialTokens) {
+        self.d.set_material(m);
+    }
+
+    /// Under glass the showing OSD is hoisted into the kit's overlay list.
     pub fn draw_surface(&mut self, cx: &mut Cx2d, screen: Rect) {
+        self.d.begin_surface(cx);
+        self.draw_surface_inner(cx, screen);
+        self.d.end_surface(cx);
+    }
+
+    fn draw_surface_inner(&mut self, cx: &mut Cx2d, screen: Rect) {
         self.screen = screen;
         let Some(show) = self.show.clone() else {
             return;

@@ -2469,6 +2469,12 @@ impl App {
     }
 
     fn apply_background(&mut self, cx: &mut Cx, index: usize) {
+        // The slot is shared with MakeOS's bundled scene, and this is reached
+        // from a wallpaper fetch landing and from Super+Ctrl+Space whatever
+        // the style: only Omarchy's ground is a theme picture.
+        if self.state_mut().style.target != desktop::DesktopStyle::Omarchy {
+            return;
+        }
         let name = self.state_mut().theme_name.clone();
         let backgrounds = theme::theme_backgrounds(&name);
         if backgrounds.is_empty() {
@@ -3764,6 +3770,7 @@ impl MatchEvent for App {
         let sheet = desktop_style::StyleSheet::load(desktop::DesktopStyle::Omarchy);
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         self.module_host.apply_style(cx, &sheet);
+        let (material, roles) = Self::chrome_from_sheet(&sheet);
         self.stylesheet = Some(sheet);
         let source = theme::load_theme_source(&theme_name);
         self.warm_pool.set_browser_appearance(desktop_app::browser_appearance(
@@ -3778,6 +3785,11 @@ impl MatchEvent for App {
             w: 1.0,
         });
         let borders = desk::BorderTheme::from_theme_source(&source);
+        // `mod.wm_theme.background` as the DSL resolved it: this theme's
+        // own, else the bundled default the DSL fell back to.
+        let bar_ground = scan_theme_color(&source, "background")
+            .or_else(|| scan_theme_color(theme::BUNDLED_TOKYO_NIGHT_SPLASH, "background"))
+            .unwrap_or_default();
 
         // The client hub is the PROCESS host's: a build without processes
         // (the web) never binds one and hosts its linked modules instead.
@@ -3802,6 +3814,7 @@ impl MatchEvent for App {
             theme_name: theme_name.clone(),
             term_env,
             accent,
+            bar_ground,
             borders,
             // gaps_in 5 sits on each side of a window, so two tiles are
             // 10 apart — the same as gaps_out to the desk edge.
@@ -3811,7 +3824,12 @@ impl MatchEvent for App {
             drop_hint: None,
             pane_sliding: false,
             style: Default::default(),
+            material,
+            roles,
         });
+        // The kits start flat; the startup sheet's material still travels
+        // the one path a style switch uses.
+        self.apply_material_to_chrome(cx, material);
         self.next_id = 1;
         // The hosting registry: the linked modules, the person's overrides
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.

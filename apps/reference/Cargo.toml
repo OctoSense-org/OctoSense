@@ -5,4 +5,4 @@ edition = "2021"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "ae20efc51e6db2ad083d65b40a9beec726582f56" }
+makepad-widgets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }

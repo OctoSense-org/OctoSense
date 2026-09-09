@@ -67,10 +67,86 @@ def save_grab(artifacts, name, grab):
     (artifacts / f"{name}.json").write_text(json.dumps(metadata))
 
 
+def assert_no_runtime_errors(text):
+    failures = [line for line in text.splitlines() if any(marker in line for marker in (
+        "[E]", "panicked at", "failed to compile and will NOT be drawn"))]
+    assert not failures, "Runtime rendering errors:\n" + "\n".join(failures)
+
+
+def settled_window_size(port):
+    # Layout and child resize messages arrive asynchronously. A visible tile
+    # during a workspace animation can still have an intermediate size.
+    last = None
+    since = time.monotonic()
+    def settled():
+        nonlocal last, since
+        size = get(port, "s")["w"][0]["sz"]
+        now = time.monotonic()
+        if size != last:
+            last, since = size, now
+        return size if now - since >= 0.5 else None
+    return wait_for("child window size settles", settled)
+
+
+def check_styles(port, child_port, host_pid, log, artifacts):
+    """Exercise live capture/style changes through the host with a retained app."""
+    current = "omarchy"
+    count = 1
+    clients = set(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log"))
+    styles = [("makeos", "MakeOS"), ("macos", "macOS"), ("windows", "Windows"),
+              ("windows-2000", "Windows 2000"), ("nextstep", "NeXTSTEP"),
+              ("ios", "iOS"), ("android", "Android"), ("omarchy", "Omarchy"),
+              ("makeos", "MakeOS"), ("omarchy", "Omarchy")]
+    for index, (style, label) in enumerate(styles):
+        offset = log.stat().st_size
+        if current in ("ios", "android"):
+            # Mobile Home consumes keyboard shortcuts; its top bar opens styles.
+            get(port, "click", x=130, y=13, wait=1)
+        else:
+            get(port, "k", c="Space", cmd=1, wait=1)
+        if current == "nextstep":
+            # The catalog-filtered Workspace menu starts with Applications,
+            # then Appearance. Select Appearance before typing a style name.
+            get(port, "k", c="ArrowDown", wait=1)
+            get(port, "k", c="enter", wait=1)
+        for char in label.lower():
+            get(port, "k", c="Space" if char == " " else "Key" + char.upper(), wait=1)
+        get(port, "k", c="enter", wait=1)
+        wait_for(style + " applied", lambda: f"wm: desktop style {style} applied" in log.read_text(errors="replace")[offset:])
+        current = style
+        time.sleep(0.9)  # Let the framebuffer transition and child restyle settle.
+        assert any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]), style
+        assert set(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log")) == clients, "style launched an extra client"
+        save_grab(artifacts, f"style-{index}-{style}", get(port, "g", scale=0.5))
+        if style == "makeos":
+            tile = max(get(port, "snap", q="MpRunView")["s"], key=lambda item: item["r"][2] * item["r"][3])
+            button = get(child_port, "snap", q="increment")["s"][0]["r"]
+            get(port, "click", x=tile["r"][0] + button[0] + button[2]/2,
+                y=tile["r"][1] + button[1] + button[3]/2, wait=1)
+            count += 1
+            wait_for("input inside glass window", lambda: any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]))
+            get(port, "k", c="Space", cmd=1, wait=1)
+            save_grab(artifacts, f"style-{index}-makeos-menu", get(port, "g", scale=0.5))
+            get(port, "k", c="Escape", wait=1)
+            if index == 0:
+                width = get(port, "s")["w"][0]["sz"][0]
+                get(port, "click", x=width/2, y=13, wait=1)
+                save_grab(artifacts, "makeos-calendar", get(port, "g", scale=0.5))
+                # Flyouts close on outside clicks; Escape only closes menus.
+                get(port, "click", x=width-10, y=100, wait=1)
+                # The lean catalog has no assistant: this requests a local
+                # notification, exercising its glass without launching an app.
+                get(port, "k", c="F10", wait=1)
+                save_grab(artifacts, "makeos-notification", get(port, "g", scale=0.5))
+        print(f"PASS: {style} renders and preserves the hosted app without extra launches", flush=True)
+        assert_no_runtime_errors(log.read_text(errors="replace"))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cargo-run", action="store_true")
     parser.add_argument("--default-catalog", action="store_true", help="Use the shipped catalog; skip injected failure/build fixtures")
+    parser.add_argument("--styles", action="store_true", help="Exercise all desktop styles, including MakeOS glass, with a retained app")
     parser.add_argument("--artifacts-dir", type=Path, help="New directory for retained logs, state, and frames")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -163,11 +239,12 @@ def main():
         wait_for("original workspace is empty", lambda: not get(port, "snap", q="MpRunView")["s"])
         get(port, "k", c="Key2", cmd=1, wait=1)
         wait_for("app visible on destination workspace", lambda: get(port, "snap", q="MpRunView")["s"])
-        size = get(child_port, "s")["w"][0]["sz"]
+        size = settled_window_size(child_port)
         get(port, "k", c="KeyF", cmd=1, wait=1)
         wait_for("fullscreen expands child", lambda: get(child_port, "s")["w"][0]["sz"][0] > size[0] + 10)
+        settled_window_size(child_port)
         get(port, "k", c="KeyF", cmd=1, wait=1)
-        wait_for("fullscreen restores child size", lambda: get(child_port, "s")["w"][0]["sz"] == size)
+        wait_for(f"fullscreen restores child size {size}", lambda: get(child_port, "s")["w"][0]["sz"] == size)
         assert alive(child_pid), "client died on workspace/fullscreen changes"
         print("PASS: workspace and fullscreen operations retain the app", flush=True)
 
@@ -181,6 +258,9 @@ def main():
         wait_for("close window reaps second instance", lambda: not alive(second_pid))
         assert alive(child_pid), "closing one instance closed both"
         print("PASS: separate instances keep independent state and close individually", flush=True)
+
+        if args.styles:
+            check_styles(port, child_port, host_pid, log, artifacts)
 
         slow_group = None
         if not args.default_catalog:
@@ -203,6 +283,9 @@ def main():
             print("PASS: host quit reaps its hosted app and an unfinished Cargo build", flush=True)
         else:
             print("PASS: host quit reaps its hosted app", flush=True)
+        assert_no_runtime_errors(log.read_text(errors="replace"))
+        for path in Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log"):
+            assert_no_runtime_errors(path.read_text(errors="replace"))
     except Exception:
         if port:
             for route, params in [("snap", {"all": 1}), ("g", {"scale": 0.5})]:

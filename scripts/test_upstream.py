@@ -110,6 +110,32 @@ class RepoFixture(unittest.TestCase):
 
 
 class SyncTests(RepoFixture):
+    def test_nested_worktrees_do_not_participate_in_dependency_pins(self):
+        stale = (self.root / "Cargo.toml").read_text().replace(self.base, "0" * 40)
+        write(self.root, ".worktrees/old-feature/Cargo.toml", stale)
+        self.assertFalse(upstream.pin_problems(self.root, REPOSITORY, self.base))
+        upstream.rewrite_pins(self.root, REPOSITORY, self.base, "1" * 40)
+        self.assertEqual((self.root / ".worktrees/old-feature/Cargo.toml").read_text(), stale)
+
+    def test_recorded_default_source_used_by_sync_and_cli(self):
+        renamed = self.source.with_name("guofoo-makepad")
+        self.source.rename(renamed)
+        self.source = renamed
+        self.manifest["default_source"] = "../guofoo-makepad"
+        self.save_manifest()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(upstream.sync(self.root))
+            self.assertEqual(upstream.main(["status", "--root", str(self.root)]), 0)
+            self.assertEqual(upstream.main(["sync", "--root", str(self.root)]), 0)
+
+    def test_explicit_source_overrides_recorded_default(self):
+        self.manifest["default_source"] = "../missing-checkout"
+        self.save_manifest()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertIsNone(upstream.sync(self.root, self.source))
+            self.assertEqual(upstream.main(["status", "--root", str(self.root),
+                                            "--source", str(self.source)]), 0)
+
     def test_unchanged_and_local_only(self):
         self.assertFalse(self.compare().problems)
         self.assertEqual(self.change(self.compare()).status, "unchanged")
@@ -548,7 +574,7 @@ class DailySyncTests(RepoFixture):
             "build --release --locked --workspace", "build --locked --workspace",
         ])
         smokes = [json.loads(line) for line in (stage / "smokes.jsonl").read_text().splitlines()]
-        self.assertEqual(smokes[0], [["--artifacts-dir", str(report / "smoke-release")], str(stage / "target")])
+        self.assertEqual(smokes[0], [["--styles", "--artifacts-dir", str(report / "smoke-release")], str(stage / "target")])
         self.assertEqual(smokes[1], [["--cargo-run", "--default-catalog", "--artifacts-dir", str(report / "smoke-default")], str(stage / "target")])
 
 

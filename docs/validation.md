@@ -93,3 +93,24 @@ was seeded from existing compiled artifacts; both native test modes used that
 copy's executables and retained PNG frames and host/client logs in the report.
 This validates the orchestration at the current revision; it does not establish
 compatibility with a newer upstream commit that has not yet been pulled.
+
+## Fork WM feature import — 2026-09-08
+
+Imported `guofoo/makepad` at `beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`, after first fast-forwarding MakeOS main to the completed sync at `8b2dc9c`. The published fork revision supplies all Makepad Git crates, including the Reference app's widgets. No framework files or unrelated apps were copied. The lockfile changes only Makepad source URLs and revisions.
+
+Validation passed:
+
+- Workspace Cargo check, 205 Rust tests, 44 Python tests, release/debug builds.
+- Release native smoke with `--styles`: all eight styles, repeated MakeOS/Omarchy transitions, retained Reference state, input inside rounded glass windows, menus, calendar and notification captures.
+- Pointer/keyboard forwarding, workspace movement, fullscreen restoration, independent instances, failed Cargo launch, and shutdown/reaping during an unfinished build.
+- Exact `cargo run` with the shipped catalog and isolated state.
+- All 88 pristine source hashes and coordinated Cargo pins; 73 imported files match the fork exactly and 15 retain documented local adaptations.
+- Runtime host/client logs reject shader compilation failures, error logs and panics. Independent review found no remaining material issues.
+
+The stronger smoke exposed inherited desk bookkeeping defects: its reported area came from the tiling-only border, and widget-tree refreshes could discard surviving dynamically hosted children after another closed. An explicit WidgetNode now uses the stable turtle area and enumerates hosted children. A failing child-enumeration regression passed after the fix, and native clicks in MakeOS glass incremented the surviving Reference counter. Script layout metadata, phone selection delegation and layer inspection were retained.
+
+The smoke also waits for asynchronous child sizing before fullscreen comparisons and dismisses flyouts with their supported outside-click gesture. Earlier failed diagnostic runs are retained alongside the successful evidence.
+
+Local evidence is archived under `target/fork-import-20260908/`, including `smoke-verified/` (glass/style/lifecycle), `smoke-default-final/` (exact cargo run), unit/build logs, and the original comparison. Captures are app-provided images. Test processes were closed and source checkouts were left unchanged.
+
+Validation remains macOS process hosting. Optional linked app modules and other OS targets are retained without new runtime validation; the lean catalog intentionally has no assistant process. The imported assistant/OSD glass paths share the shell material implementation but were not separately exercised with real assistant or system-volume changes.

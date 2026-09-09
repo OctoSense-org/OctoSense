@@ -23,6 +23,8 @@ The first build downloads Makepad and other dependencies. No sibling Makepad che
 
 The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit MakeOS** closes the desktop and its hosted processes.
 
+Eight desktop styles are available, including **MakeOS**, a dark floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **MakeOS**, and press Enter to select it. The style includes a bundled vector wallpaper and rounded hosted surfaces; startup remains Omarchy. Select another style from the same appearance menu.
+
 Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
 
 ## Add an app
@@ -71,17 +73,21 @@ Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-ph
 
 ## Upstream updates
 
-[upstream/makepad.json](upstream/makepad.json) records every imported file, its original path/hash, and the matching framework revision. The source baseline is `83a00d2801e4864c42c3a40e85186a8b1743fd84`.
+[upstream/makepad.json](upstream/makepad.json) records every imported file, its original path/hash, and the matching framework revision. The source and dependency baseline is [guofoo/makepad at beb3857a](https://github.com/guofoo/makepad/commit/beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d). Its widget changes provide the MakeOS style and glass support; framework code remains external.
 
 Run this daily, or after any upstream pull. With Python 3.11+, update the Makepad
 checkout using your normal Git workflow, then run one command from MakeOS:
 
 ```sh
-git -C ../makepad pull --ff-only
+git -C ../guofoo-makepad pull --ff-only origin work
 python3 scripts/upstream.py sync
 ```
 
-`sync` defaults to the sibling checkout's current `HEAD`. When that matches the
+`sync` defaults to the recorded `../guofoo-makepad` checkout's current `HEAD`.
+That fork must incorporate official Makepad updates through your source Git
+workflow before they can be imported here. WM feature development now belongs
+in this repository; framework changes remain in the pinned fork until available
+upstream. When the checkout's HEAD matches the
 recorded revision, it exits without building. Otherwise it requires a clean
 MakeOS tree, saves comparison diffs, stages the merge, updates all dependency
 pins and the lockfile, runs compile/Rust/Python checks, builds both profiles,
@@ -110,11 +116,11 @@ The native smoke test opens and closes its own test windows, isolates settings i
 
 ```sh
 cargo build --release --locked --workspace
-python3 scripts/smoke.py
+python3 scripts/smoke.py --styles
 python3 scripts/smoke.py --cargo-run --default-catalog
 ```
 
-The first smoke command checks hosted input, workspace movement, fullscreen resizing, independent instances, failed launches, and quitting during an unfinished build. The second uses exactly `cargo run` with the shipped catalog. Python supplies app-local remote control and isolated state through the environment; neither is required for normal use. Smoke runs set Cargo offline and require GUI access.
+The first smoke command checks hosted input, workspace movement, fullscreen resizing, independent instances, all eight desktop styles (including MakeOS glass and menus), failed launches, and quitting during an unfinished build. The second uses exactly `cargo run` with the shipped catalog. Python supplies app-local remote control and isolated state through the environment; neither is required for normal use. Smoke runs set Cargo offline and require GUI access.
 
 See the [validation record](docs/validation.md). Source builds and process hosting are the initial target on macOS. Linux/Windows branches are retained but have not been validated here. A relocatable `.app`, installer, web/mobile delivery, and a Linux session compositor are separate work.
 
