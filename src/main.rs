@@ -2419,9 +2419,8 @@ impl App {
 
     /// A theme with no pictures yet fetches them from the omarchy repo on a
     /// thread of its own; the desk shows the first one when it lands (the
-    /// tick polls `theme_backgrounds` while `backgrounds_pending`). The
-    /// bundled default theme ships without wallpapers, so a fresh install
-    /// gets the omarchy look on its own; no network, no pictures, no harm.
+    /// tick polls `theme_backgrounds` while `backgrounds_pending`). This is
+    /// opt-in; the bundled default wallpaper already works offline.
     fn fetch_backgrounds_if_missing(&mut self, cx: &mut Cx) {
         if !host::processes_available() {
             return;
@@ -2455,7 +2454,7 @@ impl App {
         self.background_task = None;
         self.backgrounds_pending = false;
         match result {
-            Ok(count) if count > 0 => self.apply_background(cx, 0),
+            Ok(count) if count > 0 => { self.apply_background(cx, 0); }
             Ok(_) => {}
             Err(error) => log!("wm: wallpaper fetch task failed: {error}"),
         }
@@ -2468,25 +2467,33 @@ impl App {
         self.apply_background(cx, idx);
     }
 
-    fn apply_background(&mut self, cx: &mut Cx, index: usize) {
+    fn apply_background(&mut self, cx: &mut Cx, index: usize) -> bool {
         // The slot is shared with MakeOS's bundled scene, and this is reached
         // from a wallpaper fetch landing and from Super+Ctrl+Space whatever
         // the style: only Omarchy's ground is a theme picture.
         if self.state_mut().style.target != desktop::DesktopStyle::Omarchy {
-            return;
+            return false;
         }
         let name = self.state_mut().theme_name.clone();
         let backgrounds = theme::theme_backgrounds(&name);
-        if backgrounds.is_empty() {
-            return;
-        }
-        let path = &backgrounds[index % backgrounds.len()];
         let image = self.ui.widget(cx, ids!(bg_image));
         let image_ref = self.ui.image(cx, ids!(bg_image));
-        if image_ref.load_image_file_by_path_async(cx, path).is_ok() {
-            image.set_visible(cx, true);
-        }
+        let loaded = if !backgrounds.is_empty() {
+            let path = &backgrounds[index % backgrounds.len()];
+            image_ref.load_image_file_by_path_async(cx, path).is_ok()
+        } else if name == theme::DEFAULT_THEME {
+            // A stable cache key for embedded bytes; no filesystem lookup.
+            image_ref.load_image_from_data_async(
+                cx,
+                std::path::Path::new("makeos-bundled/tokyo-night.webp"),
+                std::sync::Arc::new(theme::BUNDLED_TOKYO_NIGHT_WALLPAPER),
+            ).is_ok()
+        } else {
+            false
+        };
+        image.set_visible(cx, loaded);
         self.redraw_all(cx);
+        loaded
     }
 
     fn open_shell_menu(&mut self, cx: &mut Cx, path: &str, skin: MenuSkin) {

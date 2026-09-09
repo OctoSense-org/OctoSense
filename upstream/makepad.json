@@ -450,6 +450,7 @@
     "Cargo manifest uses pinned external dependencies and lean default features.",
     "WM fonts use named dependency resources.",
     "MakeOS owns app registration, state paths, and opt-in startup behavior.",
+    "Omarchy's default Tokyo Night wallpaper is embedded for offline startup; installed wallpapers take precedence and explicit downloads remain available. Asset provenance is recorded in resources/wallpapers/README.md.",
     "User-facing branding is MakeOS; wire protocol identifiers remain compatible.",
     "Client lifecycle reports failed builds and synchronously terminates/reaps process groups on host shutdown.",
     "Run-view widget geometry follows the presented surface after its startup background disappears.",

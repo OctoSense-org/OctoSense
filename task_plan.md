@@ -21,6 +21,8 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 
 14. Merge completed sync into main and adopt the fork WM features — complete; main advanced to 8b2dc9c before import, fork features integrated with 205 Rust and 44 Python tests plus native glass/style and cargo run validation. See `docs/plans/2026-09-08-fork-wm-features.md`.
 
+15. Restore the Omarchy startup wallpaper — complete; bundled the original default image with provenance, retained installed-image precedence and opt-in downloads, and verified offline startup plus all style transitions.
+
 ## Daily sync requirements (2026-09-06)
 - User performs the source Git pull/fetch; the command uses local HEAD by default and never pulls or commits.
 - Automate comparison, safe staged merging, coordinated pins/lockfile, compile/tests, release build, and both native smoke modes.

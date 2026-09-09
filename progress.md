@@ -59,3 +59,14 @@
 - Native glass input validation exposed inherited desk geometry/dynamic-child discovery issues; fixed with explicit WidgetNode enumeration and a regression test.
 - Verification passed: 205 Rust tests, 44 Python tests, both profile builds, all-style release smoke and exact cargo run smoke. Frames reviewed for glass windows, dock, bar, menus, calendar and notifications. See docs/validation.md.
 - Preparing the verified import commit and local main integration; no pushes or source-checkout changes.
+
+## 2026-09-08 — Omarchy startup wallpaper
+- Preserving uncommitted full app catalog and README changes. Traced the missing image to the extracted app’s offline startup policy and absent bundled Omarchy asset.
+
+- Native reproduction failed as expected: bg_image was hidden with a zero rectangle; saved blank frame in target/wallpaper-validation/before. Verified cached image Git blob matches Omarchy upstream, then embedded the unmodified file with source/license record. Installed discovery remains unchanged so explicit downloads are not suppressed.
+- Inspection hiccups: unquoted URL/glob caused zsh errors; corrected quoting. Sandbox DNS required curl escalation. API response included image bytes; subsequent downloads saved directly to artifact files.
+
+- 205 Rust and 44 Python tests passed. Updated two obsolete Reference-only catalog tests to preserve Reference and validate package/binary targets through Cargo workspace metadata; first edit used incorrect JSON helper names, corrected to the local parse/as_arr API.
+- Exact cargo run and hosted Reference interactions passed. Startup capture raced asynchronous decoding, so the smoke now waits for a detailed rendered frame. A MakeOS SVG visibility assertion was invalid because its widget snapshot has no raster area despite the SVG drawing correctly; limited that new assertion to the Omarchy raster path. Native frames confirmed the SVG and later Omarchy raster render.
+
+- Final verification passed: release all-style smoke (including repeated MakeOS/Omarchy, Reference state/input and shutdown cleanup) and exact cargo run with the full default catalog. Reviewed decoded startup and return-to-Omarchy frames. All test instances were closed. Source checkouts unchanged; catalog plus wallpaper changes remain uncommitted on main.
