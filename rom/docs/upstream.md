@@ -1,17 +1,30 @@
 # Updating the Makepad import
 
-MakeOS maintains the WM source and icons plus the original license notice.
+MakeOS maintains the WM source, icons and bundled wallpaper plus the original license notice.
 `upstream/makepad.json` records their original paths and SHA-256 hashes at one
 full Makepad commit. The hashes describe **pristine upstream content**, so local
 MakeOS adaptations do not require changing them. Framework and hosted-app
 dependencies use that same commit. Do not independently change their revisions.
+
+The active source is `https://github.com/guofoo/makepad.git`, starting at
+`beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`. This fork adds the shared MakeOS
+style, widget theme, SVG crop behavior and safe cached-view rendering needed by
+the imported WM. The framework remains in Git crates; no widget sources or
+unrelated monorepo apps are copied here. WM feature development continues here.
+
+Official Makepad changes must first be incorporated into the source fork using
+your normal Git workflow, retaining these framework additions, and published
+at a fetchable fork revision. A pull of the fork alone only obtains changes
+already published there. Do not point an upgrade at an official-only commit
+that lacks the MakeOS widget APIs. A future return to official dependencies
+requires those APIs there and a coordinated repository/pin/provenance change.
 
 ## Daily command
 
 After updating the Makepad checkout, run from MakeOS:
 
 ```sh
-git -C ../makepad pull --ff-only
+git -C ../guofoo-makepad pull --ff-only origin work
 python3 scripts/upstream.py sync
 ```
 
@@ -20,7 +33,11 @@ changes. The first command is your source-repository Git step; `sync` performs
 the remaining comparison, preparation, and verification without prompts. No
 scheduled job is installed.
 
-Defaults are the sibling `../makepad` checkout and its current local `HEAD`.
+Defaults are the provenance file's `default_source` (`../guofoo-makepad`) and its
+current local `HEAD`. Relative recorded paths resolve from the MakeOS project
+root, independent of the invoking shell's working directory. Older provenance
+without this field retains `../makepad`. An explicit `--source` overrides it;
+use that option from a nested worktree whose sibling location differs.
 The command resolves the target once, so another pull during verification does
 not change the candidate. `--source /path/to/makepad` and `--to <commit-or-ref>`
 override those defaults. The chosen commit must be fetchable from the pinned
@@ -42,7 +59,7 @@ For an actual update, the command:
    together. Runs Cargo metadata, locked workspace check/tests, and the Python
    maintenance tests.
 3. Builds release and debug workspace binaries, then runs the release hosting
-   smoke test and the exact `cargo run` test with the shipped catalog. Tests
+   smoke test with `--styles` and the exact `cargo run` test with the shipped catalog. The release test also switches through all eight styles, captures MakeOS glass and menus, and checks that the hosted app retains its state without background launches. Tests
    open and close their own windows and isolate user state. The command needs
    native GUI access and is currently validated on macOS.
 4. Rechecks the starting MakeOS HEAD, branch, and files. Only after verification
@@ -89,9 +106,9 @@ clone's working tree, index, or refs. Uncommitted changes in that clone are not
 part of an import.
 
 ```sh
-python3 scripts/upstream.py status --source ../makepad
-python3 scripts/upstream.py status --source ../makepad --to <commit>
-python3 scripts/upstream.py diff --source ../makepad --to <commit>
+python3 scripts/upstream.py status
+python3 scripts/upstream.py status --to <commit>
+python3 scripts/upstream.py diff --to <commit>
 ```
 
 `status` classifies local adaptations and upstream changes, checks provenance
@@ -107,7 +124,7 @@ Commit MakeOS changes before running an update, including its current baseline
 and lockfile:
 
 ```sh
-python3 scripts/upstream.py update --source ../makepad --to <commit>
+python3 scripts/upstream.py update --to <commit>
 git diff --stat
 git diff
 cargo run --locked
@@ -141,7 +158,7 @@ cargo run --locked
 Run the host/client GUI smoke tests before committing the update: desktop
 startup, icons/fonts/theme, launch the reference app, keyboard/pointer input,
 resize, and close. Use `cargo build --release --locked --workspace` followed by
-`python3 scripts/smoke.py` and `python3 scripts/smoke.py --cargo-run --default-catalog`.
+`python3 scripts/smoke.py --styles` and `python3 scripts/smoke.py --cargo-run --default-catalog`.
 The automatic compile check and Rust tests do not establish GUI or
 protocol behavior. Commit the reviewed source, manifests, lockfile, and baseline
 together. Use a MakeOS Git revert to roll back a committed upgrade.

@@ -54,3 +54,10 @@
 - The existing update verifier runs Cargo metadata/check/tests and Python fixtures, but no release build or GUI smoke tests.
 - A fixed ignored candidate directory can preserve its own `target/` cache and keep runtime resource/catalog discovery rooted in the candidate. A shared target outside it could make the app discover the live project instead.
 - The source checkout remains at the current baseline on 2026-09-06; use local Git fixtures to verify actual revision transitions.
+
+## Fork feature takeover findings — 2026-09-08
+- The MakeOS desktop style depends on seven changed widgets paths outside apps/wm. Pinning all crates to published guofoo/makepad beb3857a provides these without vendoring framework code.
+- The provenance baseline now uses the fork, with default_source ../guofoo-makepad. This checkout tracks official upstream/work locally, so the documented fork pull names origin work explicitly. Incorporating official updates into the fork remains the user's source Git workflow.
+- Safe cached-view snapshots and wallpaper redraw are now provided by widgets; the temporary standalone WM implementations can be removed.
+- Persistent widget-tree child enumeration is necessary for dynamically hosted apps: one-time insertion alone loses surviving entries when a sibling closes and the tree refreshes. A floating desk also needs its turtle area, not its tiling border's stale area.
+- Successful screenshots alone do not detect skipped shaders; native smoke now rejects runtime shader/error logs as well as checking app input and state.

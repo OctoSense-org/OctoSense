@@ -26,6 +26,8 @@
 //! and answering before the pane ever slides in, and a turn in flight
 //! finishes behind a hidden one.
 
+use super::ui::{inset, ShellDraw};
+use super::MaterialTokens;
 use crate::desk::ease_out_quint;
 use crate::hub::ClientId;
 use crate::run_view::MpRunView;
@@ -46,6 +48,7 @@ script_mod! {
         height: Fill
         draw_card +: { color: mod.wm_theme.background }
         draw_edge +: { color: mod.wm_theme.accent }
+        d +: {}
         run := MpRunView{}
     }
 }
@@ -103,6 +106,10 @@ pub struct ShellAiPane {
     draw_card: DrawColor,
     #[live]
     draw_edge: DrawColor,
+    /// The shell kit, for the glass card; the flat card is the two fills
+    /// above.
+    #[live]
+    d: ShellDraw,
     #[rust]
     open: bool,
     /// 0 = fully hidden, 1 = fully shown.
@@ -174,6 +181,11 @@ impl ShellAiPane {
                 false
             }
         }
+    }
+
+    /// The material the card paints with; the next draw reads it.
+    pub fn set_material(&mut self, m: MaterialTokens) {
+        self.d.set_material(m);
     }
 
     pub fn client(&self) -> Option<ClientId> {
@@ -339,18 +351,37 @@ impl Widget for ShellAiPane {
         // assistant already running, not a "starting…" wash.
         cx.begin_turtle(walk, Layout::default());
         let r = self.card_rect();
-        self.draw_card.draw_abs(cx, r);
-        self.draw_edge.draw_abs(
-            cx,
-            Rect { pos: dvec2(r.pos.x + r.size.x - EDGE, r.pos.y), size: dvec2(EDGE, r.size.y) },
-        );
-        let inner = Rect { pos: r.pos, size: dvec2(r.size.x - EDGE, r.size.y) };
+        // Under glass the card is one glass quad, hoisted into the kit's
+        // overlay list — and the body rides in that same list, drawn over
+        // it: an overlay composites above the pass body, so a body left
+        // in the pass would sit UNDER the glass. The accent edge belongs
+        // to the flat look; glass keeps the material's own ring, with the
+        // body inside it. (Both kit calls are no-ops under flat.)
+        self.d.begin_surface(cx);
+        let m = self.d.material();
+        // The body's corner clip: inside the ring, concentric with the card
+        // (an Sdf2d half-radius, like `draw_window_surface` halves the
+        // window's). Square under flat, whose card is square.
+        let child_half = if m.is_glass() { ((m.corner_radius - m.border_width).max(0.0) * 0.5) as f32 } else { 0.0 };
+        self.with_run_view(cx, |_, v| v.set_corner_radius(child_half));
+        let inner = if m.is_glass() {
+            self.d.glass_rect(cx, r, m.corner_radius, true);
+            inset(r, m.border_width)
+        } else {
+            self.draw_card.draw_abs(cx, r);
+            self.draw_edge.draw_abs(
+                cx,
+                Rect { pos: dvec2(r.pos.x + r.size.x - EDGE, r.pos.y), size: dvec2(EDGE, r.size.y) },
+            );
+            Rect { pos: r.pos, size: dvec2(r.size.x - EDGE, r.size.y) }
+        };
         match self.overlay.clone() {
             Some(overlay) => overlay.draw_walk_all(cx, scope, Walk::abs_rect(inner)),
             None => {
                 while self.view.draw_walk(cx, scope, Walk::abs_rect(inner)).is_step() {}
             }
         }
+        self.d.end_surface(cx);
         cx.end_turtle();
         if self.focus_pending && self.open {
             // The body just drew: its area is live, the claim can land.

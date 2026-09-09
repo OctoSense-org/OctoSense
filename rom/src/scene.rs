@@ -1,4 +1,4 @@
-//! WM-owned framebuffer transition. Retaining the previous render target freezes
+//! WM-owned framebuffer transition. Detaching a cached render target freezes
 //! pixels without readback or a second app/widget tree.
 use makepad_widgets::*;
 script_mod! {
@@ -7,7 +7,7 @@ script_mod! {
     mod.widgets.WmSceneBase = #(WmScene::register_widget(vm))
     mod.widgets.WmScene = set_type_default() do mod.widgets.WmSceneBase {
         width: Fill height: Fill flow: Overlay
-        texture_caching: false
+        texture_caching: true
         draw_bg +: {
             image: texture_2d(float)
             pixel: fn() { return self.image.sample(self.pos) }
@@ -26,11 +26,7 @@ pub struct WmScene {
     #[live]
     draw_old: DrawQuad,
     #[rust]
-    frame: Option<SceneFrame>,
-    #[rust]
-    capturing: bool,
-    #[rust]
-    frozen: Vec<(SceneFrame, f32)>,
+    frozen: Vec<(ViewTextureSnapshot, f32)>,
     #[rust]
     progress: f64,
     #[rust]
@@ -38,25 +34,6 @@ pub struct WmScene {
     #[rust]
     last: f64,
 }
-// Keep the cache in WM: this pinned widgets revision exposes View's snapshot
-// type but not the methods needed to detach or redraw its private cache.
-struct SceneFrame {
-    pass: DrawPass,
-    list: DrawList2d,
-    texture: Texture,
-}
-impl SceneFrame {
-    fn new(cx: &mut Cx) -> Self {
-        let pass = DrawPass::new(cx);
-        let texture = Texture::new_with_format(cx, TextureFormat::RenderBGRAu8 {
-            size: TextureSize::Auto, initial: true,
-        });
-        pass.set_color_texture(cx, &texture, DrawPassClearColor::ClearWith(vec4(0.0, 0.0, 0.0, 0.0)));
-        Self { pass, list: DrawList2d::new(cx), texture }
-    }
-    fn texture(&self) -> &Texture { &self.texture }
-}
-
 impl WmScene {
     pub fn cut(&mut self, cx: &mut Cx) {
         self.frozen.clear();
@@ -65,7 +42,7 @@ impl WmScene {
         self.view.redraw(cx);
     }
     pub fn transition(&mut self, cx: &mut Cx) {
-        if let Some(frame) = self.frame.take() {
+        if let Some(frame) = self.view.take_texture_snapshot(cx) {
             let t = smooth(self.progress);
             for (_, weight) in &mut self.frozen {
                 *weight *= 1.0 - t;
@@ -116,22 +93,7 @@ impl Widget for WmScene {
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.capturing {
-            let frame = self.frame.get_or_insert_with(|| SceneFrame::new(cx));
-            cx.make_child_pass(&frame.pass);
-            cx.begin_pass(&frame.pass, None);
-            frame.list.begin_always(cx);
-            self.capturing = true;
-        }
         self.view.draw_walk(cx, scope, walk)?;
-        let frame = self.frame.as_mut().unwrap();
-        frame.list.end(cx);
-        cx.end_pass(&frame.pass);
-        self.capturing = false;
-        let area = self.view.area();
-        self.view.draw_bg.draw_vars.set_texture(0, &frame.texture);
-        self.view.draw_bg.draw_abs(cx, area.rect(cx));
-        cx.set_pass_area(&frame.pass, area);
         let t = smooth(self.progress);
         let mut accumulated = t;
         for (frame, weight) in &self.frozen {

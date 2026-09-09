@@ -38,4 +38,8 @@ pub trait TileHost {
     fn set_close_crop(&mut self, crop: Option<(Vec2d, Vec2d)>);
     /// The popin fade the desk drives during open/close (1 = solid).
     fn set_fade(&mut self, fade: f32);
+    /// A corner clip on the window body (Sdf2d half-radius; 0 = square),
+    /// so an inset body cannot overpaint a glass frame's corner arcs. A
+    /// module tile draws its own root and needs none.
+    fn set_corner_radius(&mut self, _radius: f32) {}
 }

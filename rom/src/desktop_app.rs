@@ -1,21 +1,70 @@
 //! Desktop style orchestration. Application state stays in the existing clients;
 //! shell presentation and the compositor's frozen framebuffer change together.
 use crate::desk::ChromeHit;
-use crate::desktop::{DesktopShelf, DesktopStyle, ShelfHit};
+use crate::desktop::{dark_chrome, DesktopShelf, DesktopStyle, ShelfHit, SPECS};
 use crate::*;
 
-/// Match the browser's initial page palette, including light Omarchy themes
-/// and classic desktops that have no dark variant.
+/// Match the browser's initial page palette: light Omarchy themes, classic
+/// desktops that have no dark variant, and MakeOS, dark whatever the flag says.
 pub(super) fn browser_appearance(style: DesktopStyle, dark: bool, omarchy_source: &str) -> bool {
     if style == DesktopStyle::Omarchy {
         return scan_theme_color(omarchy_source, "background")
             .map(|c| 0.2126*c.x + 0.7152*c.y + 0.0722*c.z < 0.5)
             .unwrap_or(true);
     }
-    style.supports_dark() && dark
+    dark_chrome(style, dark)
+}
+
+/// The bar's parent strip: transparent under glass, so the material sits
+/// on the wallpaper with no flat wash beneath; the theme ground otherwise.
+pub(super) fn bar_strip_color(material: &shell::MaterialTokens, ground: Vec4f) -> Vec4f {
+    if material.is_glass() { Vec4f::default() } else { ground }
 }
 
 impl App {
+    /// What a style's sheet says the chrome paints with: its material and
+    /// its palette roles, for `WmState` to carry and the desk and kits to
+    /// read. Startup and every switch come through here, so a sheet that
+    /// grows a material block or a role is honoured wherever it loads; a
+    /// material line that does not read is logged and the rest still applies.
+    pub(super) fn chrome_from_sheet(sheet: &desktop_style::StyleSheet) -> (shell::MaterialTokens, theme::StyleRoles) {
+        let (material, problems) = theme::scan_material(&sheet.theme);
+        for problem in &problems {
+            log!("wm: style {} material {}", sheet.name, problem);
+        }
+        (material, theme::scan_style_roles(&sheet.theme))
+    }
+
+    /// Hand the material to every shell surface. Nothing is stored here —
+    /// `WmState.material` already holds it — and nothing redraws: the
+    /// callers redraw everything after. The bar's parent strip is the one
+    /// fill outside a kit: under glass it goes transparent so the material
+    /// sits on the wallpaper with no flat wash beneath; under flat it is
+    /// `mod.wm_theme.background` again, as the DSL resolved it.
+    pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens) {
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_bar)).borrow_mut::<shell::bar::ShellBar>() {
+            w.set_material(material);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_menu)).borrow_mut::<ShellMenu>() {
+            w.set_material(material);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_panel)).borrow_mut::<shell::panels::ShellPanel>() {
+            w.set_material(material);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
+            w.set_material(material);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_osd)).borrow_mut::<shell::osd::ShellOsd>() {
+            w.set_material(material);
+        }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
+            w.set_material(material);
+        }
+        let bar_strip = bar_strip_color(&material, self.state_mut().bar_ground);
+        let mut bar = self.ui.widget(cx, ids!(bar));
+        script_apply_eval!(cx, bar, { draw_bg +: { color: #(bar_strip) } });
+    }
+
     pub(super) fn set_desktop_style(&mut self, cx: &mut Cx, style: DesktopStyle) {
         let previous = self.state_mut().style.target;
         let changes_size = previous.mobile() != style.mobile() || (style.mobile() && previous != style);
@@ -37,7 +86,10 @@ impl App {
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {desk.set_startup_style(cx, &sheet);}
         let sheet_name = sheet.name.clone();
         app_icon::install(cx, style, &sheet.icons);
+        let (material, roles) = Self::chrome_from_sheet(&sheet);
         let state = self.state_mut();
+        state.material = material;
+        state.roles = roles;
         state.dragging.clear();
         state.style.select(style);
         if changes_size { state.style.step(1.0); }
@@ -53,6 +105,7 @@ impl App {
                 send_to_app(sender, vec![StudioToApp::Custom(json.clone())]);
             }
         }
+        self.apply_material_to_chrome(cx, material);
         self.module_host.apply_style(cx, &sheet);
         self.stylesheet = Some(sheet);
         // New child processes pick the style before their widget definitions load.
@@ -70,25 +123,37 @@ impl App {
         {
             menu.desktop_style = style;
             menu.dark = dark;
+            menu.roles = roles;
         }
         // Wallpaper is part of the framebuffer crossfade. Omarchy retains the
-        // selected wallpaper; the other desktop identities have their own ground.
-        self.ui.widget(cx, ids!(bg_image)).set_visible(
-            cx,
-            style == DesktopStyle::Omarchy
-                && !theme::theme_backgrounds(&self.state_mut().theme_name).is_empty(),
-        );
-        let (top, bottom) = match style {
-            DesktopStyle::Omarchy => (shell::rgb(16, 19, 21), shell::rgb(24, 30, 34)),
-            DesktopStyle::Macos if dark => (shell::rgb(12, 15, 36), shell::rgb(65, 36, 69)),
-            DesktopStyle::Macos => (shell::rgb(39, 43, 87), shell::rgb(171, 109, 131)),
-            DesktopStyle::Windows if dark => (shell::rgb(10, 19, 34), shell::rgb(21, 49, 72)),
-            DesktopStyle::Windows => (shell::rgb(10, 45, 108), shell::rgb(24, 137, 210)),
-            DesktopStyle::Windows2000 => (shell::rgb(0, 128, 128), shell::rgb(0, 128, 128)),
-            DesktopStyle::NextStep => (shell::rgb(85, 85, 85), shell::rgb(85, 85, 85)),
-            DesktopStyle::Ios => (shell::rgb(38, 78, 137), shell::rgb(159, 207, 227)),
-            DesktopStyle::Android => (shell::rgb(50, 46, 73), shell::rgb(158, 156, 204)),
+        // selected wallpaper and MakeOS shows its bundled scene through the
+        // same slot, the spec gradient beneath as the fallback; the other
+        // desktop identities have their own ground.
+        let has_wallpaper = match style {
+            DesktopStyle::Omarchy => {
+                // The slot may still hold MakeOS's scene from an earlier
+                // visit: put the theme's own picture back (a cache hit when
+                // it is already decoded) rather than leave the vector one.
+                self.apply_background(cx, self.background_index);
+                !theme::theme_backgrounds(&self.state_mut().theme_name).is_empty()
+            }
+            DesktopStyle::MakeOs => {
+                let scene = theme::BUNDLED_MAKEOS_WALLPAPER.as_bytes();
+                match self.ui.image(cx, ids!(bg_image)).load_svg_from_data(cx, scene) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        log!("wm: the bundled MakeOS wallpaper did not load: {}", error);
+                        false
+                    }
+                }
+            }
+            _ => false,
         };
+        self.ui.widget(cx, ids!(bg_image)).set_visible(cx, has_wallpaper);
+        let spec = &SPECS[style as usize];
+        let pair = if dark && style.supports_dark() { spec.ground_dark } else { spec.ground };
+        let to = |(r, g, b)| shell::rgb(r, g, b);
+        let (top, bottom) = (to(pair.0), to(pair.1));
         let mut bg = self.ui.widget(cx, ids!(bg_fill));
         script_apply_eval!(cx,bg,{draw_bg +: {color_top: #(top) color_bottom: #(bottom)}});
         self.update_bar(cx);
@@ -317,7 +382,8 @@ impl App {
         if !super_chord(&e.modifiers) {
             return false;
         }
-        if e.key_code == KeyCode::KeyD && style != DesktopStyle::Macos {
+        // The macOS family has no show-desktop: MakeOS shares the dock.
+        if e.key_code == KeyCode::KeyD && !style.mac_family() {
             self.activate_shelf(cx, ShelfHit::ShowDesktop);
             return true;
         }
@@ -483,6 +549,17 @@ impl App {
 mod appearance_tests {
     use super::*;
     #[test]
+    fn the_bar_strip_is_transparent_only_under_glass() {
+        let ground = shell::rgb(26, 27, 38);
+        let flat = shell::MaterialTokens::default();
+        assert_eq!(bar_strip_color(&flat, ground), ground);
+        let glass = shell::MaterialTokens { glass: 1.0, ..flat };
+        assert_eq!(bar_strip_color(&glass, ground), Vec4f::default());
+        let below = shell::MaterialTokens { glass: 0.49, ..flat };
+        assert_eq!(bar_strip_color(&below, ground), ground, "under the glass threshold reads flat");
+    }
+
+    #[test]
     fn warm_browser_appearance_matches_classic_and_omarchy_palettes() {
         for style in [DesktopStyle::Windows2000,DesktopStyle::NextStep] {
             assert!(!browser_appearance(style,true,""));
@@ -493,5 +570,8 @@ mod appearance_tests {
         }
         assert!(browser_appearance(DesktopStyle::Omarchy,false,"background: #121212"));
         assert!(!browser_appearance(DesktopStyle::Omarchy,true,"background: #eeeeee"));
+        // MakeOS has one look, and it is dark.
+        assert!(browser_appearance(DesktopStyle::MakeOs,false,""));
+        assert!(browser_appearance(DesktopStyle::MakeOs,true,""));
     }
 }

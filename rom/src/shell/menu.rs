@@ -31,10 +31,11 @@ use crate::desktop::DesktopStyle;
 
 use crate::binds::{combo_text, keymap};
 use crate::theme;
+use crate::theme::StyleRoles;
 
 use super::launcher;
 use super::ui::{contains, rect, DrawShellFill, Ico, ShellDraw};
-use super::{alpha, fade, MenuTokens, ShellTokens};
+use super::{alpha, fade, MaterialTokens, MenuTokens, ShellTokens};
 
 mod nextstep;
 use nextstep::NextMenus;
@@ -882,6 +883,8 @@ pub struct ShellMenu {
     #[rust] app_icons: AppIconDraw,
     #[rust] pub desktop_style: DesktopStyle,
     #[rust] pub dark: bool,
+    /// The sheet's palette roles: the accent the glass skin's cursor row takes.
+    #[rust] pub roles: StyleRoles,
     #[uid]
     uid: WidgetUid,
     #[source]
@@ -923,31 +926,40 @@ pub struct ShellMenu {
     pub inert: bool,
 }
 
+/// The floating desktops' skin over the sheet's: NeXT and Windows 2000's
+/// greys, else macOS's light card — or its dark one wherever the chrome
+/// reads dark (`dark_chrome`: the flag, and MakeOS whatever it says). Under
+/// a glass material the kit paints the card itself and the cursor row takes
+/// the palette's focus accent; macOS-dark's highlight stays on its flat card.
+fn floating_skin(mut skin: MenuTokens, style: DesktopStyle, dark: bool, glass: bool, roles: &StyleRoles) -> MenuTokens {
+    let classic=style==DesktopStyle::Windows2000;
+    let next=style==DesktopStyle::NextStep;
+    skin.surface.background=if next {super::rgb(170,170,170)} else {super::rgb(if classic {212}else{245},if classic {208}else{245},if classic {200}else{249})};
+    skin.surface.background_alpha=1.0;
+    skin.surface.text=super::rgb(24,24,28);
+    skin.surface.border=super::rgb(160,160,165);skin.surface.border_end=skin.surface.border;
+    skin.surface.border_width=1.0;
+    skin.selected_background=if next {super::rgb(0,0,0)}else if classic {super::rgb(0,0,128)}else{super::rgb(213,228,249)};
+    skin.selected_background_alpha=1.0;
+    skin.selected_text=if classic || next {super::rgb(255,255,255)}else{super::rgb(24,24,28)};
+    skin.scrim_alpha=0.0;
+    if crate::desktop::dark_chrome(style, dark) {
+        skin.surface.background=super::rgb(40,40,43);
+        skin.surface.text=super::rgb(242,242,245);
+        skin.surface.border=super::rgb(82,82,88);skin.surface.border_end=skin.surface.border;
+        skin.selected_background=if glass {roles.focus} else {super::rgb(36,77,117)};
+        skin.selected_text=super::rgb(255,255,255);
+    }
+    skin
+}
+
 impl ShellMenu {
     fn skin(&self) -> MenuTokens {
         let mut skin=match self.model.skin { MenuSkin::Menu=>self.tokens.menu, MenuSkin::Launcher=>self.tokens.launcher };
         if self.anchor.is_some() { skin.scrim_alpha = 0.0; return skin; }
-        if self.desktop_style.floating() {
-            let classic=self.desktop_style==DesktopStyle::Windows2000;
-            let next=self.desktop_style==DesktopStyle::NextStep;
-            skin.surface.background=if next {super::rgb(170,170,170)} else {super::rgb(if classic {212}else{245},if classic {208}else{245},if classic {200}else{249})};
-            skin.surface.background_alpha=1.0;
-            skin.surface.text=super::rgb(24,24,28);
-            skin.surface.border=super::rgb(160,160,165);skin.surface.border_end=skin.surface.border;
-            skin.surface.border_width=1.0;
-            skin.selected_background=if next {super::rgb(0,0,0)}else if classic {super::rgb(0,0,128)}else{super::rgb(213,228,249)};
-            skin.selected_background_alpha=1.0;
-            skin.selected_text=if classic || next {super::rgb(255,255,255)}else{super::rgb(24,24,28)};
-            skin.scrim_alpha=0.0;
-            if self.desktop_style.supports_dark() && self.dark {
-                skin.surface.background=super::rgb(40,40,43);
-                skin.surface.text=super::rgb(242,242,245);
-                skin.surface.border=super::rgb(82,82,88);skin.surface.border_end=skin.surface.border;
-                skin.selected_background=super::rgb(36,77,117);
-                skin.selected_text=super::rgb(255,255,255);
-            }
-        }
-        skin
+        // `self.d` is the kit this draw paints with (`draw_surface` swaps the
+        // desktop one in first), so its material is the card's.
+        if self.desktop_style.floating() { floating_skin(skin, self.desktop_style, self.dark, self.d.material().is_glass(), &self.roles) } else { skin }
     }
 
     pub fn open_at(&mut self, cx: &mut Cx, path: &str, skin: MenuSkin) {
@@ -1041,21 +1053,32 @@ impl ShellMenu {
                 .max(screen.pos.y + gaps_out)
                 .floor(),
         };
+        let offset=crate::desktop::SPECS[self.desktop_style as usize].menu_bottom_offset;
         let (x,y)=match self.desktop_style {
-            crate::desktop::DesktopStyle::Windows2000=>(screen.pos.x+3.0,screen.pos.y+screen.size.y-height-34.0),
-            crate::desktop::DesktopStyle::Windows=>(x,screen.pos.y+screen.size.y-height-66.0),
-            crate::desktop::DesktopStyle::Macos=>(x,screen.pos.y+screen.size.y-height-98.0),
+            DesktopStyle::Windows2000=>(screen.pos.x+3.0,screen.pos.y+screen.size.y-height-offset),
             DesktopStyle::NextStep=>(screen.pos.x+10.0,screen.pos.y+42.0),
+            // A shelf-anchored menu rises above its shelf; the rest stay centred.
+            // Styles that also place x keep an explicit arm above this guard.
+            _ if offset>0.0=>(x,screen.pos.y+screen.size.y-height-offset),
             _=>(x,y),
         };
         (rect(x.max(screen.pos.x),y.max(screen.pos.y+4.0),(if classic || next {244.0}else{CARD_WIDTH}).min(screen.size.x),height),visible)
     }
 
-    /// Draw the whole surface into `screen` (scrim included).
+    /// The material both kits paint with — the desktop one draws the
+    /// floating styles' menu, so it must not be left flat.
+    pub fn set_material(&mut self, m: MaterialTokens) {
+        self.d.set_material(m);
+        self.desktop_d.set_material(m);
+    }
+    /// Draw the whole surface into `screen` (scrim included). Under glass
+    /// the active kit hoists it into its overlay list.
     pub fn draw_surface(&mut self,cx:&mut Cx2d,screen:Rect) {
         let desktop=self.desktop_style.floating() && self.anchor.is_none();
         if desktop {std::mem::swap(&mut self.d,&mut self.desktop_d);}
+        self.d.begin_surface(cx);
         self.draw_surface_inner(cx,screen);
+        self.d.end_surface(cx);
         if desktop {std::mem::swap(&mut self.d,&mut self.desktop_d);}
     }
     fn draw_surface_inner(&mut self, cx: &mut Cx2d, screen: Rect) {
@@ -1683,5 +1706,37 @@ mod tests {
         assert!(text_rect.pos.x + text_rect.size.x <= header_rect.pos.x + header_rect.size.x);
         assert_eq!(icon_slot.pos.y, header_rect.pos.y);
         assert_eq!(text_rect.pos.y, header_rect.pos.y);
+    }
+
+    #[test]
+    fn the_floating_skin_reads_makeos_dark_with_the_accent_on_glass() {
+        use super::super::rgb;
+        let base = MenuTokens::default();
+        // A sheet's own roles, unlike the bundled defaults, so a highlight
+        // that hardcoded MakeOS's accent would not pass as the palette's.
+        let roles = StyleRoles { text: rgb(9, 8, 7), focus: rgb(1, 2, 3), ..StyleRoles::default() };
+        // MakeOS: the dark card's light ink whatever the flag says, and the
+        // cursor row in the palette's focus accent under its glass.
+        for dark in [false, true] {
+            let makeos = floating_skin(base, DesktopStyle::MakeOs, dark, true, &roles);
+            assert_eq!(makeos.surface.text, rgb(242, 242, 245));
+            assert_eq!(makeos.selected_background, rgb(1, 2, 3));
+            assert_eq!(makeos.selected_background_alpha, 1.0);
+            assert_eq!(makeos.selected_text, rgb(255, 255, 255));
+        }
+        // A MakeOS sheet whose material fell back to flat keeps the dark
+        // card's own highlight, like macOS dark.
+        let flat = floating_skin(base, DesktopStyle::MakeOs, false, false, &roles);
+        assert_eq!(flat.selected_background, rgb(36, 77, 117));
+        let mac_dark = floating_skin(base, DesktopStyle::Macos, true, false, &roles);
+        assert_eq!(mac_dark.surface.text, rgb(242, 242, 245));
+        assert_eq!(mac_dark.selected_background, rgb(36, 77, 117));
+        // The light macOS card, and a classic desktop the flag cannot darken.
+        let mac = floating_skin(base, DesktopStyle::Macos, false, false, &roles);
+        assert_eq!(mac.surface.text, rgb(24, 24, 28));
+        assert_eq!(mac.selected_background, rgb(213, 228, 249));
+        let classic = floating_skin(base, DesktopStyle::Windows2000, true, false, &roles);
+        assert_eq!(classic.surface.text, rgb(24, 24, 28));
+        assert_eq!(classic.selected_background, rgb(0, 0, 128));
     }
 }

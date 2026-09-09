@@ -99,7 +99,7 @@ def blob(source, entries, name):
 def manifest_paths(root):
     paths = []
     for directory, children, files in os.walk(root):
-        children[:] = [name for name in children if name not in ("target", ".git")]
+        children[:] = [name for name in children if name not in ("target", ".git", ".worktrees")]
         if "Cargo.toml" in files:
             paths.append(Path(directory) / "Cargo.toml")
     return sorted(paths)
@@ -392,7 +392,7 @@ def verify_stage(stage, *, runtime=False, report=None):
         commands.extend([
             ["cargo", "build", "--release", "--locked", "--workspace"],
             ["cargo", "build", "--locked", "--workspace"],
-            [sys.executable, "scripts/smoke.py", "--artifacts-dir", str(report / "smoke-release")],
+            [sys.executable, "scripts/smoke.py", "--styles", "--artifacts-dir", str(report / "smoke-release")],
             [sys.executable, "scripts/smoke.py", "--cargo-run", "--default-catalog",
              "--artifacts-dir", str(report / "smoke-default")],
         ])
@@ -519,9 +519,22 @@ def sync_lock(cache):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def source_checkout(root, source=None):
+    if source is not None:
+        return Path(source).resolve()
+    root = Path(root).resolve()
+    baseline = json.loads(checked_path(root, BASELINE).read_text())
+    default = baseline.get("default_source", "../makepad")
+    if not isinstance(default, str) or not default.strip():
+        raise SyncError("default_source must be a nonempty checkout path")
+    # This is a read-only source location, not an import destination: sibling
+    # and absolute paths are allowed. Relative defaults belong to the project.
+    return (root / default).resolve()
+
+
 def sync(root, source=None, to=None, verify=None):
     root = Path(root).resolve()
-    source = Path(source).resolve() if source is not None else root.parent / "makepad"
+    source = source_checkout(root, source)
     # Freeze a moving ref once. Later fetches/pulls cannot change this attempt.
     target = resolve(source, to or "HEAD")
     comparison = compare(root, source, target)
@@ -641,14 +654,14 @@ def format_comparison(comparison, show_diff=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["sync", "status", "diff", "update"])
-    parser.add_argument("--source", type=Path, help="existing Makepad Git clone (default: sibling makepad; never written)")
+    parser.add_argument("--source", type=Path, help="existing Makepad Git clone (default: provenance default_source or ../makepad; never written)")
     parser.add_argument("--to", help="target commit/ref; sync defaults to source HEAD, status/diff to baseline; required for update")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1], help="MakeOS repository root")
     args = parser.parse_args(argv)
     if args.command == "update" and not args.to:
         parser.error("update requires --to")
-    source = args.source or args.root.resolve().parent / "makepad"
     try:
+        source = source_checkout(args.root, args.source)
         if args.command == "sync":
             sync(args.root, source, args.to)
             return 0

@@ -25,7 +25,7 @@
 use makepad_widgets::*;
 
 use super::ui::{contains, rect, DrawShellFill, Ico, ShellDraw};
-use super::{alpha, fade, ShellTokens};
+use super::{alpha, fade, MaterialTokens, ShellTokens};
 
 /// Every clickable thing in the bar, in `shell.json` id terms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -583,9 +583,23 @@ impl ShellBar {
         v
     }
 
+    /// The material the kit paints this bar with; the next draw reads it
+    /// (`App::apply_material_to_chrome` redraws everything after the
+    /// fan-out).
+    pub fn set_material(&mut self, m: MaterialTokens) {
+        self.d.set_material(m);
+    }
+
     /// Draw the bar into `r`. Returns nothing; hit rects are recorded for
-    /// the next event pass.
+    /// the next event pass. Under glass the whole bar — strip, modules,
+    /// tooltip — is hoisted into the kit's overlay list.
     pub fn draw_bar(&mut self, cx: &mut Cx2d, r: Rect) {
+        self.d.begin_surface(cx);
+        self.draw_bar_inner(cx, r);
+        self.d.end_surface(cx);
+    }
+
+    fn draw_bar_inner(&mut self, cx: &mut Cx2d, r: Rect) {
         let tok = self.tokens;
         let fg = tok.bar.text;
         let accent = tok.bar.active;
@@ -594,9 +608,17 @@ impl ShellBar {
         self.hits.clear();
         self.screen = r;
 
-        // The strip itself: `Color.bar.background`, no border.
-        self.draw_bg.color = alpha(tok.bar.background, tok.bar.background_alpha);
+        // The strip itself: `Color.bar.background`, no border. Under glass
+        // the material paints it and this fill goes transparent — still
+        // drawn, as the widget's `#[redraw]` anchor. (`glass_strip` is a
+        // no-op under flat.)
+        self.draw_bg.color = if self.d.material().is_glass() {
+            Vec4f::default()
+        } else {
+            alpha(tok.bar.background, tok.bar.background_alpha)
+        };
         self.draw_bg.draw_abs(cx, r);
+        self.d.glass_strip(cx, r);
 
         // ---- left: menu, workspaces
         let mut x = r.pos.x + self.pad_left.max(EDGE_MARGIN);

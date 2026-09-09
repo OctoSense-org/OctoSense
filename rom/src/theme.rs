@@ -13,6 +13,8 @@
 //! Installed layout: `~/.makepad/wm/themes/<name>/theme.splash`
 //!                   `~/.makepad/wm/themes/<name>/backgrounds/*`
 
+use crate::shell::MaterialTokens;
+use makepad_widgets::Vec4f;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -95,6 +97,8 @@ pub const DEFAULT_INACTIVE_BORDER: Stop = Stop {
     },
     alpha: 0.85,
 };
+/// The MakeOS ground: a vector scene, bundled so the style needs no theme download.
+pub const BUNDLED_MAKEOS_WALLPAPER: &str = include_str!("../resources/wallpapers/makeos.svg");
 const OMARCHY_RAW: &str = "https://raw.githubusercontent.com/omacom/omarchy/quattro/themes";
 const OMARCHY_API: &str = "https://api.github.com/repos/omacom/omarchy/contents/themes";
 
@@ -858,6 +862,156 @@ fn scan_rgb(source: &str, key: &str) -> Option<Rgb> {
     None
 }
 
+/// `mod.theme.material = { key: value ... }` in a style sheet: the material
+/// every shell surface and window frame paints with. The block is one
+/// `key: value` per line with no nested braces, closes on a bare `}`, and
+/// anything after the opening `{` on its line is ignored. Absent, the sheet
+/// is the flat look. A value that does not read, or a key the material has
+/// no field for, is reported (in file order) and skipped, so one typo in
+/// the sheet cannot take the whole material down with it.
+pub fn scan_material(sheet_theme: &str) -> (MaterialTokens, Vec<String>) {
+    let mut material = MaterialTokens::default();
+    let mut problems = Vec::new();
+    let mut lines = sheet_theme.lines().map(str::trim);
+    if !lines.any(|line| line.starts_with("mod.theme.material = {")) {
+        return (material, problems);
+    }
+    for line in lines.take_while(|line| *line != "}") {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim().trim_end_matches(','));
+        match material_slot(&mut material, key) {
+            None => problems.push(format!("{key}: unknown")),
+            Some(slot) => {
+                if !slot.assign(value) {
+                    problems.push(format!("{key}: {value}"));
+                }
+            }
+        }
+    }
+    (material, problems)
+}
+
+/// Where one key of the material block lands, typed as its value must read.
+enum MaterialSlot<'a> {
+    /// A non-negative float literal.
+    Number(&'a mut f64),
+    /// The same literal, for the alphas and strengths the shaders take as f32.
+    Strength(&'a mut f32),
+    /// `#rrggbb` or `#rrggbbaa`.
+    Color(&'a mut Vec4f),
+}
+
+impl MaterialSlot<'_> {
+    /// False when `value` is not the literal this slot takes; the slot is
+    /// then left as it was.
+    fn assign(self, value: &str) -> bool {
+        match self {
+            MaterialSlot::Number(slot) => parse_material_number(value).map(|v| *slot = v).is_some(),
+            MaterialSlot::Strength(slot) => {
+                parse_material_number(value).map(|v| *slot = v as f32).is_some()
+            }
+            MaterialSlot::Color(slot) => parse_material_color(value).map(|c| *slot = c).is_some(),
+        }
+    }
+}
+
+/// A material number: a finite, non-negative float literal.
+fn parse_material_number(value: &str) -> Option<f64> {
+    value.parse::<f64>().ok().filter(|v| v.is_finite() && *v >= 0.0)
+}
+
+fn material_slot<'a>(m: &'a mut MaterialTokens, key: &str) -> Option<MaterialSlot<'a>> {
+    use MaterialSlot::*;
+    Some(match key {
+        "glass" => Number(&mut m.glass),
+        "corner_radius" => Number(&mut m.corner_radius),
+        "blur_level" => Number(&mut m.blur_level),
+        "lensing_effect" => Number(&mut m.lensing_effect),
+        "lensing_strength" => Number(&mut m.lensing_strength),
+        "lensing_width" => Number(&mut m.lensing_width),
+        "diffraction_strength" => Number(&mut m.diffraction_strength),
+        "tint_color" => Color(&mut m.tint_color),
+        "tint_alpha" => Strength(&mut m.tint_alpha),
+        "border_color" => Color(&mut m.border_color),
+        "border_alpha" => Strength(&mut m.border_alpha),
+        "border_width" => Number(&mut m.border_width),
+        "specular_strength" => Strength(&mut m.specular_strength),
+        "noise_strength" => Strength(&mut m.noise_strength),
+        "shadow_color" => Color(&mut m.shadow_color),
+        "shadow_alpha" => Strength(&mut m.shadow_alpha),
+        "shadow_radius" => Number(&mut m.shadow_radius),
+        "shadow_offset_y" => Number(&mut m.shadow_offset_y),
+        "fallback_color" => Color(&mut m.fallback_color),
+        _ => return None,
+    })
+}
+
+/// The palette roles the window frame paints from under a style whose
+/// sheet is the source: the title ink, the focus accent and the destructive
+/// red of the close caption. Scanned out of the sheet like the material,
+/// never read from the DSL.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyleRoles {
+    pub text: Vec4f,
+    pub focus: Vec4f,
+    pub error: Vec4f,
+}
+
+/// MakeOS's own palette, so a sheet that names no role still frames its
+/// windows in the bundled colours.
+impl Default for StyleRoles {
+    fn default() -> Self {
+        Self {
+            text: crate::shell::rgb(0xd6, 0xe2, 0xff),
+            focus: crate::shell::rgb(0x5b, 0x9d, 0xff),
+            error: crate::shell::rgb(0xff, 0x6b, 0x81),
+        }
+    }
+}
+
+/// `mod.theme.color_text = #rrggbb`, `color_focus`, `color_error` out of a
+/// style sheet's theme text. A role the sheet leaves out, or writes as
+/// anything but a hex literal, keeps its default; the others still apply.
+pub fn scan_style_roles(sheet_theme: &str) -> StyleRoles {
+    let mut roles = StyleRoles::default();
+    for (key, slot) in [
+        ("mod.theme.color_text", &mut roles.text),
+        ("mod.theme.color_focus", &mut roles.focus),
+        ("mod.theme.color_error", &mut roles.error),
+    ] {
+        if let Some(color) = scan_assigned_color(sheet_theme, key) {
+            *slot = color;
+        }
+    }
+    roles
+}
+
+/// The value of the first `key = #hex` line in a sheet: the assignment form
+/// the style sheets write, against the `key: #hex` form of the wm theme
+/// files that `scan_theme_color` reads.
+fn scan_assigned_color(sheet_theme: &str, key: &str) -> Option<Vec4f> {
+    sheet_theme.lines().find_map(|line| {
+        let (k, v) = line.split_once('=')?;
+        (k.trim() == key).then(|| parse_material_color(v.trim())).flatten()
+    })
+}
+
+/// A material colour, `#rrggbb` or `#rrggbbaa`; the alpha is 1 when absent.
+fn parse_material_color(value: &str) -> Option<Vec4f> {
+    let hex = value.strip_prefix('#')?;
+    if hex.len() != 6 && hex.len() != 8 {
+        return None;
+    }
+    let channel = |at: usize| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok();
+    let mut color = crate::shell::rgb(channel(0)?, channel(2)?, channel(4)?);
+    if hex.len() == 8 {
+        color.w = channel(6)? as f32 / 255.0;
+    }
+    Some(color)
+}
+
 /// True when the theme ships its own `shell: { ... }` block, in which case
 /// it replaces the generated one wholesale (omarchy's rule for a theme
 /// shipping `themes/<name>/shell.toml` instead of the generated file).
@@ -1308,5 +1462,62 @@ bright_magenta = "#bb9af7"
         assert!(resolve_omarchy_colors("x", light).unwrap().light_mode);
         let lum = "background = \"#f0f0f0\"\nforeground = \"#000000\"\n";
         assert!(resolve_omarchy_colors("x", lum).unwrap().light_mode);
+    }
+
+    #[test]
+    fn material_scans_from_a_sheet_and_falls_to_flat_when_absent_or_bad() {
+        let sheet = "mod.theme.color_text = #d6e2ff\nmod.theme.material = {\n    glass: 1.0\n    lensing_strength: 28.0\n    tint_color: #0b1220\n    tint_alpha: 0.52\n    shadow_radius: nonsense\n    mystery: 1.0\n    border_alpha: -0.1\n    glass: #fff\n    shadow_color: #00000080\n}\ntrue\n";
+        let (m, problems) = scan_material(sheet);
+        assert!(m.is_glass(), "a colour where a number is expected keeps the earlier value");
+        assert_eq!(m.lensing_strength, 28.0);
+        assert_eq!(m.tint_alpha, 0.52);
+        assert_eq!(m.tint_color, crate::shell::rgb(0x0b, 0x12, 0x20));
+        assert_eq!(m.shadow_radius, MaterialTokens::default().shadow_radius, "a bad value keeps the default");
+        assert_eq!(m.border_alpha, MaterialTokens::default().border_alpha, "a negative alpha keeps the default");
+        assert!((m.shadow_color.w - 0.502).abs() < 1e-3, "#rrggbbaa carries its alpha");
+        assert_eq!(
+            problems,
+            vec![
+                "shadow_radius: nonsense".to_string(),
+                "mystery: unknown".to_string(),
+                "border_alpha: -0.1".to_string(),
+                "glass: #fff".to_string(),
+            ]
+        );
+        let (flat, problems) = scan_material("mod.theme.color_text = #fff\ntrue\n");
+        assert!(!flat.is_glass() && problems.is_empty());
+    }
+
+    #[test]
+    fn style_roles_scan_the_sheet_and_default_where_it_is_silent() {
+        let sheet = makepad_widgets::desktop_style::StyleSheet::load(
+            makepad_widgets::desktop_style::DesktopStyle::MakeOs,
+        );
+        let roles = scan_style_roles(&sheet.theme);
+        assert_eq!(roles.text, crate::shell::rgb(0xd6, 0xe2, 0xff));
+        assert_eq!(roles.focus, crate::shell::rgb(0x5b, 0x9d, 0xff));
+        assert_eq!(roles.error, crate::shell::rgb(0xff, 0x6b, 0x81), "the sheet owns its red");
+        // No `color_error`, a `color_text` of its own, and the hover
+        // variant of the same role must not be mistaken for it.
+        let partial = "mod.theme = mod.themes.dark\nmod.theme.color_text_hover = #ffffff\nmod.theme.color_text = #102030\nmod.theme.color_focus = mod.theme.color_text\ntrue\n";
+        let roles = scan_style_roles(partial);
+        assert_eq!(roles.text, crate::shell::rgb(0x10, 0x20, 0x30));
+        assert_eq!(roles.focus, StyleRoles::default().focus, "a reference, not a literal, keeps the default");
+        assert_eq!(roles.error, StyleRoles::default().error);
+        assert_eq!(scan_style_roles(""), StyleRoles::default());
+    }
+
+    #[test]
+    fn the_makeos_sheet_material_matches_the_bundled_numbers() {
+        let sheet = makepad_widgets::desktop_style::StyleSheet::load(
+            makepad_widgets::desktop_style::DesktopStyle::MakeOs,
+        );
+        let (m, problems) = scan_material(&sheet.theme);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(m.glass, 1.0);
+        assert_eq!(m.lensing_strength, 28.0);
+        assert_eq!(m.tint_alpha, 0.52);
+        assert_eq!(m.shadow_radius, 13.0);
+        assert_eq!(m.corner_radius, 12.0);
     }
 }

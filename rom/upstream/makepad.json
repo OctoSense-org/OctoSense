@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "repository": "https://github.com/makepad/makepad.git",
-  "revision": "ae20efc51e6db2ad083d65b40a9beec726582f56",
-  "dependency_revision": "ae20efc51e6db2ad083d65b40a9beec726582f56",
+  "repository": "https://github.com/guofoo/makepad.git",
+  "revision": "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d",
+  "dependency_revision": "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d",
   "source_prefix": "apps/wm/",
   "files": [
     {
@@ -241,6 +241,11 @@
       "sha256": "e08cb962ba825370b2fec6e11d1e9008420d7662ab15e435564c16b9a2b9bffc"
     },
     {
+      "source": "apps/wm/resources/wallpapers/makeos.svg",
+      "destination": "resources/wallpapers/makeos.svg",
+      "sha256": "cfb1eefda276dc4ca9f15577326c37c95ee75f3121af7cd6d80b417d9e04a605"
+    },
+    {
       "source": "apps/wm/src/ai_bus.rs",
       "destination": "src/ai_bus.rs",
       "sha256": "76f3c8cede2ee600ad1e9e7df7562f78e531aea31eaed306c874ecfa5c1ec8ed"
@@ -268,7 +273,7 @@
     {
       "source": "apps/wm/src/desk.rs",
       "destination": "src/desk.rs",
-      "sha256": "297bfebbbcc5f82b253ffb8b3e0284d70fa610ab38a23cc28ada4e662cb25d81"
+      "sha256": "9abd725a4a9a85eed71eb1a017bf9559a260bd85dde9df6b3918bfb600921712"
     },
     {
       "source": "apps/wm/src/desk/phone.rs",
@@ -278,12 +283,12 @@
     {
       "source": "apps/wm/src/desktop.rs",
       "destination": "src/desktop.rs",
-      "sha256": "3a3b2f58b642cd7f3910925ea4e5223857e1c2c7c60333bbca1d15665be51375"
+      "sha256": "b3368cb3ea59ebdc2ce0b928baa2f08541933016ab0e2887855e1f43aaa9ff45"
     },
     {
       "source": "apps/wm/src/desktop_app.rs",
       "destination": "src/desktop_app.rs",
-      "sha256": "441654d8662ec59fca6066c34e126abadf678056929965ce6d9ad28d8b3b82cd"
+      "sha256": "44202d439c9975a479fb774b6f199e60e2da4026bf657504ffaede9806143112"
     },
     {
       "source": "apps/wm/src/desktop_layout.rs",
@@ -313,7 +318,7 @@
     {
       "source": "apps/wm/src/main.rs",
       "destination": "src/main.rs",
-      "sha256": "8b8d4cc63573a38c1e5427bc1949ed8ab307dd1763bd7fc7f8969cf9df346e56"
+      "sha256": "4d9f25fe8d5543dbb397776dc653c04f75829467eefcb8afc063e273b2b08e74"
     },
     {
       "source": "apps/wm/src/mobile.rs",
@@ -363,7 +368,7 @@
     {
       "source": "apps/wm/src/run_view.rs",
       "destination": "src/run_view.rs",
-      "sha256": "b6ac52b22098fe1b51c1cdbf71cb0007543e0f4fe1ec73de94101dd9c4a3a8f3"
+      "sha256": "d1519eafdded1f1deb1bd8c750f4a44cc23fdad90c84400101e5064b87fb14d5"
     },
     {
       "source": "apps/wm/src/scene.rs",
@@ -373,12 +378,12 @@
     {
       "source": "apps/wm/src/shell/ai_pane.rs",
       "destination": "src/shell/ai_pane.rs",
-      "sha256": "71c47ef5acdfd44268ab94fa34a38cdee6f217a8890b5e1cfd3110a9c35ad277"
+      "sha256": "17ac541c404541be2f2f5d756a02a552dc2b1f730bb14efb40beb302e3e4ef80"
     },
     {
       "source": "apps/wm/src/shell/bar.rs",
       "destination": "src/shell/bar.rs",
-      "sha256": "46ca5c335faf8bc3bda1c9fbeb98d5d0c62c766a05462f86dd7dc4e885d0dc71"
+      "sha256": "15995362322b5de1db8e14f8caf7d0ddc6730ff2c80d11140b2c5090e68628c3"
     },
     {
       "source": "apps/wm/src/shell/gallery.rs",
@@ -393,7 +398,7 @@
     {
       "source": "apps/wm/src/shell/menu.rs",
       "destination": "src/shell/menu.rs",
-      "sha256": "db4e60acb1e0b96489cf06cb4e85191c70c369d871247d40f8d8fd3913a48e84"
+      "sha256": "bafb2679b6012547a386af01f9f48919c23f1dbfd72e98209e49c03e2be451a2"
     },
     {
       "source": "apps/wm/src/shell/menu/nextstep.rs",
@@ -403,27 +408,27 @@
     {
       "source": "apps/wm/src/shell/mod.rs",
       "destination": "src/shell/mod.rs",
-      "sha256": "11e51d8618f702888f0d6eb5f403a40c04ffa9d7b83b498751cf2b69f9597be0"
+      "sha256": "866ddb6b83f91088a0d51b7a95d866d8ddb689f3119a16587bf3afa35b6db1dd"
     },
     {
       "source": "apps/wm/src/shell/notifications.rs",
       "destination": "src/shell/notifications.rs",
-      "sha256": "8e0d8f0a2bcec7f91c7ddc6ddaecdc8c95cfbb8b40e04bae6ac865f29778a20d"
+      "sha256": "0e5d2908f588947bc2db9a9fe7f69d39aba6f61a14f58d2400548d58b67e740d"
     },
     {
       "source": "apps/wm/src/shell/osd.rs",
       "destination": "src/shell/osd.rs",
-      "sha256": "6caa5796b36896888d0a79cc199dd507b6ee7105fb45db09eec788dd1d7db35d"
+      "sha256": "74c6187c197e471c08a044cb619b8cef71845c70a8d869d17df487006eab05ec"
     },
     {
       "source": "apps/wm/src/shell/panels.rs",
       "destination": "src/shell/panels.rs",
-      "sha256": "e16a5b3f0d318b0bde6e81b69ba92c4c8c8547cbbeeab1ed45031a90367a92bb"
+      "sha256": "c427aeefff954acc7151d156257c6e8269135c98b62be5a5f230d45fc005757a"
     },
     {
       "source": "apps/wm/src/shell/ui.rs",
       "destination": "src/shell/ui.rs",
-      "sha256": "00966215a845176a39a14b1592779e3168f412bb862fc55fc8f0a4043778c543"
+      "sha256": "640afdfebbc148de5d526d3c5acc4a541d5b7a2085f42b0858d3c304ed13d708"
     },
     {
       "source": "apps/wm/src/snap.rs",
@@ -433,12 +438,12 @@
     {
       "source": "apps/wm/src/theme.rs",
       "destination": "src/theme.rs",
-      "sha256": "db1bf89b5ddf6d86b8968f1aeef389a3bdd1443abc59132635b11bffd34dee06"
+      "sha256": "6a3f54feefa45803abc47b9178bba465b2e930b59fc824ac8950441a2d196698"
     },
     {
       "source": "apps/wm/src/tile.rs",
       "destination": "src/tile.rs",
-      "sha256": "a956d6aac298b688fcf9b83b3adbe0797821790e24aeedb06b87b1f1665560cc"
+      "sha256": "f49803550e9d19eb15c67d325222aa811cfa48d04cd2e75afc37129f8daaa7c0"
     }
   ],
   "adaptations": [
@@ -449,7 +454,9 @@
     "Client lifecycle reports failed builds and synchronously terminates/reaps process groups on host shutdown.",
     "Run-view widget geometry follows the presented surface after its startup background disappears.",
     "Desktop and mobile launch surfaces only expose available catalog apps; mobile tile background launches honor prewarming opt-in.",
-    "WM owns transition framebuffers and reuses the wallpaper quad because the pinned widgets View lacks the snapshot/redraw methods called by upstream WM."
+    "Theme material tests load the pinned widgets StyleSheet API instead of assuming a monorepo-relative widgets directory.",
+    "Desktop widget geometry uses its stable turtle area and explicitly enumerates hosted children so floating styles and tree refreshes retain app discovery."
   ],
-  "omissions": []
+  "omissions": [],
+  "default_source": "../guofoo-makepad"
 }

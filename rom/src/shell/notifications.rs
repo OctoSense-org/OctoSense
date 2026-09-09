@@ -21,7 +21,7 @@
 use makepad_widgets::*;
 
 use super::ui::{contains, inset, rect, DrawShellFill, Ico, ShellDraw};
-use super::{darker, fade, ShellTokens};
+use super::{darker, fade, MaterialTokens, ShellTokens};
 
 pub const CARD_WIDTH: f64 = 380.0;
 const SIDE_MARGIN: f64 = 12.0;
@@ -242,7 +242,19 @@ impl ShellNotifications {
         (text_h.max(ICON_SLOT) + v * 2.0 + tok.notifications.surface.border_width * 2.0).ceil()
     }
 
+    /// The material the kit paints the stack with; the next draw reads it.
+    pub fn set_material(&mut self, m: MaterialTokens) {
+        self.d.set_material(m);
+    }
+
+    /// Under glass the stack is hoisted into the kit's overlay list.
     pub fn draw_surface(&mut self, cx: &mut Cx2d, screen: Rect) {
+        self.d.begin_surface(cx);
+        self.draw_surface_inner(cx, screen);
+        self.d.end_surface(cx);
+    }
+
+    fn draw_surface_inner(&mut self, cx: &mut Cx2d, screen: Rect) {
         self.card_rects.clear();
         self.screen = screen;
         if self.live.is_empty() {
