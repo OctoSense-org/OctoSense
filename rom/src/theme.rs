@@ -99,6 +99,9 @@ pub const DEFAULT_INACTIVE_BORDER: Stop = Stop {
 };
 /// The MakeOS ground: a vector scene, bundled so the style needs no theme download.
 pub const BUNDLED_MAKEOS_WALLPAPER: &str = include_str!("../resources/wallpapers/makeos.svg");
+/// The default Omarchy ground, available without installed themes or downloads.
+pub const BUNDLED_TOKYO_NIGHT_WALLPAPER: &[u8] =
+    include_bytes!("../resources/wallpapers/tokyo-night.webp");
 const OMARCHY_RAW: &str = "https://raw.githubusercontent.com/omacom/omarchy/quattro/themes";
 const OMARCHY_API: &str = "https://api.github.com/repos/omacom/omarchy/contents/themes";
 
@@ -568,8 +571,8 @@ pub fn theme_backgrounds(name: &str) -> Vec<PathBuf> {
     files
 }
 
-/// Seed the default theme locally without touching the network (a later
-/// `--import-theme` upgrades it with the real backgrounds).
+/// Seed the default palette locally without touching the network. Its first
+/// wallpaper is embedded; `--import-theme` installs the full background set.
 pub fn ensure_default_theme() {
     let path = theme_splash_path(DEFAULT_THEME);
     if let Ok(existing) = std::fs::read_to_string(&path) {
@@ -598,10 +601,10 @@ fn curl(url: &str) -> Option<Vec<u8>> {
 }
 
 /// Fetch a theme's wallpapers from the omarchy repo into its `backgrounds`
-/// folder when that folder is empty — the bundled default theme ships its
-/// colours but not its pictures, so a fresh install has nothing behind the
-/// desk until this runs. Off the UI thread (the caller spawns it); the
-/// pictures are applied when the desk notices them (`theme_backgrounds`).
+/// folder when that folder is empty. The embedded default wallpaper does not
+/// count as an installed picture, so an explicit download still fetches the
+/// full set. Off the UI thread (the caller spawns it); the pictures are applied
+/// when the desk notices them (`theme_backgrounds`).
 /// Nothing when the folder already has pictures or the network is away.
 pub fn fetch_backgrounds_if_missing(name: &str) -> usize {
     let dir = themes_dir().join(name).join("backgrounds");

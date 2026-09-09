@@ -134,8 +134,7 @@ impl App {
                 // The slot may still hold MakeOS's scene from an earlier
                 // visit: put the theme's own picture back (a cache hit when
                 // it is already decoded) rather than leave the vector one.
-                self.apply_background(cx, self.background_index);
-                !theme::theme_backgrounds(&self.state_mut().theme_name).is_empty()
+                self.apply_background(cx, self.background_index)
             }
             DesktopStyle::MakeOs => {
                 let scene = theme::BUNDLED_MAKEOS_WALLPAPER.as_bytes();

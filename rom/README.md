@@ -19,15 +19,29 @@ cargo build --release --workspace
 cargo run --release
 ```
 
-The first build downloads Makepad and other dependencies. No sibling Makepad checkout, Studio process, model download, or wallpaper download is required. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../guofoo-makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
 
 The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit MakeOS** closes the desktop and its hosted processes.
+
+Omarchy starts with a bundled Tokyo Night wallpaper, so the background works offline on a fresh install. Installed images in `~/.makeos/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
 
 Eight desktop styles are available, including **MakeOS**, a dark floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **MakeOS**, and press Enter to select it. The style includes a bundled vector wallpaper and rounded hosted surfaces; startup remains Omarchy. Select another style from the same appearance menu.
 
 Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
 
 ## Add an app
+
+The default [config/apps.json](config/apps.json) includes Reference and the apps from the sibling `guofoo-makepad` checkout. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
+
+```sh
+cargo run -- --apps config/apps.makepad.json
+```
+
+It includes Reference plus the fork's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Fabric, Score, Video Player, Route, VJ, Fab and Studio. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.makeos/wm/launcher.hides`.
+
+App source stays in `../guofoo-makepad`; each app builds on demand using its package's normal default features and the source workspace's build cache. The catalog uses the workspace root manifest to preserve the fork apps' expected working directory. Files retains the fork's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. No apps start automatically; `--assistant` remains opt-in.
+
+Keep that checkout at the revision in `upstream/makepad.json` so hosted apps and the host use matching framework/protocol code. Reference remains available independently of that checkout. A personal `~/.makeos/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
 
 Applications must be compatible Makepad applications that support the `--stdin-loop` hosting protocol. Use the same Makepad revision as this project; the protocol is not a stable compatibility boundary across arbitrary revisions. Start from [apps/reference](apps/reference).
 

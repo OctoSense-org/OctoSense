@@ -995,9 +995,13 @@ mod tests {
     }
 
     #[test]
-    fn the_default_catalog_has_only_the_reference_app() {
+    fn the_default_catalog_keeps_the_local_reference_app() {
         let apps = crate::makeos::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
-        assert_eq!(apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["reference"]);
+        let reference = apps.iter().find(|app| app.id == "reference").expect("Reference must remain in the default catalog");
+        assert_eq!(reference.manifest.as_deref(), Some("/catalog/../apps/reference/Cargo.toml"));
+        assert_eq!(reference.package, "makeos-reference");
+        assert_eq!(reference.bin, "makeos-reference");
+        assert_eq!(reference.policy, LaunchPolicy::AlwaysNew);
     }
 
     #[test]
@@ -1086,6 +1090,7 @@ mod tests {
         let Some(root) = repo_root() else {
             return; // installed layout: nothing to check against
         };
+        let mut metadata = std::collections::HashMap::new();
         for app in registry() {
             let manifest = app
                 .manifest
@@ -1098,13 +1103,26 @@ mod tests {
                 assert!(!app.is_available(), "{} claims to be available", app.id);
                 continue;
             }
-            let text = std::fs::read_to_string(&path).unwrap();
-            assert_eq!(
-                manifest_value(&text, "name").as_deref(),
-                Some(app.package.as_str()),
-                "{} points at the wrong package",
-                app.id
-            );
+            // Catalog entries may select a package through its workspace
+            // manifest, which has no package name of its own. Ask Cargo for
+            // the actual packages and binaries once per launch manifest.
+            let value = metadata.entry(path.clone()).or_insert_with(|| {
+                let output = std::process::Command::new("cargo")
+                    .args(["metadata", "--format-version", "1", "--no-deps", "--locked", "--offline", "--manifest-path"])
+                    .arg(&path)
+                    .output().unwrap();
+                assert!(output.status.success(), "{}: {}", path.display(), String::from_utf8_lossy(&output.stderr));
+                makepad_strict_json::parse(&output.stdout).unwrap()
+            });
+            let packages = value.get("packages").and_then(makepad_strict_json::Value::as_arr).unwrap();
+            let package = packages.iter().find(|p| p.get("name").and_then(makepad_strict_json::Value::as_str) == Some(app.package.as_str()))
+                .unwrap_or_else(|| panic!("{} points at the wrong package", app.id));
+            let targets = package.get("targets").and_then(makepad_strict_json::Value::as_arr).unwrap();
+            assert!(targets.iter().any(|target| {
+                target.get("name").and_then(makepad_strict_json::Value::as_str) == Some(app.bin.as_str())
+                    && target.get("kind").and_then(makepad_strict_json::Value::as_arr).unwrap()
+                        .iter().any(|kind| kind.as_str() == Some("bin"))
+            }), "{} points at the wrong binary", app.id);
             assert!(app.is_available(), "{} should be available", app.id);
         }
     }

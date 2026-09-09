@@ -115,6 +115,8 @@ def check_styles(port, child_port, host_pid, log, artifacts):
         wait_for(style + " applied", lambda: f"wm: desktop style {style} applied" in log.read_text(errors="replace")[offset:])
         current = style
         time.sleep(0.9)  # Let the framebuffer transition and child restyle settle.
+        if style == "omarchy":
+            wait_for(style + " wallpaper visible", lambda: get(port, "snap", q="bg_image").get("s"))
         assert any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]), style
         assert set(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log")) == clients, "style launched an extra client"
         save_grab(artifacts, f"style-{index}-{style}", get(port, "g", scale=0.5))
@@ -195,6 +197,17 @@ def main():
         wait_for("desktop first frame", lambda: get(port, "snap", q="main_window").get("s"))
         assert not list(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log")), "unexpected startup child"
         print("PASS: desktop starts without child apps", flush=True)
+        wait_for("bundled Omarchy wallpaper visible on clean startup",
+                 lambda: get(port, "snap", q="bg_image").get("s"), timeout=10)
+        def wallpaper_frame():
+            grab = get(port, "g", scale=0.5)
+            paths = grab["png"] if isinstance(grab["png"], list) else [grab["png"]]
+            # The empty desktop gradient compresses to a few KB. Wait for
+            # the detailed raster image, which decodes after Image is visible.
+            return grab if sum(Path(path).stat().st_size for path in paths) > 50_000 else None
+        save_grab(artifacts, "startup-wallpaper",
+                  wait_for("startup wallpaper decoded and drawn", wallpaper_frame, timeout=10))
+        print("PASS: Omarchy startup wallpaper renders without downloaded themes", flush=True)
 
         def launch(name):
             get(port, "k", c="Space", cmd=1, wait=1)

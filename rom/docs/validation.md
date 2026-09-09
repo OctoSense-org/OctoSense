@@ -114,3 +114,14 @@ The smoke also waits for asynchronous child sizing before fullscreen comparisons
 Local evidence is archived under `target/fork-import-20260908/`, including `smoke-verified/` (glass/style/lifecycle), `smoke-default-final/` (exact cargo run), unit/build logs, and the original comparison. Captures are app-provided images. Test processes were closed and source checkouts were left unchanged.
 
 Validation remains macOS process hosting. Optional linked app modules and other OS targets are retained without new runtime validation; the lean catalog intentionally has no assistant process. The imported assistant/OSD glass paths share the shell material implementation but were not separately exercised with real assistant or system-volume changes.
+
+
+# Omarchy startup wallpaper — 2026-09-08
+
+A clean MakeOS state directory reproduced the blank startup gradient: the default palette was bundled but its image lived only in the old Makepad state, while MakeOS wallpaper downloads are opt-in. The unmodified Tokyo Night winding-road image is now embedded (653,482 bytes), with its source revision, checksum and upstream license recorded in `resources/wallpapers/README.md`. Installed backgrounds still take precedence; embedded bytes do not prevent an explicit download of the full set.
+
+Verified 205 Rust tests, 44 Python tests, and debug/release workspace builds. Two catalog tests were updated for the previously expanded default app list: Reference must retain its local manifest and independent-instance policy, and Cargo metadata validates the configured package/binary targets, including workspace-root manifests.
+
+The native smoke first failed on the missing wallpaper before the fix. Updated startup checks wait for both the visible image widget and a detailed decoded frame, then retain the app-provided screenshot. Release smoke passed all eight desktop styles, repeated MakeOS/Omarchy transitions, hosted Reference input/state, failed launches and process cleanup. Plain `cargo run` with the default catalog also passed using isolated fresh state and no wallpaper download flag. No runtime rendering errors were reported.
+
+Artifacts: `target/wallpaper-validation/` (ignored), with original reproduction in `before/`, final style checks in `styles-verified/`, and final default startup in `cargo-run-verified/`. The intermediate `styles/` failure was an invalid SVG visibility assertion, corrected to inspect the Omarchy raster path; its captured MakeOS SVG was visibly rendered.

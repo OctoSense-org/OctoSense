@@ -61,3 +61,8 @@
 - Safe cached-view snapshots and wallpaper redraw are now provided by widgets; the temporary standalone WM implementations can be removed.
 - Persistent widget-tree child enumeration is necessary for dynamically hosted apps: one-time insertion alone loses surviving entries when a sibling closes and the tree refreshes. A floating desk also needs its turtle area, not its tiling border's stale area.
 - Successful screenshots alone do not detect skipped shaders; native smoke now rejects runtime shader/error logs as well as checking app input and state.
+
+## Omarchy wallpaper — 2026-09-08
+- MakeOS bundles Tokyo Night colors but no wallpaper and deliberately gates downloads behind --download-wallpapers. Its separate state directory has no Tokyo Night backgrounds. The old Makepad state has the original 0-winding-road.webp (653,482 bytes), first in the sorted wallpaper list.
+- Keep installed-background discovery separate from the embedded fallback so explicit downloads still work. Style switching currently tests only installed files, so it must use the actual load result to expose the fallback.
+- Async Image visibility precedes decoding. Native startup validation now waits for the rendered wallpaper frame; the default gradient is only a few KB, while the fixed photographic frame exceeds 50 KB. The SVG Image path does not expose a raster area in snapshots, so Omarchy visibility assertions are scoped to its raster wallpaper.
