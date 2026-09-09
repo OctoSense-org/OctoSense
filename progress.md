@@ -70,3 +70,12 @@
 - Exact cargo run and hosted Reference interactions passed. Startup capture raced asynchronous decoding, so the smoke now waits for a detailed rendered frame. A MakeOS SVG visibility assertion was invalid because its widget snapshot has no raster area despite the SVG drawing correctly; limited that new assertion to the Omarchy raster path. Native frames confirmed the SVG and later Omarchy raster render.
 
 - Final verification passed: release all-style smoke (including repeated MakeOS/Omarchy, Reference state/input and shutdown cleanup) and exact cargo run with the full default catalog. Reviewed decoded startup and return-to-Omarchy frames. All test instances were closed. Source checkouts unchanged; catalog plus wallpaper changes remain uncommitted on main.
+
+## 2026-09-08 — Reuse the fork’s local Qwen model
+- Committed the app catalog and wallpaper changes as 03224eb on main; working tree was clean immediately afterward.
+- Found the existing 5.6 GiB Qwen3.5-9B GGUF in Makepad state and linked it into MakeOS weights after filesystem approval. The fork already defaults to the Local provider with local-only enabled; no settings file was present.
+- Verified that the hosted assistant selects Qwen and produces a local reply from the linked file. Model test used the child remote endpoint after two host-pane input probes did not submit text; no claim of verified pane input routing. All owned test processes exited. README/setup and validation documentation remain uncommitted.
+
+## 2026-09-09 — Document local AI setup for contributors
+- Added docs/local-ai.md and a README entry covering per-user weights outside Git, assistant source setup at the recorded revision, a pinned model download with checksum validation, existing-file reuse, custom paths and verification. Added ignore rules for GGUFs and partial downloads.
+- Verified the installed GGUF SHA-256 matches the publisher’s pinned file. Checked all four shell command blocks with bash -n, checked ignore behavior and ran git diff --check. No model download, source build, GUI launch or personal-state change was needed for this documentation update.

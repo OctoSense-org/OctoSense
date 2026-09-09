@@ -85,6 +85,12 @@ Optional launch flags are `--assistant`, `--prewarm`, `--demo-home`, and `--down
 
 Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-photos`, and `app-aichat` Cargo features; all are off by default. A module must be linked and selected with `--module <id>` or `wm/apps.splash`. This initial milestone validates process hosting. It does not provide runtime loading of native shared libraries or embedding of unrelated native desktop windows.
 
+## Local AI setup
+
+Store model weights outside this repository, normally at `~/.makeos/weights/Qwen3.5-9B-UD-Q4_K_XL.gguf`. Each user downloads the model once or references an existing copy; model files and machine-specific symlinks stay out of Git. `MAKEOS_HOME` relocates the state directory, and `MAKEPAD_AI_CHAT_MODEL` can select a model file anywhere on disk.
+
+The [local AI setup guide](docs/local-ai.md) covers the assistant app prerequisite, the pinned model download and checksum, reusing existing weights, and checking the **F10** assistant. The desktop and Reference app work without a model.
+
 ## Upstream updates
 
 [upstream/makepad.json](upstream/makepad.json) records every imported file, its original path/hash, and the matching framework revision. The source and dependency baseline is [guofoo/makepad at beb3857a](https://github.com/guofoo/makepad/commit/beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d). Its widget changes provide the MakeOS style and glass support; framework code remains external.

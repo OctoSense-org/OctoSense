@@ -23,6 +23,10 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 
 15. Restore the Omarchy startup wallpaper — complete; bundled the original default image with provenance, retained installed-image precedence and opt-in downloads, and verified offline startup plus all style transitions.
 
+16. Reuse the fork’s installed Qwen model — complete; linked the existing GGUF into MakeOS state and verified hosted local inference. Outer-pane input routing remains a separate unverified observation, documented with the test evidence.
+
+17. Document local AI installation for other users — complete; per-user storage, pinned verified download, existing-model reuse and model ignore rules documented and checked.
+
 ## Daily sync requirements (2026-09-06)
 - User performs the source Git pull/fetch; the command uses local HEAD by default and never pulls or commits.
 - Automate comparison, safe staged merging, coordinated pins/lockfile, compile/tests, release build, and both native smoke modes.

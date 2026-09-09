@@ -125,3 +125,12 @@ Verified 205 Rust tests, 44 Python tests, and debug/release workspace builds. Tw
 The native smoke first failed on the missing wallpaper before the fix. Updated startup checks wait for both the visible image widget and a detailed decoded frame, then retain the app-provided screenshot. Release smoke passed all eight desktop styles, repeated MakeOS/Omarchy transitions, hosted Reference input/state, failed launches and process cleanup. Plain `cargo run` with the default catalog also passed using isolated fresh state and no wallpaper download flag. No runtime rendering errors were reported.
 
 Artifacts: `target/wallpaper-validation/` (ignored), with original reproduction in `before/`, final style checks in `styles-verified/`, and final default startup in `cargo-run-verified/`. The intermediate `styles/` failure was an invalid SVG visibility assertion, corrected to inspect the Omarchy raster path; its captured MakeOS SVG was visibly rendered.
+
+
+# Shared local Qwen model — 2026-09-08
+
+Configured this machine’s `~/.makeos/weights/Qwen3.5-9B-UD-Q4_K_XL.gguf` as a symlink to the existing `~/.makepad/weights/unsloth/Qwen3.5-9B-UD-Q4_K_XL.gguf`. The paths refer to the same 5,966,095,584-byte file. No model download, weight copy, source-checkout change, or app-code change was needed. The reusable setup is documented in the README; the machine-local link is outside Git.
+
+An isolated MakeOS release instance launched the catalog’s AI app through the normal WM Cargo path. The provider showed `Local · Qwen3.5 9B · local only`; its log confirmed loading the linked GGUF after no fleet node answered. A short arithmetic prompt returned `4`. The prompt was injected through the hosted assistant’s own remote input endpoint. Two earlier attempts through host pane coordinates did not submit text, including after waiting for child sizing; pane input routing remains unverified by this check. The host and assistant exited after validation.
+
+Artifacts: `target/aichat-validation/model-verified/`, including the assistant log, exact reply and app-provided frame. Earlier probe attempts are retained alongside it.
