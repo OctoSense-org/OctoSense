@@ -66,3 +66,10 @@
 - MakeOS bundles Tokyo Night colors but no wallpaper and deliberately gates downloads behind --download-wallpapers. Its separate state directory has no Tokyo Night backgrounds. The old Makepad state has the original 0-winding-road.webp (653,482 bytes), first in the sorted wallpaper list.
 - Keep installed-background discovery separate from the embedded fallback so explicit downloads still work. Style switching currently tests only installed files, so it must use the actual load result to expose the fallback.
 - Async Image visibility precedes decoding. Native startup validation now waits for the rendered wallpaper frame; the default gradient is only a few KB, while the fixed photographic frame exceeds 50 KB. The SVG Image path does not expose a raster area in snapshots, so Omarchy visibility assertions are scoped to its raster wallpaper.
+
+## Shared Qwen configuration — 2026-09-08
+- The fork AI engine searches MAKEPAD_AI_CHAT_MODEL, then MAKEPAD_HOME/weights recursively, then checkout-local models. MakeOS sets child MAKEPAD_HOME to its separate state home. A symlink to the existing GGUF solves discovery without changing the app or sharing the full state home.
+- The pinned aichat settings implementation still uses ~/.makepad/aichat/settings directly, independent of MAKEPAD_HOME. No settings file exists here, so defaults select Local and local-only; no settings were modified.
+- Model inference through the hosted child passed; two automated host-pane input attempts failed to submit. Retain this separate input-routing observation for subsequent UI work.
+
+- Contributor setup source verified on 2026-09-09: unsloth/Qwen3.5-9B-GGUF revision 24fadbaba5891f3965d66ea0e2e4aa259cd38c77 publishes the tested file with SHA-256 6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293; hashing the existing local GGUF produced the same digest. Source: https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/24fadbaba5891f3965d66ea0e2e4aa259cd38c77/Qwen3.5-9B-UD-Q4_K_XL.gguf
