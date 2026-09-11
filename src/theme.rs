@@ -97,8 +97,11 @@ pub const DEFAULT_INACTIVE_BORDER: Stop = Stop {
     },
     alpha: 0.85,
 };
-/// The OctoSense ground: a vector scene, bundled so the style needs no theme download.
-pub const BUNDLED_OCTOSENSE_WALLPAPER: &str = include_str!("../resources/wallpapers/octosense.svg");
+/// The OctoSense ground: Abyssal Currents, bundled for offline startup.
+pub const BUNDLED_OCTOSENSE_WALLPAPER: &[u8] =
+    include_bytes!("../resources/wallpapers/octosense-abyssal-currents.png");
+pub const BUNDLED_OCTOSENSE_LIGHT_WALLPAPER: &[u8] =
+    include_bytes!("../resources/wallpapers/octosense-abyssal-currents-light.png");
 /// The default Omarchy ground, available without installed themes or downloads.
 pub const BUNDLED_TOKYO_NIGHT_WALLPAPER: &[u8] =
     include_bytes!("../resources/wallpapers/tokyo-night.webp");
@@ -991,6 +994,23 @@ pub fn scan_style_roles(sheet_theme: &str) -> StyleRoles {
     roles
 }
 
+/// Keep shell surfaces in the same palette as OctoSense's hosted widgets.
+/// The original shell tokens remain available when leaving this desktop style.
+pub fn scan_shell_palette(sheet_theme: &str) -> crate::shell::ShellPalette {
+    let roles = scan_style_roles(sheet_theme);
+    crate::shell::ShellPalette {
+        background: scan_assigned_color(sheet_theme, "mod.theme.color_bg_app")
+            .unwrap_or(crate::shell::rgb(11, 18, 32)),
+        text: roles.text,
+        accent: roles.focus,
+        on_accent: scan_assigned_color(sheet_theme, "mod.theme.color_text_on_accent")
+            .unwrap_or(crate::shell::rgb(255, 255, 255)),
+        border: scan_assigned_color(sheet_theme, "mod.theme.color_bevel_outset_1")
+            .unwrap_or(roles.text),
+        error: roles.error,
+    }
+}
+
 /// The value of the first `key = #hex` line in a sheet: the assignment form
 /// the style sheets write, against the `key: #hex` form of the wm theme
 /// files that `scan_theme_color` reads.
@@ -1493,7 +1513,7 @@ bright_magenta = "#bb9af7"
 
     #[test]
     fn style_roles_scan_the_sheet_and_default_where_it_is_silent() {
-        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, false);
+        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, true);
         let roles = scan_style_roles(&sheet.theme);
         assert_eq!(roles.text, crate::shell::rgb(0xd6, 0xe2, 0xff));
         assert_eq!(roles.focus, crate::shell::rgb(0x5b, 0x9d, 0xff));
@@ -1510,7 +1530,7 @@ bright_magenta = "#bb9af7"
 
     #[test]
     fn the_octosense_sheet_material_matches_the_bundled_numbers() {
-        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, false);
+        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, true);
         let (m, problems) = scan_material(&sheet.theme);
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(m.glass, 1.0);
@@ -1518,5 +1538,45 @@ bright_magenta = "#bb9af7"
         assert_eq!(m.tint_alpha, 0.52);
         assert_eq!(m.shadow_radius, 13.0);
         assert_eq!(m.corner_radius, 12.0);
+    }
+
+    #[test]
+    fn octosense_shell_palette_switches_without_mutating_the_omarchy_tokens() {
+        use crate::shell::{rgb, ShellTokens};
+        let mut base = ShellTokens::default();
+        base.bar.text = rgb(2, 3, 4);
+        base.spacing.popup_padding = 23.0;
+        for dark in [false, true, false] {
+            let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, dark);
+            let p = scan_shell_palette(&sheet.theme);
+            let tokens = base.with_palette(Some(p));
+            assert_eq!(tokens.bar.text, p.text);
+            assert_eq!(tokens.popups.text, p.text);
+            assert_eq!(tokens.tooltip.text, p.text);
+            assert_eq!(tokens.notifications.surface.text, p.text);
+            assert_eq!(tokens.menu.surface.text, p.text);
+            assert_eq!(tokens.launcher.selected_text, p.on_accent);
+            assert_eq!(tokens.controls.focus_color, p.accent);
+            assert_eq!(tokens.spacing.popup_padding, 23.0);
+            assert_eq!(base.with_palette(None).bar.text, rgb(2, 3, 4));
+        }
+    }
+
+    #[test]
+    fn octosense_light_text_and_selection_have_readable_contrast() {
+        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, false);
+        let p = scan_shell_palette(&sheet.theme);
+        let (material, problems) = scan_material(&sheet.theme);
+        assert!(problems.is_empty(), "{problems:?}");
+        assert!(material.is_glass());
+        let luminance = |color: Vec4f| {
+            let linear = |v: f32| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+            0.2126 * linear(color.x) + 0.7152 * linear(color.y) + 0.0722 * linear(color.z)
+        };
+        for (fg, bg) in [(p.text, p.background), (p.on_accent, p.accent), (p.text, material.fallback_color)] {
+            let (a, b) = (luminance(fg), luminance(bg));
+            let contrast = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+            assert!(contrast >= 4.5, "light text contrast: {contrast}");
+        }
     }
 }

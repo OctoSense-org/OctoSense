@@ -27,7 +27,7 @@ The default desktop starts empty. AI assistant startup, background app prewarmin
 
 Omarchy starts with a bundled Tokyo Night wallpaper, so the background works offline on a fresh install. Installed images in `~/.octosense/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
 
-Eight desktop styles are available, including **OctoSense**, a dark floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **OctoSense**, and press Enter to select it. The style includes a bundled vector wallpaper and rounded hosted surfaces; desktop startup remains Omarchy. Select another style from the same appearance menu.
+Eight desktop styles are available, including **OctoSense**, a floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **OctoSense**, and press Enter to select its light appearance. Click **Light / Dark** beside the style name in the top bar to switch appearances, or search for **OctoSense Dark** directly. Light uses pearl and pale aqua surfaces with dark text; Dark keeps the ink-blue palette. Both include matching versions of **Abyssal Currents**, the original oceanic wallpaper, and rounded hosted surfaces. The wallpaper switches with the appearance, fills the window with a centered crop and works offline. Desktop startup remains Omarchy; Android retains its animated background.
 
 Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
 
@@ -179,7 +179,7 @@ python3 scripts/smoke.py --styles
 python3 scripts/smoke.py --cargo-run --default-catalog
 ```
 
-The first smoke command checks hosted input, workspace movement, fullscreen resizing, independent instances, all eight desktop styles (including OctoSense glass and menus), failed launches, and quitting during an unfinished build. The second uses exactly `cargo run` with the shipped catalog. Python supplies app-local remote control and isolated state through the environment; neither is required for normal use. Smoke runs set Cargo offline and require GUI access.
+The first smoke command checks hosted input, workspace movement, fullscreen resizing, independent instances, all eight desktop styles (including both OctoSense appearances, glass and menus), failed launches, and quitting during an unfinished build. The second uses exactly `cargo run` with the shipped catalog. Python supplies app-local remote control and isolated state through the environment; neither is required for normal use. Smoke runs set Cargo offline and require GUI access.
 
 See the [validation record](docs/validation.md). Source builds and process hosting are the initial target on macOS. Linux/Windows branches are retained but have not been validated here. A relocatable `.app`, installer, web/mobile delivery, and a Linux session compositor are separate work.
 

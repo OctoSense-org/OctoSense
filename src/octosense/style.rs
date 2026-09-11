@@ -39,7 +39,7 @@ impl DesktopStyle {
         let name = name.strip_suffix("-dark").unwrap_or(name);
         Self::ALL.into_iter().find(|style| style.id() == name)
     }
-    pub fn supports_dark(self) -> bool { self != Self::OctoSense && self.framework().supports_dark() }
+    pub fn supports_dark(self) -> bool { self.framework().supports_dark() }
     pub fn mobile(self) -> bool { self.framework().mobile() }
     pub fn floating(self) -> bool { self.framework().floating() }
     pub fn shelf_height(self) -> f64 { self.framework().shelf_height() }
@@ -62,11 +62,18 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
         bundled.to_string()
     };
     // Use a recognized wire family so unmodified hosted apps choose macOS icons
-    // and dark appearance. The full theme and widget overrides travel with it.
+    // and the selected appearance. Full theme and widget overrides travel with it.
+    let (theme_name, theme, widgets_name, widgets) = if dark {
+        ("theme.splash", include_str!("../../resources/themes/octosense/theme.splash"),
+         "widgets.splash", include_str!("../../resources/themes/octosense/widgets.splash"))
+    } else {
+        ("theme-light.splash", include_str!("../../resources/themes/octosense/theme-light.splash"),
+         "widgets-light.splash", include_str!("../../resources/themes/octosense/widgets-light.splash"))
+    };
     StyleSheet {
-        name: "macos-dark".into(),
-        theme: read("theme.splash", include_str!("../../resources/themes/octosense/theme.splash")),
-        widgets: read("widgets.splash", include_str!("../../resources/themes/octosense/widgets.splash")),
+        name: if dark { "macos-dark" } else { "macos" }.into(),
+        theme: read(theme_name, theme),
+        widgets: read(widgets_name, widgets),
         icons: app_icon::load_assets(UpstreamStyle::Macos),
     }
 }
@@ -85,20 +92,34 @@ mod tests {
 
     #[test]
     fn octosense_sheet_survives_the_unmodified_upstream_wire_protocol() {
-        let sheet = load_sheet(DesktopStyle::OctoSense, false);
-        assert_eq!(StyleSheet::parse(&sheet.to_json()), Some(sheet.clone()));
-        assert_eq!(UpstreamStyle::parse(&sheet.name), Some(UpstreamStyle::Macos));
-        assert_eq!(sheet.icons, app_icon::load_assets(UpstreamStyle::Macos));
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(|vm| {
             makepad_widgets::script_mod(vm);
-            desktop_style::install(vm, sheet);
-            vm.bx.captured_errors = Some(Vec::new());
-            vm.with_reload(makepad_widgets::script_mod);
-            assert!(vm.take_errors().is_empty());
-            assert_eq!(desktop_style::current_style(vm), UpstreamStyle::Macos);
-            assert_eq!(script_eval!(vm, {mod.theme.color_focus}).as_color(), Some(0x5b9dffff));
-            assert_eq!(script_eval!(vm, {mod.theme.material.lensing_strength}).as_f64(), Some(28.0));
+            // Reuse one VM, as hosted apps do: every palette role must reset
+            // when switching appearances in either direction.
+            for dark in [true, false, true] {
+                let sheet = load_sheet(DesktopStyle::OctoSense, dark);
+                assert_eq!(sheet.name, if dark { "macos-dark" } else { "macos" });
+                assert_eq!(StyleSheet::parse(&sheet.to_json()), Some(sheet.clone()));
+                assert_eq!(UpstreamStyle::parse(&sheet.name), Some(UpstreamStyle::Macos));
+                assert_eq!(sheet.icons, app_icon::load_assets(UpstreamStyle::Macos));
+                desktop_style::install(vm, sheet);
+                vm.bx.captured_errors = Some(Vec::new());
+                vm.with_reload(makepad_widgets::script_mod);
+                assert!(vm.take_errors().is_empty());
+                assert_eq!(desktop_style::current_style(vm), UpstreamStyle::Macos);
+                let (focus, background, text) = if dark {
+                    (0x5b9dffff, 0x0b1220ff, 0xd6e2ffff)
+                } else {
+                    (0x206bc4ff, 0xeff5f6ff, 0x203644ff)
+                };
+                assert_eq!(script_eval!(vm, {mod.theme.color_focus}).as_color(), Some(focus));
+                assert_eq!(script_eval!(vm, {mod.theme.color_bg_app}).as_color(), Some(background));
+                assert_eq!(script_eval!(vm, {mod.theme.color_text}).as_color(), Some(text));
+                assert_eq!(script_eval!(vm, {mod.theme.color_terminal_bg}).as_color(), Some(background));
+                assert_eq!(script_eval!(vm, {mod.theme.color_terminal_text}).as_color(), Some(text));
+                assert_eq!(script_eval!(vm, {mod.theme.material.lensing_strength}).as_f64(), Some(28.0));
+            }
         });
     }
 
@@ -110,7 +131,7 @@ mod tests {
             assert_eq!(style.next(), DesktopStyle::ALL[(index + 1) % 8]);
         }
         assert!(DesktopStyle::OctoSense.floating());
-        assert!(!DesktopStyle::OctoSense.supports_dark());
+        assert!(DesktopStyle::OctoSense.supports_dark());
         assert_eq!(DesktopStyle::OctoSense.title_height(), DesktopStyle::Macos.title_height());
     }
 }

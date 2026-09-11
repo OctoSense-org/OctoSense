@@ -148,7 +148,7 @@ impl ShellOsd {
 
     /// The card rect inside `screen`, per `Osd.qml`'s anchors.
     fn card_rect(&mut self, cx: &mut Cx2d, screen: Rect, show: &OsdShow) -> (Rect, f64) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let icon = tok.font.display_large;
         let gap = if show.value.is_some() {
             GAP_WITH_BAR
@@ -177,8 +177,9 @@ impl ShellOsd {
     }
 
     /// The material the kit paints the OSD with; the next draw reads it.
-    pub fn set_material(&mut self, m: MaterialTokens) {
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
+        self.d.set_palette(palette);
     }
 
     /// Under glass the showing OSD is hoisted into the kit's overlay list.
@@ -193,7 +194,7 @@ impl ShellOsd {
         let Some(show) = self.show.clone() else {
             return;
         };
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let (card, text_w) = self.card_rect(cx, screen, &show);
         // The OSD card is the popup surface at α .97.
         let mut surface = tok.popups;

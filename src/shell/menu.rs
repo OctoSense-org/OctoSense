@@ -501,6 +501,7 @@ impl MenuModel {
         }
         items.push(MenuItem::new("desktop.macos-dark","macOS · Dark",MenuKind::Action));
         items.push(MenuItem::new("desktop.windows-dark","Windows · Dark",MenuKind::Action));
+        items.push(MenuItem::new("desktop.octosense-dark","OctoSense · Dark",MenuKind::Action));
         if path.starts_with("style.theme") {
             items.extend(theme_items());
         }
@@ -939,7 +940,7 @@ fn centered_card_top(screen: Rect, height: f64, margin: f64, frozen_top: Option<
 
 /// The floating desktops' skin over the sheet's: NeXT and Windows 2000's
 /// greys, else macOS's light card — or its dark one wherever the chrome
-/// reads dark (`dark_chrome`: the flag, and OctoSense whatever it says). Under
+/// reads dark (`dark_chrome` follows the selected appearance). Under
 /// a glass material the kit paints the card itself and the cursor row takes
 /// the palette's focus accent; macOS-dark's highlight stays on its flat card.
 fn floating_skin(mut skin: MenuTokens, style: DesktopStyle, dark: bool, glass: bool, roles: &StyleRoles) -> MenuTokens {
@@ -958,7 +959,12 @@ fn floating_skin(mut skin: MenuTokens, style: DesktopStyle, dark: bool, glass: b
         skin.surface.background=super::rgb(40,40,43);
         skin.surface.text=super::rgb(242,242,245);
         skin.surface.border=super::rgb(82,82,88);skin.surface.border_end=skin.surface.border;
-        skin.selected_background=if glass {roles.focus} else {super::rgb(36,77,117)};
+        skin.selected_background=super::rgb(36,77,117);
+        skin.selected_text=super::rgb(255,255,255);
+    }
+    if glass {
+        skin.surface.text=roles.text;
+        skin.selected_background=roles.focus;
         skin.selected_text=super::rgb(255,255,255);
     }
     skin
@@ -966,7 +972,8 @@ fn floating_skin(mut skin: MenuTokens, style: DesktopStyle, dark: bool, glass: b
 
 impl ShellMenu {
     fn skin(&self) -> MenuTokens {
-        let mut skin=match self.model.skin { MenuSkin::Menu=>self.tokens.menu, MenuSkin::Launcher=>self.tokens.launcher };
+        let tokens = self.d.tokens(self.tokens);
+        let mut skin=match self.model.skin { MenuSkin::Menu=>tokens.menu, MenuSkin::Launcher=>tokens.launcher };
         if self.anchor.is_some() { skin.scrim_alpha = 0.0; return skin; }
         // `self.d` is the kit this draw paints with (`draw_surface` swaps the
         // desktop one in first), so its material is the card's.
@@ -1001,7 +1008,7 @@ impl ShellMenu {
     /// The empty state's own height (accent glyph + gap + message line) —
     /// what the "rows area" collapses to when nothing matches.
     fn empty_block_height(&self) -> f64 {
-        let tok = &self.tokens;
+        let tok = &self.d.tokens(self.tokens);
         tok.font.display_large + EMPTY_BLOCK_GAP + tok.font.title * 1.6
     }
 
@@ -1034,7 +1041,7 @@ impl ShellMenu {
             let left = anchor.pos.x.clamp(screen.pos.x + 6.0, (screen.pos.x + screen.size.x - width - 6.0).max(screen.pos.x + 6.0));
             return (rect(left, top, width, height), visible);
         }
-        let tok = &self.tokens;
+        let tok = &self.d.tokens(self.tokens);
         let classic=self.desktop_style==DesktopStyle::Windows2000;
         let next=self.desktop_style==DesktopStyle::NextStep;
         let pad = if classic || next {3.0}else{tok.spacing.panel_padding};
@@ -1075,9 +1082,11 @@ impl ShellMenu {
 
     /// The material both kits paint with — the desktop one draws the
     /// floating styles' menu, so it must not be left flat.
-    pub fn set_material(&mut self, m: MaterialTokens) {
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
+        self.d.set_palette(palette);
         self.desktop_d.set_material(m);
+        self.desktop_d.set_palette(palette);
     }
     /// Draw the whole surface into `screen` (scrim included). Under glass
     /// the active kit hoists it into its overlay list.
@@ -1100,7 +1109,7 @@ impl ShellMenu {
             if self.desktop_style == DesktopStyle::Windows2000 {self.draw_classic_menus(cx, screen);} else {self.draw_next_menus(cx, screen);}
             return;
         }
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let skin = self.skin();
         let classic=self.desktop_style==DesktopStyle::Windows2000;
         let next=self.desktop_style==DesktopStyle::NextStep;
@@ -1735,24 +1744,23 @@ mod tests {
     }
 
     #[test]
-    fn the_floating_skin_reads_octosense_dark_with_the_accent_on_glass() {
+    fn the_floating_skin_uses_the_glass_palette_in_both_appearances() {
         use super::super::rgb;
         let base = MenuTokens::default();
         // A sheet's own roles, unlike the bundled defaults, so a highlight
         // that hardcoded OctoSense's accent would not pass as the palette's.
         let roles = StyleRoles { text: rgb(9, 8, 7), focus: rgb(1, 2, 3), ..StyleRoles::default() };
-        // OctoSense: the dark card's light ink whatever the flag says, and the
-        // cursor row in the palette's focus accent under its glass.
+        // The palette owns text and the selected row in both appearances.
         for dark in [false, true] {
             let octosense = floating_skin(base, DesktopStyle::OctoSense, dark, true, &roles);
-            assert_eq!(octosense.surface.text, rgb(242, 242, 245));
+            assert_eq!(octosense.surface.text, roles.text);
             assert_eq!(octosense.selected_background, rgb(1, 2, 3));
             assert_eq!(octosense.selected_background_alpha, 1.0);
             assert_eq!(octosense.selected_text, rgb(255, 255, 255));
         }
         // An OctoSense sheet whose material fell back to flat keeps the dark
         // card's own highlight, like macOS dark.
-        let flat = floating_skin(base, DesktopStyle::OctoSense, false, false, &roles);
+        let flat = floating_skin(base, DesktopStyle::OctoSense, true, false, &roles);
         assert_eq!(flat.selected_background, rgb(36, 77, 117));
         let mac_dark = floating_skin(base, DesktopStyle::Macos, true, false, &roles);
         assert_eq!(mac_dark.surface.text, rgb(242, 242, 245));
