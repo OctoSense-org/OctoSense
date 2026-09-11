@@ -65,3 +65,8 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 18. Snapshot existing local changes and compare official work, including wm_api/wm_theme — complete.
 19. Resolve fork-specific API/style compatibility, integrate all WM changes and crate updates in an isolated candidate — complete.
 20. Verify tests, desktop GPU hosting/styles and Android builds; update provenance/docs and apply reviewed candidate without losing local edits — complete (iOS upstream failures and unavailable ADB device documented).
+
+## OctoSense rename
+21. Inventory project identifiers, state compatibility, packaging and provenance — complete.
+22. Rename active code, Cargo targets, resources, scripts and documentation; retain historical provenance and compatibility — complete.
+23. Verify Cargo/tests, desktop branding and hosting, Android package metadata, and sync integrity — complete (no ADB device attached).

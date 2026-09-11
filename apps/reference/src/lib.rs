@@ -15,13 +15,13 @@ script_mod! {
         draw_bg.color: theme.color_bg_app
         flow: Down padding: 32 spacing: 20
         title := Label {
-            text: "Hello from MakeOS"
+            text: "Hello from OctoSense"
             draw_text.text_style.font_size: 24
         }
         description := Label {
             width: Fill
             draw_text.wrap: Words
-            text: "An app running inside MakeOS."
+            text: "An app running inside OctoSense."
         }
         message := TextInput { width: Fill empty_text: "Type a message" }
         echo := Label { text: "Your message appears here." }

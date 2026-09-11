@@ -97,8 +97,8 @@ pub const DEFAULT_INACTIVE_BORDER: Stop = Stop {
     },
     alpha: 0.85,
 };
-/// The MakeOS ground: a vector scene, bundled so the style needs no theme download.
-pub const BUNDLED_MAKEOS_WALLPAPER: &str = include_str!("../resources/wallpapers/makeos.svg");
+/// The OctoSense ground: a vector scene, bundled so the style needs no theme download.
+pub const BUNDLED_OCTOSENSE_WALLPAPER: &str = include_str!("../resources/wallpapers/octosense.svg");
 /// The default Omarchy ground, available without installed themes or downloads.
 pub const BUNDLED_TOKYO_NIGHT_WALLPAPER: &[u8] =
     include_bytes!("../resources/wallpapers/tokyo-night.webp");
@@ -518,7 +518,7 @@ pub fn splash_source(theme: &ImportedTheme) -> String {
 // ----------------------------------------------------------------------
 
 pub fn makepad_home() -> PathBuf {
-    crate::makeos::paths::home()
+    crate::octosense::paths::home()
 }
 
 pub fn themes_dir() -> PathBuf {
@@ -962,7 +962,7 @@ pub struct StyleRoles {
     pub error: Vec4f,
 }
 
-/// MakeOS's own palette, so a sheet that names no role still frames its
+/// OctoSense's own palette, so a sheet that names no role still frames its
 /// windows in the bundled colours.
 impl Default for StyleRoles {
     fn default() -> Self {
@@ -1493,7 +1493,7 @@ bright_magenta = "#bb9af7"
 
     #[test]
     fn style_roles_scan_the_sheet_and_default_where_it_is_silent() {
-        let sheet = crate::makeos::style::load_sheet(crate::desktop::DesktopStyle::MakeOs, false);
+        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, false);
         let roles = scan_style_roles(&sheet.theme);
         assert_eq!(roles.text, crate::shell::rgb(0xd6, 0xe2, 0xff));
         assert_eq!(roles.focus, crate::shell::rgb(0x5b, 0x9d, 0xff));
@@ -1509,8 +1509,8 @@ bright_magenta = "#bb9af7"
     }
 
     #[test]
-    fn the_makeos_sheet_material_matches_the_bundled_numbers() {
-        let sheet = crate::makeos::style::load_sheet(crate::desktop::DesktopStyle::MakeOs, false);
+    fn the_octosense_sheet_material_matches_the_bundled_numbers() {
+        let sheet = crate::octosense::style::load_sheet(crate::desktop::DesktopStyle::OctoSense, false);
         let (m, problems) = scan_material(&sheet.theme);
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(m.glass, 1.0);

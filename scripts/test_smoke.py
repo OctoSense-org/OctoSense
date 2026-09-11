@@ -21,8 +21,8 @@ class ArtifactTests(unittest.TestCase):
         ]:
             with self.subTest(message=message), self.assertRaises(AssertionError):
                 smoke.assert_no_runtime_errors(message)
-        smoke.assert_no_runtime_errors("[I] wm: desktop style makeos applied\n"
-                                       "error: package(s) `makeos-package-does-not-exist` not found\n")
+        smoke.assert_no_runtime_errors("[I] wm: desktop style octosense applied\n"
+                                       "error: package(s) `octosense-package-does-not-exist` not found\n")
 
     def test_smoke_accepts_explicit_artifact_directory(self):
         result = subprocess.run([sys.executable, smoke.__file__, "--help"], capture_output=True, text=True)

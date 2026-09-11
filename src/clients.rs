@@ -120,7 +120,7 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// order. Curated on purpose — every row is one we run and verify, not a
 /// scan of whatever the workspace happens to contain.
 pub fn registry() -> &'static [AppDef] {
-    match crate::makeos::catalog::loaded() {
+    match crate::octosense::catalog::loaded() {
         Ok(apps) => apps,
         Err(_) => &[],
     }
@@ -167,7 +167,7 @@ pub fn word_match(haystack: &str, pattern: &str) -> bool {
 /// dir elsewhere (CARGO_TARGET_DIR) is still running out of a checkout,
 /// and every app is then one `cargo run` away.
 pub fn repo_root() -> Option<PathBuf> {
-    crate::makeos::paths::project_root()
+    crate::octosense::paths::project_root()
 }
 
 /// Resolve a sibling binary of the running wm executable (`.exe` on
@@ -288,7 +288,7 @@ pub fn warm_enabled(no_warm: Option<&str>) -> bool {
 impl WarmPool {
     pub fn from_env() -> Self {
         // A build without processes has nothing to keep warm.
-        Self::new(host::processes_available() && crate::makeos::policy::requested("--prewarm") && warm_enabled(std::env::var("MAKEPAD_WM_NO_WARM").ok().as_deref()))
+        Self::new(host::processes_available() && crate::octosense::policy::requested("--prewarm") && warm_enabled(std::env::var("MAKEPAD_WM_NO_WARM").ok().as_deref()))
     }
 
     pub fn new(enabled: bool) -> Self {
@@ -681,7 +681,7 @@ pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
                 Ok(Some(_)) => false,
                 Ok(None) => true,
                 Err(error) => {
-                    makepad_widgets::log!("makeos: could not reap child {}: {error}", child.id());
+                    makepad_widgets::log!("octosense: could not reap child {}: {error}", child.id());
                     false
                 }
             });
@@ -694,7 +694,7 @@ pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
-    makepad_widgets::log!("makeos: child cleanup reached its shutdown deadline after termination");
+    makepad_widgets::log!("octosense: child cleanup reached its shutdown deadline after termination");
 }
 
 impl ClientSlot {
@@ -937,8 +937,8 @@ pub fn spawn_client(
     // Child output (and cargo's "Compiling …") goes to a per-client log —
     // silent children are undebuggable — and every line also reaches the
     // UI so the tile can show what the build is doing.
-    let log_path = host::homeless_root().join(format!("makeos-{}-client-{}.log", std::process::id(), id));
-    makepad_widgets::log!("makeos: client {id} log: {}", log_path.display());
+    let log_path = host::homeless_root().join(format!("octosense-{}-client-{}.log", std::process::id(), id));
+    makepad_widgets::log!("octosense: client {id} log: {}", log_path.display());
     let log = std::fs::File::create(&log_path).ok();
     if let Some(out) = child.stdout.take() {
         pump(spawner, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
@@ -981,12 +981,12 @@ mod tests {
 
     #[test]
     fn catalog_launches_select_the_binary_and_preserve_literal_arguments() {
-        let apps = crate::makeos::catalog::parse_catalog(br#"[
-            {"id":"ref","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"makeos-reference","bin":"makeos-reference","args":["two words"]},
+        let apps = crate::octosense::catalog::parse_catalog(br#"[
+            {"id":"ref","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","args":["two words"]},
             {"id":"installed","label":"Installed","executable":"/usr/bin/true","args":["$(literal)"]}
         ]"#, Path::new("/catalog")).unwrap();
         let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
-        assert!(args.windows(2).any(|p| p == ["--bin", "makeos-reference"]));
+        assert!(args.windows(2).any(|p| p == ["--bin", "octosense-reference"]));
         assert!(args.windows(2).any(|p| p == ["--manifest-path", "/catalog/../apps/reference/Cargo.toml"]));
         assert_eq!(&args[args.len()-2..], ["--stdin-loop", "two words"]);
         let (program, args) = launch_argv(&apps[1], Some(Path::new("/unrelated")), &[]).unwrap();
@@ -996,11 +996,11 @@ mod tests {
 
     #[test]
     fn the_default_catalog_keeps_the_local_reference_app() {
-        let apps = crate::makeos::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
+        let apps = crate::octosense::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
         let reference = apps.iter().find(|app| app.id == "reference").expect("Reference must remain in the default catalog");
         assert_eq!(reference.manifest.as_deref(), Some("/catalog/../apps/reference/Cargo.toml"));
-        assert_eq!(reference.package, "makeos-reference");
-        assert_eq!(reference.bin, "makeos-reference");
+        assert_eq!(reference.package, "octosense-reference");
+        assert_eq!(reference.bin, "octosense-reference");
         assert_eq!(reference.policy, LaunchPolicy::AlwaysNew);
     }
 
@@ -1456,12 +1456,12 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         let mut slot = ClientSlot::module(7, "reference", "");
         slot.ready = false;
-        slot.diagnostic = "error: package makeos-missing was not found".into();
-        slot.log_path = Some(PathBuf::from("/tmp/makeos-123-client-7.log"));
+        slot.diagnostic = "error: package octosense-missing was not found".into();
+        slot.log_path = Some(PathBuf::from("/tmp/octosense-123-client-7.log"));
         let message = slot.exit_failure(std::process::ExitStatus::from_raw(101 << 8), "Reference App").unwrap();
         assert!(message.contains("Reference App"));
         assert!(message.contains(&slot.diagnostic));
-        assert!(message.contains("/tmp/makeos-123-client-7.log"));
+        assert!(message.contains("/tmp/octosense-123-client-7.log"));
         assert!(slot.exit_failure(std::process::ExitStatus::from_raw(0), "Reference App").is_some(),
             "exiting successfully before creating a window is also a startup failure");
     }

@@ -90,3 +90,8 @@
 - Applied 28 integration files on main after checking their live contents against the starting dirty snapshot. No staging or commit. Latest validation: 217 Rust tests, 48 Python tests, all-style GPU smoke, default cargo-run catalog smoke, and Android APK build passed. iOS upstream errors and absent ADB device documented.
 
 - Final live workspace all-features locked check passed. Daily sync reports already at the recorded official revision; applied file hashes match the verified candidate.
+
+## OctoSense rename
+- Started from clean main at 9da3b28. Inventoried Cargo, shell labels, local modules/resources, catalog, state paths, sync scripts and docs.
+- Renamed packages, modules/resources, custom style, shell/catalog/log labels, packaging metadata, scripts and active docs. Preserved upstream source paths/hashes and access to legacy state/model links.
+- Verification passed: locked metadata/check, 218 Rust tests, 48 Python tests, release/debug workspace builds, all-style native smoke, plain cargo-run default-catalog smoke, Android APK/manifest and sync integrity. No connected Android device. Changes remain uncommitted on main.

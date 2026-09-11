@@ -1,5 +1,7 @@
 # Fork WM features implementation plan
 
+> Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
+
 **Goal:** Adopt the WM features from guofoo/makepad at beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d and continue standalone WM development in MakeOS.
 
 **Architecture:** Merge completed work into main first, then three-way merge apps/wm against the existing ae20efc5 baseline. Use the published fork revision for all Makepad Git crates; copy only WM assets/source and the license. Record the fork as the new pristine baseline, preserving standalone adaptations and the existing daily review workflow.

@@ -3,8 +3,8 @@
     "id": "reference",
     "label": "Reference",
     "manifest": "../apps/reference/Cargo.toml",
-    "package": "makeos-reference",
-    "bin": "makeos-reference",
+    "package": "octosense-reference",
+    "bin": "octosense-reference",
     "policy": "new"
   },
   {

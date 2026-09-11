@@ -1,5 +1,7 @@
 # Official Makepad work integration
 
+> Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
+
 Update the external framework and WM baseline to official Makepad `74b63be83e101ab3a28d3604df77e9662d50a833`. Preserve all MakeOS features and uncommitted Android fixes.
 
 1. Save tracked and nonignored untracked contents and starting Git state under `target/upstream-20260911/before`; compare both repositories in a disposable union Git database.

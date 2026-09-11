@@ -2,7 +2,7 @@
 use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
-use crate::makeos::style::AppIconDraw;
+use crate::octosense::style::AppIconDraw;
 mod search;
 
 script_mod! {
@@ -238,7 +238,7 @@ impl PhoneSurface {
         let ink=if !ios && !state.style.dark {rgb(31,27,38)}else{rgb(255,255,255)};
         if !ios && !landscape {
             self.label(cx,rect(screen.pos.x+24.0,screen.pos.y+48.0,screen.size.x-48.0,58.0),&phone.clock,48.0,false,alpha(ink,opacity));
-            self.label(cx,rect(screen.pos.x+24.0,screen.pos.y+110.0,screen.size.x-48.0,26.0),"MakeOS",15.0,false,alpha(ink,opacity*0.8));
+            self.label(cx,rect(screen.pos.x+24.0,screen.pos.y+110.0,screen.size.x-48.0,26.0),"OctoSense",15.0,false,alpha(ink,opacity*0.8));
         }
         let layout=Self::home_layout(style,screen);
         let home=phone.screen==PhoneScreen::Home;

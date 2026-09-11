@@ -1,5 +1,7 @@
 # One-command Makepad sync
 
+> Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
+
 User runs Git pull in the Makepad checkout, then `python3 scripts/upstream.py sync`
 from MakeOS. Defaults are the sibling `makepad` checkout and its local HEAD.
 Optional source/revision overrides preserve the lower-level workflow.

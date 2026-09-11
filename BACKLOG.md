@@ -1,4 +1,4 @@
-# MakeOS backlog
+# OctoSense backlog
 
 Items from the upstream-sync review on 2026-09-09. All items below are pending.
 The existing [sync workflow](docs/upstream.md) remains the starting point.
@@ -16,7 +16,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   app set is available; checks catalog packages/binaries and builds; and exercises
   representative external apps alongside Reference, including Terminal and AI
   Chat. Basic AI Chat hosting/input checks should not require model weights.
-  Keep external app/framework sources out of tracked MakeOS files. Add coverage
+  Keep external app/framework sources out of tracked OctoSense files. Add coverage
   for candidate path resolution and missing expected apps.
 
 - [ ] **SYNC-02 — P2: Merge upstream executable-bit changes.**
@@ -37,7 +37,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   changes that have not reached the fork.
 
   Acceptance: provide a read-only check with human-readable and JSON output for
-  the MakeOS baseline, local fork HEAD, cached official tracking status, and fetch
+  the OctoSense baseline, local fork HEAD, cached official tracking status, and fetch
   freshness when known. Clearly distinguish stale/unknown remote information,
   pending updates, and comparison errors. Summarize WM and non-WM changes without
   building. Keep fetch/pull user-controlled and make the check suitable for daily
@@ -45,7 +45,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 
 - [ ] **SYNC-04 — P3: Support verified conflict resolution and resume.**
 
-  Current recovery requires resolving adaptations in MakeOS, committing with the
+  Current recovery requires resolving adaptations in OctoSense, committing with the
   old baseline, and rerunning. Editing a retained candidate does not provide a
   supported path to resume validation and apply it.
 
@@ -64,14 +64,14 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   because two paths reference the macOS-only module on iOS. Correct this in the
   source fork and adopt a published revision through the normal sync workflow.
 
-  Acceptance: `cargo check --locked -p makeos --lib --target aarch64-apple-ios`
+  Acceptance: `cargo check --locked -p octosense --lib --target aarch64-apple-ios`
   passes, followed by iOS startup, safe-area and touch verification.
 
 - [ ] **MOBILE-02 — P2: Adopt the upstream Android compositor orientation fix.**
 
   The pinned GL backend already stores 2D render targets with top-left rows, but
-  its compositor still requests an Android Y flip. MakeOS currently overrides
-  the scene shader in `src/makeos/android_rendering.rs` to keep the phone home
+  its compositor still requests an Android Y flip. OctoSense currently overrides
+  the scene shader in `src/octosense/android_rendering.rs` to keep the phone home
   screen upright and its drawn controls aligned with hit regions.
 
   Acceptance: correct the framework's scene/blur texture orientation and verify
@@ -106,8 +106,8 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 Makepad 74b63be8 `platform/src/draw_list.rs:485` indexes a freed draw list from
 a retired pass slot in `prepare_retained_working_set`. Reproduced by desktop
 style switching to iOS; the call stack is in
-`target/upstream-20260911/trace-tap/host.log`. MakeOS detaches only passes with freed roots in
-`src/makeos/retired_passes.rs` before GPU submission. Once upstream ignores
+`target/upstream-20260911/trace-tap/host.log`. OctoSense detaches only passes with freed roots in
+`src/octosense/retired_passes.rs` before GPU submission. Once upstream ignores
 retired roots/slots, remove the adapter and rerun the all-style GPU smoke.
 
 The iOS check on this revision is still blocked in upstream `ios.rs`: missing

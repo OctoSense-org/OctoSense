@@ -26,7 +26,7 @@
 //! activates, a click outside the card cancels, and the wheel scrolls.
 
 use makepad_widgets::*;
-use crate::makeos::style::AppIconDraw;
+use crate::octosense::style::AppIconDraw;
 use crate::desktop::DesktopStyle;
 
 use crate::binds::{combo_text, keymap};
@@ -457,7 +457,7 @@ impl MenuModel {
     fn all_items(path: &str) -> Vec<MenuItem> {
         let mut items = omarchy_tree();
         items.retain(|item| !item.disabled);
-        items.push(MenuItem::new("system.quit", "Quit MakeOS", MenuKind::Action).icon(Ico::Power));
+        items.push(MenuItem::new("system.quit", "Quit OctoSense", MenuKind::Action).icon(Ico::Power));
         if path.starts_with("workspace") {
             for (id, label, kind) in [
                 ("workspace", "Workspace", MenuKind::Menu),
@@ -939,7 +939,7 @@ fn centered_card_top(screen: Rect, height: f64, margin: f64, frozen_top: Option<
 
 /// The floating desktops' skin over the sheet's: NeXT and Windows 2000's
 /// greys, else macOS's light card — or its dark one wherever the chrome
-/// reads dark (`dark_chrome`: the flag, and MakeOS whatever it says). Under
+/// reads dark (`dark_chrome`: the flag, and OctoSense whatever it says). Under
 /// a glass material the kit paints the card itself and the cursor row takes
 /// the palette's focus accent; macOS-dark's highlight stays on its flat card.
 fn floating_skin(mut skin: MenuTokens, style: DesktopStyle, dark: bool, glass: bool, roles: &StyleRoles) -> MenuTokens {
@@ -1683,7 +1683,7 @@ mod tests {
     fn checked_rows_get_the_tick_and_disabled_rows_are_skipped() {
         let mut m = MenuModel::default();
         m.open_at("system", MenuSkin::Menu);
-        assert_eq!(m.rows[0].label, "Quit MakeOS");
+        assert_eq!(m.rows[0].label, "Quit OctoSense");
         // Retain the navigation invariant using an explicit disabled fixture.
         for row in &mut m.rows { row.disabled = true; }
         assert!(m.rows.iter().all(|r| r.disabled));
@@ -1735,24 +1735,24 @@ mod tests {
     }
 
     #[test]
-    fn the_floating_skin_reads_makeos_dark_with_the_accent_on_glass() {
+    fn the_floating_skin_reads_octosense_dark_with_the_accent_on_glass() {
         use super::super::rgb;
         let base = MenuTokens::default();
         // A sheet's own roles, unlike the bundled defaults, so a highlight
-        // that hardcoded MakeOS's accent would not pass as the palette's.
+        // that hardcoded OctoSense's accent would not pass as the palette's.
         let roles = StyleRoles { text: rgb(9, 8, 7), focus: rgb(1, 2, 3), ..StyleRoles::default() };
-        // MakeOS: the dark card's light ink whatever the flag says, and the
+        // OctoSense: the dark card's light ink whatever the flag says, and the
         // cursor row in the palette's focus accent under its glass.
         for dark in [false, true] {
-            let makeos = floating_skin(base, DesktopStyle::MakeOs, dark, true, &roles);
-            assert_eq!(makeos.surface.text, rgb(242, 242, 245));
-            assert_eq!(makeos.selected_background, rgb(1, 2, 3));
-            assert_eq!(makeos.selected_background_alpha, 1.0);
-            assert_eq!(makeos.selected_text, rgb(255, 255, 255));
+            let octosense = floating_skin(base, DesktopStyle::OctoSense, dark, true, &roles);
+            assert_eq!(octosense.surface.text, rgb(242, 242, 245));
+            assert_eq!(octosense.selected_background, rgb(1, 2, 3));
+            assert_eq!(octosense.selected_background_alpha, 1.0);
+            assert_eq!(octosense.selected_text, rgb(255, 255, 255));
         }
-        // A MakeOS sheet whose material fell back to flat keeps the dark
+        // An OctoSense sheet whose material fell back to flat keeps the dark
         // card's own highlight, like macOS dark.
-        let flat = floating_skin(base, DesktopStyle::MakeOs, false, false, &roles);
+        let flat = floating_skin(base, DesktopStyle::OctoSense, false, false, &roles);
         assert_eq!(flat.selected_background, rgb(36, 77, 117));
         let mac_dark = floating_skin(base, DesktopStyle::Macos, true, false, &roles);
         assert_eq!(mac_dark.surface.text, rgb(242, 242, 245));

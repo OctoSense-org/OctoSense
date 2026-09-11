@@ -30,7 +30,7 @@ mod dock_warp;
 mod host;
 mod hub;
 mod layout;
-mod makeos;
+mod octosense;
 mod module_host;
 mod module_view;
 mod pane_links;
@@ -99,7 +99,7 @@ script_mod! {
         ui: Root{
             main_window := Window{
                 window.inner_size: vec2(1400, 900)
-                window.title: "MakeOS"
+                window.title: "OctoSense"
                 // No native caption: the Omarchy bar IS the caption. Our
                 // WindowDragQuery answers Caption over the bar strip (minus
                 // its buttons) so the window still drags.
@@ -134,7 +134,7 @@ script_mod! {
                             }
                         }
                     }
-                    makeos_wallpaper := MakeosWallpaper{}
+                    octosense_wallpaper := OctoSenseWallpaper{}
                     bg_image := Image{
                         width: Fill
                         height: Fill
@@ -522,7 +522,7 @@ impl App {
 
     fn launch_app(&mut self, cx: &mut Cx, app_id: &str) {
         let Some(app) = crate::clients::find_app(app_id) else {
-            log!("makeos: no app '{}' in the registry", app_id);
+            log!("octosense: no app '{}' in the registry", app_id);
             self.notify(cx, "App unavailable", &format!("Register '{app_id}' in your app catalog to launch it."));
             return;
         };
@@ -663,7 +663,7 @@ impl App {
             // In demo mode a terminal with nothing to inherit opens inside
             // the generated demo home so `ls` shows plausible content,
             // never the user's real files.
-            if makeos::policy::requested("--demo-home") {
+            if octosense::policy::requested("--demo-home") {
                 crate::demo_home::ensure_demo_home()
             } else {
                 None
@@ -1600,7 +1600,7 @@ impl App {
         for (id, failure) in dead {
             self.remove_client(cx, id);
             if let Some(message) = failure {
-                log!("makeos: {message}");
+                log!("octosense: {message}");
                 self.notify(cx, "App stopped", &message);
             }
         }
@@ -2495,7 +2495,7 @@ impl App {
             // A stable cache key for embedded bytes; no filesystem lookup.
             image_ref.load_image_from_data_async(
                 cx,
-                std::path::Path::new("makeos-bundled/tokyo-night.webp"),
+                std::path::Path::new("octosense-bundled/tokyo-night.webp"),
                 std::sync::Arc::new(theme::BUNDLED_TOKYO_NIGHT_WALLPAPER),
             ).is_ok()
         } else {
@@ -3792,14 +3792,14 @@ impl MatchEvent for App {
             }
         }
 
-        let startup_style = makeos::policy::startup_style();
+        let startup_style = octosense::policy::startup_style();
         let theme_name = Self::theme_name_from_env();
         // Children inherit the theme file path so every Makepad app styles
         // itself from the same theme.splash.
         host::set_child_env("MAKEPAD_WM_THEME_SPLASH", theme::theme_splash_path(&theme_name).as_os_str());
         let wallpaper = self.ui.widget(cx, ids!(wallpaper));
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() { desk.wallpaper = wallpaper; }
-        let sheet = makeos::style::load_sheet(desktop::DesktopStyle::Omarchy, false);
+        let sheet = octosense::style::load_sheet(desktop::DesktopStyle::Omarchy, false);
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         self.module_host.apply_style(cx, &sheet);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
@@ -3891,7 +3891,7 @@ impl MatchEvent for App {
             self.warm_tick = cx.start_interval(WARM_PUMP);
         }
         if !self.warm_pool.enabled() {
-            log!("makeos: background app prewarming disabled");
+            log!("octosense: background app prewarming disabled");
         }
 
         // `--gallery`: the shell surfaces with fixture data instead of a
@@ -3910,15 +3910,15 @@ impl MatchEvent for App {
             return;
         }
 
-        if makeos::policy::requested("--assistant") {
+        if octosense::policy::requested("--assistant") {
             if self.apps.pane_in_process() {
                 self.with_ai_pane(cx, |cx, p| p.ensure_overlay(cx));
             } else if hub_port != 0 && clients::find_app("aichat").is_some_and(|a| a.is_available()) {
                 self.launch_ai_pane(cx);
             }
         }
-        if let Err(error) = makeos::catalog::loaded() {
-            log!("makeos: {error}");
+        if let Err(error) = octosense::catalog::loaded() {
+            log!("octosense: {error}");
             self.notify(cx, "Could not load apps", error);
         }
 
@@ -3938,7 +3938,7 @@ impl MatchEvent for App {
         if startup_style == desktop::DesktopStyle::Omarchy {
             self.apply_background(cx, 0);
         }
-        if makeos::policy::requested("--download-wallpapers") {
+        if octosense::policy::requested("--download-wallpapers") {
             self.fetch_backgrounds_if_missing(cx);
         }
         self.update_bar(cx);
@@ -3950,13 +3950,13 @@ impl MatchEvent for App {
         #[cfg(target_os = "macos")]
         cx.update_macos_menu(MacosMenu::Main {
             items: vec![MacosMenu::Sub {
-                name: "MakeOS".to_string(),
+                name: "OctoSense".to_string(),
                 items: vec![MacosMenu::Item {
                     command: live_id!(quit),
                     key: KeyCode::KeyQ,
                     shift: true,
                     enabled: true,
-                    name: "Quit MakeOS".to_string(),
+                    name: "Quit OctoSense".to_string(),
                 }],
             }],
         });
@@ -4113,12 +4113,12 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
-        host::set_child_env("MAKEPAD_HOME", makeos::paths::home().as_os_str());
+        host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
-        makeos::wallpaper::script_mod(vm);
+        octosense::wallpaper::script_mod(vm);
         #[cfg(target_os = "android")]
-        makeos::android_rendering::script_mod(vm);
+        octosense::android_rendering::script_mod(vm);
 
         // The theme: evaluated before any module that reads
         // mod.wm_theme. This IS the theming system — splash.
@@ -4427,7 +4427,7 @@ impl AppMain for App {
         self.sync_phone_keyboard(cx);
         // Style reloads and phone capture teardown may retire draw lists during
         // this event. Remove their pass roots before upstream scans GPU demand.
-        makeos::retired_passes::clear_retired_roots(cx);
+        octosense::retired_passes::clear_retired_roots(cx);
         // The gap cursor, LAST: a tile hover-out inside `ui.handle_event`
         // resets the cursor to Default, and the frame's final `set_cursor`
         // is the one the platform applies.

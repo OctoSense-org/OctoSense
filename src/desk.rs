@@ -8,7 +8,7 @@
 //! 379ms, border color over 539ms, a new window popping in from 87% over
 //! 410ms, a closing one popping back out over 149ms while it fades.
 
-use crate::makeos::style::AppIconDraw;
+use crate::octosense::style::AppIconDraw;
 pub(crate) mod phone;
 use phone::{DrawPhoneApp, PhoneFrame};
 use crate::mobile_surface::PhoneSurface;
@@ -361,7 +361,7 @@ pub struct WmState {
     /// The material the selected style's sheet declares; flat until a
     /// sheet says otherwise.
     pub material: crate::shell::MaterialTokens,
-    /// The palette roles the same sheet declares: what a MakeOS frame
+    /// The palette roles the same sheet declares: what an OctoSense frame
     /// inks its title and captions with.
     pub roles: StyleRoles,
     pub dock_backdrop: Option<gauss_view::GaussBlurSnapshot>,
@@ -1215,7 +1215,7 @@ impl WmDesk {
             }).or_else(|| (rounding > 0.01).then(|| self.desktop_frames.remove(&client)
                 .unwrap_or_else(|| WindowFrame::new_with_name(cx, "wm_window_surface"))));
         if let Some(frame) = &mut capture { frame.begin(cx, draw_rect); }
-        // MakeOS: the Liquid Glass frame, inside the captured surface so the
+        // OctoSense: the Liquid Glass frame, inside the captured surface so the
         // window mask rounds it with everything else. The opaque body covers
         // it below the title; what shows is the title strip and the ring.
         if let Some(snapshot) = glass_backdrop {
@@ -1525,13 +1525,13 @@ impl WmDesk {
         let classic = classic64 as f32;
         let next = next64 as f32;
         let retro = classic + next;
-        // MakeOS's share of the floating chrome: the glass `draw_tile` laid
+        // OctoSense's share of the floating chrome: the glass `draw_tile` laid
         // down stands in for the title fill, and the sheet's roles for the
         // ink and the captions, blended so a tween into it crossfades. A
-        // MakeOS sheet with a flat material keeps the macOS title instead.
+        // OctoSense sheet with a flat material keeps the macOS title instead.
         let glass_share = t.glass_share(self.shell_draw.material().is_glass());
         let roles = self.roles;
-        // The flag, or MakeOS regardless of it: the macOS title MakeOS keeps
+        // The flag, or OctoSense regardless of it: the macOS title OctoSense keeps
         // when its material is flat, and the ink a tween into it starts from.
         let chrome_dark = crate::desktop::dark_chrome(t.target, t.dark);
         self.chrome.pressed=0.0;
@@ -1581,7 +1581,7 @@ impl WmDesk {
         self.title_hits.push((client,title,ChromeHit::Title));
         let ink=lerp_color(alpha(if retro>0.5 || chrome_dark {rgb(255,255,255)}else{rgb(30,30,34)},opacity),alpha(roles.text,opacity),glass_share);
         let text=self.titles.get(&client).cloned().unwrap_or_default();
-        // MakeOS keeps macOS's title layout: captions left, no app icon, the
+        // OctoSense keeps macOS's title layout: captions left, no app icon, the
         // title centred.
         let mac_family=t.target.mac_family();
         let centred=mac_family || t.target==DesktopStyle::NextStep;
@@ -1624,7 +1624,7 @@ impl WmDesk {
                 } else if pressed {rgb(196,196,200)}else{rgb(218,218,222)},opacity);
             }
             if glass_share > 0.001 {
-                // MakeOS: translucent discs in the palette's ink at the
+                // OctoSense: translucent discs in the palette's ink at the
                 // traffic lights' places; the one under the pointer
                 // brightens, and close turns the palette's red.
                 let disc=if hovered && hit==ChromeHit::Close {alpha(roles.error,opacity)}else{alpha(roles.text,opacity*if hovered {0.30}else{0.18})};
@@ -1647,7 +1647,7 @@ impl WmDesk {
                 let glyph=if hovered && hit==ChromeHit::Close {rgb(255,255,255)}else{roles.text};
                 self.chrome.caption_ink=lerp_color(self.chrome.caption_ink,alpha(glyph,opacity),glass_share);
             }
-            // A press darkens the disc: macOS's 12 %, MakeOS's 15 %.
+            // A press darkens the disc: macOS's 12 %, OctoSense's 15 %.
             if mac>0.99 && pressed {self.chrome.color = lerp_color(self.chrome.color,alpha(rgb(0,0,0),opacity),0.12+0.03*glass_share);}
             self.chrome.draw_abs(cx,face);
             self.chrome.caption = MacCaption::None;

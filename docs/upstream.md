@@ -1,9 +1,9 @@
 # Updating the Makepad import
 
-MakeOS maintains the WM source, icons and bundled wallpaper plus the original license notice.
+OctoSense maintains the WM source, icons and bundled wallpaper plus the original license notice.
 `upstream/makepad.json` records their original paths and SHA-256 hashes at one
 full Makepad commit. The hashes describe **pristine upstream content**, so local
-MakeOS adaptations do not require changing them. Framework and hosted-app
+OctoSense adaptations do not require changing them. Framework and hosted-app
 dependencies use that same commit. Do not independently change their revisions.
 
 The active source is `https://github.com/makepad/makepad.git`, at
@@ -11,14 +11,14 @@ The active source is `https://github.com/makepad/makepad.git`, at
 source checkout is `../makepad`. `makepad-wm-api` (`libs/wm_api`) and
 `makepad-wm-theme` (`libs/wm_theme`) are pinned Git dependencies alongside
 widgets, platform, app-module and the linked app crates. They are not copied
-into MakeOS. Advancing the shared pin includes their changes and their required
+into OctoSense. Advancing the shared pin includes their changes and their required
 transitive dependencies. Unrelated monorepo sources are not imported here.
 
-MakeOS's extra style is implemented in `src/makeos/style.rs` with two small
+OctoSense's extra style is implemented in `src/octosense/style.rs` with two small
 local theme files. It sends its complete palette/material using the recognized
 `macos-dark` wire family, allowing unmodified upstream apps to select the right
 icons and appearance. The local wallpaper widget preserves SVG cover behavior;
-upstream already supplies the cached-view APIs. `src/makeos/retired_passes.rs`
+upstream already supplies the cached-view APIs. `src/octosense/retired_passes.rs`
 detaches passes with freed draw-list roots before the new retained GPU working-set scan;
 remove it when upstream guards retired pass slots. No framework fork is required.
 
@@ -26,13 +26,13 @@ The previous `guofoo/makepad` additions are retained as local WM adaptations.
 The one-time migration compared official changes from the common ancestor,
 rather than interpreting absent fork features as upstream deletions. Historical
 asset origins are recorded in `upstream/makepad.json` under
-`retained_fork_assets`; these are MakeOS-owned and are not ongoing upstream
+`retained_fork_assets`; these are OctoSense-owned and are not ongoing upstream
 file mappings. Future syncs use the official baseline and normal three-way
 merge. See `docs/plans/2026-09-11-official-work-sync.md` for the migration scope.
 
 ## Daily command
 
-After updating the Makepad checkout, run from MakeOS:
+After updating the Makepad checkout, run from OctoSense:
 
 ```sh
 git -C ../makepad pull --ff-only origin work
@@ -45,7 +45,7 @@ the remaining comparison, preparation, and verification without prompts. No
 scheduled job is installed.
 
 Defaults are the provenance file's `default_source` (`../makepad`) and its
-current local `HEAD`. Relative recorded paths resolve from the MakeOS project
+current local `HEAD`. Relative recorded paths resolve from the OctoSense project
 root, independent of the invoking shell's working directory. Older provenance
 without this field retains `../makepad`. An explicit `--source` overrides it;
 use that option from a nested worktree whose sibling location differs.
@@ -53,11 +53,11 @@ The command resolves the target once, so another pull during verification does
 not change the candidate. `--source /path/to/makepad` and `--to <commit-or-ref>`
 override those defaults. The chosen commit must be fetchable from the pinned
 Makepad Git dependency URL; local unpublished commits cannot form a portable
-MakeOS upgrade. Cargo will report a resolution failure for an unavailable pin.
+OctoSense upgrade. Cargo will report a resolution failure for an unavailable pin.
 
-An unchanged revision is a fast successful no-op, including when MakeOS has
+An unchanged revision is a fast successful no-op, including when OctoSense has
 uncommitted work; it reports that work separately. If upstream has advanced,
-MakeOS must have a clean working tree first. Complete review/commit of the
+OctoSense must have a clean working tree first. Complete review/commit of the
 previous update before applying another one. A nonzero result means the new
 candidate has not passed the workflow.
 
@@ -65,15 +65,15 @@ For an actual update, the command:
 
 1. Saves the source comparison and resolves the three-way merge in
    `target/makepad-sync/project`. Only that candidate's `target/` build cache
-   survives between attempts; its source is rebuilt from tracked MakeOS files.
+   survives between attempts; its source is rebuilt from tracked OctoSense files.
 2. Advances the candidate's provenance, all Makepad dependency pins, and lockfile
    together. Runs Cargo metadata, locked workspace check/tests, and the Python
    maintenance tests.
 3. Builds release and debug workspace binaries, then runs the release hosting
-   smoke test with `--styles` and the exact `cargo run` test with the shipped catalog. The release test also switches through all eight styles, captures MakeOS glass and menus, and checks that the hosted app retains its state without background launches. Tests
+   smoke test with `--styles` and the exact `cargo run` test with the shipped catalog. The release test also switches through all eight styles, captures OctoSense glass and menus, and checks that the hosted app retains its state without background launches. Tests
    open and close their own windows and isolate user state. The command needs
    native GUI access and is currently validated on macOS.
-4. Rechecks the starting MakeOS HEAD, branch, and files. Only after verification
+4. Rechecks the starting OctoSense HEAD, branch, and files. Only after verification
    passes, creates `sync/makepad-<12-character-revision>` (with a numeric suffix
    if necessary) and applies the candidate. Existing branches are never reused
    or overwritten.
@@ -125,13 +125,13 @@ python3 scripts/upstream.py diff --to <commit>
 `status` classifies local adaptations and upstream changes, checks provenance
 hashes, and checks every Makepad Git dependency pin in Cargo manifests and the
 lockfile. `diff` also prints separate old-upstream-to-local and
-old-upstream-to-new-upstream diffs. Both are read-only with respect to MakeOS and
+old-upstream-to-new-upstream diffs. Both are read-only with respect to OctoSense and
 the source clone. Exit status is 0 for a valid comparison, 1 for conflicts or
 provenance problems, and 2 for operational errors. File changes alone are not an
 error. Changes outside the WM subtree are listed for framework/API review; they
 are not copied wholesale.
 
-Commit MakeOS changes before running an update, including its current baseline
+Commit OctoSense changes before running an update, including its current baseline
 and lockfile:
 
 ```sh
@@ -143,14 +143,14 @@ cargo run --locked
 
 `update` performs these steps:
 
-1. Require a clean MakeOS Git working tree, including no untracked files, and
+1. Require a clean OctoSense Git working tree, including no untracked files, and
    validate the existing hashes, import inventory, and dependency revisions.
 2. Copy tracked project files into a disposable staging directory. Compare old
-   Makepad, current MakeOS, and new Makepad. Merge independent text edits;
+   Makepad, current OctoSense, and new Makepad. Merge independent text edits;
    preserve local-only changes. Treat conflicting edits, changed binary files,
    deletion of locally modified files, and new-file destination collisions as
    conflicts. Collisions include ignored files and directories. New files under
-   `apps/wm/` map to the same relative path in MakeOS; deletions remove unchanged
+   `apps/wm/` map to the same relative path in OctoSense; deletions remove unchanged
    imported files. Renames appear as additions and deletions.
 3. Change matching Makepad Git revisions in all staged Cargo manifests,
    including the reference app, and generate the candidate provenance baseline.
@@ -160,7 +160,7 @@ cargo run --locked
    Check the resulting manifest and lock revisions
    again. Cargo may download dependencies; all compilation happens in the
    staging directory. The ordinary Cargo cache is shared.
-4. After verification succeeds, check that MakeOS has not changed during
+4. After verification succeeds, check that OctoSense has not changed during
    verification. Apply the staged source,
    Cargo manifests, and lockfile, writing the baseline last. Files are replaced
    atomically; an ordinary write failure rolls back previous writes. The Git
@@ -172,13 +172,13 @@ resize, and close. Use `cargo build --release --locked --workspace` followed by
 `python3 scripts/smoke.py --styles` and `python3 scripts/smoke.py --cargo-run --default-catalog`.
 The automatic compile check and Rust tests do not establish GUI or
 protocol behavior. Commit the reviewed source, manifests, lockfile, and baseline
-together. Use a MakeOS Git revert to roll back a committed upgrade.
+together. Use an OctoSense Git revert to roll back a committed upgrade.
 
 If a merge or verification fails, the live project and baseline remain intact.
 The script prints the retained temporary directory containing `project/`,
 `comparison.txt`, and, if verification ran, `verification.log`. Inspect those
 files to understand the failure. There is intentionally no command that
-blindly applies a retained stage. Resolve local adaptations in MakeOS while
+blindly applies a retained stage. Resolve local adaptations in OctoSense while
 keeping the old baseline, commit the resolution, and rerun `update` against the
 same target. For an overlapping edit, adopting the intended upstream lines in
 the affected local region before rerunning allows the next three-way merge to

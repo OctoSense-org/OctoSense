@@ -1,6 +1,6 @@
 # Wallpaper sources
 
-`makeos.svg` is retained from the guofoo/makepad WM fork at `beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`. Its original path and hash are recorded under `retained_fork_assets` in `upstream/makepad.json`. It is now maintained locally.
+`octosense.svg` is retained from the guofoo/makepad WM fork at `beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`. Its original path and hash are recorded under `retained_fork_assets` in `upstream/makepad.json`. It is now maintained locally.
 
 `tokyo-night.webp` is the unmodified `0-winding-road.webp` from Omarchy’s Tokyo Night theme. It is embedded in the executable as the offline fallback when that theme has no installed images. The other Omarchy wallpapers remain optional downloads.
 

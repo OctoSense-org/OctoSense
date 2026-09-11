@@ -1,4 +1,4 @@
-pub use crate::makeos::style::DesktopStyle;
+pub use crate::octosense::style::DesktopStyle;
 use makepad_widgets::*;
 
 /// Everything one desktop style says about the shell's geometry and family
@@ -16,7 +16,7 @@ pub struct StyleSpec {
     pub reserved_height: f64,
     pub title_height: f64,
     /// Child inset from the tile rect: Omarchy's ring, the retro bevel frame,
-    /// or MakeOS's glass ring — 2 × the material's 1 px border, since the
+    /// or OctoSense's glass ring — 2 × the material's 1 px border, since the
     /// stroke is centred one border-width in and a 1 px inset would show only
     /// half of it. A `glass_chrome` row's inset counts only under a glass
     /// material (`StyleTween::frame_inset`).
@@ -52,7 +52,7 @@ pub struct StyleSpec {
     /// of fading it out; restore plays it back.
     pub dock_warp: bool,
     /// Chrome that is dark by identity, whatever the appearance flag says:
-    /// MakeOS's sheet has no light look. Read through `dark_chrome`.
+    /// OctoSense's sheet has no light look. Read through `dark_chrome`.
     pub dark_chrome: bool,
     /// This style's chrome is the Liquid Glass material: the window frame,
     /// the shelf pill and the kit's surfaces paint from the sheet's material
@@ -162,7 +162,7 @@ pub static SPECS: [StyleSpec; 8] = [
         dark_chrome: false,
         glass_chrome: false,
     },
-    // MakeOS floats like macOS: its dock overlays the desk rather than
+    // OctoSense floats like macOS: its dock overlays the desk rather than
     // reserving a strip, and the title bar and menu share macOS's placement.
     // Dark only, so both grounds are the same night gradient.
     // The row owns the window geometry (rounding, frame_inset, shadow); the
@@ -174,7 +174,7 @@ pub static SPECS: [StyleSpec; 8] = [
     // uses the row's frame_inset; both round the child to "outer radius
     // minus inset, halved".
     StyleSpec {
-        style: DesktopStyle::MakeOs,
+        style: DesktopStyle::OctoSense,
         tiling: false,
         reserved_height: 0.0, title_height: 32.0,
         frame_inset: 2.0, rounding: 12.0, chrome_radius: 10.0,
@@ -191,7 +191,7 @@ pub static SPECS: [StyleSpec; 8] = [
 
 /// The chrome appearance a style draws: dark by identity (its row's
 /// `dark_chrome`), else the appearance flag when the style has a dark look
-/// at all — `supports_dark()` is false for MakeOS, so the flag alone would
+/// at all — `supports_dark()` is false for OctoSense, so the flag alone would
 /// read it as light.
 pub fn dark_chrome(style: DesktopStyle, dark: bool) -> bool {
     SPECS[style as usize].dark_chrome || (style.supports_dark() && dark)
@@ -255,7 +255,7 @@ impl StyleTween {
     }
     /// The window shadow's opacity: the table's focused value, scaled to the
     /// 0.16 an unfocused window always had against the 0.28 of the styles that
-    /// cast one, so those styles read the same numbers as before and MakeOS
+    /// cast one, so those styles read the same numbers as before and OctoSense
     /// gets its own darker 0.44.
     pub fn window_shadow_opacity(&self, focus: f64, fade: f64) -> f32 {
         (self.mix(|s| s.shadow) * fade * if focus > 0.5 { 1.0 } else { 0.16 / 0.28 }) as f32
@@ -299,7 +299,7 @@ mod tests {
     fn specs_reproduce_the_literal_arrays_for_every_style() {
         // The arrays these replace, verbatim from the pre-refactor code, padded
         // with the zeros the phone rows must hold for a tween into them to land,
-        // then the MakeOS row appended after the table existed.
+        // then the OctoSense row appended after the table existed.
         let reserved = [0.0, 0.0, 54.0, 34.0, 0.0, 0.0, 0.0, 0.0];
         let title = [0.0, 32.0, 34.0, 20.0, 22.0, 0.0, 0.0, 32.0];
         let inset = [2.0, 0.0, 0.0, 3.0, 1.0, 0.0, 0.0, 2.0]; // BORDER_SIZE = 2.0
@@ -307,7 +307,7 @@ mod tests {
         let chrome_radius = [0.0, 10.0, 8.0, 0.0, 0.0, 0.0, 0.0, 10.0];
         let frame_width = [2.0, 2.0, 2.0, 3.0, 1.0, 0.0, 0.0, 1.0];
         let caption_width = [30.0, 30.0, 46.0, 16.0, 14.0, 0.0, 0.0, 30.0];
-        // MakeOS's 24 is macOS's frosted pill as seen: that shader takes its
+        // OctoSense's 24 is macOS's frosted pill as seen: that shader takes its
         // DSL corner_radius of 12 as the SDF radius raw, the kit and the
         // chrome halve a visual one.
         let shelf_radius = [0.0, 18.0, 0.0, 0.0, 0.0, 0.0, 0.0, 24.0];
@@ -339,11 +339,11 @@ mod tests {
         assert_eq!(SPECS.map(|s| s.dark_chrome), [false, false, false, false, false, false, false, true]);
         assert_eq!(SPECS.map(|s| s.glass_chrome), [false, false, false, false, false, false, false, true]);
         // The shadow reads the table: bit-neutral at the f32 the uniform takes
-        // for the styles that had 0.28 / 0.16, MakeOS's own 0.44 above them.
+        // for the styles that had 0.28 / 0.16, OctoSense's own 0.44 above them.
         for (style, focused, unfocused) in [
             (DesktopStyle::Macos, 0.28f32, 0.16f32),
             (DesktopStyle::Windows, 0.28, 0.16),
-            (DesktopStyle::MakeOs, 0.44, (0.44 * (0.16 / 0.28)) as f32),
+            (DesktopStyle::OctoSense, 0.44, (0.44 * (0.16 / 0.28)) as f32),
         ] {
             let mut t = StyleTween::default();
             t.select(style);
@@ -390,39 +390,39 @@ mod tests {
         }
     }
     #[test]
-    fn the_glass_share_is_makeos_within_the_floating_chrome() {
+    fn the_glass_share_is_octosense_within_the_floating_chrome() {
         let mut t = StyleTween::default();
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(1.0);
-        assert_eq!(t.glass_share(true), 1.0, "settled MakeOS");
+        assert_eq!(t.glass_share(true), 1.0, "settled OctoSense");
         assert_eq!(t.glass_share(false), 0.0, "no glass material, no glass frame");
         t.select(DesktopStyle::Macos);
         t.step(1.0);
         assert_eq!(t.glass_share(true), 0.0, "settled macOS");
-        // Into MakeOS from the tiled desk: the share follows the chrome's own
+        // Into OctoSense from the tiled desk: the share follows the chrome's own
         // opacity, which is what fades in — never more than 1.
         let mut t = StyleTween::default();
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(0.3);
-        let makeos = t.weights[DesktopStyle::MakeOs as usize];
+        let octosense = t.weights[DesktopStyle::OctoSense as usize];
         let tiling = t.weights[DesktopStyle::Omarchy as usize];
-        assert!(makeos > 0.0 && makeos < 1.0);
-        assert!((t.glass_share(true) - makeos / (1.0 - tiling)).abs() < 1e-12);
+        assert!(octosense > 0.0 && octosense < 1.0);
+        assert!((t.glass_share(true) - octosense / (1.0 - tiling)).abs() < 1e-12);
         // From macOS, the floating share is already 1: the glass share is the
-        // MakeOS weight itself.
+        // OctoSense weight itself.
         let mut t = StyleTween::default();
         t.select(DesktopStyle::Macos);
         t.step(1.0);
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(0.3);
-        assert!((t.glass_share(true) - t.weights[DesktopStyle::MakeOs as usize]).abs() < 1e-12);
+        assert!((t.glass_share(true) - t.weights[DesktopStyle::OctoSense as usize]).abs() < 1e-12);
     }
     #[test]
     fn a_glass_chrome_inset_needs_a_glass_material() {
-        // MakeOS's 2 px is the room for its ring: gone without a glass
+        // OctoSense's 2 px is the room for its ring: gone without a glass
         // material. The other rows' insets do not read the material at all.
         for (style, glass, flat) in [
-            (DesktopStyle::MakeOs, 2.0, 0.0),
+            (DesktopStyle::OctoSense, 2.0, 0.0),
             (DesktopStyle::Macos, 0.0, 0.0),
             (DesktopStyle::NextStep, 1.0, 1.0),
         ] {
@@ -471,18 +471,18 @@ mod tests {
         t.select(DesktopStyle::Ios);
         t.step(0.3);
         assert_eq!(shelf_geometry(screen, &t, n), old(&t), "into a phone row");
-        // MakeOS's dock is macOS's dock, settled: same rect from the same arms.
+        // OctoSense's dock is macOS's dock, settled: same rect from the same arms.
         t.select(DesktopStyle::Macos);
         t.step(1.0);
         let mac = shelf_geometry(screen, &t, n);
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(1.0);
-        assert_eq!(shelf_geometry(screen, &t, n), mac, "settled MakeOS");
+        assert_eq!(shelf_geometry(screen, &t, n), mac, "settled OctoSense");
     }
     #[test]
-    fn makeos_chrome_is_dark_by_identity_and_the_others_follow_the_flag() {
-        assert!(dark_chrome(DesktopStyle::MakeOs, false));
-        assert!(dark_chrome(DesktopStyle::MakeOs, true));
+    fn octosense_chrome_is_dark_by_identity_and_the_others_follow_the_flag() {
+        assert!(dark_chrome(DesktopStyle::OctoSense, false));
+        assert!(dark_chrome(DesktopStyle::OctoSense, true));
         for style in [DesktopStyle::Macos, DesktopStyle::Windows, DesktopStyle::Ios, DesktopStyle::Android] {
             assert!(dark_chrome(style, true), "{style:?}");
             assert!(!dark_chrome(style, false), "{style:?}");
@@ -500,14 +500,14 @@ mod tests {
         t.select(DesktopStyle::Macos);
         t.step(1.0);
         assert_eq!(shelf_glass_split(&t, false), (1.0, 0.0), "settled macOS");
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(0.3);
-        let (frosted, makeos) = shelf_glass_split(&t, true);
-        assert!(frosted > 0.0 && makeos > 0.0, "mid-tween both pills are up");
-        assert!((frosted + makeos - t.share(|s| s.glass_shelf)).abs() < 1e-12, "one pill's worth of glass");
+        let (frosted, octosense) = shelf_glass_split(&t, true);
+        assert!(frosted > 0.0 && octosense > 0.0, "mid-tween both pills are up");
+        assert!((frosted + octosense - t.share(|s| s.glass_shelf)).abs() < 1e-12, "one pill's worth of glass");
         t.step(1.0);
-        assert_eq!(shelf_glass_split(&t, true), (0.0, 1.0), "settled MakeOS, glass");
-        assert_eq!(shelf_glass_split(&t, false), (1.0, 0.0), "settled MakeOS, flat: the frosted pill stands in");
+        assert_eq!(shelf_glass_split(&t, true), (0.0, 1.0), "settled OctoSense, glass");
+        assert_eq!(shelf_glass_split(&t, false), (1.0, 0.0), "settled OctoSense, flat: the frosted pill stands in");
     }
     #[test]
     fn the_dock_backdrop_is_as_deep_as_the_pill_that_samples_it() {
@@ -515,7 +515,7 @@ mod tests {
         let glass = MaterialTokens { glass: 1.0, blur_level: 5.2, ..flat };
         let shallow = MaterialTokens { glass: 1.0, blur_level: 3.0, ..flat };
         let mut t = StyleTween::default();
-        t.select(DesktopStyle::MakeOs);
+        t.select(DesktopStyle::OctoSense);
         t.step(1.0);
         assert_eq!(dock_backdrop_level(&t, &glass), 5.2);
         assert_eq!(dock_backdrop_level(&t, &shallow), FROSTED_SHELF_BLUR_LEVEL, "never shallower than the frosted pill");
@@ -533,7 +533,7 @@ use crate::shell::{
     alpha, rgb, MaterialTokens,
     ui::{rect, HAlign, Ico, ShellDraw},
 };
-use crate::makeos::style::AppIconDraw;
+use crate::octosense::style::AppIconDraw;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Script, ScriptHook)]
@@ -921,14 +921,14 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
     rect(
         screen.pos.x + style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 8.0,
-            DesktopStyle::Macos | DesktopStyle::MakeOs => (screen.size.x - dock_width) * 0.5,
+            DesktopStyle::Macos | DesktopStyle::OctoSense => (screen.size.x - dock_width) * 0.5,
             DesktopStyle::Windows | DesktopStyle::Windows2000 => 0.0,
             DesktopStyle::NextStep => screen.size.x - 64.0,
             DesktopStyle::Ios | DesktopStyle::Android => 0.0,
         }),
         screen.pos.y + style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 0.0,
-            DesktopStyle::Macos | DesktopStyle::MakeOs => screen.size.y - 88.0,
+            DesktopStyle::Macos | DesktopStyle::OctoSense => screen.size.y - 88.0,
             DesktopStyle::Windows => screen.size.y - 54.0,
             DesktopStyle::Windows2000 => screen.size.y - 34.0,
             DesktopStyle::NextStep => 40.0,
@@ -936,14 +936,14 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
         }),
         style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 32.0,
-            DesktopStyle::Macos | DesktopStyle::MakeOs => dock_width,
+            DesktopStyle::Macos | DesktopStyle::OctoSense => dock_width,
             DesktopStyle::Windows | DesktopStyle::Windows2000 => screen.size.x,
             DesktopStyle::NextStep => 56.0,
             DesktopStyle::Ios | DesktopStyle::Android => 0.0,
         }),
         style.mix(|s| match s.style {
             DesktopStyle::Omarchy => 0.0,
-            DesktopStyle::Macos | DesktopStyle::MakeOs => 78.0,
+            DesktopStyle::Macos | DesktopStyle::OctoSense => 78.0,
             DesktopStyle::Windows => 54.0,
             DesktopStyle::Windows2000 => 34.0,
             DesktopStyle::NextStep => next_height,
@@ -984,17 +984,17 @@ pub fn dock_icon_bounds(state: &WmState, size: Vec2d, app: &str) -> Rect {
 }
 
 /// How the shelf's glass is shared between its two pills, `(frosted,
-/// makeos)`: macOS's frosted `GaussRoundedView` and MakeOS's Liquid Glass
-/// from the kit, which paints only under a glass material — a MakeOS sheet
+/// octosense)`: macOS's frosted `GaussRoundedView` and OctoSense's Liquid Glass
+/// from the kit, which paints only under a glass material — an OctoSense sheet
 /// without one keeps the frosted pill. `glass_shelf` is the weight of every
-/// glass-shelf style, macOS's plus MakeOS's, so `frosted = glass_shelf -
-/// makeos` is macOS's own weight — or the whole glass share when the
-/// material is flat and the frosted pill stands in for MakeOS too. Through
-/// a macOS<->MakeOS tween the two sum to one pill's worth of glass.
+/// glass-shelf style, macOS's plus OctoSense's, so `frosted = glass_shelf -
+/// octosense` is macOS's own weight — or the whole glass share when the
+/// material is flat and the frosted pill stands in for OctoSense too. Through
+/// a macOS<->OctoSense tween the two sum to one pill's worth of glass.
 pub fn shelf_glass_split(t: &StyleTween, glass_material: bool) -> (f64, f64) {
     let glass_shelf = t.share(|s| s.glass_shelf);
-    let makeos = if glass_material { t.share(|s| s.glass_chrome) } else { 0.0 };
-    (glass_shelf - makeos, makeos)
+    let octosense = if glass_material { t.share(|s| s.glass_chrome) } else { 0.0 };
+    (glass_shelf - octosense, octosense)
 }
 
 /// Where the frosted pill samples the pyramid; the shelf's GlassPanel
@@ -1007,8 +1007,8 @@ pub const FROSTED_SHELF_BLUR_LEVEL: f64 = 4.5;
 /// the request is the deeper of the two, or the kit would read mips that
 /// were never rendered.
 pub fn dock_backdrop_level(t: &StyleTween, m: &MaterialTokens) -> f64 {
-    let (_, makeos) = shelf_glass_split(t, m.is_glass());
-    if makeos > 0.001 { m.blur_level.max(FROSTED_SHELF_BLUR_LEVEL) } else { FROSTED_SHELF_BLUR_LEVEL }
+    let (_, octosense) = shelf_glass_split(t, m.is_glass());
+    if octosense > 0.001 { m.blur_level.max(FROSTED_SHELF_BLUR_LEVEL) } else { FROSTED_SHELF_BLUR_LEVEL }
 }
 
 impl Widget for DesktopShelf {
@@ -1030,7 +1030,7 @@ impl Widget for DesktopShelf {
             self.dark = t.dark;
             // The target's chrome appearance: the flat pill's fill and the
             // frosted pill's tint. Only macOS's GaussRoundedView takes the
-            // tint; MakeOS's Liquid Glass reads its own from the material.
+            // tint; OctoSense's Liquid Glass reads its own from the material.
             let chrome_dark = dark_chrome(style, t.dark);
             if self.tint_dark != chrome_dark {
                 self.tint_dark = chrome_dark;
@@ -1081,7 +1081,7 @@ impl Widget for DesktopShelf {
                 self.bounds = r;
                 let glass_shelf = t.share(|s| s.glass_shelf);
                 // One pill's worth of glass between the two pills.
-                let (frosted, makeos) = shelf_glass_split(t, self.d.material().is_glass());
+                let (frosted, octosense) = shelf_glass_split(t, self.d.material().is_glass());
                 // Window-backed Gaussian blur, sampled from the live desktop.
                 if frosted > 0.01 {
                     if let Some(mut glass) = self.glass.borrow_mut::<gauss_view::GaussRoundedView>()
@@ -1098,12 +1098,12 @@ impl Widget for DesktopShelf {
                 // (`dock_backdrop_level`). The radius is the table's visual
                 // one: the kit and the chrome halve it for Sdf2d, while the
                 // frosted GaussRoundedView takes its DSL corner_radius as
-                // the SDF radius raw — MakeOS's row carries twice that, so
+                // the SDF radius raw — OctoSense's row carries twice that, so
                 // the pills a tween overlays share their corners. The quad
                 // lands in this list, under the foreground overlay below.
-                if makeos > 0.001 {
+                if octosense > 0.001 {
                     self.d.bind_snapshot(cx, state.dock_backdrop.clone());
-                    self.d.glass_pill(cx, r, t.mix(|s| s.shelf_radius), makeos as f32);
+                    self.d.glass_pill(cx, r, t.mix(|s| s.shelf_radius), octosense as f32);
                 }
                 // The pills draw in the scene list; the icons go to a
                 // separate overlay list so they composite above the glass.
@@ -1137,7 +1137,7 @@ impl Widget for DesktopShelf {
                     DesktopStyle::Windows,
                     DesktopStyle::Windows2000,
                     DesktopStyle::NextStep,
-                    DesktopStyle::MakeOs,
+                    DesktopStyle::OctoSense,
                 ] {
                     let opacity = t.weights[style as usize] as f32;
                     if opacity < 0.001 {

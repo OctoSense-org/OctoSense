@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn manifest_and_executable_paths_are_relative_to_the_catalog() {
         let apps = parse_catalog(br#"[
-            {"id":"reference","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"makeos-reference","bin":"makeos-reference","policy":"new","args":["two words","$(literal)"]},
+            {"id":"reference","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","policy":"new","args":["two words","$(literal)"]},
             {"id":"installed","label":"Installed","executable":"bin/my app"}
         ]"#, Path::new("/project/config")).unwrap();
         assert_eq!(

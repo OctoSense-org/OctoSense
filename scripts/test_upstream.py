@@ -40,7 +40,7 @@ class RepoFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve() / "makeos"
+        self.root = Path(self.temp.name).resolve() / "octosense"
         self.source = Path(self.temp.name).resolve() / "makepad"
         for root in (self.root, self.source):
             root.mkdir()
@@ -418,7 +418,7 @@ class DailySyncTests(RepoFixture):
         self.assertIn("READY", (report / "summary.txt").read_text())
         self.assertEqual(git(self.source, "status", "--porcelain"), source_before)
 
-    def test_new_revision_requires_clean_makeos(self):
+    def test_new_revision_requires_clean_octosense(self):
         self.target()
         write(self.root, "src/main.rs", "unfinished local edit\n")
         before = self.snapshot()
@@ -453,7 +453,7 @@ class DailySyncTests(RepoFixture):
         self.assertEqual(git(self.root, "branch"), branches)
         self.assertEqual(self.snapshot(), before)
         candidates = list((self.root / "target/makepad-sync/reports").glob("*/project/src/main.rs"))
-        self.assertIn("<<<<<<< MakeOS", candidates[0].read_text())
+        self.assertIn("<<<<<<< OctoSense", candidates[0].read_text())
 
     def test_cache_reused_but_stale_candidate_source_removed(self):
         self.target("first update\n")

@@ -3,14 +3,14 @@ use makepad_widgets::*;
 
 script_mod! {
     use mod.prelude.widgets_internal.*
-    mod.widgets.MakeosWallpaper = set_type_default() do #(MakeosWallpaper::register_widget(vm)) {
+    mod.widgets.OctoSenseWallpaper = set_type_default() do #(OctoSenseWallpaper::register_widget(vm)) {
         width: Fill height: Fill
         visible: false
     }
 }
 
 #[derive(Script, ScriptHook, Widget)]
-pub struct MakeosWallpaper {
+pub struct OctoSenseWallpaper {
     #[uid] uid: WidgetUid,
     #[source] source: ScriptObjectRef,
     #[walk] walk: Walk,
@@ -30,13 +30,13 @@ fn cover_rect(rect: Rect, aspect: f64) -> Rect {
     Rect { pos: rect.pos + (rect.size - size) * 0.5, size }
 }
 
-impl Widget for MakeosWallpaper {
+impl Widget for OctoSenseWallpaper {
     fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {}
 
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         if !self.visible { return DrawStep::done(); }
         if self.draw_svg.svg_doc.is_none() {
-            self.draw_svg.load_from_str(crate::theme::BUNDLED_MAKEOS_WALLPAPER);
+            self.draw_svg.load_from_str(crate::theme::BUNDLED_OCTOSENSE_WALLPAPER);
         }
         let walk = cx.resolve_walk(walk, ResolveAt::BeforeBegin);
         let rect = cx.walk_turtle(walk);

@@ -84,3 +84,11 @@
 - Real GPU tracing reproduces a freed draw-list root at platform/src/draw_list.rs:485 in prepare_retained_working_set. The pass iterator includes retired slots; a local pre-submit cleanup clears only invalid roots. Regression test fails before and passes after.
 - Studio was split into public Director and private Scope upstream; catalog retains studio ID but uses makepad-director/director.
 - Android APK builds, but adb devices is empty. iOS still fails in upstream with two missing methods.
+
+## OctoSense rename
+- Cargo package/binary and Reference package become octosense and octosense-reference; labels use OctoSense.
+- Current ~/.makeos exists and holds the previously configured weights. Prefer OCTOSENSE_HOME and ~/.octosense, with legacy environment/state fallback so existing setup keeps working.
+- Cargo Android packaging supports package.metadata.packager.product_name and identifier; set explicit OctoSense label and dev.makepad.octosense ID.
+- Upstream original asset source paths/hashes must remain unchanged while local destinations move. Workspace directory and past validation artifacts remain at their real locations.
+- Android packaging preserves the exact OctoSense label through product_name; it emits octo_sense.apk under the octosense build directory. The new dev.makepad.octosense ID installs separately from MakeOS.
+- Native screenshots confirm the OctoSense shell name and Reference greeting render correctly; all eight style transitions preserve the hosted app.
