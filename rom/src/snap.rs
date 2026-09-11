@@ -208,7 +208,7 @@ impl Widget for SnapOverlay {
         let Some(state) = scope.data.get_mut::<WmState>() else {
             return DrawStep::done();
         };
-        if state.style.target != desktop_style::DesktopStyle::Windows {
+        if state.style.target != crate::desktop::DesktopStyle::Windows {
             return DrawStep::done();
         }
         let snap = &state.snap;

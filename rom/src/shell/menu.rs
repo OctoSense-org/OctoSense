@@ -26,7 +26,7 @@
 //! activates, a click outside the card cancels, and the wheel scrolls.
 
 use makepad_widgets::*;
-use makepad_widgets::app_icon::AppIconDraw;
+use crate::makeos::style::AppIconDraw;
 use crate::desktop::DesktopStyle;
 
 use crate::binds::{combo_text, keymap};
@@ -535,6 +535,7 @@ impl MenuModel {
         self.stack.push((self.path.clone(), self.sel));
         self.path = id.to_string();
         self.filter.clear();
+        self.frozen_top = None;
         self.sel = 0;
         self.scroll = 0;
         self.items = Self::all_items(&self.path);
@@ -546,6 +547,7 @@ impl MenuModel {
         if let Some((path, sel)) = self.stack.pop() {
             self.path = path;
             self.filter.clear();
+            self.frozen_top = None;
             self.items = Self::all_items(&self.path);
             self.rebuild();
             self.sel = sel.min(self.rows.len().saturating_sub(1));
@@ -560,6 +562,7 @@ impl MenuModel {
         };
         self.path = parent;
         self.filter.clear();
+        self.frozen_top = None;
         self.sel = 0;
         self.items = Self::all_items(&self.path);
         self.rebuild();
@@ -926,6 +929,14 @@ pub struct ShellMenu {
     pub inert: bool,
 }
 
+/// Preserve a search's top while keeping the whole card in the viewport.
+fn centered_card_top(screen: Rect, height: f64, margin: f64, frozen_top: Option<f64>) -> f64 {
+    let min = screen.pos.y + margin;
+    let max = (screen.pos.y + screen.size.y - height - margin).max(min);
+    frozen_top.unwrap_or_else(|| (screen.pos.y + (screen.size.y - height) * 0.5).floor())
+        .clamp(min, max)
+}
+
 /// The floating desktops' skin over the sheet's: NeXT and Windows 2000's
 /// greys, else macOS's light card — or its dark one wherever the chrome
 /// reads dark (`dark_chrome`: the flag, and MakeOS whatever it says). Under
@@ -1047,12 +1058,9 @@ impl ShellMenu {
         };
         let height = (chrome + list_h).min(max_h);
         let x = (screen.pos.x + (screen.size.x - CARD_WIDTH) * 0.5).floor();
-        let y = match self.model.frozen_top {
-            Some(top) => top,
-            None => (screen.pos.y + (screen.size.y - height) * 0.5)
-                .max(screen.pos.y + gaps_out)
-                .floor(),
-        };
+        // Typing keeps the top stable only while the card still fits. A
+        // resized window or expanded search must not put rows off screen.
+        let y = centered_card_top(screen, height, gaps_out, self.model.frozen_top);
         let offset=crate::desktop::SPECS[self.desktop_style as usize].menu_bottom_offset;
         let (x,y)=match self.desktop_style {
             DesktopStyle::Windows2000=>(screen.pos.x+3.0,screen.pos.y+screen.size.y-height-offset),
@@ -1417,10 +1425,6 @@ impl ShellMenu {
     }
 
     fn activate_selected(&mut self, cx: &mut Cx) {
-        // A descent freezes the card top too.
-        if self.model.frozen_top.is_none() {
-            self.model.frozen_top = Some(self.card.pos.y);
-        }
         if let Some(target) = self.model.activate() {
             self.model.close();
             cx.widget_action(self.uid, ShellMenuAction::Activate(target));
@@ -1564,6 +1568,28 @@ impl Widget for ShellMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn centered_and_filtered_cards_stay_inside_the_viewport() {
+        let screen = rect(0.0, 26.0, 1400.0, 874.0);
+        assert_eq!(centered_card_top(screen, 600.0, 8.0, None), 163.0);
+        assert_eq!(centered_card_top(screen, 100.0, 8.0, Some(300.0)), 300.0);
+        assert_eq!(centered_card_top(screen, 600.0, 8.0, Some(300.0)), 292.0);
+        let smaller = rect(0.0, 26.0, 800.0, 400.0);
+        assert_eq!(centered_card_top(smaller, 280.0, 8.0, Some(300.0)), 138.0);
+    }
+
+    #[test]
+    fn navigating_between_menus_recenters_after_a_search() {
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.frozen_top = Some(300.0);
+        model.descend("apps");
+        assert_eq!(model.frozen_top, None, "the taller Apps menu needs its own center");
+        model.frozen_top = Some(180.0);
+        assert!(model.back());
+        assert_eq!(model.frozen_top, None, "returning to the root also recenters");
+    }
 
     #[test]
     fn the_tree_has_the_omarchy_root_in_order() {

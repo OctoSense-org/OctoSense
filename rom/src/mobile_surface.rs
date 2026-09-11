@@ -1,7 +1,8 @@
 //! Phone chrome drawn around compositor-owned application surfaces.
 use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
-use makepad_widgets::{app_icon::AppIconDraw, gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
+use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
+use crate::makeos::style::AppIconDraw;
 mod search;
 
 script_mod! {
@@ -160,20 +161,9 @@ impl PhoneSurface {
     }
     /// The home page's regions for this screen: tiles, favorites, dock.
     pub fn home_layout(style: DesktopStyle, screen: Rect) -> HomeLayout {
-        let mut layout = mobile_tiles::home_layout(screen, Self::home_top(style, screen), Self::home_dock(screen));
         let available = crate::shell::launcher::apps();
-        layout.tiles.retain(|slot| available.iter().any(|app| app.id == format!("apps.{}", slot.app)));
-        if layout.tiles.is_empty() {
-            // A catalog without live tile apps gives the space to its app icons.
-            let top = Self::home_top(style, screen);
-            let height = (Self::home_dock(screen).pos.y - 36.0 - top).max(0.0);
-            layout.row_height = if layout.landscape { 64.0 } else { 88.0 };
-            let rows = (height / layout.row_height).floor() as usize;
-            layout.favorites.pos.y = top;
-            layout.favorites.size.y = rows as f64 * layout.row_height;
-            layout.capacity = rows * layout.columns;
-        }
-        layout
+        let ids: Vec<_> = available.iter().map(|app| app.id.trim_start_matches("apps.")).collect();
+        mobile_tiles::home_layout_for_apps(screen, Self::home_top(style, screen), Self::home_dock(screen), &ids)
     }
     /// Where a window zooms out of and back into: its tile for a tile app,
     /// the dock's centre otherwise.

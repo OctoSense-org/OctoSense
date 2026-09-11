@@ -165,8 +165,15 @@ impl Widget for MpModuleView {
         if matches!(event, Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_)) && !self.focused {
             return;
         }
-        if let Event::MouseDown(e) = event {
-            if self.area.is_valid(cx) && self.area.rect(cx).contains(e.abs) {
+        let press = match event {
+            Event::MouseDown(e) => Some(e.abs),
+            Event::TouchUpdate(update) => update.touches.iter()
+                .find(|point| point.state == makepad_platform::event::TouchState::Start)
+                .map(|point| point.abs),
+            _ => None,
+        };
+        if let Some(abs) = press {
+            if self.area.is_valid(cx) && self.area.rect(cx).contains(abs) {
                 if let Some(client) = self.client {
                     // The WM moves focus here (and back to us through
                     // `focus_keyboard`), exactly as for a process tile.
@@ -182,6 +189,15 @@ impl Widget for MpModuleView {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let rect = cx.turtle().rect();
+        if self.root.is_some() {
+            // Read the instance's current theme: the host's module-view
+            // template was registered before mobile/light styles were applied.
+            // Transparent app roots must not get dark text on an old dark ground.
+            if let Some(color) = cx.with_script_vm_id_trusted(self.vm_id,
+                |vm| script_eval!(vm, {mod.theme.color_bg_app})).as_color() {
+                self.draw_bg.color = Vec4f::from_u32(color);
+            }
+        }
         self.draw_bg.draw_abs(cx, rect);
         if let Some(root) = self.root.clone() {
             let entry = enter_isolate(cx, self.vm_id);

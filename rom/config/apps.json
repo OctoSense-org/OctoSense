@@ -10,7 +10,7 @@
   {
     "id": "browser",
     "label": "Browser",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-browser",
     "bin": "browser",
     "policy": "focus"
@@ -18,7 +18,7 @@
   {
     "id": "files",
     "label": "Files",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-files",
     "bin": "files",
     "policy": "focus",
@@ -29,7 +29,7 @@
   {
     "id": "terminal",
     "label": "Terminal",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-terminal",
     "bin": "terminal",
     "policy": "new"
@@ -37,7 +37,7 @@
   {
     "id": "mixer",
     "label": "Mixer",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-mixer",
     "bin": "makepad-mixer",
     "policy": "focus"
@@ -45,7 +45,7 @@
   {
     "id": "task",
     "label": "Task Manager",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-task",
     "bin": "task",
     "policy": "focus"
@@ -53,7 +53,7 @@
   {
     "id": "sheets",
     "label": "Sheets",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-sheets",
     "bin": "sheets",
     "policy": "focus"
@@ -61,7 +61,7 @@
   {
     "id": "photos",
     "label": "Photos",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-photos",
     "bin": "photos",
     "policy": "focus"
@@ -69,7 +69,7 @@
   {
     "id": "clock",
     "label": "Clock",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-clock",
     "bin": "clock",
     "policy": "focus"
@@ -77,7 +77,7 @@
   {
     "id": "weather",
     "label": "Weather",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-weather",
     "bin": "weather",
     "policy": "focus"
@@ -85,7 +85,7 @@
   {
     "id": "fabric",
     "label": "Fabric",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-fabric",
     "bin": "makepad-fabric",
     "policy": "focus"
@@ -93,7 +93,7 @@
   {
     "id": "score",
     "label": "Score",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-app-score",
     "bin": "makepad-app-score",
     "policy": "focus"
@@ -101,7 +101,7 @@
   {
     "id": "video",
     "label": "Video Player",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-video",
     "bin": "video",
     "policy": "new"
@@ -109,7 +109,7 @@
   {
     "id": "route",
     "label": "Route",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-app-route",
     "bin": "makepad-app-route",
     "policy": "focus"
@@ -117,7 +117,7 @@
   {
     "id": "vj",
     "label": "VJ",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-vj",
     "bin": "makepad-vj",
     "policy": "focus"
@@ -125,23 +125,23 @@
   {
     "id": "fab",
     "label": "Fab",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-fab",
     "bin": "makepad-fab",
     "policy": "focus"
   },
   {
     "id": "studio",
-    "label": "Studio",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
-    "package": "makepad-studio",
-    "bin": "makepad-studio",
+    "label": "Director",
+    "manifest": "../../makepad/Cargo.toml",
+    "package": "makepad-director",
+    "bin": "director",
     "policy": "focus"
   },
   {
     "id": "image",
     "label": "Image Viewer",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-image",
     "bin": "image",
     "policy": "new"
@@ -149,7 +149,7 @@
   {
     "id": "pdf",
     "label": "PDF Viewer",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-pdf",
     "bin": "pdf",
     "policy": "new"
@@ -157,7 +157,7 @@
   {
     "id": "aichat",
     "label": "AI",
-    "manifest": "../../guofoo-makepad/Cargo.toml",
+    "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-aichat",
     "bin": "aichat",
     "policy": "new"

@@ -134,3 +134,136 @@ Configured this machine’s `~/.makeos/weights/Qwen3.5-9B-UD-Q4_K_XL.gguf` as a 
 An isolated MakeOS release instance launched the catalog’s AI app through the normal WM Cargo path. The provider showed `Local · Qwen3.5 9B · local only`; its log confirmed loading the linked GGUF after no fleet node answered. A short arithmetic prompt returned `4`. The prompt was injected through the hosted assistant’s own remote input endpoint. Two earlier attempts through host pane coordinates did not submit text, including after waiting for child sizing; pane input routing remains unverified by this check. The host and assistant exited after validation.
 
 Artifacts: `target/aichat-validation/model-verified/`, including the assistant log, exact reply and app-provided frame. Earlier probe attempts are retained alongside it.
+
+# Android library target — 2026-09-09
+
+Reproduced `cargo makepad android build -p makeos --release` failing with a
+duplicate `[workspace]` in its generated wrapper manifest. MakeOS's own manifest
+was valid: the installed builder copied its existing workspace section and
+appended another when adapting the binary-only package for Android.
+
+An explicit library target now uses the existing `src/main.rs` entry point, so
+the builder compiles it directly as an Android shared library. The desktop binary
+continues to use the same source and owns its unit tests. Cargo reports that the
+source is shared by two targets; this avoids moving or duplicating the imported
+WM source. No builder or dependency-checkout changes were needed.
+
+The exact Android release command passed and produced
+`target/android/makepad-android-apk/makeos/apk/makeos.apk`. The desktop check
+(`cargo check --locked --workspace`) and upstream provenance/pin check passed.
+Missing launcher icons remain nonfatal packaging warnings. This check built the
+APK; it did not install or exercise it on a device.
+
+Logs: `target/android-validation/` (ignored), including the original failure,
+successful Android build, desktop check, and provenance check.
+
+# Platform startup defaults and native phone controls — 2026-09-09
+
+MakeOS now chooses its startup shell using the compiled target OS: Android and
+iOS enter their respective phone layouts before the first frame; desktop/web
+retain Omarchy. Selection uses the existing style-switch path to configure phone
+state, controls, icons and hosted-app styles together. Native mobile toolbars
+use 48-point height and an 8-point left inset, reserve the reported safe area,
+and do not act as desktop window-drag handles. Desktop caption geometry and
+manual style switching remain available.
+
+Two new regression checks failed before the fix: Android selected Omarchy and
+native toolbar geometry was `(26, 84)` instead of `(48, 8)`. All 208 Rust tests
+then passed. The Android release command produced an APK, installed on the
+connected OnePlus 6T. Native ADB taps opened the style menu, toggled light/dark,
+and opened the app drawer. The desktop `cargo run` smoke passed Omarchy wallpaper
+startup, Reference pointer/keyboard input, workspace/fullscreen behavior,
+independent instances, and shutdown cleanup.
+
+Native testing also exposed vertically flipped phone home content: the pinned
+GL backend normalizes render-target rows, while the compositor applies a legacy
+Android flip. The Android-only shader override in
+`src/makeos/android_rendering.rs` restores upright home/drawer content. This is a
+local compatibility correction until the framework is updated; neither the
+Makepad dependency pin nor its checkout was changed. Android hosted-app captures
+and blur paths require separate coverage; the desktop Cargo app catalog is not
+bundled into the APK.
+
+The iOS policy is unit-tested, but the full cross-check
+`cargo check --locked -p makeos --lib --target aarch64-apple-ios` stops in the
+pinned Makepad `platform/src/os/apple/metal.rs` at lines 1092 and 1183, where
+macOS-only module references are not guarded for iOS. No iOS runtime validation
+is claimed. Both framework follow-ups are recorded in `BACKLOG.md`.
+
+Artifacts: `target/mobile-startup-validation/` (ignored), with red/green test
+logs, Android builds, iOS diagnostics, desktop smoke artifacts, and device frames
+for startup, style selection, appearance and the app drawer.
+
+# Launcher centering and bundled mobile apps — 2026-09-09
+
+Opening Apps from the shorter root menu retained the parent's frozen top,
+putting the larger list below the window. A regression test failed with that
+position retained. Menu navigation now recenters, while searches keep their top
+only while the card fits. Native screenshots confirm both the first app rows
+and the final AI row remain inside the desktop window.
+
+Android previously had no catalog on the device and linked no app modules.
+Native mobile targets now link Reference, Sheets and Photos automatically and
+derive their installed catalog from the module registry. Desktop still uses its
+Cargo/process catalog by default. Partial home-tile catalogs now reflow instead
+of reserving empty Clock/Weather slots and hiding Reference/Sheets icons.
+
+Reference's counter and input view is shared between its standalone binary and
+embedded module. Native testing also required correcting Android capture
+orientation, registering bundled theme fonts inside module isolates, using the
+instance's theme for its background, and forwarding touch presses to module
+focus. Device taps incremented Reference and Android keyboard text appeared in
+both its input and echo label. Sheets and Photos opened from the home screen.
+
+Validation: 213 Rust tests with `--features mobile-apps`, 44 Python tests, the
+Android release build, and the final `cargo run` desktop smoke passed. The smoke
+covers launcher screenshots, Reference pointer/keyboard input, independent
+instances, workspace/fullscreen operations and cleanup. Earlier attempts exposed
+Reference script import/background issues and intermittent remote snapshot
+404s; the final desktop run completed successfully. Provenance remains at the
+same Makepad revision, and no framework checkout was edited.
+
+Photos has no picture library bundled; its empty-library screen was exercised,
+not image import or persistence. Sheets launches but its grid labels and narrow
+toolbar need further work (`MOBILE-04`). The other 17 desktop apps still need mobile
+ports (`MOBILE-03` in `BACKLOG.md`). iOS retains the previously documented
+framework compilation blocker. Android blur/Recents coverage remains a separate
+framework follow-up.
+
+Artifacts: `target/launcher-mobile-validation/` (ignored). The successful desktop
+run is `desktop-input-final/`; native screenshots record home, drawer, counter,
+keyboard and app launches. `android-build-complete.log` records the final APK.
+
+## Official work update, 2026-09-11
+
+Baseline: official `makepad/makepad` `74b63be83e101ab3a28d3604df77e9662d50a833`.
+All Git dependencies, including wm_api/wm_theme, use this revision. Both WM
+libraries are unchanged from the previous fork pin and remain external.
+
+- `cargo check --workspace --all-features` passed.
+- `cargo test --workspace --all-features --locked --quiet`: 217 tests passed.
+- Python maintenance tests: 48 passed, including the existing artifact tests
+  and new bounded retry checks for explicitly unsubmitted remote requests.
+- Release GPU hosting/style smoke passed all eight styles, repeated MakeOS
+  transitions, pointer/keyboard input, independent instances, failure handling
+  and process cleanup. Frames are in
+  `target/upstream-20260911/smoke-styles-verified/`.
+- Plain `cargo run` with the shipped catalog passed the native smoke, including
+  centered launcher scrolling and Reference input. Frames are in
+  `target/upstream-20260911/smoke-default-verified/`.
+- Android release APK builds with the linked Reference, Sheets and Photos.
+  ADB reported no connected device for this update, so this revision has not
+  been installed or tested on hardware.
+- iOS compilation remains blocked upstream: `ios.rs:520` calls the missing
+  `Cx::recover_after_caught_panic`; `ios.rs:1598` calls the missing
+  `IosApp::set_deferred_system_gesture_edges`. Desktop iOS-style smoke passes.
+
+The native test exposed a new upstream retained-memory scan reading freed draw
+list roots from retired pass slots. `src/makeos/retired_passes.rs` detaches only
+those invalid passes, leaving live roots intact. The pool regression was
+observed failing before the fix; all-style GPU verification passes afterward.
+The diagnostic call stack is in `target/upstream-20260911/trace-tap/host.log`.
+
+The starting dirty working tree is preserved in
+`target/upstream-20260911/before/`; the integration diff and exact file list
+are saved beside it. Source checkouts were read only.

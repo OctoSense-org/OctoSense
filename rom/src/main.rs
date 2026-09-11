@@ -134,6 +134,7 @@ script_mod! {
                             }
                         }
                     }
+                    makeos_wallpaper := MakeosWallpaper{}
                     bg_image := Image{
                         width: Fill
                         height: Fill
@@ -198,7 +199,10 @@ const BAR_HEIGHT_FALLBACK: f64 = 26.0;
 /// the right, where they must not push the left cluster off screen.
 type BarMetrics = (f64, f64);
 
-fn bar_metrics_for_geom(geom: &WindowGeom) -> BarMetrics {
+fn bar_metrics_for_geom(geom: &WindowGeom, native_mobile: bool) -> BarMetrics {
+    if native_mobile {
+        return (48.0, 8.0);
+    }
     let buttons = geom.window_chrome_buttons;
     if buttons.size.y <= 0.0 {
         return (BAR_HEIGHT_FALLBACK, 84.0);
@@ -227,7 +231,7 @@ mod bar_chrome_tests {
             },
             ..Default::default()
         };
-        assert_eq!(bar_metrics_for_geom(&geom), (42.0, 96.0));
+        assert_eq!(bar_metrics_for_geom(&geom, false), (42.0, 96.0));
     }
 
     #[test]
@@ -240,7 +244,14 @@ mod bar_chrome_tests {
             },
             ..Default::default()
         };
-        assert_eq!(bar_metrics_for_geom(&geom), (29.0, 8.0));
+        assert_eq!(bar_metrics_for_geom(&geom, false), (29.0, 8.0));
+    }
+
+    #[test]
+    fn native_mobile_toolbar_has_touch_height_without_caption_space() {
+        let geom = WindowGeom::default();
+        assert_eq!(bar_metrics_for_geom(&geom, true), (48.0, 8.0));
+        assert_eq!(bar_metrics_for_geom(&geom, false), (26.0, 84.0));
     }
 }
 
@@ -2468,9 +2479,8 @@ impl App {
     }
 
     fn apply_background(&mut self, cx: &mut Cx, index: usize) -> bool {
-        // The slot is shared with MakeOS's bundled scene, and this is reached
-        // from a wallpaper fetch landing and from Super+Ctrl+Space whatever
-        // the style: only Omarchy's ground is a theme picture.
+        // Wallpaper downloads and Super+Ctrl+Space update the Omarchy
+        // raster layer only.
         if self.state_mut().style.target != desktop::DesktopStyle::Omarchy {
             return false;
         }
@@ -2808,7 +2818,21 @@ impl App {
     /// caption buttons affect the height only; the bar's left cluster stays
     /// at its normal edge inset.
     fn update_bar_chrome(&mut self, cx: &mut Cx, geom: &WindowGeom) {
-        let (height, pad_left) = bar_metrics_for_geom(geom);
+        let native_mobile = cfg!(any(target_os = "ios", target_os = "android"));
+        // Insets can change without changing the toolbar (rotation, system
+        // navigation mode), so update them before the metrics cache check.
+        if native_mobile {
+            let insets = geom.safe_area_insets;
+            let padding = Inset {
+                top: insets.top, right: insets.right,
+                bottom: insets.bottom, left: insets.left,
+            };
+            if let Some(mut body) = self.ui.view(cx, ids!(main_window.body)).borrow_mut() {
+                body.layout.padding = padding;
+                body.redraw(cx);
+            }
+        }
+        let (height, pad_left) = bar_metrics_for_geom(geom, native_mobile);
         if self.bar_metrics == Some((height, pad_left)) {
             return;
         }
@@ -3768,13 +3792,14 @@ impl MatchEvent for App {
             }
         }
 
+        let startup_style = makeos::policy::startup_style();
         let theme_name = Self::theme_name_from_env();
         // Children inherit the theme file path so every Makepad app styles
         // itself from the same theme.splash.
         host::set_child_env("MAKEPAD_WM_THEME_SPLASH", theme::theme_splash_path(&theme_name).as_os_str());
         let wallpaper = self.ui.widget(cx, ids!(wallpaper));
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() { desk.wallpaper = wallpaper; }
-        let sheet = desktop_style::StyleSheet::load(desktop::DesktopStyle::Omarchy);
+        let sheet = makeos::style::load_sheet(desktop::DesktopStyle::Omarchy, false);
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         self.module_host.apply_style(cx, &sheet);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
@@ -3843,6 +3868,17 @@ impl MatchEvent for App {
         let args: Vec<String> = std::env::args().collect();
         self.apps = AppRegistry::load(&theme::makepad_home().join("wm/apps.splash"), &args);
         log!("wm: modules linked: {:?}", self.apps.linked_ids());
+        // Use the normal style-switch path before the first frame, so phone
+        // state, controls, icons and hosted-app styles all agree from startup.
+        if startup_style != self.state_mut().style.target {
+            self.set_desktop_style(cx, startup_style);
+        }
+        if cfg!(any(target_os = "ios", target_os = "android")) {
+            self.update_bar_chrome(cx, &WindowGeom {
+                safe_area_insets: cx.display_context.safe_area_insets,
+                ..Default::default()
+            });
+        }
         // An in-process assistant: the WM's own service waits on Cx for
         // the pane's root to adopt it, so it is there from the first open.
         if self.apps.pane_in_process() {
@@ -3899,7 +3935,9 @@ impl MatchEvent for App {
             }
         }
 
-        self.apply_background(cx, 0);
+        if startup_style == desktop::DesktopStyle::Omarchy {
+            self.apply_background(cx, 0);
+        }
         if makeos::policy::requested("--download-wallpapers") {
             self.fetch_backgrounds_if_missing(cx);
         }
@@ -4078,6 +4116,9 @@ impl AppMain for App {
         host::set_child_env("MAKEPAD_HOME", makeos::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
+        makeos::wallpaper::script_mod(vm);
+        #[cfg(target_os = "android")]
+        makeos::android_rendering::script_mod(vm);
 
         // The theme: evaluated before any module that reads
         // mod.wm_theme. This IS the theming system — splash.
@@ -4195,7 +4236,8 @@ impl AppMain for App {
             // The shell bar's own modules are BUTTONS, not a drag handle:
             // where it claims a point, the press reaches the widget.
             let bar = self.ui.view(cx, ids!(bar)).area();
-            if self.phone_toolbar_hit(cx,dq.abs).is_some() || self.shell_bar_claims(cx, dq.abs) {
+            if cfg!(any(target_os = "ios", target_os = "android"))
+                || self.phone_toolbar_hit(cx,dq.abs).is_some() || self.shell_bar_claims(cx, dq.abs) {
                 dq.response.set(WindowDragQueryResponse::Client);
             } else if bar.is_valid(cx) && bar.rect(cx).contains(dq.abs) {
                 dq.response.set(WindowDragQueryResponse::Caption);
@@ -4383,6 +4425,9 @@ impl AppMain for App {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
         self.sync_phone_keyboard(cx);
+        // Style reloads and phone capture teardown may retire draw lists during
+        // this event. Remove their pass roots before upstream scans GPU demand.
+        makeos::retired_passes::clear_retired_roots(cx);
         // The gap cursor, LAST: a tile hover-out inside `ui.handle_event`
         // resets the cursor to Default, and the frame's final `set_cursor`
         // is the one the platform applies.

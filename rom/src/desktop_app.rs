@@ -82,10 +82,10 @@ impl App {
         cx.stop_timer(self.snap_hover_timer);
         let area = self.desk_area(cx);
         let dark = self.state_mut().style.dark;
-        let sheet = desktop_style::StyleSheet::load_with_appearance(style, dark);
+        let sheet = makeos::style::load_sheet(style, dark);
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {desk.set_startup_style(cx, &sheet);}
-        let sheet_name = sheet.name.clone();
-        app_icon::install(cx, style, &sheet.icons);
+        let sheet_name = if style == DesktopStyle::MakeOs { style.id().to_string() } else { sheet.name.clone() };
+        app_icon::install(cx, style.framework(), &sheet.icons);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
         let state = self.state_mut();
         state.material = material;
@@ -131,24 +131,14 @@ impl App {
         // desktop identities have their own ground.
         let has_wallpaper = match style {
             DesktopStyle::Omarchy => {
-                // The slot may still hold MakeOS's scene from an earlier
-                // visit: put the theme's own picture back (a cache hit when
-                // it is already decoded) rather than leave the vector one.
+                // Restore the selected Omarchy raster when returning from
+                // another style (a cache hit when it is already decoded).
                 self.apply_background(cx, self.background_index)
-            }
-            DesktopStyle::MakeOs => {
-                let scene = theme::BUNDLED_MAKEOS_WALLPAPER.as_bytes();
-                match self.ui.image(cx, ids!(bg_image)).load_svg_from_data(cx, scene) {
-                    Ok(()) => true,
-                    Err(error) => {
-                        log!("wm: the bundled MakeOS wallpaper did not load: {}", error);
-                        false
-                    }
-                }
             }
             _ => false,
         };
         self.ui.widget(cx, ids!(bg_image)).set_visible(cx, has_wallpaper);
+        self.ui.widget(cx, ids!(makeos_wallpaper)).set_visible(cx, style == DesktopStyle::MakeOs);
         let spec = &SPECS[style as usize];
         let pair = if dark && style.supports_dark() { spec.ground_dark } else { spec.ground };
         let to = |(r, g, b)| shell::rgb(r, g, b);

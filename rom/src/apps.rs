@@ -37,15 +37,34 @@ pub fn is_linked(id: &str) -> bool {
     linked_modules().iter().any(|m| m.id() == id)
 }
 
-/// The modules this build links, one entry per `app-*` feature.
+/// Mobile includes its bundled modules automatically; desktop opts in with
+/// `app-*` features and continues to use process hosting by default.
 fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
-    #[cfg(feature = "app-sheets")]
+    #[cfg(any(feature = "app-reference", target_os = "android", target_os = "ios"))]
+    out.push(&makeos_reference::REFERENCE_MODULE);
+    #[cfg(any(feature = "app-sheets", target_os = "android", target_os = "ios"))]
     out.push(&makepad_sheets::SHEETS_MODULE);
-    #[cfg(feature = "app-photos")]
+    #[cfg(any(feature = "app-photos", target_os = "android", target_os = "ios"))]
     out.push(&makepad_photos::PHOTOS_MODULE);
     out
+}
+
+/// An installed host has no checkout catalog. Its linked modules carry all
+/// the information needed to populate the launcher without filesystem paths.
+pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
+    linked_modules().iter().map(|module| crate::clients::AppDef {
+        id: module.id().into(),
+        label: module.label().into(),
+        bin: module.id().into(),
+        package: String::new(),
+        dir: String::new(),
+        manifest: None,
+        args: Vec::new(),
+        policy: if module.id() == "reference" { crate::clients::LaunchPolicy::AlwaysNew }
+            else { crate::clients::LaunchPolicy::OrFocus },
+    }).collect()
 }
 
 /// The launcher checks the selected host, not merely whether a module is linked.
@@ -89,7 +108,7 @@ impl AppRegistry {
 
     /// How a launch of `id` is hosted. On a desktop: Module only when a
     /// module is linked AND the person (or the dev flag) asked for it. In a
-    /// build without processes (the web): every linked module is a module,
+    /// build without processes (mobile/web): every linked module is a module,
     /// and everything else is simply not there.
     pub fn hosting(&self, id: &str) -> Hosting {
         if !crate::host::processes_available() {
@@ -142,6 +161,36 @@ impl AppRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "mobile-apps")]
+    #[test]
+    fn bundled_apps_open_without_catalog_files_or_child_processes() {
+        use makepad_widgets::*;
+        let catalog = bundled_catalog();
+        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
+                   ["reference", "sheets", "photos"]);
+        assert!(catalog.iter().all(|app| app.manifest.is_none()));
+        assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
+        let registry = AppRegistry::default();
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        for (index, app) in catalog.iter().enumerate() {
+            let module = registry.module(&app.id).unwrap();
+            let client = index as u64 + 1;
+            host.create(&mut cx, client, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+            let instance = host.get(client).unwrap();
+            assert!(!instance.root.is_empty(), "{} must provide a real view", app.id);
+            cx.with_script_vm_id_trusted(instance.vm_id, |vm| {
+                assert!(script_eval!(vm, {mod.theme.font_regular.font_family.latin.res}).as_handle().is_some(),
+                        "{} must have the Android font resource", app.id);
+                assert!(script_eval!(vm, {mod.res}).is_nil(), "resource loading stays restricted after registration");
+                assert!(vm.take_errors().is_empty(), "{} must initialize without script errors", app.id);
+            });
+            assert!(host.teardown(&mut cx, client));
+        }
+    }
 
     #[test]
     fn overrides_parse_the_settings_shape_and_ignore_noise() {

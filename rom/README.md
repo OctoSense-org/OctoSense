@@ -19,19 +19,58 @@ cargo build --release --workspace
 cargo run --release
 ```
 
-The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../guofoo-makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+
+The build target selects the startup shell automatically: Android uses the Android phone layout, iOS uses the iOS phone layout, and desktop/web builds keep Omarchy. You can still switch styles from the shell's style menu. Native phone toolbars are 48 points high and respect the window's safe-area insets.
 
 The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit MakeOS** closes the desktop and its hosted processes.
 
 Omarchy starts with a bundled Tokyo Night wallpaper, so the background works offline on a fresh install. Installed images in `~/.makeos/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
 
-Eight desktop styles are available, including **MakeOS**, a dark floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **MakeOS**, and press Enter to select it. The style includes a bundled vector wallpaper and rounded hosted surfaces; startup remains Omarchy. Select another style from the same appearance menu.
+Eight desktop styles are available, including **MakeOS**, a dark floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **MakeOS**, and press Enter to select it. The style includes a bundled vector wallpaper and rounded hosted surfaces; desktop startup remains Omarchy. Select another style from the same appearance menu.
 
 Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
 
+## Android
+
+With the Makepad Android toolchain installed and a device connected through ADB:
+
+```sh
+cargo makepad android run -p makeos --release
+```
+
+`run` builds, installs, and launches the app; `build` only creates the APK.
+Native Android/iOS builds automatically link **Reference, Sheets, and Photos**
+as embedded apps. They need no sibling checkout or extra feature flags. On an
+installed device, the launcher derives its default catalog from those linked
+modules. Missing Clock/Weather tiles give their space to the available app icons.
+
+Switching desktop MakeOS to the Android style changes its interface; it still
+uses desktop process hosting and the full desktop catalog. The other desktop
+apps (including Browser, Files, Terminal, and AI Chat) need embedded mobile
+implementations before they can be bundled in the phone build. Photos includes
+the app, not your desktop photo library; local Qwen weights are not packaged.
+
+To exercise the same embedded apps on desktop:
+
+```sh
+cargo run --features mobile-apps -- --module reference --module sheets --module photos
+```
+
+Reference shares its counter and text-input view between the standalone desktop
+process and the embedded mobile module. Sheets and Photos remain external Git
+crates at the same pinned Makepad revision.
+
+Mobile app support is still partial: Sheets needs grid-label and toolbar fixes,
+and Photos needs a picture library/import setup. These follow-ups are tracked
+in [BACKLOG.md](BACKLOG.md).
+
+The iOS startup policy is covered by tests, but a complete iOS build currently
+fails in the pinned Makepad Metal backend; see [validation](docs/validation.md).
+
 ## Add an app
 
-The default [config/apps.json](config/apps.json) includes Reference and the apps from the sibling `guofoo-makepad` checkout. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
+The default [config/apps.json](config/apps.json) includes Reference and the apps from the sibling `makepad` checkout. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
 
 ```sh
 cargo run -- --apps config/apps.makepad.json
@@ -39,7 +78,7 @@ cargo run -- --apps config/apps.makepad.json
 
 It includes Reference plus the fork's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Fabric, Score, Video Player, Route, VJ, Fab and Studio. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.makeos/wm/launcher.hides`.
 
-App source stays in `../guofoo-makepad`; each app builds on demand using its package's normal default features and the source workspace's build cache. The catalog uses the workspace root manifest to preserve the fork apps' expected working directory. Files retains the fork's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. No apps start automatically; `--assistant` remains opt-in.
+App source stays in `../makepad`; each app builds on demand using its package's normal default features and the source workspace's build cache. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
 
 Keep that checkout at the revision in `upstream/makepad.json` so hosted apps and the host use matching framework/protocol code. Reference remains available independently of that checkout. A personal `~/.makeos/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
 
@@ -93,21 +132,19 @@ The [local AI setup guide](docs/local-ai.md) covers the assistant app prerequisi
 
 ## Upstream updates
 
-[upstream/makepad.json](upstream/makepad.json) records every imported file, its original path/hash, and the matching framework revision. The source and dependency baseline is [guofoo/makepad at beb3857a](https://github.com/guofoo/makepad/commit/beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d). Its widget changes provide the MakeOS style and glass support; framework code remains external.
+[upstream/makepad.json](upstream/makepad.json) records every imported WM file, its original path/hash, and the matching framework revision. The source and dependency baseline is [official Makepad at 74b63be8](https://github.com/makepad/makepad/commit/74b63be83e101ab3a28d3604df77e9662d50a833). All framework crates, including `libs/wm_api` and `libs/wm_theme`, stay external at that exact Git revision. MakeOS owns its additional style, theme assets and wallpaper behavior locally.
 
 Run this daily, or after any upstream pull. With Python 3.11+, update the Makepad
 checkout using your normal Git workflow, then run one command from MakeOS:
 
 ```sh
-git -C ../guofoo-makepad pull --ff-only origin work
+git -C ../makepad pull --ff-only origin work
 python3 scripts/upstream.py sync
 ```
 
-`sync` defaults to the recorded `../guofoo-makepad` checkout's current `HEAD`.
-That fork must incorporate official Makepad updates through your source Git
-workflow before they can be imported here. WM feature development now belongs
-in this repository; framework changes remain in the pinned fork until available
-upstream. When the checkout's HEAD matches the
+`sync` defaults to the recorded `../makepad` checkout's current `HEAD`.
+WM feature development belongs in this repository; framework updates come from
+official Makepad. When the checkout's HEAD matches the
 recorded revision, it exits without building. Otherwise it requires a clean
 MakeOS tree, saves comparison diffs, stages the merge, updates all dependency
 pins and the lockfile, runs compile/Rust/Python checks, builds both profiles,

@@ -79,3 +79,14 @@
 ## 2026-09-09 — Document local AI setup for contributors
 - Added docs/local-ai.md and a README entry covering per-user weights outside Git, assistant source setup at the recorded revision, a pinned model download with checksum validation, existing-file reuse, custom paths and verification. Added ignore rules for GGUFs and partial downloads.
 - Verified the installed GGUF SHA-256 matches the publisher’s pinned file. Checked all four shell command blocks with bash -n, checked ignore behavior and ran git diff --check. No model download, source build, GUI launch or personal-state change was needed for this documentation update.
+
+## 2026-09-11 — Update from official work
+- Bootstrapped skills, inspected both repo states, saved local source snapshot and inventory. Assessing framework compatibility before changing the live code.
+
+- Candidate pins now fetch the published official revision successfully. Common-ancestor WM diff is only the Studio catalog rename; fork additions are retained as local changes.
+
+- Candidate Rust tests 216 passed, Python maintenance 44 passed. Added 3 remote input retry tests and a real draw-list retirement regression. Release GPU smoke exposed upstream stale pass roots; fixing with local public-API adapter.
+
+- Applied 28 integration files on main after checking their live contents against the starting dirty snapshot. No staging or commit. Latest validation: 217 Rust tests, 48 Python tests, all-style GPU smoke, default cargo-run catalog smoke, and Android APK build passed. iOS upstream errors and absent ADB device documented.
+
+- Final live workspace all-features locked check passed. Daily sync reports already at the recorded official revision; applied file hashes match the verified candidate.

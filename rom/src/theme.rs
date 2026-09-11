@@ -1493,9 +1493,7 @@ bright_magenta = "#bb9af7"
 
     #[test]
     fn style_roles_scan_the_sheet_and_default_where_it_is_silent() {
-        let sheet = makepad_widgets::desktop_style::StyleSheet::load(
-            makepad_widgets::desktop_style::DesktopStyle::MakeOs,
-        );
+        let sheet = crate::makeos::style::load_sheet(crate::desktop::DesktopStyle::MakeOs, false);
         let roles = scan_style_roles(&sheet.theme);
         assert_eq!(roles.text, crate::shell::rgb(0xd6, 0xe2, 0xff));
         assert_eq!(roles.focus, crate::shell::rgb(0x5b, 0x9d, 0xff));
@@ -1512,9 +1510,7 @@ bright_magenta = "#bb9af7"
 
     #[test]
     fn the_makeos_sheet_material_matches_the_bundled_numbers() {
-        let sheet = makepad_widgets::desktop_style::StyleSheet::load(
-            makepad_widgets::desktop_style::DesktopStyle::MakeOs,
-        );
+        let sheet = crate::makeos::style::load_sheet(crate::desktop::DesktopStyle::MakeOs, false);
         let (m, problems) = scan_material(&sheet.theme);
         assert!(problems.is_empty(), "{problems:?}");
         assert_eq!(m.glass, 1.0);
