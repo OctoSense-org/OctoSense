@@ -841,6 +841,8 @@ pub struct ShellDraw {
     /// (main.rs) hands over another.
     #[rust]
     material: MaterialTokens,
+    #[rust]
+    palette: Option<super::ShellPalette>,
     /// The overlay draw list a glass surface is hoisted into — created on
     /// the first glass draw, reused on every one after.
     #[rust]
@@ -1072,6 +1074,14 @@ impl ShellDraw {
     /// here; the next `begin_surface` and `card` read it.
     pub fn set_material(&mut self, m: MaterialTokens) {
         self.material = m;
+    }
+
+    pub fn set_palette(&mut self, palette: Option<super::ShellPalette>) {
+        self.palette = palette;
+    }
+
+    pub fn tokens(&self, base: ShellTokens) -> ShellTokens {
+        base.with_palette(self.palette)
     }
 
     /// What `begin_surface` and `card` paint with right now — the flat

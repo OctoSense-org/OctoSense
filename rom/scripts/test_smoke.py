@@ -63,19 +63,33 @@ def refusal(body='requested input frame could not be submitted; retry'):
 class RemoteInputTests(unittest.TestCase):
     @patch('smoke.time.sleep')
     @patch('smoke.urlopen')
-    def test_retries_explicitly_unsubmitted_input(self, request, sleep):
-        request.side_effect = [refusal(), io.StringIO('{"ok":true}')]
-        self.assertEqual(smoke.get(1, 'click', x=1, y=2), {'ok': True})
-        self.assertEqual(request.call_count, 2)
-        self.assertEqual(request.call_args_list[0], request.call_args_list[1])
+    def test_input_presentation_failure_waits_without_replaying_input(self, request, sleep):
+        for route in ('click', 'k'):
+            with self.subTest(route=route):
+                request.reset_mock()
+                request.side_effect = [refusal(), io.StringIO('{"png":"frame.png"}')]
+                self.assertEqual(smoke.get(1, route, w=2, wait=1), {'ok': 1})
+                self.assertEqual(request.call_count, 2)
+                self.assertEqual(request.call_args_list[0].args[0], f'http://127.0.0.1:1/{route}?w=2&wait=1')
+                self.assertEqual(request.call_args_list[1].args[0], 'http://127.0.0.1:1/g?w=2')
 
     @patch('smoke.time.sleep')
     @patch('smoke.urlopen')
     def test_persistent_refusal_is_bounded(self, request, sleep):
-        request.side_effect = [refusal(), refusal(), refusal()]
+        request.side_effect = [refusal('grab frame could not be submitted at arming; retry') for _ in range(3)]
         with self.assertRaisesRegex(ValueError, 'HTTP 404'):
-            smoke.get(1, 'click')
+            smoke.get(1, 'g')
         self.assertEqual(request.call_count, 3)
+
+    @patch('smoke.time.sleep')
+    @patch('smoke.urlopen')
+    def test_failed_capture_never_replays_applied_input(self, request, sleep):
+        request.side_effect = [refusal()] + [refusal('grab frame could not be submitted at arming; retry') for _ in range(3)]
+        with self.assertRaisesRegex(ValueError, 'HTTP 404'):
+            smoke.get(1, 'click', x=1, y=2, wait=1)
+        urls = [call.args[0] for call in request.call_args_list]
+        self.assertEqual(len(urls), 4)
+        self.assertEqual(sum('/click?' in url for url in urls), 1)
 
     @patch('smoke.urlopen')
     def test_other_errors_are_not_replayed(self, request):
