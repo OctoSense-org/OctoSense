@@ -46,7 +46,7 @@ pub fn set_child_env(key: &str, value: &std::ffi::OsStr) {
 /// The storage namespace the desk keeps its own small state in (the
 /// theme choice), on the Cx storage API — files under the makepad home
 /// natively, the browser's store on the web.
-pub const STORAGE: &str = "makeos";
+pub const STORAGE: &str = "octosense";
 
 /// The key the chosen theme's name is kept under.
 pub const THEME_KEY: &str = "theme";

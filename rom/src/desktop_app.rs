@@ -5,7 +5,7 @@ use crate::desktop::{dark_chrome, DesktopShelf, DesktopStyle, ShelfHit, SPECS};
 use crate::*;
 
 /// Match the browser's initial page palette: light Omarchy themes, classic
-/// desktops that have no dark variant, and MakeOS, dark whatever the flag says.
+/// desktops that have no dark variant, and OctoSense, dark whatever the flag says.
 pub(super) fn browser_appearance(style: DesktopStyle, dark: bool, omarchy_source: &str) -> bool {
     if style == DesktopStyle::Omarchy {
         return scan_theme_color(omarchy_source, "background")
@@ -82,9 +82,9 @@ impl App {
         cx.stop_timer(self.snap_hover_timer);
         let area = self.desk_area(cx);
         let dark = self.state_mut().style.dark;
-        let sheet = makeos::style::load_sheet(style, dark);
+        let sheet = octosense::style::load_sheet(style, dark);
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {desk.set_startup_style(cx, &sheet);}
-        let sheet_name = if style == DesktopStyle::MakeOs { style.id().to_string() } else { sheet.name.clone() };
+        let sheet_name = if style == DesktopStyle::OctoSense { style.id().to_string() } else { sheet.name.clone() };
         app_icon::install(cx, style.framework(), &sheet.icons);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
         let state = self.state_mut();
@@ -126,7 +126,7 @@ impl App {
             menu.roles = roles;
         }
         // Wallpaper is part of the framebuffer crossfade. Omarchy retains the
-        // selected wallpaper and MakeOS shows its bundled scene through the
+        // selected wallpaper and OctoSense shows its bundled scene through the
         // same slot, the spec gradient beneath as the fallback; the other
         // desktop identities have their own ground.
         let has_wallpaper = match style {
@@ -138,7 +138,7 @@ impl App {
             _ => false,
         };
         self.ui.widget(cx, ids!(bg_image)).set_visible(cx, has_wallpaper);
-        self.ui.widget(cx, ids!(makeos_wallpaper)).set_visible(cx, style == DesktopStyle::MakeOs);
+        self.ui.widget(cx, ids!(octosense_wallpaper)).set_visible(cx, style == DesktopStyle::OctoSense);
         let spec = &SPECS[style as usize];
         let pair = if dark && style.supports_dark() { spec.ground_dark } else { spec.ground };
         let to = |(r, g, b)| shell::rgb(r, g, b);
@@ -371,7 +371,7 @@ impl App {
         if !super_chord(&e.modifiers) {
             return false;
         }
-        // The macOS family has no show-desktop: MakeOS shares the dock.
+        // The macOS family has no show-desktop: OctoSense shares the dock.
         if e.key_code == KeyCode::KeyD && !style.mac_family() {
             self.activate_shelf(cx, ShelfHit::ShowDesktop);
             return true;
@@ -559,8 +559,8 @@ mod appearance_tests {
         }
         assert!(browser_appearance(DesktopStyle::Omarchy,false,"background: #121212"));
         assert!(!browser_appearance(DesktopStyle::Omarchy,true,"background: #eeeeee"));
-        // MakeOS has one look, and it is dark.
-        assert!(browser_appearance(DesktopStyle::MakeOs,false,""));
-        assert!(browser_appearance(DesktopStyle::MakeOs,true,""));
+        // OctoSense has one look, and it is dark.
+        assert!(browser_appearance(DesktopStyle::OctoSense,false,""));
+        assert!(browser_appearance(DesktopStyle::OctoSense,true,""));
     }
 }

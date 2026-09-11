@@ -107,11 +107,11 @@ def check_styles(port, child_port, host_pid, log, artifacts):
     """Exercise live capture/style changes through the host with a retained app."""
     current = "omarchy"
     count = 1
-    clients = set(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log"))
-    styles = [("makeos", "MakeOS"), ("macos", "macOS"), ("windows", "Windows"),
+    clients = set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"))
+    styles = [("octosense", "OctoSense"), ("macos", "macOS"), ("windows", "Windows"),
               ("windows-2000", "Windows 2000"), ("nextstep", "NeXTSTEP"),
               ("ios", "iOS"), ("android", "Android"), ("omarchy", "Omarchy"),
-              ("makeos", "MakeOS"), ("omarchy", "Omarchy")]
+              ("octosense", "OctoSense"), ("omarchy", "Omarchy")]
     for index, (style, label) in enumerate(styles):
         offset = len(log.read_text(errors="replace"))
         if current in ("ios", "android"):
@@ -133,9 +133,9 @@ def check_styles(port, child_port, host_pid, log, artifacts):
         if style == "omarchy":
             wait_for(style + " wallpaper visible", lambda: get(port, "snap", q="bg_image").get("s"))
         assert any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]), style
-        assert set(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log")) == clients, "style launched an extra client"
+        assert set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")) == clients, "style launched an extra client"
         save_grab(artifacts, f"style-{index}-{style}", get(port, "g", scale=0.5))
-        if style == "makeos":
+        if style == "octosense":
             tile = max(get(port, "snap", q="MpRunView")["s"], key=lambda item: item["r"][2] * item["r"][3])
             button = get(child_port, "snap", q="increment")["s"][0]["r"]
             get(port, "click", x=tile["r"][0] + button[0] + button[2]/2,
@@ -143,18 +143,18 @@ def check_styles(port, child_port, host_pid, log, artifacts):
             count += 1
             wait_for("input inside glass window", lambda: any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]))
             get(port, "k", c="Space", cmd=1, wait=1)
-            save_grab(artifacts, f"style-{index}-makeos-menu", get(port, "g", scale=0.5))
+            save_grab(artifacts, f"style-{index}-octosense-menu", get(port, "g", scale=0.5))
             get(port, "k", c="Escape", wait=1)
             if index == 0:
                 width = get(port, "s")["w"][0]["sz"][0]
                 get(port, "click", x=width/2, y=13, wait=1)
-                save_grab(artifacts, "makeos-calendar", get(port, "g", scale=0.5))
+                save_grab(artifacts, "octosense-calendar", get(port, "g", scale=0.5))
                 # Flyouts close on outside clicks; Escape only closes menus.
                 get(port, "click", x=width-10, y=100, wait=1)
                 # The lean catalog has no assistant: this requests a local
                 # notification, exercising its glass without launching an app.
                 get(port, "k", c="F10", wait=1)
-                save_grab(artifacts, "makeos-notification", get(port, "g", scale=0.5))
+                save_grab(artifacts, "octosense-notification", get(port, "g", scale=0.5))
         print(f"PASS: {style} renders and preserves the hosted app without extra launches", flush=True)
         assert_no_runtime_errors(log.read_text(errors="replace"))
 
@@ -163,7 +163,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cargo-run", action="store_true")
     parser.add_argument("--default-catalog", action="store_true", help="Use the shipped catalog; skip injected failure/build fixtures")
-    parser.add_argument("--styles", action="store_true", help="Exercise all desktop styles, including MakeOS glass, with a retained app")
+    parser.add_argument("--styles", action="store_true", help="Exercise all desktop styles, including OctoSense glass, with a retained app")
     parser.add_argument("--artifacts-dir", type=Path, help="New directory for retained logs, state, and frames")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -171,33 +171,33 @@ def main():
         artifacts = args.artifacts_dir.resolve()
         artifacts.mkdir(parents=True, exist_ok=False)
     else:
-        artifacts = Path(tempfile.mkdtemp(prefix="makeos-smoke-"))
+        artifacts = Path(tempfile.mkdtemp(prefix="octosense-smoke-"))
     state = artifacts / "state"
     state.mkdir()
     manifest = str(root / "apps/reference/Cargo.toml")
     slow = artifacts / "slow"
     (slow / "src").mkdir(parents=True)
-    (slow / "Cargo.toml").write_text('[package]\nname="makeos-smoke-slow"\nversion="0.1.0"\nedition="2021"\n[workspace]\n')
+    (slow / "Cargo.toml").write_text('[package]\nname="octosense-smoke-slow"\nversion="0.1.0"\nedition="2021"\n[workspace]\n')
     (slow / "src/main.rs").write_text("fn main() {}\n")
     (slow / "build.rs").write_text('fn main() {\n'
-        'std::fs::write(std::env::var("MAKEOS_SMOKE_BUILD_MARKER").unwrap(), std::process::id().to_string()).unwrap();\n'
+        'std::fs::write(std::env::var("OCTOSENSE_SMOKE_BUILD_MARKER").unwrap(), std::process::id().to_string()).unwrap();\n'
         'std::thread::sleep(std::time::Duration::from_secs(45));\n}\n')
     marker = artifacts / "build.pid"
     catalog = [
         {"id": "reference", "label": "Reference", "manifest": manifest,
-         "package": "makeos-reference", "bin": "makeos-reference", "policy": "new"},
+         "package": "octosense-reference", "bin": "octosense-reference", "policy": "new"},
         {"id": "broken", "label": "Broken startup test", "manifest": manifest,
-         "package": "makeos-package-does-not-exist", "bin": "missing"},
+         "package": "octosense-package-does-not-exist", "bin": "missing"},
         {"id": "slow", "label": "Slow build", "manifest": str(slow / "Cargo.toml"),
-         "package": "makeos-smoke-slow", "bin": "makeos-smoke-slow"},
+         "package": "octosense-smoke-slow", "bin": "octosense-smoke-slow"},
     ]
     if not args.default_catalog:
         (state / "apps.json").write_text(json.dumps(catalog))
-    env = dict(os.environ, MAKEOS_HOME=str(state), MAKEPAD_REMOTE="true", CARGO_NET_OFFLINE="true",
-               MAKEOS_SMOKE_BUILD_MARKER=str(marker))
+    env = dict(os.environ, OCTOSENSE_HOME=str(state), MAKEPAD_REMOTE="true", CARGO_NET_OFFLINE="true",
+               OCTOSENSE_SMOKE_BUILD_MARKER=str(marker))
     for key in ["MAKEPAD_HOME", "MAKEPAD_WM_ROOT", "MAKEPAD_WM_TEST_APP", "MAKEPAD_WM_THEME"]:
         env.pop(key, None)
-    command = ["cargo", "run"] if args.cargo_run else [str(root / "target/release/makeos")]
+    command = ["cargo", "run"] if args.cargo_run else [str(root / "target/release/octosense")]
     log = artifacts / "host.log"
     port = None
     child_pids = []
@@ -208,9 +208,9 @@ def main():
     try:
         port, host_pid = wait_for("host remote startup", lambda: remote(log), timeout=120)
         status = wait_for("desktop window", lambda: get(port, "s").get("w"))
-        assert "MakeOS" in status[0]["t"], status
+        assert "OctoSense" in status[0]["t"], status
         wait_for("desktop first frame", lambda: get(port, "snap", q="main_window").get("s"))
-        assert not list(Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log")), "unexpected startup child"
+        assert not list(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")), "unexpected startup child"
         print("PASS: desktop starts without child apps", flush=True)
         wait_for("bundled Omarchy wallpaper visible on clean startup",
                  lambda: get(port, "snap", q="bg_image").get("s"), timeout=10)
@@ -244,7 +244,7 @@ def main():
 
         launch("Reference")
         def child_remote():
-            for path in Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log"):
+            for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"):
                 result = remote(path)
                 if result and result[1] not in child_pids:
                     return result
@@ -264,8 +264,8 @@ def main():
         click_child("increment")
         wait_for("forwarded pointer increments counter", lambda: any(item.get("t") == "Count: 1" for item in get(child_port, "snap", q="count")["s"]))
         click_child("message")
-        get(port, "t", t="Hello through MakeOS", wait=1)
-        wait_for("forwarded keyboard updates echo", lambda: any(item.get("t") == "Hello through MakeOS" for item in get(child_port, "snap", q="echo")["s"]))
+        get(port, "t", t="Hello through OctoSense", wait=1)
+        wait_for("forwarded keyboard updates echo", lambda: any(item.get("t") == "Hello through OctoSense" for item in get(child_port, "snap", q="echo")["s"]))
         print("PASS: pointer and keyboard input cross the host/client boundary", flush=True)
         # Let the shell's arrival animation finish before recording a frame.
         time.sleep(0.6)
@@ -304,7 +304,7 @@ def main():
         slow_group = None
         if not args.default_catalog:
             launch("Broken startup test")
-            wait_for("failed Cargo launch diagnostic", lambda: "makeos-package-does-not-exist" in log.read_text(errors="replace"), timeout=30)
+            wait_for("failed Cargo launch diagnostic", lambda: "octosense-package-does-not-exist" in log.read_text(errors="replace"), timeout=30)
             assert get(port, "s")["w"], "failed app launch stopped host"
             print("PASS: failed app build leaves the desktop running", flush=True)
             launch("Slow build")
@@ -323,7 +323,7 @@ def main():
         else:
             print("PASS: host quit reaps its hosted app", flush=True)
         assert_no_runtime_errors(log.read_text(errors="replace"))
-        for path in Path(tempfile.gettempdir()).glob(f"makeos-{host_pid}-client-*.log"):
+        for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"):
             assert_no_runtime_errors(path.read_text(errors="replace"))
     except Exception:
         if port:
@@ -362,7 +362,7 @@ def main():
         # Copy this test host's logs before handing the report to the caller.
         host_remote = remote(log)
         if host_remote:
-            for path in Path(tempfile.gettempdir()).glob(f"makeos-{host_remote[1]}-client-*.log"):
+            for path in Path(tempfile.gettempdir()).glob(f"octosense-{host_remote[1]}-client-*.log"):
                 shutil.copyfile(path, artifacts / path.name)
         print(f"Logs and app-provided frames: {artifacts}", flush=True)
 

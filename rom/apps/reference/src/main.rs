@@ -26,7 +26,7 @@ pub struct App {
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
         makepad_widgets::script_mod(vm);
-        makeos_reference::script_mod(vm);
+        octosense_reference::script_mod(vm);
         self::script_mod(vm)
     }
 

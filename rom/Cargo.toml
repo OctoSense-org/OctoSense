@@ -14,10 +14,14 @@
 # nested-mode assumptions for that reason.
 
 [package]
-name = "makeos"
+name = "octosense"
 version = "0.1.0"
 edition = "2021"
-default-run = "makeos"
+default-run = "octosense"
+
+[package.metadata.packager]
+product_name = "OctoSense"
+identifier = "dev.makepad.octosense"
 
 # Android builds this entry point as a shared library. Declaring it explicitly
 # avoids cargo-makepad's generated wrapper duplicating our workspace section.
@@ -29,7 +33,7 @@ bench = false
 doctest = false
 
 [[bin]]
-name = "makeos"
+name = "octosense"
 path = "src/main.rs"
 
 [dependencies]
@@ -46,7 +50,7 @@ makepad-app-module = { git = "https://github.com/makepad/makepad.git", rev = "74
 makepad-wm-theme = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
 makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false, optional = true }
 makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false, optional = true }
-makeos-reference = { path = "apps/reference", optional = true }
+octosense-reference = { path = "apps/reference", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
@@ -55,7 +59,7 @@ makepad-aichat = { git = "https://github.com/makepad/makepad.git", rev = "74b63b
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
-makeos-reference = { path = "apps/reference" }
+octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false }
 makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false }
 
@@ -63,7 +67,7 @@ makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "74b63b
 default = []
 # Also usable on desktop for testing the same embedded apps with --module.
 mobile-apps = ["app-reference", "app-sheets", "app-photos"]
-app-reference = ["dep:makeos-reference"]
+app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.

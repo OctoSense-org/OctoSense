@@ -1,5 +1,7 @@
 /target/
 /.worktrees/
+/.octosense/
+# Retain the legacy state exclusion during the project rename.
 /.makeos/
 __pycache__/
 *.pyc

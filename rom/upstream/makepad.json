@@ -444,18 +444,19 @@
   "adaptations": [
     "Cargo manifest uses pinned external dependencies and lean default features.",
     "WM fonts use named dependency resources.",
-    "MakeOS owns app registration, state paths, and opt-in startup behavior.",
+    "OctoSense owns app registration, state paths, and opt-in startup behavior.",
     "Omarchy's default Tokyo Night wallpaper is embedded for offline startup; installed wallpapers take precedence and explicit downloads remain available. Asset provenance is recorded in resources/wallpapers/README.md.",
-    "User-facing branding is MakeOS; wire protocol identifiers remain compatible.",
+    "User-facing branding is OctoSense; wire protocol identifiers remain compatible.",
     "Client lifecycle reports failed builds and synchronously terminates/reaps process groups on host shutdown.",
     "Run-view widget geometry follows the presented surface after its startup background disappears.",
     "Desktop and mobile launch surfaces only expose available catalog apps; mobile tile background launches honor prewarming opt-in.",
-    "Theme material tests load the local MakeOS stylesheet adapter instead of assuming a monorepo-relative widgets directory.",
+    "Theme material tests load the local OctoSense stylesheet adapter instead of assuming a monorepo-relative widgets directory.",
     "Desktop widget geometry uses its stable turtle area and explicitly enumerates hosted children so floating styles and tree refreshes retain app discovery.",
-    "The MakeOS style is owned locally, using official macOS icon/layout APIs and a complete custom stylesheet over the existing protocol.",
-    "The MakeOS SVG wallpaper uses a local cover widget; framework image sources remain external.",
+    "The OctoSense style is owned locally, using official macOS icon/layout APIs and a complete custom stylesheet over the existing protocol.",
+    "The OctoSense SVG wallpaper uses a local cover widget; framework image sources remain external.",
     "The local retired-pass adapter detaches passes with freed draw-list roots before the upstream retained GPU working-set scan, preserving live pass roots.",
-    "The catalog follows official Makepad apps; the stable studio catalog ID now launches Director, which replaced Studio upstream."
+    "The catalog follows official Makepad apps; the stable studio catalog ID now launches Director, which replaced Studio upstream.",
+    "OctoSense owns the project identity, package names and local resource paths; pristine upstream names and hashes are retained for syncing."
   ],
   "omissions": [],
   "default_source": "../makepad",
@@ -465,17 +466,17 @@
     "files": [
       {
         "source": "apps/wm/resources/wallpapers/makeos.svg",
-        "destination": "resources/wallpapers/makeos.svg",
+        "destination": "resources/wallpapers/octosense.svg",
         "sha256": "cfb1eefda276dc4ca9f15577326c37c95ee75f3121af7cd6d80b417d9e04a605"
       },
       {
         "source": "widgets/themes/makeos/theme.splash",
-        "destination": "resources/themes/makeos/theme.splash",
+        "destination": "resources/themes/octosense/theme.splash",
         "sha256": "b7517d4e77a8812bfc986f45ed076699022adcc50c82e1456b5555c33491d54f"
       },
       {
         "source": "widgets/themes/makeos/widgets.splash",
-        "destination": "resources/themes/makeos/widgets.splash",
+        "destination": "resources/themes/octosense/widgets.splash",
         "sha256": "ebaad2a4eb58d155282cb8d5ef1ec77f3745b9cc2e2ef656c3090c7206921573"
       }
     ]

@@ -1,4 +1,41 @@
+# OctoSense rename validation — 2026-09-11
+
+The application and Reference crate now build as `octosense` and
+`octosense-reference`. Shell labels, the custom desktop style, resource paths,
+logs, catalog entries, packaging and active documentation use the new name.
+Existing desktop settings and model links remain accessible through the
+`MAKEOS_HOME` fallback and existing `~/.makeos` directory; new installations use
+`OCTOSENSE_HOME` / `~/.octosense`.
+
+Verified on macOS with Rust 1.98.1:
+
+- Locked Cargo metadata, all-features workspace check, **218 Rust tests** and
+  **48 Python maintenance tests** passed.
+- Locked release and debug workspace builds passed.
+- Native release smoke passed across all eight styles, including OctoSense,
+  with Reference input/state retained, failed-launch handling and child cleanup.
+  Captured frames show the renamed shell and Reference greeting.
+- Plain `cargo run` with the shipped catalog passed startup, wallpaper, app
+  launch, pointer/text input, workspace/fullscreen, instance and shutdown checks.
+- `cargo makepad android build -p octosense --release` passed. The generated
+  manifest has label `OctoSense` and application ID `dev.makepad.octosense`.
+  APK: `target/android/makepad-android-apk/octosense/apk/octo_sense.apk`.
+  No ADB device was attached, so this rename was not tested on hardware.
+- Upstream status and the already-current daily-sync path passed at
+  `74b63be83e101ab3a28d3604df77e9662d50a833`. Original import mappings, source
+  names and hashes remain intact; all three retained theme/wallpaper asset
+  hashes match their renamed local destinations. Framework pins are unchanged.
+
+Runtime evidence is retained under `target/octosense-rename/smoke-styles/` and
+`target/octosense-rename/smoke-default/`. Existing shared-entry-point, duplicate
+upstream-package and missing-custom-icon warnings remain. The earlier iOS
+framework build failure below was not revisited for this rename.
+
+---
+
 # Upstream sync validation — 2026-09-08
+
+> Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
 
 Target: `ae20efc51e6db2ad083d65b40a9beec726582f56`, read from the local sibling Makepad checkout. Previous baseline: `83a00d2801e4864c42c3a40e85186a8b1743fd84`.
 

@@ -190,11 +190,11 @@ def merge(base, local, new):
         return ("deleted" if new is None else "converged"), new
     if local is None or new is None or any(b"\0" in data for data in (base, local, new)):
         return "conflict", local
-    with tempfile.TemporaryDirectory(prefix="makeos-merge-") as directory:
+    with tempfile.TemporaryDirectory(prefix="octosense-merge-") as directory:
         paths = [Path(directory) / name for name in ("local", "base", "upstream")]
         for path, data in zip(paths, (local, base, new)):
             path.write_bytes(data)
-        result = subprocess.run(["git", "merge-file", "-p", "--diff3", "-L", "MakeOS", "-L", "old Makepad", "-L", "new Makepad", *map(str, paths)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(["git", "merge-file", "-p", "--diff3", "-L", "OctoSense", "-L", "old Makepad", "-L", "new Makepad", *map(str, paths)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode < 0 or result.returncode > 127:
             raise SyncError(f"merge failed: {result.stderr.decode(errors='replace')}")
         return ("merged" if result.returncode == 0 else "conflict"), result.stdout
@@ -254,7 +254,7 @@ def compare(root, source, to=None):
             (parent.exists() and not parent.is_dir()) for parent in local_path.parents if parent != root
         )
         status = "conflict" if collision else "added"
-        detail = "new upstream file collides with an existing MakeOS path" if collision else "new upstream file"
+        detail = "new upstream file collides with an existing OctoSense path" if collision else "new upstream file"
         local = local_path.read_bytes() if local_path.is_file() else None
         result.changes.append(Change(name, destination, status, None, local, new, local if collision else new, int(new_tree[name][0], 8) & 0o777, detail))
         destinations.add(destination)
@@ -312,9 +312,9 @@ def rewrite_pins(root, repository, old, new):
 
 def clean_snapshot(root):
     if git(root, "rev-parse", "--show-toplevel").decode().strip() != str(root):
-        raise SyncError("run update at the MakeOS Git repository root")
+        raise SyncError("run update at the OctoSense Git repository root")
     if git(root, "status", "--porcelain", "--untracked-files=all"):
-        raise SyncError("update requires a clean MakeOS working tree; commit local changes first")
+        raise SyncError("update requires a clean OctoSense working tree; commit local changes first")
     snapshot = {}
     for name in git(root, "ls-files", "-z").decode().split("\0"):
         if name:
@@ -335,7 +335,7 @@ def put(root, name, data, mode=0o644):
     path.parent.mkdir(parents=True, exist_ok=True)
     # Atomic replacement of each file; apply() rolls back the transaction if
     # a later write fails. The live provenance file is written last.
-    descriptor, temporary = tempfile.mkstemp(prefix=".makeos-sync-", dir=path.parent)
+    descriptor, temporary = tempfile.mkstemp(prefix=".octosense-sync-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
@@ -412,7 +412,7 @@ def apply(root, stage, original, names):
     # Recheck after lengthy Cargo verification; a user's concurrent changes
     # must never be overwritten by the staged result.
     if clean_snapshot(root) != original:
-        raise SyncError("MakeOS changed during verification; refusing to apply")
+        raise SyncError("OctoSense changed during verification; refusing to apply")
     for name in names:
         if name not in original and checked_path(root, name).exists():
             raise SyncError(f"new destination collision after verification: {name}")
@@ -446,7 +446,7 @@ def update(root, source, to, verify=None, *, work_dir=None, report=None, before_
     for change in comparison.changes:
         if change.base is not None and change.local is not None and change.destination not in original:
             raise SyncError(f"import destination must be tracked before updating: {change.destination}")
-    temporary = work_dir or Path(tempfile.mkdtemp(prefix="makeos-upstream-"))
+    temporary = work_dir or Path(tempfile.mkdtemp(prefix="octosense-upstream-"))
     report = report or temporary
     stage = temporary / "project"
     stage.mkdir(parents=True, exist_ok=True)
@@ -512,7 +512,7 @@ def sync_lock(cache):
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
-            raise SyncError("another MakeOS sync is running; wait for it to finish") from error
+            raise SyncError("another OctoSense sync is running; wait for it to finish") from error
         try:
             yield
         finally:
@@ -543,7 +543,7 @@ def sync(root, source=None, to=None, verify=None):
     if comparison.manifest["revision"] == target:
         print(f"Already at Makepad {target}; no update or checks needed.")
         if git(root, "status", "--porcelain", "--untracked-files=all"):
-            print("MakeOS has uncommitted changes; review/commit them separately.")
+            print("OctoSense has uncommitted changes; review/commit them separately.")
         return None
 
     original = clean_snapshot(root)
@@ -553,7 +553,7 @@ def sync(root, source=None, to=None, verify=None):
         raise SyncError("target/makepad-sync must be Git-ignored before running sync")
     with sync_lock(cache):
         if clean_snapshot(root) != original:
-            raise SyncError("MakeOS changed while starting sync; retry from a clean tree")
+            raise SyncError("OctoSense changed while starting sync; retry from a clean tree")
         head = git(root, "rev-parse", "HEAD").decode().strip()
         starting_branch = git(root, "branch", "--show-current").decode().strip()
         reports = cache / "reports"
@@ -569,7 +569,7 @@ def sync(root, source=None, to=None, verify=None):
             if (git(root, "rev-parse", "HEAD").decode().strip() != head or
                     git(root, "branch", "--show-current").decode().strip() != starting_branch or
                     clean_snapshot(root) != original):
-                raise SyncError("MakeOS HEAD, branch, or files changed during verification; refusing to apply")
+                raise SyncError("OctoSense HEAD, branch, or files changed during verification; refusing to apply")
             existing = set(git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads/").decode().splitlines())
             base = candidate = f"sync/makepad-{target[:12]}"
             suffix = 2
@@ -656,7 +656,7 @@ def main(argv=None):
     parser.add_argument("command", choices=["sync", "status", "diff", "update"])
     parser.add_argument("--source", type=Path, help="existing Makepad Git clone (default: provenance default_source or ../makepad; never written)")
     parser.add_argument("--to", help="target commit/ref; sync defaults to source HEAD, status/diff to baseline; required for update")
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1], help="MakeOS repository root")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1], help="OctoSense repository root")
     args = parser.parse_args(argv)
     if args.command == "update" and not args.to:
         parser.error("update requires --to")

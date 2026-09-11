@@ -1,4 +1,4 @@
-//! MakeOS's additional desktop style, layered on the upstream widget API.
+//! OctoSense's additional desktop style, layered on the upstream widget API.
 use makepad_widgets::{app_icon, desktop_style::{DesktopStyle as UpstreamStyle, StyleSheet}, *};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -11,17 +11,17 @@ pub enum DesktopStyle {
     NextStep,
     Ios,
     Android,
-    MakeOs,
+    OctoSense,
 }
 
 impl DesktopStyle {
-    pub const ALL: [Self; 8] = [Self::Omarchy, Self::Macos, Self::Windows, Self::Windows2000, Self::NextStep, Self::Ios, Self::Android, Self::MakeOs];
+    pub const ALL: [Self; 8] = [Self::Omarchy, Self::Macos, Self::Windows, Self::Windows2000, Self::NextStep, Self::Ios, Self::Android, Self::OctoSense];
 
-    /// MakeOS shares macOS geometry and artwork; its palette and material stay local.
+    /// OctoSense shares macOS geometry and artwork; its palette and material stay local.
     pub fn framework(self) -> UpstreamStyle {
         match self {
             Self::Omarchy => UpstreamStyle::Omarchy,
-            Self::Macos | Self::MakeOs => UpstreamStyle::Macos,
+            Self::Macos | Self::OctoSense => UpstreamStyle::Macos,
             Self::Windows => UpstreamStyle::Windows,
             Self::Windows2000 => UpstreamStyle::Windows2000,
             Self::NextStep => UpstreamStyle::NextStep,
@@ -30,16 +30,16 @@ impl DesktopStyle {
         }
     }
     pub fn id(self) -> &'static str {
-        if self == Self::MakeOs { "makeos" } else { self.framework().id() }
+        if self == Self::OctoSense { "octosense" } else { self.framework().id() }
     }
     pub fn label(self) -> &'static str {
-        if self == Self::MakeOs { "MakeOS" } else { self.framework().label() }
+        if self == Self::OctoSense { "OctoSense" } else { self.framework().label() }
     }
     pub fn parse(name: &str) -> Option<Self> {
         let name = name.strip_suffix("-dark").unwrap_or(name);
         Self::ALL.into_iter().find(|style| style.id() == name)
     }
-    pub fn supports_dark(self) -> bool { self != Self::MakeOs && self.framework().supports_dark() }
+    pub fn supports_dark(self) -> bool { self != Self::OctoSense && self.framework().supports_dark() }
     pub fn mobile(self) -> bool { self.framework().mobile() }
     pub fn floating(self) -> bool { self.framework().floating() }
     pub fn shelf_height(self) -> f64 { self.framework().shelf_height() }
@@ -49,14 +49,14 @@ impl DesktopStyle {
 }
 
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
-    if style != DesktopStyle::MakeOs {
+    if style != DesktopStyle::OctoSense {
         return StyleSheet::load_with_appearance(style.framework(), dark);
     }
     let read = |name: &str, bundled: &str| {
         // Source checkouts reload on selection; installed/mobile builds use embedded data.
         #[cfg(not(target_arch = "wasm32"))]
         if let Ok(text) = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/themes/makeos").join(name)
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/themes/octosense").join(name)
         ) { return text; }
         let _ = name;
         bundled.to_string()
@@ -65,8 +65,8 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     // and dark appearance. The full theme and widget overrides travel with it.
     StyleSheet {
         name: "macos-dark".into(),
-        theme: read("theme.splash", include_str!("../../resources/themes/makeos/theme.splash")),
-        widgets: read("widgets.splash", include_str!("../../resources/themes/makeos/widgets.splash")),
+        theme: read("theme.splash", include_str!("../../resources/themes/octosense/theme.splash")),
+        widgets: read("widgets.splash", include_str!("../../resources/themes/octosense/widgets.splash")),
         icons: app_icon::load_assets(UpstreamStyle::Macos),
     }
 }
@@ -84,8 +84,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn makeos_sheet_survives_the_unmodified_upstream_wire_protocol() {
-        let sheet = load_sheet(DesktopStyle::MakeOs, false);
+    fn octosense_sheet_survives_the_unmodified_upstream_wire_protocol() {
+        let sheet = load_sheet(DesktopStyle::OctoSense, false);
         assert_eq!(StyleSheet::parse(&sheet.to_json()), Some(sheet.clone()));
         assert_eq!(UpstreamStyle::parse(&sheet.name), Some(UpstreamStyle::Macos));
         assert_eq!(sheet.icons, app_icon::load_assets(UpstreamStyle::Macos));
@@ -109,8 +109,8 @@ mod tests {
             assert_eq!(DesktopStyle::parse(style.id()), Some(style));
             assert_eq!(style.next(), DesktopStyle::ALL[(index + 1) % 8]);
         }
-        assert!(DesktopStyle::MakeOs.floating());
-        assert!(!DesktopStyle::MakeOs.supports_dark());
-        assert_eq!(DesktopStyle::MakeOs.title_height(), DesktopStyle::Macos.title_height());
+        assert!(DesktopStyle::OctoSense.floating());
+        assert!(!DesktopStyle::OctoSense.supports_dark());
+        assert_eq!(DesktopStyle::OctoSense.title_height(), DesktopStyle::Macos.title_height());
     }
 }
