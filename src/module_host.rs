@@ -53,6 +53,19 @@ pub struct ModuleHost {
     style: Option<desktop_style::StyleSheet>,
 }
 
+/// The isolate removes mod.res after bootstrap. Trusted framework themes
+/// still need its crate resource resolver for their bundled fonts. Expose
+/// only that existing resolver during theme registration, then remove it.
+fn apply_module_style(vm: &mut ScriptVm, sheet: &desktop_style::StyleSheet) {
+    desktop_style::install(vm, sheet.clone());
+    vm.with_reload(|vm| {
+        script_eval!(vm, { mod.res = {crate_resource: mod.prelude.widgets.crate_resource} });
+        makepad_widgets::widgets_mod(vm);
+        desktop_style::apply_widgets(vm);
+        script_eval!(vm, { mod.res = nil });
+    });
+}
+
 impl ModuleHost {
     /// Build one instance of `module` for the client id the WM gave it.
     /// `viewport` is the tile size the layout will give it.
@@ -84,8 +97,7 @@ impl ModuleHost {
             // The isolate came up with the stock theme; the WM's palette
             // retints it exactly as it retints a child process's.
             if let Some(sheet)=&self.style {
-                desktop_style::install(vm,sheet.clone());
-                vm.with_reload(|vm| { makepad_widgets::widgets_mod(vm); desktop_style::apply_widgets(vm); });
+                apply_module_style(vm, sheet);
             }
             makepad_wm_theme::apply(vm);
             module.register(vm);
@@ -120,10 +132,8 @@ impl ModuleHost {
         self.style=Some(sheet.clone());
         for instance in self.instances.values_mut() {
             cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
-                desktop_style::install(vm,sheet.clone());
+                apply_module_style(vm, sheet);
                 vm.with_reload(|vm| {
-                    makepad_widgets::widgets_mod(vm);
-                    desktop_style::apply_widgets(vm);
                     makepad_wm_theme::apply(vm);
                     instance.module.register(vm);
                 });

@@ -58,40 +58,46 @@ pub struct HomeLayout {
 /// dock. `top` is where content starts (below the status bar and, on
 /// Android, the big clock). Pure geometry, so both orientations are tested.
 pub fn home_layout(screen: Rect, top: f64, dock: Rect) -> HomeLayout {
+    home_layout_for_apps(screen, top, dock, &["clock", "weather", "photos"])
+}
+
+/// Lay out only installed tile apps so absent tiles leave room for icons.
+pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -> HomeLayout {
     let landscape = screen.size.x > screen.size.y;
     let m = HOME_MARGIN;
     let left = screen.pos.x + m;
     let width = (screen.size.x - m * 2.0).max(1.0);
+    let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id)).collect();
     let mut tiles = Vec::new();
-    let tiles_bottom;
     if landscape {
-        let w = ((width - TILE_GAP * 2.0) / 3.0).max(1.0);
+        let count = tile_apps.len().max(1) as f64;
+        let w = ((width - TILE_GAP * (count - 1.0)) / count).max(1.0);
         // Short enough that a row of favorites still fits above the dock.
         let h = (w * 0.56).min((dock.pos.y - top - 126.0).max(60.0)).max(1.0);
-        for (index, (app, kind)) in TILE_APPS.iter().enumerate() {
+        for (index, (app, kind)) in tile_apps.iter().enumerate() {
             let x = left + index as f64 * (w + TILE_GAP);
             tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
         }
-        tiles_bottom = top + h;
     } else {
         let s = ((width - TILE_GAP) / 2.0).max(1.0);
-        let mut y = top;
-        for (index, (app, kind)) in TILE_APPS.iter().enumerate() {
+        let mut small = 0;
+        for (app, kind) in &tile_apps {
             match kind {
                 TileKind::Small => {
-                    let x = left + index as f64 * (s + TILE_GAP);
-                    tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, y), size: dvec2(s, s) } });
+                    let x = left + small as f64 * (s + TILE_GAP);
+                    tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(s, s) } });
+                    small += 1;
                 }
                 TileKind::Wide => {
-                    y += s + TILE_GAP;
+                    let y = top + if small > 0 { s + TILE_GAP } else { 0.0 };
                     tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(left, y), size: dvec2(width, s) } });
                 }
             }
         }
-        tiles_bottom = y + s;
     }
     let columns = if landscape { 7 } else { 4 };
-    let fav_top = tiles_bottom + TILE_GAP + 6.0;
+    let fav_top = tiles.iter().map(|slot| slot.rect.pos.y + slot.rect.size.y + TILE_GAP + 6.0)
+        .fold(top, f64::max);
     // Leave a separate strip for the page indicator / App Library target.
     let fav_bottom = dock.pos.y - 36.0;
     let cell_min = if landscape { 64.0 } else { 88.0 };
@@ -381,6 +387,23 @@ mod tests {
 
     fn overlaps(a: Rect, b: Rect) -> bool {
         a.pos.x < b.pos.x + b.size.x && b.pos.x < a.pos.x + a.size.x && a.pos.y < b.pos.y + b.size.y && b.pos.y < a.pos.y + a.size.y
+    }
+
+    #[test]
+    fn a_partial_mobile_catalog_keeps_app_icons_on_the_home_page() {
+        let screen = Rect { pos: dvec2(0.0, 78.0), size: dvec2(412.0, 768.0) };
+        let top = screen.pos.y + 156.0;
+        let dock = PhoneSurface::home_dock(screen);
+        let layout = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos"]);
+        assert_eq!(layout.tiles.len(), 1);
+        assert_eq!(layout.tiles[0].app, "photos");
+        assert_eq!(layout.tiles[0].rect.pos.y, top, "no gap for absent Clock and Weather");
+        assert!(layout.capacity >= 2, "Reference and Sheets must be visible");
+        assert!(!overlaps(layout.tiles[0].rect, layout.favorites));
+        assert!(layout.favorites.pos.y + layout.favorites.size.y <= dock.pos.y - 36.0);
+        let empty = home_layout_for_apps(screen, top, dock, &[]);
+        assert!(empty.tiles.is_empty());
+        assert_eq!(empty.favorites.pos.y, top);
     }
 
     #[test]

@@ -19,31 +19,51 @@ version = "0.1.0"
 edition = "2021"
 default-run = "makeos"
 
+# Android builds this entry point as a shared library. Declaring it explicitly
+# avoids cargo-makepad's generated wrapper duplicating our workspace section.
+[lib]
+path = "src/main.rs"
+# The binary target runs the tests for this shared source.
+test = false
+bench = false
+doctest = false
+
 [[bin]]
 name = "makeos"
 path = "src/main.rs"
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-studio-protocol = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-network = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-wm-api = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-studio-protocol = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-network = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-wm-api = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
 # The AI services wire only: the WM relays frames between the aichat child and the apps.
-makepad-ai-services = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-strict-json = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-ai-services = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-strict-json = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
 # In-process hosting (aicontrol §3): the module contract, the palette applied
 # into each instance's isolate, and the modules this build links.
-makepad-app-module = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-wm-theme = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
-makepad-sheets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
-makepad-photos = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-app-module = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-wm-theme = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833" }
+makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false, optional = true }
+makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false, optional = true }
+makeos-reference = { path = "apps/reference", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
-makepad-aichat = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-aichat = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false, optional = true }
+
+# A phone cannot spawn the desktop catalog's Cargo binaries. Link the
+# available modules into native mobile builds without requiring CLI flags.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+makeos-reference = { path = "apps/reference" }
+makepad-sheets = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false }
+makepad-photos = { git = "https://github.com/makepad/makepad.git", rev = "74b63be83e101ab3a28d3604df77e9662d50a833", default-features = false }
 
 [features]
 default = []
+# Also usable on desktop for testing the same embedded apps with --module.
+mobile-apps = ["app-reference", "app-sheets", "app-photos"]
+app-reference = ["dep:makeos-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.

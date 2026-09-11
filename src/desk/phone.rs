@@ -66,7 +66,9 @@ impl WmDesk {
         self.draw_phone.opacity = 1.0;
         // Sdf2d.box uses half the visible corner radius.
         self.draw_phone.radius = radius * 0.5;
-        self.draw_phone.y_flip = if matches!(cx.os_type(), OsType::Android(_)) {1.0} else {0.0};
+        // WindowFrame render targets already have top-left rows, including
+        // the pinned Android GL backend. Keep pixels aligned with input.
+        self.draw_phone.y_flip = 0.0;
         self.draw_phone.draw_abs(cx, rect);
     }
     fn client_arriving(&self, client: ClientId) -> bool {
@@ -118,7 +120,7 @@ impl WmDesk {
         self.draw_phone.draw_vars.set_texture(0,capture.frame.texture());
         self.draw_phone.opacity=opacity;
         self.draw_phone.radius=radius;
-        self.draw_phone.y_flip=if matches!(cx.os_type(),OsType::Android(_)){1.0}else{0.0};
+        self.draw_phone.y_flip=0.0;
         self.draw_phone.draw_abs(cx,rect);
         self.compositor.as_mut().unwrap().content(rect);
     }
@@ -173,7 +175,9 @@ impl WmDesk {
                 self.phone_frames.insert(client,stored);
             }
             if !shown {
-                let (headline,detail)=crate::mobile_tiles::placeholder_text(&status,connected,gave_up);
+                let (headline,detail)=if client.is_none() && !gave_up {
+                    ("Tap to open", String::new())
+                } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
                 self.phone_ui.draw_tile_placeholder(cx,slot,style,dark,opacity,headline,&detail);
                 self.compositor.as_mut().unwrap().content(slot.rect);
             }

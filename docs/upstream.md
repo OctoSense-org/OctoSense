@@ -6,25 +6,36 @@ full Makepad commit. The hashes describe **pristine upstream content**, so local
 MakeOS adaptations do not require changing them. Framework and hosted-app
 dependencies use that same commit. Do not independently change their revisions.
 
-The active source is `https://github.com/guofoo/makepad.git`, starting at
-`beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`. This fork adds the shared MakeOS
-style, widget theme, SVG crop behavior and safe cached-view rendering needed by
-the imported WM. The framework remains in Git crates; no widget sources or
-unrelated monorepo apps are copied here. WM feature development continues here.
+The active source is `https://github.com/makepad/makepad.git`, at
+`74b63be83e101ab3a28d3604df77e9662d50a833` on the `work` branch. The local
+source checkout is `../makepad`. `makepad-wm-api` (`libs/wm_api`) and
+`makepad-wm-theme` (`libs/wm_theme`) are pinned Git dependencies alongside
+widgets, platform, app-module and the linked app crates. They are not copied
+into MakeOS. Advancing the shared pin includes their changes and their required
+transitive dependencies. Unrelated monorepo sources are not imported here.
 
-Official Makepad changes must first be incorporated into the source fork using
-your normal Git workflow, retaining these framework additions, and published
-at a fetchable fork revision. A pull of the fork alone only obtains changes
-already published there. Do not point an upgrade at an official-only commit
-that lacks the MakeOS widget APIs. A future return to official dependencies
-requires those APIs there and a coordinated repository/pin/provenance change.
+MakeOS's extra style is implemented in `src/makeos/style.rs` with two small
+local theme files. It sends its complete palette/material using the recognized
+`macos-dark` wire family, allowing unmodified upstream apps to select the right
+icons and appearance. The local wallpaper widget preserves SVG cover behavior;
+upstream already supplies the cached-view APIs. `src/makeos/retired_passes.rs`
+detaches passes with freed draw-list roots before the new retained GPU working-set scan;
+remove it when upstream guards retired pass slots. No framework fork is required.
+
+The previous `guofoo/makepad` additions are retained as local WM adaptations.
+The one-time migration compared official changes from the common ancestor,
+rather than interpreting absent fork features as upstream deletions. Historical
+asset origins are recorded in `upstream/makepad.json` under
+`retained_fork_assets`; these are MakeOS-owned and are not ongoing upstream
+file mappings. Future syncs use the official baseline and normal three-way
+merge. See `docs/plans/2026-09-11-official-work-sync.md` for the migration scope.
 
 ## Daily command
 
 After updating the Makepad checkout, run from MakeOS:
 
 ```sh
-git -C ../guofoo-makepad pull --ff-only origin work
+git -C ../makepad pull --ff-only origin work
 python3 scripts/upstream.py sync
 ```
 
@@ -33,7 +44,7 @@ changes. The first command is your source-repository Git step; `sync` performs
 the remaining comparison, preparation, and verification without prompts. No
 scheduled job is installed.
 
-Defaults are the provenance file's `default_source` (`../guofoo-makepad`) and its
+Defaults are the provenance file's `default_source` (`../makepad`) and its
 current local `HEAD`. Relative recorded paths resolve from the MakeOS project
 root, independent of the invoking shell's working directory. Older provenance
 without this field retains `../makepad`. An explicit `--source` overrides it;

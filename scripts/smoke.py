@@ -16,13 +16,28 @@ import subprocess
 import tempfile
 import time
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 
 def get(port, route, **params):
     query = "?" + urlencode(params) if params else ""
-    with urlopen(f"http://127.0.0.1:{port}/{route}{query}", timeout=8) as response:
-        result = json.load(response)
+    for attempt in range(3):
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/{route}{query}", timeout=8) as response:
+                result = json.load(response)
+            break
+        except HTTPError as error:
+            body = error.read().decode(errors="replace")
+            # This response guarantees the input was not submitted. Replaying
+            # arbitrary errors could duplicate a click or typed character.
+            if (attempt < 2 and error.code == 404 and
+                    any(message in body for message in (
+                        "requested input frame could not be submitted; retry",
+                        "grab frame could not be submitted at arming; retry"))):
+                time.sleep(0.2)
+                continue
+            raise ValueError(f"/{route}: HTTP {error.code}: {body}") from error
     if "err" in result:
         raise ValueError(f"/{route}: {result['err']}")
     return result
@@ -98,7 +113,7 @@ def check_styles(port, child_port, host_pid, log, artifacts):
               ("ios", "iOS"), ("android", "Android"), ("omarchy", "Omarchy"),
               ("makeos", "MakeOS"), ("omarchy", "Omarchy")]
     for index, (style, label) in enumerate(styles):
-        offset = log.stat().st_size
+        offset = len(log.read_text(errors="replace"))
         if current in ("ios", "android"):
             # Mobile Home consumes keyboard shortcuts; its top bar opens styles.
             get(port, "click", x=130, y=13, wait=1)
@@ -208,6 +223,17 @@ def main():
         save_grab(artifacts, "startup-wallpaper",
                   wait_for("startup wallpaper decoded and drawn", wallpaper_frame, timeout=10))
         print("PASS: Omarchy startup wallpaper renders without downloaded themes", flush=True)
+
+        # Open Apps through the shorter root menu: the larger submenu must
+        # recenter, and scrolling must keep the last application reachable.
+        get(port, "k", c="Space", cmd=1, wait=1)
+        save_grab(artifacts, "launcher-root", get(port, "g", scale=0.5))
+        get(port, "k", c="enter", wait=1)
+        save_grab(artifacts, "launcher-apps", get(port, "g", scale=0.5))
+        for _ in range(19):
+            get(port, "k", c="ArrowDown", wait=1)
+        save_grab(artifacts, "launcher-apps-bottom", get(port, "g", scale=0.5))
+        get(port, "k", c="Escape", wait=1)
 
         def launch(name):
             get(port, "k", c="Space", cmd=1, wait=1)

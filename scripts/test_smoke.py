@@ -1,4 +1,5 @@
 """Artifact handling checks; these do not launch native windows."""
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 import smoke
 
@@ -53,6 +55,41 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(single["w"], 0)
             self.assertEqual(multi["quit"], 1)
 
+
+def refusal(body='requested input frame could not be submitted; retry'):
+    return HTTPError('http://127.0.0.1/click', 404, 'Not Found', {}, io.BytesIO(body.encode()))
+
+
+class RemoteInputTests(unittest.TestCase):
+    @patch('smoke.time.sleep')
+    @patch('smoke.urlopen')
+    def test_retries_explicitly_unsubmitted_input(self, request, sleep):
+        request.side_effect = [refusal(), io.StringIO('{"ok":true}')]
+        self.assertEqual(smoke.get(1, 'click', x=1, y=2), {'ok': True})
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_args_list[0], request.call_args_list[1])
+
+    @patch('smoke.time.sleep')
+    @patch('smoke.urlopen')
+    def test_persistent_refusal_is_bounded(self, request, sleep):
+        request.side_effect = [refusal(), refusal(), refusal()]
+        with self.assertRaisesRegex(ValueError, 'HTTP 404'):
+            smoke.get(1, 'click')
+        self.assertEqual(request.call_count, 3)
+
+    @patch('smoke.urlopen')
+    def test_other_errors_are_not_replayed(self, request):
+        request.side_effect = refusal('widget not found')
+        with self.assertRaisesRegex(ValueError, 'widget not found'):
+            smoke.get(1, 'click')
+        self.assertEqual(request.call_count, 1)
+
+    @patch('smoke.time.sleep')
+    @patch('smoke.urlopen')
+    def test_retries_grab_refused_before_arming(self, request, sleep):
+        request.side_effect = [refusal('grab frame could not be submitted at arming; retry'), io.StringIO('{"png":"frame.png"}')]
+        self.assertEqual(smoke.get(1, 'g'), {'png': 'frame.png'})
+        self.assertEqual(request.call_count, 2)
 
 if __name__ == "__main__":
     unittest.main()

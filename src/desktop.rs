@@ -1,4 +1,4 @@
-pub use makepad_widgets::desktop_style::DesktopStyle;
+pub use crate::makeos::style::DesktopStyle;
 use makepad_widgets::*;
 
 /// Everything one desktop style says about the shell's geometry and family
@@ -533,7 +533,7 @@ use crate::shell::{
     alpha, rgb, MaterialTokens,
     ui::{rect, HAlign, Ico, ShellDraw},
 };
-use makepad_widgets::app_icon::AppIconDraw;
+use crate::makeos::style::AppIconDraw;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Script, ScriptHook)]

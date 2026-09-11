@@ -73,3 +73,14 @@
 - Model inference through the hosted child passed; two automated host-pane input attempts failed to submit. Retain this separate input-routing observation for subsequent UI work.
 
 - Contributor setup source verified on 2026-09-09: unsloth/Qwen3.5-9B-GGUF revision 24fadbaba5891f3965d66ea0e2e4aa259cd38c77 publishes the tested file with SHA-256 6f5d30666c2d8ae16a306e616d95341dcf3cc46810df84d7e6f5a7d1e4c1b293; hashing the existing local GGUF produced the same digest. Source: https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/24fadbaba5891f3965d66ea0e2e4aa259cd38c77/Qwen3.5-9B-UD-Q4_K_XL.gguf
+
+## 2026-09-11 official work intake
+- Source is ../makepad work at 74b63be83; source checkout has unrelated untracked examples, which will be excluded.
+- Recorded baseline is fork beb3857a; official checkout does not contain that object and lacks DesktopStyle::MakeOs. New wm library changes will stay in external crates where possible.
+- Uncommitted Android/launcher changes are preserved under target/upstream-20260911/before with SHA-256 inventory; no commit or push requested.
+
+- wm_api/wm_theme are byte-identical between old fork pin and official tip. Safe view snapshot/cached drawing APIs are present upstream; only MakeOS enum/theme/icon alias and SVG cover require local adapters.
+
+- Real GPU tracing reproduces a freed draw-list root at platform/src/draw_list.rs:485 in prepare_retained_working_set. The pass iterator includes retired slots; a local pre-submit cleanup clears only invalid roots. Regression test fails before and passes after.
+- Studio was split into public Director and private Scope upstream; catalog retains studio ID but uses makepad-director/director.
+- Android APK builds, but adb devices is empty. iOS still fails in upstream with two missing methods.

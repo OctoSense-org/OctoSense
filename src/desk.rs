@@ -8,7 +8,7 @@
 //! 379ms, border color over 539ms, a new window popping in from 87% over
 //! 410ms, a closing one popping back out over 149ms while it fades.
 
-use makepad_widgets::app_icon::AppIconDraw;
+use crate::makeos::style::AppIconDraw;
 pub(crate) mod phone;
 use phone::{DrawPhoneApp, PhoneFrame};
 use crate::mobile_surface::PhoneSurface;

@@ -60,3 +60,8 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 - Imported tests assuming bundled app registry were adapted to explicit fixture/catalog entries. Shutdown test needed a condition-based wait for grandchild exit.
 - Code review found final host shutdown cleanup, process-group escalation, and asynchronous startup error reporting gaps; corrected and verified with regression tests and native smoke checks.
 - Runtime inspection exposed stale run-view widget geometry after the startup background disappears; explicitly selecting the live surface area fixed it.
+
+## Official work update — 2026-09-11
+18. Snapshot existing local changes and compare official work, including wm_api/wm_theme — complete.
+19. Resolve fork-specific API/style compatibility, integrate all WM changes and crate updates in an isolated candidate — complete.
+20. Verify tests, desktop GPU hosting/styles and Android builds; update provenance/docs and apply reviewed candidate without losing local edits — complete (iOS upstream failures and unavailable ADB device documented).

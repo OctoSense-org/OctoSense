@@ -27,10 +27,10 @@ pub fn wall_now() -> f64 {
 }
 
 /// Whether this build can host apps as child PROCESSES: a hub to accept
-/// them, a spawner to start them, a pool to keep them warm. The web
-/// build hosts its linked modules in-process and nothing else.
+/// them, a spawner to start them, a pool to keep them warm. Mobile and web
+/// builds host their linked modules in-process.
 pub const fn processes_available() -> bool {
-    cfg!(not(target_arch = "wasm32"))
+    cfg!(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))
 }
 
 /// Hand a child process a setting through its environment (the theme
