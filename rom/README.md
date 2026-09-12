@@ -21,6 +21,11 @@ cargo run --release
 
 The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
 
+On macOS, `.cargo/config.toml` sets the native menu-bar name to **OctoSense**.
+Makepad otherwise derives it from the checkout directory, which may still be
+named `makeos`. Rebuild and relaunch after updating; Cargo regenerates the
+development `Info.plist` automatically.
+
 The build target selects the startup shell automatically: Android uses the Android phone layout, iOS uses the iOS phone layout, and desktop/web builds keep Omarchy. You can still switch styles from the shell's style menu. Native phone toolbars are 48 points high and respect the window's safe-area insets.
 
 The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit OctoSense** closes the desktop and its hosted processes.

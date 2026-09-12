@@ -1,0 +1,5 @@
+# Makepad otherwise derives the macOS menu-bar name from the checkout directory.
+# Keep native Cargo launches branded correctly even when the folder is "makeos".
+[env]
+MAKEPAD_BUNDLE_NAME = { value = "OctoSense", force = true }
+MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
