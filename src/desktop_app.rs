@@ -5,7 +5,7 @@ use crate::desktop::{dark_chrome, DesktopShelf, DesktopStyle, ShelfHit, SPECS};
 use crate::*;
 
 /// Match the browser's initial page palette: light Omarchy themes, classic
-/// desktops that have no dark variant, and OctoSense, dark whatever the flag says.
+/// desktops that have no dark variant, and each style's selected appearance.
 pub(super) fn browser_appearance(style: DesktopStyle, dark: bool, omarchy_source: &str) -> bool {
     if style == DesktopStyle::Omarchy {
         return scan_theme_color(omarchy_source, "background")
@@ -41,21 +41,21 @@ impl App {
     /// fill outside a kit: under glass it goes transparent so the material
     /// sits on the wallpaper with no flat wash beneath; under flat it is
     /// `mod.wm_theme.background` again, as the DSL resolved it.
-    pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens) {
+    pub(super) fn apply_material_to_chrome(&mut self, cx: &mut Cx, material: shell::MaterialTokens, palette: Option<shell::ShellPalette>) {
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_bar)).borrow_mut::<shell::bar::ShellBar>() {
-            w.set_material(material);
+            w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_menu)).borrow_mut::<ShellMenu>() {
-            w.set_material(material);
+            w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_panel)).borrow_mut::<shell::panels::ShellPanel>() {
-            w.set_material(material);
+            w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_notes)).borrow_mut::<shell::notifications::ShellNotifications>() {
-            w.set_material(material);
+            w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_osd)).borrow_mut::<shell::osd::ShellOsd>() {
-            w.set_material(material);
+            w.set_material(material, palette);
         }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
             w.set_material(material);
@@ -84,7 +84,12 @@ impl App {
         let dark = self.state_mut().style.dark;
         let sheet = octosense::style::load_sheet(style, dark);
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {desk.set_startup_style(cx, &sheet);}
-        let sheet_name = if style == DesktopStyle::OctoSense { style.id().to_string() } else { sheet.name.clone() };
+        let sheet_name = if style == DesktopStyle::OctoSense {
+            if dark { "octosense-dark" } else { "octosense" }.to_string()
+        } else { sheet.name.clone() };
+        // New child processes need the recognized upstream family at startup.
+        // Once connected, they receive the full custom palette too.
+        host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet.name));
         app_icon::install(cx, style.framework(), &sheet.icons);
         let (material, roles) = Self::chrome_from_sheet(&sheet);
         let state = self.state_mut();
@@ -105,11 +110,10 @@ impl App {
                 send_to_app(sender, vec![StudioToApp::Custom(json.clone())]);
             }
         }
-        self.apply_material_to_chrome(cx, material);
+        let palette = (style == DesktopStyle::OctoSense).then(|| theme::scan_shell_palette(&sheet.theme));
+        self.apply_material_to_chrome(cx, material, palette);
         self.module_host.apply_style(cx, &sheet);
         self.stylesheet = Some(sheet);
-        // New child processes pick the style before their widget definitions load.
-        host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet_name));
         let omarchy_source = if style == DesktopStyle::Omarchy {
             theme::load_theme_source(&self.state_mut().theme_name)
         } else { String::new() };
@@ -126,7 +130,7 @@ impl App {
             menu.roles = roles;
         }
         // Wallpaper is part of the framebuffer crossfade. Omarchy retains the
-        // selected wallpaper and OctoSense shows its bundled scene through the
+        // selected wallpaper and OctoSense loads its bundled image into the
         // same slot, the spec gradient beneath as the fallback; the other
         // desktop identities have their own ground.
         let has_wallpaper = match style {
@@ -135,10 +139,21 @@ impl App {
                 // another style (a cache hit when it is already decoded).
                 self.apply_background(cx, self.background_index)
             }
+            DesktopStyle::OctoSense => {
+                // Separate cache keys prevent a decoded dark image being reused
+                // for the light appearance (or vice versa).
+                let (path, bytes) = if dark {
+                    ("octosense-bundled/abyssal-currents.png", theme::BUNDLED_OCTOSENSE_WALLPAPER)
+                } else {
+                    ("octosense-bundled/abyssal-currents-light.png", theme::BUNDLED_OCTOSENSE_LIGHT_WALLPAPER)
+                };
+                self.ui.image(cx, ids!(bg_image)).load_image_from_data_async(
+                    cx, std::path::Path::new(path), std::sync::Arc::new(bytes),
+                ).is_ok()
+            }
             _ => false,
         };
         self.ui.widget(cx, ids!(bg_image)).set_visible(cx, has_wallpaper);
-        self.ui.widget(cx, ids!(octosense_wallpaper)).set_visible(cx, style == DesktopStyle::OctoSense);
         let spec = &SPECS[style as usize];
         let pair = if dark && style.supports_dark() { spec.ground_dark } else { spec.ground };
         let to = |(r, g, b)| shell::rgb(r, g, b);
@@ -559,8 +574,7 @@ mod appearance_tests {
         }
         assert!(browser_appearance(DesktopStyle::Omarchy,false,"background: #121212"));
         assert!(!browser_appearance(DesktopStyle::Omarchy,true,"background: #eeeeee"));
-        // OctoSense has one look, and it is dark.
-        assert!(browser_appearance(DesktopStyle::OctoSense,false,""));
+        assert!(!browser_appearance(DesktopStyle::OctoSense,false,""));
         assert!(browser_appearance(DesktopStyle::OctoSense,true,""));
     }
 }

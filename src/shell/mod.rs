@@ -454,6 +454,51 @@ impl Default for ShellTokens {
     }
 }
 
+/// A desktop stylesheet's colors, applied without replacing the Omarchy
+/// shell's layout tokens. Clearing the override restores the selected theme.
+#[derive(Clone, Copy, Debug)]
+pub struct ShellPalette {
+    pub background: Vec4f,
+    pub text: Vec4f,
+    pub accent: Vec4f,
+    pub on_accent: Vec4f,
+    pub border: Vec4f,
+    pub error: Vec4f,
+}
+
+impl ShellTokens {
+    pub fn with_palette(mut self, palette: Option<ShellPalette>) -> Self {
+        let Some(p) = palette else { return self; };
+        self.bar.background = p.background;
+        self.bar.text = p.text;
+        self.bar.active = p.error;
+        for surface in [&mut self.popups, &mut self.tooltip,
+            &mut self.notifications.surface, &mut self.menu.surface, &mut self.launcher.surface] {
+            surface.background = p.background;
+            surface.text = p.text;
+            surface.border = p.border;
+            surface.border_end = p.border;
+        }
+        self.notifications.countdown = p.accent;
+        for menu in [&mut self.menu, &mut self.launcher] {
+            menu.scrim = p.background;
+            menu.selected_background = p.accent;
+            menu.selected_background_alpha = 1.0;
+            menu.selected_text = p.on_accent;
+            menu.selected_border = p.accent;
+        }
+        self.controls.normal_color = p.text;
+        self.controls.normal_border = p.border;
+        self.controls.hover_color = p.text;
+        self.controls.hover_border = p.border;
+        self.controls.focus_color = p.accent;
+        self.controls.focus_border = p.accent;
+        self.controls.selected_color = p.accent;
+        self.controls.selected_border = p.accent;
+        self
+    }
+}
+
 /// `mod.theme.material` — the MATERIAL every shell surface and window frame
 /// paints with. `glass` 0 is the flat look, the default every style sheet
 /// without a material block gets; 1 is Liquid Glass, refracting the

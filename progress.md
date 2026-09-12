@@ -95,3 +95,14 @@
 - Started from clean main at 9da3b28. Inventoried Cargo, shell labels, local modules/resources, catalog, state paths, sync scripts and docs.
 - Renamed packages, modules/resources, custom style, shell/catalog/log labels, packaging metadata, scripts and active docs. Preserved upstream source paths/hashes and access to legacy state/model links.
 - Verification passed: locked metadata/check, 218 Rust tests, 48 Python tests, release/debug workspace builds, all-style native smoke, plain cargo-run default-catalog smoke, Android APK/manifest and sync integrity. No connected Android device. Changes remain uncommitted on main.
+
+## OctoSense wallpaper and light appearance — 2026-09-11
+- Working on feat/desktop-wallpaper; preserving the untracked repository instructions. Bundled the original dark Abyssal Currents PNG, retired the custom SVG renderer and kept Android's animation. Documented source prompt and provenance.
+- Dark wallpaper checks passed: 217 Rust tests, 49 Python tests, release build and all-style native smoke with Reference interaction. Fixed the smoke helper's duplicate input retries after capture failures.
+- User requested a light counterpart. Inspected appearance routing, palette loading and glass chrome; adding light resources and enabling the existing appearance controls next.
+- Generated the light wallpaper as an edit of the original; saved both native PNGs and full prompts locally. Enabled OctoSense Light/Dark, paired the wallpaper cache keys, and made new child processes use recognized upstream appearance names.
+- Shell bar, calendar, notifications, menus and controls now derive their colors from the same local palette, preserving the base Omarchy tokens. Original fork dark theme hashes still match.
+- The new wire/reload test failed on the forced macos-dark name before implementation. Updated a stale ground-gradient fixture after the first full test run. Verification now passes 219 Rust tests, 49 Python tests and the locked release build; native all-style smoke is running.
+- Native all-style smoke passed with both OctoSense appearances. Inspected light/dark menus, calendar, notifications and Android-style frames. A focused probe verified actual top-bar clicks, new apps in each appearance and retained counter state. All test processes stopped, with clean host/client rendering logs.
+- Documented appearance selection, both native assets/prompts, upstream ownership and validation. Work remains uncommitted on feat/desktop-wallpaper; no dependency migration, framework changes or Android device build.
+- User requested check-in and a PR. Preparing the verified feature changes for OctoSense-org/OctoSense main; preserving the pre-existing AGENTS.md locally.

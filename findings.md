@@ -92,3 +92,10 @@
 - Upstream original asset source paths/hashes must remain unchanged while local destinations move. Workspace directory and past validation artifacts remain at their real locations.
 - Android packaging preserves the exact OctoSense label through product_name; it emits octo_sense.apk under the octosense build directory. The new dev.makepad.octosense ID installs separately from MakeOS.
 - Native screenshots confirm the OctoSense shell name and Reference greeting render correctly; all eight style transitions preserve the hosted app.
+
+## OctoSense light appearance — 2026-09-11
+- OctoSense currently disables supports_dark and always loads the dark Splash palette, wire name and chrome. Enable the same light/dark convention as macOS: false is light, true is dark.
+- Retain the existing glass geometry and dark theme. The light companion uses pearl surfaces, pale aqua shadows, dark ink text and blue accents; its wallpaper preserves the Abyssal Currents composition.
+- Hosted apps receive complete style sheets through the upstream macOS wire family. New child processes must also receive the recognized macos/macos-dark environment value, rather than the local octosense identifier.
+- The previous wallpaper smoke exposed upstream remote input applying before a capture error. The helper now retries only captures, never clicks/keys; regression coverage and native smoke passed.
+- The proposed dependency/submodule migration was canceled; no dependency or sync mechanism changes are part of this work.

@@ -389,7 +389,7 @@ impl ShellPanel {
     }
 
     fn section_header(&mut self, cx: &mut Cx2d, r: Rect, label: &str, value: &str) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         self.d.section_header(cx, r, &tok, fg, label);
         if !value.is_empty() {
@@ -408,7 +408,7 @@ impl ShellPanel {
     /// A `CursorSurface` slider row: the track inset by `space(6)` with the
     /// panel's own hover chrome.
     fn slider_row(&mut self, cx: &mut Cx2d, r: Rect, hit: Hit, progress: f64, enabled: bool) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let hot = self.hot == Some(hit) || self.dragging == Some(hit);
         if hot && enabled {
             self.d
@@ -433,7 +433,7 @@ impl ShellPanel {
     }
 
     fn info_pair(&mut self, cx: &mut Cx2d, r: Rect, label: &str, value: &str) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         self.d.label(
             cx,
@@ -458,7 +458,7 @@ impl ShellPanel {
     /// "Not available on this OS" — the honest reading of a panel whose
     /// service does not exist here.
     fn unavailable(&mut self, cx: &mut Cx2d, r: Rect, what: &str) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         self.d.label(
             cx,
             r,
@@ -471,8 +471,9 @@ impl ShellPanel {
     }
 
     /// The material the kit paints this panel with; the next draw reads it.
-    pub fn set_material(&mut self, m: MaterialTokens) {
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
+        self.d.set_palette(palette);
     }
 
     /// Under glass the open panel is hoisted into the kit's overlay list.
@@ -490,7 +491,7 @@ impl ShellPanel {
             return;
         };
         self.hits.clear();
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let pad = tok.spacing.popup_padding;
         let gap = tok.spacing.panel_gap;
         let height = match kind {
@@ -554,7 +555,7 @@ impl ShellPanel {
     // ------------------------------------------------------------- clock
 
     fn draw_clock(&mut self, cx: &mut Cx2d, body: Rect) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         let (ty, tm, td) = self.data.today;
         let (vy, vm) = self.data.view;
@@ -750,7 +751,7 @@ impl ShellPanel {
     // ------------------------------------------------------------- audio
 
     fn draw_audio(&mut self, cx: &mut Cx2d, body: Rect) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         let mood = self.data.volume_mood();
         let level = self.data.volume;
@@ -861,7 +862,7 @@ impl ShellPanel {
     // ------------------------------------------------------------- power
 
     fn draw_power(&mut self, cx: &mut Cx2d, body: Rect) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         let battery = self.data.battery;
         let (hero, rest) = cut_top(body, 44.0);
@@ -982,7 +983,7 @@ impl ShellPanel {
     // ----------------------------------------------------------- monitor
 
     fn draw_monitor(&mut self, cx: &mut Cx2d, body: Rect) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.popups.text;
         let (hero, rest) = cut_top(body, 40.0);
         let mood = self.data.brightness_mood();

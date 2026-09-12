@@ -134,7 +134,6 @@ script_mod! {
                             }
                         }
                     }
-                    octosense_wallpaper := OctoSenseWallpaper{}
                     bg_image := Image{
                         width: Fill
                         height: Fill
@@ -3861,7 +3860,7 @@ impl MatchEvent for App {
         });
         // The kits start flat; the startup sheet's material still travels
         // the one path a style switch uses.
-        self.apply_material_to_chrome(cx, material);
+        self.apply_material_to_chrome(cx, material, None);
         self.next_id = 1;
         // The hosting registry: the linked modules, the person's overrides
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.
@@ -4116,7 +4115,6 @@ impl AppMain for App {
         host::set_child_env("MAKEPAD_HOME", octosense::paths::home().as_os_str());
         desktop_style::install(vm,desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Omarchy));
         crate::makepad_widgets::script_mod(vm);
-        octosense::wallpaper::script_mod(vm);
         #[cfg(target_os = "android")]
         octosense::android_rendering::script_mod(vm);
 

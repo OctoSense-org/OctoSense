@@ -586,8 +586,9 @@ impl ShellBar {
     /// The material the kit paints this bar with; the next draw reads it
     /// (`App::apply_material_to_chrome` redraws everything after the
     /// fan-out).
-    pub fn set_material(&mut self, m: MaterialTokens) {
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
+        self.d.set_palette(palette);
     }
 
     /// Draw the bar into `r`. Returns nothing; hit rects are recorded for
@@ -600,7 +601,7 @@ impl ShellBar {
     }
 
     fn draw_bar_inner(&mut self, cx: &mut Cx2d, r: Rect) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let fg = tok.bar.text;
         let accent = tok.bar.active;
         let slot = self.icon_slot();
@@ -902,7 +903,7 @@ impl ShellBar {
     /// `controlPaddingX/Y`, on `[tooltip] background` behind its 1px
     /// border, 6px off the bar edge.
     fn draw_tooltip(&mut self, cx: &mut Cx2d, r: Rect, module: BarModule) {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let text = self.tooltip_for(module);
         if text.is_empty() {
             return;
