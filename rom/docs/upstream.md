@@ -14,11 +14,12 @@ widgets, platform, app-module and the linked app crates. They are not copied
 into OctoSense. Advancing the shared pin includes their changes and their required
 transitive dependencies. Unrelated monorepo sources are not imported here.
 
-OctoSense's extra style is implemented in `src/octosense/style.rs` with two small
-local theme files. It sends its complete palette/material using the recognized
-`macos-dark` wire family, allowing unmodified upstream apps to select the right
-icons and appearance. The local wallpaper widget preserves SVG cover behavior;
-upstream already supplies the cached-view APIs. `src/octosense/retired_passes.rs`
+OctoSense's extra style is implemented in `src/octosense/style.rs` with local
+light and dark theme/widget files. It sends its complete palette/material using
+the recognized `macos` / `macos-dark` wire families, allowing unmodified upstream
+apps to select the right icons and appearance. The paired Abyssal Currents wallpapers use the standard
+Image widget with crop-to-fill sizing; upstream supplies the image-loading and
+cached-view APIs. `src/octosense/retired_passes.rs`
 detaches passes with freed draw-list roots before the new retained GPU working-set scan;
 remove it when upstream guards retired pass slots. No framework fork is required.
 
@@ -70,7 +71,7 @@ For an actual update, the command:
    together. Runs Cargo metadata, locked workspace check/tests, and the Python
    maintenance tests.
 3. Builds release and debug workspace binaries, then runs the release hosting
-   smoke test with `--styles` and the exact `cargo run` test with the shipped catalog. The release test also switches through all eight styles, captures OctoSense glass and menus, and checks that the hosted app retains its state without background launches. Tests
+   smoke test with `--styles` and the exact `cargo run` test with the shipped catalog. The release test also switches through all eight styles, captures both OctoSense appearances, glass and menus, and checks that the hosted app retains its state without background launches. Tests
    open and close their own windows and isolate user state. The command needs
    native GUI access and is currently validated on macOS.
 4. Rechecks the starting OctoSense HEAD, branch, and files. Only after verification

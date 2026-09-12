@@ -29,12 +29,16 @@ def get(port, route, **params):
             break
         except HTTPError as error:
             body = error.read().decode(errors="replace")
-            # This response guarantees the input was not submitted. Replaying
-            # arbitrary errors could duplicate a click or typed character.
-            if (attempt < 2 and error.code == 404 and
-                    any(message in body for message in (
-                        "requested input frame could not be submitted; retry",
-                        "grab frame could not be submitted at arming; retry"))):
+            # Native remote.rs applies input BEFORE trying to present its
+            # frame. A presentation refusal must never replay a click/key.
+            # A separate read-only grab provides the missing frame barrier.
+            if (error.code == 404 and route in ("click", "k") and
+                    "requested input frame could not be submitted; retry" in body):
+                capture = {"w": params["w"]} if "w" in params else {}
+                get(port, "g", **capture)
+                return {"ok": 1}
+            if (attempt < 2 and error.code == 404 and route == "g" and
+                    "grab frame could not be submitted at arming; retry" in body):
                 time.sleep(0.2)
                 continue
             raise ValueError(f"/{route}: HTTP {error.code}: {body}") from error
@@ -108,10 +112,11 @@ def check_styles(port, child_port, host_pid, log, artifacts):
     current = "omarchy"
     count = 1
     clients = set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"))
-    styles = [("octosense", "OctoSense"), ("macos", "macOS"), ("windows", "Windows"),
+    styles = [("octosense", "OctoSense"), ("octosense-dark", "OctoSense Dark"),
+              ("octosense", "OctoSense"), ("macos", "macOS"), ("windows", "Windows"),
               ("windows-2000", "Windows 2000"), ("nextstep", "NeXTSTEP"),
               ("ios", "iOS"), ("android", "Android"), ("omarchy", "Omarchy"),
-              ("octosense", "OctoSense"), ("omarchy", "Omarchy")]
+              ("octosense-dark", "OctoSense Dark"), ("omarchy", "Omarchy")]
     for index, (style, label) in enumerate(styles):
         offset = len(log.read_text(errors="replace"))
         if current in ("ios", "android"):
@@ -130,12 +135,12 @@ def check_styles(port, child_port, host_pid, log, artifacts):
         wait_for(style + " applied", lambda: f"wm: desktop style {style} applied" in log.read_text(errors="replace")[offset:])
         current = style
         time.sleep(0.9)  # Let the framebuffer transition and child restyle settle.
-        if style == "omarchy":
+        if style in ("omarchy", "octosense", "octosense-dark"):
             wait_for(style + " wallpaper visible", lambda: get(port, "snap", q="bg_image").get("s"))
         assert any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]), style
         assert set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")) == clients, "style launched an extra client"
         save_grab(artifacts, f"style-{index}-{style}", get(port, "g", scale=0.5))
-        if style == "octosense":
+        if style in ("octosense", "octosense-dark"):
             tile = max(get(port, "snap", q="MpRunView")["s"], key=lambda item: item["r"][2] * item["r"][3])
             button = get(child_port, "snap", q="increment")["s"][0]["r"]
             get(port, "click", x=tile["r"][0] + button[0] + button[2]/2,
@@ -143,18 +148,18 @@ def check_styles(port, child_port, host_pid, log, artifacts):
             count += 1
             wait_for("input inside glass window", lambda: any(item.get("t") == f"Count: {count}" for item in get(child_port, "snap", q="count")["s"]))
             get(port, "k", c="Space", cmd=1, wait=1)
-            save_grab(artifacts, f"style-{index}-octosense-menu", get(port, "g", scale=0.5))
+            save_grab(artifacts, f"style-{index}-{style}-menu", get(port, "g", scale=0.5))
             get(port, "k", c="Escape", wait=1)
-            if index == 0:
+            if index < 2:
                 width = get(port, "s")["w"][0]["sz"][0]
                 get(port, "click", x=width/2, y=13, wait=1)
-                save_grab(artifacts, "octosense-calendar", get(port, "g", scale=0.5))
+                save_grab(artifacts, f"{style}-calendar", get(port, "g", scale=0.5))
                 # Flyouts close on outside clicks; Escape only closes menus.
                 get(port, "click", x=width-10, y=100, wait=1)
                 # The lean catalog has no assistant: this requests a local
                 # notification, exercising its glass without launching an app.
                 get(port, "k", c="F10", wait=1)
-                save_grab(artifacts, "octosense-notification", get(port, "g", scale=0.5))
+                save_grab(artifacts, f"{style}-notification", get(port, "g", scale=0.5))
         print(f"PASS: {style} renders and preserves the hosted app without extra launches", flush=True)
         assert_no_runtime_errors(log.read_text(errors="replace"))
 

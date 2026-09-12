@@ -452,8 +452,8 @@
     "Desktop and mobile launch surfaces only expose available catalog apps; mobile tile background launches honor prewarming opt-in.",
     "Theme material tests load the local OctoSense stylesheet adapter instead of assuming a monorepo-relative widgets directory.",
     "Desktop widget geometry uses its stable turtle area and explicitly enumerates hosted children so floating styles and tree refreshes retain app discovery.",
-    "The OctoSense style is owned locally, using official macOS icon/layout APIs and a complete custom stylesheet over the existing protocol.",
-    "The OctoSense SVG wallpaper uses a local cover widget; framework image sources remain external.",
+    "The OctoSense style is owned locally, using official macOS icon/layout APIs and complete light/dark stylesheets over the existing protocol. Shell colors follow the selected local palette.",
+    "The OctoSense desktop uses paired light/dark Abyssal Currents rasters through the standard crop-to-fill Image widget; Android retains its animated background. The replaced fork SVG is recorded under retained_fork_assets.replaced_files.",
     "The local retired-pass adapter detaches passes with freed draw-list roots before the upstream retained GPU working-set scan, preserving live pass roots.",
     "The catalog follows official Makepad apps; the stable studio catalog ID now launches Director, which replaced Studio upstream.",
     "OctoSense owns the project identity, package names and local resource paths; pristine upstream names and hashes are retained for syncing."
@@ -465,11 +465,6 @@
     "revision": "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d",
     "files": [
       {
-        "source": "apps/wm/resources/wallpapers/makeos.svg",
-        "destination": "resources/wallpapers/octosense.svg",
-        "sha256": "cfb1eefda276dc4ca9f15577326c37c95ee75f3121af7cd6d80b417d9e04a605"
-      },
-      {
         "source": "widgets/themes/makeos/theme.splash",
         "destination": "resources/themes/octosense/theme.splash",
         "sha256": "b7517d4e77a8812bfc986f45ed076699022adcc50c82e1456b5555c33491d54f"
@@ -478,6 +473,14 @@
         "source": "widgets/themes/makeos/widgets.splash",
         "destination": "resources/themes/octosense/widgets.splash",
         "sha256": "ebaad2a4eb58d155282cb8d5ef1ec77f3745b9cc2e2ef656c3090c7206921573"
+      }
+    ],
+    "replaced_files": [
+      {
+        "source": "apps/wm/resources/wallpapers/makeos.svg",
+        "sha256": "cfb1eefda276dc4ca9f15577326c37c95ee75f3121af7cd6d80b417d9e04a605",
+        "former_destination": "resources/wallpapers/octosense.svg",
+        "replacement": "resources/wallpapers/octosense-abyssal-currents.png"
       }
     ]
   }

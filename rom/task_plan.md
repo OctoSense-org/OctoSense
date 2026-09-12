@@ -70,3 +70,8 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 21. Inventory project identifiers, state compatibility, packaging and provenance — complete.
 22. Rename active code, Cargo targets, resources, scripts and documentation; retain historical provenance and compatibility — complete.
 23. Verify Cargo/tests, desktop branding and hosting, Android package metadata, and sync integrity — complete (no ADB device attached).
+
+## OctoSense wallpaper and light appearance
+24. Replace the desktop SVG with the original Abyssal Currents raster wallpaper — complete; all-style native smoke and hosted input verified on feat/desktop-wallpaper.
+25. Add a light OctoSense palette and matching wallpaper using the existing appearance controls — complete. Preserved the dark palette, Android animation, and upstream crate pins.
+26. Verify both appearances, hosted app reloads and style transitions; document assets and setup — complete. 219 Rust/49 Python tests, release build, all-style native smoke, top-bar toggle and fresh-app checks passed. Ready for the requested feature-branch commit and PR to main.

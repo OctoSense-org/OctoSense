@@ -51,8 +51,8 @@ pub struct StyleSpec {
     /// Minimize warps the window into its shelf icon (the dock genie) instead
     /// of fading it out; restore plays it back.
     pub dock_warp: bool,
-    /// Chrome that is dark by identity, whatever the appearance flag says:
-    /// OctoSense's sheet has no light look. Read through `dark_chrome`.
+    /// Chrome that is dark by identity, independent of the appearance flag.
+    /// Read through `dark_chrome`.
     pub dark_chrome: bool,
     /// This style's chrome is the Liquid Glass material: the window frame,
     /// the shelf pill and the kit's surfaces paint from the sheet's material
@@ -164,12 +164,12 @@ pub static SPECS: [StyleSpec; 8] = [
     },
     // OctoSense floats like macOS: its dock overlays the desk rather than
     // reserving a strip, and the title bar and menu share macOS's placement.
-    // Dark only, so both grounds are the same night gradient.
+    // Fallback grounds match the light and dark bundled wallpapers.
     // The row owns the window geometry (rounding, frame_inset, shadow); the
     // sheet's material block owns the kit's surfaces (cards, the shelf pill,
     // the ring's look). The two sets of numbers are kept in agreement by
-    // hand: rounding 12 is the material's corner_radius, shadow 0.44 its
-    // shadow_alpha, frame_inset 2 is twice its border_width. The pane
+    // hand: rounding 12 is the material's corner_radius, frame_inset 2 is
+    // twice its border_width. The pane
     // derives its child inset from material.border_width where a window
     // uses the row's frame_inset; both round the child to "outer radius
     // minus inset, halved".
@@ -180,19 +180,17 @@ pub static SPECS: [StyleSpec; 8] = [
         frame_inset: 2.0, rounding: 12.0, chrome_radius: 10.0,
         frame_width: 1.0, caption_width: 30.0, shelf_radius: 24.0, resize_bar: 0.0, shadow: 0.44,
         glass_shelf: true, composes: true, caption_mac: true, bevel_classic: false, bevel_next: false,
-        ground: ((11, 18, 32), (5, 7, 14)),
+        ground: ((239, 245, 246), (194, 222, 226)),
         ground_dark: ((11, 18, 32), (5, 7, 14)),
         menu_bottom_offset: 98.0,
         dock_warp: true,
-        dark_chrome: true,
+        dark_chrome: false,
         glass_chrome: true,
     },
 ];
 
 /// The chrome appearance a style draws: dark by identity (its row's
-/// `dark_chrome`), else the appearance flag when the style has a dark look
-/// at all — `supports_dark()` is false for OctoSense, so the flag alone would
-/// read it as light.
+/// `dark_chrome`), else the appearance flag when the style has a dark look.
 pub fn dark_chrome(style: DesktopStyle, dark: bool) -> bool {
     SPECS[style as usize].dark_chrome || (style.supports_dark() && dark)
 }
@@ -336,7 +334,7 @@ mod tests {
         // The rest of the row, from the match arms it centralises.
         assert_eq!(SPECS.map(|s| s.menu_bottom_offset), [0.0, 98.0, 66.0, 34.0, 0.0, 0.0, 0.0, 98.0]);
         assert_eq!(SPECS.map(|s| s.dock_warp), [false, true, false, false, false, false, false, true]);
-        assert_eq!(SPECS.map(|s| s.dark_chrome), [false, false, false, false, false, false, false, true]);
+        assert_eq!(SPECS.map(|s| s.dark_chrome), [false; 8]);
         assert_eq!(SPECS.map(|s| s.glass_chrome), [false, false, false, false, false, false, false, true]);
         // The shadow reads the table: bit-neutral at the f32 the uniform takes
         // for the styles that had 0.28 / 0.16, OctoSense's own 0.44 above them.
@@ -361,7 +359,7 @@ mod tests {
             ((85, 85, 85), (85, 85, 85)),
             ((38, 78, 137), (159, 207, 227)),
             ((50, 46, 73), (158, 156, 204)),
-            ((11, 18, 32), (5, 7, 14)),
+            ((239, 245, 246), (194, 222, 226)),
         ]);
         assert_eq!(SPECS.map(|s| s.ground_dark), [
             ((16, 19, 21), (24, 30, 34)),
@@ -480,10 +478,8 @@ mod tests {
         assert_eq!(shelf_geometry(screen, &t, n), mac, "settled OctoSense");
     }
     #[test]
-    fn octosense_chrome_is_dark_by_identity_and_the_others_follow_the_flag() {
-        assert!(dark_chrome(DesktopStyle::OctoSense, false));
-        assert!(dark_chrome(DesktopStyle::OctoSense, true));
-        for style in [DesktopStyle::Macos, DesktopStyle::Windows, DesktopStyle::Ios, DesktopStyle::Android] {
+    fn chrome_follows_the_flag_for_styles_with_both_appearances() {
+        for style in [DesktopStyle::OctoSense, DesktopStyle::Macos, DesktopStyle::Windows, DesktopStyle::Ios, DesktopStyle::Android] {
             assert!(dark_chrome(style, true), "{style:?}");
             assert!(!dark_chrome(style, false), "{style:?}");
         }

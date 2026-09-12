@@ -211,7 +211,7 @@ impl ShellNotifications {
 
     /// The height a card needs for its text.
     fn card_height(&mut self, cx: &mut Cx2d, note: &Notification) -> f64 {
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let text_w = CARD_WIDTH
             - SIDE_MARGIN * 2.0
             - ICON_SLOT
@@ -243,8 +243,9 @@ impl ShellNotifications {
     }
 
     /// The material the kit paints the stack with; the next draw reads it.
-    pub fn set_material(&mut self, m: MaterialTokens) {
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<super::ShellPalette>) {
         self.d.set_material(m);
+        self.d.set_palette(palette);
     }
 
     /// Under glass the stack is hoisted into the kit's overlay list.
@@ -260,7 +261,7 @@ impl ShellNotifications {
         if self.live.is_empty() {
             return;
         }
-        let tok = self.tokens;
+        let tok = self.d.tokens(self.tokens);
         let gaps_out = tok.spacing.gaps_out;
         let border = tok.notifications.surface.border_width;
         let mut y = screen.pos.y + self.bar_clearance.max(gaps_out);

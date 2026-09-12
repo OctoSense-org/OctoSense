@@ -1,3 +1,71 @@
+# OctoSense light appearance validation — 2026-09-11
+
+On `feat/desktop-wallpaper`, OctoSense now supports the existing Light/Dark
+appearance control. The light theme uses pearl glass, dark ink text and blue
+accents, with the matching light Abyssal Currents wallpaper. Shell surfaces and
+hosted widgets receive the same palette; existing dark theme files are preserved.
+
+Verified:
+
+- Locked all-features workspace tests: **219 passed**, including repeated
+  dark/light/dark stylesheet reloads in one VM, shell palette restoration,
+  browser appearance, and light text/selection contrast.
+- Python maintenance tests: **49 passed**. Locked release workspace build passed.
+- Native all-style smoke passed, including both OctoSense appearances, repeated
+  wallpaper/style switches, Reference input and retained state, separate
+  instances, fullscreen/workspace operations, failure handling and shutdown.
+- A focused native probe clicked the top-bar appearance control in both
+  directions, launched a fresh Reference app in each appearance, and preserved
+  the existing app's counter when switching from dark to light.
+- Reviewed native frames of light/dark windows, menus, calendar and notifications.
+  Host/client logs contain no rendering errors and all test processes stopped.
+- Upstream revision, mappings and original fork theme hashes remain unchanged.
+
+Evidence: `target/desktop-wallpaper/light-smoke/` and
+`target/desktop-wallpaper/light-toggle/`; test/build logs are alongside them.
+The Android style was checked on desktop; no Android device build was run for
+this change. Its animated background is preserved. Both native PNGs and their
+full generation/edit prompts are documented in `resources/wallpapers/README.md`.
+
+---
+
+# Abyssal Currents wallpaper validation — 2026-09-11
+
+On `feat/desktop-wallpaper`, the OctoSense desktop style now embeds the original
+Abyssal Currents PNG and renders it with the existing Image widget's centered
+crop-to-fill mode. The replaced SVG and its custom widget were removed; their
+source provenance remains recorded. Android's animated background and Omarchy's
+selected theme image are unchanged.
+
+Verified:
+
+- Locked all-features workspace tests: **217 passed** (the removed SVG widget's
+  geometry test is no longer needed).
+- Python maintenance tests: **49 passed**.
+- Locked release workspace build passed.
+- Native all-style smoke passed, including returning to OctoSense and Omarchy,
+  retained app state/input, workspace/fullscreen operations, failure handling,
+  and process cleanup. Captured frames show the new wallpaper behind glass
+  windows and menus, and the existing Android-style background.
+- Upstream status and original import mappings/hashes remain valid. Remaining
+  fork theme files match their recorded hashes; replaced wallpaper provenance
+  identifies both the old source and the new asset.
+
+The first runtime run exposed an existing smoke-helper bug: the native remote
+backend reports an input-frame presentation failure after applying the input.
+Retrying that request delivered a click twice. The helper now waits for a
+separate read-only grab instead of replaying clicks or keys. Regression tests
+cover that ordering, window selection and failed-capture handling. Framework
+and application input code were not changed.
+
+Final runtime evidence: `target/desktop-wallpaper/smoke-verified/`. Earlier
+traces and the pre-wallpaper baseline comparison are retained alongside it.
+This task tested the Android style on desktop, not an Android device build.
+The asset dimensions, hash and full generation prompt are documented in
+`resources/wallpapers/README.md`.
+
+---
+
 # OctoSense rename validation — 2026-09-11
 
 The application and Reference crate now build as `octosense` and
