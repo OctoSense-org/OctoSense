@@ -304,7 +304,8 @@ impl PhoneSurface {
         let columns=if landscape {7}else{4};
         let cell=(screen.size.x-24.0)/columns as f64;
         let rows=(ids.len()+columns-1)/columns;
-        let bottom=screen.pos.y+screen.size.y-38.0;
+        let nav=if nav_buttons() {nav_height()+bottom_inset()} else {0.0};
+        let bottom=screen.pos.y+screen.size.y-38.0-nav;
         let row_h=((bottom-top)/rows.max(1) as f64).clamp(64.0,104.0);
         let size=if landscape {44.0}else{60.0};
         for (index,(id,label)) in ids.iter().enumerate() {
@@ -379,14 +380,18 @@ impl PhoneSurface {
         self.pressed=phone.gesture.as_ref().and_then(|g|g.hit.clone());
         let ios=state.style.target==DesktopStyle::Ios;
         let ink=if (phone.screen==PhoneScreen::App || phone.screen==PhoneScreen::Drawer || !ios) && !state.style.dark {rgb(25,25,30)}else{rgb(255,255,255)};
-        let status_h=if screen.size.x>screen.size.y {24.0}else{42.0};
-        if phone.screen==PhoneScreen::App {self.rounded(cx,rect(screen.pos.x,screen.pos.y,screen.size.x,status_h),0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
-        self.label(cx,rect(screen.pos.x+16.0,screen.pos.y,62.0,status_h),&phone.clock,13.0,true,ink);
-        if ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-45.0,screen.pos.y+7.0,90.0,23.0),12.0,rgb(0,0,0));}
-        if !ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-5.0,screen.pos.y+13.0,10.0,10.0),5.0,rgb(0,0,0));}
-        self.d.icon_centered(cx,Ico::Wifi,rect(screen.pos.x+screen.size.x-69.0,screen.pos.y,22.0,status_h),14.0,ink);
-        self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
-        self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
+        // The emulated status bar (clock, camera, wifi, battery): only where
+        // the platform does not keep its own above the surface.
+        let status_h=status_height(screen);
+        if status_h>0.0 {
+            if phone.screen==PhoneScreen::App {self.rounded(cx,rect(screen.pos.x,screen.pos.y,screen.size.x,status_h),0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
+            self.label(cx,rect(screen.pos.x+16.0,screen.pos.y,62.0,status_h),&phone.clock,13.0,true,ink);
+            if ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-45.0,screen.pos.y+7.0,90.0,23.0),12.0,rgb(0,0,0));}
+            if !ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-5.0,screen.pos.y+13.0,10.0,10.0),5.0,rgb(0,0,0));}
+            self.d.icon_centered(cx,Ico::Wifi,rect(screen.pos.x+screen.size.x-69.0,screen.pos.y,22.0,status_h),14.0,ink);
+            self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
+            self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
+        }
         if phone.overview>0.01 {
             for (index,client) in phone.order.iter().enumerate() {
                 if let Some(slot)=state.clients.get(client) {
@@ -394,12 +399,44 @@ impl PhoneSurface {
                     if card.pos.x+card.size.x<screen.pos.x || card.pos.x>screen.pos.x+screen.size.x {continue;}
                     self.icons.draw(cx,&slot.app,state.style.target,rect(card.pos.x+2.0,card.pos.y-36.0,26.0,26.0),phone.overview as f32,ink);
                     self.d.label_elided(cx,rect(card.pos.x+36.0,card.pos.y-36.0,card.size.x-36.0,26.0),true,13.0,alpha(rgb(255,255,255),phone.overview as f32),HAlign::Left,slot.display_title());
-                    if phone.screen==PhoneScreen::Recents {self.hits.push((card,PhoneHit::Card(*client)));}
+                    if phone.screen==PhoneScreen::Recents {
+                        self.hits.push((card,PhoneHit::Card(*client)));
+                        // A tap close, so an app can be shut without the
+                        // flick-away gesture (which OpenHarmony's system nav
+                        // eats). Pushed after the card so it wins the hit.
+                        let x=rect(card.pos.x+card.size.x-32.0,card.pos.y-34.0,26.0,26.0);
+                        self.rounded(cx,x,13.0,if state.style.dark {rgb(52,52,58)}else{rgb(228,228,234)});
+                        self.d.icon_centered(cx,Ico::Close,x,11.0,if state.style.dark {rgb(240,240,244)}else{rgb(44,44,50)});
+                        self.hits.push((x,PhoneHit::Close(*client)));
+                    }
                 }
             }
             if phone.order.is_empty() {self.label(cx,screen,"No recent apps",20.0,false,ink);}
         }
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop);}
+        if nav_buttons() && phone.screen!=PhoneScreen::Home {
+            // The tappable Back / Home / Recents bar. OpenHarmony's own system
+            // navigation owns the bottom-edge swipe (it backgrounds the whole
+            // app), so leaving or closing an app has to be a tap, kept above
+            // the platform's home bar by `bottom_inset`.
+            let nav_h=nav_height();
+            let inset=bottom_inset();
+            let bar=rect(screen.pos.x,screen.pos.y+screen.size.y-nav_h-inset,screen.size.x,nav_h+inset);
+            self.rounded(cx,bar,0.0,if state.style.dark {rgb(18,18,22)}else{rgb(236,236,240)});
+            let nav_ink=if state.style.dark {rgb(232,232,238)}else{rgb(44,44,50)};
+            let third=screen.size.x/3.0;
+            let cy=bar.pos.y+nav_h*0.5;
+            let back=rect(bar.pos.x,bar.pos.y,third,nav_h);
+            let home=rect(bar.pos.x+third,bar.pos.y,third,nav_h);
+            let recents=rect(bar.pos.x+third*2.0,bar.pos.y,third,nav_h);
+            self.d.icon_centered(cx,Ico::ChevronLeft,rect(back.pos.x+third*0.5-12.0,cy-12.0,24.0,24.0),20.0,nav_ink);
+            self.rounded(cx,rect(home.pos.x+third*0.5-11.0,cy-11.0,22.0,22.0),11.0,nav_ink);
+            self.rounded(cx,rect(recents.pos.x+third*0.5-10.0,cy-10.0,20.0,20.0),5.0,nav_ink);
+            self.hits.push((back,PhoneHit::Back));
+            self.hits.push((home,PhoneHit::Home));
+            self.hits.push((recents,PhoneHit::Recents));
+            return;
+        }
         let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
         if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
             self.rounded(cx,bottom,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});

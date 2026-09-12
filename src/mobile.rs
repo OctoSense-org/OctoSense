@@ -9,7 +9,7 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
-    App(String), Card(ClientId), Home, Recents, Drawer, Back,
+    App(String), Card(ClientId), Close(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
 }
@@ -143,9 +143,47 @@ impl PhoneState {
 pub fn phone_size(style: DesktopStyle) -> Vec2d {
     if style == DesktopStyle::Ios { dvec2(402.0, 874.0) } else { dvec2(412.0, 892.0) }
 }
+/// A real phone (iOS, Android, OpenHarmony) rather than the desktop's phone
+/// emulation: the platform owns the window size, the keyboard, rotation and
+/// the appearance, so the emulation's controls (the style/appearance/rotate
+/// toolbar, the drawn keyboard, window resizing) stay out of the way.
+pub const fn real_phone() -> bool {
+    cfg!(any(target_os = "ios", target_os = "android", target_env = "ohos"))
+}
+/// The platform draws its status bar OUTSIDE our surface: OpenHarmony lays
+/// the XComponent out under the system bar, so the emulated status bar is
+/// not drawn and the app area starts at the top of the surface. iOS and
+/// Android overlay theirs on the surface instead and keep the emulated bar
+/// as a placeholder until safe-area insets are wired through.
+pub const fn status_bar_outside() -> bool {
+    cfg!(target_env = "ohos")
+}
+/// A device whose own system owns the bottom-edge gesture: OpenHarmony's home
+/// swipe backgrounds the whole app before the shell sees it, so the shell
+/// cannot use that swipe to leave an app. Where this holds the phone shows a
+/// tappable Back / Home / Recents bar instead of the thin home indicator.
+pub const fn nav_buttons() -> bool {
+    cfg!(target_env = "ohos")
+}
+/// A strip kept clear at the very bottom, above the platform's own home bar,
+/// so the shell's nav buttons do not sit under it.
+pub fn bottom_inset() -> f64 {
+    if nav_buttons() { 18.0 } else { 0.0 }
+}
+/// The bottom navigation strip's height: a real button bar where the swipe is
+/// unavailable, the thin home indicator otherwise.
+pub fn nav_height() -> f64 {
+    if nav_buttons() { 52.0 } else { 24.0 }
+}
+/// The emulated status bar's height on this screen, 0 where the platform
+/// keeps its own outside the surface.
+pub fn status_height(screen: Rect) -> f64 {
+    if status_bar_outside() { 0.0 } else if screen.size.x > screen.size.y { 24.0 } else { 42.0 }
+}
 pub fn app_rect(screen: Rect) -> Rect {
-    let top = if screen.size.x > screen.size.y { 24.0 } else { 42.0 };
-    Rect { pos: screen.pos + dvec2(0.0, top), size: dvec2(screen.size.x, (screen.size.y - top - 24.0).max(1.0)) }
+    let top = status_height(screen);
+    let bottom = nav_height() + bottom_inset();
+    Rect { pos: screen.pos + dvec2(0.0, top), size: dvec2(screen.size.x, (screen.size.y - top - bottom).max(1.0)) }
 }
 pub fn card_rect(screen: Rect, index: f64, page: f64) -> Rect {
     let app = app_rect(screen);

@@ -120,10 +120,33 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// order. Curated on purpose — every row is one we run and verify, not a
 /// scan of whatever the workspace happens to contain.
 pub fn registry() -> &'static [AppDef] {
-    match crate::makeos::catalog::loaded() {
-        Ok(apps) => apps,
-        Err(_) => &[],
-    }
+    static REGISTRY: std::sync::OnceLock<Vec<AppDef>> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut apps: Vec<AppDef> = match crate::makeos::catalog::loaded() {
+            Ok(apps) => apps.clone(),
+            Err(_) => Vec::new(),
+        };
+        // A module this build links is an app even where no catalog names
+        // it: a phone or web build carries no catalog file at all, and its
+        // linked modules are the only apps it has. Whether such a row is
+        // launchable is still the hosting registry's call (apps.rs).
+        for module in crate::apps::linked_modules() {
+            if apps.iter().any(|app| app.id == module.id()) {
+                continue;
+            }
+            apps.push(AppDef {
+                id: module.id().to_string(),
+                label: module.label().to_string(),
+                bin: String::new(),
+                package: String::new(),
+                dir: String::new(),
+                manifest: None,
+                args: Vec::new(),
+                policy: LaunchPolicy::OrFocus,
+            });
+        }
+        apps
+    })
 }
 
 /// Registered ids take precedence over binary aliases.

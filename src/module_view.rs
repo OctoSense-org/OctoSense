@@ -86,6 +86,15 @@ impl MpModuleView {
         self.draw_bg.redraw(cx);
     }
 
+    /// The ground under the root: the instance's own theme background,
+    /// not the desk's (a light phone style over the WM's dark palette
+    /// would otherwise show a dark hole behind a root that paints only
+    /// its chrome).
+    pub fn set_ground(&mut self, cx: &mut Cx, color: Vec4f) {
+        self.draw_bg.color = color;
+        self.draw_bg.redraw(cx);
+    }
+
     /// Drop the root — called by the host right before the instance's
     /// isolate is freed. The tile keeps drawing its ground through the
     /// close animation, nothing else.

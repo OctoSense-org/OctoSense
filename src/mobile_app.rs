@@ -53,7 +53,7 @@ impl App {
                 .map(|(c, _)| *c).min();
             if let Some(client) = existing {
                 self.state_mut().phone.tiles.bind(app, client, false);
-            } else if self.warm_pool.enabled() && home_visible && self.state_mut().phone.tiles.may_launch(app, now) {
+            } else if home_visible && self.state_mut().phone.tiles.may_launch(app, now) && self.tile_may_launch(app) {
                 self.launch_tile_client(cx, app);
             }
         }
@@ -172,6 +172,14 @@ impl App {
             self.send_face(cx, client, Face::Full, dvec2(0.0, 0.0));
         }
     }
+    /// Whether a tile may start its app unasked: a child process only when
+    /// the warm pool is on (a cargo build in the background is the pool's
+    /// budget), a linked module always, since it costs one isolate and no
+    /// build. On a phone (no processes, no pool) the tile would otherwise
+    /// say "Starting…" forever.
+    fn tile_may_launch(&self, app: &str) -> bool {
+        self.warm_pool.enabled() || self.apps.hosting(app) == Hosting::Module
+    }
     /// Start `app_id` for its home tile: the same cargo launch (or module
     /// isolate) an ordinary open uses, minus the layout seat and the focus.
     fn launch_tile_client(&mut self, cx: &mut Cx, app_id: &str) {
@@ -213,11 +221,14 @@ impl App {
             log!("wm: module {} failed to start for its home tile: {}", module.id(), e);
             return;
         }
-        let Some((manifest, root, vm_id)) = self.module_host.get(id).map(|i| (i.manifest(), i.root.clone(), i.vm_id)) else { return };
+        let Some((manifest, root, vm_id, ground)) = self.module_host.get(id).map(|i| (i.manifest(), i.root.clone(), i.vm_id, i.ground)) else { return };
         self.state_mut().clients.insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
             d.mark_module(id);
-            d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
+            d.with_module_view(cx, id, |cx, v| {
+                v.set_root(cx, id, vm_id, root);
+                if let Some(ground) = ground { v.set_ground(cx, ground); }
+            });
         });
         // On the bus like any instance: opening it later changes nothing
         // the assistant can see except the window.
@@ -242,12 +253,12 @@ impl App {
             phone.desktop_clients=desktop_clients;
             phone.client=focused;phone.navigate(PhoneScreen::Home);
             phone.openness=0.0;phone.overview=0.0;
-            if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,phone_size(style));}
+            if !real_phone() {window.resize(cx,phone_size(style));}
         }else if !style.mobile() && previous.mobile() {
             self.dismiss_phone_keyboard(cx);
             self.restore_tile_faces(cx);
             let size=self.state_mut().phone.desktop_size.take().unwrap_or(dvec2(1400.0,900.0));
-            if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,size);}
+            if !real_phone() {window.resize(cx,size);}
             // Apps first opened on a phone have no desktop restore geometry.
             // Give them normal desktop windows; retain pre-phone user geometry.
             let state=self.state_mut();
@@ -258,12 +269,15 @@ impl App {
         }else if style.mobile() && previous!=style {
             let current=window.get_inner_size(cx);
             let size=phone_size(style);
-            if !cfg!(any(target_os="ios",target_os="android")) {
+            if !real_phone() {
                 window.resize(cx,if current.x>current.y {dvec2(size.y,size.x)}else{size});
             }
         }
         self.ui.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
         self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
+        // The emulation's toolbar (style, appearance, rotate) is the desktop's;
+        // a real phone shows its wallpaper from the top of the surface.
+        if real_phone() {self.ui.widget(cx,ids!(bar)).set_visible(cx,!style.mobile());}
         self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
         self.phone_time=0.0;
         self.animate_phone(cx);
@@ -296,7 +310,7 @@ impl App {
             self.state_mut().phone.ime.insert(client,cx.hosted_ime_state());
         }
         let phone=&mut self.state_mut().phone;
-        let visible=!cfg!(any(target_os="ios",target_os="android"))
+        let visible=!real_phone()
             && ((phone.screen==PhoneScreen::Drawer && phone.search_focused)
                 || client.and_then(|c|phone.ime.get(&c)).is_some_and(|ime|ime.visible));
         let height=if visible {phone.keyboard_height()}else{0.0};
@@ -350,6 +364,11 @@ impl App {
                 else {self.launch_app(cx,&app);}
             },
             PhoneHit::Card(client)=>self.activate_client(cx,client),
+            PhoneHit::Close(client)=>{
+                self.request_close(cx,client);
+                let empty=self.state_mut().phone.order.is_empty();
+                self.state_mut().phone.navigate(if empty {PhoneScreen::Home} else {PhoneScreen::Recents});
+            }
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),

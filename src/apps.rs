@@ -38,13 +38,41 @@ pub fn is_linked(id: &str) -> bool {
 }
 
 /// The modules this build links, one entry per `app-*` feature.
-fn linked_modules() -> Vec<&'static dyn AppModule> {
+pub(crate) fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
     #[cfg(feature = "app-sheets")]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-photos")]
     out.push(&makepad_photos::PHOTOS_MODULE);
+    #[cfg(feature = "app-clock")]
+    out.push(&makepad_clock::CLOCK_MODULE);
+    #[cfg(feature = "app-weather")]
+    out.push(&makepad_weather::WEATHER_MODULE);
+    #[cfg(feature = "app-task")]
+    out.push(&makepad_task::TASK_MODULE);
+    #[cfg(feature = "app-fabric")]
+    out.push(&makepad_fabric::FABRIC_MODULE);
+    #[cfg(feature = "app-mixer")]
+    out.push(&makepad_mixer::MIXER_MODULE);
+    #[cfg(feature = "app-image")]
+    out.push(&makepad_image::IMAGE_MODULE);
+    #[cfg(feature = "app-video")]
+    out.push(&makepad_video::VIDEO_MODULE);
+    #[cfg(feature = "app-pdf")]
+    out.push(&makepad_pdf::PDF_MODULE);
+    #[cfg(feature = "app-score")]
+    out.push(&makepad_app_score::SCORE_MODULE);
+    #[cfg(feature = "app-terminal")]
+    out.push(&makepad_terminal::TERMINAL_MODULE);
+    #[cfg(feature = "app-files")]
+    out.push(&makepad_files::FILES_MODULE);
+    #[cfg(feature = "app-route")]
+    out.push(&makepad_app_route::ROUTE_MODULE);
+    #[cfg(feature = "app-fab")]
+    out.push(&makepad_fab::FAB_MODULE);
+    #[cfg(feature = "app-reference")]
+    out.push(&makeos_reference::REFERENCE_MODULE);
     out
 }
 

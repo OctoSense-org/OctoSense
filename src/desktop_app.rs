@@ -107,6 +107,13 @@ impl App {
         }
         self.apply_material_to_chrome(cx, material);
         self.module_host.apply_style(cx, &sheet);
+        // Each module tile's ground follows its instance's restyled theme.
+        let grounds = self.module_host.grounds();
+        if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
+            for (client, ground) in grounds {
+                desk.with_module_view(cx, client, |cx, v| v.set_ground(cx, ground));
+            }
+        }
         self.stylesheet = Some(sheet);
         // New child processes pick the style before their widget definitions load.
         host::set_child_env("MAKEPAD_WIDGET_STYLE", std::ffi::OsStr::new(&sheet_name));

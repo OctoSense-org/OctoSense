@@ -75,6 +75,30 @@ fn icon_for(id: &str) -> Option<Ico> {
 /// terminal first, then by rarity — a deliberate deviation from omarchy's
 /// alphabetical provider). The live filter never reorders.
 pub fn apps() -> Vec<MenuItem> {
+    // Memoised for a second. The phone home asks for this list on every
+    // frame (tile layout, dock, drawer), and each call re-read the hides
+    // file, re-loaded the hosting registry (its settings file and argv) per
+    // app and stat-ed every package: hundreds of syscalls a frame on the
+    // phone, most of its main-thread time. Tests see the uncached path.
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(Instant, Vec<MenuItem>)>> = Mutex::new(None);
+    let ttl = if cfg!(test) { Duration::ZERO } else { Duration::from_secs(1) };
+    if let Ok(cache) = CACHE.lock() {
+        if let Some((at, items)) = cache.as_ref() {
+            if at.elapsed() < ttl {
+                return items.clone();
+            }
+        }
+    }
+    let items = apps_uncached();
+    if let Ok(mut cache) = CACHE.lock() {
+        *cache = Some((Instant::now(), items.clone()));
+    }
+    items
+}
+
+fn apps_uncached() -> Vec<MenuItem> {
     let hides = hides();
     let items: Vec<MenuItem> = clients::registry()
         .iter()

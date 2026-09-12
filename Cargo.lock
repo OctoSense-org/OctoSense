@@ -8,6 +8,12 @@ version = "0.1.8"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "adler2"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15,6 +21,27 @@ checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
 dependencies = [
  "memchr 2.8.3",
 ]
+
+[[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
+name = "alloc-stdlib"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e76a019e91224d279006ff972f1e984179a6e9feb050adba6ce8274aef23195"
+dependencies = [
+ "alloc-no-stdlib",
+]
+
+[[package]]
+name = "anyhow"
+version = "1.0.104"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "arrayvec"
@@ -63,9 +90,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "brotli"
+version = "8.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc91aac060a7a1e25823bdccbfb6af1875b88f17c6daac97894eed8207166b3"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+ "brotli-decompressor",
+]
+
+[[package]]
+name = "brotli-decompressor"
+version = "5.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a32acac15fe1967bc3986b2a6347dffc965602354ea6f450ad07e8bfd253583"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+]
+
+[[package]]
 name = "bytemuck"
 version = "1.25.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "byteorder"
@@ -104,6 +158,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
+dependencies = [
+ "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "crossbeam-deque"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "622f3fc73690be383c7214310406f28a90e6edeadc3cea882f9d71e495b9711a"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc74980687109a3b14c72fd458107bf0baa1da1a1a805e178d15501ba9b86d9d"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -115,7 +203,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
 dependencies = [
  "quote",
- "syn",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -126,7 +214,7 @@ checksum = "e0b1fab2ae45819af2d0731d60f2afe17227ebb1a1538a236da84c93e9a60162"
 dependencies = [
  "dispatch2",
  "nix",
- "windows-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -147,9 +235,47 @@ version = "1.2.1"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "either"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
+
+[[package]]
+name = "equivalent"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "errno"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "fastrand"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "flate2"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
+]
 
 [[package]]
 name = "foldhash"
@@ -161,7 +287,18 @@ name = "fxhash"
 version = "0.2.1"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
- "byteorder",
+ "byteorder 1.5.0 (git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d)",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
+dependencies = [
+ "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc",
+ "r-efi",
 ]
 
 [[package]]
@@ -171,6 +308,12 @@ source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6
 dependencies = [
  "foldhash",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hexf-parse"
@@ -184,13 +327,72 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f715f263b6e73aa2322b59057134b4daf56a765cbebc2f6b35e640ffded3361b"
 
 [[package]]
+name = "home"
+version = "0.5.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "i_float"
+version = "3.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "i_key_sort"
+version = "0.11.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "i_overlay"
+version = "7.0.3"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "i_float",
+ "i_key_sort",
+ "i_shape",
+ "i_tree",
+]
+
+[[package]]
+name = "i_shape"
+version = "3.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "i_float",
+]
+
+[[package]]
+name = "i_tree"
+version = "0.19.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
 name = "indexmap"
 version = "2.13.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
- "equivalent",
- "hashbrown",
+ "equivalent 1.0.2 (git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d)",
+ "hashbrown 0.16.1",
 ]
+
+[[package]]
+name = "indexmap"
+version = "2.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
+dependencies = [
+ "equivalent 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "itoa"
+version = "1.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "libc"
@@ -218,6 +420,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
+name = "linux-raw-sys"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
 name = "log"
 version = "0.4.29"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -232,14 +446,28 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 name = "makeos"
 version = "0.1.0"
 dependencies = [
+ "makeos-reference",
  "makepad-ai-services",
  "makepad-aichat",
  "makepad-app-module",
+ "makepad-app-route",
+ "makepad-app-score",
+ "makepad-clock",
+ "makepad-fab",
+ "makepad-fabric",
+ "makepad-files",
+ "makepad-image",
+ "makepad-mixer",
  "makepad-network",
+ "makepad-pdf",
  "makepad-photos",
  "makepad-sheets",
  "makepad-strict-json",
  "makepad-studio-protocol",
+ "makepad-task",
+ "makepad-terminal",
+ "makepad-video",
+ "makepad-weather",
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
@@ -249,7 +477,124 @@ dependencies = [
 name = "makeos-reference"
 version = "0.1.0"
 dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
  "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-ai-body"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-common",
+ "makepad-ai-flux",
+ "makepad-ai-loader",
+]
+
+[[package]]
+name = "makepad-ai-common"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-cuda",
+ "makepad-ai-llm",
+ "makepad-ai-loader",
+ "makepad-ai-metal",
+]
+
+[[package]]
+name = "makepad-ai-cuda"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-loader",
+]
+
+[[package]]
+name = "makepad-ai-flux"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-common",
+ "makepad-ai-h3",
+ "makepad-ai-llm",
+ "makepad-ai-loader",
+ "makepad-micro-serde",
+ "makepad-zune-core",
+ "makepad-zune-png",
+]
+
+[[package]]
+name = "makepad-ai-h3"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-common",
+ "makepad-ai-llm",
+ "makepad-ai-loader",
+ "makepad-micro-serde",
+]
+
+[[package]]
+name = "makepad-ai-hub"
+version = "0.3.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-body",
+ "makepad-ai-common",
+ "makepad-ai-llm",
+ "makepad-ai-speech",
+ "makepad-asset-client",
+ "makepad-audio-decode",
+ "makepad-base64",
+ "makepad-micro-serde",
+ "makepad-network",
+ "makepad-strict-json",
+ "makepad-system-speech",
+ "makepad-video-flow",
+ "makepad-zip-file",
+ "makepad-zune-core",
+ "makepad-zune-jpeg",
+ "makepad-zune-png",
+]
+
+[[package]]
+name = "makepad-ai-hub-ui"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-hub",
+ "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-ai-llm"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-cuda",
+ "makepad-ai-loader",
+ "makepad-ai-metal",
+]
+
+[[package]]
+name = "makepad-ai-loader"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-micro-serde",
+]
+
+[[package]]
+name = "makepad-ai-metal"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-cuda",
+ "makepad-ai-loader",
+ "makepad-objc-sys",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -260,6 +605,28 @@ dependencies = [
  "makepad-micro-serde",
  "makepad-platform",
  "makepad-strict-json",
+]
+
+[[package]]
+name = "makepad-ai-sfx"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-common",
+ "makepad-ai-h3",
+ "makepad-ai-loader",
+]
+
+[[package]]
+name = "makepad-ai-speech"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-common",
+ "makepad-ai-cuda",
+ "makepad-ai-loader",
+ "makepad-ai-sfx",
+ "makepad-objc-sys",
 ]
 
 [[package]]
@@ -294,6 +661,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-app-route"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-hub",
+ "makepad-ai-services",
+ "makepad-converse",
+ "makepad-geodata",
+ "makepad-map-build",
+ "makepad-map-nav",
+ "makepad-mbtile-reader",
+ "makepad-micro-serde",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-theme",
+ "serde_json",
+]
+
+[[package]]
+name = "makepad-app-score"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-score-ui",
+ "makepad-widgets",
+]
+
+[[package]]
 name = "makepad-apple-sys"
 version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -302,9 +697,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-asset-client"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-asset-data",
+ "makepad-live-id",
+ "makepad-network",
+ "makepad-platform",
+ "makepad-strict-json",
+]
+
+[[package]]
+name = "makepad-asset-data"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-audio-decode"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-base64"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-box3d"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-platform",
+]
+
+[[package]]
 name = "makepad-byteorder-lite"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-clock"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-converse"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-hub",
+ "makepad-ai-llm",
+ "makepad-widgets",
+]
 
 [[package]]
 name = "makepad-derive-wasm-bridge"
@@ -357,9 +807,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-fab"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fab-loader-gltf",
+ "makepad-fab-shell",
+ "makepad-platform-video",
+ "makepad-widgets",
+ "makepad-zune-png",
+]
+
+[[package]]
+name = "makepad-fab-loader-gltf"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fab-shell",
+ "makepad-gltf",
+ "makepad-raytrace",
+]
+
+[[package]]
+name = "makepad-fab-shell"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fab-tour",
+ "makepad-game-sim",
+ "makepad-math",
+ "makepad-micro-serde",
+ "makepad-platform-video",
+ "makepad-raytrace",
+ "makepad-render",
+ "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-fab-tour"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-math",
+]
+
+[[package]]
+name = "makepad-fabric"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-body",
+ "makepad-ai-hub",
+ "makepad-ai-hub-ui",
+ "makepad-fabric-draft",
+ "makepad-fabric-measure",
+ "makepad-widgets",
+ "makepad-wm-api",
+]
+
+[[package]]
+name = "makepad-fabric-draft"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fabric-measure",
+]
+
+[[package]]
+name = "makepad-fabric-measure"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
 name = "makepad-fast-inflate"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-files"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
 
 [[package]]
 name = "makepad-filesystem-watcher"
@@ -377,11 +911,50 @@ version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "makepad-game-math"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-game-sim"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-box3d",
+ "makepad-game-math",
+ "makepad-live-id",
+ "makepad-math",
+]
+
+[[package]]
+name = "makepad-geodata"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fast-inflate",
+ "makepad-map-nav",
+ "makepad-mbtile-reader",
+ "makepad-network",
+ "serde_json",
+]
+
+[[package]]
 name = "makepad-gif"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "weezl",
+]
+
+[[package]]
+name = "makepad-gltf"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-base64",
+ "makepad-math",
+ "makepad-micro-serde",
+ "makepad-strict-json",
 ]
 
 [[package]]
@@ -401,6 +974,16 @@ version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "makepad-live-id",
+]
+
+[[package]]
+name = "makepad-image"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
 ]
 
 [[package]]
@@ -453,11 +1036,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-map-build"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "brotli",
+ "makepad-fast-inflate",
+ "makepad-map-nav",
+ "makepad-mbtile-reader",
+ "makepad-widgets",
+ "osmpbf",
+ "serde_json",
+ "smallvec 1.15.1",
+]
+
+[[package]]
+name = "makepad-map-nav"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
 name = "makepad-math"
 version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "makepad-micro-serde",
+]
+
+[[package]]
+name = "makepad-mbtile-reader"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "brotli",
+ "makepad-fast-inflate",
+ "makepad-sqlite",
 ]
 
 [[package]]
@@ -483,6 +1096,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-midi-file"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-mixer"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-musicxml"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-zip-file",
+]
+
+[[package]]
 name = "makepad-network"
 version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -502,6 +1137,25 @@ version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "makepad-pdf"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-pdf-parse",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-pdf-parse"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-zune-inflate",
+]
+
+[[package]]
 name = "makepad-photos"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -512,6 +1166,14 @@ dependencies = [
  "makepad-strict-json",
  "makepad-widgets",
  "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-piano-model"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-loader",
 ]
 
 [[package]]
@@ -563,9 +1225,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-raytrace"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-draw",
+ "makepad-gltf",
+ "makepad-zune-png",
+]
+
+[[package]]
 name = "makepad-regex"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-render"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-draw",
+ "makepad-fast-inflate",
+ "makepad-game-sim",
+]
+
+[[package]]
+name = "makepad-score"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-micro-serde",
+]
+
+[[package]]
+name = "makepad-score-import"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-midi-file",
+ "makepad-musicxml",
+ "makepad-score",
+]
+
+[[package]]
+name = "makepad-score-layout"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-score-play"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "makepad-score-render"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-draw",
+]
+
+[[package]]
+name = "makepad-score-ui"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-piano-model",
+ "makepad-score",
+ "makepad-score-import",
+ "makepad-score-layout",
+ "makepad-score-play",
+ "makepad-score-render",
+ "makepad-score-view",
+ "makepad-soundfont",
+ "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-score-view"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-score",
+ "makepad-score-layout",
+ "makepad-score-render",
+ "makepad-widgets",
+ "ttf-parser",
+]
 
 [[package]]
 name = "makepad-script"
@@ -616,6 +1362,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-soundfont"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
 name = "makepad-sqlite"
 version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -652,6 +1403,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-system-speech"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-android-state",
+ "makepad-jni-sys",
+ "windows",
+ "windows-core",
+ "windows-future",
+]
+
+[[package]]
+name = "makepad-task"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-terminal"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+ "windows",
+]
+
+[[package]]
 name = "makepad-tsdf"
 version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -661,12 +1447,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-video"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
+name = "makepad-video-flow"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
+]
+
+[[package]]
+name = "makepad-weather"
+version = "0.1.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
 ]
 
 [[package]]
@@ -682,10 +1493,16 @@ name = "makepad-widgets"
 version = "2.0.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
+ "i_overlay",
+ "makepad-ai-hub",
+ "makepad-ai-speech",
  "makepad-derive-widget",
  "makepad-draw",
+ "makepad-fast-inflate",
  "makepad-html",
  "makepad-latex-math",
+ "makepad-mbtile-reader",
+ "makepad-pdf-parse",
  "pulldown-cmark",
  "ttf-parser",
  "unicode-segmentation 1.12.0",
@@ -705,6 +1522,14 @@ version = "0.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-zip-file"
+version = "1.0.0"
+source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+dependencies = [
+ "makepad-fast-inflate",
 ]
 
 [[package]]
@@ -729,7 +1554,7 @@ name = "makepad-zune-inflate"
 version = "0.2.54"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
- "simd-adler32",
+ "simd-adler32 0.3.9",
 ]
 
 [[package]]
@@ -770,6 +1595,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "memmap2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
+ "simd-adler32 0.3.10",
+]
+
+[[package]]
 name = "naga"
 version = "27.0.3"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -779,16 +1623,16 @@ dependencies = [
  "bitflags 2.13.1",
  "cfg-if 1.0.4 (git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d)",
  "cfg_aliases 0.2.1",
- "hashbrown",
+ "hashbrown 0.16.1",
  "hexf-parse",
- "indexmap",
+ "indexmap 2.13.0",
  "makepad-error-log",
  "makepad-half",
  "num-traits",
  "once_cell 1.21.3",
  "rustc-hash",
  "spirv",
- "thiserror",
+ "thiserror 2.0.18",
  "unicode-ident",
 ]
 
@@ -803,7 +1647,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "syn",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -817,7 +1661,7 @@ dependencies = [
  "napi-derive-backend-ohos",
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -891,6 +1735,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "osmpbf"
+version = "0.3.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d689d6e9f254bbd63893ce00a27147e41fe94bf3abca70f85b5345afb3cb728"
+dependencies = [
+ "byteorder 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "flate2",
+ "memmap2",
+ "protobuf",
+ "protobuf-codegen",
+ "rayon",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.32"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -902,6 +1760,57 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "protobuf"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65a1d4ddae7d8b5de68153b48f6aa3bba8cb002b243dbdbc55a5afbc98f99f4"
+dependencies = [
+ "once_cell 1.21.4",
+ "protobuf-support",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-codegen"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d3976825c0014bbd2f3b34f0001876604fe87e0c86cd8fa54251530f1544ace"
+dependencies = [
+ "anyhow",
+ "once_cell 1.21.4",
+ "protobuf",
+ "protobuf-parse",
+ "regex",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-parse"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4aeaa1f2460f1d348eeaeed86aea999ce98c1bded6f089ff8514c9d9dbdc973"
+dependencies = [
+ "anyhow",
+ "indexmap 2.14.2",
+ "log 0.4.34",
+ "protobuf",
+ "protobuf-support",
+ "tempfile",
+ "thiserror 1.0.69",
+ "which",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e36c2f31e0a47f9280fb347ef5e461ffcd2c52dd520d8e216b52f93b0b0d7d6"
+dependencies = [
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -921,6 +1830,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "r-efi"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "rayon"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb39b166781f92d482534ef4b4b1b2568f42613b53e5b6c160e24cfbfa30926d"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
+dependencies = [
+ "crossbeam-deque",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -958,6 +1893,32 @@ version = "1.1.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "rustix"
+version = "0.38.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
+dependencies = [
+ "bitflags 2.13.1",
+ "errno",
+ "libc",
+ "linux-raw-sys 0.4.15",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "rustix"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
+dependencies = [
+ "bitflags 2.13.1",
+ "errno",
+ "libc",
+ "linux-raw-sys 0.12.1",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "rustybuzz"
 version = "0.18.0"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -984,9 +1945,57 @@ version = "0.2.1"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "serde"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "serde_core"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.229"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
+name = "serde_json"
+version = "1.0.151"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
+dependencies = [
+ "itoa",
+ "memchr 2.8.3",
+ "serde",
+ "serde_core",
+ "zmij",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.9"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "simd-adler32"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "smallvec"
@@ -1019,11 +2028,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn"
+version = "3.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12df2e0110f65b775f769bb17ef989067a1d931b2eb822bd4346631eeada89f9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+dependencies = [
+ "fastrand",
+ "getrandom",
+ "once_cell 1.21.4",
+ "rustix 1.1.4",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
+dependencies = [
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
 name = "thiserror"
 version = "2.0.18"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 2.0.18",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -1147,6 +2200,18 @@ version = "0.1.12"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 
 [[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell 1.21.4",
+ "rustix 0.38.44",
+]
+
+[[package]]
 name = "windows"
 version = "0.62.2"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
@@ -1207,6 +2272,15 @@ version = "0.5.1"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
 dependencies = [
  "windows-link 0.2.1 (git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d)",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
+dependencies = [
+ "windows-targets",
 ]
 
 [[package]]
@@ -1286,3 +2360,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 name = "zerocopy"
 version = "0.8.39"
 source = "git+https://github.com/guofoo/makepad.git?rev=beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d#beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d"
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"

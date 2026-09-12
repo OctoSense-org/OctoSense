@@ -28,9 +28,16 @@ pub fn wall_now() -> f64 {
 
 /// Whether this build can host apps as child PROCESSES: a hub to accept
 /// them, a spawner to start them, a pool to keep them warm. The web
-/// build hosts its linked modules in-process and nothing else.
+/// build hosts its linked modules in-process and nothing else, and so
+/// does a phone build (iOS, Android, OpenHarmony): an app sandbox there
+/// can neither spawn a Cargo build nor exec a sibling executable.
 pub const fn processes_available() -> bool {
-    cfg!(not(target_arch = "wasm32"))
+    cfg!(not(any(
+        target_arch = "wasm32",
+        target_os = "ios",
+        target_os = "android",
+        target_env = "ohos"
+    )))
 }
 
 /// Hand a child process a setting through its environment (the theme
@@ -116,7 +123,15 @@ mod tests {
 
     #[test]
     fn the_desk_knows_where_it_runs() {
-        assert_eq!(processes_available(), cfg!(not(target_arch = "wasm32")));
+        assert_eq!(
+            processes_available(),
+            cfg!(not(any(
+                target_arch = "wasm32",
+                target_os = "ios",
+                target_os = "android",
+                target_env = "ohos"
+            )))
+        );
         assert!(now() >= 0.0);
     }
 }

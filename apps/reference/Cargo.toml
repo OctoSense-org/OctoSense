@@ -3,6 +3,23 @@ name = "makeos-reference"
 version = "0.1.0"
 edition = "2021"
 publish = false
+default-run = "makeos-reference"
+
+[[bin]]
+name = "makeos-reference"
+path = "src/main.rs"
+required-features = ["standalone"]
+
+[lib]
+name = "makeos_reference"
+path = "src/lib.rs"
+
+[features]
+default = ["standalone"]
+# The standalone window. A host that links the MODULE leaves this off.
+standalone = []
 
 [dependencies]
 makepad-widgets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-ai-services = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
+makepad-app-module = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }

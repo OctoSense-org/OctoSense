@@ -227,10 +227,41 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
 
 /// `date +"%A %H:%M"` — omarchy's `dddd HH:mm`.
 pub fn sample_clock(alt: bool) -> String {
-    let fmt = if alt { "+%-d %B W%V %Y" } else { "+%A %H:%M" };
-    run("date", &[fmt])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    // In-process: the fork+exec of `date` twice a second stalled the whole
+    // process for 75-100 ms each time on the phone (page-table copy of a
+    // 200 MB address space), a visible hitch at 2 Hz in every app.
+    local_strftime(if alt { "%-d %B W%V %Y" } else { "%A %H:%M" })
+}
+
+/// `strftime` of the local time, through libc (std has no local time).
+#[cfg(not(target_arch = "wasm32"))]
+fn local_strftime(fmt: &str) -> String {
+    use std::os::raw::{c_char, c_long};
+    // libc's `struct tm`: nine ints, then on every platform we build for
+    // (glibc, musl, Apple) `tm_gmtoff` and `tm_zone`; strftime only reads
+    // it, so a zeroed, over-sized buffer is a safe home for it.
+    #[repr(C)]
+    struct Tm { _fields: [i32; 9], _gmtoff: c_long, _zone: *const c_char, _pad: [u8; 64] }
+    extern "C" {
+        fn time(t: *mut c_long) -> c_long;
+        fn localtime_r(t: *const c_long, out: *mut Tm) -> *mut Tm;
+        fn strftime(buf: *mut c_char, max: usize, fmt: *const c_char, tm: *const Tm) -> usize;
+    }
+    let Ok(cfmt) = std::ffi::CString::new(fmt) else { return String::new() };
+    unsafe {
+        let mut now: c_long = 0;
+        time(&mut now);
+        let mut tm = Tm { _fields: [0; 9], _gmtoff: 0, _zone: std::ptr::null(), _pad: [0; 64] };
+        if localtime_r(&now, &mut tm).is_null() { return String::new(); }
+        let mut buf = [0u8; 96];
+        let n = strftime(buf.as_mut_ptr() as *mut c_char, buf.len(), cfmt.as_ptr(), &tm);
+        String::from_utf8_lossy(&buf[..n]).trim().to_string()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn local_strftime(_fmt: &str) -> String {
+    String::new()
 }
 
 /// Everything the bar reads from the OS, gathered OFF the main thread.

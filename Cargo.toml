@@ -23,6 +23,15 @@ default-run = "makeos"
 name = "makeos"
 path = "src/main.rs"
 
+# cargo-makepad's mobile builds (`cargo makepad {ohos,android} build`) compile
+# the app as a cdylib via `cargo rustc --lib`, which needs a library target.
+[lib]
+name = "makeos"
+path = "src/main.rs"
+# The binary target already runs the unit tests once.
+test = false
+doctest = false
+
 [dependencies]
 makepad-widgets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
 makepad-studio-protocol = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
@@ -37,6 +46,20 @@ makepad-app-module = { git = "https://github.com/guofoo/makepad.git", rev = "beb
 makepad-wm-theme = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d" }
 makepad-sheets = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
 makepad-photos = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-clock = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-weather = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-task = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-fabric = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-mixer = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-image = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-video = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-pdf = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-app-score = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-terminal = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-files = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, optional = true }
+makepad-app-route = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, features = ["native"], optional = true }
+makepad-fab = { git = "https://github.com/guofoo/makepad.git", rev = "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d", default-features = false, features = ["gltf"], optional = true }
+makeos-reference = { path = "apps/reference", default-features = false, optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
@@ -48,6 +71,25 @@ default = []
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
+# Clock linked in as a module, the same way (the module needs the sibling
+# checkout's `makeos-ohos` branch: the pinned revision has the binary only).
+app-clock = ["dep:makepad-clock"]
+app-weather = ["dep:makepad-weather"]
+app-task = ["dep:makepad-task"]
+app-fabric = ["dep:makepad-fabric"]
+app-mixer = ["dep:makepad-mixer"]
+app-image = ["dep:makepad-image"]
+app-video = ["dep:makepad-video"]
+app-pdf = ["dep:makepad-pdf"]
+app-score = ["dep:makepad-app-score"]
+app-terminal = ["dep:makepad-terminal"]
+app-files = ["dep:makepad-files"]
+app-route = ["dep:makepad-app-route"]
+app-fab = ["dep:makepad-fab"]
+app-reference = ["dep:makeos-reference"]
+# Every catalog app this build can link (the phone build's default): the
+# in-process versions of the apps the desktop starts as child processes.
+all-apps = ["app-sheets", "app-photos", "app-clock", "app-weather", "app-task", "app-fabric", "app-mixer", "app-image", "app-video", "app-pdf", "app-score", "app-terminal", "app-files", "app-route", "app-fab", "app-reference"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]

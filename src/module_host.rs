@@ -25,6 +25,31 @@ use makepad_widgets::*;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
 
+/// Apply the WM's theme inside an isolate WITH the resource loader in scope.
+///
+/// An isolate strips `mod.res` (its mini-app script must not reach the
+/// filesystem or the network through resource handles), but the iOS and
+/// Android theme sheets name their fonts through `crate_resource(...)`,
+/// so evaluated as-is they fail and every text style of the module loses
+/// its glyphs (blank spreadsheet headers on a phone). The theme is the
+/// host's own trusted text: lend it `res` for the duration of the
+/// application and take it away again before the module's script runs.
+fn with_theme_resources<R>(vm: &mut ScriptVm, f: impl FnOnce(&mut ScriptVm) -> R) -> R {
+    makepad_widgets::makepad_platform::script::res::script_mod(vm);
+    let out = f(vm);
+    vm.eval(makepad_widgets::makepad_script::script! {
+        mod.res = nil
+    });
+    out
+}
+
+/// The window background the isolate's theme resolved to, once the style
+/// sheet and the WM palette have been applied.
+fn theme_ground(vm: &mut ScriptVm) -> Option<Vec4f> {
+    let theme = vm.module(id!(theme));
+    vm.bx.heap.value(theme, id!(color_bg_app).into(), NoTrap).as_color().map(Vec4f::from_u32)
+}
+
 pub struct AppInstance {
     pub client: ClientId,
     pub module: &'static dyn AppModule,
@@ -33,6 +58,9 @@ pub struct AppInstance {
     /// The n-th instance of this app in this session: `sheets.2`.
     pub instance_no: u64,
     pub root: WidgetRef,
+    /// The isolate's `theme.color_bg_app` after its style: the ground the
+    /// tile paints under the root (a standalone window would clear to it).
+    pub ground: Option<Vec4f>,
     executor: Box<dyn ServiceExecutor>,
     shutdown: Option<Box<dyn FnOnce(&mut ScriptVm)>>,
     /// Results and publications the executor sent later.
@@ -83,14 +111,17 @@ impl ModuleHost {
         let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
             // The isolate came up with the stock theme; the WM's palette
             // retints it exactly as it retints a child process's.
-            if let Some(sheet)=&self.style {
-                desktop_style::install(vm,sheet.clone());
-                vm.with_reload(|vm| { makepad_widgets::widgets_mod(vm); desktop_style::apply_widgets(vm); });
-            }
-            makepad_wm_theme::apply(vm);
+            with_theme_resources(vm, |vm| {
+                if let Some(sheet)=&self.style {
+                    desktop_style::install(vm,sheet.clone());
+                    vm.with_reload(|vm| { makepad_widgets::widgets_mod(vm); desktop_style::apply_widgets(vm); });
+                }
+                makepad_wm_theme::apply(vm);
+            });
             module.register(vm);
-            module.create(vm, open, handles)
+            (module.create(vm, open, handles), theme_ground(vm))
         });
+        let (parts, ground) = parts;
         log!(
             "wm: module instance {}.{} for client {} in isolate {:?} (scope {})",
             module.id(),
@@ -108,6 +139,7 @@ impl ModuleHost {
                 scope,
                 instance_no,
                 root: parts.root,
+                ground,
                 executor: parts.executor,
                 shutdown: Some(parts.shutdown),
                 upstream,
@@ -120,18 +152,28 @@ impl ModuleHost {
         self.style=Some(sheet.clone());
         for instance in self.instances.values_mut() {
             cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
-                desktop_style::install(vm,sheet.clone());
+                with_theme_resources(vm, |vm| {
+                    desktop_style::install(vm,sheet.clone());
+                    vm.with_reload(|vm| {
+                        makepad_widgets::widgets_mod(vm);
+                        desktop_style::apply_widgets(vm);
+                        makepad_wm_theme::apply(vm);
+                    });
+                });
                 vm.with_reload(|vm| {
-                    makepad_widgets::widgets_mod(vm);
-                    desktop_style::apply_widgets(vm);
-                    makepad_wm_theme::apply(vm);
                     instance.module.register(vm);
                 });
                 let source=instance.root.widget_type_id().and_then(|ty|vm.bx.heap.type_default_for_id(ty)).unwrap_or_else(||instance.root.script_source());
                 instance.root.script_apply(vm,&Apply::ScriptReapply,&mut Scope::empty(),source.into());
+                instance.ground=theme_ground(vm);
             });
             instance.root.redraw(cx);
         }
+    }
+
+    /// Every instance's ground, for the desk to repaint after a restyle.
+    pub fn grounds(&self) -> Vec<(ClientId, Vec4f)> {
+        self.instances.values().filter_map(|i| i.ground.map(|g| (i.client, g))).collect()
     }
 
     pub fn is_module(&self, client: ClientId) -> bool {

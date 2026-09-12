@@ -478,6 +478,11 @@ impl App {
         self.state.as_mut().expect("state after startup")
     }
 
+    /// A real phone in a phone layout keeps the bar hidden (mobile_app.rs).
+    fn phone_hides_bar(&self) -> bool {
+        mobile::real_phone() && self.state.as_ref().is_some_and(|s| s.style.target.mobile())
+    }
+
     fn desk_area(&self, cx: &mut Cx) -> LRect {
         let desk = self.desk(cx);
         let rect = desk
@@ -1899,8 +1904,8 @@ impl App {
             log!("wm: module {} failed to start: {}", module.id(), e);
             return;
         }
-        let (manifest, root, vm_id) = match self.module_host.get(id) {
-            Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id),
+        let (manifest, root, vm_id, ground) = match self.module_host.get(id) {
+            Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id, instance.ground),
             None => return,
         };
         self.state_mut()
@@ -1912,7 +1917,10 @@ impl App {
         // in it before anything asks it to draw.
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
             d.mark_module(id);
-            d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
+            d.with_module_view(cx, id, |cx, v| {
+                v.set_root(cx, id, vm_id, root);
+                if let Some(ground) = ground { v.set_ground(cx, ground); }
+            });
         });
         // On the bus. An in-process assistant adopts the instance as a
         // link (waiting on `Cx` until the pane's root exists); the aichat
@@ -2962,7 +2970,7 @@ impl App {
         if fullscreen && bar.visible() {
             bar.set_visible(cx, false);
             self.bar_hidden_by_fullscreen = true;
-        } else if !fullscreen && self.bar_hidden_by_fullscreen {
+        } else if !fullscreen && self.bar_hidden_by_fullscreen && !self.phone_hides_bar() {
             bar.set_visible(cx, true);
             self.bar_hidden_by_fullscreen = false;
         }
@@ -3754,6 +3762,25 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // HarmonyOS hands the process a HOME under /storage/Users that the
+        // app sandbox does not provide (nothing can be created there), and
+        // an app may also start with none at all. Whenever the given HOME
+        // cannot hold `.makeos`, point it at the app's own files directory
+        // so state, themes, catalogs and the modules' MAKEPAD_HOME (Route's
+        // maps root, caches) land somewhere the app may write.
+        #[cfg(target_env = "ohos")]
+        {
+            let usable = std::env::var_os("HOME").is_some_and(|home| {
+                std::fs::create_dir_all(std::path::Path::new(&home).join(".makeos")).is_ok()
+            });
+            if !usable {
+                if let Some(dir) = cx.get_data_dir() {
+                    std::env::set_var("HOME", &dir);
+                    host::set_child_env("MAKEPAD_HOME", makeos::paths::home().as_os_str());
+                    log!("makeos: HOME set to the app sandbox {}", dir);
+                }
+            }
+        }
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -3843,6 +3870,9 @@ impl MatchEvent for App {
         let args: Vec<String> = std::env::args().collect();
         self.apps = AppRegistry::load(&theme::makepad_home().join("wm/apps.splash"), &args);
         log!("wm: modules linked: {:?}", self.apps.linked_ids());
+        // A real phone starts in the phone layout rather than the desktop.
+        #[cfg(target_env = "ohos")]
+        self.set_desktop_style(cx, desktop::DesktopStyle::Android);
         // An in-process assistant: the WM's own service waits on Cx for
         // the pane's root to adopt it, so it is there from the first open.
         if self.apps.pane_in_process() {
