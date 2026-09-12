@@ -1,0 +1,18 @@
+# One makepad for every OctoSense-org project.
+#
+# Cargo.toml and Cargo.lock keep naming makepad/makepad: that identity is what
+# makepad's own ~100 internal crate references use, so rewriting it here would
+# resolve the same crates from two sources and duplicate the whole graph.
+# Source replacement leaves the identity alone and serves every byte from the
+# OctoSense-org fork instead — no lockfile churn, and no fork-side edits to
+# carry against upstream.
+#
+# Bump both revs together when moving the pin.
+[source.makepad-upstream]
+git = "https://github.com/makepad/makepad.git"
+rev = "74b63be83e101ab3a28d3604df77e9662d50a833"
+replace-with = "makepad-fork"
+
+[source.makepad-fork]
+git = "https://github.com/OctoSense-org/makepad.git"
+rev = "74b63be83e101ab3a28d3604df77e9662d50a833"
