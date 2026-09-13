@@ -1,3 +1,29 @@
+# macOS application-name validation — 2026-09-11
+
+On `fix/macos-app-name`, `.cargo/config.toml` explicitly sets
+`MAKEPAD_BUNDLE_NAME=OctoSense` and
+`MAKEPAD_BUNDLE_IDENTIFIER=dev.makepad.octosense`. The pinned Makepad build script
+otherwise derives its generated `Info.plist` name from the checkout folder.
+Here that folder is still `makeos`, producing `Makeos` despite the correct
+OctoSense window and menu strings in the application source.
+
+Verified with isolated native launches:
+
+- Before the change, the actual macOS menu bar reported `Apple, Makeos`.
+- After locked debug and release workspace builds, both generated plists report
+  `OctoSense` for `CFBundleName` and `CFBundleDisplayName`, and
+  `dev.makepad.octosense` for `CFBundleIdentifier`.
+- Both `cargo run --locked` and `cargo run --locked --release` reported
+  `Apple, OctoSense` through macOS accessibility inspection. The application
+  rendered without runtime errors and each test process exited normally.
+
+Evidence is in `target/macos-branding/`, including build logs and the captured
+menu titles. `NSRunningApplication.localizedName` reports the executable name
+for these bare Cargo launches, so validation reads the actual menu bar instead.
+Existing legacy state-path compatibility and historical provenance remain valid.
+
+---
+
 # OctoSense light appearance validation — 2026-09-11
 
 On `feat/desktop-wallpaper`, OctoSense now supports the existing Light/Dark
