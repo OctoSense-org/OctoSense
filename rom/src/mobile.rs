@@ -20,8 +20,9 @@ pub struct PhoneGesture {
     pub last: Vec2d,
     pub time: f64,
     pub hit: Option<PhoneHit>,
-    pub bottom: bool,
-    pub edge: bool,
+    /// The gesture recognizer (mobile_gestures.rs) claimed this finger: it
+    /// started in a shell band, or in the home page body.
+    pub shell: bool,
     pub screen: PhoneScreen,
 }
 
@@ -117,7 +118,10 @@ impl PhoneState {
         let open = if matches!(self.screen, PhoneScreen::App | PhoneScreen::Recents) && self.client.is_some() { 1.0 } else { 0.0 };
         let overview = if self.screen == PhoneScreen::Recents { 1.0 } else { 0.0 };
         let mut active = false;
-        let dragging = self.gesture.as_ref().is_some_and(|g| g.bottom);
+        // A finger driving the home swipe or the back preview holds the
+        // window where it is; a lifted finger lets it settle.
+        let dragging = self.gesture.is_some()
+            && matches!(self.gesture_out, Some(crate::mobile_gestures::ShellGesture::HomeUp { .. } | crate::mobile_gestures::ShellGesture::Back { .. }));
         for (value, target) in [(&mut self.openness, open), (&mut self.overview, overview)] {
             if !dragging {
                 *value += (target - *value) * t;

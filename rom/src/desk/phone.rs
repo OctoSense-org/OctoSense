@@ -186,6 +186,9 @@ impl WmDesk {
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,screen:Rect) {
         let state=scope.data.get_mut::<WmState>().unwrap();
         state.phone.viewport=screen;
+        // The frame's exclusion zones are rebuilt below from what is drawn.
+        state.phone.exclusions.clear();
+        let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         state.phone.order.retain(|c|state.clients.contains_key(c));
         if state.phone.client.is_some_and(|c|!state.clients.contains_key(&c)) {
             state.phone.client=state.phone.order.first().copied();
@@ -221,6 +224,7 @@ impl WmDesk {
             self.phone_ui.overview_glass.draw_surface_with_backdrop(cx,screen,Some(backdrop),phone.overview as f32);
             self.compositor.as_mut().unwrap().content(screen);
         }
+        let mut excluded:Vec<Rect>=Vec::new();
         let mut order=phone.order.clone();
         order.reverse();
         // Foreground paints last during launch/return transitions.
@@ -272,13 +276,26 @@ impl WmDesk {
                 }
             }
             self.phone_frames.insert(client,stored);
-            if foreground {self.zorder.push(client);}
+            if foreground {
+                self.zorder.push(client);
+                // An app that owns its edges keeps them while it is the one
+                // full-screen window the finger can reach.
+                if phone.screen==PhoneScreen::App && owns_edges.contains(&client) {excluded.push(display);}
+            }
         }
         let glass=if phone.keyboard>0.5 {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
         let (backdrop,_,_)=self.compositor.as_mut().unwrap().finish(cx,screen,glass);
         let state=scope.data.get_mut::<WmState>().unwrap();
+        for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}
+        if phone.keyboard>0.5 {
+            // The keyboard and the navigation bar under it: a key at the
+            // bottom row is a key, never the start of a home swipe.
+            let mut kb=PhoneSurface::keyboard_rect(&phone,screen);
+            kb.size.y=screen.pos.y+screen.size.y-kb.pos.y;
+            state.phone.exclusions.add(kb,[false,true,false,false]);
+        }
         self.phone_ui.draw_overlay(cx,state,screen,backdrop);
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
