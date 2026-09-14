@@ -1,5 +1,6 @@
 //! Phone navigation/input, sharing the WM's real clients and launch paths.
 use crate::{mobile::*, mobile_surface::PhoneSurface, mobile_tiles::{self, Face, TILE_APPS}, *};
+use crate::mobile_shade::ShadeState;
 use crate::mobile_gestures::{Dir, FingerPhase, GestureContext, GestureKind, SafeInsets, ShellGesture};
 use makepad_widgets::makepad_platform::ime::{HostedKeyboard, InputMode};
 use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
@@ -596,6 +597,8 @@ impl App {
                 // The recognizer claims a finger in a band (or on the home
                 // page body); an excluded edge is left to the app.
                 self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
+                // A finger on the open shade's sheet is the shade's own drag.
+                if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) {return false;}
                 if shell || hit.is_some() || old!=PhoneScreen::App {
@@ -611,7 +614,7 @@ impl App {
                 let delta=p-g.start;let last=p-g.last;g.last=p;
                 let (shell,from)=(g.shell,g.screen);
                 let divider=g.hit==Some(PhoneHit::Divider);
-                let shade_hit=if let Some(PhoneHit::Shade(h))=&g.hit {Some(h.clone())} else {None};
+                let shade_hit=match &g.hit {Some(PhoneHit::Shade(h)) if ShadeState::drags(h)=>Some(h.clone()),_=>None};
                 if let Some(h)=shade_hit {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
                 let out=if shell {self.phone_gestures.feed(FingerPhase::Move,p,time,&ctx,&phone.exclusions)} else {None};
                 phone.gesture_out=out;
@@ -628,7 +631,7 @@ impl App {
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;
-                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0) {phone.shade.release(h,delta,time-g.time);self.animate_phone(cx);return true;}
+                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {phone.shade.release(h,delta,time-g.time);self.animate_phone(cx);return true;}
                 let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
                 phone.gesture_out=out;
                 self.gesture_out_age=0;
