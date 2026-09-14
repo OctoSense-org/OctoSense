@@ -23,8 +23,13 @@ mod desktop_app;
 mod snap;
 mod mobile;
 mod mobile_surface;
+mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
+mod mobile_shade;
+mod mobile_pages;
+mod mobile_island;
+mod mobile_groups;
 mod scene;
 mod dock_warp;
 mod host;
@@ -53,6 +58,7 @@ use layout::{Axis, Dir, DividerHit, FullscreenMode, LRect};
 use makepad_studio_protocol::{AppToStudio, StudioToApp};
 use makepad_wm_api::{WmEvent, WmRequest};
 use preview::PreviewCache;
+use mobile_gestures::GestureRecognizer;
 use run_view::{MpRunView, MpRunViewAction};
 use makepad_widgets::makepad_micro_serde::*;
 use shell::bar::{BarData, BarModule, SampledStatus, ShellBarAction};
@@ -365,6 +371,10 @@ pub struct App {
     /// at without a screen (the GPU readback does not need one).
     #[rust]
     test_capture: Option<(Timer, std::path::PathBuf)>,
+    /// `--test-action page:<n>`: the home page to jump to, once the phone
+    /// home has laid its pages out at the phone's size (mobile_pages.rs).
+    #[rust]
+    test_page: Option<(Timer, i64)>,
     /// When each warm client was last ticked. Kept apart from `WarmFrame`
     /// because the FIRST ticks are what make a frame possible at all — see
     /// `pump_warm`.
@@ -400,6 +410,12 @@ pub struct App {
     #[rust] stylesheet: Option<desktop_style::StyleSheet>,
     #[rust] phone_frame: NextFrame,
     #[rust] phone_time: f64,
+    /// The shell gesture recognizer (mobile_gestures.rs): the one owner of
+    /// the finger the phone shell claims.
+    #[rust] phone_gestures: GestureRecognizer,
+    /// Frames a Commit/Cancel has been visible in `phone.gesture_out`: the
+    /// surfaces get one drawn frame to see it before it clears.
+    #[rust] gesture_out_age: u32,
 }
 
 /// A warm instance's own swapchain: the host end of the frames a DORMANT
@@ -1087,6 +1103,8 @@ impl App {
                 // The notifications surface is the shell-UI lane's; until
                 // it lands the notification is at least not lost.
                 log!("wm: notify from client {}: {} — {}", client, title, body);
+                let (app, now) = (self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default(), cx.seconds_since_app_start());
+                self.state_mut().phone.shade.post(&app, title, body, now, vec!["Open".into()]);
             }
             WmRequest::Close => self.request_close(cx, client),
             WmRequest::SetFloating { floating } => {
@@ -2728,6 +2746,8 @@ impl App {
                 n.notify(cx, title, body);
             }
         }
+        let now = cx.seconds_since_app_start();
+        if let Some(state) = self.state.as_mut() { state.phone.shade.post("wm", title, body, now, Vec::new()); }
         self.redraw_all(cx);
     }
 
@@ -2765,6 +2785,8 @@ impl App {
         if let Some(clock)=self.bar_sample.clock.split_whitespace().find(|s|s.contains(':')).map(str::to_string) {
             self.state_mut().phone.clock=clock;
         }
+        self.state_mut().phone.shade.battery = self.bar_sample.battery.map(|b| (b.percent, b.charging));
+        self.wake_island(cx);
         let mut shown: Vec<usize> = Vec::new();
         let workspaces = {
             let state = self.state_mut();
@@ -3578,6 +3600,14 @@ impl App {
                 let _ = std::fs::rename(path.with_extension("part.png"), path);
             }
         }
+        if let Some((timer, n)) = &self.test_page {
+            if timer.is_timer(te).is_some() {
+                let n = *n;
+                self.test_page = None;
+                self.state_mut().phone.pages.jump(n);
+                self.animate_phone(cx);
+            }
+        }
         let Some(pos) = self.test_asks.iter().position(|(t, _)| t.is_timer(te).is_some()) else {
             return;
         };
@@ -3607,6 +3637,7 @@ impl App {
                 if let Some(name) = args.get(i + 1) {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
+                    if self.groups_test_action(cx, name) { i += 2; continue; }
                     if let Some(app) = name.strip_prefix("launch-") {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
@@ -3621,6 +3652,20 @@ impl App {
                         log!("wm: --test-action capture -> {}", path);
                         let timer = cx.start_interval(5.0);
                         self.test_capture = Some((timer, std::path::PathBuf::from(path)));
+                        i += 2;
+                        continue;
+                    }
+                    // page:<n>: jump the phone home to page <n> (-1 is the
+                    // glance page, the last position the App Library), on
+                    // the iOS shell when the desktop is not a phone yet.
+                    if let Some(n) = name.strip_prefix("page:") {
+                        let n = n.trim().parse::<i64>().unwrap_or(0);
+                        log!("wm: --test-action page {}", n);
+                        if !self.state_mut().style.target.mobile() { self.set_desktop_style(cx, desktop::DesktopStyle::Ios); }
+                        // After the first frames: the home's pages are laid
+                        // out at the phone's size by then.
+                        let timer = cx.start_timeout(1.0);
+                        self.test_page = Some((timer, n));
                         i += 2;
                         continue;
                     }
@@ -3639,6 +3684,19 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // shade:<notifications|controls>: open the shade on that
+                    // side (switching to the Android phone shell first when
+                    // the desk is up), for scripted screenshots.
+                    if let Some(side) = name.strip_prefix("shade:") {
+                        let side = if side.trim() == "controls" { mobile_gestures::ShadeSide::Controls } else { mobile_gestures::ShadeSide::Notifications };
+                        log!("wm: --test-action shade -> {:?}", side);
+                        if !self.state_mut().style.target.mobile() { self.set_desktop_style(cx, desktop::DesktopStyle::Android); }
+                        self.state_mut().phone.shade.open_on(side);
+                        self.animate_phone(cx);
+                        i += 2;
+                        continue;
+                    }
+                    if self.island_test_action(cx, name) { i += 2; continue; }
                     match test_action(name) {
                         Some(action) => {
                             log!("wm: --test-action {} -> {:?}", name, action);
@@ -3953,6 +4011,7 @@ impl MatchEvent for App {
         if startup_style != self.state_mut().style.target {
             self.set_desktop_style(cx, startup_style);
         }
+        mobile_island::install_producers();
         if cfg!(any(target_os = "ios", target_os = "android")) {
             self.update_bar_chrome(cx, &WindowGeom {
                 safe_area_insets: cx.display_context.safe_area_insets,

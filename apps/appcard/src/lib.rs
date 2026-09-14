@@ -43,6 +43,50 @@ use octos_app::AppShell;
 pub struct AppCardModule;
 pub static APPCARD_MODULE: AppCardModule = AppCardModule;
 
+/// A host's live-activity sink (OctoSense's island): told about the kernel
+/// turns this module submits. `begin` fires from the `ask` tool with the
+/// call id as the activity id; `progress` and `finish` are here for the
+/// day octos-app exposes its turn lifecycle to a host — today a turn's end
+/// is read back through [`turn_in_flight`], and turns typed into the card's
+/// own composer never pass through this crate at all (TODO: an
+/// `AppShell` turn callback in octos-app would cover both).
+pub trait ActivityReporter: Send + Sync {
+    fn begin(&self, id: &str, title: &str);
+    fn progress(&self, id: &str, done: usize, total: usize, detail: &str);
+    fn finish(&self, id: &str);
+}
+
+static ACTIVITY_REPORTER: std::sync::OnceLock<Box<dyn ActivityReporter>> = std::sync::OnceLock::new();
+
+/// Install the host's reporter, once. False when one is already there.
+pub fn set_activity_reporter(reporter: Box<dyn ActivityReporter>) -> bool {
+    ACTIVITY_REPORTER.set(reporter).is_ok()
+}
+
+/// The reporter the host installed, if any.
+pub fn activity_reporter() -> Option<&'static dyn ActivityReporter> {
+    ACTIVITY_REPORTER.get().map(|r| r.as_ref())
+}
+
+/// The kernel turn in flight, as the app's chat state knows it: the
+/// prompt text that started it (empty when the app has no record of it),
+/// `None` when no turn is running. Set at submit — the `ask` tool and the
+/// composer alike — and cleared when the turn completes or fails.
+pub fn turn_in_flight() -> Option<String> {
+    let data = octos_app::CHAT_DATA.read().ok()?;
+    if !data.is_streaming {
+        return None;
+    }
+    Some(
+        data.messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, octos_app::ChatRole::User))
+            .map(|m| m.text.clone())
+            .unwrap_or_default(),
+    )
+}
+
 impl AppModule for AppCardModule {
     fn id(&self) -> &'static str { "appcard" }
     fn label(&self) -> &'static str { "AppCard" }
@@ -125,6 +169,11 @@ impl ServiceExecutor for AppCardExecutor {
                         .map(|mut shell| shell.ask(cx, &text))
                         .unwrap_or(false);
                     if submitted {
+                        // The host's island shows the turn from here; its
+                        // end is read back through `turn_in_flight`.
+                        if let Some(reporter) = activity_reporter() {
+                            reporter.begin(&call.call_id, &text);
+                        }
                         ToolResult::ok(&call.call_id, format!("submitted: {text}"), "")
                     } else {
                         ToolResult::unavailable(&call.call_id, "AppCard is not running")

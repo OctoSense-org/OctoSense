@@ -1,5 +1,7 @@
 //! Phone navigation/input, sharing the WM's real clients and launch paths.
 use crate::{mobile::*, mobile_surface::PhoneSurface, mobile_tiles::{self, Face, TILE_APPS}, *};
+use crate::mobile_shade::ShadeState;
+use crate::mobile_gestures::{Dir, FingerPhase, GestureContext, GestureKind, SafeInsets, ShellGesture};
 use makepad_widgets::makepad_platform::ime::{HostedKeyboard, InputMode};
 use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 
@@ -67,8 +69,10 @@ impl App {
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|(client, app, background)| {
+                // A split member is in front too, at its pane's size.
+                let foreground = if self.state_mut().phone.groups.in_split(client) { Some(client) } else { foreground };
                 let face = mobile_tiles::wanted_face(client, foreground, settled, background)?;
-                let viewport = match face { Face::Full => full, Face::Tile => self.tile_viewport(&app)? };
+                let viewport = match face { Face::Full => self.state_mut().phone.groups.pane_size(client, full), Face::Tile => self.tile_viewport(&app)? };
                 if viewport.x < 1.0 || viewport.y < 1.0 { return None; }
                 self.state_mut().phone.tiles.pending(client, face, viewport).then_some((client, face, viewport))
             })
@@ -277,11 +281,31 @@ impl App {
             if self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {
                 let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.05)};
                 self.phone_time=frame.time;
-                let phone = &mut self.state_mut().phone;
+                let Some(state) = self.state.as_mut() else { return };
+                let phone = &mut state.phone;
                 phone.wallpaper_time = frame.time;
+                // A finger resting near the top of a home swipe becomes the
+                // switcher without moving; the frame keeps running while
+                // the recognizer owns a finger so the hold can land.
+                let mut tracking = false;
+                if self.phone_gestures.active() {
+                    tracking = true;
+                    if let Some(out) = self.phone_gestures.tick(frame.time) {
+                        log!("wm: gesture {:?}", out);
+                        let from = phone.gesture.as_ref().map(|g| g.screen).unwrap_or(phone.screen);
+                        phone.gesture_out = Some(out);
+                        Self::drive_gesture(phone, out, from);
+                    }
+                } else if matches!(phone.gesture_out, Some(ShellGesture::Commit(_) | ShellGesture::Cancel(_))) {
+                    // Commit/Cancel stay for exactly one stepped frame: aged
+                    // before `step` below, so the pager (and every other
+                    // surface that acts on a commit) sees it once.
+                    if self.gesture_out_age >= 1 { phone.gesture_out = None; } else { self.gesture_out_age += 1; tracking = true; }
+                }
                 let moving = phone.step(dt);
+                crate::mobile_groups::follow(phone);
                 let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
-                if moving || wallpaper_visible {self.phone_frame=cx.new_next_frame();}
+                if moving || wallpaper_visible || tracking {self.phone_frame=cx.new_next_frame();}
                 // The tiles follow the phone state every frame: a window
                 // takes its compact face only once its dismissal settled.
                 self.sync_home_tiles(cx);
@@ -349,14 +373,30 @@ impl App {
                 if let Some(client)=existing {self.activate_client(cx,client);}
                 else {self.launch_app(cx,&app);}
             },
-            PhoneHit::Card(client)=>self.activate_client(cx,client),
+            PhoneHit::Card(client)=>{
+                match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
+                    Some(first)=>{self.state_mut().phone.groups.pick=None;self.enter_split(cx,first,client);}
+                    None=>self.activate_client(cx,client),
+                }
+            }
+            PhoneHit::Group(name)=>self.open_group(cx,&name),
+            PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
+            PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
+            PhoneHit::Split(client)=>{
+                if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
+            }
+            PhoneHit::Divider=>{}
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
+            PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
             PhoneHit::Rotate=>{
                 let window=self.ui.window(cx,ids!(main_window));let size=window.get_inner_size(cx);
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.touch=None;
+                self.phone_gestures.cancel();
+                self.state_mut().phone.gesture_out=None;
                 window.resize(cx,dvec2(size.y,size.x));
             }
             PhoneHit::Style=>self.open_style_menu(cx),
@@ -382,6 +422,8 @@ impl App {
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 else {self.phone_back(cx);}
             }
+            PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
+            PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);
@@ -486,6 +528,58 @@ impl App {
         };
         self.phone_pointer_at(cx, phase, p, time, primary, scroll)
     }
+    /// What the recognizer needs to know about the screen right now.
+    fn gesture_context(&mut self, cx: &Cx) -> GestureContext {
+        let phone = &self.state_mut().phone;
+        let i = cx.display_context.safe_area_insets;
+        GestureContext {
+            screen: phone.viewport,
+            insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
+            phone: phone.screen,
+        }
+    }
+    /// The recognizer's in-progress gesture moves what the shell draws
+    /// itself: the window pulling back on a home swipe, the predictive
+    /// back preview. Every other surface reads `gesture_out` on its own.
+    fn drive_gesture(phone: &mut PhoneState, out: ShellGesture, from: PhoneScreen) {
+        match out {
+            ShellGesture::HomeUp { progress, held } if from != PhoneScreen::Home => {
+                phone.openness = 1.0;
+                phone.overview = if held { 1.0 } else { progress * 0.6 };
+            }
+            ShellGesture::Back { progress, .. } if from == PhoneScreen::App => {
+                phone.openness = (1.0 - progress * 0.18).clamp(0.4, 1.0);
+            }
+            _ => {}
+        }
+    }
+    /// A committed gesture becomes the navigation the shell already has.
+    /// ShadePull, PageSwipe and HomeSearch commits only reach `gesture_out`:
+    /// the shade, the pages and search are their own surfaces' work.
+    fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
+        match kind {
+            GestureKind::HomeUp => {
+                let android = self.state_mut().style.target == desktop::DesktopStyle::Android;
+                let target = if from == PhoneScreen::Home && android { PhoneHit::Drawer } else { PhoneHit::Home };
+                self.phone_action(cx, target);
+            }
+            GestureKind::Switcher => self.phone_action(cx, PhoneHit::Recents),
+            GestureKind::QuickSwitch(dir) => {
+                // `order` is most-recent first: right brings back the app
+                // used before this one, left cycles the other way round.
+                let order = &self.state_mut().phone.order;
+                let next = match dir {
+                    Dir::Right => order.get(1).copied(),
+                    Dir::Left => order.last().copied().filter(|_| order.len() > 1),
+                };
+                if let Some(client) = next { self.phone_action(cx, PhoneHit::Card(client)); }
+            }
+            // The app sees the back press first (BackPressed / HostedBack)
+            // and the shell goes home only when it declines.
+            GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
+            GestureKind::Shade(_) | GestureKind::Page(_) | GestureKind::HomeSearch => {}
+        }
+    }
     fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {
         if self.state_mut().phone.gesture.is_none() {
             if let Some(hit) = self.phone_toolbar_hit(cx, p) {
@@ -494,69 +588,86 @@ impl App {
             }
         }
         let (hit,search_scroll_max)=self.desk(cx).borrow::<WmDesk>().map(|d|(d.phone_hit(p),d.phone_search_scroll_max())).unwrap_or_default();
-        let phone=&self.state_mut().phone;
+        let ctx=self.gesture_context(cx);
+        let Some(state)=self.state.as_mut() else {return false};
+        let phone=&mut state.phone;
         let screen=phone.viewport;
-        let bottom=p.y>screen.pos.y+screen.size.y-28.0;
-        let edge=p.x<screen.pos.x+14.0 && phone.screen==PhoneScreen::App;
         match phase {
             PhonePointerPhase::Down=>{
                 if !primary {return phone.screen!=PhoneScreen::App;}
-                if !screen.contains(p) {return false;}
-                if bottom || edge || hit.is_some() || phone.screen!=PhoneScreen::App {
-                    let old=phone.screen;
-                    self.state_mut().phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,bottom,edge,screen:old});
+                let old=phone.screen;
+                // The recognizer claims a finger in a band (or on the home
+                // page body); an excluded edge is left to the app.
+                self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
+                // A finger on the open shade's sheet is the shade's own drag.
+                if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
+                let shell=self.phone_gestures.active();
+                if !shell && !screen.contains(p) {return false;}
+                if shell || hit.is_some() || old!=PhoneScreen::App {
+                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
+                    phone.gesture_out=None;
                     self.redraw_all(cx);
                     return true;
                 }
                 false
             }
             PhonePointerPhase::Move=>{
-                let phone=&mut self.state_mut().phone;
                 let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;let last=p-g.last;g.last=p;
-                if g.bottom && delta.y < -8.0 {
-                    phone.overview=(-delta.y/(screen.size.y*0.42)).clamp(0.0,1.0);
-                    phone.openness=1.0;
-                }else if g.screen==PhoneScreen::Drawer && (phone.search_focused || !phone.search_query.is_empty()) {
+                let (shell,from)=(g.shell,g.screen);
+                let divider=g.hit==Some(PhoneHit::Divider);
+                let shade_hit=match &g.hit {Some(PhoneHit::Shade(h)) if ShadeState::drags(h)=>Some(h.clone()),_=>None};
+                if let Some(h)=shade_hit {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
+                let out=if shell {self.phone_gestures.feed(FingerPhase::Move,p,time,&ctx,&phone.exclusions)} else {None};
+                phone.gesture_out=out;
+                if let Some(out)=out {
+                    Self::drive_gesture(phone,out,from);
+                }else if from==PhoneScreen::Drawer && (phone.search_focused || !phone.search_query.is_empty()) {
                     phone.search_scroll=(phone.search_scroll.min(search_scroll_max)-last.y).clamp(0.0,search_scroll_max);
-                }else if g.screen==PhoneScreen::Recents {
+                }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
                     else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
-                }else if g.edge {phone.openness=(1.0-delta.x.max(0.0)/screen.size.x*0.6).clamp(0.4,1.0);}
+                }else if divider {phone.groups.drag_divider(p,app_rect(screen));}
                 self.animate_phone(cx);true
             }
             PhonePointerPhase::Up=>{
-                let Some(g)=self.state_mut().phone.gesture.take() else{return self.state_mut().phone.screen!=PhoneScreen::App;};
+                let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;
-                if g.bottom {
-                    if delta.x.abs()>70.0 && delta.x.abs()>delta.y.abs()*1.5 {
-                        let phone=&self.state_mut().phone;
-                        if let Some(client)=phone.order.get(1).copied() {self.phone_action(cx,PhoneHit::Card(client));}
-                    }else if delta.y < -45.0 {
-                        let fast=time-g.time<0.30 && delta.y < -100.0;
-                        let target=if g.screen==PhoneScreen::Home && self.state_mut().style.target==desktop::DesktopStyle::Android {PhoneHit::Drawer}
-                            else if fast {PhoneHit::Home}else{PhoneHit::Recents};
-                        self.phone_action(cx,target);
-                    }else{self.phone_action(cx,PhoneHit::Home);}
-                }else if g.edge && delta.x>70.0 {self.phone_action(cx,PhoneHit::Back);}
-                else if g.screen==PhoneScreen::Recents && delta.y < -90.0 && delta.y.abs()>delta.x.abs()*1.2 {
-                    if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);self.state_mut().phone.navigate(PhoneScreen::Recents);}
-                }else if delta.length()<12.0 {
-                    if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
-                }else if g.screen==PhoneScreen::Home && (delta.y < -55.0 || delta.x < -70.0) {self.phone_action(cx,PhoneHit::Drawer);}
+                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {phone.shade.release(h,delta,time-g.time);self.animate_phone(cx);return true;}
+                let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
+                phone.gesture_out=out;
+                self.gesture_out_age=0;
+                match out {
+                    Some(ShellGesture::Commit(kind))=>{
+                        log!("wm: gesture commit {:?} from {:?}",kind,g.screen);
+                        self.commit_gesture(cx,kind,g.screen);
+                    }
+                    Some(ShellGesture::Cancel(kind))=>{
+                        log!("wm: gesture cancel {:?}",kind);
+                    }
+                    _=>{
+                        if g.screen==PhoneScreen::Recents && !g.shell && delta.y < -90.0 && delta.y.abs()>delta.x.abs()*1.2 {
+                            if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);self.state_mut().phone.navigate(PhoneScreen::Recents);}
+                        }else if delta.length()<12.0 {
+                            if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
+                        }else if g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
+                    }
+                }
                 self.state_mut().phone.dismiss_y=0.0;
                 self.animate_phone(cx);true
             }
-            PhonePointerPhase::Scroll if self.state_mut().phone.screen==PhoneScreen::Recents=>{
-                let p=&mut self.state_mut().phone;p.page=(p.page+scroll.signum()).clamp(0.0,p.order.len().saturating_sub(1)as f64);
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Recents=>{
+                phone.page=(phone.page+scroll.signum()).clamp(0.0,phone.order.len().saturating_sub(1)as f64);
                 self.animate_phone(cx);true
             }
-            PhonePointerPhase::Scroll if self.state_mut().phone.searching()=>{
-                let phone=&mut self.state_mut().phone;
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Home && phone.pages.on_glance()=>{
+                phone.pages.scroll_glance(scroll,phone.viewport.size.y);self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Scroll if phone.searching()=>{
                 phone.search_scroll=(phone.search_scroll.min(search_scroll_max)+scroll).clamp(0.0,search_scroll_max);
                 self.animate_phone(cx);true
             }
-            _=>self.state_mut().phone.screen!=PhoneScreen::App,
+            _=>phone.screen!=PhoneScreen::App,
         }
     }
 }
