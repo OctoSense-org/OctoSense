@@ -183,6 +183,10 @@ impl ShadeState {
     }
 
     /// A tap on a shade hit (the shell's tap detection already happened).
+    /// A hit the sheet drags itself (the recognizer lets the finger go):
+    /// everything but the closed status bar, whose pull is the
+    /// recognizer's `ShadePull`.
+    pub fn drags(hit: &ShadeHit) -> bool { !matches!(hit, ShadeHit::Open(_)) }
     pub fn tap(&mut self, hit: ShadeHit) {
         match hit {
             ShadeHit::Open(side) => self.open_on(side),
@@ -368,8 +372,20 @@ fn rounded(chrome: &mut DrawDesktopChrome, cx: &mut Cx2d, r: Rect, radius: f32, 
     chrome.draw_abs(cx, r);
 }
 
-/// Draw the shade over everything else. `hits` receives the tappable
-/// regions; while closed only the status bar's two halves are registered.
+/// The closed shade's tap targets: the status bar's two halves open the
+/// side under the finger. Registered right after the status bar is drawn,
+/// under the island's own targets (hits are last-wins), so the pill and
+/// the clock keep their taps.
+pub fn status_bar_hits(hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect) {
+    if state.phone.shade.open >= 0.001 { return; }
+    let status_h = if screen.size.x > screen.size.y { 24.0 } else { 42.0 };
+    let half = screen.size.x * 0.5;
+    hits.push((rect(screen.pos.x, screen.pos.y, half, status_h), PhoneHit::Shade(ShadeHit::Open(ShadeSide::Notifications))));
+    hits.push((rect(screen.pos.x + half, screen.pos.y, half, status_h), PhoneHit::Shade(ShadeHit::Open(ShadeSide::Controls))));
+}
+
+/// Draw the shade over everything else. `hits` receives the sheet's
+/// tappable regions (the closed shade's are `status_bar_hits`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
     let shade = &state.phone.shade;
@@ -378,10 +394,6 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     let ios = style == DesktopStyle::Ios;
     let landscape = screen.size.x > screen.size.y;
     if shade.open < 0.001 {
-        let status_h = if landscape { 24.0 } else { 42.0 };
-        let half = screen.size.x * 0.5;
-        hits.push((rect(screen.pos.x, screen.pos.y, half, status_h), PhoneHit::Shade(ShadeHit::Open(ShadeSide::Notifications))));
-        hits.push((rect(screen.pos.x + half, screen.pos.y, half, status_h), PhoneHit::Shade(ShadeHit::Open(ShadeSide::Controls))));
         return;
     }
     let open = shade.open.clamp(0.0, 1.0) as f32;
