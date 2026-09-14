@@ -506,10 +506,16 @@ impl PhoneSurface {
     }
 }
 impl Widget for PhoneSurface {
+    /// As a widget in the tree this surface is the desk bar's phone strip
+    /// (style menu, Desktop, Light/Dark, rotate). The standalone shell has
+    /// no bar: the desk draws the surface's home and overlay directly.
     fn draw_walk(&mut self,cx:&mut Cx2d,scope:&mut Scope,walk:Walk)->DrawStep {
         if !self.visible {self.hits.clear();self.area=Area::Empty;return DrawStep::done();}
         let r=cx.walk_turtle_with_area(&mut self.area,walk);
         self.hits.clear();
+        #[cfg(mobile_only)]
+        let _=(r,scope);
+        #[cfg(not(mobile_only))]
         if let Some(state)=scope.data.get_mut::<WmState>() {
             if state.style.target.mobile() {
                 self.d.solid(cx,r,rgb(25,27,38));

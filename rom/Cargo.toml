@@ -71,6 +71,11 @@ makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 
 [features]
 default = []
+# The standalone mobile shell: the Android phone shell fills the window, no
+# desk bar, no style switcher, no desktop styles. Android builds get it
+# without the flag (build.rs turns the same `mobile_only` cfg on for
+# `target_os = "android"`); a desktop build is universal unless this is on.
+mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
 mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
 app-reference = ["dep:octosense-reference"]

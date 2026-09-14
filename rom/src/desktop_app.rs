@@ -97,6 +97,7 @@ impl App {
         state.roles = roles;
         state.dragging.clear();
         state.style.select(style);
+        state.phone.shade.dark = dark;
         if changes_size { state.style.step(1.0); }
         state.layout.desktop.enabled = style.floating();
         for c in state.layout.all_clients() {
@@ -197,6 +198,7 @@ impl App {
         let style = self.state_mut().style.target;
         self.set_desktop_style(cx, style);
     }
+    #[cfg(not(mobile_only))]
     pub(super) fn open_style_menu(&mut self, cx: &mut Cx) {
         let anchor = if self.state_mut().style.target.mobile() {
             self.ui.widget(cx, ids!(phone_controls)).borrow::<crate::mobile_surface::PhoneSurface>()

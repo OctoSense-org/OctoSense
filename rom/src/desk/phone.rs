@@ -204,8 +204,12 @@ impl WmDesk {
             }
         }
     }
-    pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,screen:Rect) {
+    pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,full:Rect) {
         let state=scope.data.get_mut::<WmState>().unwrap();
+        // The wallpaper fills the desk; the shell lays out inside the
+        // platform's safe area (the notch, the system bars): the status bar
+        // under the notch, the navigation band above Android's gesture bar.
+        let screen=state.phone.insets.inset(full);
         state.phone.viewport=screen;
         // The frame's exclusion zones are rebuilt from what is drawn: cleared
         // once here, then every surface adds its own (the shade's sheet, the
@@ -235,8 +239,8 @@ impl WmDesk {
         let app=mobile::app_rect(screen);
         self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);
         self.phone_ui.begin();
-        self.phone_ui.draw_wallpaper(cx,screen,style,dark,phone.wallpaper_time);
-        self.compositor.as_mut().unwrap().content(screen);
+        self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_time);
+        self.compositor.as_mut().unwrap().content(full);
         let home_backdrop=if style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
             Some(self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0))
         }else{None};

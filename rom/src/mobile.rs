@@ -1,6 +1,6 @@
 //! Phone shell state and geometry. Application viewports remain stable while
 //! their compositor surfaces move between home, foreground and the task viewer.
-use crate::{desktop::DesktopStyle, hub::ClientId, mobile_tiles::HomeTiles};
+use crate::{desktop::DesktopStyle, hub::ClientId, mobile_gestures::SafeInsets, mobile_tiles::HomeTiles};
 use makepad_widgets::*;
 use std::collections::HashMap;
 
@@ -10,7 +10,13 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
-    Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
+    /// The desk bar's phone strip (universal builds only): rotate the
+    /// window, the style menu, Light/Dark, back to the desktop.
+    #[cfg(not(mobile_only))] Rotate,
+    #[cfg(not(mobile_only))] Style,
+    #[cfg(not(mobile_only))] Appearance,
+    #[cfg(not(mobile_only))] Desktop,
+    Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
     Shade(crate::mobile_shade::ShadeHit),
     /// A page indicator dot: jump the home pager there (mobile_pages.rs).
@@ -58,10 +64,15 @@ pub struct PhoneState {
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
-    pub desktop_size: Option<Vec2d>,
-    pub desktop_clients: Vec<ClientId>,
-    pub desktop_style: DesktopStyle,
+    /// What the desk bar's Desktop toggle restores (universal builds only).
+    #[cfg(not(mobile_only))] pub desktop_size: Option<Vec2d>,
+    #[cfg(not(mobile_only))] pub desktop_clients: Vec<ClientId>,
+    #[cfg(not(mobile_only))] pub desktop_style: DesktopStyle,
+    /// The rect the shell lays out in: the desk's rect inside `insets`.
     pub viewport: Rect,
+    /// The platform's safe-area insets (the notch, the system bars): the
+    /// wallpaper runs under them, everything else stays inside.
+    pub insets: SafeInsets,
     /// The home page's live app tiles (mobile_tiles.rs): which client shows
     /// which tile and in which face.
     pub tiles: HomeTiles,
@@ -87,7 +98,10 @@ impl Default for PhoneState {
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
             ime: HashMap::new(), shift: false, symbols: false,
-            desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
+            #[cfg(not(mobile_only))] desktop_size: None,
+            #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
+            #[cfg(not(mobile_only))] desktop_style: DesktopStyle::Omarchy,
+            viewport: Rect::default(), insets: SafeInsets::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
             exclusions: Default::default(),

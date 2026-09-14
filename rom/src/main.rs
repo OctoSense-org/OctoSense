@@ -45,6 +45,12 @@ mod shell;
 mod theme;
 mod tile;
 
+/// The standalone mobile shell: the Android phone shell fills the window
+/// and nothing else is offered — no desk bar, no style switcher, no
+/// desktop styles. build.rs sets the `mobile_only` cfg for Android builds
+/// and for `--features mobile-only`; this is its one Rust-side name.
+pub(crate) const MOBILE_ONLY: bool = cfg!(mobile_only);
+
 use std::collections::HashMap;
 
 use binds::{match_bind_armed, WmAction};
@@ -130,9 +136,13 @@ script_mod! {
                     flow: Down
                     // The wallpaper layer: the theme's image (crop-to-fill)
                     // over the theme's deep background.
+                        // The desk bar: the shell bar on a desktop style, the
+                        // phone's style/appearance/rotate strip on a phone
+                        // style. The standalone shell has neither.
                         bar := SolidView{
                             width: Fill
                             height: 26
+                            visible: #(!MOBILE_ONLY)
                             flow: Overlay
                             draw_bg +: {
                                 color: mod.wm_theme.background
@@ -218,8 +228,10 @@ const BAR_HEIGHT_FALLBACK: f64 = 26.0;
 /// The bar's height and the left padding its content starts at. macOS puts
 /// its traffic lights on the left; Linux and Windows put caption buttons on
 /// the right, where they must not push the left cluster off screen.
+#[cfg(not(mobile_only))]
 type BarMetrics = (f64, f64);
 
+#[cfg(not(mobile_only))]
 fn bar_metrics_for_geom(geom: &WindowGeom, native_mobile: bool) -> BarMetrics {
     if native_mobile {
         return (48.0, 8.0);
@@ -238,7 +250,7 @@ fn bar_metrics_for_geom(geom: &WindowGeom, native_mobile: bool) -> BarMetrics {
     (height, pad_left)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(mobile_only)))]
 mod bar_chrome_tests {
     use super::*;
 
@@ -322,6 +334,7 @@ pub struct App {
     tick: Timer,
     /// Bar height + left padding last applied from the OS window buttons.
     #[rust]
+    #[cfg(not(mobile_only))]
     bar_metrics: Option<BarMetrics>,
     /// SUPER+mouse:272/273 move & resize (tiling.lua).
     #[rust]
@@ -2651,6 +2664,7 @@ impl App {
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
         if target=="start.documents" {self.launch_app(cx,"files");return;}
         if target=="start.power" {self.toggle_shell_panel(cx,BarModule::Power);return;}
+        #[cfg(not(mobile_only))]
         if let Some(name) = target.strip_prefix("desktop.") {
             if let Some(style) = desktop::DesktopStyle::parse(name) {
                 if style.supports_dark() { self.state_mut().style.dark = name.ends_with("-dark"); }
@@ -2865,6 +2879,26 @@ impl App {
     /// caption buttons affect the height only; the bar's left cluster stays
     /// at its normal edge inset.
     fn update_bar_chrome(&mut self, cx: &mut Cx, geom: &WindowGeom) {
+        // The standalone shell fills the window and keeps the insets for
+        // itself: the wallpaper runs edge to edge, the status bar and the
+        // navigation band sit inside the safe area (desk/phone.rs).
+        #[cfg(mobile_only)]
+        {
+            let i = geom.safe_area_insets;
+            let insets = mobile_gestures::SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left };
+            if self.state.is_some() && self.state_mut().phone.insets != insets {
+                log!("wm: safe-area insets top {} right {} bottom {} left {}", i.top, i.right, i.bottom, i.left);
+                self.state_mut().phone.insets = insets;
+                self.redraw_all(cx);
+            }
+            return;
+        }
+        #[cfg(not(mobile_only))]
+        self.update_desk_bar_chrome(cx, geom);
+    }
+
+    #[cfg(not(mobile_only))]
+    fn update_desk_bar_chrome(&mut self, cx: &mut Cx, geom: &WindowGeom) {
         let native_mobile = cfg!(any(target_os = "ios", target_os = "android"));
         // Insets can change without changing the toolbar (rotation, system
         // navigation mode), so update them before the metrics cache check.
@@ -4123,7 +4157,9 @@ impl MatchEvent for App {
             // activations, the flyouts' controls.
             match wa.cast::<ShellBarAction>() {
                 ShellBarAction::Press(module) => match module {
+                    #[cfg(not(mobile_only))]
                     BarModule::Appearance => self.toggle_desktop_appearance(cx),
+                    #[cfg(not(mobile_only))]
                     BarModule::Style => self.open_style_menu(cx),
                     BarModule::Menu => self.toggle_launcher(cx),
                     BarModule::Workspace(i) => {
@@ -4147,7 +4183,9 @@ impl MatchEvent for App {
                 },
                 ShellBarAction::RightPress(module) => match module {
                     // The Omarchy button's right click opens a terminal.
+                    #[cfg(not(mobile_only))]
                     BarModule::Appearance => self.toggle_desktop_appearance(cx),
+                    #[cfg(not(mobile_only))]
                     BarModule::Style => self.open_style_menu(cx),
                     BarModule::Menu => self.do_action(cx, WmAction::LaunchTerminal),
                     BarModule::ActiveWindow => {
@@ -4374,7 +4412,7 @@ impl AppMain for App {
             // The shell bar's own modules are BUTTONS, not a drag handle:
             // where it claims a point, the press reaches the widget.
             let bar = self.ui.view(cx, ids!(bar)).area();
-            if cfg!(any(target_os = "ios", target_os = "android"))
+            if cfg!(any(target_os = "ios", target_os = "android")) || MOBILE_ONLY
                 || self.phone_toolbar_hit(cx,dq.abs).is_some() || self.shell_bar_claims(cx, dq.abs) {
                 dq.response.set(WindowDragQueryResponse::Client);
             } else if bar.is_valid(cx) && bar.rect(cx).contains(dq.abs) {
@@ -4383,6 +4421,7 @@ impl AppMain for App {
                 dq.response.set(WindowDragQueryResponse::Client);
             }
         }
+        #[cfg(not(mobile_only))]
         if self.state.is_some() && !self.state_mut().style.target.mobile() {
             if let Event::MouseDown(e)=event {
                 let module=self.ui.widget(cx,ids!(shell_bar)).borrow::<shell::bar::ShellBar>().and_then(|b|b.module_at(e.abs));

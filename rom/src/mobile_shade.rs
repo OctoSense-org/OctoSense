@@ -32,13 +32,15 @@ pub struct ShadeNote {
     pub revealed: bool,
 }
 
-/// The quick-settings toggles, in grid order.
+/// The quick-settings toggles, in grid order. `DarkMode` is the shell's
+/// appearance (what the desk bar's Light/Dark set): the app flips it
+/// through its style path and mirrors the result into `ShadeState::dark`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Toggle { Wifi, Bluetooth, Torch, RotationLock, DoNotDisturb }
+pub enum Toggle { Wifi, Bluetooth, Torch, RotationLock, DoNotDisturb, DarkMode }
 impl Toggle {
-    pub const ALL: [Toggle; 5] = [Toggle::Wifi, Toggle::Bluetooth, Toggle::Torch, Toggle::RotationLock, Toggle::DoNotDisturb];
+    pub const ALL: [Toggle; 6] = [Toggle::Wifi, Toggle::Bluetooth, Toggle::Torch, Toggle::RotationLock, Toggle::DoNotDisturb, Toggle::DarkMode];
     fn label(self) -> &'static str {
-        match self { Toggle::Wifi => "Wi-Fi", Toggle::Bluetooth => "Bluetooth", Toggle::Torch => "Torch", Toggle::RotationLock => "Rotation", Toggle::DoNotDisturb => "DND" }
+        match self { Toggle::Wifi => "Wi-Fi", Toggle::Bluetooth => "Bluetooth", Toggle::Torch => "Torch", Toggle::RotationLock => "Rotation", Toggle::DoNotDisturb => "DND", Toggle::DarkMode => "Dark mode" }
     }
     fn index(self) -> usize { Toggle::ALL.iter().position(|t| *t == self).unwrap_or(0) }
 }
@@ -85,8 +87,11 @@ pub struct ShadeState {
     pub torch: bool,
     pub rotation_lock: bool,
     pub do_not_disturb: bool,
+    /// The shell's appearance, mirrored from `WmState::style.dark` by the
+    /// app whenever it changes (the tile reads it; tapping goes to the app).
+    pub dark: bool,
     /// Per-toggle 0..1 shape animation (pill → rounded rectangle).
-    toggle_anim: [f64; 5],
+    toggle_anim: [f64; 6],
     /// Battery percent and charging, from the status sampler the bar uses.
     pub battery: Option<(u32, bool)>,
     /// Seconds since app start at the last frame, for the cards' ages.
@@ -105,8 +110,8 @@ impl Default for ShadeState {
         Self {
             open: 0.0, open_target: 0.0, side: ShadeSide::Notifications, page: 0.0, page_target: 0.0,
             notifications: Vec::new(), next_id: 0,
-            brightness: 0.62, volume: 0.45, wifi: true, bluetooth: false, torch: false, rotation_lock: false, do_not_disturb: false,
-            toggle_anim: [1.0, 0.0, 0.0, 0.0, 0.0],
+            brightness: 0.62, volume: 0.45, wifi: true, bluetooth: false, torch: false, rotation_lock: false, do_not_disturb: false, dark: false,
+            toggle_anim: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             battery: None, now: 0.0, pulling: false, drag: None, dragging_note: None, seeded: false,
         }
     }
@@ -124,10 +129,10 @@ impl ShadeState {
     /// island reads to hide, so it still docks with a pull in progress.
     pub fn wants_open(&self) -> bool { self.open_target > 0.5 }
     pub fn toggled(&self, t: Toggle) -> bool {
-        match t { Toggle::Wifi => self.wifi, Toggle::Bluetooth => self.bluetooth, Toggle::Torch => self.torch, Toggle::RotationLock => self.rotation_lock, Toggle::DoNotDisturb => self.do_not_disturb }
+        match t { Toggle::Wifi => self.wifi, Toggle::Bluetooth => self.bluetooth, Toggle::Torch => self.torch, Toggle::RotationLock => self.rotation_lock, Toggle::DoNotDisturb => self.do_not_disturb, Toggle::DarkMode => self.dark }
     }
     fn flip(&mut self, t: Toggle) {
-        match t { Toggle::Wifi => self.wifi = !self.wifi, Toggle::Bluetooth => self.bluetooth = !self.bluetooth, Toggle::Torch => self.torch = !self.torch, Toggle::RotationLock => self.rotation_lock = !self.rotation_lock, Toggle::DoNotDisturb => self.do_not_disturb = !self.do_not_disturb }
+        match t { Toggle::Wifi => self.wifi = !self.wifi, Toggle::Bluetooth => self.bluetooth = !self.bluetooth, Toggle::Torch => self.torch = !self.torch, Toggle::RotationLock => self.rotation_lock = !self.rotation_lock, Toggle::DoNotDisturb => self.do_not_disturb = !self.do_not_disturb, Toggle::DarkMode => self.dark = !self.dark }
     }
 
     /// Open on `side`, animated; the page follows the side.
@@ -549,7 +554,8 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
             Toggle::Bluetooth => if shade.bluetooth { Ico::Bluetooth } else { Ico::BluetoothOff },
             Toggle::Torch => Ico::Power,
             Toggle::RotationLock => Ico::Lock,
-            Toggle::DoNotDisturb => Ico::Moon,
+            Toggle::DoNotDisturb => Ico::BellOff,
+            Toggle::DarkMode => Ico::Moon,
         };
         d.icon_centered(cx, ico, rect(cell.pos.x + 10.0, cell.pos.y, 30.0, cell.size.y), 18.0, fg);
         let text = rect(cell.pos.x + 42.0, cell.pos.y, cell.size.x - 50.0, cell.size.y);
