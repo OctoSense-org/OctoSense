@@ -126,10 +126,14 @@ pub fn registry() -> &'static [AppDef] {
     }
 }
 
-/// Registered ids take precedence over binary aliases.
+/// Registered ids take precedence over binary aliases. A linked module
+/// without a catalog row (a module-only app such as `appcard`, which has no
+/// process form) is still an app: its bundled definition answers, and the
+/// hosting rules decide whether it may open (`--module <id>` on a desktop).
 pub fn find_app(id: &str) -> Option<AppDef> {
     registry().iter().find(|a| a.id == id)
         .or_else(|| registry().iter().find(|a| a.bin == id)).cloned()
+        .or_else(|| crate::apps::bundled_catalog().into_iter().find(|a| a.id == id))
 }
 
 /// `bin/omarchy-launch-or-focus`'s window test, verbatim:
