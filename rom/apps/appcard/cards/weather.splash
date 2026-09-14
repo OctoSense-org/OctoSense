@@ -1,0 +1,144 @@
+// weather@1.0.0, theme atro_light — the Splash DSL AppCard's L0 pipeline
+// emits for cards/weather.card (realize → kit lower → eval → to_dsl), written
+// out for Phase A. `place` and `fetch_epoch` are bound by the module ahead of
+// this text; every live value is a sys.* call answered by the fetch layer.
+// Omitted from the exemplar in Phase A: Photo (scene), Satellite, AqiContour
+// (their tile/photo sources are Phase B), the saved-cities pager and the add
+// editor (the durable store is Phase B), and the °C/°F toggle (no prefs).
+let lat = sys.geocodenum(place, "lat")
+let lon = sys.geocodenum(place, "lon")
+let loc = sys.locale("lang")
+width: Fill height: Fit flow: Down
+SolidView{ width: Fill height: Fit flow: Down draw_bg.color: #f2f2f7 padding: Inset{left: 14 top: 14 right: 14 bottom: 20} spacing: 12
+    if lat < -9998 {
+        RoundedView{ width: Fill height: Fit flow: Down padding: 18 draw_bg.color: #ffffff draw_bg.border_radius: 18.0
+            AppCardBody{ text: "Getting the weather…" draw_text.color: #8e8e93 }
+        }
+    }
+    if lat >= -9998 {
+    // ── current ─────────────────────────────────────────────────────────
+    RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} padding: Inset{left: 18 top: 14 right: 18 bottom: 14} draw_bg.color: #ffffff draw_bg.border_radius: 18.0 spacing: 2
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5}
+            AppCardTitle{ width: Fill text: sys.geocode(place, "name") draw_text.color: #1c1c1e }
+            AppCardBody{ text: sys.weatherword(lat, lon, "current.weather_code", loc) draw_text.color: #8e8e93 }
+        }
+        WeatherIcon{ width: 84 height: 84 draw_bg.cond: sys.weathercond(lat, lon, "current.weather_code") }
+        AppCardHero{ text: sys.weather(lat, lon, "current.temperature_2m") + "°" draw_text.color: #1c1c1e }
+        View{ width: Fit height: Fit flow: Right spacing: 12
+            AppCardStat{ text: "↑ " + sys.weather(lat, lon, "daily.temperature_2m_max.0") + "°" draw_text.color: #1c1c1e }
+            AppCardStat{ text: "↓ " + sys.weather(lat, lon, "daily.temperature_2m_min.0") + "°" draw_text.color: #8e8e93 }
+            AppCardStat{ text: "≈ " + sys.weather(lat, lon, "current.apparent_temperature") + "°" draw_text.color: #8e8e93 }
+        }
+    }
+    // ── forecast ────────────────────────────────────────────────────────
+    RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 18 top: 8 right: 18 bottom: 8} draw_bg.color: #ffffff draw_bg.border_radius: 18.0 spacing: 0
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 0, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.0") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.0") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.0") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.0") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.0") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 1, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.1") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.1") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.1") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.1") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.1") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 2, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.2") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.2") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.2") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.2") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.2") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 3, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.3") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.3") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.3") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.3") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.3") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 4, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.4") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.4") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.4") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.4") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.4") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 5, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.5") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.5") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.5") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.5") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.5") + "°" draw_text.color: #1c1c1e }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            AppCardStat{ width: 44 text: sys.dayname(lat, lon, 6, loc) draw_text.color: #1c1c1e }
+            WeatherIcon{ width: 24 height: 24 draw_bg.cond: sys.weathercond(lat, lon, "daily.weather_code.6") }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_min.6") + "°" draw_text.color: #8e8e93 }
+            TempBar{ width: Fill height: 8 draw_bg.tlo: sys.weathernum(lat, lon, "daily.temperature_2m_min.6") draw_bg.thi: sys.weathernum(lat, lon, "daily.temperature_2m_max.6") draw_bg.wmin: sys.weekmin(lat, lon) draw_bg.wmax: sys.weekmax(lat, lon) }
+            AppCardStat{ width: 34 text: sys.weather(lat, lon, "daily.temperature_2m_max.6") + "°" draw_text.color: #1c1c1e }
+        }
+    }
+    // ── sun & moon ──────────────────────────────────────────────────────
+    RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 18 top: 14 right: 18 bottom: 14} draw_bg.color: #ffffff draw_bg.border_radius: 18.0 spacing: 10
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
+            View{ width: Fit height: Fit flow: Down spacing: 2
+                AppCardCaption{ text: "SUNRISE" draw_text.color: #8e8e93 }
+                AppCardValue{ text: sys.weather(lat, lon, "daily.sunrise.0") draw_text.color: #1c1c1e }
+            }
+            SunArc{ width: Fill height: 56 draw_bg.progress: sys.daylight(lat, lon) }
+            View{ width: Fit height: Fit flow: Down align: Align{x: 1.0} spacing: 2
+                AppCardCaption{ text: "SUNSET" draw_text.color: #8e8e93 }
+                AppCardValue{ text: sys.weather(lat, lon, "daily.sunset.0") draw_text.color: #1c1c1e }
+            }
+        }
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
+            MoonPhase{ width: 40 height: 40 draw_bg.phase: sys.moonnum("phase") }
+            View{ width: Fill height: Fit flow: Down spacing: 2
+                AppCardBody{ text: sys.moonphase("name") draw_text.color: #1c1c1e }
+                AppCardCaption{ text: sys.moonphase("illumination") + "% illuminated" draw_text.color: #8e8e93 }
+            }
+        }
+    }
+    // ── details ─────────────────────────────────────────────────────────
+    View{ width: Fill height: Fit flow: Right spacing: 12
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "FEELS LIKE" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "current.apparent_temperature") + "°" draw_text.color: #1c1c1e }
+        }
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "HUMIDITY" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "current.relative_humidity_2m") + "%" draw_text.color: #1c1c1e }
+        }
+    }
+    View{ width: Fill height: Fit flow: Right spacing: 12
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "WIND" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "current.wind_speed_10m") + " km/h" draw_text.color: #1c1c1e }
+        }
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "PRESSURE" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "current.surface_pressure") + " hPa" draw_text.color: #1c1c1e }
+        }
+    }
+    View{ width: Fill height: Fit flow: Right spacing: 12
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "UV INDEX" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "daily.uv_index_max.0") draw_text.color: #1c1c1e }
+        }
+        RoundedView{ width: Fill height: Fit flow: Down padding: Inset{left: 16 top: 12 right: 16 bottom: 12} draw_bg.color: #ffffff draw_bg.border_radius: 16.0 spacing: 4
+            AppCardCaption{ text: "RAIN" draw_text.color: #8e8e93 }
+            AppCardValue{ text: sys.weather(lat, lon, "daily.precipitation_probability_max.0") + "%" draw_text.color: #1c1c1e }
+        }
+    }
+    }
+}
