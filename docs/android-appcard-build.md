@@ -105,6 +105,9 @@ screen, so a developer's own `octos serve` is never touched.
 
 ## Provisioning the LLM key
 
+The quoting-safe way is `scripts/provision-appcard-llm.sh <family> <model> <key>`: it builds the JSON, ships it through both shells intact, restarts OctoSense with the extra, and waits for the app to log `provisioned LLM`. GLM keys come in two families: `zhipu` for a bigmodel.cn key (OpenAI-style endpoint) and `zai` for a z.ai key (Anthropic-style endpoint); using the wrong one yields HTTP 401 even with a valid key.
+
+
 The kernel needs an LLM profile before a request can run. The buildtool
 activity forwards launch-intent extras prefixed `makepad.` to the app's
 environment, and the app reads `MAKEPAD_PROVISION_CONFIG` on startup and
