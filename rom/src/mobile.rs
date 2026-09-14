@@ -56,6 +56,12 @@ pub struct PhoneState {
     /// The home page's live app tiles (mobile_tiles.rs): which client shows
     /// which tile and in which face.
     pub tiles: HomeTiles,
+    /// The shell gesture recognised this frame, for every mobile surface to
+    /// read (mobile_gestures.rs owns it; surfaces never touch raw fingers).
+    pub gesture_out: Option<crate::mobile_gestures::ShellGesture>,
+    /// Rects apps own on screen; shell gestures starting inside them are not
+    /// recognised.
+    pub exclusions: crate::mobile_gestures::ExclusionZones,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -65,7 +71,9 @@ impl Default for PhoneState {
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
             ime: HashMap::new(), shift: false, symbols: false,
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
-            tiles: HomeTiles::default() }
+            tiles: HomeTiles::default(),
+            gesture_out: None,
+            exclusions: Default::default() }
     }
 }
 impl PhoneState {
