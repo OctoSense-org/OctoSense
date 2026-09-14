@@ -207,8 +207,12 @@ impl WmDesk {
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,screen:Rect) {
         let state=scope.data.get_mut::<WmState>().unwrap();
         state.phone.viewport=screen;
-        // The frame's exclusion zones are rebuilt below from what is drawn.
+        // The frame's exclusion zones are rebuilt from what is drawn: cleared
+        // once here, then every surface adds its own (the shade's sheet, the
+        // split divider, the apps that own their edges, the keyboard).
         state.phone.exclusions.clear();
+        if let Some(z)=state.phone.shade.exclusion(screen) {state.phone.exclusions.add(z,[true;4]);}
+        state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
         let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
         state.phone.order.retain(|c|state.clients.contains_key(c));

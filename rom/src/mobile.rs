@@ -160,7 +160,7 @@ impl PhoneState {
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
         }
-        active |= self.shade.step(dt, self.gesture_out, self.viewport, self.wallpaper_time, &mut self.exclusions);
+        active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
         active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active

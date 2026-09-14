@@ -131,9 +131,6 @@ pub struct GroupsState {
     /// The tile the open sub-window grew out of, remembered while it closes
     /// (the home layout may not be at hand then).
     pub origin: Option<Rect>,
-    /// The divider band handed to the exclusion zones last frame, so it
-    /// is replaced rather than piled up.
-    excluded: Option<Rect>,
     /// The last group name that was closing, so `openness` keeps a target.
     closing: Option<String>,
 }
@@ -142,7 +139,7 @@ impl Default for GroupsState {
     fn default() -> Self {
         Self {
             groups: SEED_GROUPS.iter().map(|(name, apps)| TileGroup::new(name, apps)).collect(),
-            open: None, openness: 0.0, split: None, pick: None, origin: None, excluded: None, closing: None,
+            open: None, openness: 0.0, split: None, pick: None, origin: None, closing: None,
         }
     }
 }
@@ -216,15 +213,11 @@ impl GroupsState {
         if screen != PhoneScreen::Recents { self.pick = None; }
         if screen != PhoneScreen::Home && self.open.is_some() { self.close(); }
     }
-    /// The divider band as an exclusion zone, replacing last frame's.
-    pub fn sync_exclusions(&mut self, screen: PhoneScreen, app: Rect, zones: &mut crate::mobile_gestures::ExclusionZones) {
-        if let Some(old) = self.excluded.take() { zones.zones.retain(|z| z.rect != old); }
+    /// The divider band as an exclusion zone. The desk clears the zones
+    /// once per frame and every surface adds its own, so this only adds.
+    pub fn add_exclusions(&self, screen: PhoneScreen, app: Rect, zones: &mut crate::mobile_gestures::ExclusionZones) {
         if screen != PhoneScreen::App { return; }
-        if let Some(split) = self.split {
-            let band = split.divider(app);
-            zones.add(band, [true; 4]);
-            self.excluded = Some(band);
-        }
+        if let Some(split) = self.split { zones.add(split.divider(app), [true; 4]); }
     }
     /// Animate the sub-window. True while it is still moving.
     pub fn step(&mut self, dt: f64) -> bool {
@@ -239,11 +232,10 @@ impl GroupsState {
 }
 
 /// Everything the animation frame needs from the phone state, in one call.
+/// (The divider's exclusion zone is added at draw time, by the desk.)
 pub fn follow(phone: &mut PhoneState) {
     if let Some(gesture) = phone.gesture_out.as_ref() { phone.groups.on_gesture(gesture); }
     phone.groups.follow(phone.screen, phone.client);
-    let app = mobile::app_rect(phone.viewport);
-    phone.groups.sync_exclusions(phone.screen, app, &mut phone.exclusions);
 }
 
 // --------------------------------------------------------------------
@@ -687,30 +679,36 @@ mod tests {
         let mut groups = GroupsState::default();
         let mut zones = ExclusionZones::default();
         let app = app();
-        groups.sync_exclusions(PhoneScreen::App, app, &mut zones);
+        groups.add_exclusions(PhoneScreen::App, app, &mut zones);
         assert!(zones.zones.is_empty());
         groups.enter_split(1, 2);
-        groups.sync_exclusions(PhoneScreen::App, app, &mut zones);
+        groups.add_exclusions(PhoneScreen::App, app, &mut zones);
         assert_eq!(zones.zones.len(), 1);
         let mid = dvec2(200.0, app.pos.y + app.size.y * 0.5);
         assert!(zones.excludes(mid, crate::mobile_gestures::Edge::Bottom));
+        // The desk clears the frame's zones before every surface adds again.
         groups.drag_divider(dvec2(200.0, app.pos.y + app.size.y * 0.3), app);
-        groups.sync_exclusions(PhoneScreen::App, app, &mut zones);
-        assert_eq!(zones.zones.len(), 1, "replaced, not piled up");
+        zones.clear();
+        groups.add_exclusions(PhoneScreen::App, app, &mut zones);
+        assert_eq!(zones.zones.len(), 1);
         assert!(!zones.excludes(mid, crate::mobile_gestures::Edge::Bottom));
         assert!(zones.excludes(dvec2(200.0, app.pos.y + app.size.y * 0.3), crate::mobile_gestures::Edge::Left));
         groups.leave_split();
-        groups.sync_exclusions(PhoneScreen::App, app, &mut zones);
+        zones.clear();
+        groups.add_exclusions(PhoneScreen::App, app, &mut zones);
         assert!(zones.zones.is_empty());
-        // The whole phone state in one call: leaving for home clears it too.
+        // Off the app screen the band is nobody's, split or not.
         let mut phone = PhoneState::default();
         phone.viewport = Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) };
         phone.activate(1); phone.activate(2);
         phone.groups.enter_split(2, 1);
         follow(&mut phone);
+        phone.groups.add_exclusions(phone.screen, mobile::app_rect(phone.viewport), &mut phone.exclusions);
         assert!(phone.groups.split.is_some() && phone.exclusions.zones.len() == 1);
         phone.navigate(PhoneScreen::Home);
         follow(&mut phone);
+        phone.exclusions.clear();
+        phone.groups.add_exclusions(phone.screen, mobile::app_rect(phone.viewport), &mut phone.exclusions);
         assert!(phone.groups.split.is_none() && phone.exclusions.zones.is_empty());
     }
 
