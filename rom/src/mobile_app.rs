@@ -404,6 +404,7 @@ impl App {
                 else {self.phone_back(cx);}
             }
             PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
+            PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);

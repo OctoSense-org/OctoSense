@@ -15,6 +15,7 @@ pub enum PhoneHit {
     Shade(crate::mobile_shade::ShadeHit),
     /// A page indicator dot: jump the home pager there (mobile_pages.rs).
     Page(i64),
+    Island(crate::mobile_island::IslandHit),
 }
 
 #[derive(Clone)]
@@ -70,6 +71,8 @@ pub struct PhoneState {
     pub shade: crate::mobile_shade::ShadeState,
     /// The home pager: glance page, apps pages, library (mobile_pages.rs).
     pub pages: crate::mobile_pages::PagesState,
+    /// The live island's activities and state (mobile_island.rs).
+    pub island: crate::mobile_island::IslandState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -83,7 +86,8 @@ impl Default for PhoneState {
             gesture_out: None,
             exclusions: Default::default(),
             shade: Default::default(),
-            pages: Default::default() }
+            pages: Default::default(),
+            island: Default::default() }
     }
 }
 impl PhoneState {
@@ -141,6 +145,7 @@ impl PhoneState {
         self.keyboard += (self.keyboard_target - self.keyboard) * t;
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
+        active |= self.island.step(dt, crate::host::now(), self.gesture_out);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;
