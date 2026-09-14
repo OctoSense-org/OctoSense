@@ -16,6 +16,10 @@ pub enum PhoneHit {
     /// A page indicator dot: jump the home pager there (mobile_pages.rs).
     Page(i64),
     Island(crate::mobile_island::IslandHit),
+    /// Tile groups (mobile_groups.rs): the tile, a member in its window,
+    /// the window's scrim, a pair's "Open both", a Recents card's split
+    /// button and the split divider.
+    Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
 }
 
 #[derive(Clone)]
@@ -73,6 +77,8 @@ pub struct PhoneState {
     pub pages: crate::mobile_pages::PagesState,
     /// The live island's activities and state (mobile_island.rs).
     pub island: crate::mobile_island::IslandState,
+    /// Tile groups, the open group window and the split screen (mobile_groups.rs).
+    pub groups: crate::mobile_groups::GroupsState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -87,7 +93,8 @@ impl Default for PhoneState {
             exclusions: Default::default(),
             shade: Default::default(),
             pages: Default::default(),
-            island: Default::default() }
+            island: Default::default(),
+            groups: Default::default() }
     }
 }
 impl PhoneState {
@@ -146,6 +153,7 @@ impl PhoneState {
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
         active |= self.island.step(dt, crate::host::now(), self.gesture_out);
+        active |= self.groups.step(dt);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;
