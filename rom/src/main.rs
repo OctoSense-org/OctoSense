@@ -73,6 +73,22 @@ app_main!(
     font_assets: [
         "makepad_widgets/resources/jetbrains_mono_variable.ttf",
         "makepad_widgets/resources/NotoColorEmoji.ttf",
+        // The faces the AppCard module's L0 kit names by file
+        // (`crate_resource("makepad_widgets:resources/<face>.ttf")`): the
+        // hero's hairline Roboto-Thin, the label weights, the geometric
+        // and serif roles. A face the package lacks draws NOTHING —
+        // measured on the phone: a weather card with its city, hero
+        // temperature and every row label missing.
+        "makepad_widgets/resources/Roboto-Thin.ttf",
+        "makepad_widgets/resources/Roboto-Light.ttf",
+        "makepad_widgets/resources/Roboto-Regular.ttf",
+        "makepad_widgets/resources/Roboto-Medium.ttf",
+        "makepad_widgets/resources/Roboto-Bold.ttf",
+        "makepad_widgets/resources/Montserrat-Regular.ttf",
+        "makepad_widgets/resources/Montserrat-Medium.ttf",
+        "makepad_widgets/resources/Montserrat-SemiBold.ttf",
+        "makepad_widgets/resources/Serif-Regular.ttf",
+        "makepad_widgets/resources/Serif-Bold.ttf",
     ]
 );
 
@@ -339,6 +355,16 @@ pub struct App {
     /// Drives the dormant instances (see `pump_warm`).
     #[rust]
     warm_tick: Timer,
+    /// `--test-action ask-appcard:<text>`: the text and the timer that
+    /// submits it to the appcard instance's `ask` tool once the hosted
+    /// app has had time to bring its kernel and sessions up.
+    #[rust]
+    test_asks: Vec<(Timer, String)>,
+    /// `--test-action capture:<path>`: every few seconds the next presented
+    /// frame is written to <path> as PNG, so a scripted run can be looked
+    /// at without a screen (the GPU readback does not need one).
+    #[rust]
+    test_capture: Option<(Timer, std::path::PathBuf)>,
     /// When each warm client was last ticked. Kept apart from `WarmFrame`
     /// because the FIRST ticks are what make a frame possible at all — see
     /// `pump_warm`.
@@ -3540,6 +3566,36 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// The test actions' timers: a `capture:` tick writes the next frame; a
+    /// due `ask-appcard:` sends its text to the appcard instance's executor
+    /// exactly as the assistant's `ask` call would.
+    fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
+        if let Some((timer, path)) = &self.test_capture {
+            if timer.is_timer(te).is_some() {
+                let tmp = path.with_extension("part.png");
+                cx.capture_next_frame_to_file(tmp);
+                // The previous capture is complete by now: promote it.
+                let _ = std::fs::rename(path.with_extension("part.png"), path);
+            }
+        }
+        let Some(pos) = self.test_asks.iter().position(|(t, _)| t.is_timer(te).is_some()) else {
+            return;
+        };
+        let (_, text) = self.test_asks.remove(pos);
+        let Some(client) = self.module_host.client_of_module("appcard") else {
+            log!("wm: ask-appcard {:?}: no appcard instance is running", text);
+            return;
+        };
+        let call = ServiceCall {
+            call_id: format!("test-ask-{}", self.next_id),
+            tool: "ask".into(),
+            args: format!("{{\"text\":{}}}", text.serialize_json()),
+        };
+        let outcome = self.module_host.execute(cx, client, &call);
+        log!("wm: ask-appcard {:?} -> client {} outcome {:?}", text, client, outcome.map(|o| matches!(o, ExecOutcome::Done(_))));
+        self.redraw_all(cx);
+    }
+
     /// `--test-action <name>` fires one WmAction at startup, so every
     /// binding can be driven from a script even where the host OS keeps a
     /// chord for itself.
@@ -3555,6 +3611,31 @@ impl App {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
                         self.launch_app(cx, &app);
+                        i += 2;
+                        continue;
+                    }
+                    // capture:<path>: write the presented frame to <path>
+                    // every 5 s — a scripted run's screen, with no display
+                    // (or a locked one) needed.
+                    if let Some(path) = name.strip_prefix("capture:") {
+                        log!("wm: --test-action capture -> {}", path);
+                        let timer = cx.start_interval(5.0);
+                        self.test_capture = Some((timer, std::path::PathBuf::from(path)));
+                        i += 2;
+                        continue;
+                    }
+                    // ask-appcard:<text>: submit <text> to the hosted AppCard's
+                    // composer (its `ask` tool over the bus) after a delay —
+                    // `OCTOSENSE_TEST_ASK_DELAY` seconds, default 25 — so the
+                    // app's kernel and sessions are up when the text lands.
+                    if let Some(text) = name.strip_prefix("ask-appcard:") {
+                        let delay = std::env::var("OCTOSENSE_TEST_ASK_DELAY")
+                            .ok()
+                            .and_then(|v| v.parse::<f64>().ok())
+                            .unwrap_or(25.0);
+                        log!("wm: --test-action ask-appcard {:?} in {}s", text, delay);
+                        let timer = cx.start_timeout(delay);
+                        self.test_asks.push((timer, text.to_string()));
                         i += 2;
                         continue;
                     }
@@ -4381,6 +4462,7 @@ impl AppMain for App {
             }
         }
         if let Event::Timer(te) = event {
+            self.fire_test_timers(cx, te);
             if self.tick.is_timer(te).is_some() && self.state.is_some() {
                 self.reap_exited(cx);
                 self.poll_backgrounds(cx);
