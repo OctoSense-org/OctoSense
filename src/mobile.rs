@@ -12,6 +12,8 @@ pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
+    /// A page indicator dot: jump the home pager there (mobile_pages.rs).
+    Page(i64),
 }
 
 #[derive(Clone)]
@@ -62,6 +64,8 @@ pub struct PhoneState {
     /// Rects apps own on screen; shell gestures starting inside them are not
     /// recognised.
     pub exclusions: crate::mobile_gestures::ExclusionZones,
+    /// The home pager: glance page, apps pages, library (mobile_pages.rs).
+    pub pages: crate::mobile_pages::PagesState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -73,7 +77,8 @@ impl Default for PhoneState {
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
-            exclusions: Default::default() }
+            exclusions: Default::default(),
+            pages: Default::default() }
     }
 }
 impl PhoneState {
@@ -134,6 +139,8 @@ impl PhoneState {
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
         }
+        active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
+        if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }
     pub fn accepts_app_input(&self) -> bool {
