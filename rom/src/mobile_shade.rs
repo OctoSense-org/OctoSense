@@ -9,7 +9,7 @@
 //! Until the gesture recognizer lands, the shade opens programmatically:
 //! tapping the status bar's left or right half, or `--test-action
 //! shade:<notifications|controls>`.
-use crate::mobile_gestures::{Dir, ExclusionZones, GestureKind, ShadeSide, ShellGesture};
+use crate::mobile_gestures::{Dir, GestureKind, ShadeSide, ShellGesture};
 use crate::{desk::WmState, desktop::{DesktopStyle, DrawDesktopChrome}, mobile::PhoneHit, octosense::style::AppIconDraw, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussBlurSnapshot, GaussRoundedView}, *};
 
@@ -392,7 +392,6 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     let style = state.style.target;
     let dark = state.style.dark;
     let ios = style == DesktopStyle::Ios;
-    let landscape = screen.size.x > screen.size.y;
     if shade.open < 0.001 {
         return;
     }
@@ -543,6 +542,7 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mobile_gestures::ExclusionZones;
     fn screen() -> Rect { rect(0.0, 0.0, 412.0, 892.0) }
     fn settle(s: &mut ShadeState) { for _ in 0..120 { s.step(1.0 / 60.0, None, 100.0); } }
     /// The frame's exclusion zones as the desk rebuilds them: cleared, then the shade's.
