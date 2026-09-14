@@ -53,15 +53,20 @@ installed device, the launcher derives its default catalog from those linked
 modules. Missing Clock/Weather tiles give their space to the available app icons.
 
 The phone build also links **AppCard** (`apps/appcard`, feature `app-appcard`
-on desktop): the Octoscript-AppCard port, one L0 weather card rendered
-in-process in a wide home tile. The makepad pin is the fork's AppCard
-framework line (`port/appcard-on-octoscript`), which installs AppCard's
-`sys.*` engine into every Splash isolate — live values through the platform's
-fetch layer ("—" until they land), the place from the device's GPS fix when
-there is one. The module carries the pre-lowered weather exemplar and its
-Roboto faces; the card store, routing brain and the transport to the kernel
-are later phases. On a desktop,
-`cargo run --features app-appcard -- --module appcard` opens the same card.
+on desktop): the whole Octoscript-AppCard app, hosted in-process in a wide
+home tile. The module takes `octos-app` — the crate the standalone AppCard APK
+is built from — as a git library and mounts its `AppShell` widget: the routing
+brain, the card store and transport, the L0 lowering pipeline, sessions, the
+composer and the kernel agent all run inside the tile's isolate. The kernel
+(`liboctos.so serve --stdio`) is spawned from this APK's native library dir
+when it is bundled (`MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path>"` at
+build time); without it the app falls back to its WebSocket transport / login
+screen. `ask` is the module's one AI-bus tool (the composer). On a desktop,
+`cargo run --features app-appcard -- --module appcard` opens the same app;
+`OCTOS_APP_CORE_BIN` / `OCTOS_APP_CORE_DIR` point it at a local kernel.
+GPS reaches the app through the buildtool activity described below;
+notifications, share and the WebView overlay (the standalone APK's other
+Java features) are not wired to the hosted shell yet.
 
 To get AppCard's Java activity features (GPS, notifications, share and
 deep-link intents), this repository's `resources/android/AndroidManifest.xml.template`
@@ -75,8 +80,10 @@ MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/abs/path/to/octos/target/aarch64-linux-
   /abs/path/to/makepad-buildtool/target/debug/cargo-makepad makepad android run -p octosense --release
 ```
 
-The AppCard tile probes that kernel at start and logs `kernel: ok` or
-`kernel: error` to logcat.
+When the AppCard tile starts, the hosted app spawns that kernel and logs
+`stdio: octos=… HOME=…` to logcat; an APK built without it logs `stdio:
+bundled octos not found under …; using WebSocket transport` and shows the
+app's login screen instead.
 
 Switching desktop OctoSense to the Android style changes its interface; it still
 uses desktop process hosting and the full desktop catalog. The other desktop
