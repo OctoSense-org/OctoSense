@@ -98,8 +98,6 @@ pub struct ShadeState {
     drag: Option<(DragAxis, f64, f64)>,
     /// A finger on a card: it holds its offset until release.
     dragging_note: Option<u64>,
-    /// The exclusion zone added last frame, removed before the next.
-    last_zone: Option<Rect>,
     seeded: bool,
 }
 impl Default for ShadeState {
@@ -109,7 +107,7 @@ impl Default for ShadeState {
             notifications: Vec::new(), next_id: 0,
             brightness: 0.62, volume: 0.45, wifi: true, bluetooth: false, torch: false, rotation_lock: false, do_not_disturb: false,
             toggle_anim: [1.0, 0.0, 0.0, 0.0, 0.0],
-            battery: None, now: 0.0, pulling: false, drag: None, dragging_note: None, last_zone: None, seeded: false,
+            battery: None, now: 0.0, pulling: false, drag: None, dragging_note: None, seeded: false,
         }
     }
 }
@@ -273,9 +271,16 @@ impl ShadeState {
         }
     }
 
-    /// Per frame: apply this frame's shell gesture, animate, refresh the
-    /// exclusion zone. Returns true while anything is still moving.
-    pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>, screen: Rect, now: f64, exclusions: &mut ExclusionZones) -> bool {
+    /// The rect the sheet owns while it shows: every shell edge under it is
+    /// the shade's. The desk adds it to the frame's exclusion zones (which
+    /// it clears once per frame), so the shade never removes anything.
+    pub fn exclusion(&self, screen: Rect) -> Option<Rect> {
+        if self.open <= 0.01 { return None; }
+        Some(if self.open > 0.5 { screen } else { self.sheet_rect(screen) })
+    }
+    /// Per frame: apply this frame's shell gesture and animate. Returns
+    /// true while anything is still moving.
+    pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>, now: f64) -> bool {
         if now > 0.0 { self.now = now; }
         self.apply_gesture(gesture);
         let t = 1.0 - (-dt * 16.0).exp();
@@ -303,13 +308,6 @@ impl ShadeState {
             *v += (target - *v) * t;
             if (*v - target).abs() < 0.005 { *v = target; }
             active |= *v != target;
-        }
-        // The sheet owns every edge under it while it shows.
-        if let Some(z) = self.last_zone.take() { exclusions.zones.retain(|e| !(e.rect == z && e.edges == [true; 4])); }
-        if self.open > 0.01 {
-            let z = if self.open > 0.5 { screen } else { self.sheet_rect(screen) };
-            exclusions.add(z, [true; 4]);
-            self.last_zone = Some(z);
         }
         self.pulling = false;
         active
@@ -531,82 +529,80 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
 mod tests {
     use super::*;
     fn screen() -> Rect { rect(0.0, 0.0, 412.0, 892.0) }
-    fn settle(s: &mut ShadeState, ex: &mut ExclusionZones) { for _ in 0..120 { s.step(1.0 / 60.0, None, screen(), 100.0, ex); } }
+    fn settle(s: &mut ShadeState) { for _ in 0..120 { s.step(1.0 / 60.0, None, 100.0); } }
+    /// The frame's exclusion zones as the desk rebuilds them: cleared, then the shade's.
+    fn zones(s: &ShadeState) -> ExclusionZones { let mut ex = ExclusionZones::default(); if let Some(z) = s.exclusion(screen()) { ex.add(z, [true; 4]); } ex }
 
     #[test]
     fn pull_progress_drives_open_and_commit_finishes_it() {
         let mut s = ShadeState::default();
-        let mut ex = ExclusionZones::default();
-        s.step(1.0 / 60.0, Some(ShellGesture::ShadePull { side: ShadeSide::Controls, progress: 0.4 }), screen(), 1.0, &mut ex);
+        s.step(1.0 / 60.0, Some(ShellGesture::ShadePull { side: ShadeSide::Controls, progress: 0.4 }), 1.0);
         assert!((s.open - 0.4).abs() < 1e-9 && s.side == ShadeSide::Controls);
         assert_eq!(s.page, 1.0, "the controls half is the page the pull opens onto");
-        assert!(!ex.zones.is_empty(), "a showing sheet owns the edges under it");
-        s.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls))), screen(), 1.0, &mut ex);
-        settle(&mut s, &mut ex);
+        assert!(!zones(&s).zones.is_empty(), "a showing sheet owns the edges under it");
+        s.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls))), 1.0);
+        settle(&mut s);
         assert_eq!(s.open, 1.0);
-        assert_eq!(ex.zones.len(), 1, "one zone, refreshed not accumulated");
+        let ex = zones(&s);
+        assert_eq!(ex.zones.len(), 1, "one zone per frame: the desk clears, the shade adds");
         assert_eq!(ex.zones[0].rect, screen());
     }
 
     #[test]
     fn cancel_animates_back_closed_and_drops_the_exclusion() {
         let mut s = ShadeState::default();
-        let mut ex = ExclusionZones::default();
-        s.step(1.0 / 60.0, Some(ShellGesture::ShadePull { side: ShadeSide::Notifications, progress: 0.3 }), screen(), 1.0, &mut ex);
-        s.step(1.0 / 60.0, Some(ShellGesture::Cancel(GestureKind::Shade(ShadeSide::Notifications))), screen(), 1.0, &mut ex);
-        settle(&mut s, &mut ex);
+        s.step(1.0 / 60.0, Some(ShellGesture::ShadePull { side: ShadeSide::Notifications, progress: 0.3 }), 1.0);
+        s.step(1.0 / 60.0, Some(ShellGesture::Cancel(GestureKind::Shade(ShadeSide::Notifications))), 1.0);
+        settle(&mut s);
         assert_eq!(s.open, 0.0);
-        assert!(ex.zones.is_empty());
-        assert!(!s.step(1.0 / 60.0, None, screen(), 1.0, &mut ex), "settled: nothing left to animate");
+        assert!(zones(&s).zones.is_empty());
+        assert!(!s.step(1.0 / 60.0, None, 1.0), "settled: nothing left to animate");
     }
 
     #[test]
     fn sideways_drag_and_page_gesture_switch_halves() {
         let mut s = ShadeState::default();
-        let mut ex = ExclusionZones::default();
         s.open_on(ShadeSide::Notifications);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         assert_eq!(s.page, 0.0);
         s.drag(&ShadeHit::Sheet, dvec2(100.0, 300.0), dvec2(-260.0, 4.0), screen());
         assert!(s.page > 0.5 && s.page < 1.0);
         s.release(&ShadeHit::Sheet, dvec2(-260.0, 4.0), 0.6);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         assert_eq!((s.page, s.side), (1.0, ShadeSide::Controls));
         // A short fast flick right goes back even before halfway.
         s.drag(&ShadeHit::Sheet, dvec2(200.0, 300.0), dvec2(60.0, 0.0), screen());
         s.release(&ShadeHit::Sheet, dvec2(60.0, 0.0), 0.1);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         assert_eq!((s.page, s.side), (0.0, ShadeSide::Notifications));
         // The recognizer's page swipe does the same once it exists.
-        s.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Left, progress: 0.5 }), screen(), 1.0, &mut ex);
+        s.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Left, progress: 0.5 }), 1.0);
         assert!((s.page - 0.5).abs() < 1e-9);
-        s.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))), screen(), 1.0, &mut ex);
-        settle(&mut s, &mut ex);
+        s.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))), 1.0);
+        settle(&mut s);
         assert_eq!(s.page, 1.0);
     }
 
     #[test]
     fn swipe_up_on_the_sheet_and_backdrop_tap_close() {
         let mut s = ShadeState::default();
-        let mut ex = ExclusionZones::default();
         s.open_on(ShadeSide::Controls);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         s.drag(&ShadeHit::Sheet, dvec2(200.0, 400.0), dvec2(2.0, -120.0), screen());
         assert!(s.open < 1.0, "the sheet follows the finger up");
         s.release(&ShadeHit::Sheet, dvec2(2.0, -120.0), 0.5);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         assert_eq!(s.open, 0.0);
         s.open_on(ShadeSide::Controls);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         s.tap(ShadeHit::Backdrop);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         assert_eq!(s.open, 0.0);
     }
 
     #[test]
     fn dismiss_reveal_actions_and_clear_all() {
         let mut s = ShadeState::default();
-        let mut ex = ExclusionZones::default();
         let a = s.post("wm", "A", "first", 1.0, vec![]);
         let b = s.post("messages", "B", "second", 2.0, vec!["Reply".into()]);
         assert_eq!(s.notifications.len(), 2);
@@ -615,7 +611,7 @@ mod tests {
         assert!(s.notifications.iter().all(|n| n.id != a), "a right swipe dismisses");
         s.drag(&ShadeHit::Note(b), dvec2(0.0, 0.0), dvec2(-120.0, 0.0), screen());
         s.release(&ShadeHit::Note(b), dvec2(-120.0, 0.0), 0.5);
-        settle(&mut s, &mut ex);
+        settle(&mut s);
         let note = s.notifications.iter().find(|n| n.id == b).unwrap();
         assert!(note.revealed && (note.offset + 2.0 * ACTION_W).abs() < 1e-6, "a left swipe rests on the action strip");
         s.tap(ShadeHit::Action(b, 0));
