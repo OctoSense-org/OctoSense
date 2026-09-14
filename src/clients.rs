@@ -28,7 +28,10 @@ use crate::host;
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use makepad_widgets::makepad_platform::thread::{CancellationToken, Lane, SignalToUI, TaskPool, ThreadSpawner, ThreadOptions};
+#[cfg(unix)]
+use makepad_widgets::makepad_platform::thread::CancellationToken;
+use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskPool, ThreadSpawner, ThreadOptions};
+#[cfg(any(unix, test))]
 use makepad_widgets::Cx;
 
 use crate::hub::ClientId;
@@ -609,7 +612,7 @@ pub fn kill_child_group(child: &mut Child, _grace: std::time::Duration, _pool: &
 /// Final slot teardown owns the child from here on. Signal and reap it wholly
 /// on a heavy pool worker; dropping a slot on the UI thread never waits for a
 /// process or decoder wrapper to exit.
-fn reap_child_group(mut child: Child, grace: std::time::Duration, pool: &TaskPool) {
+fn reap_child_group(mut child: Child, _grace: std::time::Duration, pool: &TaskPool) {
     #[cfg(unix)]
     let pid = {
         let pid = child.id() as i32;
@@ -622,7 +625,7 @@ fn reap_child_group(mut child: Child, grace: std::time::Duration, pool: &TaskPoo
                 #[cfg(unix)]
                 {
                     let wait = CancellationToken::new();
-                    let _ = wait.wait_until(Cx::monotonic_now() + grace.as_secs_f64());
+                    let _ = wait.wait_until(Cx::monotonic_now() + _grace.as_secs_f64());
                     if signal::alive(-pid) {
                         signal::kill_group(pid, signal::SIGKILL);
                     }
