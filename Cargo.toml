@@ -53,8 +53,8 @@ makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev =
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147", default-features = false, optional = true }
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147", default-features = false, optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
-# One Octoscript-AppCard L0 card rendered in a tile, in-process (Phase A of
-# the AppCard port): the sys.* helpers and the pre-lowered weather card.
+# The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
+# the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
@@ -91,3 +91,19 @@ resolver = "2"
 
 [profile.dev]
 opt-level = 1
+
+# `octos-app` (the AppCard module's engine) links two inline-renderer kits
+# that name makepad-widgets by the ZhangHanDong/makepad URL. Redirected to the
+# one makepad lineage this workspace pins, so the graph has a single
+# makepad-widgets (a second one would make every widget type mismatch).
+[patch."https://github.com/ZhangHanDong/makepad.git"]
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147" }
+
+[profile.release]
+# cargo-makepad builds Android with `-C prefer-dynamic` (libstd as a bundled
+# .so): fat LTO refuses that ("cannot prefer dynamic linking when performing
+# LTO"), and `panic = "abort"` breaks the cdylib link against the prebuilt
+# aarch64-linux-android std, which ships the unwind runtime. Same profile as
+# Octoscript-AppCard's app/Cargo.toml documents.
+lto = false
+panic = "unwind"
