@@ -120,6 +120,9 @@ const CARD_RADIUS: f32 = 22.0;
 
 impl ShadeState {
     pub fn is_open(&self) -> bool { self.open > 0.001 || self.open_target > 0.5 }
+    /// The sheet is open or opening (not merely being pulled): what the
+    /// island reads to hide, so it still docks with a pull in progress.
+    pub fn wants_open(&self) -> bool { self.open_target > 0.5 }
     pub fn toggled(&self, t: Toggle) -> bool {
         match t { Toggle::Wifi => self.wifi, Toggle::Bluetooth => self.bluetooth, Toggle::Torch => self.torch, Toggle::RotationLock => self.rotation_lock, Toggle::DoNotDisturb => self.do_not_disturb }
     }
