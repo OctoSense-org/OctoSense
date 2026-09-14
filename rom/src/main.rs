@@ -26,6 +26,7 @@ mod mobile_surface;
 mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
+mod mobile_shade;
 mod scene;
 mod dock_warp;
 mod host;
@@ -1095,6 +1096,8 @@ impl App {
                 // The notifications surface is the shell-UI lane's; until
                 // it lands the notification is at least not lost.
                 log!("wm: notify from client {}: {} — {}", client, title, body);
+                let (app, now) = (self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default(), cx.seconds_since_app_start());
+                self.state_mut().phone.shade.post(&app, title, body, now, vec!["Open".into()]);
             }
             WmRequest::Close => self.request_close(cx, client),
             WmRequest::SetFloating { floating } => {
@@ -2736,6 +2739,8 @@ impl App {
                 n.notify(cx, title, body);
             }
         }
+        let now = cx.seconds_since_app_start();
+        if let Some(state) = self.state.as_mut() { state.phone.shade.post("wm", title, body, now, Vec::new()); }
         self.redraw_all(cx);
     }
 
@@ -2773,6 +2778,7 @@ impl App {
         if let Some(clock)=self.bar_sample.clock.split_whitespace().find(|s|s.contains(':')).map(str::to_string) {
             self.state_mut().phone.clock=clock;
         }
+        self.state_mut().phone.shade.battery = self.bar_sample.battery.map(|b| (b.percent, b.charging));
         let mut shown: Vec<usize> = Vec::new();
         let workspaces = {
             let state = self.state_mut();
@@ -3644,6 +3650,18 @@ impl App {
                         log!("wm: --test-action ask-appcard {:?} in {}s", text, delay);
                         let timer = cx.start_timeout(delay);
                         self.test_asks.push((timer, text.to_string()));
+                        i += 2;
+                        continue;
+                    }
+                    // shade:<notifications|controls>: open the shade on that
+                    // side (switching to the Android phone shell first when
+                    // the desk is up), for scripted screenshots.
+                    if let Some(side) = name.strip_prefix("shade:") {
+                        let side = if side.trim() == "controls" { mobile_gestures::ShadeSide::Controls } else { mobile_gestures::ShadeSide::Notifications };
+                        log!("wm: --test-action shade -> {:?}", side);
+                        if !self.state_mut().style.target.mobile() { self.set_desktop_style(cx, desktop::DesktopStyle::Android); }
+                        self.state_mut().phone.shade.open_on(side);
+                        self.animate_phone(cx);
                         i += 2;
                         continue;
                     }
