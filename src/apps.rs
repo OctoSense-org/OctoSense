@@ -168,6 +168,9 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
+        // AppCard's `create` probes the bundled octos kernel (a child
+        // process) unless told not to; this test is about the modules.
+        std::env::set_var(octosense_appcard::kernel::PROBE_ENV, "0");
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
                    ["reference", "sheets", "photos", "appcard"]);
@@ -216,5 +219,26 @@ mod tests {
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
         }
+    }
+}
+
+#[cfg(all(test, feature = "mobile-apps"))]
+mod appcard_isolate_tests {
+    /// The card body runs in a Splash ISOLATE, which strips injected globals
+    /// when minted; the AppCard module must therefore re-install the
+    /// framework's `sys`/`agent` engine as an isolate mod. Without it the
+    /// body fails with "variable sys not found in scope" and the tile draws
+    /// nothing — silently, since the live Splash keeps its previous view.
+    #[test]
+    fn appcard_body_validates_in_an_isolate_with_the_engine_installed() {
+        use makepad_widgets::*;
+        std::env::set_var(octosense_appcard::kernel::PROBE_ENV, "0");
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        cx.with_vm(|vm| makepad_app_module::AppModule::register(&octosense_appcard::APPCARD_MODULE, vm));
+        let mini = "let x = sys.geocodenum(\"Cupertino\", \"lat\")\nView{ Label{ text: \"lat=\" + x } }";
+        assert_eq!(makepad_widgets::splash::validate_splash_body(&mut cx, mini, true), Vec::<String>::new());
+        let body = format!("let fetch_epoch = 0\nlet place = \"{}\"\n{}", octosense_appcard::DEFAULT_PLACE, octosense_appcard::WEATHER_BODY);
+        assert_eq!(makepad_widgets::splash::validate_splash_body(&mut cx, &body, true), Vec::<String>::new());
     }
 }
