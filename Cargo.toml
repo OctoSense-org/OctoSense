@@ -37,31 +37,31 @@ name = "octosense"
 path = "src/main.rs"
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
 # The AI services wire only: the WM relays frames between the aichat child and the apps.
-makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
 # In-process hosting (aicontrol §3): the module contract, the palette applied
 # into each instance's isolate, and the modules this build links.
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3", default-features = false, optional = true }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3", default-features = false, optional = true }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a" }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a", default-features = false, optional = true }
+makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a", default-features = false, optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
-makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3", default-features = false, optional = true }
+makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a", default-features = false, optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3", default-features = false }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "712b9f16d1992131bb99c070673faa1929fe75f3", default-features = false }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a", default-features = false }
+makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "703c00acd738c1762b5db581d3dcc359bfb97d4a", default-features = false }
 
 [features]
 default = []
