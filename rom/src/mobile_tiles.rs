@@ -1,5 +1,5 @@
-//! Home-screen app tiles: the phone home shows Clock, Weather and Photos as
-//! live compact faces of the same client that opens full screen. Nothing
+//! Home-screen app tiles: the phone home shows Clock, Weather, Photos and the
+//! AppCard as live compact faces of the same client that opens full screen. Nothing
 //! here touches processes or windows; this is the geometry of the home page
 //! and the per-client presentation bookkeeping the WM drives (which face was
 //! asked for, whether the client has confirmed it with a frame of the right
@@ -18,8 +18,8 @@ pub enum TileKind {
 
 /// The apps that own a home tile, in tile order. Every id is a launcher
 /// registry entry; the tile launches it through the same cargo path.
-pub const TILE_APPS: [(&str, TileKind); 3] =
-    [("clock", TileKind::Small), ("weather", TileKind::Small), ("photos", TileKind::Wide)];
+pub const TILE_APPS: [(&str, TileKind); 4] =
+    [("clock", TileKind::Small), ("weather", TileKind::Small), ("photos", TileKind::Wide), ("appcard", TileKind::Wide)];
 
 pub fn is_tile_app(app: &str) -> bool {
     TILE_APPS.iter().any(|(id, _)| *id == app)
@@ -53,9 +53,10 @@ pub struct HomeLayout {
     pub landscape: bool,
 }
 
-/// Cut the home page: two small tiles and a wide one under them in portrait,
-/// three across in landscape, the favorites grid in what is left above the
-/// dock. `top` is where content starts (below the status bar and, on
+/// Cut the home page: two small tiles and the wide ones under them in
+/// portrait (a second wide tile makes both banners, so the favorites keep
+/// their rows), the tiles across in landscape, the favorites grid in what is
+/// left above the dock. `top` is where content starts (below the status bar and, on
 /// Android, the big clock). Pure geometry, so both orientations are tested.
 pub fn home_layout(screen: Rect, top: f64, dock: Rect) -> HomeLayout {
     home_layout_for_apps(screen, top, dock, &["clock", "weather", "photos"])
@@ -80,7 +81,12 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         }
     } else {
         let s = ((width - TILE_GAP) / 2.0).max(1.0);
+        // One wide tile is as tall as a small one; two or more stack as
+        // banners so at least two rows of favorites still fit above the dock.
+        let wide_count = tile_apps.iter().filter(|(_, kind)| *kind == TileKind::Wide).count();
+        let wide_h = if wide_count > 1 { (s * 0.55).round().max(1.0) } else { s };
         let mut small = 0;
+        let mut wide = 0;
         for (app, kind) in &tile_apps {
             match kind {
                 TileKind::Small => {
@@ -89,8 +95,9 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
                     small += 1;
                 }
                 TileKind::Wide => {
-                    let y = top + if small > 0 { s + TILE_GAP } else { 0.0 };
-                    tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(left, y), size: dvec2(width, s) } });
+                    let y = top + if small > 0 { s + TILE_GAP } else { 0.0 } + wide as f64 * (wide_h + TILE_GAP);
+                    tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(left, y), size: dvec2(width, wide_h) } });
+                    wide += 1;
                 }
             }
         }
@@ -119,7 +126,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
 /// fixed by app id (an app the table does not know lands in "Other"), so
 /// every launch target is reachable from exactly one card.
 pub const LIBRARY_GROUPS: [(&str, &[&str]); 5] = [
-    ("Utilities", &["clock", "weather", "terminal", "files", "task"]),
+    ("Utilities", &["clock", "weather", "appcard", "terminal", "files", "task"]),
     ("Creativity", &["photos", "mixer", "score", "vj", "fab", "fabric"]),
     ("Productivity", &["sheets", "browser", "route", "studio"]),
     ("Media", &["video", "image", "pdf"]),
@@ -401,6 +408,13 @@ mod tests {
         assert!(layout.capacity >= 2, "Reference and Sheets must be visible");
         assert!(!overlaps(layout.tiles[0].rect, layout.favorites));
         assert!(layout.favorites.pos.y + layout.favorites.size.y <= dock.pos.y - 36.0);
+        // The phone catalog: Photos and the AppCard are both wide tiles.
+        let two_wide = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos", "appcard"]);
+        assert_eq!(two_wide.tiles.iter().map(|t| t.app).collect::<Vec<_>>(), ["photos", "appcard"]);
+        assert!(two_wide.tiles[1].rect.pos.y >= two_wide.tiles[0].rect.pos.y + two_wide.tiles[0].rect.size.y + TILE_GAP - 0.01, "stacked, not overlapping");
+        assert!(two_wide.tiles.iter().all(|t| (t.rect.size.x - (screen.size.x - HOME_MARGIN * 2.0)).abs() < 0.01));
+        assert!(two_wide.capacity >= 8, "two rows of favorites beside two wide tiles: {}", two_wide.capacity);
+        assert!(two_wide.tiles.iter().all(|t| !overlaps(t.rect, two_wide.favorites) && !overlaps(t.rect, dock)));
         let empty = home_layout_for_apps(screen, top, dock, &[]);
         assert!(empty.tiles.is_empty());
         assert_eq!(empty.favorites.pos.y, top);
