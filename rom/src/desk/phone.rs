@@ -274,12 +274,15 @@ impl WmDesk {
             self.phone_frames.insert(client,stored);
             if foreground {self.zorder.push(client);}
         }
+        // The shade's frosted sheet samples the finished scene here (the
+        // final-glass snapshot is upside down on GL).
+        let shade_backdrop=if phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
         let glass=if phone.keyboard>0.5 {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
         let (backdrop,_,_)=self.compositor.as_mut().unwrap().finish(cx,screen,glass);
         let state=scope.data.get_mut::<WmState>().unwrap();
-        self.phone_ui.draw_overlay(cx,state,screen,backdrop);
+        self.phone_ui.draw_overlay(cx,state,screen,shade_backdrop.or(backdrop));
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
         let state=scope.data.get_mut::<WmState>().unwrap();

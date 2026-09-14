@@ -12,6 +12,7 @@ pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
+    Shade(crate::mobile_shade::ShadeHit),
 }
 
 #[derive(Clone)]
@@ -62,6 +63,8 @@ pub struct PhoneState {
     /// Rects apps own on screen; shell gestures starting inside them are not
     /// recognised.
     pub exclusions: crate::mobile_gestures::ExclusionZones,
+    /// The notification/controls shade (mobile_shade.rs).
+    pub shade: crate::mobile_shade::ShadeState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -73,7 +76,8 @@ impl Default for PhoneState {
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
-            exclusions: Default::default() }
+            exclusions: Default::default(),
+            shade: Default::default() }
     }
 }
 impl PhoneState {
@@ -134,6 +138,7 @@ impl PhoneState {
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
         }
+        active |= self.shade.step(dt, self.gesture_out, self.viewport, self.wallpaper_time, &mut self.exclusions);
         active
     }
     pub fn accepts_app_input(&self) -> bool {

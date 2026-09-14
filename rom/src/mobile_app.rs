@@ -382,6 +382,7 @@ impl App {
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 else {self.phone_back(cx);}
             }
+            PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);
@@ -514,6 +515,7 @@ impl App {
                 let phone=&mut self.state_mut().phone;
                 let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;let last=p-g.last;g.last=p;
+                if let Some(PhoneHit::Shade(h))=g.hit.clone() {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
                 if g.bottom && delta.y < -8.0 {
                     phone.overview=(-delta.y/(screen.size.y*0.42)).clamp(0.0,1.0);
                     phone.openness=1.0;
@@ -528,6 +530,7 @@ impl App {
             PhonePointerPhase::Up=>{
                 let Some(g)=self.state_mut().phone.gesture.take() else{return self.state_mut().phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;
+                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0) {self.state_mut().phone.shade.release(h,delta,time-g.time);self.animate_phone(cx);return true;}
                 if g.bottom {
                     if delta.x.abs()>70.0 && delta.x.abs()>delta.y.abs()*1.5 {
                         let phone=&self.state_mut().phone;
