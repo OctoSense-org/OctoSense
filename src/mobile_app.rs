@@ -1,6 +1,6 @@
 //! Phone navigation/input, sharing the WM's real clients and launch paths.
 use crate::{mobile::*, mobile_surface::PhoneSurface, mobile_tiles::{self, Face, TILE_APPS}, *};
-use crate::mobile_shade::ShadeState;
+use crate::mobile_shade::{ShadeHit, ShadeState, Toggle};
 use crate::mobile_gestures::{Dir, FingerPhase, GestureContext, GestureKind, SafeInsets, ShellGesture};
 use makepad_widgets::makepad_platform::ime::{HostedKeyboard, InputMode};
 use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
@@ -238,16 +238,27 @@ impl App {
     pub(super) fn configure_phone_mode(&mut self,cx:&mut Cx,previous:desktop::DesktopStyle,style:desktop::DesktopStyle) {
         let window=self.ui.window(cx,ids!(main_window));
         if style.mobile() && !previous.mobile() {
-            let size=window.get_inner_size(cx);
             let focused=self.state_mut().layout.focused_client();
-            let desktop_clients=self.state_mut().layout.all_clients();
+            #[cfg(not(mobile_only))]
+            {
+                let size=window.get_inner_size(cx);
+                let desktop_clients=self.state_mut().layout.all_clients();
+                let phone=&mut self.state_mut().phone;
+                phone.desktop_size=Some(size);phone.desktop_style=previous;
+                phone.desktop_clients=desktop_clients;
+            }
             let phone=&mut self.state_mut().phone;
-            phone.desktop_size=Some(size);phone.desktop_style=previous;
-            phone.desktop_clients=desktop_clients;
             phone.client=focused;phone.navigate(PhoneScreen::Home);
             phone.openness=0.0;phone.overview=0.0;
+            // A desktop window becomes phone-sized; a phone is its screen.
             if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,phone_size(style));}
         }else if !style.mobile() && previous.mobile() {
+            // The standalone shell never leaves the phone style: nothing
+            // offers a desktop one, and a stray request changes nothing.
+            #[cfg(mobile_only)]
+            { log!("wm: the standalone shell stays the phone shell (asked for {:?})", style); return; }
+            #[cfg(not(mobile_only))]
+            {
             self.dismiss_phone_keyboard(cx);
             self.restore_tile_faces(cx);
             let size=self.state_mut().phone.desktop_size.take().unwrap_or(dvec2(1400.0,900.0));
@@ -259,6 +270,7 @@ impl App {
             state.layout.desktop.windows.retain(|w|retained.contains(&w.client));
             let area=LRect::new(0.0,36.0,size.x,(size.y-90.0).max(1.0));
             for client in state.layout.all_clients() {state.layout.desktop.ensure(client,area);}
+            }
         }else if style.mobile() && previous!=style {
             let current=window.get_inner_size(cx);
             let size=phone_size(style);
@@ -266,14 +278,18 @@ impl App {
                 window.resize(cx,if current.x>current.y {dvec2(size.y,size.x)}else{size});
             }
         }
-        self.ui.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
-        self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
+        #[cfg(not(mobile_only))]
+        {
+            self.ui.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
+            self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
+        }
         self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
         self.phone_time=0.0;
         self.animate_phone(cx);
     }
+    /// A hit on the desk bar's phone strip (there is none in the standalone shell).
     pub(super) fn phone_toolbar_hit(&self,cx:&Cx,p:Vec2d)->Option<PhoneHit> {
-        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return None;}
+        if MOBILE_ONLY || !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return None;}
         self.ui.widget(cx,ids!(phone_controls)).borrow::<PhoneSurface>().and_then(|s|s.hit(p))
     }
     pub(super) fn phone_animation_event(&mut self,cx:&mut Cx,event:&Event) {
@@ -364,6 +380,15 @@ impl App {
         self.state_mut().phone.keyboard_target=0.0;
         self.animate_phone(cx);
     }
+    /// Light <-> Dark for the phone shell and every hosted app, keeping the
+    /// App Library's search field focused if it was.
+    fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
+        let focused=self.state_mut().phone.search_focused;
+        self.toggle_desktop_appearance(cx);
+        if focused {
+            if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
+        }
+    }
     fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
             PhoneHit::App(app)=>{
@@ -391,6 +416,7 @@ impl App {
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
             PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
+            #[cfg(not(mobile_only))]
             PhoneHit::Rotate=>{
                 let window=self.ui.window(cx,ids!(main_window));let size=window.get_inner_size(cx);
                 self.state_mut().phone.gesture=None;
@@ -399,14 +425,11 @@ impl App {
                 self.state_mut().phone.gesture_out=None;
                 window.resize(cx,dvec2(size.y,size.x));
             }
+            #[cfg(not(mobile_only))]
             PhoneHit::Style=>self.open_style_menu(cx),
-            PhoneHit::Appearance=>{
-                let focused=self.state_mut().phone.search_focused;
-                self.toggle_desktop_appearance(cx);
-                if focused {
-                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
-                }
-            }
+            #[cfg(not(mobile_only))]
+            PhoneHit::Appearance=>self.toggle_phone_appearance(cx),
+            #[cfg(not(mobile_only))]
             PhoneHit::Desktop=>{let style=self.state_mut().phone.desktop_style;self.set_desktop_style(cx,style);}
             PhoneHit::HideKeyboard=>self.dismiss_phone_keyboard(cx),
             PhoneHit::ClearSearch=>{
@@ -422,6 +445,9 @@ impl App {
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 else {self.phone_back(cx);}
             }
+            // The shade's Dark mode tile is the appearance the desk bar's
+            // Light/Dark used to set; the shade keeps every other toggle.
+            PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>self.toggle_phone_appearance(cx),
             PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
             PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
         }

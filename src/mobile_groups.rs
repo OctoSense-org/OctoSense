@@ -496,10 +496,15 @@ impl crate::App {
             .map(|(c, _)| *c).min()
     }
     /// `--test-action phone:<ios|android>` puts the desktop into that phone
-    /// shell; `group:<name>` opens a group's window; `split:<a>,<b>`
+    /// shell (a no-op in the standalone shell, which is already the one
+    /// phone); `group:<name>` opens a group's window; `split:<a>,<b>`
     /// launches both apps and enters a split.
     pub(super) fn groups_test_action(&mut self, cx: &mut Cx, name: &str) -> bool {
         if let Some(style) = name.strip_prefix("phone:") {
+            if crate::MOBILE_ONLY {
+                log!("wm: --test-action phone:{} is a no-op in the standalone shell", style);
+                return true;
+            }
             let style = if style.eq_ignore_ascii_case("ios") { DesktopStyle::Ios } else { DesktopStyle::Android };
             log!("wm: --test-action phone {:?}", style);
             self.set_desktop_style(cx, style);

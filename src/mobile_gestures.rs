@@ -102,6 +102,15 @@ pub enum FingerPhase { Down, Move, Up }
 /// the glass goes home like the system's own gesture would.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SafeInsets { pub top: f64, pub right: f64, pub bottom: f64, pub left: f64 }
+impl SafeInsets {
+    /// `r` with the insets taken off each edge (never below a point).
+    pub fn inset(&self, r: Rect) -> Rect {
+        Rect {
+            pos: r.pos + dvec2(self.left, self.top),
+            size: dvec2((r.size.x - self.left - self.right).max(1.0), (r.size.y - self.top - self.bottom).max(1.0)),
+        }
+    }
+}
 
 /// What the recognizer knows about the screen when a finger arrives: the
 /// phone viewport, the insets around it and which shell screen is showing
