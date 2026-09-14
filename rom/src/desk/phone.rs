@@ -134,6 +134,9 @@ impl WmDesk {
         let dark=state.style.dark;
         let opacity=(1.0-phone.openness*0.85) as f32;
         if opacity<0.01 || phone.screen==PhoneScreen::Drawer {return;}
+        // The tiles ride page 0 of the home pager (mobile_pages.rs).
+        let dx=phone.pages.page_offset(0,screen.size.x);
+        if !phone.pages.page_visible(0,screen.size.x) {return;}
         let layout=PhoneSurface::home_layout(style,screen);
         // Everything the placeholders need, read before any tile draws.
         let slots:Vec<(crate::mobile_tiles::TileSlot,Option<ClientId>,String,bool)>=layout.tiles.iter().map(|slot| {
@@ -142,6 +145,7 @@ impl WmDesk {
             (*slot,client,status,connected)
         }).collect();
         for (slot,client,status,connected) in slots {
+            let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -159,7 +163,7 @@ impl WmDesk {
                         capture.frame.freeze(cx);
                     }
                     if ready {
-                        self.present_capture(cx,&capture,slot.rect,opacity,TILE_RADIUS as f32);
+                        self.present_capture(cx,&capture,shown_rect,opacity,TILE_RADIUS as f32);
                         shown=true;
                     }
                     stored.tile=Some(capture);
@@ -168,7 +172,7 @@ impl WmDesk {
                     // stands in until the client is back in it.
                     capture.frame.freeze(cx);
                     if capture.size==slot.rect.size {
-                        self.present_capture(cx,capture,slot.rect,opacity,TILE_RADIUS as f32);
+                        self.present_capture(cx,capture,shown_rect,opacity,TILE_RADIUS as f32);
                         shown=true;
                     }
                 }
@@ -178,14 +182,15 @@ impl WmDesk {
                 let (headline,detail)=if client.is_none() && !gave_up {
                     ("Tap to open", String::new())
                 } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
-                self.phone_ui.draw_tile_placeholder(cx,slot,style,dark,opacity,headline,&detail);
-                self.compositor.as_mut().unwrap().content(slot.rect);
+                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,headline,&detail);
+                self.compositor.as_mut().unwrap().content(shown_rect);
             }
         }
     }
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,screen:Rect) {
         let state=scope.data.get_mut::<WmState>().unwrap();
         state.phone.viewport=screen;
+        crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
         state.phone.order.retain(|c|state.clients.contains_key(c));
         if state.phone.client.is_some_and(|c|!state.clients.contains_key(&c)) {
             state.phone.client=state.phone.order.first().copied();
