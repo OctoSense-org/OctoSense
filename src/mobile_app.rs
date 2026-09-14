@@ -382,6 +382,7 @@ impl App {
                 if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
                 else {self.phone_back(cx);}
             }
+            PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);
