@@ -53,13 +53,30 @@ installed device, the launcher derives its default catalog from those linked
 modules. Missing Clock/Weather tiles give their space to the available app icons.
 
 The phone build also links **AppCard** (`apps/appcard`, feature `app-appcard`
-on desktop): Phase A of the Octoscript-AppCard port, one L0 weather card
-rendered in-process in a wide home tile. The module carries the card's `sys.*`
-helpers (live values through the platform's fetch layer, "—" until they land)
-and the pre-lowered weather exemplar; the card store, routing brain and the
-kernel are later phases. It needs the `appcard,maps` features of the makepad
-fork and the Roboto faces under `apps/appcard/resources`. On a desktop,
+on desktop): the Octoscript-AppCard port, one L0 weather card rendered
+in-process in a wide home tile. The makepad pin is the fork's AppCard
+framework line (`port/appcard-on-octoscript`), which installs AppCard's
+`sys.*` engine into every Splash isolate — live values through the platform's
+fetch layer ("—" until they land), the place from the device's GPS fix when
+there is one. The module carries the pre-lowered weather exemplar and its
+Roboto faces; the card store, routing brain and the transport to the kernel
+are later phases. On a desktop,
 `cargo run --features app-appcard -- --module appcard` opens the same card.
+
+To get AppCard's Java activity features (GPS, notifications, share and
+deep-link intents), this repository's `resources/android/AndroidManifest.xml.template`
+and the octos kernel bundled as `liboctos.so`, build with the fork's buildtool
+`cargo-makepad` and `MAKEPAD_ANDROID_EXTRA_LIBS` instead of the stock command
+above — the full recipe, including the kernel cross-build, is in
+[docs/android-appcard-build.md](docs/android-appcard-build.md):
+
+```sh
+MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/abs/path/to/octos/target/aarch64-linux-android/release/octos" \
+  /abs/path/to/makepad-buildtool/target/debug/cargo-makepad makepad android run -p octosense --release
+```
+
+The AppCard tile probes that kernel at start and logs `kernel: ok` or
+`kernel: error` to logcat.
 
 Switching desktop OctoSense to the Android style changes its interface; it still
 uses desktop process hosting and the full desktop catalog. The other desktop
