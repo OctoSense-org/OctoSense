@@ -1,7 +1,0 @@
-Roboto (Thin, Light, Regular, Medium, Bold) — Copyright 2011 Google Inc.
-Licensed under the Apache License, Version 2.0 (the "License"); you may not
-use these files except in compliance with the License. You may obtain a copy
-of the License at http://www.apache.org/licenses/LICENSE-2.0
-
-Carried from the Octoscript-AppCard port of the makepad fork (commit
-4fa40936c, widgets/resources/Roboto-*.ttf) for the AppCard module's text roles.
