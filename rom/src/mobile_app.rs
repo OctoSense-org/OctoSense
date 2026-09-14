@@ -371,6 +371,7 @@ impl App {
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
+            PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
             PhoneHit::Rotate=>{
                 let window=self.ui.window(cx,ids!(main_window));let size=window.get_inner_size(cx);
                 self.state_mut().phone.gesture=None;
@@ -635,6 +636,9 @@ impl App {
             PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Recents=>{
                 phone.page=(phone.page+scroll.signum()).clamp(0.0,phone.order.len().saturating_sub(1)as f64);
                 self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Home && phone.pages.on_glance()=>{
+                phone.pages.scroll_glance(scroll,phone.viewport.size.y);self.animate_phone(cx);true
             }
             PhonePointerPhase::Scroll if phone.searching()=>{
                 phone.search_scroll=(phone.search_scroll.min(search_scroll_max)+scroll).clamp(0.0,search_scroll_max);
