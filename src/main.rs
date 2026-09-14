@@ -23,6 +23,7 @@ mod desktop_app;
 mod snap;
 mod mobile;
 mod mobile_surface;
+mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
 mod scene;
