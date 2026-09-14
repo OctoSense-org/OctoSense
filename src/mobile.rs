@@ -13,6 +13,8 @@ pub enum PhoneHit {
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
     Shade(crate::mobile_shade::ShadeHit),
+    /// A page indicator dot: jump the home pager there (mobile_pages.rs).
+    Page(i64),
 }
 
 #[derive(Clone)]
@@ -66,6 +68,8 @@ pub struct PhoneState {
     pub exclusions: crate::mobile_gestures::ExclusionZones,
     /// The notification/controls shade (mobile_shade.rs).
     pub shade: crate::mobile_shade::ShadeState,
+    /// The home pager: glance page, apps pages, library (mobile_pages.rs).
+    pub pages: crate::mobile_pages::PagesState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -78,7 +82,8 @@ impl Default for PhoneState {
             tiles: HomeTiles::default(),
             gesture_out: None,
             exclusions: Default::default(),
-            shade: Default::default() }
+            shade: Default::default(),
+            pages: Default::default() }
     }
 }
 impl PhoneState {
@@ -143,6 +148,8 @@ impl PhoneState {
             active |= self.page != target;
         }
         active |= self.shade.step(dt, self.gesture_out, self.viewport, self.wallpaper_time, &mut self.exclusions);
+        active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
+        if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }
     pub fn accepts_app_input(&self) -> bool {

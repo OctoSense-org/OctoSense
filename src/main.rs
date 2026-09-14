@@ -27,6 +27,7 @@ mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
 mod mobile_shade;
+mod mobile_pages;
 mod scene;
 mod dock_warp;
 mod host;
@@ -368,6 +369,10 @@ pub struct App {
     /// at without a screen (the GPU readback does not need one).
     #[rust]
     test_capture: Option<(Timer, std::path::PathBuf)>,
+    /// `--test-action page:<n>`: the home page to jump to, once the phone
+    /// home has laid its pages out at the phone's size (mobile_pages.rs).
+    #[rust]
+    test_page: Option<(Timer, i64)>,
     /// When each warm client was last ticked. Kept apart from `WarmFrame`
     /// because the FIRST ticks are what make a frame possible at all — see
     /// `pump_warm`.
@@ -3592,6 +3597,14 @@ impl App {
                 let _ = std::fs::rename(path.with_extension("part.png"), path);
             }
         }
+        if let Some((timer, n)) = &self.test_page {
+            if timer.is_timer(te).is_some() {
+                let n = *n;
+                self.test_page = None;
+                self.state_mut().phone.pages.jump(n);
+                self.animate_phone(cx);
+            }
+        }
         let Some(pos) = self.test_asks.iter().position(|(t, _)| t.is_timer(te).is_some()) else {
             return;
         };
@@ -3635,6 +3648,20 @@ impl App {
                         log!("wm: --test-action capture -> {}", path);
                         let timer = cx.start_interval(5.0);
                         self.test_capture = Some((timer, std::path::PathBuf::from(path)));
+                        i += 2;
+                        continue;
+                    }
+                    // page:<n>: jump the phone home to page <n> (-1 is the
+                    // glance page, the last position the App Library), on
+                    // the iOS shell when the desktop is not a phone yet.
+                    if let Some(n) = name.strip_prefix("page:") {
+                        let n = n.trim().parse::<i64>().unwrap_or(0);
+                        log!("wm: --test-action page {}", n);
+                        if !self.state_mut().style.target.mobile() { self.set_desktop_style(cx, desktop::DesktopStyle::Ios); }
+                        // After the first frames: the home's pages are laid
+                        // out at the phone's size by then.
+                        let timer = cx.start_timeout(1.0);
+                        self.test_page = Some((timer, n));
                         i += 2;
                         continue;
                     }
