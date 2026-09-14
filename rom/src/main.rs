@@ -26,6 +26,7 @@ mod mobile_surface;
 mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
+mod mobile_island;
 mod scene;
 mod dock_warp;
 mod host;
@@ -2766,6 +2767,7 @@ impl App {
         if let Some(clock)=self.bar_sample.clock.split_whitespace().find(|s|s.contains(':')).map(str::to_string) {
             self.state_mut().phone.clock=clock;
         }
+        self.wake_island(cx);
         let mut shown: Vec<usize> = Vec::new();
         let workspaces = {
             let state = self.state_mut();
@@ -3640,6 +3642,7 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    if self.island_test_action(cx, name) { i += 2; continue; }
                     match test_action(name) {
                         Some(action) => {
                             log!("wm: --test-action {} -> {:?}", name, action);
@@ -3954,6 +3957,7 @@ impl MatchEvent for App {
         if startup_style != self.state_mut().style.target {
             self.set_desktop_style(cx, startup_style);
         }
+        mobile_island::install_producers();
         if cfg!(any(target_os = "ios", target_os = "android")) {
             self.update_bar_chrome(cx, &WindowGeom {
                 safe_area_insets: cx.display_context.safe_area_insets,
