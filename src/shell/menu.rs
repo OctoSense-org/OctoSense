@@ -468,6 +468,8 @@ impl MenuModel {
                 ("workspace.tools.task", "Processes", MenuKind::App),
                 ("workspace.desktop", "Appearance", MenuKind::Menu),
             ] {
+                // Appearance routes to the style rows the standalone shell lacks.
+                if crate::MOBILE_ONLY && id == "workspace.desktop" { continue; }
                 items.push(MenuItem::new(id, label, kind));
             }
         }
@@ -495,13 +497,17 @@ impl MenuModel {
             items.retain(|item| item.id != "workspace.tools");
         }
         items.extend(available);
-        items.push(MenuItem::new("desktop","Desktop style",MenuKind::Menu));
-        for style in crate::desktop::DesktopStyle::ALL {
-            items.push(MenuItem::new(&format!("desktop.{}",style.id()),style.label(),MenuKind::Action));
+        // The style rows: the standalone shell has one style and no menu for it.
+        #[cfg(not(mobile_only))]
+        {
+            items.push(MenuItem::new("desktop","Desktop style",MenuKind::Menu));
+            for style in crate::desktop::DesktopStyle::ALL {
+                items.push(MenuItem::new(&format!("desktop.{}",style.id()),style.label(),MenuKind::Action));
+            }
+            items.push(MenuItem::new("desktop.macos-dark","macOS · Dark",MenuKind::Action));
+            items.push(MenuItem::new("desktop.windows-dark","Windows · Dark",MenuKind::Action));
+            items.push(MenuItem::new("desktop.octosense-dark","OctoSense · Dark",MenuKind::Action));
         }
-        items.push(MenuItem::new("desktop.macos-dark","macOS · Dark",MenuKind::Action));
-        items.push(MenuItem::new("desktop.windows-dark","Windows · Dark",MenuKind::Action));
-        items.push(MenuItem::new("desktop.octosense-dark","OctoSense · Dark",MenuKind::Action));
         if path.starts_with("style.theme") {
             items.extend(theme_items());
         }
@@ -1628,8 +1634,10 @@ mod tests {
     fn browsing_shows_direct_children_in_order() {
         let mut m = MenuModel::default();
         m.open_at("", MenuSkin::Menu);
-        assert_eq!(m.rows.len(), 5);
-        assert!(m.rows.iter().any(|r| r.target == "desktop"));
+        // The standalone shell offers no Desktop style row.
+        let styles = if crate::MOBILE_ONLY { 0 } else { 1 };
+        assert_eq!(m.rows.len(), 4 + styles);
+        assert_eq!(m.rows.iter().any(|r| r.target == "desktop"), styles == 1);
         assert_eq!(m.rows[0].label, "Apps");
         assert_eq!(m.rows[3].label, "System");
         assert!(m.rows.iter().all(|r| !r.disabled));
