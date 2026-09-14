@@ -161,6 +161,13 @@ impl PhoneState {
             active |= self.page != target;
         }
         active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
+        // An activity the island dropped (or finished) becomes a card in the
+        // shade, stamped on the shade's clock; the island stays hidden while
+        // the sheet is (or is about to be) open and comes back as it closes.
+        for note in crate::mobile_island::take_docked() {
+            self.shade.post(&note.app, &note.title, &note.body, self.wallpaper_time, Vec::new());
+        }
+        self.island.set_shade_open(self.shade.wants_open());
         active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
