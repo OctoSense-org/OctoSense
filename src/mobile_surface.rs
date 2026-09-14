@@ -41,6 +41,14 @@ script_mod! {
                 border_alpha: 0.18 border_width: 0.7
             }
         }
+        group_glass: GlassPanel {
+            draw_bg +: {
+                blur_level: 4.0 corner_radius: 28.0
+                tint_color: #eeeeff tint_alpha: 0.22 surface_alpha: 0.90
+                lensing_strength: 0.3 specular_strength: 0.08
+                border_alpha: 0.18 border_width: 0.7
+            }
+        }
         overview_glass: GlassPanel {
             draw_bg +: {
                 blur_level: 3.0 corner_radius: 0.0
@@ -99,7 +107,7 @@ pub struct PhoneSurface {
     #[walk] walk: Walk,
     #[layout] layout: Layout,
     #[visible] #[live(true)] visible: bool,
-    #[live] d: ShellDraw,
+    #[live] pub d: ShellDraw,
     #[live] ios_font: TextStyle,
     #[live] ios_bold: TextStyle,
     #[live] android_font: TextStyle,
@@ -110,10 +118,11 @@ pub struct PhoneSurface {
     #[live] glass: GaussRoundedView,
     #[live] keyboard_glass: GaussRoundedView,
     #[live] pub overview_glass: GaussRoundedView,
+    #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
-    #[rust] icons: AppIconDraw,
-    #[rust] hits: Vec<(Rect, PhoneHit)>,
+    #[rust] pub icons: AppIconDraw,
+    #[rust] pub hits: Vec<(Rect, PhoneHit)>,
     #[find] #[live] search: WidgetRef,
     #[rust] search_style: Option<(bool, bool)>,
     #[rust] search_rect: Rect,
@@ -130,12 +139,13 @@ impl PhoneSurface {
         self.hits.iter().find(|(_, h)| h == hit).map(|(r, _)| *r)
     }
     pub fn begin(&mut self) { self.hits.clear(); }
-    fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
+    pub(crate) fn pressed_hit(&self) -> Option<&PhoneHit> { self.pressed.as_ref() }
+    pub(crate) fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
         self.chrome.radius = radius*2.0;
         self.chrome.bevel = 0.0; self.chrome.color = color;
         self.chrome.draw_abs(cx,r);
     }
-    fn label(&mut self, cx: &mut Cx2d, r: Rect, label: &str, size: f64, bold: bool, color: Vec4f) {
+    pub(crate) fn label(&mut self, cx: &mut Cx2d, r: Rect, label: &str, size: f64, bold: bool, color: Vec4f) {
         self.d.label_elided(cx,r,bold,size,color,HAlign::Center,label);
     }
     fn use_fonts(&mut self, ios: bool) {
@@ -245,7 +255,11 @@ impl PhoneSurface {
         // The tiles themselves are composited by the desk (their captures
         // or placeholders); the page owns their hit regions.
         if home {
-            for slot in &layout.tiles {self.hits.push((slot.rect,PhoneHit::App(slot.app.into())));}
+            let available: Vec<&str>=ids.iter().map(|(id,_)|id.as_str()).collect();
+            for slot in &layout.tiles {
+                if matches!(slot.kind,mobile_tiles::TileKind::Group(_)) {self.draw_group_tile(cx,&phone.groups,*slot,&available,style,state.style.dark,opacity);}
+                else {self.hits.push((slot.rect,PhoneHit::App(slot.app.into())));}
+            }
         }
         // Favorites: the launcher's order minus the dock, as many as fit
         // above it. The rest live in the App Library / the drawer.
@@ -389,6 +403,7 @@ impl PhoneSurface {
             }
             if phone.order.is_empty() {self.label(cx,screen,"No recent apps",20.0,false,ink);}
         }
+        self.draw_groups_overlay(cx,state,screen);
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop);}
         let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
         if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
@@ -505,7 +520,7 @@ mod tests {
         let available = crate::shell::launcher::apps();
         for style in [DesktopStyle::Ios, DesktopStyle::Android] {
             let layout = PhoneSurface::home_layout(style, rect(0.0, 0.0, 430.0, 900.0));
-            for slot in layout.tiles {
+            for slot in layout.tiles.into_iter().filter(|s| !matches!(s.kind, mobile_tiles::TileKind::Group(_))) {
                 assert!(available.iter().any(|app| app.id == format!("apps.{}", slot.app)), "unavailable tile: {}", slot.app);
             }
         }

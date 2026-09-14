@@ -26,6 +26,7 @@ mod mobile_surface;
 mod mobile_gestures;
 mod mobile_app;
 mod mobile_tiles;
+mod mobile_groups;
 mod scene;
 mod dock_warp;
 mod host;
@@ -3608,6 +3609,7 @@ impl App {
                 if let Some(name) = args.get(i + 1) {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
+                    if self.groups_test_action(cx, name) { i += 2; continue; }
                     if let Some(app) = name.strip_prefix("launch-") {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
