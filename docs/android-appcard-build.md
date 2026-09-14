@@ -21,8 +21,9 @@ on the makepad fork's AppCard framework line and needs three things the stock
    `dev.makepad.octosense`, not persistent).
 3. **The octos kernel**, cross-built for `aarch64-linux-android` and bundled
    into the APK as `liboctos.so`. Android lets an app exec only from its
-   nativeLibraryDir, so the kernel must ship as a "library"; `apps/appcard/src/kernel.rs`
-   finds it there and runs `octos serve --stdio` with `HOME=<files>/octos-home`.
+   nativeLibraryDir, so the kernel must ship as a "library"; the hosted app
+   (`octos-app`'s `stdio_spawn`) finds it there and runs `octos serve --stdio`
+   with `HOME=<files>/octos-home`.
 
 ## Step by step
 
@@ -79,46 +80,67 @@ ADB="$TOOLCHAIN/platform-tools/adb"
 "$ADB" shell pidof dev.makepad.octosense                       # the app is up
 "$ADB" shell pm path dev.makepad.octosense                     # the installed APK...
 unzip -l target/makepad-android-apk/octosense/apk/octosense.apk | grep liboctos   # ...carries the kernel
-"$ADB" logcat -d | grep -E 'kernel:'                           # the probe's verdict
+"$ADB" logcat -d -s Makepad | grep -E 'stdio:|kernel'          # the kernel's start
 ```
 
-The AppCard tile's `create` probes the kernel: it spawns `liboctos.so serve
---stdio`, waits two seconds, and logs one of
+When the AppCard tile starts (the module delivers `Event::Startup` to the
+hosted app on first contact), the app's agent spawns the kernel over stdio
+and logs one of
 
-- `kernel: ok (alive, silent until client_hello) [pid=… bin=…/lib/arm64/liboctos.so]` —
-  the kernel started (it says nothing on stdout until a client speaks);
-- `kernel: error (no liboctos.so under …)` — the APK was built without
-  `MAKEPAD_ANDROID_EXTRA_LIBS`;
-- `kernel: error (exited with Some(n): …)` — it started and died; the stderr
-  excerpt says why.
+- `stdio: octos=…/lib/arm64/liboctos.so HOME=…/files/octos-home` — the bundled
+  kernel was found and started; the agent's `client_hello` follows;
+- `stdio: bundled octos not found under …; using WebSocket transport` — the
+  APK was built without `MAKEPAD_ANDROID_EXTRA_LIBS`; the app shows its
+  login screen.
 
-The child is killed when the tile's instance is torn down. Nothing talks to it
-yet — the transport is the shell track's job. `OCTOSENSE_APPCARD_KERNEL=0`
-in the environment skips the probe (the host's module tests set it).
+The kernel is a `kill_on_drop` child of the agent's runtime: the module's
+`shutdown` stops the agent when the tile's instance is torn down, and the
+child goes with it. The module spawns no kernel of its own.
 
-On a desktop the same code looks for `octos` on `PATH` (or `$OCTOS_BIN`) and
-gives it `HOME=~/.octosense/appcard/octos-home`, so a developer's own
-`octos serve` and its data-dir lock are never touched.
+On a desktop the app spawns a local kernel only when BOTH `OCTOS_APP_CORE_BIN`
+(the `octos` binary) and `OCTOS_APP_CORE_DIR` (its data dir; the app runs
+`serve --stdio --data-dir <dir> --config <dir>/config.json` with
+`OCTOS_HOME=<dir>`) are set; otherwise it uses the WebSocket transport / login
+screen, so a developer's own `octos serve` is never touched.
+
+## Provisioning the LLM key
+
+The kernel needs an LLM profile before a request can run. The buildtool
+activity forwards launch-intent extras prefixed `makepad.` to the app's
+environment, and the app reads `MAKEPAD_PROVISION_CONFIG` on startup and
+writes the profile into the kernel's config:
+
+```sh
+"$ADB" shell "am start -S -n dev.makepad.octosense/.MakepadApp \
+  --es makepad.PROVISION_CONFIG '{\"llm_family\":\"zai\",\"llm_model\":\"glm-5.2\",\"llm_key\":\"<key>\"}'"
+"$ADB" logcat -d -s Makepad | grep -iE 'provision|turn/start|turn FAILED'
+```
+
+`provisioned LLM from intent: …` in logcat is the proof the profile landed;
+the next request goes to the provider (a wrong key fails the turn with the
+provider's auth error, not with `profile '_main' is not configured`).
 
 ## What the tile shows
 
-With location granted, the buildtool activity feeds the device's fix to
-`makepad_platform::gps`; the module then leaves the card's place blank and
-the engine reverse-geocodes the fix (photon.komoot.io), so the card names the
-real place — a road or a district at city-scale rounding. Without a fix it
-shows `DEFAULT_PLACE` (Cupertino) through open-meteo's gazetteer, as Phase A
-did. Both paths log `Script data fetch: issuing …` / `loaded …` in logcat.
+The whole app: its sessions and composer over the bundled kernel (the login
+screen when there is none). A request typed into the composer — or submitted
+through the module's `ask` tool — is routed by the app's brain and its card
+rendered by the L0 pipeline in a Splash isolate. With location granted, the
+buildtool activity feeds the device's fix to `makepad_platform::gps`, and a
+card whose place is blank has the engine reverse-geocode the fix
+(photon.komoot.io), so it names the real place. Live values log
+`Script data fetch: issuing …` / `loaded …` in logcat.
 
 Two things learned verifying this on a OnePlus 6T:
 
-- A Splash isolate strips injected globals when it is minted, so the
-  framework's `sys`/`agent` engine (installed by `widgets::script_mod` into
-  the main VM) is NOT in scope inside the card's isolate. The module
-  re-installs it with `register_splash_isolate_mod(register_agent_module)`;
-  without that the body fails with "variable sys not found" and the live
-  Splash keeps showing its previous (empty) view with no log line. The host
-  test `appcard_body_validates_in_an_isolate_with_the_engine_installed`
-  guards this.
+- A Splash isolate is minted without the framework's `sys`/`agent` engine
+  (`widgets::script_mod` installs it into the main VM only, and octos-app's
+  `register_script_mods` does not install it), so it is NOT in scope inside
+  a card's isolate. The module installs it with
+  `register_splash_isolate_mod(register_agent_module)`; without that the
+  body fails with "variable sys not found" and the live Splash keeps showing
+  its previous (empty) view with no log line. The host test
+  `appcard_isolates_carry_the_sys_engine_after_register` guards this.
 - The phone is one shared device: a `cargo makepad android run` from another
   checkout reinstalls `dev.makepad.octosense` (PackageManager kills the
   running instance: `stop … due to installPackageLI`) and the first launch
