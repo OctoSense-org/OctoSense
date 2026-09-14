@@ -20,6 +20,7 @@
 
 use crate::hub::ClientId;
 use makepad_ai_services::wire::{ServiceCall, ServiceManifest};
+use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 use makepad_app_module::*;
 use makepad_widgets::*;
 use std::collections::HashMap;
@@ -152,6 +153,15 @@ impl ModuleHost {
         self.instances.get(&client)
     }
 
+    /// The lowest client id hosting an instance of module `id`, if any.
+    pub fn client_of_module(&self, id: &str) -> Option<ClientId> {
+        self.instances
+            .values()
+            .filter(|i| i.module.id() == id)
+            .map(|i| i.client)
+            .min()
+    }
+
     pub fn len(&self) -> usize {
         self.instances.len()
     }
@@ -160,10 +170,15 @@ impl ModuleHost {
         self.instances.is_empty()
     }
 
-    /// One of the assistant's calls, to the instance's executor.
+    /// One of the assistant's calls, to the instance's executor — inside
+    /// the instance's isolate, as the tile dispatches events: an executor
+    /// reaches into its app's widgets (AppCard's `ask` is the composer).
     pub fn execute(&mut self, cx: &mut Cx, client: ClientId, call: &ServiceCall) -> Option<ExecOutcome> {
         let instance = self.instances.get_mut(&client)?;
-        Some(instance.executor.execute(cx, call))
+        let entry = enter_isolate(cx, instance.vm_id);
+        let outcome = instance.executor.execute(cx, call);
+        leave_isolate(cx, entry);
+        Some(outcome)
     }
 
     pub fn cancel(&mut self, cx: &mut Cx, client: ClientId, call_id: &str) {
