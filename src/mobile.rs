@@ -12,6 +12,7 @@ pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
+    Island(crate::mobile_island::IslandHit),
 }
 
 #[derive(Clone)]
@@ -62,6 +63,8 @@ pub struct PhoneState {
     /// Rects apps own on screen; shell gestures starting inside them are not
     /// recognised.
     pub exclusions: crate::mobile_gestures::ExclusionZones,
+    /// The live island's activities and state (mobile_island.rs).
+    pub island: crate::mobile_island::IslandState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -73,7 +76,8 @@ impl Default for PhoneState {
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
-            exclusions: Default::default() }
+            exclusions: Default::default(),
+            island: Default::default() }
     }
 }
 impl PhoneState {
@@ -128,6 +132,7 @@ impl PhoneState {
         self.keyboard += (self.keyboard_target - self.keyboard) * t;
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
+        active |= self.island.step(dt, crate::host::now(), self.gesture_out);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;
