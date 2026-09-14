@@ -54,6 +54,7 @@ use layout::{Axis, Dir, DividerHit, FullscreenMode, LRect};
 use makepad_studio_protocol::{AppToStudio, StudioToApp};
 use makepad_wm_api::{WmEvent, WmRequest};
 use preview::PreviewCache;
+use mobile_gestures::GestureRecognizer;
 use run_view::{MpRunView, MpRunViewAction};
 use makepad_widgets::makepad_micro_serde::*;
 use shell::bar::{BarData, BarModule, SampledStatus, ShellBarAction};
@@ -401,6 +402,12 @@ pub struct App {
     #[rust] stylesheet: Option<desktop_style::StyleSheet>,
     #[rust] phone_frame: NextFrame,
     #[rust] phone_time: f64,
+    /// The shell gesture recognizer (mobile_gestures.rs): the one owner of
+    /// the finger the phone shell claims.
+    #[rust] phone_gestures: GestureRecognizer,
+    /// Frames a Commit/Cancel has been visible in `phone.gesture_out`: the
+    /// surfaces get one drawn frame to see it before it clears.
+    #[rust] gesture_out_age: u32,
 }
 
 /// A warm instance's own swapchain: the host end of the frames a DORMANT
