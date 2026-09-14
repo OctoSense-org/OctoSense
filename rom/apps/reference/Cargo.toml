@@ -5,5 +5,5 @@ edition = "2021"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3090964f9eba54c9384c0b55d2b4869c80305f7b" }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3090964f9eba54c9384c0b55d2b4869c80305f7b" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147" }
