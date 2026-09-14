@@ -67,8 +67,10 @@ impl App {
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|(client, app, background)| {
+                // A split member is in front too, at its pane's size.
+                let foreground = if self.state_mut().phone.groups.in_split(client) { Some(client) } else { foreground };
                 let face = mobile_tiles::wanted_face(client, foreground, settled, background)?;
-                let viewport = match face { Face::Full => full, Face::Tile => self.tile_viewport(&app)? };
+                let viewport = match face { Face::Full => self.state_mut().phone.groups.pane_size(client, full), Face::Tile => self.tile_viewport(&app)? };
                 if viewport.x < 1.0 || viewport.y < 1.0 { return None; }
                 self.state_mut().phone.tiles.pending(client, face, viewport).then_some((client, face, viewport))
             })
@@ -280,6 +282,7 @@ impl App {
                 let phone = &mut self.state_mut().phone;
                 phone.wallpaper_time = frame.time;
                 let moving = phone.step(dt);
+                crate::mobile_groups::follow(phone);
                 let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
                 if moving || wallpaper_visible {self.phone_frame=cx.new_next_frame();}
                 // The tiles follow the phone state every frame: a window
@@ -349,7 +352,20 @@ impl App {
                 if let Some(client)=existing {self.activate_client(cx,client);}
                 else {self.launch_app(cx,&app);}
             },
-            PhoneHit::Card(client)=>self.activate_client(cx,client),
+            PhoneHit::Card(client)=>{
+                match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
+                    Some(first)=>{self.state_mut().phone.groups.pick=None;self.enter_split(cx,first,client);}
+                    None=>self.activate_client(cx,client),
+                }
+            }
+            PhoneHit::Group(name)=>self.open_group(cx,&name),
+            PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
+            PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
+            PhoneHit::Split(client)=>{
+                if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
+            }
+            PhoneHit::Divider=>{}
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
@@ -523,6 +539,7 @@ impl App {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
                     else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
                 }else if g.edge {phone.openness=(1.0-delta.x.max(0.0)/screen.size.x*0.6).clamp(0.4,1.0);}
+                else if g.hit==Some(PhoneHit::Divider) {phone.groups.drag_divider(p,app_rect(screen));}
                 self.animate_phone(cx);true
             }
             PhonePointerPhase::Up=>{

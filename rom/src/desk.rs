@@ -804,12 +804,12 @@ struct TabHit {
 
 #[derive(Script, WidgetRef, WidgetSet, WidgetRegister)]
 pub struct WmDesk {
-    #[live] phone_ui: PhoneSurface,
+    #[live] pub phone_ui: PhoneSurface,
     #[live] draw_phone: DrawPhoneApp,
     #[rust] phone_frames: HashMap<ClientId, PhoneFrame>,
     #[rust] desktop_frames: HashMap<ClientId, WindowFrame>,
     #[rust] pub wallpaper: WidgetRef,
-    #[rust] compositor: Option<BackdropCompositor>,
+    #[rust] pub compositor: Option<BackdropCompositor>,
     #[rust] composing: bool,
     #[rust] terminal_clients: HashSet<ClientId>,
     #[rust] blur_counts: (usize, usize),

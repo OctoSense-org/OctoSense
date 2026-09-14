@@ -14,6 +14,9 @@ pub enum TileKind {
     Small,
     /// The full-width tile under them (portrait) or the third column (landscape).
     Wide,
+    /// A tile group's face (mobile_groups.rs), named; a chip row under the
+    /// app tiles in portrait, one more column in landscape.
+    Group(&'static str),
 }
 
 /// The apps that own a home tile, in tile order. Every id is a launcher
@@ -69,15 +72,20 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
     let left = screen.pos.x + m;
     let width = (screen.size.x - m * 2.0).max(1.0);
     let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id)).collect();
+    let groups = crate::mobile_groups::GroupsState::placed(apps);
     let mut tiles = Vec::new();
     if landscape {
-        let count = tile_apps.len().max(1) as f64;
+        let count = (tile_apps.len() + groups.len()).max(1) as f64;
         let w = ((width - TILE_GAP * (count - 1.0)) / count).max(1.0);
         // Short enough that a row of favorites still fits above the dock.
         let h = (w * 0.56).min((dock.pos.y - top - 126.0).max(60.0)).max(1.0);
         for (index, (app, kind)) in tile_apps.iter().enumerate() {
             let x = left + index as f64 * (w + TILE_GAP);
             tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
+        }
+        for (index, name) in groups.iter().enumerate() {
+            let x = left + (tile_apps.len() + index) as f64 * (w + TILE_GAP);
+            tiles.push(TileSlot { app: name, kind: TileKind::Group(name), rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
         }
     } else {
         let s = ((width - TILE_GAP) / 2.0).max(1.0);
@@ -99,7 +107,16 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
                     tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(left, y), size: dvec2(width, wide_h) } });
                     wide += 1;
                 }
+                TileKind::Group(_) => {}
             }
+        }
+        // Group chips under the app tiles, two to a row.
+        let bottom = tiles.iter().map(|s| s.rect.pos.y + s.rect.size.y + TILE_GAP).fold(top, f64::max);
+        let gh = crate::mobile_groups::GROUP_TILE_HEIGHT;
+        for (index, name) in groups.iter().enumerate() {
+            let (col, row) = ((index % 2) as f64, (index / 2) as f64);
+            let w = if groups.len() == 1 { width } else { s };
+            tiles.push(TileSlot { app: name, kind: TileKind::Group(name), rect: Rect { pos: dvec2(left + col * (s + TILE_GAP), bottom + row * (gh + TILE_GAP)), size: dvec2(w, gh) } });
         }
     }
     let columns = if landscape { 7 } else { 4 };
@@ -401,19 +418,23 @@ mod tests {
         let screen = Rect { pos: dvec2(0.0, 78.0), size: dvec2(412.0, 768.0) };
         let top = screen.pos.y + 156.0;
         let dock = PhoneSurface::home_dock(screen);
+        // Group chips (mobile_groups.rs) share the grid; this test is about the app tiles.
+        let app_tiles = |l: &HomeLayout| l.tiles.iter().filter(|t| !matches!(t.kind, TileKind::Group(_))).copied().collect::<Vec<_>>();
         let layout = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos"]);
-        assert_eq!(layout.tiles.len(), 1);
-        assert_eq!(layout.tiles[0].app, "photos");
-        assert_eq!(layout.tiles[0].rect.pos.y, top, "no gap for absent Clock and Weather");
+        let tiles = app_tiles(&layout);
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].app, "photos");
+        assert_eq!(tiles[0].rect.pos.y, top, "no gap for absent Clock and Weather");
         assert!(layout.capacity >= 2, "Reference and Sheets must be visible");
-        assert!(!overlaps(layout.tiles[0].rect, layout.favorites));
+        assert!(layout.tiles.iter().all(|t| !overlaps(t.rect, layout.favorites)));
         assert!(layout.favorites.pos.y + layout.favorites.size.y <= dock.pos.y - 36.0);
         // The phone catalog: Photos and the AppCard are both wide tiles.
         let two_wide = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos", "appcard"]);
-        assert_eq!(two_wide.tiles.iter().map(|t| t.app).collect::<Vec<_>>(), ["photos", "appcard"]);
-        assert!(two_wide.tiles[1].rect.pos.y >= two_wide.tiles[0].rect.pos.y + two_wide.tiles[0].rect.size.y + TILE_GAP - 0.01, "stacked, not overlapping");
-        assert!(two_wide.tiles.iter().all(|t| (t.rect.size.x - (screen.size.x - HOME_MARGIN * 2.0)).abs() < 0.01));
-        assert!(two_wide.capacity >= 8, "two rows of favorites beside two wide tiles: {}", two_wide.capacity);
+        let tiles = app_tiles(&two_wide);
+        assert_eq!(tiles.iter().map(|t| t.app).collect::<Vec<_>>(), ["photos", "appcard"]);
+        assert!(tiles[1].rect.pos.y >= tiles[0].rect.pos.y + tiles[0].rect.size.y + TILE_GAP - 0.01, "stacked, not overlapping");
+        assert!(tiles.iter().all(|t| (t.rect.size.x - (screen.size.x - HOME_MARGIN * 2.0)).abs() < 0.01));
+        assert!(two_wide.capacity >= 4, "a row of favorites (the catalog has three) beside two wide tiles and the group chips: {}", two_wide.capacity);
         assert!(two_wide.tiles.iter().all(|t| !overlaps(t.rect, two_wide.favorites) && !overlaps(t.rect, dock)));
         let empty = home_layout_for_apps(screen, top, dock, &[]);
         assert!(empty.tiles.is_empty());

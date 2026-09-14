@@ -12,6 +12,10 @@ pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
+    /// Tile groups (mobile_groups.rs): the tile, a member in its window,
+    /// the window's scrim, a pair's "Open both", a Recents card's split
+    /// button and the split divider.
+    Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
 }
 
 #[derive(Clone)]
@@ -62,6 +66,8 @@ pub struct PhoneState {
     /// Rects apps own on screen; shell gestures starting inside them are not
     /// recognised.
     pub exclusions: crate::mobile_gestures::ExclusionZones,
+    /// Tile groups, the open group window and the split screen (mobile_groups.rs).
+    pub groups: crate::mobile_groups::GroupsState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -73,7 +79,8 @@ impl Default for PhoneState {
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
-            exclusions: Default::default() }
+            exclusions: Default::default(),
+            groups: Default::default() }
     }
 }
 impl PhoneState {
@@ -128,6 +135,7 @@ impl PhoneState {
         self.keyboard += (self.keyboard_target - self.keyboard) * t;
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
+        active |= self.groups.step(dt);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;

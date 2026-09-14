@@ -116,6 +116,22 @@ impl WmDesk {
         capture.frame.end(cx);
         self.compositor.as_mut().unwrap().content_pass(capture.frame.pass_id());
     }
+    /// A group member's live look (mobile_groups.rs): its compact capture,
+    /// else its full one, fitted into `cell` by aspect. False without one.
+    pub(crate) fn present_member_capture(&mut self,cx:&mut Cx2d,client:ClientId,cell:Rect,opacity:f32,radius:f32)->bool {
+        let Some(stored)=self.phone_frames.remove(&client) else {return false};
+        let shown=stored.tile.as_ref().or(stored.full.as_ref()).filter(|c|c.size.x>=1.0).map(|c|(c.size,c.frame.texture().clone()));
+        if let Some((size,texture))=&shown {
+            let rect=crate::mobile_groups::fit(cell,*size);
+            self.draw_phone.draw_vars.set_texture(0,texture);
+            self.draw_phone.opacity=opacity;
+            self.draw_phone.radius=radius*0.5;
+            self.draw_phone.y_flip=0.0;
+            self.draw_phone.draw_abs(cx,rect);
+        }
+        self.phone_frames.insert(client,stored);
+        shown.is_some()
+    }
     fn present_capture(&mut self,cx:&mut Cx2d,capture:&Capture,rect:Rect,opacity:f32,radius:f32) {
         self.draw_phone.draw_vars.set_texture(0,capture.frame.texture());
         self.draw_phone.opacity=opacity;
@@ -142,6 +158,7 @@ impl WmDesk {
             (*slot,client,status,connected)
         }).collect();
         for (slot,client,status,connected) in slots {
+            if matches!(slot.kind,crate::mobile_tiles::TileKind::Group(_)) {continue;}
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -214,6 +231,7 @@ impl WmDesk {
         self.phone_ui.draw_home(cx,state,screen,home_backdrop);
         self.compositor.as_mut().unwrap().content(screen);
         if phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen);}
         if phone.overview>0.001 {
             let blur = (phone.overview.clamp(0.0, 1.0) * 3.0) as f32;
             self.phone_ui.overview_glass.set_blurriness(cx, blur);
@@ -228,7 +246,9 @@ impl WmDesk {
             if let Some(c)=phone.client {order.retain(|i|*i!=c);order.push(c);}
         }
         for client in order {
-            let foreground=phone.client==Some(client);
+            let foreground=phone.client==Some(client) || (phone.screen==PhoneScreen::App && phone.groups.in_split(client));
+            // In a split each client gets its pane, so it lays out for it.
+            let app=phone.groups.pane(client,app);
             if !foreground && phone.overview<0.001 {continue;}
             if foreground && phone.openness<0.001 {continue;}
             let index=phone.order.iter().position(|c|*c==client).unwrap_or(0);
@@ -286,7 +306,7 @@ impl WmDesk {
         let input=matches!(event,Event::TouchUpdate(_)|Event::MouseDown(_)|Event::MouseUp(_)|Event::MouseMove(_)|Event::Scroll(_)|Event::KeyDown(_)|Event::KeyUp(_)|Event::TextInput(_));
         let client=state.phone.client;
         if input && !state.phone.accepts_app_input() {return;}
-        let items:Vec<_>=self.items.iter().filter(|(c,_)|!input || Some(**c)==client).map(|(_,w)|w.clone()).collect();
+        let items:Vec<_>=self.items.iter().filter(|(c,_)|!input || Some(**c)==client || state.phone.groups.in_split(**c)).map(|(_,w)|w.clone()).collect();
         for item in items {item.handle_event(cx,event,scope);}
     }
 }
