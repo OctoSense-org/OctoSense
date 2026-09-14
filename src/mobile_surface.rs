@@ -41,6 +41,14 @@ script_mod! {
                 border_alpha: 0.18 border_width: 0.7
             }
         }
+        group_glass: GlassPanel {
+            draw_bg +: {
+                blur_level: 4.0 corner_radius: 28.0
+                tint_color: #eeeeff tint_alpha: 0.22 surface_alpha: 0.90
+                lensing_strength: 0.3 specular_strength: 0.08
+                border_alpha: 0.18 border_width: 0.7
+            }
+        }
         overview_glass: GlassPanel {
             draw_bg +: {
                 blur_level: 3.0 corner_radius: 0.0
@@ -110,9 +118,10 @@ pub struct PhoneSurface {
     #[live] glass: GaussRoundedView,
     #[live] keyboard_glass: GaussRoundedView,
     #[live] pub overview_glass: GaussRoundedView,
+    #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
-    #[rust] icons: AppIconDraw,
+    #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
     #[find] #[live] search: WidgetRef,
     #[rust] search_style: Option<(bool, bool)>,
@@ -130,6 +139,7 @@ impl PhoneSurface {
         self.hits.iter().find(|(_, h)| h == hit).map(|(r, _)| *r)
     }
     pub fn begin(&mut self) { self.hits.clear(); }
+    pub(crate) fn pressed_hit(&self) -> Option<&PhoneHit> { self.pressed.as_ref() }
     pub(crate) fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
         self.chrome.radius = radius*2.0;
         self.chrome.bevel = 0.0; self.chrome.color = color;
@@ -265,7 +275,15 @@ impl PhoneSurface {
                 // The tiles themselves are composited by the desk (their
                 // captures or placeholders); the page owns their hit regions.
                 if home {
-                    for slot in &layout.tiles {self.hits.push((rect(slot.rect.pos.x+dx,slot.rect.pos.y,slot.rect.size.x,slot.rect.size.y),PhoneHit::App(slot.app.into())));}
+                    let available: Vec<&str>=ids.iter().map(|(id,_)|id.as_str()).collect();
+                    for slot in &layout.tiles {
+                        let shifted=rect(slot.rect.pos.x+dx,slot.rect.pos.y,slot.rect.size.x,slot.rect.size.y);
+                        if matches!(slot.kind,mobile_tiles::TileKind::Group(_)) {
+                            // A group chip is drawn by the page (mobile_groups.rs), so it rides the pager like the tiles.
+                            let chip=mobile_tiles::TileSlot {rect:shifted,..*slot};
+                            self.draw_group_tile(cx,&phone.groups,chip,&available,style,dark,opacity);
+                        } else {self.hits.push((shifted,PhoneHit::App(slot.app.into())));}
+                    }
                 }
             }
             // Favorites: page 0 takes as many as fit beside the tiles, the
@@ -401,6 +419,7 @@ impl PhoneSurface {
             }
             if phone.order.is_empty() {self.label(cx,screen,"No recent apps",20.0,false,ink);}
         }
+        self.draw_groups_overlay(cx,state,screen);
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop.clone());}
         let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
         if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
@@ -522,7 +541,7 @@ mod tests {
         let available = crate::shell::launcher::apps();
         for style in [DesktopStyle::Ios, DesktopStyle::Android] {
             let layout = PhoneSurface::home_layout(style, rect(0.0, 0.0, 430.0, 900.0));
-            for slot in layout.tiles {
+            for slot in layout.tiles.into_iter().filter(|s| !matches!(s.kind, mobile_tiles::TileKind::Group(_))) {
                 assert!(available.iter().any(|app| app.id == format!("apps.{}", slot.app)), "unavailable tile: {}", slot.app);
             }
         }
