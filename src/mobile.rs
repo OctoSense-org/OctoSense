@@ -161,16 +161,20 @@ impl PhoneState {
             active |= self.page != target;
         }
         active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
-        // An activity the island dropped (or finished) becomes a card in the
-        // shade, stamped on the shade's clock; the island stays hidden while
-        // the sheet is (or is about to be) open and comes back as it closes.
-        for note in crate::mobile_island::take_docked() {
-            self.shade.post(&note.app, &note.title, &note.body, self.wallpaper_time, Vec::new());
-        }
+        self.absorb_docked(crate::mobile_island::take_docked());
+        // The island stays hidden while the sheet is (or is about to be)
+        // open and comes back as it closes.
         self.island.set_shade_open(self.shade.wants_open());
         active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
+    }
+    /// An activity the island dropped becomes a card in the shade, stamped
+    /// on the shade's clock (the frame time, not the island's).
+    pub fn absorb_docked(&mut self, notes: Vec<crate::mobile_island::DockedNote>) {
+        for note in notes {
+            self.shade.post(&note.app, &note.title, &note.body, self.wallpaper_time, Vec::new());
+        }
     }
     pub fn accepts_app_input(&self) -> bool {
         self.screen == PhoneScreen::App && self.gesture.is_none()
@@ -204,6 +208,25 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_docked_activity_becomes_a_shade_card_and_the_island_hides_under_the_open_shade() {
+        use crate::mobile_gestures::{GestureKind, ShadeSide, ShellGesture};
+        let mut phone = PhoneState::default();
+        phone.viewport = Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) };
+        phone.wallpaper_time = 42.0;
+        phone.absorb_docked(vec![crate::mobile_island::DockedNote { id: "x".into(), app: "AppCard".into(), title: "Fetching forecast".into(), body: "done".into(), time: 7.0 }]);
+        let note = &phone.shade.notifications[0];
+        assert_eq!((note.app.as_str(), note.title.as_str(), note.time), ("AppCard", "Fetching forecast", 42.0), "stamped on the shade's clock");
+        // The shade commits open: the island learns it on the same step.
+        phone.gesture_out = Some(ShellGesture::Commit(GestureKind::Shade(ShadeSide::Notifications)));
+        phone.step(1.0 / 60.0);
+        assert!(phone.shade.wants_open() && phone.island.shade_open);
+        phone.gesture_out = None;
+        phone.shade.close();
+        phone.step(1.0 / 60.0);
+        assert!(!phone.island.shade_open, "the island returns as the sheet closes");
+    }
     #[test]
     fn both_orientations_reserve_system_bars_and_keep_selected_card_inside() {
         for size in [phone_size(DesktopStyle::Ios), phone_size(DesktopStyle::Android)] {
