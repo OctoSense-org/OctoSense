@@ -52,6 +52,15 @@ as embedded apps. They need no sibling checkout or extra feature flags. On an
 installed device, the launcher derives its default catalog from those linked
 modules. Missing Clock/Weather tiles give their space to the available app icons.
 
+The phone build also links **AppCard** (`apps/appcard`, feature `app-appcard`
+on desktop): Phase A of the Octoscript-AppCard port, one L0 weather card
+rendered in-process in a wide home tile. The module carries the card's `sys.*`
+helpers (live values through the platform's fetch layer, "—" until they land)
+and the pre-lowered weather exemplar; the card store, routing brain and the
+kernel are later phases. It needs the `appcard,maps` features of the makepad
+fork and the Roboto faces under `apps/appcard/resources`. On a desktop,
+`cargo run --features app-appcard -- --module appcard` opens the same card.
+
 Switching desktop OctoSense to the Android style changes its interface; it still
 uses desktop process hosting and the full desktop catalog. The other desktop
 apps (including Browser, Files, Terminal, and AI Chat) need embedded mobile
