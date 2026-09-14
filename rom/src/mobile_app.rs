@@ -68,8 +68,10 @@ impl App {
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|(client, app, background)| {
+                // A split member is in front too, at its pane's size.
+                let foreground = if self.state_mut().phone.groups.in_split(client) { Some(client) } else { foreground };
                 let face = mobile_tiles::wanted_face(client, foreground, settled, background)?;
-                let viewport = match face { Face::Full => full, Face::Tile => self.tile_viewport(&app)? };
+                let viewport = match face { Face::Full => self.state_mut().phone.groups.pane_size(client, full), Face::Tile => self.tile_viewport(&app)? };
                 if viewport.x < 1.0 || viewport.y < 1.0 { return None; }
                 self.state_mut().phone.tiles.pending(client, face, viewport).then_some((client, face, viewport))
             })
@@ -298,6 +300,7 @@ impl App {
                     // Commit/Cancel stay for exactly one drawn frame.
                     if self.gesture_out_age >= 1 { phone.gesture_out = None; } else { self.gesture_out_age += 1; tracking = true; }
                 }
+                crate::mobile_groups::follow(phone);
                 let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
                 if moving || wallpaper_visible || tracking {self.phone_frame=cx.new_next_frame();}
                 // The tiles follow the phone state every frame: a window
@@ -367,7 +370,20 @@ impl App {
                 if let Some(client)=existing {self.activate_client(cx,client);}
                 else {self.launch_app(cx,&app);}
             },
-            PhoneHit::Card(client)=>self.activate_client(cx,client),
+            PhoneHit::Card(client)=>{
+                match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
+                    Some(first)=>{self.state_mut().phone.groups.pick=None;self.enter_split(cx,first,client);}
+                    None=>self.activate_client(cx,client),
+                }
+            }
+            PhoneHit::Group(name)=>self.open_group(cx,&name),
+            PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
+            PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
+            PhoneHit::Split(client)=>{
+                if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
+            }
+            PhoneHit::Divider=>{}
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
@@ -594,6 +610,7 @@ impl App {
                 let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;let last=p-g.last;g.last=p;
                 let (shell,from)=(g.shell,g.screen);
+                let divider=g.hit==Some(PhoneHit::Divider);
                 let shade_hit=if let Some(PhoneHit::Shade(h))=&g.hit {Some(h.clone())} else {None};
                 if let Some(h)=shade_hit {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
                 let out=if shell {self.phone_gestures.feed(FingerPhase::Move,p,time,&ctx,&phone.exclusions)} else {None};
@@ -605,7 +622,7 @@ impl App {
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
                     else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
-                }
+                }else if divider {phone.groups.drag_divider(p,app_rect(screen));}
                 self.animate_phone(cx);true
             }
             PhonePointerPhase::Up=>{
