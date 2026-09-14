@@ -404,12 +404,16 @@ impl PhoneSurface {
             self.d.icon_centered(cx,Ico::ChevronLeft,back,16.0,nav_ink);self.hits.push((back,PhoneHit::Back));
         }
     }
+    /// Where the shell keyboard sits while it is up (or sliding up).
+    pub fn keyboard_rect(phone: &PhoneState, screen: Rect) -> Rect {
+        rect(screen.pos.x,screen.pos.y+screen.size.y-phone.keyboard-24.0,screen.size.x,phone.keyboard_height())
+    }
     fn draw_keyboard(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
         let phone=&state.phone;
         let ios=state.style.target==DesktopStyle::Ios;
         let dark=state.style.dark;
-        let height=phone.keyboard_height();
-        let r=rect(screen.pos.x,screen.pos.y+screen.size.y-phone.keyboard-24.0,screen.size.x,height);
+        let r=Self::keyboard_rect(phone,screen);
+        let height=r.size.y;
         if ios && !dark {self.keyboard_glass.draw_surface_with_backdrop(cx,r,backdrop,1.0);}
         else {self.rounded(cx,r,0.0,if dark {rgb(34,32,40)}else{rgb(232,225,242)});}
         let ink=if dark {rgb(250,248,255)}else{rgb(30,28,36)};
