@@ -225,6 +225,21 @@ impl ShadeState {
                 }
             }
             ShadeHit::Note(id) => {
+                // Sideways moves the card; a clearly vertical drag over a
+                // card is the sheet's, as on a phone: it pulls the shade shut.
+                let (axis, page0, open0) = self.drag.unwrap_or((DragAxis::Undecided, self.page, self.open));
+                let axis = match axis {
+                    DragAxis::Undecided if delta.length() < 8.0 => DragAxis::Undecided,
+                    DragAxis::Undecided => if delta.y.abs() > delta.x.abs() * 1.5 { DragAxis::Vertical } else { DragAxis::Horizontal },
+                    a => a,
+                };
+                self.drag = Some((axis, page0, open0));
+                if axis == DragAxis::Vertical {
+                    let h = (screen.size.y - NAV_H).max(1.0);
+                    self.open = (open0 + delta.y / h).clamp(0.0, 1.0);
+                    self.pulling = true;
+                    return;
+                }
                 self.dragging_note = Some(*id);
                 if let Some(n) = self.notifications.iter_mut().find(|n| n.id == *id) {
                     let base = if n.revealed { -(n.actions.len() as f64 + 1.0) * ACTION_W } else { 0.0 };
@@ -263,6 +278,11 @@ impl ShadeState {
             }
             ShadeHit::Note(id) => {
                 self.dragging_note = None;
+                if let Some((DragAxis::Vertical, _, _)) = self.drag.take() {
+                    self.pulling = false;
+                    if delta.y < -60.0 || (fast && delta.y < -25.0) || self.open < 0.5 { self.open_target = 0.0; } else { self.open_target = 1.0; }
+                    return;
+                }
                 let Some(n) = self.notifications.iter_mut().find(|n| n.id == *id) else { return };
                 let reveal_w = (n.actions.len() as f64 + 1.0) * ACTION_W;
                 if n.offset > 96.0 || (fast && delta.x > 40.0) {
@@ -561,6 +581,28 @@ mod tests {
         let ex = zones(&s);
         assert_eq!(ex.zones.len(), 1, "one zone per frame: the desk clears, the shade adds");
         assert_eq!(ex.zones[0].rect, screen());
+    }
+
+    #[test]
+    fn an_upward_drag_over_a_card_pulls_the_sheet_shut() {
+        let mut s = ShadeState::default();
+        s.open_on(ShadeSide::Notifications);
+        settle(&mut s);
+        let id = s.post("Photos", "Memories", "ready", 1.0, Vec::new());
+        let hit = ShadeHit::Note(id);
+        for k in 1..=6 { s.drag(&hit, dvec2(200.0, 600.0 - 40.0 * k as f64), dvec2(2.0, -40.0 * k as f64), screen()); }
+        assert!(s.open < 1.0, "the sheet followed the finger up: {}", s.open);
+        assert_eq!(s.notifications[0].offset, 0.0, "the card did not slide");
+        s.release(&hit, dvec2(2.0, -240.0), 0.2);
+        settle(&mut s);
+        assert_eq!(s.open, 0.0);
+        // A sideways drag on the card is still the card's.
+        s.open_on(ShadeSide::Notifications);
+        settle(&mut s);
+        s.drag(&hit, dvec2(260.0, 400.0), dvec2(60.0, 3.0), screen());
+        assert!(s.notifications[0].offset > 0.0 && s.open == 1.0);
+        s.release(&hit, dvec2(60.0, 3.0), 0.5);
+        assert!(s.drag.is_none());
     }
 
     #[test]

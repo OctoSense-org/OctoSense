@@ -284,7 +284,6 @@ impl App {
                 let Some(state) = self.state.as_mut() else { return };
                 let phone = &mut state.phone;
                 phone.wallpaper_time = frame.time;
-                let moving = phone.step(dt);
                 // A finger resting near the top of a home swipe becomes the
                 // switcher without moving; the frame keeps running while
                 // the recognizer owns a finger so the hold can land.
@@ -298,9 +297,12 @@ impl App {
                         Self::drive_gesture(phone, out, from);
                     }
                 } else if matches!(phone.gesture_out, Some(ShellGesture::Commit(_) | ShellGesture::Cancel(_))) {
-                    // Commit/Cancel stay for exactly one drawn frame.
+                    // Commit/Cancel stay for exactly one stepped frame: aged
+                    // before `step` below, so the pager (and every other
+                    // surface that acts on a commit) sees it once.
                     if self.gesture_out_age >= 1 { phone.gesture_out = None; } else { self.gesture_out_age += 1; tracking = true; }
                 }
+                let moving = phone.step(dt);
                 crate::mobile_groups::follow(phone);
                 let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
                 if moving || wallpaper_visible || tracking {self.phone_frame=cx.new_next_frame();}
