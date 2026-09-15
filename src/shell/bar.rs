@@ -225,12 +225,32 @@ fn run(cmd: &str, args: &[&str]) -> Option<String> {
     }
 }
 
-/// `date +"%A %H:%M"` — omarchy's `dddd HH:mm`.
+/// `date +"%A %H:%M"` — omarchy's `dddd HH:mm` — formatted in-process from
+/// the C library's local time (`localtime_r` + `strftime`, the same tz data
+/// `date` reads). Forking `date` twice a second cost an idle phone 11% of a
+/// core on this thread alone.
 pub fn sample_clock(alt: bool) -> String {
-    let fmt = if alt { "+%-d %B W%V %Y" } else { "+%A %H:%M" };
-    run("date", &[fmt])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    let fmt: &std::ffi::CStr = if alt { c"%-d %B W%V %Y" } else { c"%A %H:%M" };
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 64];
+        let written = unsafe {
+            let now = libc::time(std::ptr::null_mut());
+            let mut tm: libc::tm = std::mem::zeroed();
+            if libc::localtime_r(&now, &mut tm).is_null() {
+                return String::new();
+            }
+            libc::strftime(buf.as_mut_ptr() as *mut libc::c_char, buf.len(), fmt.as_ptr(), &tm)
+        };
+        String::from_utf8_lossy(&buf[..written]).trim().to_string()
+    }
+    #[cfg(not(unix))]
+    {
+        let fmt = format!("+{}", fmt.to_str().unwrap_or_default());
+        run("date", &[&fmt])
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default()
+    }
 }
 
 /// Everything the bar reads from the OS, gathered OFF the main thread.
