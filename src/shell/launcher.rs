@@ -75,6 +75,26 @@ fn icon_for(id: &str) -> Option<Ico> {
 /// terminal first, then by rarity — a deliberate deviation from omarchy's
 /// alphabetical provider). The live filter never reorders.
 pub fn apps() -> Vec<MenuItem> {
+    thread_local! {
+        static MEMO: std::cell::RefCell<Option<(std::time::Instant, Vec<MenuItem>)>> = const { std::cell::RefCell::new(None) };
+    }
+    if let Some(items) = MEMO.with(|m| m.borrow().as_ref().filter(|(at, _)| at.elapsed().as_secs_f64() < APPS_MEMO_S).map(|(_, items)| items.clone())) {
+        return items;
+    }
+    let items = apps_uncached();
+    MEMO.with(|m| *m.borrow_mut() = Some((std::time::Instant::now(), items.clone())));
+    items
+}
+
+/// How long `apps()` answers from memory. The list depends on two settings
+/// files (`wm/launcher.hides`, `wm/apps.splash`) and on which app binaries
+/// exist, all read afresh per call before: the phone shell asked several
+/// times per frame, so a home page burnt milliseconds of file I/O per
+/// frame. A change to those files shows within a second.
+pub const APPS_MEMO_S: f64 = 1.0;
+
+/// The list, read from the settings and the file system right now.
+pub fn apps_uncached() -> Vec<MenuItem> {
     let hides = hides();
     let items: Vec<MenuItem> = clients::registry()
         .iter()
@@ -108,6 +128,17 @@ mod tests {
         assert!(!is_hidden("btopper", &hides));
         assert!(!is_hidden("BTOP", &hides));
         assert!(!is_hidden("libreoffice", &hides));
+    }
+
+    #[test]
+    fn the_apps_list_is_answered_from_memory_within_a_second() {
+        let first = apps();
+        let again = apps();
+        assert_eq!(first.len(), again.len());
+        assert!(first.iter().zip(&again).all(|(a, b)| a.id == b.id && a.label == b.label));
+        // The memo is the uncached answer, not a stale or reordered one.
+        let fresh = apps_uncached();
+        assert!(first.iter().zip(&fresh).all(|(a, b)| a.id == b.id) && first.len() == fresh.len());
     }
 
     #[test]
