@@ -37,6 +37,8 @@ name = "octosense"
 path = "src/main.rs"
 
 [dependencies]
+# The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
+libc = "0.2"
 # `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "ad8f3729d2c24ba5a3bda5c8865a2b8366480147", features = ["appcard", "maps"] }
