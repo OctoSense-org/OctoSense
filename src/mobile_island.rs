@@ -459,9 +459,13 @@ impl IslandState {
             if (*value - target).abs() < 0.002 { *value = target; }
             moving |= *value != target;
         }
+        // A deadline within a frame or two is stepped on the frame loop;
+        // a farther one is the 1 s tick's (`needs_step`), so a demo with a
+        // 25-minute countdown does not hold the loop at 60 fps.
+        let soon = |at: f64| at - now < 0.05;
         moving
-            || !self.auto_finish.is_empty()
-            || self.activities.iter().any(|a| a.done() || matches!(a.kind, ActivityKind::Countdown { until } if until - now < 1.5))
+            || self.auto_finish.iter().any(|(_, at)| soon(*at))
+            || self.activities.iter().any(|a| a.done() || matches!(a.kind, ActivityKind::Countdown { until } if soon(until)))
             || !self.anim.get().settled
     }
 }
@@ -724,6 +728,19 @@ mod tests {
         settle(&mut island, 20.0);
         assert!(!island.step(1.0 / 60.0, 20.0, None), "an empty island settles");
         assert!(!island.finish("lin:p", 21.0));
+    }
+
+    #[test]
+    fn far_deadlines_wake_through_the_tick_not_the_frame_loop() {
+        let mut island = IslandState::default();
+        island.demo(100.0);
+        settle(&mut island, 100.5);
+        // The demo's 25-minute countdown and its 6 s auto-finish are due
+        // later: the frame loop may stop, the 1 s tick keeps the island.
+        assert!(!island.step(1.0 / 60.0, 101.0, None), "nothing moves this frame");
+        assert!(island.needs_step(), "the tick still wakes it");
+        // Within a frame of the auto-finish the loop runs it.
+        assert!(island.step(1.0 / 60.0, 100.0 + 6.0 - 0.02, None));
     }
 
     #[test]
