@@ -73,6 +73,21 @@ script_mod! {
                 let t=self.phase
                 let aspect=self.rect_size.x/max(self.rect_size.y,1.0)
                 let q=(p-0.5)*vec2(aspect,1.0)
+                let dim=1.0-self.dark*0.64
+                // One style per pixel: the other's terms were computed and
+                // mixed away at weight zero, full screen, every frame.
+                if self.android > 0.5 {
+                    // Material-style cut-paper petals with soft depth and living color.
+                    let angle=atan2(q.y,q.x)+t*0.035
+                    let petals=0.31+0.065*cos(angle*4.0+sin(t*0.07)*0.5)
+                    let radius=length(q-vec2(sin(t*0.055)*0.08,cos(t*0.04)*0.06))
+                    let shape=1.0-smoothstep(petals-0.012,petals+0.012,radius)
+                    let shadow=1.0-smoothstep(petals,petals+0.07,radius)
+                    let inner=1.0-smoothstep(0.12,0.16,length(q+vec2(0.06,0.09)))
+                    let paper=mix(vec3(0.88,0.82,0.96),vec3(0.63,0.79,0.89),p.y)*mix(1.0,0.90,shadow)
+                    let petal=mix(vec3(0.39,0.43,0.72),vec3(0.66,0.54,0.79),clamp(p.y+sin(t*0.08)*0.15,0.0,1.0))
+                    return vec4(mix(mix(paper,petal,shape),vec3(0.95,0.71,0.63),inner)*dim,1.0)
+                }
                 // Slowly drifting translucent ribbons; no per-pixel loop.
                 let bend=sin(p.y*4.2+t*0.11)*0.19+sin(p.y*8.0-t*0.07)*0.045
                 let ribbon=exp(-pow((p.x+bend-0.30-sin(t*0.08)*0.12)*3.3,2.0))
@@ -81,18 +96,7 @@ script_mod! {
                 let warm=exp(-pow((p.x-bend-0.84+sin(t*0.05)*0.12)*3.8,2.0))
                 let ios=vec3(0.025,0.085,0.24)+vec3(0.05,0.48,0.57)*ribbon
                     +vec3(0.17,0.30,0.33)*edge+vec3(0.34,0.04,0.25)*warm+vec3(0.06,0.10,0.14)*bloom
-                // Material-style cut-paper petals with soft depth and living color.
-                let angle=atan2(q.y,q.x)+t*0.035
-                let petals=0.31+0.065*cos(angle*4.0+sin(t*0.07)*0.5)
-                let radius=length(q-vec2(sin(t*0.055)*0.08,cos(t*0.04)*0.06))
-                let shape=1.0-smoothstep(petals-0.012,petals+0.012,radius)
-                let shadow=1.0-smoothstep(petals,petals+0.07,radius)
-                let inner=1.0-smoothstep(0.12,0.16,length(q+vec2(0.06,0.09)))
-                let paper=mix(vec3(0.88,0.82,0.96),vec3(0.63,0.79,0.89),p.y)*mix(1.0,0.90,shadow)
-                let petal=mix(vec3(0.39,0.43,0.72),vec3(0.66,0.54,0.79),clamp(p.y+sin(t*0.08)*0.15,0.0,1.0))
-                let android=mix(mix(paper,petal,shape),vec3(0.95,0.71,0.63),inner)
-                let color=mix(ios,android,self.android)*(1.0-self.dark*0.64)
-                return vec4(color,1.0)
+                return vec4(ios*dim,1.0)
             }
         }
     }
