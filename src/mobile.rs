@@ -22,6 +22,9 @@ pub enum PhoneHit {
     /// A page indicator dot: jump the home pager there (mobile_pages.rs).
     Page(i64),
     Island(crate::mobile_island::IslandHit),
+    /// The status bar's battery icon: three quick taps switch the
+    /// frame-time reporter (mobile_perf.rs).
+    Perf,
     /// Tile groups (mobile_groups.rs): the tile, a member in its window,
     /// the window's scrim, a pair's "Open both", a Recents card's split
     /// button and the split divider.

@@ -31,6 +31,7 @@ impl App {
         }
     }
     pub(super) fn animate_phone(&mut self,cx:&mut Cx) {
+        crate::mobile_perf::asked(crate::mobile_perf::Reason::Action);
         self.phone_frame=cx.new_next_frame();
         self.redraw_all(cx);
     }
@@ -325,8 +326,10 @@ impl App {
                 // switcher without moving; the frame keeps running while
                 // the recognizer owns a finger so the hold can land.
                 let mut tracking = false;
+                let mut gesture_reason = false;
                 if self.phone_gestures.active() {
                     tracking = true;
+                    gesture_reason = true;
                     if let Some(out) = self.phone_gestures.tick(frame.time) {
                         log!("wm: gesture {:?}", out);
                         let from = phone.gesture.as_ref().map(|g| g.screen).unwrap_or(phone.screen);
@@ -342,7 +345,10 @@ impl App {
                 let moving = phone.step(dt);
                 crate::mobile_groups::follow(phone);
                 let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
-                if moving || wallpaper_visible || tracking {self.phone_frame=cx.new_next_frame();}
+                if moving || wallpaper_visible || tracking {
+                    crate::mobile_perf::asked(if gesture_reason {crate::mobile_perf::Reason::Gesture} else {crate::mobile_perf::Reason::Anim});
+                    self.phone_frame=cx.new_next_frame();
+                }
                 // The tiles follow the phone state every frame: a window
                 // takes its compact face only once its dismissal settled.
                 self.sync_home_tiles(cx);
@@ -471,6 +477,7 @@ impl App {
             PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>self.toggle_phone_appearance(cx),
             PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
             PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
+            PhoneHit::Perf=>{crate::mobile_perf::battery_tap(cx,host::now());}
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);
