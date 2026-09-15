@@ -234,7 +234,16 @@ impl PhoneState {
             || self.groups.window_visible()
             || self.shade.open > 0.001
             || (ios && self.keyboard > 0.5);
-        ScenePlan { compose: glass, wallpaper: !app_settled, home: !app_settled }
+        // Android's app drawer is an opaque full-screen sheet and switches in
+        // without a slide, so the wallpaper under it is never seen, not even
+        // under the Recents blur when a home swipe starts on the drawer. The
+        // wallpaper shader is the most expensive full-screen fill the phone
+        // draws, and with glass up it ran once more in the backdrop scene: a
+        // Recents hold over the drawer presented at 39 fps (GPU-ready 43 ms)
+        // against 55 fps (13 ms) over Home. The iOS App Library is
+        // translucent and keeps it.
+        let drawer_covers = !ios && self.screen == PhoneScreen::Drawer;
+        ScenePlan { compose: glass, wallpaper: !app_settled && !drawer_covers, home: !app_settled }
     }
 }
 
@@ -327,6 +336,18 @@ mod tests {
             assert!(!phone.step(1.0/60.0));
         }
         assert!(phone.accepts_app_input());
+    }
+    #[test]
+    fn the_android_drawer_hides_the_wallpaper_even_under_glass() {
+        let mut phone = PhoneState::default();
+        phone.navigate(PhoneScreen::Drawer);
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: false, wallpaper: false, home: true }, "the opaque drawer covers the wallpaper");
+        phone.overview = 0.4;
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: true, wallpaper: false, home: true }, "a home swipe from the drawer blurs the drawer, not the wallpaper");
+        assert!(phone.scene_plan(true).wallpaper, "the iOS App Library is translucent: its wallpaper stays");
+        phone.overview = 0.0;
+        phone.navigate(PhoneScreen::Home);
+        assert!(phone.scene_plan(false).wallpaper, "back on Home the wallpaper draws");
     }
     #[test]
     fn compact_faces_wait_for_the_home_page_to_settle() {

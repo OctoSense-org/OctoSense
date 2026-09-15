@@ -56,6 +56,16 @@ script_mod! {
                 lensing_strength: 0.0 specular_strength: 0.0 border_alpha: 0.0
             }
         }
+        // The shade's sheet: the overview glass with the sheet's own tint
+        // folded in (desk light/dark tints below are set per draw), so the
+        // sheet is one full-width blend instead of a glass plus a tint layer.
+        shade_glass: GlassPanel {
+            draw_bg +: {
+                blur_level: 3.0 corner_radius: 0.0
+                tint_color: #101329 tint_alpha: 0.20 surface_alpha: 1.0
+                lensing_strength: 0.0 specular_strength: 0.0 border_alpha: 0.0
+            }
+        }
         perf_graph: PerfGraph {panel_width: 380.0 panel_height: 210.0 panel_margin: 12.0}
         keyboard_glass: GlassPanel {
             draw_bg +: {
@@ -127,6 +137,9 @@ pub struct PhoneSurface {
     /// the shell draws and schedules none of its own.
     #[live] perf_graph: PerfGraph,
     #[live] pub overview_glass: GaussRoundedView,
+    #[live] pub shade_glass: GaussRoundedView,
+    /// The shade's glyphs were rasterized ahead of its first pull.
+    #[rust] shade_warm: bool,
     #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
@@ -324,7 +337,9 @@ impl PhoneSurface {
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
         let style=state.style.target;
         let landscape=screen.size.x>screen.size.y;
-        self.rounded(cx,screen,0.0,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
+        // A flat fill, not the SDF chrome quad: the sheet is a full-screen
+        // opaque rect, and under Recents' glass every full-screen layer counts.
+        self.d.solid(cx,screen,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
         let ink=if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)};
         let pill=self.draw_search(cx,state,screen,ink);
         if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
@@ -452,7 +467,11 @@ impl PhoneSurface {
             self.d.icon_centered(cx,Ico::ChevronLeft,back,16.0,nav_ink);self.hits.push((back,PhoneHit::Back));
         }
         if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
-        crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.overview_glass,&mut self.hits,state,screen,backdrop);
+        if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {
+            self.shade_warm=true;
+            crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.chrome,&mut self.icons,state,screen);
+        }
+        crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.shade_glass,&mut self.hits,state,screen,backdrop);
         if perf {
             crate::mobile_perf::span(cx.cx,ch.shade,clock);
             // Above the shade, inside the navigation band's top edge.

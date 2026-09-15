@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "ab_glyph_rasterizer"
 version = "0.1.8"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "addr2line"
@@ -282,7 +282,7 @@ checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
 [[package]]
 name = "arrayvec"
 version = "0.7.6"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "arrayvec"
@@ -299,9 +299,9 @@ checksum = "d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16"
 [[package]]
 name = "ash"
 version = "0.38.0+1.3.281"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "libloading 0.8.9 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "libloading 0.8.9 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -551,7 +551,7 @@ dependencies = [
 [[package]]
 name = "bit-set"
 version = "0.8.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bit-vec",
 ]
@@ -559,7 +559,7 @@ dependencies = [
 [[package]]
 name = "bit-vec"
 version = "0.8.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "bitflags"
@@ -570,7 +570,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "bitflags"
 version = "2.10.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "bitflags"
@@ -705,7 +705,7 @@ checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 [[package]]
 name = "bytemuck"
 version = "1.25.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "bytemuck"
@@ -722,7 +722,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 [[package]]
 name = "byteorder"
 version = "1.5.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "byteorder-lite"
@@ -800,12 +800,12 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "cfg-if"
 version = "1.0.4"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "cfg_aliases"
 version = "0.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "cfg_aliases"
@@ -1275,7 +1275,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 [[package]]
 name = "crunchy"
 version = "0.2.4"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "crypto-common"
@@ -1548,7 +1548,7 @@ dependencies = [
 [[package]]
 name = "downcast-rs"
 version = "1.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "dunce"
@@ -1674,7 +1674,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "equivalent"
 version = "1.0.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "errno"
@@ -1849,7 +1849,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "foldhash"
 version = "0.2.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "fontconfig-parser"
@@ -2022,9 +2022,9 @@ dependencies = [
 [[package]]
 name = "fxhash"
 version = "0.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "byteorder 1.5.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "byteorder 1.5.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -2905,9 +2905,9 @@ dependencies = [
 [[package]]
 name = "hashbrown"
 version = "0.16.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "foldhash 0.2.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "foldhash 0.2.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -2956,7 +2956,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hexf-parse"
 version = "0.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "hilog-sys"
@@ -3153,17 +3153,17 @@ dependencies = [
 [[package]]
 name = "i_float"
 version = "3.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "i_key_sort"
 version = "0.11.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "i_overlay"
 version = "7.0.3"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "i_float",
  "i_key_sort",
@@ -3174,7 +3174,7 @@ dependencies = [
 [[package]]
 name = "i_shape"
 version = "3.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "i_float",
 ]
@@ -3182,7 +3182,7 @@ dependencies = [
 [[package]]
 name = "i_tree"
 version = "0.19.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "iana-time-zone"
@@ -3394,10 +3394,10 @@ dependencies = [
 [[package]]
 name = "indexmap"
 version = "2.13.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "equivalent 1.0.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "hashbrown 0.16.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "equivalent 1.0.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "hashbrown 0.16.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -3711,10 +3711,10 @@ dependencies = [
 [[package]]
 name = "libloading"
 version = "0.8.9"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -3864,7 +3864,7 @@ dependencies = [
 [[package]]
 name = "makepad-ai"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde",
@@ -3874,7 +3874,7 @@ dependencies = [
 [[package]]
 name = "makepad-ai-services"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-serde",
  "makepad-platform",
@@ -3884,7 +3884,7 @@ dependencies = [
 [[package]]
 name = "makepad-aichat"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-ai-services",
  "makepad-strict-json",
@@ -3905,7 +3905,7 @@ dependencies = [
 [[package]]
 name = "makepad-app-module"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-ai-services",
  "makepad-strict-json",
@@ -3915,7 +3915,7 @@ dependencies = [
 [[package]]
 name = "makepad-apple-sys"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-objc-sys",
 ]
@@ -3923,12 +3923,12 @@ dependencies = [
 [[package]]
 name = "makepad-byteorder-lite"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-code-editor"
 version = "2.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-widgets",
 ]
@@ -3936,7 +3936,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -3944,7 +3944,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "2.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -3964,7 +3964,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "2.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -3981,7 +3981,7 @@ dependencies = [
  "rustybuzz 0.18.0",
  "sdfer",
  "ttf-parser 0.24.1",
- "unicode-bidi 0.3.18 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "unicode-bidi 0.3.18 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
  "unicode-linebreak",
  "unicode-segmentation 1.12.0",
 ]
@@ -3989,7 +3989,7 @@ dependencies = [
 [[package]]
 name = "makepad-error-log"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -3997,12 +3997,12 @@ dependencies = [
 [[package]]
 name = "makepad-fast-inflate"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-filesystem-watcher"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-git",
 ]
@@ -4010,25 +4010,25 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-gif"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "weezl 0.1.12 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "weezl 0.1.12 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
 name = "makepad-git"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-fast-inflate",
 ]
@@ -4036,9 +4036,9 @@ dependencies = [
 [[package]]
 name = "makepad-half"
 version = "2.7.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
  "crunchy",
  "num-traits 0.2.20",
  "zerocopy 0.8.39",
@@ -4047,7 +4047,7 @@ dependencies = [
 [[package]]
 name = "makepad-html"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-live-id",
 ]
@@ -4055,7 +4055,7 @@ dependencies = [
 [[package]]
 name = "makepad-image-tiles"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-network",
  "makepad-platform-video",
@@ -4072,7 +4072,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-latex-math"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "ttf-parser 0.24.1",
 ]
@@ -4080,7 +4080,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -4088,7 +4088,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -4096,7 +4096,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-reload-core"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-filesystem-watcher",
 ]
@@ -4104,7 +4104,7 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-serde",
 ]
@@ -4112,7 +4112,7 @@ dependencies = [
 [[package]]
 name = "makepad-mbtile-reader"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "brotli",
  "makepad-fast-inflate",
@@ -4122,12 +4122,12 @@ dependencies = [
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -4136,7 +4136,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -4144,7 +4144,7 @@ dependencies = [
 [[package]]
 name = "makepad-network"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-apple-sys",
  "makepad-error-log",
@@ -4152,18 +4152,18 @@ dependencies = [
  "makepad-live-id",
  "makepad-micro-serde",
  "makepad-script",
- "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
 name = "makepad-objc-sys"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-pdf-parse"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-zune-inflate",
 ]
@@ -4171,7 +4171,7 @@ dependencies = [
 [[package]]
 name = "makepad-photos"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-ai-services",
  "makepad-app-module",
@@ -4184,7 +4184,7 @@ dependencies = [
 [[package]]
 name = "makepad-platform"
 version = "2.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "ash",
  "bitflags 2.10.0",
@@ -4214,30 +4214,30 @@ dependencies = [
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",
- "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
  "windows-targets 0.52.6",
 ]
 
 [[package]]
 name = "makepad-platform-video"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-apple-sys",
  "makepad-objc-sys",
- "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
 name = "makepad-regex"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-script"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-error-log",
  "makepad-html",
@@ -4252,7 +4252,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-derive"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -4260,7 +4260,7 @@ dependencies = [
 [[package]]
 name = "makepad-script-std"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-network",
  "makepad-script",
@@ -4269,12 +4269,12 @@ dependencies = [
 [[package]]
 name = "makepad-shared-bytes"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-sheets"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-ai-services",
  "makepad-app-module",
@@ -4285,22 +4285,22 @@ dependencies = [
 [[package]]
 name = "makepad-sqlite"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-stitch"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-strict-json"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "makepad-studio-protocol"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
  "makepad-error-log",
@@ -4312,7 +4312,7 @@ dependencies = [
 [[package]]
 name = "makepad-svg"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-html",
  "makepad-live-id",
@@ -4321,7 +4321,7 @@ dependencies = [
 [[package]]
 name = "makepad-tsdf"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-math",
  "makepad-micro-serde",
@@ -4330,7 +4330,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -4339,7 +4339,7 @@ dependencies = [
 [[package]]
 name = "makepad-webp"
 version = "0.2.4"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-byteorder-lite",
 ]
@@ -4347,7 +4347,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "2.0.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "i_overlay",
  "makepad-derive-widget",
@@ -4367,7 +4367,7 @@ dependencies = [
 [[package]]
 name = "makepad-wm-api"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-widgets",
 ]
@@ -4375,7 +4375,7 @@ dependencies = [
 [[package]]
 name = "makepad-wm-theme"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-widgets",
 ]
@@ -4383,7 +4383,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-bmp"
 version = "0.5.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-error-log",
  "makepad-zune-core",
@@ -4392,7 +4392,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.5.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-error-log",
 ]
@@ -4400,7 +4400,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "simd-adler32 0.3.9",
 ]
@@ -4408,7 +4408,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.5.15"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -4416,7 +4416,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.5.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-fast-inflate",
  "makepad-zune-core",
@@ -4426,7 +4426,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-qoi"
 version = "0.5.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -4493,7 +4493,7 @@ dependencies = [
 [[package]]
 name = "memchr"
 version = "2.7.6"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "memchr"
@@ -4678,14 +4678,14 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 [[package]]
 name = "naga"
 version = "27.0.3"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "arrayvec 0.7.6",
  "bit-set",
  "bitflags 2.10.0",
- "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "cfg-if 1.0.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
  "cfg_aliases 0.2.1",
- "hashbrown 0.16.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "hashbrown 0.16.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
  "hexf-parse",
  "indexmap 2.13.0",
  "makepad-error-log",
@@ -4879,7 +4879,7 @@ dependencies = [
 [[package]]
 name = "num-traits"
 version = "0.2.20"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "num_cpus"
@@ -5504,7 +5504,7 @@ checksum = "8d380ab6c951261a0e44306245bc960b3b3367f099a7da7156bd1a3cacaf783c"
 [[package]]
 name = "once_cell"
 version = "1.21.3"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "once_cell"
@@ -5758,7 +5758,7 @@ dependencies = [
 [[package]]
 name = "pkg-config"
 version = "0.3.32"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "pkg-config"
@@ -5918,11 +5918,11 @@ dependencies = [
 [[package]]
 name = "pulldown-cmark"
 version = "0.12.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
  "memchr 2.7.6",
- "unicase 2.9.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "unicase 2.9.0 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -6580,7 +6580,7 @@ checksum = "b74b56ffa8bb2830709a538c2cbcae9aa062db0d2a42563bfb09bdaae44020eb"
 [[package]]
 name = "rustc-hash"
 version = "1.1.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "rustc-hash"
@@ -6748,7 +6748,7 @@ dependencies = [
 [[package]]
 name = "rustybuzz"
 version = "0.18.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
  "bytemuck 1.25.0",
@@ -6757,8 +6757,8 @@ dependencies = [
  "ttf-parser 0.24.1",
  "unicode-bidi-mirroring 0.3.0",
  "unicode-ccc 0.3.0",
- "unicode-properties 0.1.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "unicode-script 0.5.8 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "unicode-properties 0.1.4 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "unicode-script 0.5.8 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -6866,7 +6866,7 @@ dependencies = [
 [[package]]
 name = "scoped-tls"
 version = "1.0.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "scopeguard"
@@ -6877,7 +6877,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "sdfer"
 version = "0.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "secrecy"
@@ -7149,7 +7149,7 @@ dependencies = [
 [[package]]
 name = "simd-adler32"
 version = "0.3.9"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "simd-adler32"
@@ -7230,7 +7230,7 @@ dependencies = [
 [[package]]
 name = "smallvec"
 version = "1.15.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "smallvec"
@@ -7257,7 +7257,7 @@ checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 [[package]]
 name = "spirv"
 version = "0.3.0+sdk-1.3.268.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
 ]
@@ -7512,7 +7512,7 @@ dependencies = [
 [[package]]
 name = "thiserror"
 version = "2.0.18"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "thiserror-impl 2.0.18",
 ]
@@ -7540,7 +7540,7 @@ dependencies = [
 [[package]]
 name = "thiserror-impl"
 version = "2.0.18"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -8010,7 +8010,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ttf-parser"
 version = "0.24.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "ttf-parser"
@@ -8126,7 +8126,7 @@ checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
 [[package]]
 name = "unicase"
 version = "2.9.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-bidi"
@@ -8137,12 +8137,12 @@ checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 [[package]]
 name = "unicode-bidi"
 version = "0.3.18"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-bidi-mirroring"
 version = "0.3.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-bidi-mirroring"
@@ -8159,7 +8159,7 @@ checksum = "7eec5d1121208364f6793f7d2e222bf75a915c19557537745b195b253dd64217"
 [[package]]
 name = "unicode-ccc"
 version = "0.3.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-ccc"
@@ -8170,7 +8170,7 @@ checksum = "ce61d488bcdc9bc8b5d1772c404828b17fc481c0a582b5581e95fb233aef503e"
 [[package]]
 name = "unicode-ident"
 version = "1.0.22"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-ident"
@@ -8181,7 +8181,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 [[package]]
 name = "unicode-linebreak"
 version = "0.1.5"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-normalization"
@@ -8201,7 +8201,7 @@ checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 [[package]]
 name = "unicode-properties"
 version = "0.1.4"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-script"
@@ -8212,12 +8212,12 @@ checksum = "383ad40bb927465ec0ce7720e033cb4ca06912855fc35db31b5755d0de75b1ee"
 [[package]]
 name = "unicode-script"
 version = "0.5.8"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-segmentation"
 version = "1.12.0"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "unicode-segmentation"
@@ -8465,7 +8465,7 @@ dependencies = [
 [[package]]
 name = "wayland-backend"
 version = "0.3.12"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "downcast-rs",
  "scoped-tls",
@@ -8476,7 +8476,7 @@ dependencies = [
 [[package]]
 name = "wayland-client"
 version = "0.31.12"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
  "wayland-backend",
@@ -8486,7 +8486,7 @@ dependencies = [
 [[package]]
 name = "wayland-egl"
 version = "0.32.9"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "wayland-backend",
  "wayland-sys",
@@ -8495,7 +8495,7 @@ dependencies = [
 [[package]]
 name = "wayland-protocols"
 version = "0.32.10"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "bitflags 2.10.0",
  "wayland-backend",
@@ -8505,7 +8505,7 @@ dependencies = [
 [[package]]
 name = "wayland-sys"
 version = "0.31.8"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
  "makepad-error-log",
  "pkg-config 0.3.32",
@@ -8586,7 +8586,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 [[package]]
 name = "weezl"
 version = "0.1.12"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "which"
@@ -8690,11 +8690,11 @@ dependencies = [
 [[package]]
 name = "windows"
 version = "0.62.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-collections 0.3.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-future 0.3.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-collections 0.3.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-future 0.3.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -8709,9 +8709,9 @@ dependencies = [
 [[package]]
 name = "windows-collections"
 version = "0.3.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -8754,11 +8754,11 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.62.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-result 0.4.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
- "windows-strings 0.5.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-result 0.4.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
+ "windows-strings 0.5.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -8775,9 +8775,9 @@ dependencies = [
 [[package]]
 name = "windows-future"
 version = "0.3.2"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-core 0.62.2 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -8855,7 +8855,7 @@ checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 [[package]]
 name = "windows-link"
 version = "0.2.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "windows-numerics"
@@ -8899,9 +8899,9 @@ dependencies = [
 [[package]]
 name = "windows-result"
 version = "0.4.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -8916,9 +8916,9 @@ dependencies = [
 [[package]]
 name = "windows-strings"
 version = "0.5.1"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 dependencies = [
- "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f)",
+ "windows-link 0.2.1 (git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411)",
 ]
 
 [[package]]
@@ -9324,7 +9324,7 @@ dependencies = [
 [[package]]
 name = "zerocopy"
 version = "0.8.39"
-source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=f1db9eb974b3833db7caf45de88feb12251a589f#f1db9eb974b3833db7caf45de88feb12251a589f"
+source = "git+https://www.github.com/OctoSense-org/makepad.git?rev=73dfc62a8358c7a6cce33e50a612ced28e5c7411#73dfc62a8358c7a6cce33e50a612ced28e5c7411"
 
 [[package]]
 name = "zerocopy"
