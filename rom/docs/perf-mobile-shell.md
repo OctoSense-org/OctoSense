@@ -1,4 +1,4 @@
-# Mobile shell perf — baseline vs perf (OnePlus 6T)
+# Mobile shell perf — baseline vs perf vs the idle-repaint fix (OnePlus 6T)
 
 Device: OnePlus 6T (ONEPLUS A6013), Snapdragon 845, 1080×2340 @ 60 Hz, over USB (`bf0a4730`).
 Both builds sit on `fix/hosted-appcard-mobile` @ fedd802 (PR #24):
@@ -91,7 +91,7 @@ scenes/s = phone scenes the shell drew; repaints/s = window repaints the rendere
 - Neither does drawing a single flat quad for the whole scene (desktop repro).
 - No drawn shader reads the pass time.
 
-This is **upstream** (the makepad fork) and unresolved here.
+This is **upstream** (the makepad fork). Resolved in the third column below.
 
 ### What the shell controls
 **The cost of each forced repaint.**
@@ -99,7 +99,11 @@ This is **upstream** (the makepad fork) and unresolved here.
 - **Perf:** the window pass alone. The census's hot list on idle Home is `pass#15/window` only.
 
 ### Why the 66 ms frames on the App screen remain
-The idle App screen (17–18 presents/s, every interval ≥ 33 ms) is the hosted AppCard presenting on its own. Its frames are in makepad's repaint path, not the shell's (1 scene/s on both builds).
+The idle App screen (17–18 presents/s, every interval ≥ 33 ms) looked like the hosted AppCard presenting on its own. The shell drew 1 scene/s on both builds.
+
+**Corrected by the third column.** These frames were makepad's forced repaint, not the module:
+- **Every forced repaint re-encoded the whole window's gauss pyramid.** The module's kit glass had requested it.
+- **Idle App screen with the idle fix:** 1.0 presents/s at 3 % CPU.
 
 ## Visual check
 Home, shade (pulled open) and Recents were captured on both builds with the monitor off:
@@ -108,7 +112,183 @@ Home, shade (pulled open) and Recents were captured on both builds with the moni
 
 They match, apart from the wallpaper's drift position.
 
-**A flip that is not a regression.** On both builds the frosted backdrop under the shade and the Recents overview samples the scene **upside down**: a mirrored clock and mirrored tiles show through at the bottom. It is identical on the baseline, so it predates these commits. It is the GL snapshot orientation the desk code already notes ("the final-glass snapshot is upside down on GL"), and it is left for a separate fix.
+**A flip that is not a regression.** On both builds the frosted backdrop under the shade and the Recents overview samples the scene **upside down**: a mirrored clock and mirrored tiles show through at the bottom. It is identical on the baseline, so it predates these commits. It is the GL snapshot orientation the desk code already notes ("the final-glass snapshot is upside down on GL"). Fixed in the third column below.
+
+## Third column — the makepad idle fix and the transition fixes (`perf/android-idle-repaint`)
+
+The third build is `perf/mobile-shell` plus:
+- the makepad fork at `fix/android-idle-repaint` (OctoSense-org/makepad#6);
+- five shell commits: the in-process clock, the fork-side flip replacing the GL override, a module's glass scoped to its capture, the capture freeze while an app zooms open, and a one-branch wallpaper shader.
+
+It is measured with `perf_scenarios3.sh round3`, the same 13 scenarios with the monitor verified on. Raw data is in `scratchpad/perf-round3.txt` and `perf-round3/`, and the tables come from `perf_tables3.py`.
+
+### Why the display kept getting ~56 frames/s: the unpolled GL completion fence
+The completed-serial counter on GL only moves when `poll_texture_lifetimes` polls the completion fence, and the GL render path never called it. Its only callers were `frame_completion_serial()` and texture release.
+
+**The effect, step by step.**
+1. Every released retained-upload allocation record (`submitted > completed`) stayed in the ledger forever.
+2. `has_pending_instance_retirements()` never went false.
+3. `render_view` set `demo_time_repaint` on every render (`platform/src/os/linux/opengl.rs:409` at ad8f372).
+4. Every live pass repainted on the next vsync.
+
+**Why macOS settles.** Metal command-buffer completion handlers advance the counter on their own.
+
+**A diagnostic build on the phone.** After 953 submissions of an idle Home: `completed=0 records=598 terms=allocations fence_fns=false`. The fence functions had never been resolved.
+
+**The fix.**
+- `render_view` polls the fence.
+- `eglGetCurrentContext` comes from libEGL, because Android's `eglGetProcAddress` resolves extension entry points only.
+- On Android, retirement debt is served on an idle vsync beat without painting, like the macOS maintenance beat.
+
+**Result.**
+| screen | before | after |
+|---|---|---|
+| idle Home | 56 presents/s | 1.0 presents/s (the clock tick) |
+| idle hosted-AppCard screen (17.5 fps with every frame > 33 ms before; not the module's own cost) | 18.6 presents/s | 1.0 presents/s |
+| idle Recents | 33.7 presents/s | 1.2 presents/s |
+| idle group | 44.1 presents/s | 1.0 presents/s |
+
+### Idle CPU: a forked `date`
+**After the renderer fix, idle Home still used 19 % of a core.** Per-thread `/proc` ticks put 11 % on `wm-status`: the status sampler forked `date` twice a second. `localtime_r` + `strftime` replace it.
+
+**Idle Home CPU:**
+| stage | CPU |
+|---|---|
+| perf | 43 % |
+| fork fix alone | 19 % |
+| with the clock fix | 3–8 % |
+
+The rest is the main loop waking on every Choreographer vsync to find nothing to paint (~5 %) and the Java UI thread (~2 %).
+
+### The frosted backdrop was upside down
+The fork's GL backend has rendered offscreen passes top-left since d1a0eb1cb. `gauss_render_texture_y_flip_for_os` still returned a V flip of 1.0 on Android, so every glass shader sampled the pyramid mirrored.
+
+**Fixed in the fork.** The flip is 0 on every backend. The shell's `DrawGaussScene` override (`octosense/android_rendering.rs`) is gone.
+
+**Verified.** The clock behind the shade and Recents reads upright (`scratchpad/perf-round2/visual-{shade,recents}.png`).
+
+### What the transition frames were made of
+Android had no platform channels, so the fork adds `draw` (pass encode), `wait` (`eglSwapBuffers`) and `gc` to the frame monitor. SurfaceFlinger's third `--latency` column (the acquire fence) gives a GPU-ready latency per frame.
+
+**On the idle-fix build, transitions are GPU-bound, not CPU-bound.**
+| scenario | burst fps | CPU draw (ms, mean) | CPU shell (ms, mean) | eglSwapBuffers wait (ms, mean / worst) | GPU-ready p50 |
+|---|---|---|---|---|---|
+| open-app | 17–20 | 9.8 | home 11.6, module 14 | 25.5 / 124 | 94 ms |
+| shade | 25–30 | 5.9 | shade 1.9 | 15.3 / 92 | — |
+| Recents hold | 33 | — | — | — | 41 ms |
+
+`draw` is the pass encode and the shell columns are its own channels; all of them are CPU time.
+
+**Two costs the census exposed.**
+- **The hosted module's kit glass requested the whole WM window's gauss pyramid.** `gauss_mip_*` on the window appeared in the hot list on open-app and on every idle App tick: a full-screen scene pass, a copy and six levels. `WindowFrame` now carries a `CaptureGauss`, as the fork's own WM does.
+- **The foreground app's full capture was re-recorded on every frame of the zoom-open animation.** It now zooms its last capture and refreshes once settled.
+- **Also:** the wallpaper shader computed both styles per pixel, full screen, and now branches.
+
+**Open-app improved from 17–20 fps to 31.5** (p50 16.6 ms). Every other transition is still short of the ≥ 55 fps / p95 ≤ 20 ms target; see below.
+
+## Table 3 — SurfaceFlinger, perf (Table 1) vs round3
+
+Burst stats exclude intervals of 250 ms or more (idle gaps and the 1 s clock tick): once an idle screen presents ~1/s, whole-window stats measure the idle gap, not the animation. GPU-ready = queue → acquire-fence signal, per burst frame.
+
+| scenario | perf presents/s | perf p50/p95 ms | perf >16.7 / >33 | round3 presents/s | round3 burst fps | round3 burst p50/p95/max ms | round3 >16.7 / >33 | round3 GPU-ready p50/p95 ms |
+|---|---|---|---|---|---|---|---|---|
+| idle-home | 56.2 | 16.6 / 33.1 | 24/448 · 5/448 | 1.0 | — | no burst | — | — |
+| open-app(tap AppCard icon) | 27.3 | 16.7 / 66.6 | 46/108 · 43/108 | 6.0 | 31.5 | 16.6 / 49.9 / 199.6 | 6/22 · 5/22 | 17.2 / 121.4 |
+| idle-app-screen | 18.6 | 49.9 / 66.9 | 147/147 · 146/147 | 1.0 | — | no burst | — | — |
+| swipe-up-home | 40.6 | 16.6 / 66.4 | 36/161 · 30/161 | 7.5 | 40.1 | 16.7 / 33.3 / 66.5 | 11/26 · 1/26 | 37.5 / 44.7 |
+| shade-pull+close | 41.1 | 16.7 / 50.0 | 66/204 · 27/204 | 10.2 | 33.7 | 33.3 / 49.9 / 99.8 | 24/46 · 8/46 | 39.8 / 123.7 |
+| page-swipe(right then back) | 55.3 | 16.6 / 16.8 | 9/275 · 7/275 | 7.0 | 50.1 | 16.6 / 16.8 / 116.4 | 1/30 · 1/30 | 17.3 / 21.6 |
+| recents(swipe-up-hold) | 39.9 | 16.7 / 33.6 | 81/198 · 7/198 | 15.6 | 36.0 | 33.3 / 33.3 / 83.2 | 46/73 · 1/73 | 37.2 / 48.4 |
+| recents-idle | 33.7 | 33.3 / 49.9 | 92/133 · 10/133 | 1.2 | 60.1 | 16.6 / 16.6 / 16.6 | 0/1 · 0/1 | 77.4 / 77.4 |
+| recents-to-home | 48.6 | 16.6 / 33.5 | 36/193 · 6/193 | 6.2 | 34.1 | 16.6 / 33.3 / 149.7 | 9/21 · 1/21 | 30.1 / 81.2 |
+| island-demo(triple-tap clock) | 52.9 | 16.6 / 33.3 | 22/316 · 9/316 | 5.5 | 55.7 | 16.6 / 33.2 / 33.3 | 2/25 · 0/25 | 18.3 / 24.3 |
+| group-open(tap Work) | 47.3 | 16.6 / 33.5 | 38/188 · 6/188 | 26.8 | 52.6 | 16.6 / 33.3 / 49.9 | 13/105 · 2/105 | 22.5 / 39.2 |
+| group-idle | 44.1 | 16.6 / 49.9 | 46/175 · 11/175 | 1.0 | — | no burst | — | — |
+| group-close(tap scrim) | 53.7 | 16.6 / 33.3 | 18/160 · 1/160 | 6.0 | 37.6 | 16.6 / 83.2 / 83.2 | 5/15 · 2/15 | 17.0 / 56.6 |
+
+CPU after *idle-home*: perf 43.0 % · round3 3.0 %  
+CPU after *idle-app-screen*: perf 34.0 % · round3 3.0 %  
+
+## Table 4 — frame monitor channels on round3 (busy windows, mean/worst ms per shell frame)
+
+| scenario | gap p50/p95/max ms (>16.7·>33) | channels |
+|---|---|---|
+| idle-home | idle | idle |
+| open-app(tap AppCard icon) | 16.7 / 168.2 / 176.5 (8·5) | event 13.0/247, draw 9.0/15, wait 11.0/122, home 1.8/5, module 6.1/139, overlay 0.1/1 |
+| idle-app-screen | idle | idle |
+| swipe-up-home | 23.5 / 142.2 / 293.5 (24·2) | event 3.1/24, draw 3.1/6, wait 13.2/21, home 2.2/4, module 0.0/0, glass 0.0/0, overlay 0.3/3 |
+| shade-pull+close | 39.0 / 45.5 / 104.2 (27·23) | event 6.4/48, draw 5.7/10, wait 14.9/92, home 3.9/10, glass 0.0/0, overlay 0.1/0, shade 1.6/32 |
+| page-swipe(right then back) | 15.6 / 28.8 / 120.4 (9·1) | event 8.9/61, draw 3.9/8, wait 2.9/9, home 2.8/20, overlay 0.0/0 |
+| recents(swipe-up-hold) | 27.4 / 233.1 / 466.8 (75·3) | event 11.3/53, draw 6.1/15, wait 10.5/63, home 1.0/4, glass 0.1/1, overlay 0.6/2, groups 0.1/10 |
+| recents-idle | 29.9 / 29.9 / 29.9 (1·0) | event 38.6/53, draw 7.0/9, wait 1.4/2, home 6.4/12, glass 0.2/0, overlay 1.5/3, groups 0.1/0 |
+| recents-to-home | 23.9 / 78.9 / 166.1 (20·2) | event 12.7/52, draw 4.4/9, wait 8.5/64, home 4.1/7, glass 0.1/0, overlay 0.7/4, groups 0.0/0 |
+| island-demo(triple-tap clock) | 18.5 / 313.2 / 364.0 (9·2) | event 13.4/56, draw 4.3/7, wait 2.7/14, home 4.6/10, overlay 0.6/11 |
+| group-open(tap Work) | 20.6 / 58.7 / 58.7 (59·4) | event 5.0/53, draw 3.6/8, wait 5.6/42, home 3.6/9, glass 0.0/0, overlay 0.4/1, groups 0.3/11 |
+| group-idle | idle | idle |
+| group-close(tap scrim) | 17.8 / 99.2 / 99.2 (8·5) | event 13.2/60, draw 6.5/14, wait 4.0/19, home 5.5/10, glass 0.0/0, overlay 0.5/1, groups 1.0/2 |
+
+### What still blocks 55 fps on shade, Recents and the swipe home
+**The A/B test.** A temporary build read \`debug.octosense.ab\` on every scene draw, so parts of the frame could be switched off from adb:
+- \`flatwall\`: a flat fill instead of the wallpaper shader;
+- \`noglass\`: no compositor, so no gauss scene, copy or pyramid;
+- \`nohome\`: no home page.
+
+**Results.** Fresh launch, empty Recents, two repetitions per set; burst fps with p95 in ms.
+
+| switches | shade | Recents hold | Recents → Home |
+|---|---|---|---|
+| none | 25–43 (50–150) | 48–56 (17–33) | 35–44 (33–50) |
+| flatwall | 41–43 (50–67) | 53–56 (33) | 46 (33) |
+| noglass | 32–42 (50–133) | 52–56 (33) | 44–46 (33) |
+| nohome | 42–43 (50) | 55–57 (17–33) | 28–48 (33–216) |
+| flatwall + noglass | 37–44 (50–83) | 51–56 (33) | 41–46 (33–50) |
+
+**Full-screen GPU content is not what holds these frames.** Removing the wallpaper shader, the whole backdrop compositor, or the home page moves nothing beyond run-to-run noise.
+
+**Second run, with the AppCard card in Recents** (as in the harness), monitor off:
+
+| switches | Recents hold | Recents → Home | shade |
+|---|---|---|---|
+| none (twice) | 52–56 (33) | 23–46 (33–216) | 33–44 (50) |
+| flatwall | 51–56 (33) | 44–45 (33) | 38–41 (50–67) |
+| noglass | 51–54 (33) | 34–44 (33–50) | 27–43 (33–233) |
+| nohome | 53–53 (33) | 47–48 (33) | 44 (33–50) |
+| flatwall + noglass | 54 (33) | 34–44 (33–50) | 31–42 (67–133) |
+
+The card changes nothing either.
+
+**The monitor distorts one scenario.** With the monitor off, the Recents hold runs at 52–56 fps, against 36 fps in round 3, where the monitor and PerfGraph were on. PerfGraph asks for a next frame on every draw and adds its own full-width graph, so the round-3 Recents-hold column understates the monitor-off build.
+
+**The shade doesn't have that excuse.** It stays at 33–44 fps with p95 50 ms, monitor on or off, with or without GPU content.
+
+**Where the slow frames sit.** Per-frame intervals from \`perf-round3/*.presents\`:
+- **Animation-driven phases already present at 16.6 ms:** the shade's settle, Home after a swipe, the island, the group window.
+- **The first frame of a transition** is 67–150 ms, sometimes two frames.
+- **The finger phase** runs 33/33/50 ms on the shade pull, or alternating 16.7/33 ms on the swipe home and the Recents hold.
+
+**Each alternating frame misses the vsync on the main thread, not on the GPU.** The frame monitor on round 3 during the Recents hold:
+
+| channel | ms per frame (mean) |
+|---|---|
+| \`event\` (the shell's event and draw recording) | 11.3 |
+| \`draw\` (pass encode) | 6.1 |
+| \`wait\` (\`eglSwapBuffers\`) | 10.5 |
+| **total** | **≈ 28**, against a 16.7 ms budget |
+
+The shell's own draw channels account for only ~2 ms of \`event\` (home 1.0, overlay 0.6, glass 0.1), so ~9 ms of per-frame scene recording is unattributed.
+
+**Next step:** a CPU profile of that recording plus the swap, which needs a debuggable build for \`simpleperf\`; the release APK's perf events are denied. The first-frame spikes line up with the monitor's worst \`event\` (48–80 ms) and \`wait\` (63–122 ms) frames at a transition's start.
+
+**Targets met on round 3:**
+- idle Home, Recents and group windows: ≈ 1 present/s;
+- open-app: p50 16.6 ms (31.5 fps, p95 50 ms);
+- page swipe: 50 fps, p95 16.8 ms.
+
+**Targets not met:**
+- shade: 34 fps, p95 50 ms;
+- Recents hold: 36 fps, p95 33 ms, with the AppCard card present;
+- swipe home: 40 fps, p95 33 ms;
+- Recents → Home: 34 fps, p95 33 ms.
 
 ## Device housekeeping
 - **What the run changed.** It set `svc power stayon true` and `settings put system screen_off_timeout 1800000`.
