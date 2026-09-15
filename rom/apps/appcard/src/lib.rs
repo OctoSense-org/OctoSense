@@ -68,6 +68,61 @@ pub fn activity_reporter() -> Option<&'static dyn ActivityReporter> {
     ACTIVITY_REPORTER.get().map(|r| r.as_ref())
 }
 
+/// Archive the hosted app's card approval store once per host build, the
+/// way a deployment of the standalone APK does it.
+///
+/// octos-app pins every admitted card to the runtime bundle it was admitted
+/// under (`l0_approval_store::require` with `SPLASH_RUNTIME_BUNDLE`) and
+/// fails closed on a stale receipt — a card then draws nothing. Archiving the
+/// store is the host's EXPLICIT deployment action (octos-app's own
+/// `MAKEPAD_REAPPROVE_CARDS` does exactly this rename at startup), so the
+/// host does it itself when its build id changed: the store moves to
+/// `l0-approvals-before-studio-<build_id>` beside itself, the same name the
+/// app uses, and the id is remembered in `<config>/octosense-host-build` so
+/// the next launch of the same build leaves the fresh receipts alone.
+///
+/// `config` is octos-app's config directory (`$OCTOS_APP_CONFIG_DIR`, else
+/// `$HOME/.config/octos-app`) — [`octos_app_config_dir`] finds it. Returns
+/// what was archived: `None` when this build already did it, or there was
+/// nothing to archive and the marker is now written.
+pub fn reapprove_cards_for_host_build(config: &std::path::Path, build_id: &str) -> Result<Option<std::path::PathBuf>, String> {
+    if build_id.is_empty() || !build_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("host build id {build_id:?} is not digits"));
+    }
+    let marker = config.join("octosense-host-build");
+    if std::fs::read_to_string(&marker).map(|s| s.trim() == build_id).unwrap_or(false) {
+        return Ok(None);
+    }
+    let store = config.join("l0-approvals");
+    let backup = config.join(format!("l0-approvals-before-studio-{build_id}"));
+    let archived = if store.is_dir() && !backup.exists() {
+        std::fs::rename(&store, &backup).map_err(|e| format!("archive card receipts {}: {e}", store.display()))?;
+        Some(backup)
+    } else {
+        None
+    };
+    std::fs::create_dir_all(config).map_err(|e| format!("create {}: {e}", config.display()))?;
+    std::fs::write(&marker, build_id).map_err(|e| format!("write {}: {e}", marker.display()))?;
+    Ok(archived)
+}
+
+/// Where octos-app keeps its config — its own rule, restated: the
+/// `OCTOS_APP_CONFIG_DIR` override, else `<home>/.config/octos-app`, where
+/// `home` is what the app itself makes `$HOME` at its startup: on a phone
+/// the platform's data dir (`cx.get_data_dir()`, `<files>` on Android) —
+/// the host asks BEFORE the app has started, so `$HOME` alone would be
+/// unset there — else the process's `$HOME`.
+pub fn octos_app_config_dir(data_dir: Option<String>) -> Option<std::path::PathBuf> {
+    if let Some(dir) = std::env::var_os("OCTOS_APP_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        return Some(std::path::PathBuf::from(dir));
+    }
+    let home = match data_dir.filter(|d| !d.is_empty() && cfg!(any(target_os = "android", target_env = "ohos"))) {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::PathBuf::from(std::env::var_os("HOME")?),
+    };
+    Some(home.join(".config").join("octos-app"))
+}
+
 /// The kernel turn in flight, as the app's chat state knows it: the
 /// prompt text that started it (empty when the app has no record of it),
 /// `None` when no turn is running. Set at submit — the `ask` tool and the
@@ -238,5 +293,36 @@ mod tests {
 
     fn cx_storage_for_test(vm: &mut ScriptVm) -> makepad_widgets::makepad_platform::storage::StorageHandle {
         vm.cx_mut().storage("appcard.test")
+    }
+
+    /// A new host build archives the store once, under the app's own backup
+    /// name; the same build again leaves the fresh receipts alone; a bad id
+    /// is refused before anything moves.
+    #[test]
+    fn a_new_host_build_archives_the_card_approvals_once() {
+        let dir = std::env::temp_dir().join(format!("octosense-appcard-reapprove-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = dir.join("l0-approvals");
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::write(store.join("receipt.json"), "{}").unwrap();
+        assert!(reapprove_cards_for_host_build(&dir, "abc").is_err(), "an id must be digits");
+        assert!(store.is_dir(), "a refused id moves nothing");
+        let backup = reapprove_cards_for_host_build(&dir, "1700000000").unwrap().expect("the first launch of a build archives");
+        assert_eq!(backup, dir.join("l0-approvals-before-studio-1700000000"));
+        assert!(backup.join("receipt.json").is_file() && !store.exists(), "the receipts moved aside intact");
+        // The app admits cards again into a fresh store...
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::write(store.join("fresh.json"), "{}").unwrap();
+        // ...which the same build never touches, however often it launches.
+        assert_eq!(reapprove_cards_for_host_build(&dir, "1700000000").unwrap(), None);
+        assert!(store.join("fresh.json").is_file());
+        // The next build archives again, under its own name.
+        assert!(reapprove_cards_for_host_build(&dir, "1700000001").unwrap().is_some());
+        assert!(!store.exists() && dir.join("l0-approvals-before-studio-1700000001").join("fresh.json").is_file());
+        // No store at all: nothing to archive, but the build is remembered.
+        assert_eq!(reapprove_cards_for_host_build(&dir, "1700000002").unwrap(), None);
+        assert_eq!(std::fs::read_to_string(dir.join("octosense-host-build")).unwrap(), "1700000002");
+        assert_eq!(reapprove_cards_for_host_build(&dir, "1700000002").unwrap(), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

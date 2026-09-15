@@ -155,6 +155,39 @@ impl TileHost for MpModuleView {
     }
 }
 
+/// Where a pointer event starts relative to the tile's rect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointerStart {
+    /// A press, a new touch or a wheel step inside the tile.
+    Inside,
+    /// One that begins outside it: not this tile's event.
+    Outside,
+    /// Not a pointer start (a move, a release, a key, a frame...).
+    None,
+}
+
+/// Classify `event` against the tile's rect (`None` while the tile has not
+/// drawn yet: nothing is inside a rect that does not exist). Moves and
+/// releases pass through: a finger the root captured inside keeps reaching
+/// it wherever it goes, as for any widget.
+fn pointer_start(event: &Event, rect: Option<Rect>) -> PointerStart {
+    let abs = match event {
+        Event::MouseDown(e) => Some(e.abs),
+        Event::Scroll(e) => Some(e.abs),
+        Event::TouchUpdate(update) => match update.touches.iter()
+            .find(|point| point.state == makepad_platform::event::TouchState::Start) {
+            Some(point) => Some(point.abs),
+            None => return PointerStart::None,
+        },
+        _ => None,
+    };
+    match (abs, rect) {
+        (None, _) => PointerStart::None,
+        (Some(abs), Some(rect)) if rect.contains(abs) => PointerStart::Inside,
+        (Some(_), _) => PointerStart::Outside,
+    }
+}
+
 impl Widget for MpModuleView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let Some(root) = self.root.clone() else {
@@ -165,21 +198,22 @@ impl Widget for MpModuleView {
         if matches!(event, Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_)) && !self.focused {
             return;
         }
-        let press = match event {
-            Event::MouseDown(e) => Some(e.abs),
-            Event::TouchUpdate(update) => update.touches.iter()
-                .find(|point| point.state == makepad_platform::event::TouchState::Start)
-                .map(|point| point.abs),
-            _ => None,
-        };
-        if let Some(abs) = press {
-            if self.area.is_valid(cx) && self.area.rect(cx).contains(abs) {
+        // The root is a whole app: its widgets hit-test by their own areas,
+        // which cover exactly the tile, but a press, a touch or a wheel
+        // that begins OUTSIDE the tile is not this instance's to see — it
+        // is the shell's (a band, the shade, another tile). A process tile
+        // gets the same gate from `event.hits(cx, self.area)`.
+        let rect = self.area.is_valid(cx).then(|| self.area.rect(cx));
+        match pointer_start(event, rect) {
+            PointerStart::Outside => return,
+            PointerStart::Inside => {
                 if let Some(client) = self.client {
                     // The WM moves focus here (and back to us through
                     // `focus_keyboard`), exactly as for a process tile.
                     cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
                 }
             }
+            PointerStart::None => {}
         }
         let entry = enter_isolate(cx, self.vm_id);
         root.handle_event(cx, event, scope);
@@ -207,5 +241,37 @@ impl Widget for MpModuleView {
         }
         cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use makepad_platform::event::{TouchPoint, TouchState, TouchUpdateEvent};
+
+    fn tile() -> Option<Rect> {
+        Some(Rect { pos: dvec2(0.0, 42.0), size: dvec2(412.0, 826.0) })
+    }
+    fn touch(abs: Vec2d, state: TouchState) -> Event {
+        Event::TouchUpdate(TouchUpdateEvent {
+            time: 0.0,
+            window_id: WindowId(0, 0),
+            modifiers: Default::default(),
+            touches: vec![TouchPoint { state, abs, time: 0.0, uid: 1, rotation_angle: 0.0, force: 0.0, radius: dvec2(1.0, 1.0), handled: Default::default(), sweep_lock: Default::default() }],
+        })
+    }
+
+    /// A finger in the shell's status band or navigation band never starts
+    /// inside the tile; one on the app does; the rest of its stroke passes.
+    #[test]
+    fn only_pointer_starts_inside_the_tile_reach_the_root() {
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 20.0), TouchState::Start), tile()), PointerStart::Outside, "status band");
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 880.0), TouchState::Start), tile()), PointerStart::Outside, "navigation band");
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 400.0), TouchState::Start), tile()), PointerStart::Inside);
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 20.0), TouchState::Move), tile()), PointerStart::None, "a move passes wherever it is");
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 20.0), TouchState::Stop), tile()), PointerStart::None);
+        // Before the first draw there is no rect: nothing is inside it.
+        assert_eq!(pointer_start(&touch(dvec2(200.0, 400.0), TouchState::Start), None), PointerStart::Outside);
+        assert_eq!(pointer_start(&Event::Startup, tile()), PointerStart::None);
     }
 }

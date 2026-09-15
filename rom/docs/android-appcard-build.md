@@ -115,6 +115,45 @@ On a desktop the app spawns a local kernel only when BOTH `OCTOS_APP_CORE_BIN`
 `OCTOS_HOME=<dir>`) are set; otherwise it uses the WebSocket transport / login
 screen, so a developer's own `octos serve` is never touched.
 
+## Card approvals across builds
+
+octos-app pins every card it admits to the runtime bundle that admitted it
+(`l0_approval_store::require` with `SPLASH_RUNTIME_BUNDLE`) and fails closed
+on a stale receipt: after a new APK the card draws nothing until the store is
+archived for re-admission — the standalone app's own deployment action
+(`MAKEPAD_REAPPROVE_CARDS=<digits>` renames the store to
+`l0-approvals-before-studio-<digits>`). OctoSense does this itself on
+Android: `build.rs` stamps the build with `OCTOSENSE_BUILD_ID` (the epoch
+second it was configured, renewed by any source change), and the first
+launch of a new build archives
+`<files>/.config/octos-app/l0-approvals` under that name and remembers the id
+in `octosense-host-build` next to it
+(`octosense_appcard::reapprove_cards_for_host_build`). Nothing to do by hand
+after `cargo makepad android run`; the manual equivalent, for an APK built
+elsewhere, is
+
+```sh
+"$ADB" shell "su -c 'mv /data/data/dev.makepad.octosense/files/.config/octos-app/l0-approvals \
+  /data/data/dev.makepad.octosense/files/.config/octos-app/l0-approvals-before-studio-$(date +%s)'"
+```
+
+## The hosted module in the phone's captures
+
+The phone desk never draws a client directly: each tile is recorded into a
+`WindowFrame` (a pass of its own) and the texture is presented in the
+client's slot — the app viewport, a split pane, a Recents card, a home tile —
+under the shell's overlays (island, groups, keyboard, shade). A hosted module
+draws into that pass like a process's frames land in it, with one thing to
+know: a pass has an overlay of its own, and `WindowFrame` scopes it
+(`Overlay::begin_nested_for_pass`) for the whole recording. Everything the
+app draws through `begin_overlay_*` — the AppCard kit's glass surfaces, a
+popup, a modal — composites into the capture, last, and never into the WM
+window's overlay. Before that scope existed those lists painted over the
+shade and the home page and stayed on screen after the tile was gone. The
+module's tile forwards a press, a new touch or a wheel step to the app only
+when it begins inside the tile's rect; the shell's recognizer has already
+declined that finger by the time the tile sees it.
+
 ## Provisioning the LLM key
 
 The quoting-safe way is `scripts/provision-appcard-llm.sh <family> <model> <key>`: it builds the JSON, ships it through both shells intact, restarts OctoSense with the extra, and waits for the app to log `provisioned LLM`. GLM keys come in two families: `zhipu` for a bigmodel.cn key (OpenAI-style endpoint) and `zai` for a z.ai key (Anthropic-style endpoint); using the wrong one yields HTTP 401 even with a valid key.

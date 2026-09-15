@@ -4046,6 +4046,7 @@ impl MatchEvent for App {
             self.set_desktop_style(cx, startup_style);
         }
         mobile_island::install_producers();
+        self.reapprove_hosted_cards(cx);
         if cfg!(any(target_os = "ios", target_os = "android")) {
             self.update_bar_chrome(cx, &WindowGeom {
                 safe_area_insets: cx.display_context.safe_area_insets,

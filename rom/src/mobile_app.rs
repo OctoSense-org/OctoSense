@@ -9,6 +9,27 @@ use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 enum PhonePointerPhase { Down, Move, Up, Scroll }
 
 impl App {
+    /// A hosted AppCard's card approvals are pinned to the build that
+    /// admitted them; on the phone every new APK is a deployment, so the
+    /// host archives the store once per build id (its explicit action, see
+    /// `octosense_appcard::reapprove_cards_for_host_build`). Desktop builds
+    /// leave the developer's own store alone.
+    pub(super) fn reapprove_hosted_cards(&self, cx: &Cx) {
+        #[cfg(not(target_os = "android"))]
+        let _ = cx;
+        #[cfg(target_os = "android")]
+        {
+            let Some(config) = octosense_appcard::octos_app_config_dir(cx.get_data_dir()) else {
+                log!("wm: card approvals not archived: no data dir to find the store in");
+                return;
+            };
+            match octosense_appcard::reapprove_cards_for_host_build(&config, env!("OCTOSENSE_BUILD_ID")) {
+                Ok(Some(backup)) => log!("wm: host build {} is new: card approvals archived to {}", env!("OCTOSENSE_BUILD_ID"), backup.display()),
+                Ok(None) => {}
+                Err(e) => log!("wm: card approvals not archived: {e}"),
+            }
+        }
+    }
     pub(super) fn animate_phone(&mut self,cx:&mut Cx) {
         self.phone_frame=cx.new_next_frame();
         self.redraw_all(cx);
