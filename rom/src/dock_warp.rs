@@ -65,11 +65,20 @@ pub struct DrawDockWarp {
 /// in the WM window's overlay: painted last of all, over the shell's shade,
 /// keyboard and home page, unclipped, and kept on screen after the tile was
 /// no longer drawn — the module "painting over the whole window".
+///
+/// The gauss pyramid a module's glass asks for is the capture's own too
+/// (`CaptureGauss`): built from this texture while something inside asks,
+/// nothing otherwise. Without it `request_window_gauss` resolved to the WM
+/// window: every frame that recorded a module re-routed the whole window
+/// through a full-screen gauss scene pass, a copy and a six-level pyramid
+/// (on the phone: the whole open-app animation and every idle App tick).
 pub struct WindowFrame {
     pass: DrawPass,
     list: DrawList2d,
     overlay: Overlay,
     overlay_scope: Option<OverlayScope>,
+    gauss: makepad_widgets::gauss_view::CaptureGauss,
+    rect: Rect,
     texture: Texture,
     _depth: Texture,
     frozen: bool,
@@ -105,6 +114,8 @@ impl WindowFrame {
             list: DrawList2d::new(cx),
             overlay: Overlay { draw_list: DrawList::new(cx) },
             overlay_scope: None,
+            gauss: makepad_widgets::gauss_view::CaptureGauss::new(cx),
+            rect: Rect::default(),
             texture,
             _depth: depth,
             frozen: false,
@@ -130,10 +141,18 @@ impl WindowFrame {
         cx.begin_pass(&self.pass, Some(dpi));
         self.list.begin_always(cx);
         cx.begin_root_turtle(root_size, Layout::flow_overlay());
-        // From here to `end`, overlays belong to this pass (see the type doc).
-        self.overlay_scope = Some(self.overlay.begin_nested_for_pass(cx, self.pass.draw_pass_id()));
+        // From here to `end`, overlays and gauss requests belong to this pass
+        // (see the type doc).
+        self.rect = rect;
+        let pass = self.pass.draw_pass_id();
+        self.overlay_scope = Some(self.overlay.begin_nested_for_pass(cx, pass));
+        self.gauss.begin(cx, pass, rect.pos, rect.size, root_size);
     }
     pub fn end(&mut self, cx: &mut Cx2d) {
+        let pass = self.pass.draw_pass_id();
+        // The scene (when a pyramid was built) goes under the overlays, the
+        // overlays last — the window's own order.
+        let gauss_changed = self.gauss.end(cx, pass, self.rect);
         // The overlay composites into the frame's own list, last, and the
         // enclosing frame's overlay state comes back exactly as it was.
         if let Some(scope) = self.overlay_scope.take() {
@@ -142,6 +161,9 @@ impl WindowFrame {
         cx.end_pass_sized_turtle();
         self.list.end(cx);
         cx.end_pass(&self.pass);
+        if gauss_changed {
+            cx.repaint_pass_and_child_passes(pass);
+        }
         if std::env::var_os("MAKEPAD_WM_TRACE_WARP").is_some() {
             log!("warp: capture end");
         }
