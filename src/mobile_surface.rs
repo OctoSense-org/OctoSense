@@ -337,7 +337,9 @@ impl PhoneSurface {
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
         let style=state.style.target;
         let landscape=screen.size.x>screen.size.y;
-        self.rounded(cx,screen,0.0,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
+        // A flat fill, not the SDF chrome quad: the sheet is a full-screen
+        // opaque rect, and under Recents' glass every full-screen layer counts.
+        self.d.solid(cx,screen,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
         let ink=if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)};
         let pill=self.draw_search(cx,state,screen,ink);
         if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
