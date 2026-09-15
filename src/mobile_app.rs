@@ -328,6 +328,15 @@ impl App {
             self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
         }
         self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
+        // The desktop's own full-screen layers stay out of the phone's frame:
+        // the phone paints its wallpaper itself (desk/phone.rs), and the
+        // scene's texture cache only exists for the desktop styles'
+        // crossfade. Each is a full-screen pass the renderer repaints on
+        // every frame it repaints at all — on Android that is every vsync
+        // while makepad's retained-upload ledger reports retirement debt
+        // (see mobile_perf.rs, `retirement-debt`), idle or not.
+        self.ui.widget(cx,ids!(wallpaper)).set_visible(cx,!style.mobile());
+        if let Some(mut scene)=self.ui.widget(cx,ids!(scene)).borrow_mut::<scene::WmScene>() {scene.set_caching(cx,!style.mobile());}
         self.phone_time=0.0;
         self.animate_phone(cx);
     }
