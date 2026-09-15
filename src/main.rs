@@ -3952,6 +3952,9 @@ impl MatchEvent for App {
         // state, controls, icons and hosted-app styles all agree from startup.
         if startup_style != self.state_mut().style.target {
             self.set_desktop_style(cx, startup_style);
+            // The first frame starts settled in the selected style; only
+            // later user-initiated style switches animate between layouts.
+            self.state_mut().style.step(1.0);
         }
         if cfg!(any(target_os = "ios", target_os = "android")) {
             self.update_bar_chrome(cx, &WindowGeom {
