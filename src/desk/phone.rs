@@ -259,8 +259,19 @@ impl WmDesk {
             self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_phase);
         } else {
             // Under an open app only the system-bar strips can show: the
-            // status bar's own colour, one flat quad.
-            self.phone_ui.rounded(cx,full,0.0,if dark {crate::shell::rgb(24,24,28)}else{crate::shell::rgb(248,248,252)});
+            // status bar's own colour, one flat fill. Under Android's opaque
+            // drawer only the strips outside the safe area can: a full-screen
+            // fill there was a second full-screen layer under the drawer's own,
+            // and with Recents' glass over both the frame missed its vsync
+            // (a hold from the drawer ran 38-40 fps, 48-49 without the two).
+            let bars=if dark {crate::shell::rgb(24,24,28)}else{crate::shell::rgb(248,248,252)};
+            if phone.screen==PhoneScreen::Drawer && style!=crate::desktop::DesktopStyle::Ios {
+                let bottom=screen.pos.y+screen.size.y;
+                self.phone_ui.d.solid(cx,Rect{pos:full.pos,size:dvec2(full.size.x,(screen.pos.y-full.pos.y).max(0.0))},bars);
+                self.phone_ui.d.solid(cx,Rect{pos:dvec2(full.pos.x,bottom),size:dvec2(full.size.x,(full.pos.y+full.size.y-bottom).max(0.0))},bars);
+            } else {
+                self.phone_ui.d.solid(cx,full,bars);
+            }
         }
         self.phone_content(full);
         let home_backdrop=if plan.compose && style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
