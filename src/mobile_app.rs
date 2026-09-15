@@ -31,8 +31,31 @@ impl App {
         }
     }
     pub(super) fn animate_phone(&mut self,cx:&mut Cx) {
+        crate::mobile_perf::asked(crate::mobile_perf::Reason::Action);
         self.phone_frame=cx.new_next_frame();
         self.redraw_all(cx);
+    }
+    /// The shell's 1 s tick on a phone: the things that change on their
+    /// own without a frame loop running — the status-bar clock, an
+    /// island timer, the shade's relative times, a tile client that is
+    /// still starting — get one frame when they need one. The frame loop
+    /// itself (`phone_animation_event`) runs only while something moves
+    /// or a finger is down; an idle screen draws nothing.
+    pub(super) fn phone_tick(&mut self,cx:&mut Cx) {
+        crate::mobile_perf::tick(cx);
+        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
+        let clock=self.state_mut().phone.clock.clone();
+        let clock_changed=self.phone_clock_shown.as_ref()!=Some(&clock);
+        if clock_changed {self.phone_clock_shown=Some(clock);}
+        let phone=&self.state_mut().phone;
+        let wake=clock_changed
+            || phone.island.needs_step()
+            || phone.shade.open>0.001
+            || (phone.home_visible() && phone.tiles.clients().any(|t|!t.tile_ready()));
+        // A tile client that is still binding, launching or confirming its
+        // face is followed here instead of on every frame.
+        if phone.home_visible() {self.sync_home_tiles(cx);}
+        if wake {self.animate_phone(cx);}
     }
 
     // --------------------------------------------------------------
@@ -305,6 +328,15 @@ impl App {
             self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
         }
         self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
+        // The desktop's own full-screen layers stay out of the phone's frame:
+        // the phone paints its wallpaper itself (desk/phone.rs), and the
+        // scene's texture cache only exists for the desktop styles'
+        // crossfade. Each is a full-screen pass the renderer repaints on
+        // every frame it repaints at all — on Android that is every vsync
+        // while makepad's retained-upload ledger reports retirement debt
+        // (see mobile_perf.rs, `retirement-debt`), idle or not.
+        self.ui.widget(cx,ids!(wallpaper)).set_visible(cx,!style.mobile());
+        if let Some(mut scene)=self.ui.widget(cx,ids!(scene)).borrow_mut::<scene::WmScene>() {scene.set_caching(cx,!style.mobile());}
         self.phone_time=0.0;
         self.animate_phone(cx);
     }
@@ -325,8 +357,10 @@ impl App {
                 // switcher without moving; the frame keeps running while
                 // the recognizer owns a finger so the hold can land.
                 let mut tracking = false;
+                let mut gesture_reason = false;
                 if self.phone_gestures.active() {
                     tracking = true;
+                    gesture_reason = true;
                     if let Some(out) = self.phone_gestures.tick(frame.time) {
                         log!("wm: gesture {:?}", out);
                         let from = phone.gesture.as_ref().map(|g| g.screen).unwrap_or(phone.screen);
@@ -341,8 +375,16 @@ impl App {
                 }
                 let moving = phone.step(dt);
                 crate::mobile_groups::follow(phone);
-                let wallpaper_visible = phone.screen != PhoneScreen::App || phone.openness < 0.999 || phone.overview > 0.001;
-                if moving || wallpaper_visible || tracking {self.phone_frame=cx.new_next_frame();}
+                // The wallpaper's ribbons drift while the shell is alive
+                // (something animating, a finger down) and hold still on an
+                // idle screen: the frame loop never runs just for them. It
+                // used to, and an idle home page cost a full core (see
+                // scratchpad/perf-before.md: 54 frames/s, 75 % CPU).
+                if moving || tracking {
+                    phone.wallpaper_phase += dt;
+                    crate::mobile_perf::asked(if gesture_reason {crate::mobile_perf::Reason::Gesture} else {crate::mobile_perf::Reason::Anim});
+                    self.phone_frame=cx.new_next_frame();
+                }
                 // The tiles follow the phone state every frame: a window
                 // takes its compact face only once its dismissal settled.
                 self.sync_home_tiles(cx);
@@ -471,6 +513,7 @@ impl App {
             PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>self.toggle_phone_appearance(cx),
             PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
             PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
+            PhoneHit::Perf=>{crate::mobile_perf::battery_tap(cx,host::now());}
         }
         self.sync_phone_keyboard(cx);
         self.sync_home_tiles(cx);

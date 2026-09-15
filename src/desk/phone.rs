@@ -111,10 +111,17 @@ impl WmDesk {
         }
         if let Some(item)=self.item(cx,client) {
             with_tile_host(&item,|tile| {tile.set_target_size(Some(rect.size));tile.set_close_crop(None);tile.set_fade(1.0);});
+            let t=std::time::Instant::now();
             item.draw_walk_all(cx,scope,Walk::abs_rect(rect));
+            if crate::mobile_perf::enabled() {let ch=crate::mobile_perf::channels(cx.cx);crate::mobile_perf::span(cx.cx,ch.module,t);}
         }
         capture.frame.end(cx);
-        self.compositor.as_mut().unwrap().content_pass(capture.frame.pass_id());
+        if self.phone_compose {self.compositor.as_mut().unwrap().content_pass(capture.frame.pass_id());}
+    }
+    /// A composited object covered `rect` this frame: the compositor's
+    /// backdrop reuse needs to know, on the frames that compose.
+    pub(crate) fn phone_content(&mut self,rect:Rect) {
+        if self.phone_compose {if let Some(c)=self.compositor.as_mut() {c.content(rect);}}
     }
     /// A group member's live look (mobile_groups.rs): its compact capture,
     /// else its full one, fitted into `cell` by aspect. False without one.
@@ -138,7 +145,7 @@ impl WmDesk {
         self.draw_phone.radius=radius;
         self.draw_phone.y_flip=0.0;
         self.draw_phone.draw_abs(cx,rect);
-        self.compositor.as_mut().unwrap().content(rect);
+        self.phone_content(rect);
     }
     /// The live tiles on the home page: each tile client's compact capture,
     /// or a placeholder card while it builds, starts, or has not confirmed
@@ -200,11 +207,12 @@ impl WmDesk {
                     ("Tap to open", String::new())
                 } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
                 self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,headline,&detail);
-                self.compositor.as_mut().unwrap().content(shown_rect);
+                self.phone_content(shown_rect);
             }
         }
     }
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,full:Rect) {
+        crate::mobile_perf::frame_boundary(cx.cx);
         let state=scope.data.get_mut::<WmState>().unwrap();
         // The wallpaper fills the desk; the shell lays out inside the
         // platform's safe area (the notch, the system bars): the status bar
@@ -237,24 +245,46 @@ impl WmDesk {
         let style=state.style.target;
         let dark=state.style.dark;
         let app=mobile::app_rect(screen);
-        self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);
+        // What this frame needs (mobile.rs): the compositor only when a
+        // frosted surface samples the scene, the wallpaper and the home
+        // page only while an open app does not cover them.
+        let plan=phone.scene_plan(style==crate::desktop::DesktopStyle::Ios);
+        self.phone_compose=plan.compose;
+        let perf=crate::mobile_perf::enabled();
+        let ch=crate::mobile_perf::channels(cx.cx);
+        let mut clock=std::time::Instant::now();
+        if plan.compose {self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);}
         self.phone_ui.begin();
-        self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_time);
-        self.compositor.as_mut().unwrap().content(full);
-        let home_backdrop=if style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
-            Some(self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0))
+        if plan.wallpaper {
+            self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_phase);
+        } else {
+            // Under an open app only the system-bar strips can show: the
+            // status bar's own colour, one flat quad.
+            self.phone_ui.rounded(cx,full,0.0,if dark {crate::shell::rgb(24,24,28)}else{crate::shell::rgb(248,248,252)});
+        }
+        self.phone_content(full);
+        let home_backdrop=if plan.compose && style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
+            let t=std::time::Instant::now();
+            let b=self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0);
+            if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
+            Some(b)
         }else{None};
-        self.phone_ui.draw_home(cx,state,screen,home_backdrop);
-        self.compositor.as_mut().unwrap().content(screen);
-        if phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if plan.home {
+            self.phone_ui.draw_home(cx,state,screen,home_backdrop);
+            self.phone_content(screen);
+        }
+        if plan.home && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if perf {crate::mobile_perf::span(cx.cx,ch.home,clock);clock=std::time::Instant::now();}
         if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen);}
+        if perf {crate::mobile_perf::span(cx.cx,ch.groups,clock);clock=std::time::Instant::now();}
         if phone.overview>0.001 {
             let blur = (phone.overview.clamp(0.0, 1.0) * 3.0) as f32;
             self.phone_ui.overview_glass.set_blurriness(cx, blur);
             let backdrop=self.compositor.as_mut().unwrap().backdrop(cx,screen,blur as f64);
             self.phone_ui.overview_glass.draw_surface_with_backdrop(cx,screen,Some(backdrop),phone.overview as f32);
-            self.compositor.as_mut().unwrap().content(screen);
+            self.phone_content(screen);
         }
+        if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);clock=std::time::Instant::now();}
         let mut excluded:Vec<Rect>=Vec::new();
         let mut order=phone.order.clone();
         order.reverse();
@@ -305,7 +335,7 @@ impl WmDesk {
                     // yet: a plain launch card, never the squeezed tile.
                     let app_id=phone.tiles.get(client).map(|t|t.app.clone()).unwrap_or_default();
                     self.phone_ui.draw_launch_card(cx,display,&app_id,style,dark,opacity,radius);
-                    self.compositor.as_mut().unwrap().content(display);
+                    self.phone_content(display);
                 }
             }
             self.phone_frames.insert(client,stored);
@@ -316,13 +346,16 @@ impl WmDesk {
                 if phone.screen==PhoneScreen::App && owns_edges.contains(&client) {excluded.push(display);}
             }
         }
+        // The captures' own draws are the `module` channel (record_capture).
+        if perf {clock=std::time::Instant::now();}
         // The shade's frosted sheet samples the finished scene here (the
         // final-glass snapshot is upside down on GL).
-        let shade_backdrop=if phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
-        let glass=if phone.keyboard>0.5 {
+        let shade_backdrop=if plan.compose && phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
+        let glass=if plan.compose && phone.keyboard>0.5 {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
-        let (backdrop,_,_)=self.compositor.as_mut().unwrap().finish(cx,screen,glass);
+        let backdrop=if plan.compose {self.compositor.as_mut().unwrap().finish(cx,screen,glass).0} else {None};
+        if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);}
         let state=scope.data.get_mut::<WmState>().unwrap();
         for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}
         if phone.keyboard>0.5 {
