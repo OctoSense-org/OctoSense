@@ -374,12 +374,15 @@ impl PhoneSurface {
         let size=(r.size.x.min(r.size.y)*0.3).clamp(24.0,72.0);
         self.icons.draw(cx,app,style,rect(r.pos.x+(r.size.x-size)*0.5,r.pos.y+(r.size.y-size)*0.5,size,size),opacity,alpha(ink,opacity));
     }
-    pub fn draw_home(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
+    /// `still`: the page is being recorded as the desk's kept scene, so it is
+    /// drawn at full opacity whatever `openness` is; the desk dims the kept
+    /// scene itself while a window is open over it (desk/phone.rs).
+    pub fn draw_home(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, still: bool) {
         let phone=&state.phone;
         let style=state.style.target;
         let ios=style==DesktopStyle::Ios;
         self.use_fonts(ios);
-        let opacity=(1.0-phone.openness*0.85) as f32;
+        let opacity=if still {1.0} else {(1.0-phone.openness*0.85) as f32};
         if opacity<0.01 {return;}
         let landscape=screen.size.x>screen.size.y;
         let apps=crate::shell::launcher::apps();

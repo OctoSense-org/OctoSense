@@ -294,8 +294,17 @@ impl WmDesk {
         // refresh. Other navigation, an open app, a keyboard and the drawer
         // draw live; geometry and appearance changes re-record.
         let overlay=phone.shade.open>0.001 || phone.overview>0.001 || phone.groups.window_visible();
-        let cache_scene=matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
-            && phone.openness<0.001 && phone.keyboard<0.5
+        // With a window open (`openness`) the page is recorded at full
+        // opacity and dimmed over the kept scene, so a card zooming under
+        // the overview glass still reads the same scene every frame; an
+        // app opening or closing with no overlay draws live, as before.
+        // The home-up drag on an open app (its window pulling back over the
+        // overview glass) is the same still scene, so it is kept as well;
+        // its first frame records, since a settled app draws no home page.
+        let cache_scene=(matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
+                && (phone.openness<0.001 || phone.overview>0.001)
+            || phone.screen==PhoneScreen::App && phone.overview>0.001)
+            && phone.keyboard<0.5
             && !(phone.shade.open>0.001 && phone.groups.window_visible())
             && phone.pages.position()==phone.pages.current() as f64;
         let key=(full,screen,cx.current_dpi_factor(),style,dark);
@@ -346,6 +355,7 @@ impl WmDesk {
                 }
                 _ => self.draw_window_surface(cx,&cached.frame,full,0.0),
             }
+            if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
         }
         if record {cache.as_mut().unwrap().frame.begin(cx,full);}
         if compose {self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);}
@@ -377,7 +387,7 @@ impl WmDesk {
             Some(b)
         }else{None};
         if plan.home && !hit {
-            self.phone_ui.draw_home(cx,state,screen,home_backdrop);
+            self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
         }
         if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
@@ -389,6 +399,7 @@ impl WmDesk {
             let blur=self.compositor.as_mut().unwrap().finish(cx,screen,Some((screen,4.0))).0;
             cached.frame.end(cx);
             self.draw_window_surface(cx,&cached.frame,full,0.0);
+            if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
             cached.key=Some(key);
             cached.blur=blur.clone();
             scene_backdrop=blur;
