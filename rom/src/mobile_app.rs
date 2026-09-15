@@ -374,15 +374,15 @@ impl App {
                     if self.gesture_out_age >= 1 { phone.gesture_out = None; } else { self.gesture_out_age += 1; tracking = true; }
                 }
                 let moving = phone.step(dt);
+                let active = moving || tracking || phone.gesture.is_some();
+                phone.draw_active = phone.animation_active || active;
+                phone.animation_active = active;
                 crate::mobile_groups::follow(phone);
-                // The wallpaper's ribbons drift while the shell is alive
-                // (something animating, a finger down) and hold still on an
-                // idle screen: the frame loop never runs just for them. It
-                // used to, and an idle home page cost a full core (see
-                // scratchpad/perf-before.md: 54 frames/s, 75 % CPU).
-                if moving || tracking {
-                    phone.wallpaper_phase += dt;
-                    crate::mobile_perf::asked(if gesture_reason {crate::mobile_perf::Reason::Gesture} else {crate::mobile_perf::Reason::Anim});
+                // Navigation moves the shell over a fixed wallpaper. Drifting
+                // it during gestures invalidates its full-resolution GPU cache
+                // on every frame, just when navigation needs that frame budget.
+                if active {
+                    crate::mobile_perf::asked(if gesture_reason || phone.gesture.is_some() {crate::mobile_perf::Reason::Gesture} else {crate::mobile_perf::Reason::Anim});
                     self.phone_frame=cx.new_next_frame();
                 }
                 // The tiles follow the phone state every frame: a window
@@ -634,7 +634,11 @@ impl App {
     fn drive_gesture(phone: &mut PhoneState, out: ShellGesture, from: PhoneScreen) {
         match out {
             ShellGesture::HomeUp { progress, held } if from != PhoneScreen::Home => {
-                phone.openness = 1.0;
+                // The window pulling back is the open app's: with none open
+                // (empty Recents) nothing zooms, and the home page under the
+                // overview glass stays as drawn, so the desk keeps using its
+                // recorded scene for the whole return (desk/phone.rs).
+                phone.openness = if phone.client.is_some() { 1.0 } else { 0.0 };
                 phone.overview = if held { 1.0 } else { progress * 0.6 };
             }
             ShellGesture::Back { progress, .. } if from == PhoneScreen::App => {
@@ -671,6 +675,13 @@ impl App {
         }
     }
     fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {
+        if primary && matches!(phase, PhonePointerPhase::Down | PhonePointerPhase::Up) {
+            let name = match phase {
+                PhonePointerPhase::Down => "Down", PhonePointerPhase::Move => "Move",
+                PhonePointerPhase::Up => "Up", PhonePointerPhase::Scroll => "Scroll",
+            };
+            crate::mobile_perf::trace_phone_input(name, p);
+        }
         if self.state_mut().phone.gesture.is_none() {
             if let Some(hit) = self.phone_toolbar_hit(cx, p) {
                 if phase == PhonePointerPhase::Down && primary { self.phone_action(cx, hit); }
