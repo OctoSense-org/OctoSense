@@ -807,6 +807,7 @@ pub struct WmDesk {
     #[live] pub phone_ui: PhoneSurface,
     #[live] draw_phone: DrawPhoneApp,
     #[rust] phone_frames: HashMap<ClientId, PhoneFrame>,
+    #[rust] phone_scene_backdrop: Option<phone::PhoneSceneBackdrop>,
     #[rust] desktop_frames: HashMap<ClientId, WindowFrame>,
     #[rust] pub wallpaper: WidgetRef,
     #[rust] pub compositor: Option<BackdropCompositor>,

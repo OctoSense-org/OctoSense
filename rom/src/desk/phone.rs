@@ -9,10 +9,13 @@ script_mod! {
         ..mod.draw.DrawQuad
         image: texture_2d(float)
         opacity: 1.0 radius: 0.0 y_flip: 0.0
+        // The part of the image this quad shows: a band of a cached scene
+        // can be drawn without the rest.
+        uv_pos: vec2(0.0, 0.0) uv_size: vec2(1.0, 1.0)
         pixel: fn() {
             let sdf=Sdf2d.viewport(self.pos*self.rect_size)
             sdf.box(0.0,0.0,self.rect_size.x,self.rect_size.y,self.radius)
-            let uv=vec2(self.pos.x,mix(self.pos.y,1.0-self.pos.y,self.y_flip))
+            let uv=self.uv_pos+vec2(self.pos.x,mix(self.pos.y,1.0-self.pos.y,self.y_flip))*self.uv_size
             sdf.fill(self.image.sample(uv)*self.opacity)
             return sdf.result
         }
@@ -25,6 +28,8 @@ pub struct DrawPhoneApp {
     #[live] opacity: f32,
     #[live] radius: f32,
     #[live] y_flip: f32,
+    #[live] uv_pos: Vec2f,
+    #[live] uv_size: Vec2f,
 }
 
 /// One off-screen capture of a client's tile widget at one viewport.
@@ -60,8 +65,24 @@ pub(super) struct PhoneFrame {
     tile: Option<Capture>,
 }
 
+/// The still home scene under a frosted overlay — the shade's sheet, Recents'
+/// overview glass, a tile group's window — and its blur pyramid, kept for the
+/// overlay's whole transition. Recorded on idle home frames too, so the first
+/// moving frame already finds it. `key` is None whenever the scene may differ.
+pub(super) struct PhoneSceneBackdrop {
+    frame: WindowFrame,
+    key: Option<(Rect, Rect, f64, crate::desktop::DesktopStyle, bool)>,
+    blur: Option<GaussBlurSnapshot>,
+}
+
 impl WmDesk {
     pub(super) fn draw_window_surface(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32) {
+        self.draw_window_surface_band(cx, frame, rect, rect, radius);
+    }
+    /// `band` of the frame recorded over `rect`, drawn in place: the rows a
+    /// cached scene still shows beside an opaque sheet.
+    fn draw_window_surface_band(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, band: Rect, radius: f32) {
+        if band.size.x < 0.5 || band.size.y < 0.5 { return; }
         self.draw_phone.draw_vars.set_texture(0, frame.texture());
         self.draw_phone.opacity = 1.0;
         // Sdf2d.box uses half the visible corner radius.
@@ -69,7 +90,12 @@ impl WmDesk {
         // WindowFrame render targets already have top-left rows, including
         // the pinned Android GL backend. Keep pixels aligned with input.
         self.draw_phone.y_flip = 0.0;
-        self.draw_phone.draw_abs(cx, rect);
+        let size = dvec2(rect.size.x.max(1.0), rect.size.y.max(1.0));
+        self.draw_phone.uv_pos = vec2f(((band.pos.x - rect.pos.x) / size.x) as f32, ((band.pos.y - rect.pos.y) / size.y) as f32);
+        self.draw_phone.uv_size = vec2f((band.size.x / size.x) as f32, (band.size.y / size.y) as f32);
+        self.draw_phone.draw_abs(cx, band);
+        self.draw_phone.uv_pos = vec2f(0.0, 0.0);
+        self.draw_phone.uv_size = vec2f(1.0, 1.0);
     }
     fn client_arriving(&self, client: ClientId) -> bool {
         self.items.get(&client).and_then(|item| item.borrow::<MpRunView>())
@@ -242,20 +268,90 @@ impl WmDesk {
         self.dock_warps.clear();
         self.phone_frames.retain(|c,_|state.clients.contains_key(c));
         let phone=state.phone.clone();
+        // Consume the final settling frame's activity flag. No next-frame
+        // callback follows it, so later idle redraws must not inherit it.
+        state.phone.draw_active = false;
         let style=state.style.target;
         let dark=state.style.dark;
         let app=mobile::app_rect(screen);
+        crate::mobile_perf::trace_phone_frame(&phone);
         // What this frame needs (mobile.rs): the compositor only when a
         // frosted surface samples the scene, the wallpaper and the home
         // page only while an open app does not cover them.
         let plan=phone.scene_plan(style==crate::desktop::DesktopStyle::Ios);
-        self.phone_compose=plan.compose;
         let perf=crate::mobile_perf::enabled();
         let ch=crate::mobile_perf::channels(cx.cx);
         let mut clock=std::time::Instant::now();
-        if plan.compose {self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);}
         self.phone_ui.begin();
-        if plan.wallpaper {
+        // The overlays that frost a still home scene — the shade's sheet,
+        // Recents' overview glass, a tile group's window — sample that same
+        // scene on every frame of their transition. Keep the scene and its
+        // mip textures for the transition: a moving overlay frame is then one
+        // quad of the scene plus the overlay itself, and an idle home frame
+        // records it so the first moving frame already finds it. On the
+        // OnePlus 6 the GPU clock sits at its floor for the first ~120 ms of a
+        // gesture, and there a live scene plus its pyramid did not fit a
+        // refresh. Other navigation, an open app, a keyboard and the drawer
+        // draw live; geometry and appearance changes re-record.
+        let overlay=phone.shade.open>0.001 || phone.overview>0.001 || phone.groups.window_visible();
+        let cache_scene=matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
+            && phone.openness<0.001 && phone.keyboard<0.5
+            && !(phone.shade.open>0.001 && phone.groups.window_visible())
+            && phone.pages.position()==phone.pages.current() as f64;
+        let key=(full,screen,cx.current_dpi_factor(),style,dark);
+        let moving=phone.draw_active || phone.gesture.is_some();
+        let mut cache=if cache_scene {
+            Some(self.phone_scene_backdrop.take().unwrap_or_else(|| PhoneSceneBackdrop {
+                frame: WindowFrame::new_with_name(cx,"wm_phone_scene_backdrop"),
+                key: None, blur: None,
+            }))
+        } else {
+            if let Some(cached)=self.phone_scene_backdrop.as_mut() {cached.key=None;}
+            None
+        };
+        let hit=overlay && moving && cache.as_ref().is_some_and(|c|c.key==Some(key) && c.blur.is_some());
+        // Record on idle frames and under an overlay the cache does not fit;
+        // a home animation without an overlay (the island, a settling tile)
+        // draws live and may change the scene, so it drops the key.
+        let record=!hit && cache.is_some() && (!moving || overlay);
+        if let Some(cached)=cache.as_mut() {if !hit && !record {cached.key=None;}}
+        if perf || crate::mobile_perf::trace_on() {
+            crate::mobile_perf::trace_phone_scene(if hit {"hit"} else if record {"record"} else {"live"},
+                &format!("cacheable={} overlay={} moving={} keyed={} blur={} screen={:?} openness={:.3} overview={:.3} shade={:.3} group={} pages={:.3}/{}",
+                    cache_scene, overlay, moving, cache.as_ref().is_some_and(|c|c.key==Some(key)), cache.as_ref().is_some_and(|c|c.blur.is_some()),
+                    phone.screen, phone.openness, phone.overview, phone.shade.open, phone.groups.window_visible(), phone.pages.position(), phone.pages.current()));
+        }
+        let compose=(plan.compose && !hit) || record;
+        self.phone_compose=compose;
+        let mut scene_backdrop:Option<GaussBlurSnapshot>=None;
+        if hit {
+            let cached=cache.as_ref().unwrap();
+            scene_backdrop=cached.blur.clone();
+            cached.frame.attach(cx);
+            // The sheet is opaque: only the rows beside it show the scene.
+            // Overlap its edges by its rounded corners and shadow.
+            let sheet=(phone.shade.open>0.001 && phone.overview<0.001 && !phone.groups.window_visible())
+                .then(||phone.shade.sheet_rect(screen));
+            // A settled overview glass is opaque over the whole screen:
+            // nothing of the scene under it reaches the display.
+            let covered=phone.overview>=0.999 && phone.shade.open<0.001 && !phone.groups.window_visible();
+            match sheet {
+                _ if covered => {}
+                Some(sheet) if sheet.size.y>128.0 => {
+                    let top=Rect{pos:full.pos,size:dvec2(full.size.x,(sheet.pos.y+48.0-full.pos.y).max(0.0))};
+                    let from=sheet.pos.y+sheet.size.y-48.0;
+                    let bottom=Rect{pos:dvec2(full.pos.x,from),size:dvec2(full.size.x,(full.pos.y+full.size.y-from).max(0.0))};
+                    self.draw_window_surface_band(cx,&cached.frame,full,top,0.0);
+                    self.draw_window_surface_band(cx,&cached.frame,full,bottom,0.0);
+                }
+                _ => self.draw_window_surface(cx,&cached.frame,full,0.0),
+            }
+        }
+        if record {cache.as_mut().unwrap().frame.begin(cx,full);}
+        if compose {self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);}
+        if hit {
+            // The scene is the cached quad above.
+        } else if plan.wallpaper {
             self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_phase);
         } else {
             // Under an open app only the system-bar strips can show: the
@@ -273,25 +369,46 @@ impl WmDesk {
                 self.phone_ui.d.solid(cx,full,bars);
             }
         }
-        self.phone_content(full);
-        let home_backdrop=if plan.compose && style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
+        if !hit {self.phone_content(full);}
+        let home_backdrop=if compose && !hit && style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
             let t=std::time::Instant::now();
             let b=self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0);
             if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
             Some(b)
         }else{None};
-        if plan.home {
+        if plan.home && !hit {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop);
             self.phone_content(screen);
         }
-        if plan.home && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if record {
+            // The scene is complete: its pyramid, to the deepest level an
+            // overlay reads (the group window's 4), then the frame ends and
+            // shows in the window. Overlays draw after it, in the window.
+            let mut cached=cache.take().unwrap();
+            let blur=self.compositor.as_mut().unwrap().finish(cx,screen,Some((screen,4.0))).0;
+            cached.frame.end(cx);
+            self.draw_window_surface(cx,&cached.frame,full,0.0);
+            cached.key=Some(key);
+            cached.blur=blur.clone();
+            scene_backdrop=blur;
+            self.phone_compose=false;
+            cache=Some(cached);
+        }
+        // Kept across frames the scene is not cacheable on: its frame and
+        // textures are reused, not re-created, at the next overlay.
+        if cache.is_some() {self.phone_scene_backdrop=cache;}
         if perf {crate::mobile_perf::span(cx.cx,ch.home,clock);clock=std::time::Instant::now();}
-        if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen);}
+        if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen,scene_backdrop.clone());}
         if perf {crate::mobile_perf::span(cx.cx,ch.groups,clock);clock=std::time::Instant::now();}
         if phone.overview>0.001 {
-            let blur = (phone.overview.clamp(0.0, 1.0) * 3.0) as f32;
-            self.phone_ui.overview_glass.set_blurriness(cx, blur);
-            let backdrop=self.compositor.as_mut().unwrap().backdrop(cx,screen,blur as f64);
+            // The glass samples level 3 whatever `overview` is; only its
+            // opacity follows the transition (mobile_surface.rs).
+            self.phone_ui.overview_glass.set_blurriness(cx, 3.0);
+            let backdrop=match scene_backdrop.clone() {
+                Some(b)=>b,
+                None=>self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0),
+            };
             self.phone_ui.overview_glass.draw_surface_with_backdrop(cx,screen,Some(backdrop),phone.overview as f32);
             self.phone_content(screen);
         }
@@ -374,9 +491,10 @@ impl WmDesk {
         // segment holding nothing but a full-screen copy of the first, one
         // more full-resolution scene pass per frame of the pull. With the
         // keyboard up (its own final glass) the shade keeps the checkpoint.
-        let shade_backdrop=if shade_glass && keyboard_glass.is_some() {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
+        let live=scene_backdrop.is_none();
+        let shade_backdrop=if live && shade_glass && keyboard_glass.is_some() {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
         let final_glass=if shade_glass && keyboard_glass.is_none() {Some((screen,3.0))} else {keyboard_glass};
-        let backdrop=if plan.compose {self.compositor.as_mut().unwrap().finish(cx,screen,final_glass).0} else {None};
+        let backdrop=if live && plan.compose {self.compositor.as_mut().unwrap().finish(cx,screen,final_glass).0} else {scene_backdrop};
         if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);}
         let state=scope.data.get_mut::<WmState>().unwrap();
         for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}

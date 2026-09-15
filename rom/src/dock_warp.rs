@@ -128,6 +128,13 @@ impl WindowFrame {
         self.pass.draw_pass_id()
     }
     pub fn texture(&self) -> &Texture { &self.texture }
+    /// Reuse recorded content without drawing it again. Refresh the dependency
+    /// when the consumer's draw list is re-recorded, including before the
+    /// producer's first GPU paint. Unlike a live pass, this is not dirtied just
+    /// because the consumer repaints.
+    pub fn attach(&self, cx: &mut Cx2d) {
+        cx.make_child_pass(&self.pass);
+    }
     pub fn begin(&mut self, cx: &mut Cx2d, rect: Rect) {
         self.frozen = false;
         if std::env::var_os("MAKEPAD_WM_TRACE_WARP").is_some() {
