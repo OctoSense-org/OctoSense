@@ -1,4 +1,4 @@
-# Mobile shell perf — baseline vs perf vs the idle-repaint fix (OnePlus 6T)
+# Mobile shell perf — baseline, perf, the idle-repaint fix and the transition fixes (OnePlus 6T)
 
 Device: OnePlus 6T (ONEPLUS A6013), Snapdragon 845, 1080×2340 @ 60 Hz, over USB (`bf0a4730`).
 Both builds sit on `fix/hosted-appcard-mobile` @ fedd802 (PR #24):
@@ -289,6 +289,136 @@ The shell's own draw channels account for only ~2 ms of \`event\` (home 1.0, ove
 - Recents hold: 36 fps, p95 33 ms, with the AppCard card present;
 - swipe home: 40 fps, p95 33 ms;
 - Recents → Home: 34 fps, p95 33 ms.
+
+## Fourth column — main-thread and fill-rate fixes (`perf/transition-main-thread`)
+
+The fourth build is `perf/android-idle-repaint` plus:
+- the makepad fork at `perf/android-main-thread` @ e596207 (six commits on #6);
+- five shell commits: the run view's tick, the Android drawer's wallpaper and fills, the shade as the compositor's final glass, and the shade as one glass layer with its glyphs warmed.
+
+Measured with `perf_scenarios3.sh`, monitor **off**, two fresh launches per build. Raw data is in `scratchpad/perf-t-{before,before2,final1,final2}` (SurfaceFlinger presents) and `perf-t-finalmon` (the attribution run with the monitor on). The tables come from `ttable.py`.
+
+### How it was profiled
+- **CPU.** `simpleperf record --call-graph dwarf -f 4000` as root on the release app, per scenario, both whole-process and render-thread only (`scratchpad/tprof/`). Symbols come from the APK's unstripped `libmakepad.so`.
+- **Scheduling.** `atrace gfx view input sched freq idle` over a shade pull, a Recents hold and a return home.
+- **GPU attribution.** A temporary `debug.octosense.ab` switch, not committed, turned parts of the shade and the drawer off one at a time.
+
+### Main-thread hotspots on PR #27's build (share of render-thread samples)
+| scenario | App event dispatch | hosted AppCard (`MpModuleView`) | `draw_phone_scene` | `AppIconDraw` → `render_svg` | `render_view` (GL encode) |
+|---|---|---|---|---|---|
+| shade | 34 % | 22 % (`update_connection_indicator` 10 %) | 33 % | 27 % → 23 % | 20 % |
+| open-app | 56 % | 35 % (15 %) | 16 % | 12 % → 11 % | 15 % |
+| swipe home | 49 % | 33 % (15 %) | 16 % | 14 % → 12 % | 18 % |
+| page swipe | 52 % | 34 % (15 %) | 21 % | 17 % → 15 % | 12 % |
+| Recents hold | 34 % | 23 % (11 %) | 18 % | 13 % → 11 % | 33 % |
+| Recents → Home | 50 % | 32 % (13 %) | 24 % | 20 % → 17 % | 12 % |
+| group open | 50 % | 34 % (16 %) | 24 % | 21 % → 18 % | 15 % |
+
+**Icon tessellation.** `AppIconDraw` re-tessellated icons on every frame; `add_gradient_row` and `sample_stops` were the top self symbols. In the heaviest Recents frames, icon tessellation was 54 % of the frame.
+
+**The hosted AppCard.** Its cost was `Event::Signal` and `Event::Timer` dispatched from `handle_other_events`. The sources were a worker signal once per animation frame (Recents hold: 110 next-frames against 109 signals in 2 s) and a 125 Hz run-view timer. Each event ran the AppCard's `update_connection_indicator` script eval.
+
+**After the fixes:**
+- `AppIconDraw` 0.8–1.8 %;
+- `render_svg` 0–0.6 %;
+- `glTexImage2D` 0 %;
+- the module path 5–12 %.
+
+### Scheduling
+- **Priority and cores.** The render thread ran at **nice 0**, while HWUI's RenderThread runs at −10. **21–28 % of its run time was on the little cores**, mostly between 576 MHz and 1.4 GHz, because `schedutil` ramps up from the idle gap before each transition.
+- **No contention.** Run-queue wait was short (p50 0.09 ms, max 8 ms) and there were no lock waits.
+- **Swap back-pressure.** `eglSwapBuffers` waits on the GPU, not on CPU work. In slow frames the render thread sits in D state while `queueBuffer` takes 22–73 ms.
+- **Now:** nice −10, pinned to cpus 4–7. The first boost was undone by `warm_task_pool` (`UserInteractive` = nice 0), so the boost now runs after Startup. Android 11 has no ADPF hint API.
+- **GPU clock.** The GPU (`msm-adreno-tz`) idles at 257 MHz and reaches 710 MHz within ~150 ms of a pull. It was not thermally limited (35 °C).
+
+### What the shade's frames were made of: the A/B
+Shade pull and close, monitor off, two pulls per variant.
+
+| variant | fps | GPU-ready p95 ms | monitor on: `wait` mean / worst ms |
+|---|---|---|---|
+| everything drawn (4 runs) | 34–42 | 91–108 | 7–21 / 57–85 |
+| no dim | 30–35 | 105–119 | — |
+| no sheet glass | 39–50 | 63–68 | 4–6 / 16–34 |
+| no sheet content | 41–43 | 70–94 | 12 / 79 |
+| no cards | 34–41 | 100–121 | — |
+| no text | 26–43 | 100–121 | — |
+| no compositor at all | 44–46 | 84–106 | 4–20 / 31–64 |
+| no dim, glass or content | 34 / **60.1** | 30 | **1.5–3.7 / 8–11** |
+
+**This is fill rate, not GL driver overhead.** CPU `draw` (the GL encode) stayed at 4–5.5 ms in every variant, including the one at 60 fps. The swap wait fell from 7–21 ms to 1.5 ms only once the stacked full-screen blends were gone: the sheet glass, its 55–62 % tint layer, the dim and the content. A Vulkan path would not remove this cost; drawing fewer full-screen blended pixels does.
+
+**After the shade fixes** (final glass, one merged glass layer, dim clipped, one fewer mip), with the monitor on, `wait` averages 4.9–16 ms with a worst case of 36–47 ms. Before the fixes it averaged 7–21 ms, worst 57–85 ms.
+
+### The Recents hold depends on where it starts
+The harness reaches Recents from the Android drawer, because its page swipe ends there.
+- **Over Home:** the hold already ran at 52–56 fps (GPU-ready p50 12 ms).
+- **Over the drawer:** 38–40 fps (GPU-ready p50 42 ms).
+
+A/B over the drawer:
+
+| variant | fps |
+|---|---|
+| drawer's icons, labels or search pill removed | no change |
+| either full-screen fill removed (the system-bar fill under the drawer, or the drawer's own sheet) | 42–44 |
+| both fills removed | 48–49 |
+| overview glass removed | 57–58 (p95 16.7 ms) |
+
+The committed fix draws only the system-bar strips under the drawer and a flat fill for the sheet. It was measured through the A/B switch only: the phone disconnected before a harness run on the final commit.
+
+### Fixes
+| fix | where |
+|---|---|
+| a worker's UI wake dispatches but does not paint between vsync beats | fork `platform/src/os/linux/android/android.rs` (`FromJavaMessage::Wake`), `android_jni.rs`, `os/linux/mod.rs` |
+| draw-storage retirement no longer raises `Event::Signal` on Android | fork `platform/src/draw_list.rs`, `thread.rs` (`submit_detached_silent`) |
+| icon tessellation cached per 4 % size bucket | fork `widgets/src/app_icon.rs` |
+| render thread at nice −10 on the fast cluster, after Startup | fork `platform/src/os/linux/android/android.rs` (`boost_render_thread`) |
+| integer blur level: one bicubic read, `ceil(level)` mips | fork `widgets/src/gauss_view.rs` (`sample_blur`), `backdrop.rs` |
+| run view ticks only with a process attached | `src/run_view.rs` |
+| Android drawer: no wallpaper, no full-screen fill under it | `src/mobile.rs` (`scene_plan`), `src/desk/phone.rs`, `src/mobile_surface.rs` |
+| shade sheet = the compositor's final glass | `src/desk/phone.rs` |
+| shade = one merged-tint glass, dim below the sheet only, glyphs warmed once | `src/mobile_shade.rs`, `src/mobile_surface.rs` |
+
+### Table 5 — SurfaceFlinger, PR #27's build vs this build, monitor off
+Cells: burst fps · p95 ms · intervals > 33 ms / burst intervals · worst first frame of a burst (ms). The build measured here predates the drawer fill commit.
+
+| scenario | before run 1 | before run 2 | after run 1 | after run 2 |
+|---|---|---|---|---|
+| open-app-tap-AppCard-icon | 41.4 · 49.9 · 4/20 · 49.9 | 30.1 · 50.0 · 5/21 · 16.6 | 40.1 · 66.5 · 4/20 · 49.9 | 33.4 · 166.3 · 4/20 · 16.6 |
+| swipe-up-home | 43.7 · 33.3 · 0/24 · 33.3 | 42.1 · 33.3 · 1/21 · 49.9 | 45.6 · 33.3 · 0/22 · 16.6 | 41.3 · 33.3 · 1/22 · 49.9 |
+| shade-pull-close | 33.7 · 49.9 · 9/46 · 66.5 | 33.9 · 49.9 · 8/48 · 83.2 | 45.1 · 49.9 · 3/33 · 49.9 | 45.7 · 49.9 · 2/35 · 33.3 |
+| page-swipe-right-then-back | 41.8 · 66.5 · 2/32 · 199.6 | 35.1 · 133.1 · 2/28 · 133.1 | 37.1 · 83.0 · 2/29 · 199.7 | 47.0 · 33.3 · 1/25 · 33.3 |
+| recents-swipe-up-hold | 34.9 · 33.3 · 1/75 · 149.7 | 34.5 · 49.9 · 4/74 · 83.2 | 38.8 · 33.5 · 0/84 · 33.5 | 36.3 · 33.3 · 1/84 · 149.6 |
+| recents-to-home | 30.8 · 66.5 · 2/21 · 199.6 | 41.5 · 66.3 · 1/20 · 66.3 | 41.5 · 66.5 · 1/20 · 66.5 | 45.1 · 33.3 · 0/24 · 16.6 |
+| island-demo-triple-tap-clock | 36.7 · 16.8 · 1/22 · 249.5 | 49.0 · 49.9 · 2/22 · 66.5 | 40.7 · 16.8 · 1/23 · 199.6 | 42.7 · 16.6 · 1/22 · 166.3 |
+| group-open-tap-Work | 53.6 · 33.3 · 1/115 · 49.9 | 52.4 · 33.4 · 2/115 · 49.8 | 52.3 · 33.4 · 2/100 · 33.1 | 53.9 · 33.3 · 1/130 · 49.9 |
+| group-close-tap-scrim | 48.1 · 33.3 · 0/16 · 33.3 | 36.1 · 99.8 · 2/15 · 50.0 | 48.1 · 49.9 · 1/16 · 49.9 | 48.1 · 50.0 · 1/16 · 50.0 |
+
+- **Shade:** 34 → 45–46 fps; >33 ms frames 8–9 → 2–3; first frame 67–83 → 33–50 ms.
+- **Recents → Home:** 31–42 → 42–45 fps.
+- **Recents hold:** 35 → 36–39 fps. The harness starts it from the drawer; see the section above.
+- **Page swipe, island demo, open-app:** within run-to-run noise. Their first frames are still 133–250 ms.
+
+### Table 6 — frame monitor on this build (attribution run, busy windows, mean ms per frame)
+| scenario | frames | gap p95 ms | event | draw | wait |
+|---|---|---|---|---|---|
+| open-app | 28 | 289.3 | 13.1 | 3.7 | 12.6 |
+| swipe-up-home | 23 | 66.4 | 4.0 | 4.8 | 15.4 |
+| shade-pull+close | 40 | 450.2 | 5.0 | 4.9 | 8.2 |
+| page-swipe | 33 | 431.9 | 5.9 | 3.3 | 1.8 |
+| recents (swipe-up-hold, from the drawer) | 89 | 58.4 | 8.2 | 4.7 | 12.0 |
+| recents-to-home | 28 | 44.0 | 9.7 | 4.2 | 10.2 |
+| island-demo | 27 | 297.9 | 7.1 | 2.9 | 2.3 |
+| group-open | 228 | 26.8 | 7.2 | 4.0 | 3.0 |
+| group-close | 19 | 346.9 | 8.3 | 5.2 | 4.7 |
+
+### Not met, and why
+- **No transition reaches ≥ 55 fps with p95 ≤ 20 ms in the harness.** Group open is closest: 52–54 fps, p95 33 ms. The remaining cost is GPU fill in the glass and full-screen layers; Recents over Home reaches 52–56 fps.
+- **First frames of 133–250 ms remain.**
+  - *Open-app:* 213 ms is the AppCard's script VM on first open. That covers parsing plus a failed property lookup that builds a `suggest_property` Levenshtein list.
+  - *Open-app, continued:* a further 190 ms is `inflate_fast`: a compressed font asset (`to_java_load_asset` → `ensure_fonts_loaded`, likely the 19 MB CJK face) decompressed on the render thread.
+  - *Page swipe and island:* the 150–250 ms first frames were not profiled.
+  - *Candidate fixes:* store fonts uncompressed in the APK (cargo-makepad's `aapt add`) or preload them off the main thread, and fix the AppCard's failed script lookup.
+- **A 136×128 palette PNG is decoded every ~50 ms** during a DeepSeek streaming turn. This runs on the AppCard's backend thread, not the render thread, and belongs to Octoscript-AppCard.
 
 ## Device housekeeping
 - **What the run changed.** It set `svc power stayon true` and `settings put system screen_off_timeout 1800000`.
