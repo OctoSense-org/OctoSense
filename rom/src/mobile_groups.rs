@@ -380,7 +380,9 @@ impl WmDesk {
     /// its members as tiles (their live captures where they run), and for
     /// a pair the "Open both" button. Drawn inside the compositor so the
     /// panel can blur what is under it; tapping outside closes it.
-    pub(crate) fn draw_group_window(&mut self, cx: &mut Cx2d, state: &crate::desk::WmState, screen: Rect) {
+    /// `backdrop`: the still home scene's pyramid when the desk keeps one
+    /// for the transition (desk/phone.rs); otherwise the live compositor's.
+    pub(crate) fn draw_group_window(&mut self, cx: &mut Cx2d, state: &crate::desk::WmState, screen: Rect, backdrop: Option<makepad_widgets::gauss_view::GaussBlurSnapshot>) {
         let phone = &state.phone;
         let groups = &phone.groups;
         if !groups.window_visible() { return; }
@@ -398,10 +400,14 @@ impl WmDesk {
         let t = window.t as f32;
         let face = if dark { rgb(30, 32, 46) } else if ios { rgb(246, 247, 252) } else { rgb(255, 251, 255) };
         let ink = if dark { rgb(240, 240, 248) } else { rgb(28, 27, 36) };
-        // The scrim: dims the page and catches the tap that closes.
-        self.phone_ui.rounded(cx, screen, 0.0, alpha(rgb(0, 0, 0), 0.32 * t));
+        // The scrim: dims the page and catches the tap that closes. One flat
+        // fill, not a full-screen SDF quad.
+        self.phone_ui.d.solid(cx, screen, alpha(rgb(0, 0, 0), 0.32 * t));
         if groups.open.is_some() { self.phone_ui.hits.push((screen, PhoneHit::GroupClose)); }
-        let backdrop = self.compositor.as_mut().unwrap().backdrop(cx, window.panel, 4.0);
+        let backdrop = match backdrop {
+            Some(backdrop) => backdrop,
+            None => self.compositor.as_mut().unwrap().backdrop(cx, window.panel, 4.0),
+        };
         self.phone_ui.group_glass.draw_surface_with_backdrop(cx, window.panel, Some(backdrop), t);
         self.phone_ui.rounded(cx, window.panel, 28.0, alpha(face, 0.55 * t));
         self.phone_content(window.panel);

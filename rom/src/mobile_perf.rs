@@ -106,6 +106,62 @@ pub const IDLE_GAP_MS: f32 = 500.0;
 
 pub fn enabled() -> bool { ENABLED.load(Ordering::Relaxed) }
 
+/// Whether the `phone.frames` Android trace is on (always false elsewhere).
+pub fn trace_on() -> bool {
+    #[cfg(target_os = "android")]
+    { makepad_platform::makepad_error_log::trace_enabled("phone.frames") }
+    #[cfg(not(target_os = "android"))]
+    { false }
+}
+
+/// Presentation timestamps alone cannot distinguish a slow animation from
+/// a status-clock tick after it stopped. Optional Android trace markers use
+/// SurfaceFlinger's monotonic clock and label each recorded scene. Enable via
+/// `am start ... --es makepad.TRACE phone.frames`; the frame monitor stays off.
+pub fn trace_phone_frame(phone: &crate::mobile::PhoneState) {
+    #[cfg(target_os = "android")]
+    if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
+        let mut ts = libc::timespec {tv_sec: 0, tv_nsec: 0};
+        if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
+            let ns = ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64;
+            let active = phone.draw_active || phone.gesture.is_some();
+            log!("[phone.frames] ns={} active={} screen={:?} shade={:.4} overview={:.4} openness={:.4} page={:.4} pages={:.4}",
+                ns, active as u8, phone.screen, phone.shade.open, phone.overview,
+                phone.openness, phone.page, phone.pages.position());
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = phone;
+}
+
+/// With `phone.frames` on, how the desk drew the home scene this frame:
+/// `hit` (the kept scene and pyramid), `record` (drawn live into the kept
+/// frame) or `live`, with the state the decision came from.
+pub fn trace_phone_scene(status: &str, detail: &str) {
+    #[cfg(target_os = "android")]
+    if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
+        log!("[phone.scene] {} {}", status, detail);
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = (status, detail);
+}
+
+/// Optional input timestamps on the same monotonic clock as phone.frames and
+/// SurfaceFlinger. They mark a touch reaching the shell, not the hardware
+/// event time or a visible-pixel change.
+pub fn trace_phone_input(phase: &str, point: Vec2d) {
+    #[cfg(target_os = "android")]
+    if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
+        let mut ts = libc::timespec {tv_sec: 0, tv_nsec: 0};
+        if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
+            let ns = ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64;
+            log!("[phone.input] ns={} phase={} x={:.1} y={:.1}", ns, phase, point.x, point.y);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = (phase, point);
+}
+
 pub fn channels(cx: &mut Cx) -> Channels {
     COLLECTOR.with(|c| {
         let mut c = c.borrow_mut();

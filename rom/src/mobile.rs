@@ -49,9 +49,8 @@ pub struct PhoneState {
     /// The frame clock of the last stepped frame (the shade stamps its
     /// cards on it).
     pub wallpaper_time: f64,
-    /// How far the wallpaper's ribbons have drifted: advances only while
-    /// the shell animates or a finger is down, so an idle home page never
-    /// asks for a frame just to move the wallpaper (mobile_app.rs).
+    /// Procedural wallpaper phase. Navigation keeps it fixed so the rendered
+    /// wallpaper can be reused; changing it invalidates the texture cache.
     pub wallpaper_phase: f64,
     pub screen: PhoneScreen,
     pub client: Option<ClientId>,
@@ -61,6 +60,10 @@ pub struct PhoneState {
     pub page: f64,
     pub dismiss_y: f64,
     pub gesture: Option<PhoneGesture>,
+    /// Frame-trace boundaries: include the final settling frame, while
+    /// keeping the separate one-second status refreshes out of a gesture.
+    pub(crate) animation_active: bool,
+    pub(crate) draw_active: bool,
     /// Native touch owned by shell navigation; other fingers cannot replace it.
     pub touch: Option<u64>,
     pub keyboard: f64,
@@ -104,6 +107,7 @@ impl Default for PhoneState {
     fn default() -> Self {
         Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
+            animation_active: false, draw_active: false,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
             ime: HashMap::new(), shift: false, symbols: false,

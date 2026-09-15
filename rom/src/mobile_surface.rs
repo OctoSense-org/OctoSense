@@ -8,6 +8,127 @@ mod search;
 script_mod! {
     use mod.prelude.widgets_internal.*
     use mod.widgets.*
+    // Flat surfaces use one uniform blur level. The liquid-glass shader
+    // varies the level at its lens edge and keeps six bicubic samplers plus
+    // ripple/refraction math live. This material has no lens: specialize its
+    // sampler while retaining the shadow, rim, tint and dither.
+    mod.widgets.PhoneFlatGlass = GlassPanel {
+        draw_bg +: {
+            sample_phone: fn(uv: vec2) -> vec4 {
+                // Overview uses levels 0..3. Constant sample levels avoid
+                // two dynamic selections through all six mip samplers.
+                let level = clamp(self.blur_level, 0.0, 3.0)
+                let t = fract(level)
+                let blend = t * t * (3.0 - 2.0 * t)
+                if level < 1.0 {
+                    let a = self.sample_level(0.0, uv)
+                    if blend <= 0.0001 {return a}
+                    return a.mix(self.sample_level(1.0, uv), blend)
+                }
+                if level < 2.0 {
+                    let a = self.sample_level(1.0, uv)
+                    if blend <= 0.0001 {return a}
+                    return a.mix(self.sample_level(2.0, uv), blend)
+                }
+                if level < 3.0 {
+                    let a = self.sample_level(2.0, uv)
+                    if blend <= 0.0001 {return a}
+                    return a.mix(self.sample_level(3.0, uv), blend)
+                }
+                return self.sample_level(3.0, uv)
+            }
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
+                sdf.box(self.sdf_rect_pos.x, self.sdf_rect_pos.y,
+                    self.sdf_rect_size.x, self.sdf_rect_size.y, max(1.0, self.corner_radius))
+                if sdf.shape > -1.0 {
+                    let m = self.shadow_radius
+                    let o = self.shadow_offset + self.rect_shift
+                    let sigma = mix(m * 0.5, self.shadow_sigma, step(0.001, self.shadow_sigma))
+                    let v = GaussShadow.rounded_box_shadow(vec2(m) + o, self.rect_size2 + o,
+                        self.pos * (self.rect_size3 + vec2(m)), max(sigma, 0.5), self.corner_radius * 2.0)
+                    sdf.clear(self.shadow_color * v)
+                }
+                let screen_pos = self.rect_pos2 + self.pos * self.rect_size3
+                let uv = screen_pos / max(self.source_size, vec2(1.0))
+                let sampled = self.sample_phone(uv)
+                let transmitted = vec4(self.fallback_color.rgb, 1.0).mix(sampled, self.has_gauss)
+                let material = transmitted.rgb.mix(self.tint_color.rgb, self.tint_alpha)
+                let depth = max(-sdf.shape, 0.0)
+                let noise = (Math.random_2d(screen_pos) - 0.5) * self.noise_strength
+                let surface_alpha = mix(self.surface_alpha, 1.0, self.has_gauss)
+                if depth > max(1.0, max(self.inner_shadow_band, self.rim_width)) {
+                    // The flat interior has no rim, shadow or antialiasing.
+                    // Keep its texture/tint/dither without per-pixel edge math.
+                    return vec4((material + noise) * surface_alpha, surface_alpha) * self.layer_opacity
+                }
+                let normal = self.rounded_edge_normal(sdf.shape)
+                let inner = (1.0 - smoothstep(0.0, max(self.inner_shadow_band, 0.01), depth))
+                    * (0.25 + 0.75 * max(normal.y, 0.0)) * self.inner_shadow_alpha
+                let facing = pow(max(dot(normal, normalize(vec2(-0.18, -1.0))), 0.0), 0.8)
+                let rim = (1.0 - smoothstep(0.0, max(self.rim_width, 0.01), depth)) * facing * self.rim_alpha
+                let shaded = (material * (1.0 - inner)).mix(vec3(1.0), clamp(rim, 0.0, 1.0))
+                sdf.fill_keep(vec4(shaded + noise, mix(self.surface_alpha, 1.0, self.has_gauss)))
+                return sdf.result * self.layer_opacity
+            }
+        }
+    }
+    // Recents' overview glass: one fixed level, like the sheet. Its blur
+    // used to grow 0..3 with `overview` while its opacity grew 0..1: at a
+    // fractional level the flat sampler reads two mips (eight taps per
+    // pixel) over the whole screen on every frame of the transition, and on
+    // the OnePlus 6 that kept the return at ~15 ms of GPU per frame at the
+    // floor clock. The fade alone reads as the same cross-fade to frosted.
+    mod.widgets.PhoneOverviewGlass = mod.widgets.PhoneFlatGlass {
+        draw_bg +: {
+            sample_phone: fn(uv: vec2) -> vec4 {
+                return self.sample_level(3.0, uv)
+            }
+        }
+    }
+    mod.widgets.PhoneShadeGlass = mod.widgets.PhoneFlatGlass {
+        draw_bg +: {
+            sample_phone: fn(uv: vec2) -> vec4 {
+                return self.sample_level(3.0, uv)
+            }
+        }
+    }
+    // The group window's panel: the flat material at one fixed level, letting
+    // a tenth of the sharp scene through like the liquid panel it replaces,
+    // with that panel's hairline border. The liquid shader's lens, gradient
+    // blur and chroma sampled the pyramid up to three times per pixel: on
+    // the OnePlus 6 the window cost ~18 ms of GPU per frame at full clock.
+    mod.widgets.PhoneGroupGlass = mod.widgets.PhoneFlatGlass {
+        draw_bg +: {
+            sample_phone: fn(uv: vec2) -> vec4 {
+                return self.sample_level(4.0, uv)
+            }
+            pixel: fn() {
+                let sdf = Sdf2d.viewport(self.pos * self.rect_size3)
+                sdf.box(self.sdf_rect_pos.x, self.sdf_rect_pos.y,
+                    self.sdf_rect_size.x, self.sdf_rect_size.y, max(1.0, self.corner_radius))
+                if sdf.shape > -1.0 {
+                    let m = self.shadow_radius
+                    let o = self.shadow_offset + self.rect_shift
+                    let sigma = mix(m * 0.5, self.shadow_sigma, step(0.001, self.shadow_sigma))
+                    let v = GaussShadow.rounded_box_shadow(vec2(m) + o, self.rect_size2 + o,
+                        self.pos * (self.rect_size3 + vec2(m)), max(sigma, 0.5), self.corner_radius * 2.0)
+                    sdf.clear(self.shadow_color * v)
+                }
+                let screen_pos = self.rect_pos2 + self.pos * self.rect_size3
+                let uv = screen_pos / max(self.source_size, vec2(1.0))
+                let sampled = self.sample_phone(uv)
+                let transmitted = vec4(self.fallback_color.rgb, 1.0).mix(sampled, self.has_gauss)
+                let material = transmitted.rgb.mix(self.tint_color.rgb, self.tint_alpha)
+                let noise = (Math.random_2d(screen_pos) - 0.5) * self.noise_strength
+                sdf.fill_keep(vec4(material + noise, self.surface_alpha))
+                if self.border_width > 0.0 {
+                    sdf.stroke(vec4(self.border_color.rgb, self.border_alpha), self.border_width)
+                }
+                return sdf.result * self.layer_opacity
+            }
+        }
+    }
     mod.widgets.PhoneSurfaceBase = #(PhoneSurface::register_widget(vm))
     mod.widgets.PhoneSurface = set_type_default() do mod.widgets.PhoneSurfaceBase {
         width: Fill height: Fill
@@ -41,15 +162,15 @@ script_mod! {
                 border_alpha: 0.18 border_width: 0.7
             }
         }
-        group_glass: GlassPanel {
+        group_glass: mod.widgets.PhoneGroupGlass {
             draw_bg +: {
                 blur_level: 4.0 corner_radius: 28.0
                 tint_color: #eeeeff tint_alpha: 0.22 surface_alpha: 0.90
-                lensing_strength: 0.3 specular_strength: 0.08
+                lensing_strength: 0.0 specular_strength: 0.0
                 border_alpha: 0.18 border_width: 0.7
             }
         }
-        overview_glass: GlassPanel {
+        overview_glass: mod.widgets.PhoneOverviewGlass {
             draw_bg +: {
                 blur_level: 3.0 corner_radius: 0.0
                 tint_color: #101329 tint_alpha: 0.20 surface_alpha: 1.0
@@ -59,7 +180,7 @@ script_mod! {
         // The shade's sheet: the overview glass with the sheet's own tint
         // folded in (desk light/dark tints below are set per draw), so the
         // sheet is one full-width blend instead of a glass plus a tint layer.
-        shade_glass: GlassPanel {
+        shade_glass: mod.widgets.PhoneShadeGlass {
             draw_bg +: {
                 blur_level: 3.0 corner_radius: 0.0
                 tint_color: #101329 tint_alpha: 0.20 surface_alpha: 1.0
@@ -470,6 +591,14 @@ impl PhoneSurface {
         if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {
             self.shade_warm=true;
             crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.chrome,&mut self.icons,state,screen);
+            // Offer both sheet variants to the renderer before the first pull.
+            // Verify first-use compilation separately from frame pacing.
+            self.shade_glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            self.overview_glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            self.group_glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.shade_glass,&mut self.hits,state,screen,backdrop);
         if perf {
