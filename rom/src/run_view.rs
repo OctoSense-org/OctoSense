@@ -272,7 +272,11 @@ impl ScriptHook for MpRunView {
     fn on_after_new(&mut self, vm: &mut ScriptVm) {
         vm.with_cx_mut(|cx| {
             self.draw_app.set_texture(0, &cx.null_texture());
-            self.tick_timer = cx.start_interval(0.008);
+            // The child-process tick (`StudioToApp::Tick`, bootstrap resends)
+            // runs only while a process is attached (`set_target`): a view
+            // without one used to keep a 125 Hz interval whose `Event::Timer`
+            // went through the whole app — hosted modules included — on every
+            // pass of the event loop, on a phone that hosts no processes.
             self.draw_app
                 .draw_vars
                 .set_dyn_instance(cx, id!(packed_header), &[1.0f32]);
@@ -317,12 +321,19 @@ impl MpRunView {
         self.bootstrap_pending = target.is_some();
         self.bootstrap_tick_count = 0;
         if target.is_some() {
+            if self.tick_timer.is_empty() {
+                self.tick_timer = cx.start_interval(0.008);
+            }
             // Keep redrawing during startup so bootstrap messages resend
             // until the child socket is ready.
             self.redraw_countdown = self.redraw_countdown.max(240);
         } else {
             if had_target {
                 cx.hide_text_ime();
+            }
+            if !self.tick_timer.is_empty() {
+                cx.stop_timer(self.tick_timer);
+                self.tick_timer = Timer::empty();
             }
             self.redraw_countdown = 0;
         }
