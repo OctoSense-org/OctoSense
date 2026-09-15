@@ -412,22 +412,75 @@ pub fn status_bar_hits(hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen
 /// Draw the shade over everything else. `hits` receives the sheet's
 /// tappable regions (the closed shade's are `status_bar_hits`).
 #[allow(clippy::too_many_arguments)]
-pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
+/// The sheet's content — status line, notification cards, controls —
+/// recorded once per state into a frame the size of the settled sheet, and
+/// shown as one quad while the sheet moves. Nothing inside the sheet changes
+/// during a pull, yet every moving frame used to lay out and encode all of
+/// it again (the shell's 4–5 ms of CPU per frame on the phone) and
+/// rasterize it. A settled sheet draws live, so sliders and taps respond.
+#[derive(Default)]
+pub struct ShadeContentCache {
+    frame: Option<crate::dock_warp::WindowFrame>,
+    key: Option<u64>,
+}
+
+/// Everything the recorded content depends on. Card ages tick by the
+/// minute, so the minute is part of it.
+fn content_key(shade: &ShadeState, clock: &str, dark: bool, ios: bool, size: Vec2d, dpi: f64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{:?}", shade.notifications).hash(&mut h);
+    shade.dragging_note.hash(&mut h);
+    for t in Toggle::ALL { shade.toggled(t).hash(&mut h); }
+    shade.brightness.to_bits().hash(&mut h);
+    shade.volume.to_bits().hash(&mut h);
+    shade.page.to_bits().hash(&mut h);
+    shade.battery.hash(&mut h);
+    for n in &shade.notifications { ((shade.now - n.time) / 60.0).floor().to_bits().hash(&mut h); }
+    clock.hash(&mut h);
+    (dark, ios).hash(&mut h);
+    size.x.to_bits().hash(&mut h);
+    size.y.to_bits().hash(&mut h);
+    dpi.to_bits().hash(&mut h);
+    h.finish()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, cache: &mut ShadeContentCache, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
     let shade = &state.phone.shade;
     let style = state.style.target;
     let dark = state.style.dark;
     let ios = style == DesktopStyle::Ios;
+    let content = shade.content_rect(screen);
+    let covered = backdrop.is_some();
+    let ink = if dark { rgb(245, 245, 250) } else { rgb(26, 26, 34) };
+    let accent = if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
+    let card = if dark { alpha(rgb(44, 46, 62), 0.86) } else { alpha(rgb(255, 255, 255), 0.88) };
+    // The content: live on a settled sheet (its sliders and cards respond),
+    // one recorded quad while the sheet moves over a kept scene. Recorded at
+    // the settled content rect, presented at the current one. With the shade
+    // closed, an idle home frame records it too, its hits discarded, so the
+    // first pull finds it; a moving frame whose key does not fit draws live
+    // rather than paying a record inside the gesture.
+    let settled = rect(screen.pos.x, screen.pos.y, content.size.x, content.size.y);
+    let key = content_key(shade, &state.phone.clock, dark, ios, content.size, cx.current_dpi_factor());
     if shade.open < 0.001 {
+        if covered && cache.key != Some(key) {
+            let mut scratch = Vec::new();
+            let frame = cache.frame.get_or_insert_with(|| crate::dock_warp::WindowFrame::new_with_name(cx, "wm_phone_shade_content"));
+            frame.begin(cx, settled);
+            draw_content(cx, d, chrome, icons, &mut scratch, state, screen, settled, ink, accent, card);
+            frame.end(cx);
+            cache.key = Some(key);
+        }
         return;
     }
     let open = shade.open.clamp(0.0, 1.0) as f32;
     let sheet = shade.sheet_rect(screen);
-    let content = shade.content_rect(screen);
     // The dimmed, blurred backdrop, then the sheet's own frosted surface.
     // The dim, only where the sheet does not cover: with a backdrop the
     // sheet's glass fills at alpha 1 from a snapshot taken before this
     // overlay, so dim drawn under it never reached the screen.
-    let covered = backdrop.is_some();
     let dim = if covered { rect(screen.pos.x, sheet.pos.y + sheet.size.y, screen.size.x, (screen.pos.y + screen.size.y - sheet.pos.y - sheet.size.y).max(0.0)) } else { screen };
     if dim.size.y > 0.0 { rounded(chrome, cx, dim, 0.0, alpha(rgb(0, 0, 0), 0.28 * open)); }
     hits.push((screen, PhoneHit::Shade(ShadeHit::Backdrop)));
@@ -444,9 +497,37 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     bg.set_dyn_instance(cx, live_id!(inner_shadow_alpha), &[0.10 * edge]);
     glass.draw_surface_with_backdrop(cx, sheet, backdrop, 1.0);
     hits.push((sheet, PhoneHit::Shade(ShadeHit::Sheet)));
-    let ink = if dark { rgb(245, 245, 250) } else { rgb(26, 26, 34) };
-    let accent = if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
-    let card = if dark { alpha(rgb(44, 46, 62), 0.86) } else { alpha(rgb(255, 255, 255), 0.88) };
+    let moving = shade.open < 0.999;
+    if moving && covered && cache.key == Some(key) && cache.frame.is_some() {
+        let frame = cache.frame.as_ref().unwrap();
+        frame.attach(cx);
+        present(cx, frame.texture(), content);
+    } else if !moving && covered {
+        let frame = cache.frame.get_or_insert_with(|| crate::dock_warp::WindowFrame::new_with_name(cx, "wm_phone_shade_content"));
+        frame.begin(cx, settled);
+        draw_content(cx, d, chrome, icons, hits, state, screen, settled, ink, accent, card);
+        frame.end(cx);
+        cache.key = Some(key);
+        present(cx, frame.texture(), content);
+    } else {
+        draw_content(cx, d, chrome, icons, hits, state, screen, content, ink, accent, card);
+    }
+    // Page dots and the drag handle along the sheet's bottom edge.
+    let by = sheet.pos.y + sheet.size.y;
+    for i in 0..2 {
+        let on = 1.0 - (shade.page - i as f64).abs().clamp(0.0, 1.0);
+        rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 11.0 + i as f64 * 14.0, by - 36.0, 8.0, 8.0), 4.0, alpha(ink, 0.3 + 0.6 * on as f32));
+    }
+    rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 24.0, by - 16.0, 48.0, 5.0), 2.5, alpha(ink, 0.35));
+}
+
+/// The status line, then the notifications page and the controls page,
+/// side by side across `shade.page`, in `content`.
+#[allow(clippy::too_many_arguments)]
+fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, content: Rect, ink: Vec4f, accent: Vec4f, card: Vec4f) {
+    let shade = &state.phone.shade;
+    let style = state.style.target;
+    let dark = state.style.dark;
     let w = content.size.x;
     let pages = [content.pos.x - shade.page * w, content.pos.x + (1.0 - shade.page) * w];
     // The status line on both pages: clock left, battery right.
@@ -466,13 +547,6 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
         if page == 0 { draw_notifications(cx, d, chrome, icons, hits, shade, style, dark, ink, accent, card, rect(*x, content.pos.y, w, content.size.y)); }
         else { draw_controls(cx, d, chrome, hits, shade, dark, ink, accent, card, rect(*x, content.pos.y, w, content.size.y)); }
     }
-    // Page dots and the drag handle along the sheet's bottom edge.
-    let by = sheet.pos.y + sheet.size.y;
-    for i in 0..2 {
-        let on = 1.0 - (shade.page - i as f64).abs().clamp(0.0, 1.0);
-        rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 11.0 + i as f64 * 14.0, by - 36.0, 8.0, 8.0), 4.0, alpha(ink, 0.3 + 0.6 * on as f32));
-    }
-    rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 24.0, by - 16.0, 48.0, 5.0), 2.5, alpha(ink, 0.35));
 }
 
 /// Rasterize the shade's glyphs and tessellate its notification icons once,

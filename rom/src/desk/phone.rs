@@ -526,7 +526,14 @@ impl WmDesk {
             kb.size.y=screen.pos.y+screen.size.y-kb.pos.y;
             state.phone.exclusions.add(kb,[false,true,false,false]);
         }
-        self.phone_ui.draw_overlay(cx,state,screen,shade_backdrop.or(backdrop));
+        // The sheet's recorded content is shown through the desk's own
+        // texture quad (mobile_shade.rs keeps the frame, the desk the draw).
+        let quad=&mut self.draw_phone;
+        self.phone_ui.draw_overlay(cx,state,screen,shade_backdrop.or(backdrop),&mut |cx,texture,r| {
+            quad.draw_vars.set_texture(0,texture);
+            quad.opacity=1.0; quad.radius=0.0; quad.y_flip=0.0;
+            quad.draw_abs(cx,r);
+        });
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
         let state=scope.data.get_mut::<WmState>().unwrap();
