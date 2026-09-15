@@ -56,6 +56,7 @@ script_mod! {
                 lensing_strength: 0.0 specular_strength: 0.0 border_alpha: 0.0
             }
         }
+        perf_graph: PerfGraph {panel_width: 380.0 panel_height: 210.0 panel_margin: 12.0}
         keyboard_glass: GlassPanel {
             draw_bg +: {
                 blur_level: 4.0 corner_radius: 0.0
@@ -117,6 +118,10 @@ pub struct PhoneSurface {
     #[live] key_backspace: DrawSvg,
     #[live] glass: GaussRoundedView,
     #[live] keyboard_glass: GaussRoundedView,
+    /// makepad's frame profiler panel, drawn topmost while the monitor is
+    /// on (mobile_perf.rs). Never handed events: it draws on the frames
+    /// the shell draws and schedules none of its own.
+    #[live] perf_graph: PerfGraph,
     #[live] pub overview_glass: GaussRoundedView,
     #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
@@ -394,6 +399,9 @@ impl PhoneSurface {
         }
     }
     pub fn draw_overlay(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
+        let perf=crate::mobile_perf::enabled();
+        let ch=crate::mobile_perf::channels(cx.cx);
+        let mut clock=std::time::Instant::now();
         let phone=&state.phone;
         self.pressed=phone.gesture.as_ref().and_then(|g|g.hit.clone());
         let ios=state.style.target==DesktopStyle::Ios;
@@ -408,6 +416,8 @@ impl PhoneSurface {
         self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
         crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);
         crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);
+        // The battery icon: three quick taps switch the frame-time reporter.
+        if phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
         if phone.overview>0.01 {
             for (index,client) in phone.order.iter().enumerate() {
                 if let Some(slot)=state.clients.get(client) {
@@ -420,7 +430,9 @@ impl PhoneSurface {
             }
             if phone.order.is_empty() {self.label(cx,screen,"No recent apps",20.0,false,ink);}
         }
+        if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         self.draw_groups_overlay(cx,state,screen);
+        if perf {crate::mobile_perf::span(cx.cx,ch.groups,clock);clock=std::time::Instant::now();}
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop.clone());}
         let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
         if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
@@ -435,7 +447,14 @@ impl PhoneSurface {
             let back=rect(bottom.pos.x+12.0,bottom.pos.y-10.0,40.0,34.0);
             self.d.icon_centered(cx,Ico::ChevronLeft,back,16.0,nav_ink);self.hits.push((back,PhoneHit::Back));
         }
+        if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.overview_glass,&mut self.hits,state,screen,backdrop);
+        if perf {
+            crate::mobile_perf::span(cx.cx,ch.shade,clock);
+            // Above the shade, inside the navigation band's top edge.
+            let pane=rect(screen.pos.x,screen.pos.y,screen.size.x,screen.size.y-24.0);
+            let _=self.perf_graph.draw_walk(cx,&mut Scope::empty(),Walk::abs_rect(pane));
+        }
     }
     /// Where the shell keyboard sits while it is up (or sliding up).
     pub fn keyboard_rect(phone: &PhoneState, screen: Rect) -> Rect {

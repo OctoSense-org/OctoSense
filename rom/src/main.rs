@@ -30,6 +30,7 @@ mod mobile_shade;
 mod mobile_pages;
 mod mobile_island;
 mod mobile_groups;
+mod mobile_perf;
 mod scene;
 mod dock_warp;
 mod host;
@@ -3731,6 +3732,14 @@ impl App {
                         continue;
                     }
                     if self.island_test_action(cx, name) { i += 2; continue; }
+                    // perf:on / perf:off: the phone shell's frame-time
+                    // reporter (mobile_perf.rs), a `[perf]` line every 2 s.
+                    if let Some(what) = name.strip_prefix("perf:") {
+                        mobile_perf::set_enabled(cx, what.trim() != "off");
+                        self.animate_phone(cx);
+                        i += 2;
+                        continue;
+                    }
                     match test_action(name) {
                         Some(action) => {
                             log!("wm: --test-action {} -> {:?}", name, action);
@@ -4059,6 +4068,7 @@ impl MatchEvent for App {
             self.pane_links.open_os(cx, AiBus::os_manifest(&Self::registry_apps()));
         }
         self.tick = cx.start_interval(1.0);
+        mobile_perf::init_from_env(cx);
         // The warm pool's pump. Started even when the pool is off: it
         // costs one no-op wakeup and keeps the timer id stable.
         if self.warm_pool.enabled() {
@@ -4387,6 +4397,7 @@ impl AppMain for App {
                 return;
             }
         }
+        mobile_perf::saw_event(event);
         self.phone_animation_event(cx,event);
         if let Some(ne) = self.style_frame.is_event(event) {
             if self.state.is_some() {
@@ -4569,6 +4580,7 @@ impl AppMain for App {
                 self.explain_first_exec_scan(cx);
                 self.update_status(cx);
                 self.update_bar(cx);
+                mobile_perf::tick(cx);
                 // The pool fills itself here: at startup, after an
                 // adoption, and after any death it healed from. One spawn
                 // per second, so a cold desktop never forks four cargo

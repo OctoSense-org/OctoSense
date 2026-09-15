@@ -111,7 +111,9 @@ impl WmDesk {
         }
         if let Some(item)=self.item(cx,client) {
             with_tile_host(&item,|tile| {tile.set_target_size(Some(rect.size));tile.set_close_crop(None);tile.set_fade(1.0);});
+            let t=std::time::Instant::now();
             item.draw_walk_all(cx,scope,Walk::abs_rect(rect));
+            if crate::mobile_perf::enabled() {let ch=crate::mobile_perf::channels(cx.cx);crate::mobile_perf::span(cx.cx,ch.module,t);}
         }
         capture.frame.end(cx);
         self.compositor.as_mut().unwrap().content_pass(capture.frame.pass_id());
@@ -205,6 +207,7 @@ impl WmDesk {
         }
     }
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,full:Rect) {
+        crate::mobile_perf::frame_boundary(cx.cx);
         let state=scope.data.get_mut::<WmState>().unwrap();
         // The wallpaper fills the desk; the shell lays out inside the
         // platform's safe area (the notch, the system bars): the status bar
@@ -237,17 +240,25 @@ impl WmDesk {
         let style=state.style.target;
         let dark=state.style.dark;
         let app=mobile::app_rect(screen);
+        let perf=crate::mobile_perf::enabled();
+        let ch=crate::mobile_perf::channels(cx.cx);
+        let mut clock=std::time::Instant::now();
         self.compositor.get_or_insert_with(||BackdropCompositor::new(cx)).begin(cx);
         self.phone_ui.begin();
         self.phone_ui.draw_wallpaper(cx,full,style,dark,phone.wallpaper_time);
         self.compositor.as_mut().unwrap().content(full);
         let home_backdrop=if style==crate::desktop::DesktopStyle::Ios && phone.openness<0.999 {
-            Some(self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0))
+            let t=std::time::Instant::now();
+            let b=self.compositor.as_mut().unwrap().backdrop(cx,PhoneSurface::home_dock(screen),4.0);
+            if perf {crate::mobile_perf::span(cx.cx,ch.glass,t);}
+            Some(b)
         }else{None};
         self.phone_ui.draw_home(cx,state,screen,home_backdrop);
         self.compositor.as_mut().unwrap().content(screen);
         if phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if perf {crate::mobile_perf::span(cx.cx,ch.home,clock);clock=std::time::Instant::now();}
         if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen);}
+        if perf {crate::mobile_perf::span(cx.cx,ch.groups,clock);clock=std::time::Instant::now();}
         if phone.overview>0.001 {
             let blur = (phone.overview.clamp(0.0, 1.0) * 3.0) as f32;
             self.phone_ui.overview_glass.set_blurriness(cx, blur);
@@ -255,6 +266,7 @@ impl WmDesk {
             self.phone_ui.overview_glass.draw_surface_with_backdrop(cx,screen,Some(backdrop),phone.overview as f32);
             self.compositor.as_mut().unwrap().content(screen);
         }
+        if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);clock=std::time::Instant::now();}
         let mut excluded:Vec<Rect>=Vec::new();
         let mut order=phone.order.clone();
         order.reverse();
@@ -316,6 +328,8 @@ impl WmDesk {
                 if phone.screen==PhoneScreen::App && owns_edges.contains(&client) {excluded.push(display);}
             }
         }
+        // The captures' own draws are the `module` channel (record_capture).
+        if perf {clock=std::time::Instant::now();}
         // The shade's frosted sheet samples the finished scene here (the
         // final-glass snapshot is upside down on GL).
         let shade_backdrop=if phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
@@ -323,6 +337,7 @@ impl WmDesk {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
         let (backdrop,_,_)=self.compositor.as_mut().unwrap().finish(cx,screen,glass);
+        if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);}
         let state=scope.data.get_mut::<WmState>().unwrap();
         for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}
         if phone.keyboard>0.5 {
