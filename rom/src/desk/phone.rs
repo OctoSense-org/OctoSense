@@ -449,8 +449,18 @@ impl WmDesk {
                     // own glass pyramid) under a moving quad cost a whole GPU frame
                     // per animation frame on the phone.
                     let settled=phone.openness>=0.999 && phone.overview<=0.001;
-                    let refresh=full_ready && (foreground && phone.screen==PhoneScreen::App && settled || self.client_arriving(client) || capture.stale(app.size,style,dark));
-                    if refresh {
+                    let fresh=self.client_arriving(client) || capture.stale(app.size,style,dark);
+                    let refresh=full_ready && (foreground && phone.screen==PhoneScreen::App && settled || fresh);
+                    // The zoom's last frame is the first settled one. Recording
+                    // the module there (67-84 ms on the phone) was the one hitch
+                    // of every app opening. Show the zoom's capture at full size
+                    // instead, pixel for pixel what a fresh record would show
+                    // unless the app changed, and record on the extra idle frame
+                    // asked for here, where a long frame moves nothing.
+                    if refresh && !fresh && (phone.draw_active || phone.gesture.is_some()) {
+                        capture.frame.freeze(cx);
+                        cx.redraw_all();
+                    } else if refresh {
                         self.record_capture(cx,scope,client,&mut capture,app,true);
                         capture.settle(app.size,style,dark);
                     }else{capture.frame.freeze(cx);}
