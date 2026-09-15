@@ -424,11 +424,25 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     let sheet = shade.sheet_rect(screen);
     let content = shade.content_rect(screen);
     // The dimmed, blurred backdrop, then the sheet's own frosted surface.
-    rounded(chrome, cx, screen, 0.0, alpha(rgb(0, 0, 0), 0.28 * open));
+    // The dim, only where the sheet does not cover: with a backdrop the
+    // sheet's glass fills at alpha 1 from a snapshot taken before this
+    // overlay, so dim drawn under it never reached the screen.
+    let covered = backdrop.is_some();
+    let dim = if covered { rect(screen.pos.x, sheet.pos.y + sheet.size.y, screen.size.x, (screen.pos.y + screen.size.y - sheet.pos.y - sheet.size.y).max(0.0)) } else { screen };
+    if dim.size.y > 0.0 { rounded(chrome, cx, dim, 0.0, alpha(rgb(0, 0, 0), 0.28 * open)); }
     hits.push((screen, PhoneHit::Shade(ShadeHit::Backdrop)));
+    // The sheet: one glass whose tint is the overview tint (#101329 at 0.20)
+    // with the sheet colour composited over it, folded into a single mix:
+    // mix(mix(T, g, 0.2), c, a) = mix(T, g', 1 - 0.8 (1 - a)). The rim and
+    // inner shadow scale by (1 - a), as the tint layer used to cover them.
+    let (tint, tint_alpha, edge) = if dark { (vec4(12.56 / 255.0, 12.98 / 255.0, 22.95 / 255.0, 1.0), 0.64, 0.45) } else { (vec4(211.98 / 255.0, 214.09 / 255.0, 223.61 / 255.0, 1.0), 0.696, 0.38) };
     glass.set_blurriness(cx, 3.0);
+    let bg = &mut glass.draw_bg.draw_vars;
+    bg.set_dyn_instance(cx, live_id!(tint_color), &[tint.x, tint.y, tint.z, tint.w]);
+    bg.set_uniform(cx, live_id!(tint_alpha), &[tint_alpha]);
+    bg.set_dyn_instance(cx, live_id!(rim_alpha), &[0.55 * edge]);
+    bg.set_dyn_instance(cx, live_id!(inner_shadow_alpha), &[0.10 * edge]);
     glass.draw_surface_with_backdrop(cx, sheet, backdrop, 1.0);
-    rounded(chrome, cx, sheet, 0.0, if dark { alpha(rgb(12, 12, 20), 0.55) } else { alpha(rgb(236, 238, 246), 0.62) });
     hits.push((sheet, PhoneHit::Shade(ShadeHit::Sheet)));
     let ink = if dark { rgb(245, 245, 250) } else { rgb(26, 26, 34) };
     let accent = if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
@@ -459,6 +473,29 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
         rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 11.0 + i as f64 * 14.0, by - 36.0, 8.0, 8.0), 4.0, alpha(ink, 0.3 + 0.6 * on as f32));
     }
     rounded(chrome, cx, rect(screen.pos.x + screen.size.x * 0.5 - 24.0, by - 16.0, 48.0, 5.0), 2.5, alpha(ink, 0.35));
+}
+
+/// Rasterize the shade's glyphs and tessellate its notification icons once,
+/// before the first pull: both pages drawn from a seeded copy of the shade,
+/// off-screen and fully transparent, on an idle frame. The first pull used to
+/// pay it inside its first frames (glyph atlas packing under `draw_overlay`,
+/// ~30 ms of a 55 ms frame on the OnePlus 6T). The live shade is untouched:
+/// its fixtures still seed on the first real open.
+pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, state: &WmState, screen: Rect) {
+    let mut shade = state.phone.shade.clone();
+    if shade.notifications.is_empty() { shade.seed_fixtures(); }
+    let style = state.style.target;
+    let ios = style == DesktopStyle::Ios;
+    let clear = vec4(0.0, 0.0, 0.0, 0.0);
+    let accent = if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
+    let mut hits = Vec::new();
+    // Past the right edge of the window: recorded, never rasterized on screen.
+    let x = screen.pos.x + screen.size.x * 3.0;
+    let page = rect(x, screen.pos.y, screen.size.x, screen.size.y);
+    d.label(cx, rect(x + 24.0, page.pos.y + 14.0, 200.0, 30.0), true, 22.0, clear, HAlign::Left, &state.phone.clock);
+    d.label(cx, rect(x + 24.0, page.pos.y + 14.0, 200.0, 30.0), false, 13.0, clear, HAlign::Right, "0123456789% charging");
+    draw_notifications(cx, d, chrome, icons, &mut hits, &shade, style, state.style.dark, clear, accent, clear, page);
+    draw_controls(cx, d, chrome, &mut hits, &shade, state.style.dark, clear, accent, clear, rect(x + screen.size.x, screen.pos.y, screen.size.x, screen.size.y));
 }
 
 #[allow(clippy::too_many_arguments)]
