@@ -354,13 +354,18 @@ impl WmDesk {
         }
         // The captures' own draws are the `module` channel (record_capture).
         if perf {clock=std::time::Instant::now();}
-        // The shade's frosted sheet samples the finished scene here (the
-        // final-glass snapshot is upside down on GL).
-        let shade_backdrop=if plan.compose && phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
-        let glass=if plan.compose && phone.keyboard>0.5 {
+        let shade_glass=plan.compose && phone.shade.open>0.001;
+        let keyboard_glass=if plan.compose && phone.keyboard>0.5 {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
-        let backdrop=if plan.compose {self.compositor.as_mut().unwrap().finish(cx,screen,glass).0} else {None};
+        // The shade's sheet samples the finished scene, so it is the
+        // compositor's final glass: a mid-scene `backdrop` here opened a second
+        // segment holding nothing but a full-screen copy of the first, one
+        // more full-resolution scene pass per frame of the pull. With the
+        // keyboard up (its own final glass) the shade keeps the checkpoint.
+        let shade_backdrop=if shade_glass && keyboard_glass.is_some() {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
+        let final_glass=if shade_glass && keyboard_glass.is_none() {Some((screen,3.0))} else {keyboard_glass};
+        let backdrop=if plan.compose {self.compositor.as_mut().unwrap().finish(cx,screen,final_glass).0} else {None};
         if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);}
         let state=scope.data.get_mut::<WmState>().unwrap();
         for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}
