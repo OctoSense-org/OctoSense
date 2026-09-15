@@ -315,7 +315,13 @@ impl WmDesk {
             let radius=((1.0-phone.openness).max(phone.overview)*26.0)as f32;
             match stored.full.take() {
                 Some(mut capture)=>{
-                    let refresh=full_ready && (foreground && phone.screen==PhoneScreen::App || self.client_arriving(client) || capture.stale(app.size,style,dark));
+                    // The foreground app is re-recorded every scene frame once it is
+                    // settled on screen. While it zooms open the last capture is the
+                    // animation's source: re-recording a full-screen module (and its
+                    // own glass pyramid) under a moving quad cost a whole GPU frame
+                    // per animation frame on the phone.
+                    let settled=phone.openness>=0.999 && phone.overview<=0.001;
+                    let refresh=full_ready && (foreground && phone.screen==PhoneScreen::App && settled || self.client_arriving(client) || capture.stale(app.size,style,dark));
                     if refresh {
                         self.record_capture(cx,scope,client,&mut capture,app,true);
                         capture.settle(app.size,style,dark);
