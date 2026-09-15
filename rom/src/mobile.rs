@@ -46,7 +46,13 @@ pub struct PhoneGesture {
 #[derive(Clone)]
 pub struct PhoneState {
     pub clock: String,
+    /// The frame clock of the last stepped frame (the shade stamps its
+    /// cards on it).
     pub wallpaper_time: f64,
+    /// How far the wallpaper's ribbons have drifted: advances only while
+    /// the shell animates or a finger is down, so an idle home page never
+    /// asks for a frame just to move the wallpaper (mobile_app.rs).
+    pub wallpaper_phase: f64,
     pub screen: PhoneScreen,
     pub client: Option<ClientId>,
     pub order: Vec<ClientId>,
@@ -96,7 +102,7 @@ pub struct PhoneState {
 }
 impl Default for PhoneState {
     fn default() -> Self {
-        Self { clock: "9:41".into(), wallpaper_time: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
+        Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
@@ -205,6 +211,33 @@ impl PhoneState {
     }
 }
 
+/// What one frame of the phone scene has to set up, from the state alone
+/// (desk/phone.rs follows it). The backdrop compositor — a full-screen
+/// off-screen scene pass plus a full-screen copy, and a blur pyramid per
+/// glass — is only worth paying for on a frame where some frosted surface
+/// samples the scene; the wallpaper and the home page are only worth
+/// drawing while they can be seen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScenePlan {
+    /// Route the scene through the backdrop compositor.
+    pub compose: bool,
+    /// Draw the wallpaper (else a flat fill under the system bars).
+    pub wallpaper: bool,
+    /// Draw the home page's chrome and tiles.
+    pub home: bool,
+}
+impl PhoneState {
+    pub fn scene_plan(&self, ios: bool) -> ScenePlan {
+        let app_settled = self.screen == PhoneScreen::App && self.openness >= 0.999 && self.overview <= 0.001;
+        let glass = (ios && self.openness < 0.999)
+            || self.overview > 0.001
+            || self.groups.window_visible()
+            || self.shade.open > 0.001
+            || (ios && self.keyboard > 0.5);
+        ScenePlan { compose: glass, wallpaper: !app_settled, home: !app_settled }
+    }
+}
+
 pub fn phone_size(style: DesktopStyle) -> Vec2d {
     if style == DesktopStyle::Ios { dvec2(402.0, 874.0) } else { dvec2(412.0, 892.0) }
 }
@@ -243,6 +276,28 @@ mod tests {
         phone.shade.close();
         phone.step(1.0 / 60.0);
         assert!(!phone.island.shade_open, "the island returns as the sheet closes");
+    }
+    #[test]
+    fn the_scene_composes_only_for_glass_and_skips_what_an_open_app_covers() {
+        let mut phone = PhoneState::default();
+        // An idle Android home page: nothing frosted, straight to the window.
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: false, wallpaper: true, home: true });
+        // iOS's dock is glass: the home page composes.
+        assert_eq!(phone.scene_plan(true), ScenePlan { compose: true, wallpaper: true, home: true });
+        // The shade over the home page samples the scene.
+        phone.shade.open = 0.5;
+        assert!(phone.scene_plan(false).compose);
+        phone.shade.open = 0.0;
+        // An open, settled app covers the wallpaper and the home page.
+        phone.activate(3);
+        for _ in 0..80 { phone.step(1.0 / 60.0); }
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: false, wallpaper: false, home: false });
+        // …until it starts to leave (a home swipe, Recents).
+        phone.overview = 0.3;
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: true, wallpaper: true, home: true });
+        phone.overview = 0.0;
+        phone.openness = 0.9;
+        assert_eq!(phone.scene_plan(false), ScenePlan { compose: false, wallpaper: true, home: true });
     }
     #[test]
     fn both_orientations_reserve_system_bars_and_keep_selected_card_inside() {

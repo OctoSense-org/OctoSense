@@ -810,6 +810,10 @@ pub struct WmDesk {
     #[rust] desktop_frames: HashMap<ClientId, WindowFrame>,
     #[rust] pub wallpaper: WidgetRef,
     #[rust] pub compositor: Option<BackdropCompositor>,
+    /// This frame of the phone scene goes through the compositor
+    /// (`PhoneState::scene_plan`); off, the scene draws straight to the
+    /// window and the content notes are dropped (desk/phone.rs).
+    #[rust] pub phone_compose: bool,
     #[rust] composing: bool,
     #[rust] terminal_clients: HashSet<ClientId>,
     #[rust] blur_counts: (usize, usize),
