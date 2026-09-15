@@ -35,6 +35,18 @@ pub struct WmScene {
     last: f64,
 }
 impl WmScene {
+    /// Render the subtree through the framebuffer cache (the crossfade's
+    /// source) or straight into the window. Off, a transition is a cut.
+    /// `View` reads `texture_caching` only when a script is applied, so the
+    /// switch goes through `set_optimize`, which forces one re-render.
+    pub fn set_caching(&mut self, cx: &mut Cx, on: bool) {
+        if self.view.texture_caching == on { return; }
+        self.view.texture_caching = on;
+        self.view.set_optimize(cx, if on { ViewOptimize::Texture } else { ViewOptimize::DrawList });
+        if !on { self.frozen.clear(); self.progress = 1.0; }
+        self.view.redraw(cx);
+    }
+    pub fn caching(&self) -> bool { self.view.texture_caching }
     pub fn cut(&mut self, cx: &mut Cx) {
         self.frozen.clear();
         self.progress = 1.0;
