@@ -1,5 +1,6 @@
 //! A whole-window texture pulled into its dock icon. No app layout or resize
 //! occurs during the warp; the same frozen surface is used for restoration.
+use makepad_widgets::makepad_draw::overlay::{Overlay, OverlayScope};
 use makepad_widgets::*;
 
 script_mod! {
@@ -53,9 +54,22 @@ pub struct DrawDockWarp {
     y_flip: f32,
 }
 
+/// A client's tile recorded into a texture of its own: the dock warp, the
+/// desktop's rounded window surface, every phone capture.
+///
+/// The frame is a PASS, and a pass has an overlay of its own. Everything a
+/// hosted module draws through `begin_overlay_*` while the frame records —
+/// the AppCard kit's glass surfaces, a popup, a modal — composites into THIS
+/// texture, after the frame's body, and the window's overlay never sees it.
+/// Without that scope (`Overlay::begin_nested_for_pass`) those lists landed
+/// in the WM window's overlay: painted last of all, over the shell's shade,
+/// keyboard and home page, unclipped, and kept on screen after the tile was
+/// no longer drawn — the module "painting over the whole window".
 pub struct WindowFrame {
     pass: DrawPass,
     list: DrawList2d,
+    overlay: Overlay,
+    overlay_scope: Option<OverlayScope>,
     texture: Texture,
     _depth: Texture,
     frozen: bool,
@@ -89,6 +103,8 @@ impl WindowFrame {
         Self {
             pass,
             list: DrawList2d::new(cx),
+            overlay: Overlay { draw_list: DrawList::new(cx) },
+            overlay_scope: None,
             texture,
             _depth: depth,
             frozen: false,
@@ -114,8 +130,15 @@ impl WindowFrame {
         cx.begin_pass(&self.pass, Some(dpi));
         self.list.begin_always(cx);
         cx.begin_root_turtle(root_size, Layout::flow_overlay());
+        // From here to `end`, overlays belong to this pass (see the type doc).
+        self.overlay_scope = Some(self.overlay.begin_nested_for_pass(cx, self.pass.draw_pass_id()));
     }
     pub fn end(&mut self, cx: &mut Cx2d) {
+        // The overlay composites into the frame's own list, last, and the
+        // enclosing frame's overlay state comes back exactly as it was.
+        if let Some(scope) = self.overlay_scope.take() {
+            self.overlay.end_nested(cx, scope);
+        }
         cx.end_pass_sized_turtle();
         self.list.end(cx);
         cx.end_pass(&self.pass);
