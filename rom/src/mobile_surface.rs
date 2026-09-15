@@ -599,6 +599,13 @@ impl PhoneSurface {
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
             self.group_glass.draw_surface_with_backdrop(cx,
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            // And the two liquid panels the phone still draws (the iOS dock
+            // and keyboard), so no material meets the driver on first use:
+            // a program still compiling skips its draw for a frame.
+            self.glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            self.keyboard_glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.shade_glass,&mut self.hits,state,screen,backdrop);
         if perf {
