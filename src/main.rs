@@ -424,6 +424,9 @@ pub struct App {
     #[rust] stylesheet: Option<desktop_style::StyleSheet>,
     #[rust] phone_frame: NextFrame,
     #[rust] phone_time: f64,
+    /// The status-bar clock the phone last drew: `phone_tick` redraws when
+    /// the minute changes (mobile_app.rs).
+    #[rust] phone_clock_shown: Option<String>,
     /// The shell gesture recognizer (mobile_gestures.rs): the one owner of
     /// the finger the phone shell claims.
     #[rust] phone_gestures: GestureRecognizer,
@@ -4580,7 +4583,7 @@ impl AppMain for App {
                 self.explain_first_exec_scan(cx);
                 self.update_status(cx);
                 self.update_bar(cx);
-                mobile_perf::tick(cx);
+                self.phone_tick(cx);
                 // The pool fills itself here: at startup, after an
                 // adoption, and after any death it healed from. One spawn
                 // per second, so a cold desktop never forks four cargo
