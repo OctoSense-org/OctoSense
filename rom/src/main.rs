@@ -4399,6 +4399,8 @@ impl AppMain for App {
             }
         }
         mobile_perf::saw_event(event);
+        // Android's Home button or gesture, with OctoSense as the Home app.
+        if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);
         if let Some(ne) = self.style_frame.is_event(event) {
             if self.state.is_some() {

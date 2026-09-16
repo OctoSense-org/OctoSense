@@ -535,6 +535,20 @@ impl App {
             send_to_app(sender,vec![StudioToApp::Custom(makepad_platform::ime::HostedBack::default().to_json())]);
         }
     }
+    /// Android delivered a HOME intent to the running activity (OctoSense is
+    /// the device's Home app): whatever is up — an app, Recents, a group
+    /// window, the sheet — the home page shows, as the Home tap does.
+    pub(crate) fn phone_home_intent(&mut self,cx:&mut Cx) {
+        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
+        log!("[phone] home intent");
+        {
+            let phone=&mut self.state_mut().phone;
+            phone.shade.close();
+            phone.groups.close();
+        }
+        self.phone_action(cx,PhoneHit::Home);
+        self.redraw_all(cx);
+    }
     fn type_phone_key(&mut self,cx:&mut Cx,key:&str) {
         let event=match key {
             "backspace"=>Event::KeyDown(KeyEvent{key_code:KeyCode::Backspace,..Default::default()}),
