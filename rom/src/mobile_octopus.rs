@@ -1,6 +1,6 @@
 //! The thinking octopus: OctoSense's mascot drawn by a shader while the
-//! hosted AppCard's kernel is on a turn — its head breathing, its eight
-//! arms waving. The live island shows it in place of the AppCard glyph
+//! hosted AppCard's kernel is on a turn — a round coral head that breathes,
+//! eyes that blink and look about, six arms curling under it. The live island shows it in place of the AppCard glyph
 //! (mobile_island.rs) while a turn is in flight, and the island keeps the
 //! frame loop running for it. Nothing here reads the pass clock: the phase
 //! comes from the frame that draws it, so an idle screen stays idle.
@@ -15,54 +15,69 @@ script_mod! {
         phase: 0.0
         color: #ffffff
         alpha: 1.0
-        // One arm: a wavy stroke hanging from the head's rim at `root`
-        // (x in the quad's -1..1 frame), thinning to its tip. Returns the
-        // signed distance to it in quad units.
+        // One arm: a curling stroke hanging from the head's rim at `root`
+        // (x in the quad's -1..1 frame), curling outward toward its rounded
+        // tip. Returns the signed distance to it.
         arm: fn(q: vec2, root: float, seed: float) -> float {
-            let t = clamp((q.y - 0.05) / 0.9, 0.0, 1.0)
-            // The wave grows along the arm and drifts with the phase; each
-            // arm runs at its own offset so they never move in step.
-            let sway = sin(q.y * 4.5 - self.phase * 4.2 + seed) * 0.16 * t
-                + sin(q.y * 9.0 + self.phase * 2.7 + seed * 1.7) * 0.05 * t
-            let x = root * (1.0 + 0.25 * t) + sway
-            let width = mix(0.085, 0.02, t)
+            let t = clamp((q.y - 0.0) / 0.78, 0.0, 1.0)
+            let side = sign(root)
+            // The curl grows toward the tip; the whole arm sways slowly.
+            let curl = side * (0.28 + 0.06 * sin(self.phase * 2.2 + seed)) * pow(t, 2.2)
+            let sway = sin(self.phase * 3.0 + seed) * 0.05 * t
+            let x = root * (1.0 + 0.1 * t) + curl + sway
+            let width = mix(0.13, 0.065, t)
             let d = abs(q.x - x) - width
-            // Below the tip and above the root the arm is not there.
-            return max(d, max(q.y - 0.97, 0.05 - q.y))
+            let stroke = max(d, max(q.y - 0.78, 0.0 - q.y))
+            let tip = length(q - vec2(root * 1.1 + side * (0.28 + 0.06 * sin(self.phase * 2.2 + seed)) + sin(self.phase * 3.0 + seed) * 0.05, 0.78)) - 0.07
+            return min(stroke, tip)
         }
         pixel: fn() {
-            // q: -1..1 across the quad, y down; the head sits in the upper
-            // third, the arms hang under it.
+            // q: -1..1 across the quad, y down; the head is the upper half,
+            // the arms curl under it.
             let q = self.pos * 2.0 - 1.0
-            let breath = 1.0 + 0.04 * sin(self.phase * 3.1)
-            let head_c = vec2(0.0, -0.42)
-            let head_r = vec2(0.52 * breath, 0.44 / breath)
-            let hq = (q - head_c) / head_r
-            let head = (length(hq) - 1.0) * min(head_r.x, head_r.y)
-            let a0 = self.arm(q, -0.62, 0.0)
-            let a1 = self.arm(q, -0.44, 1.3)
-            let a2 = self.arm(q, -0.26, 2.6)
-            let a3 = self.arm(q, -0.09, 3.9)
-            let a4 = self.arm(q, 0.09, 5.2)
-            let a5 = self.arm(q, 0.26, 0.7)
-            let a6 = self.arm(q, 0.44, 2.0)
-            let a7 = self.arm(q, 0.62, 3.3)
-            let arms = min(min(min(a0, a1), min(a2, a3)), min(min(a4, a5), min(a6, a7)))
-            // Smooth union of head and arms: the arms grow out of the rim.
-            let k = 0.12
+            let breath = 1.0 + 0.03 * sin(self.phase * 3.1)
+            let hq = q - vec2(0.0, -0.36)
+            let dome = length(hq / vec2(0.62 * breath, 0.58 / breath)) - 1.0
+            let belly = length((q - vec2(0.0, -0.12)) / vec2(0.66 * breath, 0.32)) - 1.0
+            let head = min(dome, belly) * 0.5
+            let a0 = self.arm(q, -0.58, 0.0)
+            let a1 = self.arm(q, -0.34, 1.9)
+            let a2 = self.arm(q, -0.11, 3.7)
+            let a3 = self.arm(q, 0.11, 0.9)
+            let a4 = self.arm(q, 0.34, 2.8)
+            let a5 = self.arm(q, 0.58, 4.6)
+            let arms = min(min(min(a0, a1), min(a2, a3)), min(a4, a5))
+            let k = 0.16
             let h = clamp(0.5 + 0.5 * (arms - head) / k, 0.0, 1.0)
             let body = mix(arms, head, h) - k * h * (1.0 - h)
-            let aa = 1.5 / max(self.rect_size.x, 1.0) * 2.0
+            let aa = 3.0 / max(self.rect_size.x, 1.0)
             let fill = 1.0 - smoothstep(-aa, aa, body)
-            // Eyes: two dark dots that blink every few seconds.
-            let blink = smoothstep(0.92, 0.97, sin(self.phase * 1.3 + 1.0))
-            let eye_r = vec2(0.075, 0.075 * (1.0 - 0.9 * blink))
-            let e1 = length((q - vec2(-0.18, -0.4)) / eye_r) - 1.0
-            let e2 = length((q - vec2(0.18, -0.4)) / eye_r) - 1.0
-            let eyes = 1.0 - smoothstep(-aa * 4.0, aa * 4.0, min(e1, e2) * eye_r.x)
-            let rgb = self.color.rgb * (1.0 - 0.85 * eyes)
+            // Eyes: white with a dark pupil that looks around and a glint;
+            // a blink every few seconds.
+            let blink = smoothstep(0.93, 0.98, sin(self.phase * 1.4 + 1.0))
+            let look = vec2(sin(self.phase * 0.9), cos(self.phase * 0.7)) * 0.035
+            let er = vec2(0.17, 0.17 * (1.0 - 0.92 * blink))
+            let e1 = length((q - vec2(-0.24, -0.4)) / er) - 1.0
+            let e2 = length((q - vec2(0.24, -0.4)) / er) - 1.0
+            let white = 1.0 - smoothstep(-aa * 5.0, aa * 5.0, min(e1, e2) * er.x)
+            let pr = vec2(0.085, 0.085 * (1.0 - 0.92 * blink))
+            let p1 = length((q - vec2(-0.24, -0.4) - look) / pr) - 1.0
+            let p2 = length((q - vec2(0.24, -0.4) - look) / pr) - 1.0
+            let pupil = 1.0 - smoothstep(-aa * 8.0, aa * 8.0, min(p1, p2) * pr.x)
+            let g1 = length(q - vec2(-0.21, -0.44) - look) - 0.03
+            let g2 = length(q - vec2(0.27, -0.44) - look) - 0.03
+            let glint = (1.0 - smoothstep(-aa * 2.0, aa * 2.0, min(g1, g2))) * (1.0 - blink)
+            // A small smile.
+            let sm = abs(length(q - vec2(0.0, -0.3)) - 0.14) - 0.02
+            let smile = (1.0 - smoothstep(-aa * 2.0, aa * 2.0, max(sm, -0.22 - q.y))) * (1.0 - blink * 0.5)
+            let coral = vec3(0.98, 0.60, 0.56)
+            let shade = mix(coral, coral * 0.82, smoothstep(-0.1, 0.6, q.y))
+            let ink = vec3(0.14, 0.12, 0.2)
+            let rgb = mix(shade, vec3(1.0), white)
+            let rgb2 = mix(rgb, ink, max(pupil, smile))
+            let rgb3 = mix(rgb2, vec3(1.0), glint)
             let a = fill * self.alpha
-            return vec4(rgb * a, a)
+            return vec4(rgb3 * a, a)
         }
     }
 }
@@ -84,8 +99,8 @@ impl DrawOctopus {
         self.phase = (now % 8.0) as f32;
         self.color = color;
         self.alpha = alpha;
-        let w = slot.size.x.min(slot.size.y);
-        let h = w * 1.25;
+        let w = slot.size.x.min(slot.size.y) * 1.3;
+        let h = w * 1.2;
         self.draw_abs(cx, Rect { pos: dvec2(slot.pos.x + (slot.size.x - w) * 0.5, slot.pos.y + (slot.size.y - h) * 0.5), size: dvec2(w, h) });
     }
 }
