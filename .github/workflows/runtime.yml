@@ -1,0 +1,26 @@
+name: Shared runtime
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: workspace/OctoSense
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare Octoscript-Makepad
+        working-directory: workspace/OctoSense
+        run: python tools/setup-native.py
+      - name: Compile with the shared runtime
+        working-directory: workspace/OctoSense
+        run: |
+          cargo check --locked --workspace --features mobile-apps
+      - name: Reject divergent runtime sources
+        working-directory: workspace/OctoSense
+        run: |
+          python tools/setup-native.py --check --cargo-manifest Cargo.toml

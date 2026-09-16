@@ -1,5 +1,21 @@
 # OctoSense
 
+## Shared Octoscript-Makepad runtime
+
+`native-runtime.lock.json` selects one
+[Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad)
+release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
+shared with AppCards, Mail and the other OctoSense applications.
+
+Before building, run `python3 tools/setup-native.py` (Python 3.9+). The framework
+repositories are siblings of this app: `../octoscript-makepad`, `../makepad`
+and `../octoscript`. Local changes are preserved; `--update` only updates clean
+checkouts. CI verifies the selected release and rejects duplicate Makepad sources.
+Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
+to check the local dependency graph. Existing platform rendering backends remain
+part of their applications; the framework controls the shared VM and UI sources.
+
+
 A Makepad desktop that hosts compatible applications inside one window. The shell comes from Makepad's WM app; framework libraries remain external Cargo dependencies pinned to the same upstream commit.
 
 ## Run
@@ -19,7 +35,7 @@ cargo build --release --workspace
 cargo run --release
 ```
 
-The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+The first build downloads Makepad and other dependencies. Prepare the sibling framework sources with the setup command above. The host and Reference app need no Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
 
 On macOS, `.cargo/config.toml` sets the native menu-bar name to **OctoSense**.
 Makepad otherwise derives it from the checkout directory, which may still be
@@ -48,7 +64,7 @@ The Android launcher label is **OctoSense** and its application ID is `dev.makep
 
 `run` builds, installs, and launches the app; `build` only creates the APK.
 Native Android/iOS builds automatically link **Reference, Sheets, and Photos**
-as embedded apps. They need no sibling checkout or extra feature flags. On an
+as embedded apps. They need no extra feature flags after runtime setup. On an
 installed device, the launcher derives its default catalog from those linked
 modules. Missing Clock/Weather tiles give their space to the available app icons.
 
