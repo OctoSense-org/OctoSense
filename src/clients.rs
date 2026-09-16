@@ -58,6 +58,10 @@ pub struct AppDef {
     pub manifest: Option<String>,
     pub args: Vec<String>,
     pub policy: LaunchPolicy,
+    /// Where `cargo` should build this app. Set for rows that resolve into
+    /// a checkout this project does not own, so the build lands in our tree
+    /// instead of someone else's cache.
+    pub target_dir: Option<String>,
 }
 
 impl AppDef {
@@ -78,6 +82,7 @@ impl AppDef {
             manifest: None,
             args: Vec::new(),
             policy,
+            target_dir: None,
         }
     }
 
@@ -852,6 +857,10 @@ pub fn launch_argv(
             args.push(app.package.clone());
             args.push("--bin".to_string());
             args.push(app.bin.clone());
+            if let Some(target) = &app.target_dir {
+                args.push("--target-dir".to_string());
+                args.push(target.clone());
+            }
             args.push("--".to_string());
             cargo_bin()
         }
@@ -983,12 +992,38 @@ pub fn spawn_client(
 mod tests {
     use super::*;
 
+    /// Cargo's checkout is Cargo's to manage: a build there is invisible to
+    /// `cargo clean`, survives no refetch, and quietly grows the shared
+    /// cache. Apps from the pinned revision build into OctoSense's own tree.
+    #[test]
+    fn makepad_launches_build_outside_cargos_checkout() {
+        let apps = crate::octosense::catalog::parse_catalog(
+            br#"[{"id":"browser","label":"Browser","source":"makepad","package":"makepad-browser","bin":"browser"}]"#,
+            Path::new("/catalog"),
+            Some(Path::new("/cargo/checkouts/makepad-d00a/ad8f372")),
+        )
+        .unwrap();
+        let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
+        assert!(args
+            .windows(2)
+            .any(|p| p == ["--manifest-path", "/cargo/checkouts/makepad-d00a/ad8f372/Cargo.toml"]));
+        let at = args
+            .iter()
+            .position(|arg| arg == "--target-dir")
+            .expect("builds are redirected out of the cargo cache");
+        assert!(
+            !args[at + 1].starts_with("/cargo/checkouts"),
+            "{}",
+            args[at + 1]
+        );
+    }
+
     #[test]
     fn catalog_launches_select_the_binary_and_preserve_literal_arguments() {
         let apps = crate::octosense::catalog::parse_catalog(br#"[
             {"id":"ref","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","args":["two words"]},
             {"id":"installed","label":"Installed","executable":"/usr/bin/true","args":["$(literal)"]}
-        ]"#, Path::new("/catalog")).unwrap();
+        ]"#, Path::new("/catalog"), None).unwrap();
         let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
         assert!(args.windows(2).any(|p| p == ["--bin", "octosense-reference"]));
         assert!(args.windows(2).any(|p| p == ["--manifest-path", "/catalog/../apps/reference/Cargo.toml"]));
@@ -1000,7 +1035,7 @@ mod tests {
 
     #[test]
     fn the_default_catalog_keeps_the_local_reference_app() {
-        let apps = crate::octosense::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
+        let apps = crate::octosense::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog"), None).unwrap();
         let reference = apps.iter().find(|app| app.id == "reference").expect("Reference must remain in the default catalog");
         assert_eq!(reference.manifest.as_deref(), Some("/catalog/../apps/reference/Cargo.toml"));
         assert_eq!(reference.package, "octosense-reference");
