@@ -1,5 +1,21 @@
 # OctoSense mobile
 
+## Shared Octoscript-Makepad runtime
+
+`native-runtime.lock.json` selects one
+[Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad)
+release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
+shared with AppCards, Mail and the other OctoSense applications.
+
+Before building, run `python3 tools/setup-native.py` (Python 3.9+). The framework
+repositories are siblings of this app: `../octoscript-makepad`, `../makepad`
+and `../octoscript`. Local changes are preserved; `--update` only updates clean
+checkouts. CI verifies the selected release and rejects duplicate Makepad sources.
+Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
+to check the local dependency graph. Existing platform rendering backends remain
+part of their applications; the framework controls the shared VM and UI sources.
+
+
 The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
 This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
