@@ -29,6 +29,7 @@ mod mobile_tiles;
 mod mobile_shade;
 mod mobile_pages;
 mod mobile_island;
+mod mobile_octopus;
 mod mobile_groups;
 mod mobile_perf;
 mod scene;

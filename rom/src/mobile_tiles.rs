@@ -33,7 +33,7 @@ pub const HOME_MARGIN: f64 = 16.0;
 /// Gap between two tiles and between a tile and the favorites grid.
 pub const TILE_GAP: f64 = 14.0;
 /// Corner radius of a tile capture on screen.
-pub const TILE_RADIUS: f64 = 22.0;
+pub const TILE_RADIUS: f64 = 14.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TileSlot {
