@@ -1,224 +1,90 @@
-# OctoSense
+# OctoSense mobile
 
-A Makepad desktop that hosts compatible applications inside one window. The shell comes from Makepad's WM app; framework libraries remain external Cargo dependencies pinned to the same upstream commit.
+The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
-## Run
+This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
-Install stable Rust and the native development tools for your OS. On macOS, install Xcode Command Line Tools (`xcode-select --install`) if needed. Validated with Rust 1.98.1 on macOS.
+## Build and run on a phone
 
-From this directory:
-
-```sh
-cargo run
-```
-
-Open **Apps → Reference** from the top-left menu. The reference app has a counter and text input, and runs as a separate process inside a tile. Its first launch builds the release executable; build progress appears in the tile. Later launches reuse Cargo's build cache. To build both executables ahead of time:
+Rust stable, the Makepad Android toolchain, a device on ADB. The build tool is the fork's `cargo-makepad` — build it from the fork's `main` (the same revision `Cargo.toml` pins), since it carries this app's Java activity (HOME-intent forwarding, GPS, share and deep-link intents):
 
 ```sh
-cargo build --release --workspace
-cargo run --release
+git clone https://github.com/OctoSense-org/makepad.git ../makepad-fork
+cargo build --manifest-path ../makepad-fork/tools/cargo_makepad/Cargo.toml
+../makepad-fork/target/debug/cargo-makepad makepad android install-toolchain
+../makepad-fork/target/debug/cargo-makepad makepad android run -p octosense --release
 ```
 
-The first build downloads Makepad and other dependencies. The host and Reference app need no sibling Makepad checkout, Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
 
-On macOS, `.cargo/config.toml` sets the native menu-bar name to **OctoSense**.
-Makepad otherwise derives it from the checkout directory, which may still be
-named `makeos`. Rebuild and relaunch after updating; Cargo regenerates the
-development `Info.plist` automatically.
+### Make it the Home app
 
-The build target selects the shell. **Android builds are the standalone mobile shell**: the Android phone shell fills the screen inside the platform's safe-area insets, with no desk bar, no style menu and no other desktop style compiled in — Light/Dark is the **Dark mode** tile in the shade's controls, and rotation follows the device. **Desktop builds are universal** — every desktop style plus the two phone styles, switched from the bar — unless built with `cargo run --features mobile-only`, which is the same standalone shell in a phone-sized window (`build.rs` turns one `mobile_only` cfg on for that feature and for `target_os = "android"`). iOS builds still start in the iOS phone layout of the universal shell.
-
-The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit OctoSense** closes the desktop and its hosted processes.
-
-Omarchy starts with a bundled Tokyo Night wallpaper, so the background works offline on a fresh install. Installed images in `~/.octosense/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
-
-Eight desktop styles are available, including **OctoSense**, a floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **OctoSense**, and press Enter to select its light appearance. Click **Light / Dark** beside the style name in the top bar to switch appearances, or search for **OctoSense Dark** directly. Light uses pearl and pale aqua surfaces with dark text; Dark keeps the ink-blue palette. Both include matching versions of **Abyssal Currents**, the original oceanic wallpaper, and rounded hosted surfaces. The wallpaper switches with the appearance, fills the window with a centered crop and works offline. Desktop startup remains Omarchy; Android retains its animated background. None of this bar or its styles exists in the standalone mobile shell (Android, or `--features mobile-only`).
-
-Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
-
-## Android
-
-With the Makepad Android toolchain installed and a device connected through ADB:
+The activity offers the `HOME` intent filter and is `singleInstance`. On a device you control:
 
 ```sh
-cargo makepad android run -p octosense --release
+adb shell cmd package set-home-activity dev.makepad.octosense/.MakepadApp
 ```
 
-The Android launcher label is **OctoSense** and its application ID is `dev.makepad.octosense`. It installs separately from an existing MakeOS Android app because the application ID changed.
-
-`run` builds, installs, and launches the app; `build` only creates the APK.
-Native Android/iOS builds automatically link **Reference, Sheets, and Photos**
-as embedded apps. They need no sibling checkout or extra feature flags. On an
-installed device, the launcher derives its default catalog from those linked
-modules. Missing Clock/Weather tiles give their space to the available app icons.
-
-The phone build also links **AppCard** (`apps/appcard`, feature `app-appcard`
-on desktop): the whole Octoscript-AppCard app, hosted in-process in a wide
-home tile. The module takes `octos-app` — the crate the standalone AppCard APK
-is built from — as a git library and mounts its `AppShell` widget: the routing
-brain, the card store and transport, the L0 lowering pipeline, sessions, the
-composer and the kernel agent all run inside the tile's isolate. The kernel
-(`liboctos.so serve --stdio`) is spawned from this APK's native library dir
-when it is bundled (`MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path>"` at
-build time); without it the app falls back to its WebSocket transport / login
-screen. `ask` is the module's one AI-bus tool (the composer). On a desktop,
-`cargo run --features app-appcard -- --module appcard` opens the same app;
-`OCTOS_APP_CORE_BIN` / `OCTOS_APP_CORE_DIR` point it at a local kernel.
-GPS reaches the app through the buildtool activity described below;
-notifications, share and the WebView overlay (the standalone APK's other
-Java features) are not wired to the hosted shell yet.
-
-To get AppCard's Java activity features (GPS, notifications, share and
-deep-link intents), this repository's `resources/android/AndroidManifest.xml.template`
-and the octos kernel bundled as `liboctos.so`, build with the fork's buildtool
-`cargo-makepad` and `MAKEPAD_ANDROID_EXTRA_LIBS` instead of the stock command
-above — the full recipe, including the kernel cross-build, is in
-[docs/android-appcard-build.md](docs/android-appcard-build.md):
+or pick OctoSense in Android's Home chooser. A Home press or gesture then reaches the running shell as `Event::HomeIntent` and shows the home page. What the Home role does **not** change: the system keeps its bottom gesture zone, its Recents (swipe-up-and-hold) and its status-bar shade. **3-button navigation** removes the gesture-zone race and is the recommended mode:
 
 ```sh
-MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/abs/path/to/octos/target/aarch64-linux-android/release/octos" \
-  /abs/path/to/makepad-buildtool/target/debug/cargo-makepad makepad android run -p octosense --release
+adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.threebutton
 ```
 
-When the AppCard tile starts, the hosted app spawns that kernel and logs
-`stdio: octos=… HOME=…` to logcat; an APK built without it logs `stdio:
-bundled octos not found under …; using WebSocket transport` and shows the
-app's login screen instead.
+(`…navbar.gestural` restores gestures.) The privileged route — owning the gesture zone and Recents — is sized in [docs/android/launcher-plan.md](docs/android/launcher-plan.md) and not started.
 
-Switching desktop OctoSense to the Android style changes its interface; it still
-uses desktop process hosting and the full desktop catalog. The other desktop
-apps (including Browser, Files, Terminal, and AI Chat) need embedded mobile
-implementations before they can be bundled in the phone build. Photos includes
-the app, not your desktop photo library; local Qwen weights are not packaged.
+### Gestures
 
-To exercise the same embedded apps on desktop:
+| Where | Gesture | Does |
+|---|---|---|
+| Home page, middle | pull down | App Library with its search field |
+| Home page, right quarter | pull down | the shade's Controls (Wi-Fi, brightness, …) |
+| Home page, left quarter | pull down | the shade's Notifications |
+| Top edge, left / right | pull down | Notifications / Controls (as well) |
+| Home page | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
+| App Library | pull down | back to the home page |
+| Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
+| Side edges | swipe in | Back |
+
+A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick.
+
+## Run on a desktop
+
+The same shell in a phone-sized window, on Metal/DX/GL:
 
 ```sh
-cargo run --features mobile-apps -- --module reference --module sheets --module photos
+cargo run --release --features mobile-only
+cargo run --release --features mobile-only -- --test-action island:demo --test-action capture:/tmp/shell.png
 ```
 
-Reference shares its counter and text-input view between the standalone desktop
-process and the embedded mobile module. Sheets and Photos remain external Git
-crates at the same pinned Makepad revision.
+`--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`, `ask-appcard:<text>`) and `capture:<path>` writes the presented frame every 5 s, so a scripted run can be looked at without a screen. A plain `cargo run` is the universal desktop shell of the desktop repository; it is kept building here but is not this repository's product.
 
-Mobile app support is still partial: Sheets needs grid-label and toolbar fixes,
-and Photos needs a picture library/import setup. These follow-ups are tracked
-in [BACKLOG.md](BACKLOG.md).
+## Performance
 
-The iOS startup policy is covered by tests, but a complete iOS build currently
-fails in the pinned Makepad Metal backend; see [validation](docs/validation.md).
+Target on the OnePlus 6 (Android 15, Adreno 630, 60 Hz): **≥ 55 fps with p95 frame intervals ≤ 20 ms** on every shell transition, and an idle screen that presents about once a second. As of 16 September 2026 the shade (open/close), pages, Group open/close, Recents both ways (empty and populated) and AppCard opening pass warm and fresh-process blocks; native SystemUI still shows no early skipped refresh where a few of ours do. The measured reason for the remaining early skips is the GPU's DVFS floor (257 MHz for the first ~120 ms of a gesture), so the working rule is: a transition frame must cost ≤ ~4.5 ms of GPU at 710 MHz. The unchanged Vulkan backend is slower (it serialises CPU and GPU and the clock never ramps under it) and is not a route to the target.
 
-## Add an app
+Measure with the phone tools:
 
-The default [config/apps.json](config/apps.json) includes Reference and the apps from the sibling `makepad` checkout. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
+- `scripts/measure_android_frames.py` — SurfaceFlinger presentation timestamps for one injected gesture, joined to the shell's markers when the app is launched with `--es makepad.TRACE phone.frames` (`[phone.frames]`, `[phone.input]`, `[phone.scene]` in logcat).
+- The bench's `target/perf-artifacts/` helpers (`run_cases.py` for the scenario blocks, `kgsl_gpu_timeline.py` / `kgsl_frames_summary.py` for Adreno GPU execution time and clock per frame from kgsl ftrace) — described in [docs/android/perf-gap-analysis.md](docs/android/perf-gap-analysis.md).
+- Three quick taps on the status-bar battery icon toggle the on-device frame monitor; three quick taps on the clock push the island demo, on a bench run only.
 
-```sh
-cargo run -- --apps config/apps.makepad.json
-```
+Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher plan, validation log, Vulkan probe) and the earlier [docs/perf-mobile-shell.md](docs/perf-mobile-shell.md).
 
-It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
+## Layout
 
-App source stays in `../makepad`; each app builds on demand using its package's normal default features and the source workspace's build cache. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
+- `src/mobile*.rs` — the phone shell: state and navigation (`mobile.rs`), the gesture recognizer (`mobile_gestures.rs`), the surface that draws home, drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups, the shade, the island, the thinking octopus, the perf monitor.
+- `src/desk/phone.rs` — the desk's phone composition: hosted-app captures, the kept home scene and its blur pyramid, the compositor path.
+- `resources/android/AndroidManifest.xml.template` — the activity (Home role, share and deep-link intents).
+- `apps/appcard`, `apps/reference` — the hosted modules built into the APK.
+- `docs/` — records and recipes; `docs/android/` the performance and launcher records.
 
-Keep that checkout at the revision in `upstream/makepad.json` so hosted apps and the host use matching framework/protocol code. Reference remains available independently of that checkout. A personal `~/.octosense/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
+## Dependencies
 
-Applications must be compatible Makepad applications that support the `--stdin-loop` hosting protocol. Use the same Makepad revision as this project; the protocol is not a stable compatibility boundary across arbitrary revisions. Start from [apps/reference](apps/reference).
+- Framework: `OctoSense-org/makepad`, pinned by revision in `Cargo.toml` to the fork's `main` (one revision across OctoSense-mobile, Octoscript-AppCard and Octoscript-Makepad). Every crate of that URL, including the ones the AppCard kits reach through other URLs, is redirected onto the same revision by the `[patch]` sections so a single `makepad-widgets` exists.
+- `OctoSense-org/Octoscript-AppCard` (`octos-app`, the hosted AppCard) and, through it, `Octoscript`, `Octoscript-Makepad` (component kits) and a few chart/diagram crates.
+- The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at build time (above).
 
-The default catalog is [config/apps.json](config/apps.json). To keep a personal catalog, create `~/.octosense/apps.json`; it replaces the default catalog. An explicit catalog can be selected with:
+Tests: `cargo test --features mobile-only mobile -- --test-threads=1` runs the shell's unit tests (gestures, pages, island, shade, groups, tiles). `docs/validation.md` and `docs/android/validation-record.md` hold the device validation.
 
-```sh
-cargo run -- --apps /path/to/apps.json
-```
-
-A catalog is a JSON array. Each entry chooses either a Cargo manifest or an executable:
-
-```json
-[
-  {
-    "id": "notes",
-    "label": "Notes",
-    "manifest": "../notes/Cargo.toml",
-    "package": "my-notes",
-    "bin": "notes",
-    "policy": "new",
-    "args": []
-  },
-  {
-    "id": "installed-notes",
-    "label": "Installed Notes",
-    "executable": "/opt/my-apps/notes",
-    "policy": "focus"
-  }
-]
-```
-
-Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell. `policy: "new"` opens a new instance; `"focus"` focuses an existing instance and is the default. Restart OctoSense after editing the catalog. Existing personal catalogs should rename `makeos-reference` package/bin entries to `octosense-reference`. Only apps with available launch targets appear in the launcher. Missing manifests, invalid catalogs, and failed starts are reported in the desktop/logs.
-
-OctoSense adds the hosting arguments and connection settings itself. Do not add `--stdin-loop` or Studio connection variables to the catalog. For executable registrations, supply the app's resources as required by that app's packaging.
-
-## Settings and optional features
-
-OctoSense state lives under `~/.octosense`; `OCTOSENSE_HOME` selects another directory. Existing installations continue using `~/.makeos` if `~/.octosense` does not exist, preserving settings and local model links. The old `MAKEOS_HOME` override remains supported; `OCTOSENSE_HOME` takes precedence. Theme files and hosting overrides retain the upstream `wm/` layout inside that directory. Hosted apps inherit the OctoSense state root through Makepad's compatible `MAKEPAD_HOME` setting.
-
-Optional launch flags are `--assistant`, `--prewarm`, `--demo-home`, and `--download-wallpapers`. Assistant/prewarm flags require matching apps in your catalog. Theme importing remains an explicit action in the theme menu.
-
-Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-photos`, and `app-aichat` Cargo features; all are off by default. A module must be linked and selected with `--module <id>` or `wm/apps.splash`. This initial milestone validates process hosting. It does not provide runtime loading of native shared libraries or embedding of unrelated native desktop windows.
-
-## Local AI setup
-
-Store model weights outside this repository, normally at `~/.octosense/weights/Qwen3.5-9B-UD-Q4_K_XL.gguf`. Each user downloads the model once or references an existing copy; model files and machine-specific symlinks stay out of Git. `OCTOSENSE_HOME` relocates the state directory, and `MAKEPAD_AI_CHAT_MODEL` can select a model file anywhere on disk.
-
-The [local AI setup guide](docs/local-ai.md) covers the assistant app prerequisite, the pinned model download and checksum, reusing existing weights, and checking the **F10** assistant. The desktop and Reference app work without a model.
-
-## Upstream updates
-
-[upstream/makepad.json](upstream/makepad.json) records every imported WM file, its original path/hash, and the matching framework revision. The source and dependency baseline is [official Makepad at 74b63be8](https://github.com/makepad/makepad/commit/74b63be83e101ab3a28d3604df77e9662d50a833). All framework crates, including `libs/wm_api` and `libs/wm_theme`, stay external at that exact Git revision. OctoSense owns its additional style, theme assets and wallpaper behavior locally.
-
-Run this daily, or after any upstream pull. With Python 3.11+, update the Makepad
-checkout using your normal Git workflow, then run one command from OctoSense:
-
-```sh
-git -C ../makepad pull --ff-only origin work
-python3 scripts/upstream.py sync
-```
-
-`sync` defaults to the recorded `../makepad` checkout's current `HEAD`.
-WM feature development belongs in this repository; framework updates come from
-official Makepad. When the checkout's HEAD matches the
-recorded revision, it exits without building. Otherwise it requires a clean
-OctoSense tree, saves comparison diffs, stages the merge, updates all dependency
-pins and the lockfile, runs compile/Rust/Python checks, builds both profiles,
-and runs both native smoke modes. It reuses an ignored staging build cache.
-
-After every check passes, it creates a unique `sync/makepad-<revision>` branch
-and applies the verified changes, leaving them unstaged and uncommitted. You
-then review the diff and report, commit, and merge. Conflicts or failed checks
-stop with diagnostics and preserve the live import. The command never pulls,
-commits, merges branches, or pushes. Full sync currently requires macOS GUI
-access; a headless session cannot pass its native runtime checks.
-
-Reports and captured frames are under `target/makepad-sync/reports/`; the command
-prints the exact directory. Use `--source /path/to/makepad` or `--to <commit>`
-when needed. See the [full workflow and conflict recovery](docs/upstream.md) for
-manual commands and how to investigate a failed candidate.
-
-## Verification and scope
-
-```sh
-cargo test --locked --workspace
-python3 -m unittest discover -s scripts -p 'test_*.py'
-```
-
-The native smoke test opens and closes its own test windows, isolates settings in a temporary directory, and records app-provided frames/logs. After dependencies are downloaded:
-
-```sh
-cargo build --release --locked --workspace
-python3 scripts/smoke.py --styles
-python3 scripts/smoke.py --cargo-run --default-catalog
-```
-
-The first smoke command checks hosted input, workspace movement, fullscreen resizing, independent instances, all eight desktop styles (including both OctoSense appearances, glass and menus), failed launches, and quitting during an unfinished build. The second uses exactly `cargo run` with the shipped catalog. Python supplies app-local remote control and isolated state through the environment; neither is required for normal use. Smoke runs set Cargo offline and require GUI access.
-
-See the [validation record](docs/validation.md). Source builds and process hosting are the initial target on macOS. Linux/Windows branches are retained but have not been validated here. A relocatable `.app`, installer, web/mobile delivery, and a Linux session compositor are separate work.
-
-The copied Makepad source is covered by its [original MIT notice](LICENSES/Makepad-MIT.txt). Dependencies retain their respective licenses.
+State lives under `~/.octosense` on desktop and the app's data directory on Android; `OCTOSENSE_HOME` relocates it.
