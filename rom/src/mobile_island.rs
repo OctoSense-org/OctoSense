@@ -102,6 +102,8 @@ impl LiveActivity {
         self
     }
     pub fn done(&self) -> bool { self.finished.is_some() }
+    /// An AppCard kernel turn still running: the island animates its octopus.
+    pub fn thinking(&self) -> bool { !self.done() && self.source == "appcard" }
     /// What survives when the island is full: finished ones go first, then
     /// timers, then countdowns; a progress in flight stays.
     pub fn priority(&self) -> u8 {
@@ -463,7 +465,10 @@ impl IslandState {
         // a farther one is the 1 s tick's (`needs_step`), so a demo with a
         // 25-minute countdown does not hold the loop at 60 fps.
         let soon = |at: f64| at - now < 0.05;
+        // A visible octopus animates every frame while its turn runs.
+        let thinking = self.presence > 0.01 && !self.shade_open && self.activities.iter().any(|a| a.thinking());
         moving
+            || thinking
             || self.auto_finish.iter().any(|(_, at)| soon(*at))
             || self.activities.iter().any(|a| a.done() || matches!(a.kind, ActivityKind::Countdown { until } if soon(until)))
             || !self.anim.get().settled
@@ -525,7 +530,7 @@ fn card_height(activities: &[LiveActivity]) -> f64 {
 
 /// Draw the island for this frame and register its taps. One call from
 /// `PhoneSurface::draw_overlay`, after the status bar.
-pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
+pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, icons: &mut AppIconDraw, octopus: &mut crate::mobile_octopus::DrawOctopus, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
     let island = &state.phone.island;
     let style = state.style.target;
     let ios = style == DesktopStyle::Ios;
@@ -588,7 +593,9 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let dim = alpha(white, 0.45 * compact);
         let mut x = r.pos.x + 12.0;
         let mid = r.pos.y + pill_h * 0.5;
-        icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink);
+        // A kernel turn in flight: the thinking octopus instead of the glyph.
+        if primary.thinking() { octopus.draw(cx, rect(x, mid - glyph * 0.5, glyph, glyph), now, ink, compact); }
+        else { icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink); }
         x += glyph + 8.0;
         d.label_elided(cx, rect(x, r.pos.y, title_w, pill_h), true, px, ink, HAlign::Left, &primary.title);
         x += title_w + 10.0;
@@ -616,7 +623,8 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let inner_w = r.size.x - 36.0;
         for (index, activity) in island.activities.iter().enumerate() {
             let glyph = 30.0;
-            icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink);
+            if activity.thinking() { octopus.draw(cx, rect(left, y + 4.0, glyph, glyph), now, ink, card); }
+            else { icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink); }
             let text_x = left + glyph + 12.0;
             let status = activity.status(now);
             let status_w = if activity.done() { 22.0 } else { d.measure(cx, true, 14.0, &status) + 4.0 };

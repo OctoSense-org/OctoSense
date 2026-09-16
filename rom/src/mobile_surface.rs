@@ -3,6 +3,7 @@ use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
 use crate::mobile_shade::ShadeContentCache;
+use crate::mobile_octopus::DrawOctopus;
 use crate::octosense::style::AppIconDraw;
 mod search;
 
@@ -139,6 +140,7 @@ script_mod! {
         android_font: theme.font_regular{font_family: FontFamily{latin := FontMember{res: crate_resource("makepad_widgets:resources/RobotoFlex.ttf") weight: 400.0 asc: 0.0 desc: 0.0}}}
         android_bold: theme.font_bold{font_family: FontFamily{latin := FontMember{res: crate_resource("makepad_widgets:resources/RobotoFlex.ttf") weight: 600.0 asc: 0.0 desc: 0.0}}}
         chrome +: {}
+        octopus +: {}
         key_shift +: {svg: crate_resource("self:resources/icons/key-shift.svg")}
         key_backspace +: {svg: crate_resource("self:resources/icons/key-backspace.svg")}
         search: View {
@@ -265,6 +267,8 @@ pub struct PhoneSurface {
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
     #[rust] shade_content: ShadeContentCache,
+    // The thinking octopus the island shows during an AppCard turn.
+    #[live] octopus: DrawOctopus,
     #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
@@ -564,7 +568,7 @@ impl PhoneSurface {
         self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
         self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
         crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);
-        crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);
+        crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.octopus,&mut self.hits,state,screen);
         // The battery icon: three quick taps switch the frame-time reporter.
         if phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
         if phone.overview>0.01 {
