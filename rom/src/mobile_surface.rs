@@ -2,6 +2,7 @@
 use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
+use crate::mobile_shade::ShadeContentCache;
 use crate::octosense::style::AppIconDraw;
 mod search;
 
@@ -261,6 +262,9 @@ pub struct PhoneSurface {
     #[live] pub shade_glass: GaussRoundedView,
     /// The shade's glyphs were rasterized ahead of its first pull.
     #[rust] shade_warm: bool,
+    // The sheet's content recorded once per state, shown as one quad while
+    // the sheet moves (mobile_shade.rs).
+    #[rust] shade_content: ShadeContentCache,
     #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
@@ -374,12 +378,15 @@ impl PhoneSurface {
         let size=(r.size.x.min(r.size.y)*0.3).clamp(24.0,72.0);
         self.icons.draw(cx,app,style,rect(r.pos.x+(r.size.x-size)*0.5,r.pos.y+(r.size.y-size)*0.5,size,size),opacity,alpha(ink,opacity));
     }
-    pub fn draw_home(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
+    /// `still`: the page is being recorded as the desk's kept scene, so it is
+    /// drawn at full opacity whatever `openness` is; the desk dims the kept
+    /// scene itself while a window is open over it (desk/phone.rs).
+    pub fn draw_home(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, still: bool) {
         let phone=&state.phone;
         let style=state.style.target;
         let ios=style==DesktopStyle::Ios;
         self.use_fonts(ios);
-        let opacity=(1.0-phone.openness*0.85) as f32;
+        let opacity=if still {1.0} else {(1.0-phone.openness*0.85) as f32};
         if opacity<0.01 {return;}
         let landscape=screen.size.x>screen.size.y;
         let apps=crate::shell::launcher::apps();
@@ -538,7 +545,9 @@ impl PhoneSurface {
             self.label(cx,rect(card.pos.x,card.pos.y+ch+2.0,cw,20.0),name,12.0,false,alpha(ink,0.85));
         }
     }
-    pub fn draw_overlay(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>) {
+    /// `present` draws a recorded texture over a rect in the window (the
+    /// desk's quad): the sheet's content while the sheet moves.
+    pub fn draw_overlay(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
         let perf=crate::mobile_perf::enabled();
         let ch=crate::mobile_perf::channels(cx.cx);
         let mut clock=std::time::Instant::now();
@@ -599,8 +608,15 @@ impl PhoneSurface {
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
             self.group_glass.draw_surface_with_backdrop(cx,
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            // And the two liquid panels the phone still draws (the iOS dock
+            // and keyboard), so no material meets the driver on first use:
+            // a program still compiling skips its draw for a frame.
+            self.glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            self.keyboard_glass.draw_surface_with_backdrop(cx,
+                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
-        crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.shade_glass,&mut self.hits,state,screen,backdrop);
+        crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
         if perf {
             crate::mobile_perf::span(cx.cx,ch.shade,clock);
             // Above the shade, inside the navigation band's top edge.
