@@ -116,6 +116,152 @@ def dependency_tables(value, repository):
             yield from dependency_tables(child, repository)
 
 
+CURATED_ROW = re.compile(
+    r'AppDef::app\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,'
+    r'\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\w+)\s*,?\s*\)',
+    re.S,
+)
+ARG_PUSH = re.compile(r'\.args\.push\(\s*"([^"]+)"\.to_string\(\)\s*\)')
+ANY_ARG_PUSH = re.compile(r'\.args\.push\(')
+POLICIES = {"OrFocus": "focus", "AlwaysNew": "new"}
+
+
+def curated_body(source):
+    """Just `fn curated()`. Other registries in the file, such as the file
+    viewers `find_app` resolves, are deliberately not menu rows."""
+    start = source.find("fn curated()")
+    if start < 0:
+        raise SyncError("upstream registry has no curated() to read")
+    end = source.find("\n}\n", start)
+    if end < 0:
+        raise SyncError("upstream registry's curated() is unterminated")
+    return source[start:end]
+
+
+def git_repo_name(source):
+    """The repository a `cargo metadata` source string names, by its final
+    URL segment. `makepad-diagram-kit` and `Octoscript-Makepad` are separate
+    repositories and must not be mistaken for Makepad itself."""
+    if not source.startswith("git+"):
+        return None
+    url = re.split(r"[?#]", source[len("git+"):])[0].rstrip("/")
+    name = url.rsplit("/", 1)[-1]
+    return name[: -len(".git")].lower() if name.endswith(".git") else name.lower()
+
+
+def curated_apps(source):
+    """Catalog rows for the apps upstream's own registry curates.
+
+    The rows describe the apps, never where they live: they resolve through
+    the revision this project pins, which Cargo fetches from GitHub.
+    """
+    body = curated_body(source)
+    rows = []
+    matches = list(CURATED_ROW.finditer(body))
+    for index, found in enumerate(matches):
+        identifier, label, package, _dir, binary, policy = found.groups()
+        if policy not in POLICIES:
+            raise SyncError(f"{identifier}: unknown launch policy '{policy}'")
+        row = {
+            "id": identifier,
+            "label": label,
+            "source": "makepad",
+            "package": package,
+            "bin": binary,
+            "policy": POLICIES[policy],
+        }
+        # Arguments are pushed onto the row after it is built, inside the
+        # same block. They travel only when every one of them is a literal:
+        # half of a flag and its value is worse than neither, so a block
+        # that computes any argument contributes none.
+        stop = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        block = body[found.end():stop]
+        args = ARG_PUSH.findall(block)
+        if args and len(args) == len(ANY_ARG_PUSH.findall(block)):
+            row["args"] = args
+        rows.append(row)
+    return rows
+
+
+def pinned_checkout(root):
+    """The Makepad checkout Cargo fetched for this project's pinned revision.
+
+    The apps the catalog launches live there, so nothing has to be cloned
+    beside this repository for them to resolve.
+    """
+    metadata = json.loads(run(
+        ["cargo", "metadata", "--format-version", "1", "--locked", "--offline",
+         "--manifest-path", str(Path(root) / "Cargo.toml")],
+        root,
+    ))
+    for package in metadata.get("packages", ()):
+        if git_repo_name(package.get("source") or "") != "makepad":
+            continue
+        for parent in Path(package["manifest_path"]).parents:
+            if (parent / "apps/wm/Cargo.toml").is_file():
+                return parent
+    raise SyncError("cargo has not fetched the pinned makepad revision; build once first")
+
+
+def package_binaries(checkout):
+    """Every package in the checkout and the binaries it actually builds."""
+    metadata = json.loads(run(
+        ["cargo", "metadata", "--format-version", "1", "--no-deps", "--offline",
+         "--manifest-path", str(Path(checkout) / "Cargo.toml")],
+        checkout,
+    ))
+    return {
+        package["name"]: [
+            target["name"] for target in package["targets"] if "bin" in target["kind"]
+        ]
+        for package in metadata["packages"]
+    }
+
+
+def merge_catalog(rows, overlay):
+    """Upstream's curated rows under this project's own adaptations.
+
+    Adaptations are named, never silent: `drop` removes a row this project
+    does not ship, `overrides` changes what an id runs while keeping the id
+    itself, and `rows` are this project's own apps, which lead the menu.
+    """
+    dropped = set(overlay.get("drop", ()))
+    overrides = overlay.get("overrides", {})
+    merged = list(overlay.get("rows", ()))
+    for row in rows:
+        if row["id"] in dropped:
+            continue
+        adapted = dict(row)
+        adapted.update(overrides.get(row["id"], {}))
+        merged.append(adapted)
+    merged.extend(overlay.get("append", ()))
+    return merged
+
+
+def catalog_problems(rows, packages):
+    """Rows whose package or binary is not in the pinned revision.
+
+    Only rows resolved through the pinned checkout can be checked here;
+    this project's own apps build from its workspace.
+    """
+    problems = []
+    for row in rows:
+        if row.get("source") != "makepad":
+            continue
+        binaries = packages.get(row["package"])
+        if binaries is None:
+            problems.append({
+                "id": row["id"],
+                "detail": f"package {row['package']} is not in the pinned revision",
+            })
+        elif row["bin"] not in binaries:
+            problems.append({
+                "id": row["id"],
+                "detail": f"{row['package']} builds {sorted(binaries)}, not {row['bin']}",
+            })
+    return problems
+
+
 def pin_problems(root, repository, revision, check_lock=True):
     problems = []
     count = 0
@@ -622,6 +768,45 @@ def sync(root, source=None, to=None, verify=None):
         return report
 
 
+CATALOGS = ("config/apps.json", "config/apps.makepad.json")
+OVERLAY_PATH = "config/apps.overlay.json"
+
+
+def generated_catalog(root):
+    """The catalog this project should ship for the revision it pins.
+
+    Upstream's registry is read out of the checkout Cargo already fetched,
+    so regenerating needs no second clone and cannot describe a revision
+    other than the one this build uses.
+    """
+    root = Path(root)
+    checkout = pinned_checkout(root)
+    registry = (checkout / "apps/wm/src/clients.rs").read_text(errors="replace")
+    overlay = json.loads((root / OVERLAY_PATH).read_text())
+    rows = merge_catalog(curated_apps(registry), overlay)
+    return rows, catalog_problems(rows, package_binaries(checkout))
+
+
+def format_catalog_drift(current, generated, problems):
+    lines = []
+    here = {row["id"]: row for row in current}
+    there = {row["id"]: row for row in generated}
+    for identifier in [i for i in there if i not in here]:
+        lines.append(f"added          {identifier}")
+    for identifier in [i for i in here if i not in there]:
+        lines.append(f"removed        {identifier}")
+    for identifier, row in there.items():
+        if identifier in here and here[identifier] != row:
+            lines.append(f"changed        {identifier}: {here[identifier]} -> {row}")
+    if not lines:
+        lines.append("Catalog matches the pinned revision.")
+    if problems:
+        lines.append("")
+        lines.append("Rows the pinned revision cannot build:")
+        lines.extend(f"  {problem['id']}: {problem['detail']}" for problem in problems)
+    return "\n".join(lines) + "\n"
+
+
 def format_comparison(comparison, show_diff=False):
     lines = [f"Makepad baseline: {comparison.manifest['revision']}", f"Compare to:       {comparison.revision}"]
     counts = {}
@@ -653,14 +838,27 @@ def format_comparison(comparison, show_diff=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["sync", "status", "diff", "update"])
+    parser.add_argument("command", choices=["sync", "status", "diff", "update", "catalog"])
     parser.add_argument("--source", type=Path, help="existing Makepad Git clone (default: provenance default_source or ../makepad; never written)")
     parser.add_argument("--to", help="target commit/ref; sync defaults to source HEAD, status/diff to baseline; required for update")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1], help="OctoSense repository root")
+    parser.add_argument("--apply", action="store_true", help="catalog: write the regenerated catalog")
     args = parser.parse_args(argv)
     if args.command == "update" and not args.to:
         parser.error("update requires --to")
     try:
+        if args.command == "catalog":
+            generated, problems = generated_catalog(args.root)
+            current = json.loads((args.root / CATALOGS[0]).read_text())
+            print(format_catalog_drift(current, generated, problems), end="")
+            if problems:
+                print("Refusing to write a catalog with rows that cannot start.", file=sys.stderr)
+                return 1
+            if args.apply:
+                for name in CATALOGS:
+                    (args.root / name).write_text(json.dumps(generated, indent=2) + "\n")
+                print(f"Wrote {', '.join(CATALOGS)}.")
+            return 0
         source = source_checkout(args.root, args.source)
         if args.command == "sync":
             sync(args.root, source, args.to)
