@@ -526,6 +526,7 @@ script_mod! {
         icons +: {
             menu +: {svg: crate_resource("self:resources/icons/menu.svg")}
             dot +: {svg: crate_resource("self:resources/icons/dot.svg")}
+            octopus +: {svg: crate_resource("self:resources/icons/octopus.svg")}
             volume_0 +: {svg: crate_resource("self:resources/icons/volume-0.svg")}
             volume_1 +: {svg: crate_resource("self:resources/icons/volume-1.svg")}
             volume_2 +: {svg: crate_resource("self:resources/icons/volume-2.svg")}
@@ -638,6 +639,9 @@ pub struct ShellIcons {
     pub menu: DrawSvg,
     #[live]
     pub dot: DrawSvg,
+    // The OctoSense mark: the logo's octopus silhouette (mobile_octopus.rs).
+    #[live]
+    pub octopus: DrawSvg,
     #[live]
     pub volume_0: DrawSvg,
     #[live]
@@ -724,6 +728,7 @@ pub struct ShellIcons {
 pub enum Ico {
     Menu,
     Dot,
+    Octopus,
     Volume0,
     Volume1,
     Volume2,
@@ -770,6 +775,7 @@ impl ShellIcons {
         match ico {
             Ico::Menu => &mut self.menu,
             Ico::Dot => &mut self.dot,
+            Ico::Octopus => &mut self.octopus,
             Ico::Volume0 => &mut self.volume_0,
             Ico::Volume1 => &mut self.volume_1,
             Ico::Volume2 => &mut self.volume_2,

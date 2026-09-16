@@ -102,6 +102,8 @@ impl LiveActivity {
         self
     }
     pub fn done(&self) -> bool { self.finished.is_some() }
+    /// An AppCard kernel turn still running: the island animates its octopus.
+    pub fn thinking(&self) -> bool { !self.done() && self.source == "appcard" }
     /// What survives when the island is full: finished ones go first, then
     /// timers, then countdowns; a progress in flight stays.
     pub fn priority(&self) -> u8 {
@@ -364,19 +366,24 @@ impl IslandState {
         }
         None
     }
-    /// Three demo activities: a ticking timer that finishes after 6 s (the
-    /// linger), a three-segment progress, and a countdown with a button.
+    /// Three demo activities: a ticking timer that finishes after 6 s, a
+    /// three-segment progress that finishes after 12 s, and a 90 s countdown
+    /// with a Stop button.
     pub fn demo(&mut self, now: f64) {
         self.push(LiveActivity::new("demo:writing", "appcard", "AppCard", "Writing weather card", ActivityKind::Elapsed { started: now }, now)
             .with_detail("Kernel turn: weather, Tokyo"));
         self.push(LiveActivity::new("demo:forecast", "appcard", "AppCard", "Fetching forecast", ActivityKind::Progress { done: 1, total: 3, segments: vec![1.0, 0.45, 0.0] }, now)
             .with_detail("Open-Meteo: current, hourly, daily")
             .with_action("Open", ActivityAction::Open("appcard".into())));
-        self.push(LiveActivity::new("demo:pomodoro", "clock", "Clock", "Pomodoro", ActivityKind::Countdown { until: now + 25.0 * 60.0 }, now)
+        self.push(LiveActivity::new("demo:pomodoro", "clock", "Clock", "Pomodoro", ActivityKind::Countdown { until: now + 90.0 }, now)
             .with_detail("Focus, then a 5 minute break")
             .with_action("Stop", ActivityAction::Cancel));
-        self.auto_finish.retain(|(id, _)| id != "demo:writing");
+        // A demo leaves on its own: the timer at 6 s, the progress at 12 s,
+        // the countdown when it ends (or Stop). Nothing of it stays on the
+        // screen for someone who tapped the clock by accident.
+        self.auto_finish.retain(|(id, _)| id != "demo:writing" && id != "demo:forecast");
         self.auto_finish.push(("demo:writing".into(), now + 6.0));
+        self.auto_finish.push(("demo:forecast".into(), now + 12.0));
     }
     /// Apply a producer's report.
     pub fn apply(&mut self, r: Report, now: f64) {
@@ -463,7 +470,10 @@ impl IslandState {
         // a farther one is the 1 s tick's (`needs_step`), so a demo with a
         // 25-minute countdown does not hold the loop at 60 fps.
         let soon = |at: f64| at - now < 0.05;
+        // A visible octopus animates every frame while its turn runs.
+        let thinking = self.presence > 0.01 && !self.shade_open && self.activities.iter().any(|a| a.thinking());
         moving
+            || thinking
             || self.auto_finish.iter().any(|(_, at)| soon(*at))
             || self.activities.iter().any(|a| a.done() || matches!(a.kind, ActivityKind::Countdown { until } if soon(until)))
             || !self.anim.get().settled
@@ -494,6 +504,10 @@ impl App {
     /// A tap on the island (`PhoneHit::Island`). The app an `Open` button
     /// names comes back for the phone to bring forward.
     pub(crate) fn island_hit(&mut self, hit: IslandHit) -> Option<String> {
+        // The clock's triple tap pushes the demo only on a bench run (the
+        // perf monitor or the phone.frames trace on): on an everyday phone
+        // three taps on the clock must not fill the island with fixtures.
+        if hit == IslandHit::Clock && !(crate::mobile_perf::enabled() || crate::mobile_perf::trace_on()) { return None; }
         match self.state_mut().phone.island.on_hit(hit, crate::host::now()) {
             Some(ActivityAction::Open(app)) => Some(app),
             _ => None,
@@ -588,7 +602,9 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let dim = alpha(white, 0.45 * compact);
         let mut x = r.pos.x + 12.0;
         let mid = r.pos.y + pill_h * 0.5;
-        icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink);
+        // A kernel turn in flight: the thinking octopus instead of the glyph.
+        if primary.thinking() { crate::mobile_octopus::draw(cx, d, rect(x, mid - glyph * 0.5, glyph, glyph), now, ink); }
+        else { icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink); }
         x += glyph + 8.0;
         d.label_elided(cx, rect(x, r.pos.y, title_w, pill_h), true, px, ink, HAlign::Left, &primary.title);
         x += title_w + 10.0;
@@ -616,7 +632,8 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let inner_w = r.size.x - 36.0;
         for (index, activity) in island.activities.iter().enumerate() {
             let glyph = 30.0;
-            icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink);
+            if activity.thinking() { crate::mobile_octopus::draw(cx, d, rect(left, y + 4.0, glyph, glyph), now, ink); }
+            else { icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink); }
             let text_x = left + glyph + 12.0;
             let status = activity.status(now);
             let status_w = if activity.done() { 22.0 } else { d.measure(cx, true, 14.0, &status) + 4.0 };
@@ -735,12 +752,19 @@ mod tests {
         let mut island = IslandState::default();
         island.demo(100.0);
         settle(&mut island, 100.5);
-        // The demo's 25-minute countdown and its 6 s auto-finish are due
-        // later: the frame loop may stop, the 1 s tick keeps the island.
-        assert!(!island.step(1.0 / 60.0, 101.0, None), "nothing moves this frame");
+        // The demo's AppCard turns are in flight: the octopus animates, so
+        // the frame loop runs for it.
+        assert!(island.step(1.0 / 60.0, 101.0, None), "a thinking octopus keeps the frame loop");
+        // Over and gone after the linger, only the countdown is left, due
+        // much later: the frame loop may stop, the 1 s tick keeps the island.
+        island.finish("demo:writing", 101.0);
+        island.finish("demo:forecast", 101.0);
+        settle(&mut island, 101.0 + LINGER + 0.5);
+        assert!(island.get("demo:writing").is_none() && island.get("demo:forecast").is_none());
+        assert!(!island.step(1.0 / 60.0, 106.0, None), "nothing moves this frame");
         assert!(island.needs_step(), "the tick still wakes it");
-        // Within a frame of the auto-finish the loop runs it.
-        assert!(island.step(1.0 / 60.0, 100.0 + 6.0 - 0.02, None));
+        // Within a frame of a deadline the loop runs it: the countdown's end.
+        assert!(island.step(1.0 / 60.0, 100.0 + 90.0 - 0.02, None));
     }
 
     #[test]
