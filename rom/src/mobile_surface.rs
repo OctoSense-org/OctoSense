@@ -3,7 +3,6 @@ use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
 use crate::mobile_shade::ShadeContentCache;
-use crate::mobile_octopus::DrawOctopus;
 use crate::octosense::style::AppIconDraw;
 mod search;
 
@@ -266,8 +265,6 @@ pub struct PhoneSurface {
     // The sheet's content recorded once per state, shown as one quad while
     // the sheet moves (mobile_shade.rs).
     #[rust] shade_content: ShadeContentCache,
-    // The thinking octopus the island shows during an AppCard turn.
-    #[live] octopus: DrawOctopus,
     #[live] pub group_glass: GaussRoundedView,
     #[rust] pressed: Option<PhoneHit>,
     #[live] wallpaper: DrawQuad,
