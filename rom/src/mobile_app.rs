@@ -640,6 +640,8 @@ impl App {
             screen: phone.viewport,
             insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
             phone: phone.screen,
+            // The library's body scrolls its search results while it searches.
+            body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && !phone.searching()),
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws
@@ -662,8 +664,10 @@ impl App {
         }
     }
     /// A committed gesture becomes the navigation the shell already has.
-    /// ShadePull, PageSwipe and HomeSearch commits only reach `gesture_out`:
-    /// the shade, the pages and search are their own surfaces' work.
+    /// ShadePull and PageSwipe commits only reach `gesture_out`: the shade
+    /// and the pages are their own surfaces' work. A pull on the home page
+    /// opens the App Library with its search field focused; the same pull on
+    /// the library closes it.
     fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
         match kind {
             GestureKind::HomeUp => {
@@ -685,7 +689,15 @@ impl App {
             // The app sees the back press first (BackPressed / HostedBack)
             // and the shell goes home only when it declines.
             GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
-            GestureKind::Shade(_) | GestureKind::Page(_) | GestureKind::HomeSearch => {}
+            GestureKind::HomeSearch => match from {
+                PhoneScreen::Home => {
+                    self.phone_action(cx, PhoneHit::Drawer);
+                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
+                }
+                PhoneScreen::Drawer => self.phone_action(cx, PhoneHit::Home),
+                _ => {}
+            },
+            GestureKind::Shade(_) | GestureKind::Page(_) => {}
         }
     }
     fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {

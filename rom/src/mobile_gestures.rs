@@ -116,12 +116,19 @@ impl SafeInsets {
 /// phone viewport, the insets around it and which shell screen is showing
 /// (the home page recognises page swipes and search; the others do not).
 #[derive(Clone, Copy, Debug)]
-pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen }
+/// `body`: the middle of the screen is the shell's to recognise gestures
+/// in — the home page, and the App Library while it is not scrolling search
+/// results; over an app it belongs to the app.
+pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool }
 
 /// Where the finger touched down: the band decides the family of gesture
-/// it can become. `Body` is only ever an origin on the home page.
+/// it can become. `Body` is the middle of the home page (a pull opens
+/// search, a horizontal drag turns a page); `Column` its left or right
+/// quarter, where a pull is the shade's side — notifications on the left,
+/// controls on the right — without reaching for the top edge; `Library`
+/// the App Library's body, where a pull closes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body }
+enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), Library }
 
 #[derive(Clone, Debug)]
 struct Track {
@@ -255,7 +262,17 @@ impl GestureRecognizer {
         }
         if p.x <= left + m.edge_band { return clear(Edge::Left).then_some(Origin::Side(Edge::Left)); }
         if p.x >= right - m.edge_band { return clear(Edge::Right).then_some(Origin::Side(Edge::Right)); }
-        (ctx.phone == PhoneScreen::Home).then_some(Origin::Body)
+        if !ctx.body { return None; }
+        match ctx.phone {
+            PhoneScreen::Home => {
+                let column = s.size.x * 0.25;
+                if p.x < left + column { Some(Origin::Column(ShadeSide::Notifications)) }
+                else if p.x > right - column { Some(Origin::Column(ShadeSide::Controls)) }
+                else { Some(Origin::Body) }
+            }
+            PhoneScreen::Drawer => Some(Origin::Library),
+            _ => None,
+        }
     }
 
     fn classify(origin: Origin, d: Vec2d) -> Option<GestureKind> {
@@ -277,6 +294,12 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::HomeSearch) }
                 else { None }
             }
+            Origin::Column(side) => {
+                if ax > ay * 1.2 { Some(GestureKind::Page(dir)) }
+                else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
+                else { None }
+            }
+            Origin::Library => (d.y > 0.0 && ay > ax * 1.2).then_some(GestureKind::HomeSearch),
         }
     }
 
@@ -331,7 +354,7 @@ mod tests {
     use FingerPhase::*;
 
     fn screen() -> Rect { Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) } }
-    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone } }
+    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer) } }
     /// Feed a finger path; each step is (phase, x, y, time).
     fn drive(rec: &mut GestureRecognizer, ctx: &GestureContext, ex: &ExclusionZones, steps: &[(FingerPhase, f64, f64, f64)]) -> Vec<Option<ShellGesture>> {
         steps.iter().map(|&(phase, x, y, t)| rec.feed(phase, dvec2(x, y), t, ctx, ex)).collect()
@@ -450,6 +473,35 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((200.0, 500.0), (204.0, 300.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "an upward drag on the home page is the drawer's, not a shell gesture: {out:?}");
+    }
+    #[test]
+    fn a_downward_drag_in_a_home_column_pulls_that_side_of_the_shade() {
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 300.0), (384.0, 500.0), 0.3, 5));
+        assert!(matches!(out[2], Some(ShellGesture::ShadePull { side: ShadeSide::Controls, .. })), "{:?}", out[2]);
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls)));
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((60.0, 300.0), (64.0, 500.0), 0.3, 5));
+        assert!(matches!(out[2], Some(ShellGesture::ShadePull { side: ShadeSide::Notifications, .. })), "{:?}", out[2]);
+        // A horizontal drag from a column is still a page swipe.
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 400.0), (200.0, 410.0), 0.3, 5));
+        assert!(matches!(out[2], Some(ShellGesture::PageSwipe { dir: Dir::Left, .. })), "{:?}", out[2]);
+    }
+    #[test]
+    fn a_library_downward_drag_closes_it_and_nothing_else_is_a_shell_gesture_there() {
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
+        assert!(matches!(out[2], Some(ShellGesture::HomeSearch { .. })), "{:?}", out[2]);
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch));
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((300.0, 400.0), (120.0, 410.0), 0.3, 5));
+        assert!(out.iter().all(|g| g.is_none()), "no pages in the library: {out:?}");
+        // Scrolling search results is the library's: the body is not offered.
+        let mut rec = GestureRecognizer::default();
+        let ctx = GestureContext { body: false, ..ctx(PhoneScreen::Drawer) };
+        let out = drive(&mut rec, &ctx, &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
+        assert!(out.iter().all(|g| g.is_none()), "{out:?}");
     }
     #[test]
     fn a_tap_in_a_band_is_not_a_gesture_and_a_finger_in_the_nav_bar_is_the_bottom_band() {
