@@ -6,13 +6,18 @@ use std::{
     sync::OnceLock,
 };
 
-pub fn parse_catalog(bytes: &[u8], base: &Path) -> Result<Vec<AppDef>, String> {
+pub fn parse_catalog(
+    bytes: &[u8],
+    base: &Path,
+    makepad_root: Option<&Path>,
+) -> Result<Vec<AppDef>, String> {
     let value = json::parse(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
     let rows = value.as_arr().ok_or("catalog must be a JSON array")?;
     let mut ids = HashSet::new();
     let mut out = Vec::new();
     for (i, row) in rows.iter().enumerate() {
-        let parse = || -> Result<AppDef, String> {
+        // `None` is a row this host cannot launch, not a broken catalog.
+        let parse = || -> Result<Option<AppDef>, String> {
             let Value::Obj(fields) = row else {
                 return Err("entry must be an object".into());
             };
@@ -21,6 +26,7 @@ pub fn parse_catalog(bytes: &[u8], base: &Path) -> Result<Vec<AppDef>, String> {
                     "id",
                     "label",
                     "manifest",
+                    "source",
                     "package",
                     "bin",
                     "executable",
@@ -49,11 +55,38 @@ pub fn parse_catalog(bytes: &[u8], base: &Path) -> Result<Vec<AppDef>, String> {
             let label = required("label")?;
             let manifest = row.get("manifest").is_some();
             let executable = row.get("executable").is_some();
-            if manifest == executable {
-                return Err("specify exactly one of 'manifest' and 'executable'".into());
+            let source = row.get("source").is_some();
+            if [manifest, executable, source].iter().filter(|set| **set).count() != 1 {
+                return Err(
+                    "specify exactly one of 'manifest', 'executable' and 'source'".into(),
+                );
             }
             let path = |value: String| base.join(value).to_string_lossy().into_owned();
-            let (manifest, package, bin) = if manifest {
+            let mut target_dir = None;
+            let (manifest, package, bin) = if source {
+                // A named upstream checkout, not a path: the row travels with
+                // the repository and resolves wherever Cargo placed the
+                // revision this build pins.
+                let name = required("source")?;
+                if name != "makepad" {
+                    return Err(format!("unknown source '{name}'"));
+                }
+                let Some(root) = makepad_root else {
+                    return Ok(None);
+                };
+                target_dir = Some(
+                    super::paths::home()
+                        .join("build")
+                        .join(name)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                (
+                    Some(root.join("Cargo.toml").to_string_lossy().into_owned()),
+                    required("package")?,
+                    required("bin")?,
+                )
+            } else if manifest {
                 (
                     Some(path(required("manifest")?)),
                     required("package")?,
@@ -83,7 +116,7 @@ pub fn parse_catalog(bytes: &[u8], base: &Path) -> Result<Vec<AppDef>, String> {
                     .collect::<Result<Vec<_>, _>>()?,
                 _ => return Err("args must be an array of strings".into()),
             };
-            Ok(AppDef {
+            Ok(Some(AppDef {
                 id,
                 label,
                 bin,
@@ -92,9 +125,12 @@ pub fn parse_catalog(bytes: &[u8], base: &Path) -> Result<Vec<AppDef>, String> {
                 manifest,
                 args,
                 policy,
-            })
+                target_dir,
+            }))
         };
-        let app = parse().map_err(|e| format!("entry {}: {e}", i + 1))?;
+        let Some(app) = parse().map_err(|e| format!("entry {}: {e}", i + 1))? else {
+            continue;
+        };
         if !ids.insert(app.id.clone()) {
             return Err(format!("entry {}: duplicate id '{}'", i + 1, app.id));
         }
@@ -133,7 +169,11 @@ pub fn loaded() -> &'static Result<Vec<AppDef>, String> {
                 .join(path)
         };
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        parse_catalog(&bytes, path.parent().unwrap_or(Path::new(".")))
+        parse_catalog(
+            &bytes,
+            path.parent().unwrap_or(Path::new(".")),
+            super::makepad_source::makepad_root(),
+        )
             .map_err(|e| format!("{}: {e}", path.display()))
     })
 }
@@ -147,7 +187,7 @@ mod tests {
         let apps = parse_catalog(br#"[
             {"id":"reference","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","policy":"new","args":["two words","$(literal)"]},
             {"id":"installed","label":"Installed","executable":"bin/my app"}
-        ]"#, Path::new("/project/config")).unwrap();
+        ]"#, Path::new("/project/config"), None).unwrap();
         assert_eq!(
             apps[0].manifest.as_deref(),
             Some("/project/config/../apps/reference/Cargo.toml")
@@ -165,6 +205,7 @@ mod tests {
         let apps = parse_catalog(
             br#"[{"id":"app","label":"App","executable":"/opt/apps/app"}]"#,
             Path::new("/elsewhere"),
+            None,
         )
         .unwrap();
         assert_eq!(apps[0].bin, "/opt/apps/app");
@@ -198,8 +239,46 @@ mod tests {
                 "argz",
             ),
         ] {
-            let error = parse_catalog(json.as_bytes(), Path::new("/catalog")).unwrap_err();
+            let error = parse_catalog(json.as_bytes(), Path::new("/catalog"), None).unwrap_err();
             assert!(error.contains(reason), "expected {reason}, got {error}");
         }
+    }
+
+    /// Makepad's apps are not in this repository and must not be reached
+    /// through a path beside it: they live in the checkout Cargo already
+    /// fetched from GitHub for the pinned revision.
+    #[test]
+    fn makepad_rows_resolve_against_the_pinned_checkout() {
+        let apps = parse_catalog(
+            br#"[{"id":"browser","label":"Browser","source":"makepad","package":"makepad-browser","bin":"browser","policy":"focus"}]"#,
+            Path::new("/project/config"),
+            Some(Path::new("/cargo/checkouts/makepad-d00a/ad8f372")),
+        )
+        .unwrap();
+        assert_eq!(
+            apps[0].manifest.as_deref(),
+            Some("/cargo/checkouts/makepad-d00a/ad8f372/Cargo.toml")
+        );
+        assert_eq!(apps[0].package, "makepad-browser");
+        assert_eq!(apps[0].bin, "browser");
+    }
+
+    /// An installed host has no Cargo checkout. Its Makepad rows cannot
+    /// launch, but the rows that can must still reach the launcher.
+    #[test]
+    fn an_absent_checkout_drops_its_rows_instead_of_failing_the_catalog() {
+        let apps = parse_catalog(
+            br#"[
+                {"id":"browser","label":"Browser","source":"makepad","package":"makepad-browser","bin":"browser"},
+                {"id":"reference","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference"}
+            ]"#,
+            Path::new("/project/config"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            apps.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
+            ["reference"]
+        );
     }
 }

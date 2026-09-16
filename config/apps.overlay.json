@@ -1,0 +1,31 @@
+{
+  "_": "This project's named adaptations to upstream's curated app registry. Everything else in config/apps.json is generated from the pinned revision by `python3 scripts/upstream.py catalog --apply`.",
+  "rows": [
+    {
+      "id": "reference",
+      "label": "Reference",
+      "manifest": "../apps/reference/Cargo.toml",
+      "package": "octosense-reference",
+      "bin": "octosense-reference",
+      "policy": "new"
+    }
+  ],
+  "overrides": {
+    "studio": {
+      "label": "Director",
+      "package": "makepad-director",
+      "bin": "director"
+    },
+    "route": {
+      "bin": "route"
+    }
+  },
+  "drop": [
+    "scope"
+  ],
+  "append": [
+    {"id": "image", "label": "Image Viewer", "source": "makepad", "package": "makepad-image", "bin": "image", "policy": "new"},
+    {"id": "pdf", "label": "PDF Viewer", "source": "makepad", "package": "makepad-pdf", "bin": "pdf", "policy": "new"},
+    {"id": "aichat", "label": "AI", "source": "makepad", "package": "makepad-aichat", "bin": "aichat", "policy": "new"}
+  ]
+}
