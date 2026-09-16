@@ -38,13 +38,30 @@
             android:name=".{class_name}"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="singleInstance"
             android:windowSoftInputMode="adjustNothing|stateUnchanged"
             android:theme="@style/MakepadLaunchTheme">
-            <!-- App-drawer entry (a regular app; Home returns to the device launcher). -->
+            <!-- App-drawer entry. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Home app: Android offers OctoSense in its Home chooser, and a
+                 Home press or gesture delivers a HOME intent to the running
+                 activity (Event::HomeIntent), which shows the phone's home
+                 page. The system keeps its own gesture zone, Recents and
+                 shade; docs/octosense-android-launcher-plan.md.
+                 singleInstance, not singleTask: as the Home app the activity
+                 lives in the home task, and a launch from the app drawer or
+                 `am start` would otherwise open a SECOND instance in a
+                 standard task of the same process — two activities on one
+                 Makepad message channel, and the visible one stops drawing.
+                 Every entry (HOME, LAUNCHER, VIEW, SEND) now reaches the one
+                 instance as a new intent. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <!-- Deep links: YouTube URLs open here (AppCard's youtube card plays them). -->
             <intent-filter>
