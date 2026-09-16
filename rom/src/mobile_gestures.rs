@@ -218,7 +218,7 @@ impl GestureRecognizer {
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
                 let along = Self::along(kind, t.origin, Self::velocity(&t));
                 if kind == GestureKind::HomeUp && t.held { return Some(ShellGesture::Commit(GestureKind::Switcher)); }
-                if progress >= 1.0 || along >= m.flick_velocity { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
+                if progress >= Self::commit_fraction(kind) || along >= m.flick_velocity { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
             }
         }
     }
@@ -303,6 +303,15 @@ impl GestureRecognizer {
         }
     }
 
+    /// How far along (of `commit_distance`) a lifted finger must be for the
+    /// gesture to commit rather than cancel. A pull — the shade, search, the
+    /// library closing — commits from well under half way: a finger pulls
+    /// shorter than it swipes, and the surface it opens keeps following it
+    /// to the full distance anyway. Navigation swipes still need the whole
+    /// distance (or a flick).
+    fn commit_fraction(kind: GestureKind) -> f64 {
+        match kind { GestureKind::Shade(_) | GestureKind::HomeSearch => 0.4, _ => 1.0 }
+    }
     /// The component of `v` (a displacement or a velocity) that advances
     /// the gesture, in points.
     fn along(kind: GestureKind, origin: Origin, v: Vec2d) -> f64 {
@@ -487,6 +496,23 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 400.0), (200.0, 410.0), 0.3, 5));
         assert!(matches!(out[2], Some(ShellGesture::PageSwipe { dir: Dir::Left, .. })), "{:?}", out[2]);
+    }
+    #[test]
+    fn a_short_pull_commits_but_a_short_home_swipe_does_not() {
+        // 60 points down, slowly: half the commit distance, no flick.
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((200.0, 300.0), (203.0, 360.0), 0.5, 6));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 300.0), (383.0, 360.0), 0.5, 6));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls)), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((200.0, 300.0), (203.0, 360.0), 0.5, 6));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "{out:?}");
+        // The same 60 points up from the bottom band is not a home swipe yet.
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx(PhoneScreen::App), &ExclusionZones::default(), &swipe((200.0, 880.0), (203.0, 820.0), 0.5, 6));
+        assert_eq!(last(&out), ShellGesture::Cancel(GestureKind::HomeUp), "{out:?}");
     }
     #[test]
     fn a_library_downward_drag_closes_it_and_nothing_else_is_a_shell_gesture_there() {
