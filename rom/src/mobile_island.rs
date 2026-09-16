@@ -366,19 +366,24 @@ impl IslandState {
         }
         None
     }
-    /// Three demo activities: a ticking timer that finishes after 6 s (the
-    /// linger), a three-segment progress, and a countdown with a button.
+    /// Three demo activities: a ticking timer that finishes after 6 s, a
+    /// three-segment progress that finishes after 12 s, and a 90 s countdown
+    /// with a Stop button.
     pub fn demo(&mut self, now: f64) {
         self.push(LiveActivity::new("demo:writing", "appcard", "AppCard", "Writing weather card", ActivityKind::Elapsed { started: now }, now)
             .with_detail("Kernel turn: weather, Tokyo"));
         self.push(LiveActivity::new("demo:forecast", "appcard", "AppCard", "Fetching forecast", ActivityKind::Progress { done: 1, total: 3, segments: vec![1.0, 0.45, 0.0] }, now)
             .with_detail("Open-Meteo: current, hourly, daily")
             .with_action("Open", ActivityAction::Open("appcard".into())));
-        self.push(LiveActivity::new("demo:pomodoro", "clock", "Clock", "Pomodoro", ActivityKind::Countdown { until: now + 25.0 * 60.0 }, now)
+        self.push(LiveActivity::new("demo:pomodoro", "clock", "Clock", "Pomodoro", ActivityKind::Countdown { until: now + 90.0 }, now)
             .with_detail("Focus, then a 5 minute break")
             .with_action("Stop", ActivityAction::Cancel));
-        self.auto_finish.retain(|(id, _)| id != "demo:writing");
+        // A demo leaves on its own: the timer at 6 s, the progress at 12 s,
+        // the countdown when it ends (or Stop). Nothing of it stays on the
+        // screen for someone who tapped the clock by accident.
+        self.auto_finish.retain(|(id, _)| id != "demo:writing" && id != "demo:forecast");
         self.auto_finish.push(("demo:writing".into(), now + 6.0));
+        self.auto_finish.push(("demo:forecast".into(), now + 12.0));
     }
     /// Apply a producer's report.
     pub fn apply(&mut self, r: Report, now: f64) {
@@ -499,6 +504,10 @@ impl App {
     /// A tap on the island (`PhoneHit::Island`). The app an `Open` button
     /// names comes back for the phone to bring forward.
     pub(crate) fn island_hit(&mut self, hit: IslandHit) -> Option<String> {
+        // The clock's triple tap pushes the demo only on a bench run (the
+        // perf monitor or the phone.frames trace on): on an everyday phone
+        // three taps on the clock must not fill the island with fixtures.
+        if hit == IslandHit::Clock && !(crate::mobile_perf::enabled() || crate::mobile_perf::trace_on()) { return None; }
         match self.state_mut().phone.island.on_hit(hit, crate::host::now()) {
             Some(ActivityAction::Open(app)) => Some(app),
             _ => None,
@@ -743,12 +752,19 @@ mod tests {
         let mut island = IslandState::default();
         island.demo(100.0);
         settle(&mut island, 100.5);
-        // The demo's 25-minute countdown and its 6 s auto-finish are due
-        // later: the frame loop may stop, the 1 s tick keeps the island.
-        assert!(!island.step(1.0 / 60.0, 101.0, None), "nothing moves this frame");
+        // The demo's AppCard turns are in flight: the octopus animates, so
+        // the frame loop runs for it.
+        assert!(island.step(1.0 / 60.0, 101.0, None), "a thinking octopus keeps the frame loop");
+        // Over and gone after the linger, only the countdown is left, due
+        // much later: the frame loop may stop, the 1 s tick keeps the island.
+        island.finish("demo:writing", 101.0);
+        island.finish("demo:forecast", 101.0);
+        settle(&mut island, 101.0 + LINGER + 0.5);
+        assert!(island.get("demo:writing").is_none() && island.get("demo:forecast").is_none());
+        assert!(!island.step(1.0 / 60.0, 106.0, None), "nothing moves this frame");
         assert!(island.needs_step(), "the tick still wakes it");
-        // Within a frame of the auto-finish the loop runs it.
-        assert!(island.step(1.0 / 60.0, 100.0 + 6.0 - 0.02, None));
+        // Within a frame of a deadline the loop runs it: the countdown's end.
+        assert!(island.step(1.0 / 60.0, 100.0 + 90.0 - 0.02, None));
     }
 
     #[test]
