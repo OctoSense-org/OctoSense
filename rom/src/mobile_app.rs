@@ -640,8 +640,10 @@ impl App {
             screen: phone.viewport,
             insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
             phone: phone.screen,
-            // The library's body scrolls its search results while it searches.
-            body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && !phone.searching()),
+            // The library's body scrolls its search results while there is a
+            // query; with the field merely focused (the way a pull opens it)
+            // a pull still closes it.
+            body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && phone.search_query.is_empty()),
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws
@@ -694,7 +696,11 @@ impl App {
                     self.phone_action(cx, PhoneHit::Drawer);
                     if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
                 }
-                PhoneScreen::Drawer => self.phone_action(cx, PhoneHit::Home),
+                PhoneScreen::Drawer => {
+                    // Closing drops the search focus and its keyboard with it.
+                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
+                    self.phone_action(cx, PhoneHit::Home);
+                }
                 _ => {}
             },
             GestureKind::Shade(_) | GestureKind::Page(_) => {}
