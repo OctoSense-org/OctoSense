@@ -58,6 +58,9 @@ octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
+# News: headlines from Hacker News, TechMeme, Google News and the person's
+# own feeds, in a tab per source; a wide home tile on the phone.
+octosense-news = { path = "apps/news", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
@@ -68,6 +71,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard" }
+octosense-news = { path = "apps/news" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
 
@@ -79,7 +83,7 @@ default = []
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-news"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
@@ -87,12 +91,14 @@ app-sheets = ["dep:makepad-sheets"]
 app-photos = ["dep:makepad-photos"]
 # The AppCard module (one L0 weather card in a tile) linked in.
 app-appcard = ["dep:octosense-appcard"]
+# The News module (headlines in a tile) linked in.
+app-news = ["dep:octosense-news"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]
 
 [workspace]
-members = [".", "apps/reference", "apps/appcard"]
+members = [".", "apps/reference", "apps/appcard", "apps/news"]
 default-members = ["."]
 resolver = "2"
 

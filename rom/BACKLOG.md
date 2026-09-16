@@ -113,3 +113,28 @@ retired roots/slots, remove the adapter and rerun the all-style GPU smoke.
 The iOS check on this revision is still blocked in upstream `ios.rs`: missing
 `Cx::recover_after_caught_panic` and `IosApp::set_deferred_system_gesture_edges`.
 This supersedes the earlier Metal compile diagnostics in MOBILE-01.
+
+## News app follow-ups
+
+- [ ] **NEWS-01 — P2: Open links on Linux, Android and iOS.**
+
+  `Cx::open_url` is a stub on Linux, Android and iOS in the pinned framework
+  (`platform/src/os/linux/windowing_backend.rs`,
+  `platform/src/os/linux/direct/linux_direct.rs`,
+  `platform/src/os/linux/android/android.rs`, `platform/src/os/apple/ios/ios.rs`),
+  so the News app's Open button does nothing there; the expanded row shows the
+  link's host as text instead. macOS shells out to `open` and the web build
+  uses the browser.
+
+  Acceptance: implement `open_url` with `xdg-open` on Linux, an `ACTION_VIEW`
+  intent on Android and `UIApplication.openURL` on iOS in the framework fork,
+  adopt the revision through the normal sync workflow, and verify a News
+  headline opens on all three.
+
+- [ ] **NEWS-02 — P3: Edit user feeds in the app.**
+
+  User feeds are read once at start from the `feeds.json` storage value, with
+  no editor and no live re-read.
+
+  Acceptance: a sheet in the full face lists the feeds with add and remove,
+  writes the same JSON shape back to the storage jail, and refetches the tabs.

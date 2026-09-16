@@ -1,9 +1,10 @@
-//! Home-screen app tiles: the phone home shows Clock, Weather, Photos and the
-//! AppCard as live compact faces of the same client that opens full screen. Nothing
-//! here touches processes or windows; this is the geometry of the home page
-//! and the per-client presentation bookkeeping the WM drives (which face was
-//! asked for, whether the client has confirmed it with a frame of the right
-//! size), so the rules are testable without a window manager running.
+//! Home-screen app tiles: the phone home shows Clock, Weather, Photos, the
+//! AppCard and News as live compact faces of the same client that opens full
+//! screen. Nothing here touches processes or windows; this is the geometry
+//! of the home page and the per-client presentation bookkeeping the WM
+//! drives (which face was asked for, whether the client has confirmed it
+//! with a frame of the right size), so the rules are testable without a
+//! window manager running.
 use crate::hub::ClientId;
 use makepad_widgets::*;
 use std::collections::HashMap;
@@ -12,7 +13,8 @@ use std::collections::HashMap;
 pub enum TileKind {
     /// One of the two square tiles on the first row.
     Small,
-    /// The full-width tile under them (portrait) or the third column (landscape).
+    /// A full-width tile under them (portrait; several stack as banners) or
+    /// one of the columns after them (landscape).
     Wide,
     /// A tile group's face (mobile_groups.rs), named; a chip row under the
     /// app tiles in portrait, one more column in landscape.
@@ -21,8 +23,8 @@ pub enum TileKind {
 
 /// The apps that own a home tile, in tile order. Every id is a launcher
 /// registry entry; the tile launches it through the same cargo path.
-pub const TILE_APPS: [(&str, TileKind); 4] =
-    [("clock", TileKind::Small), ("weather", TileKind::Small), ("photos", TileKind::Wide), ("appcard", TileKind::Wide)];
+pub const TILE_APPS: [(&str, TileKind); 5] =
+    [("clock", TileKind::Small), ("weather", TileKind::Small), ("photos", TileKind::Wide), ("appcard", TileKind::Wide), ("news", TileKind::Wide)];
 
 pub fn is_tile_app(app: &str) -> bool {
     TILE_APPS.iter().any(|(id, _)| *id == app)
@@ -34,6 +36,14 @@ pub const HOME_MARGIN: f64 = 16.0;
 pub const TILE_GAP: f64 = 14.0;
 /// Corner radius of a tile capture on screen.
 pub const TILE_RADIUS: f64 = 14.0;
+/// The least a portrait favorites row needs (icon and label).
+const FAVORITES_CELL_MIN: f64 = 88.0;
+/// The strip above the dock kept for the page indicator / App Library target.
+const FAVORITES_STRIP: f64 = 36.0;
+/// The lead from the last tile (past its gap) to the favorites grid.
+const TILE_TO_FAVORITES: f64 = 6.0;
+/// The least a wide tile may shrink to and still be a usable banner.
+const BANNER_MIN: f64 = 60.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TileSlot {
@@ -57,10 +67,14 @@ pub struct HomeLayout {
 }
 
 /// Cut the home page: two small tiles and the wide ones under them in
-/// portrait (a second wide tile makes both banners, so the favorites keep
-/// their rows), the tiles across in landscape, the favorites grid in what is
-/// left above the dock. `top` is where content starts (below the status bar and, on
-/// Android, the big clock). Pure geometry, so both orientations are tested.
+/// portrait (a second wide tile makes them all banners, and a third shortens
+/// the banners as far as one row of favorites needs), the tiles across in
+/// landscape, the favorites grid in what is left above the dock. `top` is
+/// where content starts (below the status bar and, on Android, the big
+/// clock). Pure geometry, so both orientations are tested. This default lays
+/// out Clock, Weather and Photos only; the two- and three-banner cases
+/// (AppCard, News) are reached through `home_layout_for_apps`, which takes
+/// the installed tile apps.
 pub fn home_layout(screen: Rect, top: f64, dock: Rect) -> HomeLayout {
     home_layout_for_apps(screen, top, dock, &["clock", "weather", "photos"])
 }
@@ -78,7 +92,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         let count = (tile_apps.len() + groups.len()).max(1) as f64;
         let w = ((width - TILE_GAP * (count - 1.0)) / count).max(1.0);
         // Short enough that a row of favorites still fits above the dock.
-        let h = (w * 0.56).min((dock.pos.y - top - 126.0).max(60.0)).max(1.0);
+        let h = (w * 0.56).min((dock.pos.y - top - 126.0).max(BANNER_MIN)).max(1.0);
         for (index, (app, kind)) in tile_apps.iter().enumerate() {
             let x = left + index as f64 * (w + TILE_GAP);
             tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
@@ -89,10 +103,19 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         }
     } else {
         let s = ((width - TILE_GAP) / 2.0).max(1.0);
-        // One wide tile is as tall as a small one; two or more stack as
-        // banners so at least two rows of favorites still fit above the dock.
+        let small_count = tile_apps.iter().filter(|(_, kind)| *kind == TileKind::Small).count();
         let wide_count = tile_apps.iter().filter(|(_, kind)| *kind == TileKind::Wide).count();
-        let wide_h = if wide_count > 1 { (s * 0.55).round().max(1.0) } else { s };
+        // One wide tile is as tall as a small one; two or more stack as
+        // banners. The banner height is capped so one row of favorites still
+        // fits above the dock: with two banners the cap never bites, with
+        // three it does under Android's big clock. The budgeted height is
+        // floored, not rounded: rounding a third up by half a point per
+        // banner would overshoot the row by up to 1.5pt and lose it whole.
+        // The floor keeps a banner usable on a screen too short for both.
+        let banners_top = top + if small_count > 0 { s + TILE_GAP } else { 0.0 };
+        let banners_room = dock.pos.y - FAVORITES_STRIP - FAVORITES_CELL_MIN - TILE_GAP - TILE_TO_FAVORITES - banners_top - TILE_GAP * (wide_count.max(1) - 1) as f64;
+        let budgeted = (banners_room / wide_count.max(1) as f64).floor();
+        let wide_h = if wide_count > 1 { (s * 0.55).min(budgeted).round().max(BANNER_MIN) } else { s };
         let mut small = 0;
         let mut wide = 0;
         for (app, kind) in &tile_apps {
@@ -120,11 +143,10 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         }
     }
     let columns = if landscape { 7 } else { 4 };
-    let fav_top = tiles.iter().map(|slot| slot.rect.pos.y + slot.rect.size.y + TILE_GAP + 6.0)
+    let fav_top = tiles.iter().map(|slot| slot.rect.pos.y + slot.rect.size.y + TILE_GAP + TILE_TO_FAVORITES)
         .fold(top, f64::max);
-    // Leave a separate strip for the page indicator / App Library target.
-    let fav_bottom = dock.pos.y - 36.0;
-    let cell_min = if landscape { 64.0 } else { 88.0 };
+    let fav_bottom = dock.pos.y - FAVORITES_STRIP;
+    let cell_min = if landscape { 64.0 } else { FAVORITES_CELL_MIN };
     let (favorites, row_height, capacity) = if fav_bottom - fav_top >= cell_min {
         let rows = ((fav_bottom - fav_top) / cell_min).floor().max(1.0) as usize;
         let row_height = ((fav_bottom - fav_top) / rows as f64).min(104.0);
@@ -143,7 +165,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
 /// fixed by app id (an app the table does not know lands in "Other"), so
 /// every launch target is reachable from exactly one card.
 pub const LIBRARY_GROUPS: [(&str, &[&str]); 5] = [
-    ("Utilities", &["clock", "weather", "appcard", "terminal", "files", "task"]),
+    ("Utilities", &["clock", "weather", "appcard", "news", "terminal", "files", "task"]),
     ("Creativity", &["photos", "mixer", "score", "vj", "fab", "fabric"]),
     ("Productivity", &["sheets", "browser", "route", "studio"]),
     ("Media", &["video", "image", "pdf"]),
@@ -427,7 +449,7 @@ mod tests {
         assert_eq!(tiles[0].rect.pos.y, top, "no gap for absent Clock and Weather");
         assert!(layout.capacity >= 2, "Reference and Sheets must be visible");
         assert!(layout.tiles.iter().all(|t| !overlaps(t.rect, layout.favorites)));
-        assert!(layout.favorites.pos.y + layout.favorites.size.y <= dock.pos.y - 36.0);
+        assert!(layout.favorites.pos.y + layout.favorites.size.y <= dock.pos.y - FAVORITES_STRIP);
         // The phone catalog: Photos and the AppCard are both wide tiles.
         let two_wide = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos", "appcard"]);
         let tiles = app_tiles(&two_wide);
@@ -462,6 +484,81 @@ mod tests {
                 assert!(!overlaps(tile.rect, dock));
             }
             assert!(!overlaps(layout.favorites, dock));
+        }
+    }
+
+    #[test]
+    fn portrait_stacks_three_wide_tiles_as_banners_and_keeps_a_favorites_row() {
+        for style in [crate::desktop::DesktopStyle::Ios, crate::desktop::DesktopStyle::Android] {
+            let screen = screen(phone_size(style));
+            let dock = PhoneSurface::home_dock(screen);
+            let layout = home_layout_for_apps(screen, screen.pos.y + 70.0, dock, &["clock", "weather", "photos", "appcard", "news"]);
+            assert_eq!(layout.tiles.len(), 5);
+            let wide: Vec<_> = layout.tiles.iter().filter(|t| t.kind == TileKind::Wide).collect();
+            assert_eq!(wide.iter().map(|t| t.app).collect::<Vec<_>>(), ["photos", "appcard", "news"]);
+            for pair in wide.windows(2) {
+                assert!(pair[1].rect.pos.y >= pair[0].rect.pos.y + pair[0].rect.size.y, "banners stack");
+                assert_eq!(pair[0].rect.size, pair[1].rect.size);
+            }
+            assert!(wide[0].rect.size.y < wide[0].rect.size.x * 0.3, "three wide tiles are banners");
+            assert!(layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
+            for tile in &layout.tiles {
+                assert!(!overlaps(tile.rect, layout.favorites));
+                assert!(!overlaps(tile.rect, dock));
+            }
+        }
+    }
+
+    /// Android's home starts under its big clock (156pt, `PhoneSurface::home_top`),
+    /// where three banners at the two-banner height would leave no favorites
+    /// row at all: the banners give way, not the icons.
+    #[test]
+    fn android_home_shortens_three_banners_to_keep_a_favorites_row() {
+        let screen = screen(phone_size(crate::desktop::DesktopStyle::Android));
+        let dock = PhoneSurface::home_dock(screen);
+        let apps = ["clock", "weather", "photos", "appcard", "news"];
+        let roomy = home_layout_for_apps(screen, screen.pos.y + 70.0, dock, &apps);
+        let layout = home_layout_for_apps(screen, screen.pos.y + 156.0, dock, &apps);
+        let wide: Vec<_> = layout.tiles.iter().filter(|t| t.kind == TileKind::Wide).collect();
+        assert_eq!(wide.len(), 3);
+        let roomy_h = roomy.tiles.iter().find(|t| t.app == "news").unwrap().rect.size.y;
+        assert!(wide[0].rect.size.y < roomy_h, "shorter than under the iOS status bar: {} vs {roomy_h}", wide[0].rect.size.y);
+        assert!(wide[0].rect.size.y >= BANNER_MIN, "still a usable banner: {}", wide[0].rect.size.y);
+        assert!(wide.iter().all(|t| t.rect.size == wide[0].rect.size));
+        assert!(layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
+        for tile in &layout.tiles {
+            assert!(!overlaps(tile.rect, layout.favorites));
+            assert!(!overlaps(tile.rect, dock));
+        }
+        // Two banners never needed the cap: the AppCard-era home is unchanged.
+        let two = home_layout_for_apps(screen, screen.pos.y + 156.0, dock, &["clock", "weather", "photos", "appcard"]);
+        let s = two.tiles[0].rect.size.y;
+        assert_eq!(two.tiles[2].rect.size.y, (s * 0.55).round());
+        assert!(two.capacity >= 4);
+    }
+
+    /// The cap is a budget, not a hint: at every phone height where the
+    /// banners are taller than their 60pt floor, one row of favorites fits.
+    /// Heights where the third of the room has a fraction of .5 or more
+    /// (412x890 is one) are where a rounded-up banner would overshoot it.
+    #[test]
+    fn three_banners_keep_a_favorites_row_at_every_android_height() {
+        let apps = ["clock", "weather", "photos", "appcard", "news"];
+        // The loop's 890 iteration, kept apart for its named message.
+        let exact = screen(dvec2(412.0, 890.0));
+        let layout = home_layout_for_apps(exact, exact.pos.y + 156.0, PhoneSurface::home_dock(exact), &apps);
+        assert!(layout.capacity >= 4, "412x890: one row of favorites stays: {}", layout.capacity);
+        for height in 840..=900 {
+            let screen = screen(dvec2(412.0, height as f64));
+            let dock = PhoneSurface::home_dock(screen);
+            let layout = home_layout_for_apps(screen, screen.pos.y + 156.0, dock, &apps);
+            let banner = layout.tiles[2].rect.size.y;
+            assert!(banner >= BANNER_MIN, "{height}pt tall: banner {banner}pt");
+            assert!(banner == BANNER_MIN || layout.capacity >= 4, "{height}pt tall: banners {banner}pt leave {} favorites", layout.capacity);
+            for tile in &layout.tiles {
+                assert!(!overlaps(tile.rect, layout.favorites), "{height}pt tall");
+                assert!(!overlaps(tile.rect, dock), "{height}pt tall");
+            }
         }
     }
 
