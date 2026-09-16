@@ -4378,8 +4378,6 @@ impl AppMain for App {
         shell::script_mod(vm);
         desktop::script_mod(vm);
         snap::script_mod(vm);
-        // The octopus's draw shader is a type the surface's script names.
-        mobile_octopus::script_mod(vm);
         mobile_surface::script_mod(vm);
         desk::phone::script_mod(vm);
         dock_warp::script_mod(vm);

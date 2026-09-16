@@ -539,7 +539,7 @@ fn card_height(activities: &[LiveActivity]) -> f64 {
 
 /// Draw the island for this frame and register its taps. One call from
 /// `PhoneSurface::draw_overlay`, after the status bar.
-pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, icons: &mut AppIconDraw, octopus: &mut crate::mobile_octopus::DrawOctopus, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
+pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
     let island = &state.phone.island;
     let style = state.style.target;
     let ios = style == DesktopStyle::Ios;
@@ -603,7 +603,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let mut x = r.pos.x + 12.0;
         let mid = r.pos.y + pill_h * 0.5;
         // A kernel turn in flight: the thinking octopus instead of the glyph.
-        if primary.thinking() { octopus.draw(cx, rect(x, mid - glyph * 0.5, glyph, glyph), now, ink, compact); }
+        if primary.thinking() { crate::mobile_octopus::draw(cx, d, rect(x, mid - glyph * 0.5, glyph, glyph), now, ink); }
         else { icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink); }
         x += glyph + 8.0;
         d.label_elided(cx, rect(x, r.pos.y, title_w, pill_h), true, px, ink, HAlign::Left, &primary.title);
@@ -632,7 +632,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let inner_w = r.size.x - 36.0;
         for (index, activity) in island.activities.iter().enumerate() {
             let glyph = 30.0;
-            if activity.thinking() { octopus.draw(cx, rect(left, y + 4.0, glyph, glyph), now, ink, card); }
+            if activity.thinking() { crate::mobile_octopus::draw(cx, d, rect(left, y + 4.0, glyph, glyph), now, ink); }
             else { icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink); }
             let text_x = left + glyph + 12.0;
             let status = activity.status(now);
