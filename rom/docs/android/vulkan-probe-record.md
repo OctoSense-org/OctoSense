@@ -1,0 +1,35 @@
+# OnePlus 6 Vulkan probe — 15 Sep 2026
+
+This is an isolated check of the **unchanged pinned Makepad Vulkan backend**, not a change to the retained GLES candidate. The full-app Vulkan switch fails the shade pacing gate on this phone. Its off-screen CPU fence waits are a source-level bottleneck candidate; the phone runs did not measure their duration.
+
+## Build and device
+
+- Isolated worktree `~/home/OctoSense-frame-baseline`, base PR #28 commit `efc153cb6caf63759334a0810adbb35f3e2c376f`, Makepad pin `73dfc62a8358c7a6cce33e50a612ced28e5c7411`. Source differs from `~/home/OctoSense-native-perf` only in two `mobile_surface.rs` shader-warmup comment lines; code and UI are identical. The isolated tracked `git diff --binary` SHA-256 is `a40e9ba86ff7cdcc6ea6f8f9d792ca5178927901adacc126dcbbb41a03d7994b`.
+- Built release Android with `MAKEPAD=vulkan`, `CARGO_TARGET_DIR=target/vulkan-probe` and the same bundled `liboctos.so`; `vulkan-probe-build.log` ends `APK Build completed`. The Makepad platform build output includes `cargo:rustc-cfg=use_vulkan`. Probe APK `op6-vulkan-probe.apk` SHA-256 `863b2894da9927049e4c49d40e1a2918ff372be1f12d248d902cd87059760c76`.
+- OnePlus 6 `cfb7c9e3`, Android 15, 1080×2280, 60 Hz, Snapdragon 845/Adreno 630, AC powered at 100%, battery temperature 31.4°C after the block. `cmd gpu vkjson` identifies the physical device as Adreno 630, Vulkan **1.1.128**, Qualcomm driver build `8e5405b` dated 21 May 2021, a graphics-capable queue and `VK_KHR_swapchain`. The JSON and `cmd gpu vkprofiles` output are `op6-vulkan-vkjson.json` and `op6-vulkan-vkprofiles.txt`; Android baseline 2021/2022 profiles were reported supported, Android 15 minimums were not.
+- During OctoSense startup, `dumpsys gpu` reported `createdVulkanDevice=1`, `createdVulkanSwapchain=1`, `vulkanApiVersion=0x401000`. It also reported a GLES context, which this Makepad path keeps for interop; these counts and the `use_vulkan` build flag confirm the window renderer is Vulkan. A fresh-captured Glance page and warm notification sheet rendered; the original first-immediate screenshot was black while startup was incomplete, and a later screenshot showed a partially settled page transition. These are startup/capture caveats, not evidence of a permanently black Vulkan renderer. `op6-vulkan-shade.png`, `op6-vulkan-home-six-second.png` and other PNGs passed CRC verification. Full visual equivalence across all shell states was not checked.
+
+## Input-aware 60 Hz presentation runs
+
+Raw valid JSON: `op6-vulkan-shade-warm/`. Warm driver started a process, waited six seconds, prewarmed one shade open/close pair, then measured five pairs with `phone.frames` and `phone.input` markers; `scripts/measure_android_frames.py` rejected process changes or disconnected/no-layer runs. One warm opening had only **one interval** and is retained as `.invalid.json`, not a performance run.
+
+| Interaction | Usable runs | Vulkan fps | p95 interval | Passing ≥55 fps / p95 ≤20 ms |
+|---|---:|---:|---:|---:|
+| Shade open | 4 | **21.27–22.02** | 66.75–100.42 ms | **0/4** |
+| Shade close | 5 | **36.78–38.28** | 33.49–50.20 ms | **0/5** |
+
+The exact saved GLES APK on the same phone passed **6/6 warm opening and closing** runs: openings 57.36–58.56 fps, closes 57.91–57.97 fps, all p95 ≤16.83 ms (`~/home/OctoSense-native-perf/target/perf-artifacts/op6-pointer-loop-final-shade-warm/`). The blocks were run at different times; the ~2× difference is large and consistent, but a paired alternating thermal/order experiment was not done. On Vulkan, the valid open spans had 22 presents across ~954–988 ms, with 33–100 ms intervals through the whole gesture; closes had 41–42 presents across ~1.07–1.10 s, with repeated 33 ms intervals. `drop_analysis.py` replay found frame-ready timestamps only ~1–2 ms after desired timestamps while app submissions were widely spaced. This is consistent with work or waiting before presentation; it does not isolate CPU fence time, GPU execution, driver work or BufferQueue pressure.
+
+Fresh-process block `op6-vulkan-shade-fresh/` produced three opening raw files with only one raw present and **no valid marked activity interval**; each was relabeled `.invalid.json`. Each following close failed with `No presentation timestamps`. Do not score these as three pacing failures. They leave immediate first-use responsiveness and startup correctness unresolved.
+
+Pinned Vulkan source waits on a CPU fence at the frame path (`platform/src/os/linux/vulkan.rs:2911-2914`) and before and after each off-screen pass (`3557-3559`, `3946-3948`); its swapchain selects FIFO and `min_image_count + 1` (`7589-7607`). A paired CPU/GPU timeline would be needed before attributing the measured cost to those waits or changing synchronization. The unchanged Vulkan backend is **rejected as the full-app performance replacement on this OnePlus 6**. The saved GLES APK (`d355ef1dc999e3e99c3ec9c6a409af5a95c2fa1606275a35922c04b372c32252`) was reinstalled, freshly launched, and visually confirmed in the original light Home appearance (`op6-gl-restored-after-vulkan.png`). No phone settings or governors were changed.
+
+## kgsl GPU trace of the probe — 15 Sep 2026, 22:05 UTC
+
+Captured with the session's tracefs script (kgsl `adreno_cmdbatch_*`, `kgsl_pwrlevel`, `kgsl_waittimestamp_*`; `trace_clock mono`) on the same probe APK, warm shade open and close: `~/home/OctoSense-native-perf/target/perf-artifacts/kgsl-vk-shade-{open,close}.txt` plus `kgsl-gl-shade-{open,close}.txt`, which were also captured on the probe because the GL reinstall between them failed on a USB drop. Parser: `kgsl_gpu_timeline.py` / `kgsl_frames_summary.py` beside them.
+
+- **Serialised pipeline, measured.** Every app submission has `inflight = 0` and 2–5 ms of GPU idle precede it (the CPU recording the next frame after the fence). The GLES build's traces run 3–4 submissions in flight. This is the single-fence structure at `vulkan.rs:2911-2914`, `3557-3559`, `3946-3948`.
+- **No clock ramp.** Zero `kgsl_pwrlevel` events during ~1 s of gesture on Vulkan; the GLES captures show 5–9 steps from 257 to 675–710 MHz within ~250 ms. The serialised pipeline keeps the governor's busy fraction under its ramp threshold, so the whole gesture runs at 257 MHz.
+- **Per-frame GPU work is not lower.** Shade close: 32.8 → 19.6 ms per frame at 257 MHz (≈11.9 → 7.1 ms at 710) against 19 → 9 ms on GLES; shade open: 11–17 ms against 15–20 ms. The measured 21–22 fps (open) and 37–38 fps (close) follow: each frame is CPU record + GPU execute + acquire at the floor clock, three refreshes when the pair exceeds 33 ms.
+
+Conclusion: the probe's slowness is the backend's synchronisation and its effect on DVFS, not the API. A pipelined rewrite (all passes of a frame in one command buffer with barriers, ≥2 frames in flight with per-frame fences/semaphores, acquire off the critical path) would be needed before Vulkan can be compared on equal terms; nothing in these traces suggests it would then beat the optimised GLES path on pixel work.
