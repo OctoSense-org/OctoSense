@@ -26,7 +26,7 @@
     <application
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:debuggable="{debuggable}"

@@ -76,6 +76,12 @@ pub(super) struct PhoneSceneBackdrop {
 }
 
 impl WmDesk {
+    /// App-owned GPU drawable for Android's capture hook (no system screen capture).
+    #[cfg(target_os = "android")]
+    pub fn phone_client_texture(&self, client: ClientId) -> Option<Texture> {
+        self.phone_frames.get(&client)?.full.as_ref().map(|capture|capture.frame.texture().clone())
+    }
+
     pub(super) fn draw_window_surface(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32) {
         self.draw_window_surface_band(cx, frame, rect, rect, radius);
     }
