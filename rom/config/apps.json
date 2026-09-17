@@ -119,7 +119,7 @@
     "label": "Route",
     "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-app-route",
-    "bin": "makepad-app-route",
+    "bin": "route",
     "policy": "focus"
   },
   {
