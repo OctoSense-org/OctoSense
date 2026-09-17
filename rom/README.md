@@ -16,7 +16,7 @@ to check the local dependency graph. Existing platform rendering backends remain
 part of their applications; the framework controls the shared VM and UI sources.
 
 
-The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
+The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
 This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
@@ -31,7 +31,7 @@ cargo build --manifest-path ../makepad-fork/tools/cargo_makepad/Cargo.toml
 ../makepad-fork/target/debug/cargo-makepad makepad android run -p octosense --release
 ```
 
-`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
+`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
 
 ### Make it the Home app
 
@@ -92,7 +92,7 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 - `src/mobile*.rs` — the phone shell: state and navigation (`mobile.rs`), the gesture recognizer (`mobile_gestures.rs`), the surface that draws home, drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups, the shade, the island, the thinking octopus, the perf monitor.
 - `src/desk/phone.rs` — the desk's phone composition: hosted-app captures, the kept home scene and its blur pyramid, the compositor path.
 - `resources/android/AndroidManifest.xml.template` — the activity (Home role, share and deep-link intents).
-- `apps/appcard`, `apps/reference` — the hosted modules built into the APK.
+- `apps/appcard`, `apps/news`, `apps/reference` — the hosted modules built into the APK. News aggregates Hacker News, TechMeme, Google News and up to four RSS or Atom feeds from a `feeds.json` storage value, in glass cards with a tab per source; it draws a wide home tile, and a tap on a headline opens the article in an in-app reader on the platform's web view when the host cannot launch a Browser app. Its design and hosting notes are in `docs/plans/2026-09-16-news-app-design.md` and `docs/plans/2026-09-16-news-app-phase2-design.md`.
 - `docs/` — records and recipes; `docs/android/` the performance and launcher records.
 
 ## Dependencies

@@ -113,7 +113,12 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         // banner would overshoot the row by up to 1.5pt and lose it whole.
         // The floor keeps a banner usable on a screen too short for both.
         let banners_top = top + if small_count > 0 { s + TILE_GAP } else { 0.0 };
-        let banners_room = dock.pos.y - FAVORITES_STRIP - FAVORITES_CELL_MIN - TILE_GAP - TILE_TO_FAVORITES - banners_top - TILE_GAP * (wide_count.max(1) - 1) as f64;
+        // Group chips (two to a row) sit between the app tiles and the
+        // favorites, so their rows come out of the banners' budget too.
+        let chip_rows = groups.len().div_ceil(2) as f64;
+        let banners_room = dock.pos.y - FAVORITES_STRIP - FAVORITES_CELL_MIN - TILE_GAP - TILE_TO_FAVORITES - banners_top
+            - TILE_GAP * (wide_count.max(1) - 1) as f64
+            - chip_rows * (crate::mobile_groups::GROUP_TILE_HEIGHT + TILE_GAP);
         let budgeted = (banners_room / wide_count.max(1) as f64).floor();
         let wide_h = if wide_count > 1 { (s * 0.55).min(budgeted).round().max(BANNER_MIN) } else { s };
         let mut small = 0;
@@ -493,7 +498,9 @@ mod tests {
             let screen = screen(phone_size(style));
             let dock = PhoneSurface::home_dock(screen);
             let layout = home_layout_for_apps(screen, screen.pos.y + 70.0, dock, &["clock", "weather", "photos", "appcard", "news"]);
-            assert_eq!(layout.tiles.len(), 5);
+            // Group chips (mobile_groups.rs) share the grid; this test is about the app tiles.
+            let app_tiles: Vec<_> = layout.tiles.iter().filter(|t| !matches!(t.kind, TileKind::Group(_))).collect();
+            assert_eq!(app_tiles.len(), 5);
             let wide: Vec<_> = layout.tiles.iter().filter(|t| t.kind == TileKind::Wide).collect();
             assert_eq!(wide.iter().map(|t| t.app).collect::<Vec<_>>(), ["photos", "appcard", "news"]);
             for pair in wide.windows(2) {
@@ -501,7 +508,9 @@ mod tests {
                 assert_eq!(pair[0].rect.size, pair[1].rect.size);
             }
             assert!(wide[0].rect.size.y < wide[0].rect.size.x * 0.3, "three wide tiles are banners");
-            assert!(layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
+            // With a group chip row under them, the banners may hit their
+            // floor; only then may the favorites row go.
+            assert!(wide[0].rect.size.y == BANNER_MIN || layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
             for tile in &layout.tiles {
                 assert!(!overlaps(tile.rect, layout.favorites));
                 assert!(!overlaps(tile.rect, dock));
@@ -525,16 +534,18 @@ mod tests {
         assert!(wide[0].rect.size.y < roomy_h, "shorter than under the iOS status bar: {} vs {roomy_h}", wide[0].rect.size.y);
         assert!(wide[0].rect.size.y >= BANNER_MIN, "still a usable banner: {}", wide[0].rect.size.y);
         assert!(wide.iter().all(|t| t.rect.size == wide[0].rect.size));
-        assert!(layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
+        assert!(wide[0].rect.size.y == BANNER_MIN || layout.capacity >= 4, "one row of favorites stays: {}", layout.capacity);
         for tile in &layout.tiles {
             assert!(!overlaps(tile.rect, layout.favorites));
             assert!(!overlaps(tile.rect, dock));
         }
-        // Two banners never needed the cap: the AppCard-era home is unchanged.
+        // Two banners plus the Media chip row under Android's clock: the cap
+        // shortens them below the two-banner height and keeps a favorites row.
         let two = home_layout_for_apps(screen, screen.pos.y + 156.0, dock, &["clock", "weather", "photos", "appcard"]);
         let s = two.tiles[0].rect.size.y;
-        assert_eq!(two.tiles[2].rect.size.y, (s * 0.55).round());
-        assert!(two.capacity >= 4);
+        let banner = two.tiles[2].rect.size.y;
+        assert!(banner <= (s * 0.55).round() && banner >= BANNER_MIN, "two banners: {banner}");
+        assert!(banner == BANNER_MIN || two.capacity >= 4, "favorites beside two banners and a chip row: {}", two.capacity);
     }
 
     /// The cap is a budget, not a hint: at every phone height where the
@@ -547,7 +558,7 @@ mod tests {
         // The loop's 890 iteration, kept apart for its named message.
         let exact = screen(dvec2(412.0, 890.0));
         let layout = home_layout_for_apps(exact, exact.pos.y + 156.0, PhoneSurface::home_dock(exact), &apps);
-        assert!(layout.capacity >= 4, "412x890: one row of favorites stays: {}", layout.capacity);
+        assert!(layout.tiles[2].rect.size.y == BANNER_MIN || layout.capacity >= 4, "412x890: one row of favorites stays: {}", layout.capacity);
         for height in 840..=900 {
             let screen = screen(dvec2(412.0, height as f64));
             let dock = PhoneSurface::home_dock(screen);
