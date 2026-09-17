@@ -4,6 +4,7 @@
 use makepad_widgets::makepad_micro_serde::*;
 use makepad_widgets::LiveId;
 use std::ops::Range;
+use std::str::Chars;
 use std::time::{Duration, Instant};
 
 pub(crate) const REFRESH_EVERY: Duration = Duration::from_secs(15 * 60);
@@ -64,18 +65,204 @@ pub(crate) fn builtin_sources() -> Vec<SourceDef> {
     ]
 }
 
-/// One row, whatever the source.
-#[derive(Clone, Debug, Default, PartialEq, SerJson, DeJson)]
+/// One row, whatever the source. `DeJson` is by hand, below: a cache
+/// written before a field existed must still load.
+#[derive(Clone, Debug, Default, PartialEq, SerJson)]
 pub struct Headline {
     pub title: String,
     pub link: String,
+    /// What the row shows as its source: the tab's label, or the outlet a
+    /// Google News title names.
     pub source: String,
+    /// The id of the source the row came from (`hn`, a user feed's
+    /// `user_…`), stamped by the model when rows land, so a row keeps its
+    /// provenance through the All interleave and the tile. Empty in
+    /// caches written before it existed; `load_cache` fills it.
+    pub source_id: String,
     /// Unix seconds, when the feed gives a time.
     pub published: Option<i64>,
     pub points: Option<u32>,
     pub comments: Option<u32>,
     /// The feed's description with tags stripped and entities decoded, capped.
     pub summary: String,
+    /// Where the story is discussed (a Hacker News item page); the row's
+    /// link is the story itself. Absent in caches written before it existed.
+    pub discussion: Option<String>,
+}
+
+/// A row as any version of this crate wrote it. micro_serde has no field
+/// default and a missing key is an error even when lenient, so the fields
+/// that came after the first caches are optional here and `Headline`
+/// decodes through this. A field added to `Headline` is added here too:
+/// the constructor below is exhaustive.
+#[derive(DeJson)]
+struct HeadlineJson {
+    title: String,
+    link: String,
+    source: String,
+    source_id: Option<String>,
+    published: Option<i64>,
+    points: Option<u32>,
+    comments: Option<u32>,
+    summary: String,
+    discussion: Option<String>,
+}
+
+impl DeJson for Headline {
+    fn de_json(s: &mut DeJsonState, i: &mut Chars) -> Result<Self, DeJsonErr> {
+        let h = HeadlineJson::de_json(s, i)?;
+        Ok(Headline {
+            title: h.title,
+            link: h.link,
+            source: h.source,
+            source_id: h.source_id.unwrap_or_default(),
+            published: h.published,
+            points: h.points,
+            comments: h.comments,
+            summary: h.summary,
+            discussion: h.discussion,
+        })
+    }
+}
+
+/// The colour a source's badge and tile dot carry (RGBA), by the row's
+/// `source_id`: Hacker News orange, TechMeme teal, Google News blue; a
+/// person's own feed, and a row with no provenance, slate.
+pub(crate) fn source_color(id: &str) -> u32 {
+    match id {
+        "hn" => 0xff6600ff,
+        "techmeme" => 0x2bb5a0ff,
+        "google" => 0x4285f4ff,
+        _ => 0x7d8aa5ff,
+    }
+}
+
+/// The most characters a row's badge shows: a long outlet or feed name is
+/// cut with an ellipsis rather than pushing the title off its line.
+pub(crate) const BADGE_CHARS: usize = 12;
+
+/// The badge's text: a short name for a built-in, the outlet a Google News
+/// row names, otherwise the source label (the row's own, or its tab's)
+/// cut to `BADGE_CHARS`.
+pub(crate) fn source_short_label(source_id: &str, source: &str) -> String {
+    let source = source.trim();
+    match source_id {
+        "hn" => "HN".into(),
+        "techmeme" => "TechMeme".into(),
+        "google" if source.is_empty() => "Google".into(),
+        _ if source.is_empty() => "Feed".into(),
+        _ => shorten(source, BADGE_CHARS),
+    }
+}
+
+/// `s` cut to `max` characters, the last one an ellipsis when it was cut.
+fn shorten(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut cut: String = s.chars().take(max.saturating_sub(1)).collect();
+    cut.truncate(cut.trim_end().len());
+    cut.push('\u{2026}');
+    cut
+}
+
+/// How the view is hosted: its own window, a child process in a host tile,
+/// or an in-process module in an isolate. `main.rs` and the module's
+/// `create` say which; the opener policy reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Hosting {
+    #[default]
+    Standalone,
+    Process,
+    Module,
+}
+
+/// What the window manager answers when an `Open` or `Launch` named an app
+/// its catalog cannot launch, as an `Event::Custom`:
+/// `{"wm_unavailable": {"app": "browser", "path": "https://..."}}`. The
+/// host's `src/wm_reply.rs` is the same envelope; this crate cannot depend
+/// on the host, so the shape is spelled here too.
+// `pub`, not `pub(crate)`: the micro_serde derives parse only a plain `pub`.
+#[derive(Clone, Debug, PartialEq, SerJson, DeJson)]
+pub struct WmUnavailable {
+    pub app: String,
+    pub path: String,
+}
+
+#[derive(SerJson, DeJson)]
+struct WmUnavailableEnvelope {
+    wm_unavailable: WmUnavailable,
+}
+
+impl WmUnavailable {
+    /// The host's side of the envelope, for the tests that play the host.
+    #[cfg(test)]
+    pub(crate) fn to_json(&self) -> String {
+        WmUnavailableEnvelope { wm_unavailable: self.clone() }.serialize_json()
+    }
+
+    /// The reply in a Custom event's json; None when it is something else.
+    /// Lenient, so a field a later host adds does not break the receiver.
+    pub(crate) fn parse(json: &str) -> Option<Self> {
+        if !json.contains("\"wm_unavailable\"") {
+            return None;
+        }
+        WmUnavailableEnvelope::deserialize_json_lenient(json).ok().map(|e| e.wm_unavailable)
+    }
+}
+
+/// One way to open a link, in the order the view tries them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OpenTier {
+    /// The bundled Browser app, through the window manager.
+    Browser,
+    /// The in-app reader on the platform's native web view.
+    Reader,
+    /// The system browser.
+    System,
+    /// Tell the person: nothing here can show the page.
+    Notify,
+}
+
+/// What a link can be opened with here: the hosting and the platform's
+/// answers, so the choice is a pure function the tests can pin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OpenPolicy {
+    pub hosting: Hosting,
+    pub has_webview: bool,
+    pub has_system_open: bool,
+}
+
+impl OpenPolicy {
+    /// The tiers to try, in order. The Browser only when hosted; the reader
+    /// only where the native web view can appear (the standalone window or
+    /// a module in the host's window, never a process child, which has no
+    /// window of its own) and the platform has one; the system browser
+    /// where the platform can open a URL; a notification always, last.
+    pub(crate) fn tiers(&self) -> Vec<OpenTier> {
+        let mut tiers = Vec::with_capacity(4);
+        if matches!(self.hosting, Hosting::Process | Hosting::Module) {
+            tiers.push(OpenTier::Browser);
+        }
+        if self.has_webview && matches!(self.hosting, Hosting::Standalone | Hosting::Module) {
+            tiers.push(OpenTier::Reader);
+        }
+        if self.has_system_open {
+            tiers.push(OpenTier::System);
+        }
+        tiers.push(OpenTier::Notify);
+        tiers
+    }
+
+    /// The platform's own answers: a native web view on macOS, iOS and
+    /// Android; `open_url` on macOS and the web.
+    pub(crate) fn for_platform(hosting: Hosting) -> Self {
+        OpenPolicy {
+            hosting,
+            has_webview: cfg!(any(target_os = "macos", target_os = "ios", target_os = "android")),
+            has_system_open: cfg!(any(target_os = "macos", target_arch = "wasm32")),
+        }
+    }
 }
 
 /// One entry of the person's own feeds file, one tab each.
@@ -296,7 +483,12 @@ impl NewsModel {
         let state = &mut self.sources[index];
         state.pending = None;
         match result {
-            Ok(rows) => {
+            Ok(mut rows) => {
+                // Provenance is the model's to stamp: the parsers share
+                // one feed reader, and the All interleave mixes sources.
+                for row in &mut rows {
+                    row.source_id = state.def.id.clone();
+                }
                 state.rows = rows;
                 state.fetched_at = Some(Instant::now());
                 state.error = None;
@@ -386,8 +578,10 @@ impl NewsModel {
     }
 
     /// Seed a source from the storage jail; only while it has nothing better.
-    /// Rows the faces would not show (no title, no http link) are dropped and
-    /// the count is capped, as if the document had just been parsed.
+    /// Rows the faces would not show (no title, no http link) are dropped, a
+    /// discussion that is no http link is cleared, and the count is capped,
+    /// as if the document had just been parsed. The document is this
+    /// source's, so every row gets its id, whatever the row says.
     pub fn load_cache(&mut self, source: usize, bytes: &[u8]) -> bool {
         let state = &mut self.sources[source];
         if state.fetched_at.is_some() || !state.rows.is_empty() {
@@ -395,7 +589,17 @@ impl NewsModel {
         }
         let Ok(text) = std::str::from_utf8(bytes) else { return false };
         let Ok(rows) = <Vec<Headline> as DeJson>::deserialize_json_lenient(text) else { return false };
-        let rows: Vec<Headline> = rows.into_iter().filter(showable).take(MAX_ROWS_PER_SOURCE).collect();
+        let source_id = state.def.id.as_str();
+        let rows: Vec<Headline> = rows
+            .into_iter()
+            .filter(showable)
+            .take(MAX_ROWS_PER_SOURCE)
+            .map(|mut row| {
+                row.source_id = source_id.to_string();
+                row.discussion = row.discussion.filter(|d| is_http_url(d));
+                row
+            })
+            .collect();
         if rows.is_empty() {
             return false;
         }
@@ -495,12 +699,10 @@ pub(crate) fn tile_line(row: &Headline) -> String {
     }
 }
 
-/// The second line of a row: source, time, points and comments, joined by dots.
+/// The second line of a row: time, points and comments, joined by dots.
+/// The source is the badge's, not repeated here.
 pub(crate) fn meta_line(row: &Headline, now: i64) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if !row.source.is_empty() {
-        parts.push(row.source.clone());
-    }
     if let Some(t) = relative_time(row.published, now) {
         parts.push(t);
     }
@@ -540,6 +742,9 @@ mod tests {
         let titles: Vec<&str> = all.iter().map(|h| h.title.as_str()).collect();
         assert_eq!(titles, ["a1", "b1", "d1", "a2", "d2", "a3"]);
         assert!(interleave(&[]).is_empty());
+        let mut stamped = vec![row("s1")];
+        stamped[0].source_id = "techmeme".into();
+        assert_eq!(interleave(&[&stamped, &b])[0].source_id, "techmeme", "a row keeps its provenance");
     }
 
     #[test]
@@ -559,12 +764,125 @@ mod tests {
 
     #[test]
     fn headline_round_trips_through_json() {
-        let h = Headline { title: "T \"q\"".into(), link: "https://x".into(), source: "S".into(), published: Some(1_700_000_000), points: Some(12), comments: None, summary: "s".into() };
+        let h = Headline {
+            title: "T \"q\"".into(),
+            link: "https://x".into(),
+            source: "S".into(),
+            source_id: "hn".into(),
+            published: Some(1_700_000_000),
+            points: Some(12),
+            comments: None,
+            summary: "s".into(),
+            discussion: Some("https://news.ycombinator.com/item?id=1".into()),
+        };
         let json = h.serialize_json();
         let back: Headline = DeJson::deserialize_json_lenient(&json).unwrap();
         assert_eq!(back, h);
         let rows: Vec<Headline> = DeJson::deserialize_json_lenient(&vec![h.clone()].serialize_json()).unwrap();
         assert_eq!(rows, vec![h]);
+    }
+
+    #[test]
+    fn a_row_cached_before_discussion_existed_still_loads() {
+        let old = r#"{"title":"Old","link":"https://x/old","source":"S","published":null,"points":null,"comments":null,"summary":""}"#;
+        let back: Headline = DeJson::deserialize_json_lenient(old).unwrap();
+        assert_eq!((back.title.as_str(), back.discussion), ("Old", None));
+        assert_eq!(back.source_id, "", "no id in the document");
+        let mut m = NewsModel::new();
+        assert!(m.load_cache(0, format!("[{old}]").as_bytes()));
+        assert_eq!(m.sources[0].rows[0].discussion, None);
+        assert_eq!(m.sources[0].rows[0].source_id, "hn", "the cache is per source, so the id is known");
+    }
+
+    #[test]
+    fn rows_carry_their_source_id_from_the_fetch_and_the_cache_and_through_all() {
+        let mut m = NewsModel::new();
+        m.set_user_feeds(vec![UserFeed { label: "Blog".into(), url: "https://blog.example/feed".into() }]);
+        let user_id = m.sources[3].def.id.clone();
+        for (i, prefix) in ["h", "t", "g", "u"].iter().enumerate() {
+            let (id, _) = m.begin_fetch(i);
+            let mut rows = rows(prefix, 2);
+            // A parser leaves the id empty (feeds share one), a row that
+            // claims one is corrected: the source the rows land in decides.
+            rows[1].source_id = "hn".into();
+            if i == 2 {
+                rows[0].source = "Reuters".into();
+            }
+            m.complete(id, Ok(rows));
+        }
+        for (i, expected) in ["hn", "techmeme", "google", user_id.as_str()].iter().enumerate() {
+            assert!(m.sources[i].rows.iter().all(|r| r.source_id == *expected), "source {i} stamps {expected}");
+        }
+        let all = m.rows_for_tab(0);
+        let ids: Vec<&str> = all.iter().map(|r| r.source_id.as_str()).collect();
+        assert_eq!(ids, ["hn", "techmeme", "google", &user_id, "hn", "techmeme", "google", &user_id], "All keeps the provenance");
+        assert_eq!((all[2].source.as_str(), all[2].source_id.as_str()), ("Reuters", "google"), "the outlet stays the outlet");
+        assert!(m.tile_rows().iter().all(|r| !r.source_id.is_empty()));
+        // A cache document is this source's, whatever its rows say.
+        let mut stamped = rows("c", 1);
+        stamped[0].source_id = "hn".into();
+        let mut fresh = NewsModel::new();
+        assert!(fresh.load_cache(2, stamped.serialize_json().as_bytes()));
+        assert_eq!(fresh.sources[2].rows[0].source_id, "google");
+    }
+
+    #[test]
+    fn hosting_defaults_to_standalone() {
+        assert_eq!(Hosting::default(), Hosting::Standalone);
+    }
+
+    #[test]
+    fn source_colors_are_fixed_per_builtin_and_slate_for_the_rest() {
+        assert_eq!(source_color("hn"), 0xff6600ff);
+        assert_eq!(source_color("techmeme"), 0x2bb5a0ff);
+        assert_eq!(source_color("google"), 0x4285f4ff);
+        assert_eq!(source_color("user_0123456789abcdef"), 0x7d8aa5ff, "a user feed is slate");
+        assert_eq!(source_color(""), 0x7d8aa5ff, "so is a row with no provenance");
+    }
+
+    #[test]
+    fn badge_labels_are_short_names_outlets_or_cut_feed_labels() {
+        assert_eq!(source_short_label("hn", HN_LABEL), "HN");
+        assert_eq!(source_short_label("techmeme", ""), "TechMeme");
+        assert_eq!(source_short_label("google", "Reuters"), "Reuters", "a Google row names its outlet");
+        assert_eq!(source_short_label("google", ""), "Google");
+        assert_eq!(source_short_label("google", "The Washington Post"), "The Washing\u{2026}", "cut to {BADGE_CHARS} characters");
+        assert_eq!(source_short_label("user_0123456789abcdef", "My Feed"), "My Feed");
+        assert_eq!(source_short_label("user_0123456789abcdef", "Twelve chars"), "Twelve chars", "exactly the cap is not cut");
+        assert_eq!(source_short_label("user_0123456789abcdef", " Ünïcødé feed name "), "Ünïcødé fee\u{2026}", "cut on characters, not bytes");
+        assert_eq!(source_short_label("user_0123456789abcdef", ""), "Feed", "a feed row without a label");
+        assert_eq!(source_short_label("", ""), "Feed", "so is a row with no provenance");
+    }
+
+    #[test]
+    fn wm_unavailable_parses_the_hosts_envelope_and_nothing_else() {
+        let u = WmUnavailable::parse(r#"{"wm_unavailable":{"app":"browser","path":"https://x/a?b=1"}}"#).unwrap();
+        assert_eq!((u.app.as_str(), u.path.as_str()), ("browser", "https://x/a?b=1"));
+        assert_eq!(WmUnavailable::parse(&u.to_json()), Some(u), "the shape the host sends round-trips");
+        let extra = r#"{"wm_unavailable":{"app":"browser","path":"https://x/a","reason":"not installed"}}"#;
+        assert_eq!(WmUnavailable::parse(extra).map(|u| u.app), Some("browser".into()), "a field this crate does not know is skipped");
+        assert_eq!(WmUnavailable::parse(r#"{"wm":{"CloseRequested":{}}}"#), None);
+        assert_eq!(WmUnavailable::parse("garbage"), None);
+        assert_eq!(WmUnavailable::parse(r#"{"wm_unavailable":{"app":"browser"}}"#), None, "a missing path is not the envelope");
+    }
+
+    #[test]
+    fn open_policy_tiers_follow_hosting_and_platform() {
+        use OpenTier::*;
+        let mac = |hosting| OpenPolicy { hosting, has_webview: true, has_system_open: true };
+        assert_eq!(mac(Hosting::Process).tiers(), [Browser, System, Notify], "a process child has no window for a reader");
+        assert_eq!(mac(Hosting::Module).tiers(), [Browser, Reader, System, Notify]);
+        assert_eq!(mac(Hosting::Standalone).tiers(), [Reader, System, Notify]);
+        let bare = |hosting| OpenPolicy { hosting, has_webview: false, has_system_open: false };
+        assert_eq!(bare(Hosting::Module).tiers(), [Browser, Notify]);
+        assert_eq!(bare(Hosting::Standalone).tiers(), [Notify]);
+        assert_eq!(bare(Hosting::Process).tiers(), [Browser, Notify]);
+        let here = OpenPolicy::for_platform(Hosting::Standalone);
+        assert_eq!(here.hosting, Hosting::Standalone);
+        #[cfg(target_os = "macos")]
+        assert!(here.has_webview && here.has_system_open, "this Mac has WKWebView and open");
+        #[cfg(target_os = "linux")]
+        assert!(!here.has_webview && !here.has_system_open);
     }
 
     fn rows(prefix: &str, n: usize) -> Vec<Headline> {
@@ -650,11 +968,16 @@ mod tests {
         let mut m = NewsModel::new();
         assert_eq!(m.cache_key(0), "cache.hn");
         let (id, _) = m.begin_fetch(0);
-        m.complete(id, Ok(rows("h", 2)));
+        let mut fetched = rows("h", 2);
+        fetched[0].discussion = Some("https://news.ycombinator.com/item?id=1".into());
+        m.complete(id, Ok(fetched));
         let bytes = m.cache_bytes(0);
         let mut fresh = NewsModel::new();
         assert!(fresh.load_cache(0, &bytes));
         assert_eq!(fresh.sources[0].rows.len(), 2);
+        assert_eq!(fresh.sources[0].rows[0].discussion.as_deref(), Some("https://news.ycombinator.com/item?id=1"));
+        assert_eq!(fresh.sources[0].rows[1].discussion, None);
+
         assert!(fresh.sources[0].from_cache);
         assert!(fresh.due(0), "cached rows still want a fetch");
         assert!(!m.load_cache(0, &bytes), "fetched rows win over the cache");
@@ -767,11 +1090,23 @@ mod tests {
         let odd_link = Headline { title: "Odd link".into(), link: "javascript:alert(1)".into(), ..Default::default() };
         let mut m = NewsModel::new();
         assert!(m.load_cache(0, vec![blank_title.clone(), good.clone(), odd_link.clone()].serialize_json().as_bytes()));
-        assert_eq!(m.sources[0].rows, vec![good]);
+        let mut stamped = good.clone();
+        stamped.source_id = "hn".into();
+        assert_eq!(m.sources[0].rows, vec![stamped], "the showable row, stamped with the source it was loaded into");
         assert!(!m.load_cache(1, vec![blank_title, odd_link].serialize_json().as_bytes()), "nothing showable is nothing");
         let many: Vec<Headline> = (0..MAX_ROWS_PER_SOURCE + 10).map(|i| row(&format!("r{i}"))).collect();
         assert!(m.load_cache(2, many.serialize_json().as_bytes()));
         assert_eq!(m.sources[2].rows.len(), MAX_ROWS_PER_SOURCE);
+        // A discussion is a link too: one that is no http url is cleared,
+        // the row itself is kept.
+        let mut scripted = row("scripted");
+        scripted.discussion = Some("javascript:alert(2)".into());
+        let mut kept = row("kept");
+        kept.discussion = Some("https://news.ycombinator.com/item?id=1".into());
+        let mut fresh = NewsModel::new();
+        assert!(fresh.load_cache(0, vec![scripted, kept].serialize_json().as_bytes()));
+        assert_eq!((fresh.sources[0].rows[0].title.as_str(), fresh.sources[0].rows[0].discussion.as_deref()), ("scripted", None));
+        assert_eq!(fresh.sources[0].rows[1].discussion.as_deref(), Some("https://news.ycombinator.com/item?id=1"));
     }
 
     #[test]
@@ -877,14 +1212,15 @@ mod tests {
     fn meta_line_joins_what_the_row_has() {
         let mut h = row("t");
         assert_eq!(meta_line(&h, 1_000_000), "");
+        // The badge carries the provenance; the meta line never repeats it.
         h.source = "Hacker News".into();
         h.published = Some(1_000_000 - 3 * 3600);
         h.points = Some(10);
         h.comments = Some(2);
-        assert_eq!(meta_line(&h, 1_000_000), "Hacker News · 3h ago · 10 points · 2 comments");
+        assert_eq!(meta_line(&h, 1_000_000), "3h ago · 10 points · 2 comments");
         h.points = Some(1);
         h.comments = Some(1);
-        assert_eq!(meta_line(&h, 1_000_000), "Hacker News · 3h ago · 1 point · 1 comment");
+        assert_eq!(meta_line(&h, 1_000_000), "3h ago · 1 point · 1 comment");
         assert_eq!(plural(0, "comment"), "0 comments");
         assert_eq!(relative_time(Some(1_000_000 - 30), 1_000_000).as_deref(), Some("just now"));
         assert_eq!(relative_time(Some(1_000_000 - 2 * 86_400), 1_000_000).as_deref(), Some("2d ago"));

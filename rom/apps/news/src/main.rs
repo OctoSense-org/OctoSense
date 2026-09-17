@@ -12,7 +12,7 @@
 pub use makepad_widgets;
 use makepad_ai_services::port::{AiServicePort, PortEvent};
 use makepad_widgets::*;
-use octosense_news::{ai, view::NewsView};
+use octosense_news::{ai, model::Hosting, view::NewsView};
 
 app_main!(App);
 
@@ -126,6 +126,9 @@ impl MatchEvent for App {
         let storage = cx.storage("news");
         if let Some(mut view) = self.ui.widget(cx, ids!(news)).borrow_mut::<NewsView>() {
             view.set_storage(cx, storage);
+            // A tile's child process has a host to ask for the Browser but
+            // no window of its own for the reader; a window has the reverse.
+            view.set_hosting(if cx.in_makepad_studio() { Hosting::Process } else { Hosting::Standalone });
         }
         if args.iter().any(|a| a == "--tile") {
             window.resize(cx, dvec2(370.0, 98.0));
@@ -141,6 +144,7 @@ impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
         makepad_widgets::script_mod(vm);
         makepad_wm_theme::apply(vm);
+        octosense_news::reader::script_mod(vm);
         octosense_news::view::script_mod(vm);
         self::script_mod(vm)
     }

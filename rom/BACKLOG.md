@@ -114,22 +114,30 @@ The iOS check on this revision is still blocked in upstream `ios.rs`: missing
 `Cx::recover_after_caught_panic` and `IosApp::set_deferred_system_gesture_edges`.
 This supersedes the earlier Metal compile diagnostics in MOBILE-01.
 
+## UPSTREAM-02: PortalList ignores set_visible
+
+At ad8f3729 `PortalList` keeps the `Widget` trait's no-op `set_visible`, so a
+list is hidden only by wrapping it in a view (News keeps its list in a
+`list_box`); drop the wrapper once the widget honours visibility.
+
 ## News app follow-ups
 
-- [ ] **NEWS-01 — P2: Open links on Linux, Android and iOS.**
+- [ ] **NEWS-01 — P2: Open links in the system browser on Linux, Android and iOS.**
 
-  `Cx::open_url` is a stub on Linux, Android and iOS in the pinned framework
-  (`platform/src/os/linux/windowing_backend.rs`,
+  Phase 2's reader covers the phones: where the platform has a native web
+  view (macOS, iOS, Android) a headline opens in the app's own reader pane,
+  so the `Cx::open_url` stub matters only for the system-browser tier, which
+  comes after the reader wherever there is one and is the only tier left on
+  Linux (no web view there, NEWS-04). `open_url` is a stub on Linux, Android
+  and iOS in the pinned framework (`platform/src/os/linux/windowing_backend.rs`,
   `platform/src/os/linux/direct/linux_direct.rs`,
-  `platform/src/os/linux/android/android.rs`, `platform/src/os/apple/ios/ios.rs`),
-  so the News app's Open button does nothing there; the expanded row shows the
-  link's host as text instead. macOS shells out to `open` and the web build
-  uses the browser.
+  `platform/src/os/linux/android/android.rs`, `platform/src/os/apple/ios/ios.rs`);
+  macOS shells out to `open` and the web build uses the browser.
 
   Acceptance: implement `open_url` with `xdg-open` on Linux, an `ACTION_VIEW`
   intent on Android and `UIApplication.openURL` on iOS in the framework fork,
   adopt the revision through the normal sync workflow, and verify a News
-  headline opens on all three.
+  headline reaches the system browser on all three.
 
 - [ ] **NEWS-02 — P3: Edit user feeds in the app.**
 
@@ -138,3 +146,58 @@ This supersedes the earlier Metal compile diagnostics in MOBILE-01.
 
   Acceptance: a sheet in the full face lists the feeds with add and remove,
   writes the same JSON shape back to the storage jail, and refetches the tabs.
+
+- [ ] **NEWS-03 — P3: Open links in the running Browser instead of a new tile.**
+
+  Every link the host hands to the bundled Browser spawns a new Browser tile:
+  the Browser reads URLs from its arguments and has no message that navigates
+  a running instance.
+
+  Acceptance: a fork-side message for the Browser (a `WmEvent`, or a custom
+  message of its own) that tells a running instance to open a URL, Browser
+  support for it, and the host reusing an existing Browser tile for
+  `Open { app: "browser" }`; a second headline then opens in the same tile.
+
+- [ ] **NEWS-04 — P3: A reader on Linux.**
+
+  The pinned framework has no native web view on Linux, so the reader tier is
+  skipped there and a standalone News window on Linux can only notify.
+
+  Acceptance: a Linux web view in the framework fork, `has_webview` true for
+  it in `OpenPolicy::for_platform`, and a headline opening in the reader on a
+  Linux desktop.
+
+- [ ] **NEWS-05 — P2: Check the web view plumbing on an Android device, and on iOS.**
+
+  The reader drives `cx.system_browser`: WKWebView on macOS and iOS, the
+  Android WebView through JNI. Only macOS was exercised. On Android the
+  WebView attaches inside OctoSense's own activity, not the framework's, so
+  its attachment there is unverified; iOS likewise, once the iOS build
+  compiles again (MOBILE-01).
+
+  Acceptance: on an Android phone, tap a headline in the News app opened from
+  its home tile and see the page render inside the app, with Back and Close
+  working; the same on an iOS device.
+
+- [ ] **NEWS-06 — P2: Keyboard focus while the reader's web view is attached.**
+
+  On macOS, once the reader's WKWebView is attached inside an OctoSense tile
+  (the News module, reader open), keyboard chords no longer reach the host
+  until the reader closes: the workspace keys (⌘2 / Ctrl+Alt+2, Super+Tab),
+  the menu chord (Ctrl+Alt+Space) and Super+wheel over the tile were all
+  inert, and a synthetic modifier press (System Events `keystroke … using
+  {control down, option down}`) stayed down until released with `key up`,
+  so even plain clicks failed in between. Mouse clicks on Makepad-drawn
+  areas kept working throughout (the reader's Close, the bar's dropdown), so
+  the reader itself stays usable. The web view most likely becomes the
+  window's first responder when it is attached, so key events never reach
+  the Makepad view; the standalone News window shows the same pattern. In
+  one capture the OctoSense window's traffic lights were inactive with the
+  reader open, so the window itself had lost key status: the fix concerns
+  key-window handling as well as the responder chain.
+
+  Acceptance: the host or the platform returns key focus to the Makepad
+  window while a native overlay is shown (or the reader offers a
+  keyboard-free Close that always works, which it does today); verify ⌘W
+  and the workspace keys with the reader open in the module tile, and that
+  the overlay then leaves the window with its tile (the reader's watchdog).

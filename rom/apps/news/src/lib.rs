@@ -9,6 +9,9 @@ pub mod feed;
 pub mod hn;
 pub mod model;
 pub mod module;
+pub mod reader;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod view;
 
 pub use module::{NewsModule, NEWS_MODULE};

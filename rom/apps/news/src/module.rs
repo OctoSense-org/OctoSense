@@ -10,6 +10,7 @@
 //! a socket or spawns a thread itself — every fetch rides the platform's own
 //! HTTP request API, so it works identically hosted.
 
+use crate::model::Hosting;
 use crate::view::NewsView;
 use makepad_ai_services::wire::{ServiceCall, ServiceManifest};
 use makepad_app_module::*;
@@ -30,6 +31,8 @@ impl AppModule for NewsModule {
     }
 
     fn register(&self, vm: &mut ScriptVm) {
+        // The reader first: the view's DSL mounts an `ArticleReader`.
+        crate::reader::script_mod(vm);
         crate::view::script_mod(vm);
     }
 
@@ -47,6 +50,9 @@ impl AppModule for NewsModule {
             // The instance's disk is its storage jail: the feeds file and
             // the per-source cache live there, on every host the same way.
             view.set_storage(vm.cx_mut(), handles.storage);
+            // In the host's own window: the Browser through the host first,
+            // then the reader on this window's web view.
+            view.set_hosting(Hosting::Module);
         }
         let shutdown_root = root.clone();
         InstanceParts {
@@ -85,7 +91,7 @@ impl ServiceExecutor for NewsExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
+    use crate::test_support::{isolate_root, Isolate};
 
     #[test]
     fn the_module_describes_itself_and_opens_empty() {
@@ -104,11 +110,8 @@ mod tests {
     /// standalone window does, teardown in the host's order.
     #[test]
     fn the_module_mints_its_root_in_a_fresh_isolate_and_switches_faces() {
-        let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.init_cx_os();
-        cx.with_vm(makepad_widgets::script_mod);
-        let vm_id = cx.alloc_splash_vm_with_network(false);
-        let storage = cx.storage("news.test");
+        let mut iso = Isolate::new();
+        let storage = iso.cx.storage("news.test");
         let (replies, _upstream) = ReplySink::pair();
         let handles = InstanceHandles {
             scope: InstanceScope::new(1, 1),
@@ -117,8 +120,7 @@ mod tests {
             replies,
         };
         let open = NEWS_MODULE.open_schema().empty_open().unwrap();
-        let InstanceParts { root, mut executor, shutdown } = cx.with_script_vm_id_trusted(vm_id, |vm| {
-            NEWS_MODULE.register(vm);
+        let InstanceParts { root, mut executor, shutdown } = iso.with_vm(|vm| {
             let parts = NEWS_MODULE.create(vm, open, handles);
             assert!(vm.take_errors().is_empty(), "the isolate evaluated the view without errors");
             parts
@@ -129,26 +131,23 @@ mod tests {
         // Full is the default face; the host asks for the tile over
         // `Event::Custom`. The isolate has no network, so no fetch lands;
         // the face switch and the empty answer are what is asserted.
-        let entry = enter_isolate(&mut cx, vm_id);
-        root.handle_event(&mut cx, &Event::Custom(HostedViewMode::Tile.to_json()), &mut Scope::empty());
-        leave_isolate(&mut cx, entry);
+        iso.entered(|cx| root.handle_event(cx, &Event::Custom(HostedViewMode::Tile.to_json()), &mut Scope::empty()));
         {
             let view = root.borrow::<NewsView>().unwrap();
-            assert_eq!(view.face(&cx), HostedViewMode::Tile, "the module root switched faces from the host's message");
+            assert_eq!(view.face(&iso.cx), HostedViewMode::Tile, "the module root switched faces from the host's message");
             assert!(view.has_pending_loads(), "the jail is read on the start");
             assert_eq!(view.ai_summary(), "News: All tab, 0 rows, Loading", "three fetches in flight, nothing landed");
         }
         let call = ServiceCall { call_id: "c1".into(), tool: "headlines".into(), args: String::new() };
-        match executor.execute(&mut cx, &call) {
+        match executor.execute(&mut iso.cx, &call) {
             ExecOutcome::Done(result) => assert_eq!(result.text, "No headlines: Loading"),
             _ => panic!("the tool answers at once"),
         }
 
         // The host's order: shutdown in the isolate, the refs, the isolate.
-        cx.with_script_vm_id_trusted(vm_id, |vm| shutdown(vm));
-        drop(root);
+        iso.with_vm(|vm| shutdown(vm));
         drop(executor);
-        cx.free_splash_vm(vm_id);
+        iso.teardown(root);
     }
 
     /// A standalone window seats the view before its startup hands over a
@@ -156,32 +155,16 @@ mod tests {
     /// that already happened.
     #[test]
     fn storage_handed_to_a_started_view_is_read_at_once() {
-        let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.init_cx_os();
-        cx.with_vm(makepad_widgets::script_mod);
-        let vm_id = cx.alloc_splash_vm_with_network(false);
-        let root = cx.with_script_vm_id_trusted(vm_id, |vm| {
-            NEWS_MODULE.register(vm);
-            let value = script_eval!(vm, {
-                use mod.widgets.*
-                NewsView {}
-            });
-            let root = WidgetRef::script_from_value(vm, value);
-            assert!(vm.take_errors().is_empty(), "the isolate evaluated the view without errors");
-            root
-        });
-        let entry = enter_isolate(&mut cx, vm_id);
-        root.handle_event(&mut cx, &Event::Custom(HostedViewMode::Full.to_json()), &mut Scope::empty());
-        {
+        let (mut iso, root) = isolate_root();
+        iso.entered(|cx| {
+            root.handle_event(cx, &Event::Custom(HostedViewMode::Full.to_json()), &mut Scope::empty());
             let mut view = root.borrow_mut::<NewsView>().unwrap();
             assert!(!view.has_pending_loads(), "started without a jail: nothing to read");
             let storage = cx.storage("news.late");
-            view.set_storage(&mut cx, storage);
+            view.set_storage(cx, storage);
             assert!(view.has_pending_loads(), "the late handle is read without another start");
-            view.shutdown(&mut cx);
-        }
-        leave_isolate(&mut cx, entry);
-        drop(root);
-        cx.free_splash_vm(vm_id);
+            view.shutdown(cx);
+        });
+        iso.teardown(root);
     }
 }

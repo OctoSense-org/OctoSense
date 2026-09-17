@@ -31,33 +31,31 @@ pub fn parse(json: &str) -> Result<Vec<Headline>, String> {
 /// One hit as a row; None when it has no title, or nowhere to link to.
 fn row(hit: Hit) -> Option<Headline> {
     let title = hit.title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())?;
+    // Only Algolia's numeric ids make an item URL: anything else would be
+    // spliced into a link the row hands to a browser.
     let discussion = hit
         .object_id
-        .filter(|id| !id.is_empty())
+        .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
         .map(|id| format!("https://news.ycombinator.com/item?id={id}"));
     // A text post links to its discussion.
     let link = hit.url.filter(|u| is_http_url(u)).or_else(|| discussion.clone())?;
     let points = hit.points.map(|p| p.max(0.0) as u32);
     let comments = hit.num_comments.map(|c| c.max(0.0) as u32);
-    let mut summary = format!(
-        "{} points by {} · {} comments",
-        points.unwrap_or(0),
-        hit.author.unwrap_or_else(|| "unknown".into()),
-        comments.unwrap_or(0)
-    );
-    if let Some(discussion) = discussion {
-        summary.push('\n');
-        summary.push_str(&discussion);
-    }
+    // Points and comments are the meta line's; the summary adds only what
+    // it does not show. No author, no summary: the view says so.
+    let summary = hit.author.map(|a| format!("Posted by {a}")).unwrap_or_default();
     Some(Headline {
         title,
         link,
         source: HN_LABEL.into(),
+        // The model stamps the id when the rows land.
+        source_id: String::new(),
         // Only a plausible unix time: nothing before 1970, nothing past year 5138.
         published: hit.created_at_i.filter(|t| *t > 0.0 && *t < 1e11).map(|t| t as i64),
         points,
         comments,
         summary,
+        discussion,
     })
 }
 
@@ -77,9 +75,10 @@ mod tests {
         assert_eq!(rows[0].points, Some(312));
         assert_eq!(rows[0].comments, Some(145));
         assert_eq!(rows[0].published, Some(1_789_466_400));
-        assert!(rows[0].summary.contains("312 points by pg"), "{}", rows[0].summary);
-        assert!(rows[0].summary.contains("https://news.ycombinator.com/item?id=44000001"));
+        assert_eq!(rows[0].summary, "Posted by pg", "points and comments are the meta line's; the discussion is a field");
+        assert_eq!(rows[0].discussion.as_deref(), Some("https://news.ycombinator.com/item?id=44000001"));
         assert_eq!(rows[1].link, "https://news.ycombinator.com/item?id=44000002", "a text post links to its discussion");
+        assert_eq!(rows[1].discussion.as_deref(), Some("https://news.ycombinator.com/item?id=44000002"));
     }
 
     #[test]
@@ -110,11 +109,21 @@ mod tests {
     }
 
     #[test]
+    fn a_discussion_needs_a_numeric_object_id() {
+        let rows = parse(r#"{"hits":[{"title":"Odd id","url":"https://u.example/1","objectID":"abc\"><script>"},{"title":"Fine","url":"https://u.example/2","objectID":"42"}]}"#).unwrap();
+        assert_eq!(rows[0].link, "https://u.example/1", "the row still links to its url");
+        assert_eq!(rows[0].discussion, None, "a non-numeric id makes no discussion url");
+        assert_eq!(rows[1].discussion.as_deref(), Some("https://news.ycombinator.com/item?id=42"));
+        assert!(parse(r#"{"hits":[{"title":"Nowhere","url":null,"objectID":"x1"}]}"#).unwrap().is_empty(), "nor a fallback link");
+    }
+
+    #[test]
     fn a_hit_with_nowhere_to_link_is_skipped() {
         assert!(parse(r#"{"hits":[{"title":"Nowhere","url":null}]}"#).unwrap().is_empty());
         assert!(parse(r#"{"hits":[{"title":"Blank id","url":null,"objectID":""}]}"#).unwrap().is_empty());
         let rows = parse(r#"{"hits":[{"title":"Url only","url":"https://u.example/"}]}"#).unwrap();
         assert_eq!(rows[0].link, "https://u.example/");
-        assert!(!rows[0].summary.contains("item?id="), "{}", rows[0].summary);
+        assert_eq!(rows[0].discussion, None, "no object id, no discussion");
+        assert_eq!(rows[0].summary, "", "an unknown author leaves no summary");
     }
 }

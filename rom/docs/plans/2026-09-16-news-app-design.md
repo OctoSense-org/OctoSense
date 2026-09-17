@@ -13,7 +13,9 @@ Decisions taken in the design conversation on 2026-09-15:
    than sorting by time, so no single source floods it and every source's own
    order survives.
 2. Tapping a headline expands the row in place to show the feed's summary and
-   an Open button that hands the link to the system browser.
+   an Open button that hands the link to the system browser. (Phase 2 changed
+   this: a tap opens the article and a chevron reveals the summary; see
+   `2026-09-16-news-app-phase2-design.md`.)
 3. Three built-in sources (Hacker News, TechMeme, Google News) plus user RSS or
    Atom feeds from a file in the app's storage jail.
 4. A compact wide home-tile face for the phone home screen, like Weather and
@@ -120,6 +122,10 @@ source keeps its cached rows and shows an inline error line naming the HTTP
 status or connection error. A feed that parses to zero rows is an error.
 
 ## The two faces
+
+Phase 2 (`2026-09-16-news-app-phase2-design.md`) restyled both faces in glass
+and replaced the Open button with an opener chain; the paragraphs below
+describe phase 1 as shipped.
 
 `NewsView` embeds a `HostedView` and reads its mode; the host switches faces
 with the `HostedViewMode` message over `Event::Custom`. The standalone binary

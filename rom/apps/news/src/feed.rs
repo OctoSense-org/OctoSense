@@ -120,7 +120,9 @@ fn parse_item(body: &str, is_atom: bool, split_source: bool) -> Option<Headline>
         .or_else(|| element_text(body, "published").and_then(|d| parse_rfc3339(d.trim())))
         .or_else(|| element_text(body, "updated").and_then(|d| parse_rfc3339(d.trim())))
         .or_else(|| element_text(body, "dc:date").and_then(|d| parse_rfc3339(d.trim())));
-    Some(Headline { title, link, source, published, points: None, comments: None, summary })
+    // The model stamps `source_id` when the rows land: one reader serves
+    // every feed.
+    Some(Headline { title, link, source, source_id: String::new(), published, points: None, comments: None, summary, discussion: None })
 }
 
 /// Google News titles end in ` - Source`; the last dash is the separator.
