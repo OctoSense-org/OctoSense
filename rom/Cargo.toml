@@ -53,7 +53,7 @@ makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4" }
 makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false, optional = true }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false, optional = true }
+octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
@@ -69,7 +69,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
+octosense-photos = { path = "apps/photos" }
 
 [features]
 default = []
@@ -83,8 +83,8 @@ mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
-# Photos (the picture wall) linked in as a module, the same way.
-app-photos = ["dep:makepad-photos"]
+# The native Photos library, albums, and Memories app.
+app-photos = ["dep:octosense-photos"]
 # The AppCard module (one L0 weather card in a tile) linked in.
 app-appcard = ["dep:octosense-appcard"]
 # The aichat module linked in (the pane seats it in-process where there are
@@ -92,7 +92,7 @@ app-appcard = ["dep:octosense-appcard"]
 app-aichat = ["dep:makepad-aichat"]
 
 [workspace]
-members = [".", "apps/reference", "apps/appcard"]
+members = [".", "apps/reference", "apps/appcard", "apps/photos"]
 default-members = ["."]
 resolver = "2"
 
@@ -132,7 +132,6 @@ makepad-strict-json = { path = "../makepad/libs/strict_json" }
 makepad-app-module = { path = "../makepad/libs/app_module" }
 makepad-wm-theme = { path = "../makepad/libs/wm_theme" }
 makepad-sheets = { path = "../makepad/apps/sheets" }
-makepad-photos = { path = "../makepad/apps/photos" }
 makepad-aichat = { path = "../makepad/apps/aichat" }
 
 [patch."https://github.com/OctoSense-org/Octoscript.git"]
