@@ -61,9 +61,9 @@
   {
     "id": "photos",
     "label": "Photos",
-    "manifest": "../../makepad/Cargo.toml",
-    "package": "makepad-photos",
-    "bin": "photos",
+    "manifest": "../apps/photos/Cargo.toml",
+    "package": "octosense-photos",
+    "bin": "octosense-photos",
     "policy": "focus"
   },
   {
