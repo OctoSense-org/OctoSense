@@ -142,6 +142,9 @@ impl App {
             let tiles = &mut self.state_mut().phone.tiles;
             tiles.note_sent(client, face, viewport);
             tiles.note_frame(client, viewport);
+            if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
+                desk.note_client_frame(client, Some(face));
+            }
             self.animate_phone(cx);
             return true;
         }

@@ -10,6 +10,9 @@ Collections, People, and Memories screenshots in the
 
 - **Library** shows all 19 bundled photos in a chronological, three-column grid.
 - **Collections** contains Memories, editable albums, People, and Favorites.
+- The home-screen Photos card shows up to three library photos, preferring
+  favorites and filling any remaining spaces with recent photos. Tap the card
+  to return to the same screen, photo, or unfinished album draft.
 - Tap a photo to view it; swipe horizontally or use the arrows to move through
   the current collection. The heart toggles its favorite status.
 - Tap **+** to name an album and select photos, then **Save**. Open an album and
@@ -63,7 +66,11 @@ image cache. Search and arrow icons reuse OctoSense resources. The existing
 runtime/framework pins are unchanged.
 
 Rust owns the catalog, routes, album drafts, favorites, deterministic Memory
-groups, and slideshow timer. Timer cleanup runs on app pause/background,
+groups, and slideshow timer. The shell's `HostedViewMode` selects a compact
+photo strip or the full app without resetting navigation or drafts.
+The shell refreshes the compact capture when images finish decoding or the
+app changes presentation, so the card reflects the current favorites.
+Timer cleanup runs when returning to the home card, on app pause/background,
 navigation away, and module shutdown. Album saves replace a JSON file through
 a temporary file. Failed writes roll back the in-memory mutation; unreadable
 or unsupported saved state is reported rather than overwritten.
@@ -102,7 +109,9 @@ was saved locally and inspected: it did not contain a bundled `liboctos.so`.
 
 | Check | Result |
 | --- | --- |
-| Album validation, creation/edit/delete, state serialization/reconciliation, file replacement, search, Memory grouping | 8 model tests passed |
+| Album validation, creation/edit/delete, state serialization/reconciliation, file replacement, search, Memory grouping, home preview selection | 9 model tests passed |
+| Home card/full app transitions | Regression passed: album draft, error message, viewer position preserved; Memory playback paused |
+| Compact capture refresh and shell tile bookkeeping | 11 tests passed |
 | UI registration/instantiation and embedded catalog integrity | 2 tests passed |
 | Bundled module registry initialization | Passed |
 | Shared runtime/dependency graph verifier | Passed; one Makepad lineage |
@@ -112,11 +121,14 @@ was saved locally and inspected: it did not contain a bundled `liboctos.so`.
 | Saved albums/favorites after app restart and APK replacement | Passed on device |
 | Automatic Memory advance and pause | Passed; advancing frames differed, paused frames were identical across a 3.5-second interval |
 | Visual review | Square grids, visible captions, selected-tab surface, centered icon buttons/People names/Memory captions |
+| Home photo card | Three photos rendered on device; favorite changes refreshed the selection |
 | Final process logs | No app errors, panics, or shader failures in the captured log |
 
 Local evidence is in `target/photos-validation/`: build/test logs and native
 screenshots including `collections-final.png`, `library.png`, `people-final.png`,
 `viewer-swipe.png`, `search.png`, `album-renamed.png`, `album-cancel.png`,
 `album-delete-confirmation.png`, `favorites.png`, and `memory-frame-2.png`.
+Home-card evidence includes `card-after.png`, `card-favorite-update.png`, and
+`card-viewer-reopened.png`.
 The phone validation exercised the workflows above; no formal frame-rate
 benchmark was run for Photos.

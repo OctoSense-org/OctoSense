@@ -142,6 +142,25 @@ impl Store {
     }
 }
 
+/// A stable home-card selection: favorites first, then other library photos.
+pub fn preview_photos(
+    catalog: &[Photo],
+    favorites: &BTreeSet<String>,
+    limit: usize,
+) -> Vec<String> {
+    catalog
+        .iter()
+        .filter(|photo| favorites.contains(&photo.id))
+        .chain(
+            catalog
+                .iter()
+                .filter(|photo| !favorites.contains(&photo.id)),
+        )
+        .take(limit)
+        .map(|photo| photo.id.clone())
+        .collect()
+}
+
 pub fn memories(catalog: &[Photo]) -> Vec<Memory> {
     let mut groups: BTreeMap<String, Vec<&Photo>> = BTreeMap::new();
     for photo in catalog {

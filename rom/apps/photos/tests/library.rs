@@ -1,4 +1,14 @@
-use octosense_photos::model::{memories, search, Photo, Store};
+use octosense_photos::model::{memories, preview_photos, search, Photo, Store};
+
+#[test]
+fn home_preview_prefers_favorites_and_fills_from_the_library_without_duplicates() {
+    let photos = catalog();
+    let favorites = ["b".into(), "missing".into()].into_iter().collect();
+    assert_eq!(preview_photos(&photos, &favorites, 3), ["b", "a", "c"]);
+    assert_eq!(preview_photos(&photos, &favorites, 1), ["b"]);
+    assert_eq!(preview_photos(&photos[..1], &favorites, 3), ["a"]);
+    assert!(preview_photos(&[], &favorites, 3).is_empty());
+}
 
 fn catalog() -> Vec<Photo> {
     serde_json::from_str(r#"[

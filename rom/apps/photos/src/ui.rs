@@ -61,6 +61,20 @@ script_mod! {
     mod.widgets.PhotosView = set_type_default() do #(PhotosView::register_widget(vm)) {
         ..RectView
         width: Fill height: Fill flow: Down draw_bg.color: #fff
+        compact := View {
+            visible: false width: Fill height: Fill flow: Overlay
+            photos := View {width: Fill height: Fill flow: Right spacing: 2
+                preview_first := mod.widgets.PhotosRoundImage {draw_bg.radius: 0.0}
+                preview_second := mod.widgets.PhotosRoundImage {draw_bg.radius: 0.0}
+                preview_third := mod.widgets.PhotosRoundImage {draw_bg.radius: 0.0}
+            }
+            shade := View {width: Fill height: Fill show_bg: true
+                draw_bg +: {pixel: fn() {return vec4(0.0,0.0,0.0,pow(self.pos.y,3.0)*0.6)}}
+            }
+            caption := View {width: Fill height: Fill padding: 14 align: Align{y: 1}
+                label := mod.widgets.PhotosLabel {text: "Photos" draw_text.color: #fff draw_text.text_style: theme.font_bold{font_size: 16}}
+            }
+        }
         header := View {
             width: Fill height: 82 flow: Right padding: Inset{left: 20 right: 16 top: 12 bottom: 8} spacing: 10 align: Align{y: 0.5}
             back := mod.widgets.PhotosIconButton {visible: false}

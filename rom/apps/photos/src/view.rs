@@ -44,6 +44,8 @@ pub struct PhotosView {
     #[rust]
     initialized: bool,
     #[rust]
+    mode: HostedViewMode,
+    #[rust]
     catalog: Vec<Photo>,
     #[rust]
     store: Store,
@@ -180,7 +182,7 @@ impl PhotosView {
     fn message(&self, cx: &mut Cx, text: &str) {
         let label = self.view.label(cx, ids!(message));
         label.set_text(cx, text);
-        label.set_visible(cx, !text.is_empty());
+        label.set_visible(cx, self.mode == HostedViewMode::Full && !text.is_empty());
     }
 
     fn persist(&mut self, cx: &mut Cx, previous: Store) -> bool {
@@ -319,6 +321,31 @@ impl PhotosView {
     }
 
     fn sync_chrome(&mut self, cx: &mut Cx) {
+        let compact = self.mode == HostedViewMode::Tile;
+        self.view.view(cx, ids!(compact)).set_visible(cx, compact);
+        self.view.view(cx, ids!(header)).set_visible(cx, !compact);
+        self.view.view(cx, ids!(body)).set_visible(cx, !compact);
+        let message = self.view.label(cx, ids!(message));
+        message.set_visible(cx, !compact && !message.text().is_empty());
+        if compact {
+            for id in [
+                id!(search_bar),
+                id!(editor_bar),
+                id!(editor_footer),
+                id!(footer),
+            ] {
+                self.view.widget(cx, &[id]).set_visible(cx, false);
+            }
+            let photos = model::preview_photos(&self.catalog, &self.store.favorites, 3);
+            for (index, id) in [id!(preview_first), id!(preview_second), id!(preview_third)]
+                .into_iter()
+                .enumerate()
+            {
+                let image = self.view.image(cx, &[id]);
+                self.set_image(cx, image, photos.get(index).map(String::as_str));
+            }
+            return;
+        }
         let viewer = self.route == Route::Viewer;
         let editor = self.route == Route::Editor;
         let root = matches!(self.route, Route::Library | Route::Collections);
@@ -906,8 +933,25 @@ impl Widget for PhotosView {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.initialize(cx);
+        if let Event::Custom(json) = event {
+            if let Some(mode) = HostedViewMode::parse(json) {
+                if self.mode != mode {
+                    self.mode = mode;
+                    if mode == HostedViewMode::Tile {
+                        self.stop_playback(cx);
+                    }
+                    self.sync_chrome(cx);
+                    self.view.redraw(cx);
+                }
+            }
+        }
         if matches!(event, Event::Pause | Event::Background | Event::Shutdown) {
             self.stop_playback(cx);
+        }
+        if self.mode == HostedViewMode::Tile {
+            // Keep async image loading alive; the shell owns tapping the card.
+            self.view.handle_event(cx, event, scope);
+            return;
         }
         if !matches!(self.route, Route::Library | Route::Collections) && event.back_pressed() {
             self.go_back(cx);
@@ -928,5 +972,97 @@ impl Widget for PhotosView {
         }
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
         self.handle_actions(cx, &actions);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn home_card_round_trip_preserves_the_album_draft() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut root = WidgetRef::empty();
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::script_mod(vm);
+            let value = script_eval!(vm, {use mod.widgets.* PhotosView{}});
+            root = WidgetRef::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+        });
+        let mut view = root.borrow_mut::<PhotosView>().unwrap();
+        // Isolate the transition from on-disk storage and image decoding.
+        view.initialized = true;
+        view.route = Route::Editor;
+        view.editor_return = Route::Album(7);
+        view.editor_id = Some(7);
+        view.selected.insert("family".into());
+        view.view
+            .text_input(&mut cx, ids!(name_input))
+            .set_text(&mut cx, "Weekend draft");
+        view.message(&mut cx, "A saved error message");
+        view.sync_chrome(&mut cx);
+
+        view.handle_event(
+            &mut cx,
+            &Event::Custom(HostedViewMode::Tile.to_json()),
+            &mut Scope::empty(),
+        );
+        assert!(view.view.widget(&mut cx, ids!(compact)).visible());
+        for id in [
+            id!(header),
+            id!(body),
+            id!(editor_bar),
+            id!(editor_footer),
+            id!(footer),
+            id!(message),
+        ] {
+            assert!(!view.view.widget(&mut cx, &[id]).visible());
+        }
+
+        view.handle_event(
+            &mut cx,
+            &Event::Custom(HostedViewMode::Full.to_json()),
+            &mut Scope::empty(),
+        );
+        assert!(!view.view.widget(&mut cx, ids!(compact)).visible());
+        for id in [
+            id!(header),
+            id!(body),
+            id!(editor_bar),
+            id!(editor_footer),
+            id!(message),
+        ] {
+            assert!(view.view.widget(&mut cx, &[id]).visible());
+        }
+        assert!(matches!(view.route, Route::Editor));
+        assert!(matches!(view.editor_return, Route::Album(7)));
+        assert_eq!(view.editor_id, Some(7));
+        assert_eq!(view.selected, BTreeSet::from(["family".into()]));
+        assert_eq!(
+            view.view.text_input(&mut cx, ids!(name_input)).text(),
+            "Weekend draft"
+        );
+
+        // A playing Memory pauses on the home card and retains its position.
+        view.route = Route::Viewer;
+        view.viewer_ids = vec!["family".into(), "alpine".into()];
+        view.viewer_index = 1;
+        view.playing = true;
+        view.handle_event(
+            &mut cx,
+            &Event::Custom(HostedViewMode::Tile.to_json()),
+            &mut Scope::empty(),
+        );
+        assert!(!view.playing);
+        view.handle_event(
+            &mut cx,
+            &Event::Custom(HostedViewMode::Full.to_json()),
+            &mut Scope::empty(),
+        );
+        assert!(matches!(view.route, Route::Viewer));
+        assert_eq!(view.viewer_index, 1);
+        assert!(!view.playing);
+        assert!(view.view.widget(&mut cx, ids!(viewer)).visible());
     }
 }
