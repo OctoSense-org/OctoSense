@@ -2,8 +2,10 @@
 //! All interleave, and the per-source fetch state machine (loading, failed,
 //! stale-but-kept, cached) both faces render from.
 use makepad_widgets::makepad_micro_serde::*;
-use makepad_widgets::LiveId;
+use makepad_widgets::{LiveId, ScriptVm, Vec4f};
+use std::collections::BTreeSet;
 use std::ops::Range;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::str::Chars;
 use std::time::{Duration, Instant};
 
@@ -14,6 +16,14 @@ pub(crate) const MAX_ROWS_PER_SOURCE: usize = 30;
 pub const MAX_USER_FEEDS: usize = 4;
 pub(crate) const TILE_ROWS: usize = 3;
 pub(crate) const SUMMARY_CHARS: usize = 280;
+/// Stories a Today section shows: the hero and four more.
+pub(crate) const SECTION_ROWS: usize = 5;
+pub(crate) const MAX_SAVED: usize = 100;
+pub(crate) const MAX_SEARCH_ROWS: usize = 50;
+/// The storage key of the hidden source ids: a JSON array of ids.
+pub const HIDDEN_KEY: &str = "hidden.json";
+/// The storage key of the saved stories: a JSON array of rows.
+pub const SAVED_KEY: &str = "saved.json";
 /// The one place the built-in source's name is spelled: its tab and its rows.
 pub(crate) const HN_LABEL: &str = "Hacker News";
 /// The storage key of the person's own feeds: `[{"label": "...", "url": "..."}]`.
@@ -29,6 +39,9 @@ pub enum SourceKind {
     /// RSS or Atom. `split_source` takes the trailing " - Source" off Google
     /// News titles into the row's source field.
     Feed { split_source: bool },
+    /// A digest feed (TechMeme): RSS whose titles end in ` (Outlet)`, which
+    /// becomes the row's publisher.
+    Digest,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +53,11 @@ pub struct SourceDef {
     pub label: String,
     pub url: String,
     pub kind: SourceKind,
+}
+
+/// How many sources are built in: the person's own feeds come after them.
+pub(crate) fn builtin_count() -> usize {
+    3
 }
 
 pub(crate) fn builtin_sources() -> Vec<SourceDef> {
@@ -54,7 +72,7 @@ pub(crate) fn builtin_sources() -> Vec<SourceDef> {
             id: "techmeme".into(),
             label: "TechMeme".into(),
             url: "https://www.techmeme.com/feed.xml".into(),
-            kind: SourceKind::Feed { split_source: false },
+            kind: SourceKind::Digest,
         },
         SourceDef {
             id: "google".into(),
@@ -88,6 +106,10 @@ pub struct Headline {
     /// Where the story is discussed (a Hacker News item page); the row's
     /// link is the story itself. Absent in caches written before it existed.
     pub discussion: Option<String>,
+    /// The feed's picture for the story (an http(s) URL), when it gives one:
+    /// a hero on the first card of a section, a thumbnail on the rest.
+    /// Absent in caches written before it existed.
+    pub image: Option<String>,
 }
 
 /// A row as any version of this crate wrote it. micro_serde has no field
@@ -106,6 +128,7 @@ struct HeadlineJson {
     comments: Option<u32>,
     summary: String,
     discussion: Option<String>,
+    image: Option<String>,
 }
 
 impl DeJson for Headline {
@@ -121,6 +144,7 @@ impl DeJson for Headline {
             comments: h.comments,
             summary: h.summary,
             discussion: h.discussion,
+            image: h.image.filter(|u| is_http_url(u)),
         })
     }
 }
@@ -135,35 +159,6 @@ pub(crate) fn source_color(id: &str) -> u32 {
         "google" => 0x4285f4ff,
         _ => 0x7d8aa5ff,
     }
-}
-
-/// The most characters a row's badge shows: a long outlet or feed name is
-/// cut with an ellipsis rather than pushing the title off its line.
-pub(crate) const BADGE_CHARS: usize = 12;
-
-/// The badge's text: a short name for a built-in, the outlet a Google News
-/// row names, otherwise the source label (the row's own, or its tab's)
-/// cut to `BADGE_CHARS`.
-pub(crate) fn source_short_label(source_id: &str, source: &str) -> String {
-    let source = source.trim();
-    match source_id {
-        "hn" => "HN".into(),
-        "techmeme" => "TechMeme".into(),
-        "google" if source.is_empty() => "Google".into(),
-        _ if source.is_empty() => "Feed".into(),
-        _ => shorten(source, BADGE_CHARS),
-    }
-}
-
-/// `s` cut to `max` characters, the last one an ellipsis when it was cut.
-fn shorten(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut cut: String = s.chars().take(max.saturating_sub(1)).collect();
-    cut.truncate(cut.trim_end().len());
-    cut.push('\u{2026}');
-    cut
 }
 
 /// How the view is hosted: its own window, a child process in a host tile,
@@ -234,18 +229,28 @@ pub(crate) struct OpenPolicy {
 }
 
 impl OpenPolicy {
-    /// The tiers to try, in order. The Browser only when hosted; the reader
-    /// only where the native web view can appear (the standalone window or
-    /// a module in the host's window, never a process child, which has no
-    /// window of its own) and the platform has one; the system browser
-    /// where the platform can open a URL; a notification always, last.
+    /// The tiers to try, in order. The reader first, wherever the native
+    /// web view can appear (the standalone window or a module in the
+    /// host's window, never a process child, which has no window of its
+    /// own) and the platform has one; the Browser through the host when
+    /// hosted; the system browser where the platform can open a URL; a
+    /// notification always, last.
     pub(crate) fn tiers(&self) -> Vec<OpenTier> {
         let mut tiers = Vec::with_capacity(4);
-        if matches!(self.hosting, Hosting::Process | Hosting::Module) {
-            tiers.push(OpenTier::Browser);
-        }
         if self.has_webview && matches!(self.hosting, Hosting::Standalone | Hosting::Module) {
             tiers.push(OpenTier::Reader);
+        }
+        tiers.extend(self.browser_tiers());
+        tiers
+    }
+
+    /// The tiers after the reader: what `Open in Browser` asks for. The
+    /// Browser through the host when hosted, the system browser where the
+    /// platform can open a URL, a notification last.
+    pub(crate) fn browser_tiers(&self) -> Vec<OpenTier> {
+        let mut tiers = Vec::with_capacity(3);
+        if matches!(self.hosting, Hosting::Process | Hosting::Module) {
+            tiers.push(OpenTier::Browser);
         }
         if self.has_system_open {
             tiers.push(OpenTier::System);
@@ -262,6 +267,283 @@ impl OpenPolicy {
             has_webview: cfg!(any(target_os = "macos", target_os = "ios", target_os = "android")),
             has_system_open: cfg!(any(target_os = "macos", target_arch = "wasm32")),
         }
+    }
+}
+
+
+/// One Today section: a followed source and its top stories, the first
+/// the section's hero.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Section {
+    pub source: usize,
+    pub rows: Vec<Headline>,
+}
+
+/// The caption under a section's name: how the source ranks its stories,
+/// or where a person's feed comes from.
+pub(crate) fn section_caption(def: &SourceDef) -> String {
+    match def.id.as_str() {
+        "hn" => "Ranked by points".into(),
+        "techmeme" => "Editors' picks".into(),
+        "google" => "Top stories".into(),
+        _ => host_of(&def.url),
+    }
+}
+
+/// The monogram a source's circle carries: its label's first letter.
+pub(crate) fn initial(label: &str) -> String {
+    label.trim().chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_else(|| "?".into())
+}
+
+/// The app's colours: one set of roles in two variants, Apple News' light
+/// look and its dark counterpart. `Vec4f`s, so the DSL splices them as
+/// values when the crate's `script_mod` runs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Skin {
+    pub light: bool,
+    /// The page behind the cards.
+    pub ground: Vec4f,
+    /// A card, the bottom sheet, a field's card.
+    pub card: Vec4f,
+    /// Titles and headlines.
+    pub ink: Vec4f,
+    /// Captions, meta lines, inactive tabs.
+    pub secondary: Vec4f,
+    /// The line between compact rows.
+    pub hairline: Vec4f,
+    /// The search field and the inputs.
+    pub field: Vec4f,
+    /// The selected tab, the `More from` links, `NEWS` on the tile.
+    pub accent: Vec4f,
+}
+
+impl Skin {
+    pub fn for_mode(light: bool) -> Self {
+        let c = Vec4f::from_u32;
+        if light {
+            Skin {
+                light,
+                ground: c(0xf2f2f7ff),
+                card: c(0xffffffff),
+                ink: c(0x000000ff),
+                secondary: c(0x6e6e73ff),
+                hairline: c(0x3c3c432e),
+                field: c(0xe5e5eaff),
+                accent: c(0xfa2d48ff),
+            }
+        } else {
+            Skin {
+                light,
+                ground: c(0x000000ff),
+                card: c(0x1c1c1eff),
+                ink: c(0xffffffff),
+                secondary: c(0x98989fff),
+                hairline: c(0x54545866),
+                field: c(0x2c2c2eff),
+                accent: c(0xfa2d48ff),
+            }
+        }
+    }
+
+    /// The skin for this isolate: a forced one (`force_skin`, the
+    /// standalone window's `--dark` and `--light`), else the host palette's
+    /// light or dark mode, else light. The host re-runs the crate's
+    /// `script_mod` on a style change, so the answer is re-read then.
+    pub fn for_vm(vm: &mut ScriptVm) -> Self {
+        let light = forced_light().or_else(|| makepad_wm_theme::current_for_vm(vm).map(|p| p.light_mode)).unwrap_or(true);
+        LAST_SKIN.store(if light { 1 } else { 2 }, Ordering::Relaxed);
+        Self::for_mode(light)
+    }
+
+    /// The skin the last `for_vm` picked: what the Rust side tints with
+    /// (the selected tab) between DSL applies. Light before any.
+    pub fn current() -> Self {
+        Self::for_mode(LAST_SKIN.load(Ordering::Relaxed) != 2)
+    }
+}
+
+/// 0: not forced; 1: light; 2: dark.
+static FORCED_SKIN: AtomicU8 = AtomicU8::new(0);
+/// The last skin `Skin::for_vm` resolved, the same encoding.
+static LAST_SKIN: AtomicU8 = AtomicU8::new(0);
+
+/// Force the skin for every isolate in this process, before the crate's
+/// `script_mod` runs; `None` follows the palette again.
+pub fn force_skin(light: Option<bool>) {
+    FORCED_SKIN.store(
+        match light {
+            None => 0,
+            Some(true) => 1,
+            Some(false) => 2,
+        },
+        Ordering::Relaxed,
+    );
+}
+
+fn forced_light() -> Option<bool> {
+    match FORCED_SKIN.load(Ordering::Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
+
+/// The page the bottom bar picks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Root {
+    #[default]
+    Today,
+    Following,
+    Saved,
+}
+
+/// A page pushed over the root: a source's own page, or Search.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pushed {
+    Source(usize),
+    Search,
+}
+
+/// What the full face shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Today,
+    Following,
+    Saved,
+    Search,
+    Source(usize),
+}
+
+/// Where the person is: a root page from the bar, with at most one page
+/// pushed over it. The reader is not a page; it lies over everything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Nav {
+    pub root: Root,
+    pub pushed: Option<Pushed>,
+}
+
+impl Nav {
+    /// The bar picked a root: a pushed page goes. False when the person
+    /// picked the page already showing (the view scrolls it to the top).
+    pub fn pick(&mut self, root: Root) -> bool {
+        let changed = self.root != root || self.pushed.is_some();
+        self.root = root;
+        self.pushed = None;
+        changed
+    }
+
+    pub fn push(&mut self, page: Pushed) {
+        self.pushed = Some(page);
+    }
+
+    /// Back: the pushed page goes. False when there was none to pop, so
+    /// the host may take the press.
+    pub fn pop(&mut self) -> bool {
+        self.pushed.take().is_some()
+    }
+
+    pub fn page(&self) -> Page {
+        match (self.pushed, self.root) {
+            (Some(Pushed::Source(i)), _) => Page::Source(i),
+            (Some(Pushed::Search), _) => Page::Search,
+            (None, Root::Today) => Page::Today,
+            (None, Root::Following) => Page::Following,
+            (None, Root::Saved) => Page::Saved,
+        }
+    }
+
+    /// The tab the tick refreshes here: a source's own on its page, Today's
+    /// followed set everywhere else.
+    pub fn fetch_tab(&self) -> usize {
+        match self.pushed {
+            Some(Pushed::Source(i)) => i + 1,
+            _ => 0,
+        }
+    }
+}
+
+const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS: [&str; 12] =
+    ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/// `Wednesday, September 16`: the local date of `secs` (unix), in the
+/// platform's zone where it has one, else UTC.
+pub fn date_line(secs: i64) -> String {
+    let (month, day, weekday) = local_date::local(secs).unwrap_or_else(|| civil_date(secs));
+    format!("{}, {} {}", WEEKDAYS[weekday], MONTHS[month.saturating_sub(1).min(11)], day)
+}
+
+/// The UTC (month, day, weekday) of `secs`: the fallback and the tests'
+/// ground truth. Sunday is weekday 0; 1970-01-01 was a Thursday.
+pub(crate) fn civil_date(secs: i64) -> (usize, usize, usize) {
+    let days = secs.div_euclid(86_400);
+    let weekday = (days + 4).rem_euclid(7) as usize;
+    // Howard Hinnant's civil-from-days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as usize;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as usize;
+    (month, day, weekday)
+}
+
+#[cfg(unix)]
+mod local_date {
+    use std::os::raw::{c_char, c_int, c_long};
+
+    #[repr(C)]
+    struct Tm {
+        tm_sec: c_int,
+        tm_min: c_int,
+        tm_hour: c_int,
+        tm_mday: c_int,
+        tm_mon: c_int,
+        tm_year: c_int,
+        tm_wday: c_int,
+        tm_yday: c_int,
+        tm_isdst: c_int,
+        tm_gmtoff: c_long,
+        tm_zone: *const c_char,
+    }
+
+    extern "C" {
+        fn tzset();
+        fn localtime_r(time: *const c_long, out: *mut Tm) -> *mut Tm;
+    }
+
+    /// The local (month, day, weekday) of `secs`, from the C library.
+    pub fn local(secs: i64) -> Option<(usize, usize, usize)> {
+        let t: c_long = c_long::try_from(secs).ok()?;
+        let mut tm = Tm {
+            tm_sec: 0,
+            tm_min: 0,
+            tm_hour: 0,
+            tm_mday: 1,
+            tm_mon: 0,
+            tm_year: 70,
+            tm_wday: 4,
+            tm_yday: 0,
+            tm_isdst: 0,
+            tm_gmtoff: 0,
+            tm_zone: std::ptr::null(),
+        };
+        // SAFETY: `tm` is a properly laid out struct tm the C library fills;
+        // `t` outlives the call; localtime_r is the re-entrant form.
+        let ok = unsafe {
+            tzset();
+            !localtime_r(&t, &mut tm).is_null()
+        };
+        ok.then(|| ((tm.tm_mon + 1).clamp(1, 12) as usize, tm.tm_mday.clamp(1, 31) as usize, tm.tm_wday.clamp(0, 6) as usize))
+    }
+}
+
+#[cfg(not(unix))]
+mod local_date {
+    pub fn local(_secs: i64) -> Option<(usize, usize, usize)> {
+        None
     }
 }
 
@@ -316,12 +598,38 @@ pub(crate) fn body_text(status_code: u16, body: Option<&[u8]>) -> Result<&str, S
     std::str::from_utf8(body).map_err(|_| "response is not UTF-8".to_string())
 }
 
+/// A transport error in plain words. The Android backend reports a failed
+/// request as the Java exception chain (`java.util.concurrent.
+/// CompletionException: java.net.UnknownHostException: Unable to resolve
+/// host …`); the person needs "no internet connection", not the chain.
+/// Anything unrecognised keeps its message, minus the exception wrappers.
+pub(crate) fn plain_error(message: &str) -> String {
+    let lower = message.to_lowercase();
+    let known = [
+        (&["unknownhost", "unable to resolve host", "no address associated", "dns"][..], "no internet connection"),
+        (&["sslhandshake", "certificate", "ssl", "tls"][..], "secure connection failed"),
+        (&["timed out", "timeout"][..], "timed out"),
+        (&["connectexception", "failed to connect", "connection refused", "unreachable", "network is unreachable", "econnreset", "connection reset"][..], "could not connect"),
+    ];
+    for (needles, words) in known {
+        if needles.iter().any(|n| lower.contains(n)) {
+            return words.to_string();
+        }
+    }
+    // The last exception in a chain carries the message; drop the wrappers
+    // and the package names.
+    let last = message.rsplit(": ").find(|part| !part.trim().is_empty()).unwrap_or(message).trim();
+    let last = last.rsplit('.').next().unwrap_or(last);
+    if last.is_empty() { message.trim().to_string() } else { last.to_string() }
+}
+
 /// Parse one source's body into rows, by its kind. Zero rows is an error:
 /// the tab keeps what it had rather than going blank.
 pub(crate) fn parse_body(kind: SourceKind, body: &str) -> Result<Vec<Headline>, String> {
     let rows = match kind {
         SourceKind::HackerNews => crate::hn::parse(body)?,
         SourceKind::Feed { split_source } => crate::feed::parse(body, split_source)?,
+        SourceKind::Digest => crate::feed::parse_digest(body)?,
     };
     if rows.is_empty() {
         return Err("no headlines in the response".into());
@@ -379,14 +687,18 @@ impl SourceState {
 }
 
 /// What the faces show, independent of how it is laid out: every source's
-/// rows and fetch state, the selected tab and the open row.
+/// rows and fetch state, which sources the person follows, the saved
+/// stories, and the tab whose sources the tick refreshes.
 pub struct NewsModel {
     pub sources: Vec<SourceState>,
-    /// 0 is All; `n` shows `sources[n - 1]`.
+    /// 0 is Today (every followed source); `n` is `sources[n - 1]`'s own
+    /// page. The tick refreshes this tab's sources.
     pub tab: usize,
-    /// The open row's link: a refresh moves rows, and the story stays open,
-    /// not the position.
-    pub expanded: Option<String>,
+    /// The ids of sources switched off on the Following page: left out of
+    /// Today, the tile and Search; still listed, their own page reachable.
+    pub hidden: BTreeSet<String>,
+    /// The saved stories, newest first, one per link, at most `MAX_SAVED`.
+    pub saved: Vec<Headline>,
     seq: u64,
 }
 
@@ -398,7 +710,13 @@ impl Default for NewsModel {
 
 impl NewsModel {
     pub fn new() -> Self {
-        NewsModel { sources: builtin_sources().into_iter().map(SourceState::new).collect(), tab: 0, expanded: None, seq: 0 }
+        NewsModel {
+            sources: builtin_sources().into_iter().map(SourceState::new).collect(),
+            tab: 0,
+            hidden: BTreeSet::new(),
+            saved: Vec::new(),
+            seq: 0,
+        }
     }
 
     pub fn tab_count(&self) -> usize {
@@ -407,35 +725,25 @@ impl NewsModel {
 
     pub fn tab_label(&self, tab: usize) -> &str {
         if tab == 0 {
-            "All"
+            "Today"
         } else {
             self.sources.get(tab - 1).map(|s| s.def.label.as_str()).unwrap_or("")
         }
     }
 
-    /// Change tabs; the open row closes. False when nothing changed.
+    /// Change the tab the tick refreshes. False when nothing changed.
     pub fn select_tab(&mut self, tab: usize) -> bool {
         if tab >= self.tab_count() || tab == self.tab {
             return false;
         }
         self.tab = tab;
-        self.expanded = None;
         true
     }
 
-    /// Open a row by its link, or close it when it is the open one.
-    pub fn toggle_expanded(&mut self, link: &str) {
-        self.expanded = if self.expanded.as_deref() == Some(link) { None } else { Some(link.to_string()) };
-    }
-
-    pub fn is_expanded(&self, link: &str) -> bool {
-        self.expanded.as_deref() == Some(link)
-    }
-
-    /// The source indices a tab shows: every source for All.
+    /// The source indices a tab shows: every followed source for Today.
     pub fn sources_for_tab(&self, tab: usize) -> Vec<usize> {
         if tab == 0 {
-            (0..self.sources.len()).collect()
+            self.followed_sources()
         } else {
             vec![tab - 1]
         }
@@ -443,11 +751,156 @@ impl NewsModel {
 
     pub fn rows_for_tab(&self, tab: usize) -> Vec<Headline> {
         if tab == 0 {
-            let slices: Vec<&[Headline]> = self.sources.iter().map(|s| s.rows.as_slice()).collect();
+            let slices: Vec<&[Headline]> = self.followed_sources().into_iter().map(|i| self.sources[i].rows.as_slice()).collect();
             interleave(&slices)
         } else {
             self.sources.get(tab - 1).map(|s| s.rows.clone()).unwrap_or_default()
         }
+    }
+
+    /// The sources the person follows, in tab order: every source not
+    /// switched off on the Following page.
+    pub fn followed_sources(&self) -> Vec<usize> {
+        (0..self.sources.len()).filter(|i| self.is_followed(*i)).collect()
+    }
+
+    pub fn is_followed(&self, source: usize) -> bool {
+        self.sources.get(source).is_some_and(|s| !self.hidden.contains(&s.def.id))
+    }
+
+    /// Follow or hide a source. Returns whether anything changed.
+    pub fn set_followed(&mut self, source: usize, followed: bool) -> bool {
+        let Some(id) = self.sources.get(source).map(|s| s.def.id.clone()) else { return false };
+        if followed {
+            self.hidden.remove(&id)
+        } else {
+            self.hidden.insert(id)
+        }
+    }
+
+    /// `hidden.json`: the hidden ids as a JSON array.
+    pub fn hidden_bytes(&self) -> Vec<u8> {
+        self.hidden.iter().cloned().collect::<Vec<String>>().serialize_json().into_bytes()
+    }
+
+    /// Seed the hidden set from `hidden.json`; garbage leaves it empty.
+    pub fn load_hidden(&mut self, bytes: &[u8]) -> bool {
+        let Ok(text) = std::str::from_utf8(bytes) else { return false };
+        let Ok(ids) = <Vec<String> as DeJson>::deserialize_json_lenient(text) else { return false };
+        self.hidden = ids.into_iter().collect();
+        true
+    }
+
+    /// Today's sections: one per followed source with rows, each with its
+    /// top `SECTION_ROWS` stories (the first is the section's hero).
+    pub fn today_sections(&self) -> Vec<Section> {
+        self.followed_sources()
+            .into_iter()
+            .filter(|i| !self.sources[*i].rows.is_empty())
+            .map(|i| Section { source: i, rows: self.sources[i].rows.iter().take(SECTION_ROWS).cloned().collect() })
+            .collect()
+    }
+
+    /// The rows of every followed source whose title, publisher or summary
+    /// contains `query` (case-insensitively), in Today's order, at most
+    /// `MAX_SEARCH_ROWS`. An empty query matches nothing.
+    pub fn search(&self, query: &str) -> Vec<Headline> {
+        let needle = query.trim().to_lowercase();
+        if needle.is_empty() {
+            return Vec::new();
+        }
+        self.rows_for_tab(0)
+            .into_iter()
+            .filter(|row| {
+                [row.title.as_str(), row.source.as_str(), row.summary.as_str()]
+                    .iter()
+                    .any(|field| field.to_lowercase().contains(&needle))
+            })
+            .take(MAX_SEARCH_ROWS)
+            .collect()
+    }
+
+    pub fn is_saved(&self, link: &str) -> bool {
+        self.saved.iter().any(|row| row.link == link)
+    }
+
+    /// Save a story, or unsave it when it is saved. Returns whether it is
+    /// saved afterwards. Newest first, one per link, capped.
+    pub fn toggle_saved(&mut self, row: &Headline) -> bool {
+        if let Some(pos) = self.saved.iter().position(|r| r.link == row.link) {
+            self.saved.remove(pos);
+            return false;
+        }
+        self.saved.insert(0, row.clone());
+        self.saved.truncate(MAX_SAVED);
+        true
+    }
+
+    /// `saved.json`: the saved rows as JSON.
+    pub fn saved_bytes(&self) -> Vec<u8> {
+        self.saved.serialize_json().into_bytes()
+    }
+
+    /// Seed the saved list from `saved.json`; rows the faces would not show
+    /// are dropped, as the cache does.
+    pub fn load_saved(&mut self, bytes: &[u8]) -> bool {
+        let Ok(text) = std::str::from_utf8(bytes) else { return false };
+        let Ok(rows) = <Vec<Headline> as DeJson>::deserialize_json_lenient(text) else { return false };
+        self.saved = rows.into_iter().filter(showable).take(MAX_SAVED).collect();
+        true
+    }
+
+    /// The person's own feeds, in order, as the feeds file spells them.
+    pub fn user_feeds(&self) -> Vec<UserFeed> {
+        self.sources.iter().skip(builtin_count()).map(|s| UserFeed { label: s.def.label.clone(), url: s.def.url.clone() }).collect()
+    }
+
+    /// `feeds.json`, for writing back after an add or a remove.
+    pub fn feeds_bytes(&self) -> Vec<u8> {
+        self.user_feeds().serialize_json().into_bytes()
+    }
+
+    /// Add one feed from the Following page: an http(s) URL not already a
+    /// source, under the cap. Returns the new source's index.
+    pub fn add_user_feed(&mut self, label: &str, url: &str) -> Result<usize, String> {
+        let url = url.trim();
+        if !is_http_url(url) {
+            return Err("Enter a feed address starting with http:// or https://".into());
+        }
+        if self.sources.iter().any(|s| s.def.url == url) {
+            return Err("That feed is already a source".into());
+        }
+        if self.user_feeds().len() >= MAX_USER_FEEDS {
+            return Err(format!("Up to {MAX_USER_FEEDS} feeds; remove one first"));
+        }
+        let mut feeds = self.user_feeds();
+        feeds.push(UserFeed { label: label.trim().to_string(), url: url.to_string() });
+        self.set_user_feeds(feeds);
+        Ok(self.sources.len() - 1)
+    }
+
+    /// Remove one of the person's feeds; a built-in cannot be removed. Its
+    /// hidden flag goes with it. Returns the in-flight requests to cancel.
+    pub fn remove_user_feed(&mut self, source: usize) -> Result<Vec<LiveId>, String> {
+        let builtin = builtin_count();
+        if source < builtin || source >= self.sources.len() {
+            return Err("Only your own feeds can be removed".into());
+        }
+        let id = self.sources[source].def.id.clone();
+        self.hidden.remove(&id);
+        let mut feeds = self.user_feeds();
+        feeds.remove(source - builtin);
+        let (_, cancelled) = self.set_user_feeds(feeds);
+        Ok(cancelled)
+    }
+
+    /// The name a row shows as its publisher: the outlet the row names (a
+    /// Google News row), else its source's label.
+    pub fn publisher(&self, row: &Headline) -> String {
+        if !row.source.trim().is_empty() {
+            return row.source.trim().to_string();
+        }
+        self.sources.iter().find(|s| s.def.id == row.source_id).map(|s| s.def.label.clone()).unwrap_or_else(|| "Feed".into())
     }
 
     /// How many rows a tab has, without building them.
@@ -455,7 +908,7 @@ impl NewsModel {
         self.sources_for_tab(tab).into_iter().map(|i| self.sources[i].rows.len()).sum()
     }
 
-    /// The home tile: the top of All, one row per built-in source.
+    /// The home tile: the top of Today, one row per followed source.
     pub fn tile_rows(&self) -> Vec<Headline> {
         self.rows_for_tab(0).into_iter().take(TILE_ROWS).collect()
     }
@@ -616,7 +1069,7 @@ impl NewsModel {
     /// finite. Returns the indices of the new sources and the in-flight
     /// request ids of the old ones, for the caller to cancel.
     pub fn set_user_feeds(&mut self, feeds: Vec<UserFeed>) -> (Range<usize>, Vec<LiveId>) {
-        let builtin = builtin_sources().len();
+        let builtin = builtin_count();
         let cancelled: Vec<LiveId> = self.sources.iter_mut().skip(builtin).filter_map(SourceState::cancel).collect();
         self.sources.truncate(builtin);
         for feed in feeds {
@@ -636,8 +1089,6 @@ impl NewsModel {
             }));
         }
         if self.tab > builtin {
-            // A user tab's rows just changed under its open row.
-            self.expanded = None;
             self.tab = self.tab.min(self.tab_count() - 1);
         }
         (builtin..self.sources.len(), cancelled)
@@ -690,6 +1141,18 @@ pub(crate) fn plural(n: u32, noun: &str) -> String {
     }
 }
 
+/// A hero's deck: the feed's summary, unless there is none or it only
+/// repeats the headline (a feed whose description is its title again).
+pub(crate) fn deck_text(row: &Headline) -> Option<&str> {
+    let summary = row.summary.trim();
+    if summary.is_empty() {
+        return None;
+    }
+    let title = row.title.trim().trim_end_matches('…').trim();
+    let repeats = !title.is_empty() && summary.to_lowercase().starts_with(&title.to_lowercase());
+    (!repeats).then_some(summary)
+}
+
 /// One tile line: the title, with its source when the row names one.
 pub(crate) fn tile_line(row: &Headline) -> String {
     if row.source.is_empty() {
@@ -729,6 +1192,7 @@ mod tests {
         let ids: Vec<&str> = sources.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["hn", "techmeme", "google"]);
         assert_eq!(builtin_sources()[0].kind, SourceKind::HackerNews);
+        assert_eq!(builtin_sources()[1].kind, SourceKind::Digest);
         assert_eq!(builtin_sources()[2].kind, SourceKind::Feed { split_source: true });
     }
 
@@ -774,6 +1238,7 @@ mod tests {
             comments: None,
             summary: "s".into(),
             discussion: Some("https://news.ycombinator.com/item?id=1".into()),
+            image: Some("https://x/i.jpg".into()),
         };
         let json = h.serialize_json();
         let back: Headline = DeJson::deserialize_json_lenient(&json).unwrap();
@@ -786,7 +1251,7 @@ mod tests {
     fn a_row_cached_before_discussion_existed_still_loads() {
         let old = r#"{"title":"Old","link":"https://x/old","source":"S","published":null,"points":null,"comments":null,"summary":""}"#;
         let back: Headline = DeJson::deserialize_json_lenient(old).unwrap();
-        assert_eq!((back.title.as_str(), back.discussion), ("Old", None));
+        assert_eq!((back.title.as_str(), back.discussion, back.image), ("Old", None, None));
         assert_eq!(back.source_id, "", "no id in the document");
         let mut m = NewsModel::new();
         assert!(m.load_cache(0, format!("[{old}]").as_bytes()));
@@ -841,20 +1306,6 @@ mod tests {
     }
 
     #[test]
-    fn badge_labels_are_short_names_outlets_or_cut_feed_labels() {
-        assert_eq!(source_short_label("hn", HN_LABEL), "HN");
-        assert_eq!(source_short_label("techmeme", ""), "TechMeme");
-        assert_eq!(source_short_label("google", "Reuters"), "Reuters", "a Google row names its outlet");
-        assert_eq!(source_short_label("google", ""), "Google");
-        assert_eq!(source_short_label("google", "The Washington Post"), "The Washing\u{2026}", "cut to {BADGE_CHARS} characters");
-        assert_eq!(source_short_label("user_0123456789abcdef", "My Feed"), "My Feed");
-        assert_eq!(source_short_label("user_0123456789abcdef", "Twelve chars"), "Twelve chars", "exactly the cap is not cut");
-        assert_eq!(source_short_label("user_0123456789abcdef", " Ünïcødé feed name "), "Ünïcødé fee\u{2026}", "cut on characters, not bytes");
-        assert_eq!(source_short_label("user_0123456789abcdef", ""), "Feed", "a feed row without a label");
-        assert_eq!(source_short_label("", ""), "Feed", "so is a row with no provenance");
-    }
-
-    #[test]
     fn wm_unavailable_parses_the_hosts_envelope_and_nothing_else() {
         let u = WmUnavailable::parse(r#"{"wm_unavailable":{"app":"browser","path":"https://x/a?b=1"}}"#).unwrap();
         assert_eq!((u.app.as_str(), u.path.as_str()), ("browser", "https://x/a?b=1"));
@@ -871,8 +1322,10 @@ mod tests {
         use OpenTier::*;
         let mac = |hosting| OpenPolicy { hosting, has_webview: true, has_system_open: true };
         assert_eq!(mac(Hosting::Process).tiers(), [Browser, System, Notify], "a process child has no window for a reader");
-        assert_eq!(mac(Hosting::Module).tiers(), [Browser, Reader, System, Notify]);
+        assert_eq!(mac(Hosting::Module).tiers(), [Reader, Browser, System, Notify], "the reader first, the Browser behind it");
         assert_eq!(mac(Hosting::Standalone).tiers(), [Reader, System, Notify]);
+        assert_eq!(mac(Hosting::Module).browser_tiers(), [Browser, System, Notify], "Open in Browser skips the reader");
+        assert_eq!(mac(Hosting::Standalone).browser_tiers(), [System, Notify]);
         let bare = |hosting| OpenPolicy { hosting, has_webview: false, has_system_open: false };
         assert_eq!(bare(Hosting::Module).tiers(), [Browser, Notify]);
         assert_eq!(bare(Hosting::Standalone).tiers(), [Notify]);
@@ -890,24 +1343,16 @@ mod tests {
     }
 
     #[test]
-    fn tabs_are_all_then_every_source_and_selecting_resets_the_open_row() {
+    fn tabs_are_today_then_every_source() {
         let mut m = NewsModel::new();
         assert_eq!(m.tab_count(), 4);
-        assert_eq!(m.tab_label(0), "All");
+        assert_eq!(m.tab_label(0), "Today");
         assert_eq!(m.tab_label(1), "Hacker News");
         assert_eq!(m.sources_for_tab(0), vec![0, 1, 2]);
         assert_eq!(m.sources_for_tab(2), vec![1]);
-        m.toggle_expanded("https://x/3");
-        assert!(m.is_expanded("https://x/3"));
         assert!(m.select_tab(2));
-        assert_eq!(m.expanded, None);
         assert!(!m.select_tab(2), "same tab: nothing changed");
         assert!(!m.select_tab(99), "out of range is ignored");
-        m.toggle_expanded("https://x/1");
-        m.toggle_expanded("https://x/2");
-        assert!(m.is_expanded("https://x/2") && !m.is_expanded("https://x/1"), "opening another row moves the open one");
-        m.toggle_expanded("https://x/2");
-        assert_eq!(m.expanded, None, "toggling the open row closes it");
     }
 
     #[test]
@@ -1001,13 +1446,12 @@ mod tests {
         assert_ne!(blog_id, m.sources[4].def.id, "a different url gets a different id");
         assert_eq!(m.sources[3].def.kind, SourceKind::Feed { split_source: false });
         m.select_tab(4);
-        m.toggle_expanded("https://blog.example/1");
         let (pending, _) = m.begin_fetch(4);
         let (added, cancelled) = m.set_user_feeds(vec![blog.clone(), only.clone()]);
         assert_eq!(added, 3..5);
         assert_eq!(cancelled, vec![pending], "the replaced feed's in-flight request comes back for cancelling");
         assert_eq!(m.sources[3].def.id, blog_id, "the same url gets the same id");
-        assert_eq!((m.tab, m.expanded.as_deref()), (4, None), "a user tab's open row closes: its rows changed");
+        assert_eq!(m.tab, 4);
         m.select_tab(5);
         let (added, _) = m.set_user_feeds(vec![only]);
         assert_eq!(added, 3..4);
@@ -1017,9 +1461,8 @@ mod tests {
         assert_eq!(m.source_index("HN"), Some(0), "so do ids");
         assert_eq!(m.source_index("nope"), None);
         m.select_tab(1);
-        m.toggle_expanded("https://x/h1");
         m.set_user_feeds(vec![blog]);
-        assert_eq!((m.tab, m.expanded.as_deref()), (1, Some("https://x/h1")), "a built-in tab keeps its open row");
+        assert_eq!(m.tab, 1, "a built-in tab stays selected");
     }
 
     #[test]
@@ -1166,6 +1609,17 @@ mod tests {
     }
 
     #[test]
+    fn transport_errors_are_said_in_plain_words() {
+        assert_eq!(plain_error("java.util.concurrent.CompletionException: java.net.UnknownHostException: Unable to resolve host \"hn.algolia.com\": No address associated with hostname"), "no internet connection");
+        assert_eq!(plain_error("javax.net.ssl.SSLHandshakeException: Chain validation failed"), "secure connection failed");
+        assert_eq!(plain_error("java.net.SocketTimeoutException: timeout"), "timed out");
+        assert_eq!(plain_error("Failed to connect to www.techmeme.com/1.2.3.4:443"), "could not connect");
+        assert_eq!(plain_error("java.util.concurrent.CompletionException: java.io.IOException: unexpected end of stream"), "unexpected end of stream");
+        assert_eq!(plain_error("HTTP 503"), "HTTP 503");
+        assert_eq!(plain_error("  "), "");
+    }
+
+    #[test]
     fn body_text_lets_only_a_utf8_200_under_the_cap_through() {
         assert_eq!(body_text(200, Some(b"<rss/>".as_slice())), Ok("<rss/>"));
         assert_eq!(body_text(503, Some(b"x".as_slice())), Err("HTTP 503".into()));
@@ -1174,6 +1628,19 @@ mod tests {
         let big = vec![b'a'; MAX_BODY_BYTES + 1];
         assert_eq!(body_text(200, Some(&big)), Err(format!("response too large ({} bytes)", MAX_BODY_BYTES + 1)));
         assert_eq!(body_text(200, Some([0xff, 0xfe].as_slice())), Err("response is not UTF-8".into()));
+    }
+
+    #[test]
+    fn the_deck_is_the_summary_unless_it_repeats_the_headline() {
+        let mut h = row("A look at AI");
+        assert_eq!(deck_text(&h), None, "no summary");
+        h.summary = "A look at AI, and more".into();
+        assert_eq!(deck_text(&h), None, "the summary opens with the headline");
+        h.summary = "Posted by someone".into();
+        assert_eq!(deck_text(&h), Some("Posted by someone"));
+        h.title = "A look at AI…".into();
+        h.summary = "a look at ai in warfare".into();
+        assert_eq!(deck_text(&h), None, "case and a cut headline's ellipsis do not matter");
     }
 
     #[test]
@@ -1249,8 +1716,212 @@ mod tests {
         assert_eq!(parse_body(SourceKind::Feed { split_source: true }, google).unwrap()[0].source, "Reuters");
         assert!(parse_body(SourceKind::Feed { split_source: false }, "<rss><channel></channel></rss>").is_err(), "zero rows is an error");
         assert!(parse_body(SourceKind::HackerNews, "<html>").is_err());
+        let techmeme = include_str!("../tests/fixtures/techmeme.xml");
+        assert_eq!(parse_body(SourceKind::Digest, techmeme).unwrap()[0].source, "", "the fixture's titles name no outlet");
         let many: String = (0..50).map(|i| format!("<item><title>t{i}</title><link>https://x/{i}</link></item>")).collect();
         let feed = format!("<rss><channel>{many}</channel></rss>");
         assert_eq!(parse_body(SourceKind::Feed { split_source: false }, &feed).unwrap().len(), MAX_ROWS_PER_SOURCE);
+    }
+
+    #[test]
+    fn the_skin_has_two_variants_and_can_be_forced() {
+        let light = Skin::for_mode(true);
+        let dark = Skin::for_mode(false);
+        assert!(light.light && !dark.light);
+        assert_eq!(light.ground, Vec4f::from_u32(0xf2f2f7ff));
+        assert_eq!(dark.ground, Vec4f::from_u32(0x000000ff));
+        assert_eq!(light.accent, dark.accent, "the accent is the same red in both");
+        assert_ne!(light.ink, dark.ink);
+        force_skin(Some(false));
+        assert_eq!(forced_light(), Some(false));
+        force_skin(None);
+        assert_eq!(forced_light(), None);
+    }
+
+    #[test]
+    fn nav_picks_roots_pushes_pages_and_pops_back() {
+        let mut nav = Nav::default();
+        assert_eq!(nav.page(), Page::Today);
+        assert!(!nav.pick(Root::Today), "the page already showing: a scroll to the top, not a change");
+        assert!(nav.pick(Root::Saved));
+        assert_eq!(nav.page(), Page::Saved);
+        nav.push(Pushed::Source(1));
+        assert_eq!((nav.page(), nav.fetch_tab()), (Page::Source(1), 2));
+        assert!(nav.pick(Root::Saved), "picking the root under a pushed page pops it");
+        assert_eq!(nav.page(), Page::Saved);
+        nav.push(Pushed::Search);
+        assert_eq!((nav.page(), nav.fetch_tab()), (Page::Search, 0));
+        assert!(nav.pop());
+        assert_eq!(nav.page(), Page::Saved);
+        assert!(!nav.pop(), "nothing pushed: the host may take the back press");
+        assert!(nav.pick(Root::Following));
+        assert_eq!(nav.page(), Page::Following);
+    }
+
+    #[test]
+    fn hidden_sources_leave_today_the_tile_and_search_but_stay_listed() {
+        let mut m = NewsModel::new();
+        for (i, prefix) in ["h", "t", "g"].iter().enumerate() {
+            let (id, _) = m.begin_fetch(i);
+            m.complete(id, Ok(rows(prefix, 3)));
+        }
+        assert!(m.set_followed(1, false));
+        assert!(!m.set_followed(1, false), "already hidden");
+        assert!(!m.is_followed(1) && m.is_followed(0));
+        assert_eq!(m.followed_sources(), vec![0, 2]);
+        assert_eq!(m.sources_for_tab(0), vec![0, 2], "the tick skips a hidden source");
+        let today: Vec<String> = m.rows_for_tab(0).iter().map(|h| h.title.clone()).collect();
+        assert_eq!(today, ["h1", "g1", "h2", "g2", "h3", "g3"]);
+        let tile: Vec<String> = m.tile_rows().iter().map(|h| h.title.clone()).collect();
+        assert_eq!(tile, ["h1", "g1", "h2"]);
+        assert_eq!(m.today_sections().iter().map(|s| s.source).collect::<Vec<_>>(), [0, 2]);
+        assert!(m.search("t1").is_empty(), "a hidden source's rows are not searched");
+        assert_eq!(m.rows_for_tab(2).len(), 3, "its own page still has them");
+        assert_eq!(m.sources.len(), 3, "and it is still a source");
+        let bytes = m.hidden_bytes();
+        let mut again = NewsModel::new();
+        assert!(again.load_hidden(&bytes));
+        assert_eq!(again.hidden, m.hidden);
+        assert!(!again.load_hidden(b"nonsense"));
+        assert!(m.set_followed(1, true));
+        assert_eq!(m.followed_sources(), vec![0, 1, 2]);
+        assert!(!m.set_followed(99, false), "no such source");
+    }
+
+    #[test]
+    fn today_sections_take_five_rows_per_followed_source_with_rows() {
+        let mut m = NewsModel::new();
+        let (id, _) = m.begin_fetch(0);
+        m.complete(id, Ok(rows("h", 8)));
+        let (id, _) = m.begin_fetch(2);
+        m.complete(id, Ok(rows("g", 2)));
+        let sections = m.today_sections();
+        assert_eq!(sections.len(), 2, "TechMeme has nothing yet: no section");
+        assert_eq!(sections[0].source, 0);
+        assert_eq!(sections[0].rows.len(), SECTION_ROWS);
+        assert_eq!(sections[0].rows[0].title, "h1", "the first row is the hero");
+        assert_eq!((sections[1].source, sections[1].rows.len()), (2, 2));
+        let def = &m.sources[0].def;
+        assert_eq!(section_caption(def), "Ranked by points");
+        assert_eq!(section_caption(&m.sources[1].def), "Editors' picks");
+        assert_eq!(section_caption(&m.sources[2].def), "Top stories");
+        m.set_user_feeds(vec![UserFeed { label: "Blog".into(), url: "https://blog.example/feed".into() }]);
+        assert_eq!(section_caption(&m.sources[3].def), "blog.example");
+        assert_eq!(initial("hacker news"), "H");
+        assert_eq!(initial("  "), "?");
+    }
+
+    #[test]
+    fn search_matches_title_publisher_and_summary_case_insensitively_and_caps() {
+        let mut m = NewsModel::new();
+        let mut hn = rows("h", 3);
+        hn[1].summary = "A story about Rust".into();
+        let (id, _) = m.begin_fetch(0);
+        m.complete(id, Ok(hn));
+        let mut google = rows("g", 2);
+        google[0].source = "Reuters".into();
+        let (id, _) = m.begin_fetch(2);
+        m.complete(id, Ok(google));
+        assert_eq!(m.search("rust").iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), ["h2"]);
+        assert_eq!(m.search("REUTERS").iter().map(|h| h.title.as_str()).collect::<Vec<_>>(), ["g1"]);
+        assert_eq!(m.search("h").len(), 3);
+        assert!(m.search("   ").is_empty(), "an empty query matches nothing");
+        let with_summary = |prefix: &str| {
+            rows(prefix, 30).into_iter().map(|mut r| {
+                r.summary = "shared".into();
+                r
+            }).collect::<Vec<_>>()
+        };
+        let (id, _) = m.begin_fetch(1);
+        m.complete(id, Ok(with_summary("t")));
+        let (id, _) = m.begin_fetch(0);
+        m.complete(id, Ok(with_summary("h")));
+        // h1, h10..h19, h21 and the same for t: twelve each, plus g1.
+        assert_eq!(m.search("1").len(), 25);
+        assert_eq!(m.search("shared").len(), MAX_SEARCH_ROWS, "sixty match: capped");
+    }
+
+    #[test]
+    fn saved_stories_toggle_dedupe_stay_newest_first_cap_and_round_trip() {
+        let mut m = NewsModel::new();
+        let a = row("a");
+        let b = row("b");
+        assert!(m.toggle_saved(&a), "saved");
+        assert!(m.is_saved(&a.link));
+        assert!(m.toggle_saved(&b));
+        assert_eq!(m.saved.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["b", "a"], "newest first");
+        assert!(!m.toggle_saved(&a), "unsaved");
+        assert!(!m.is_saved(&a.link));
+        assert_eq!(m.saved.len(), 1);
+        for i in 0..(MAX_SAVED + 5) {
+            m.toggle_saved(&row(&format!("r{i}")));
+        }
+        assert_eq!(m.saved.len(), MAX_SAVED, "capped");
+        assert_eq!(m.saved[0].title, format!("r{}", MAX_SAVED + 4), "the newest survives the cap");
+        let bytes = m.saved_bytes();
+        let mut again = NewsModel::new();
+        assert!(again.load_saved(&bytes));
+        assert_eq!(again.saved, m.saved);
+        assert!(!again.load_saved(b"{"));
+        assert!(again.load_saved(br#"[{"title":"","link":"https://x","source":"","summary":""}]"#));
+        assert!(again.saved.is_empty(), "a row without a title is not shown, so not kept");
+    }
+
+    #[test]
+    fn feeds_are_added_and_removed_from_the_following_page() {
+        let mut m = NewsModel::new();
+        assert!(m.add_user_feed("", "ftp://x").is_err(), "not http(s)");
+        assert!(m.add_user_feed("", "https://www.techmeme.com/feed.xml").is_err(), "already a source");
+        assert_eq!(m.add_user_feed(" Blog ", " https://blog.example/feed "), Ok(3));
+        assert_eq!(m.tab_label(4), "Blog");
+        assert_eq!(m.add_user_feed("", "https://b.example/feed"), Ok(4));
+        assert_eq!(m.tab_label(5), "b.example", "no label: the host names it");
+        assert!(m.add_user_feed("", "https://blog.example/feed").is_err(), "a duplicate of a feed");
+        assert_eq!(m.user_feeds(), vec![
+            UserFeed { label: "Blog".into(), url: "https://blog.example/feed".into() },
+            UserFeed { label: "b.example".into(), url: "https://b.example/feed".into() },
+        ]);
+        let json = String::from_utf8(m.feeds_bytes()).unwrap();
+        assert_eq!(parse_user_feeds(&json).unwrap(), m.user_feeds(), "the file round-trips through phase 1's parser");
+        for i in 0..(MAX_USER_FEEDS - 2) {
+            assert!(m.add_user_feed("", &format!("https://{i}.example/feed")).is_ok());
+        }
+        assert!(m.add_user_feed("", "https://one-more.example/feed").is_err(), "the cap holds");
+        assert!(m.remove_user_feed(0).is_err(), "a built-in cannot be removed");
+        assert!(m.remove_user_feed(99).is_err());
+        m.set_followed(3, false);
+        let (pending, _) = m.begin_fetch(3);
+        assert_eq!(m.remove_user_feed(3), Ok(vec![pending]), "its in-flight request comes back");
+        assert_eq!(m.tab_label(4), "b.example");
+        assert!(m.hidden.is_empty(), "the removed feed's hidden flag goes with it");
+        assert_eq!(m.user_feeds().len(), MAX_USER_FEEDS - 1);
+    }
+
+    #[test]
+    fn the_publisher_is_the_rows_outlet_else_its_source() {
+        let mut m = NewsModel::new();
+        let mut h = row("t");
+        h.source_id = "hn".into();
+        assert_eq!(m.publisher(&h), "Hacker News");
+        h.source = " Reuters ".into();
+        assert_eq!(m.publisher(&h), "Reuters");
+        h.source.clear();
+        h.source_id = "gone".into();
+        assert_eq!(m.publisher(&h), "Feed");
+        m.set_user_feeds(vec![UserFeed { label: "Blog".into(), url: "https://blog.example/feed".into() }]);
+        h.source_id = m.sources[3].def.id.clone();
+        assert_eq!(m.publisher(&h), "Blog");
+    }
+
+    #[test]
+    fn the_date_line_names_the_weekday_month_and_day() {
+        // 2026-09-16 (a Wednesday) at noon UTC.
+        let secs = crate::feed::days_from_civil(2026, 9, 16) * 86_400 + 12 * 3600;
+        assert_eq!(civil_date(secs), (9, 16, 3));
+        assert_eq!(civil_date(0), (1, 1, 4), "the epoch was a Thursday");
+        assert_eq!(civil_date(crate::feed::days_from_civil(2000, 2, 29) * 86_400), (2, 29, 2));
+        let line = date_line(secs);
+        assert!(line.starts_with("Wednesday, September 1") || line.starts_with("Thursday, September 1"), "{line}: local zones near the date line may shift a day");
+        assert!(WEEKDAYS.iter().any(|w| line.starts_with(w)) && line.contains(", "));
     }
 }

@@ -8,9 +8,28 @@
 
 use crate::model::{is_http_url, Headline, SUMMARY_CHARS};
 
+/// How a feed spells its stories, beyond plain RSS or Atom.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Style {
+    /// Google News: titles end in ` - Source`.
+    pub split_source: bool,
+    /// A digest (TechMeme): titles end in ` (Author/Outlet)` and the
+    /// description is `Outlet: headline` again.
+    pub digest: bool,
+}
+
 /// Parse a feed body. `split_source` handles Google News titles, which end
 /// in ` - Source`.
 pub fn parse(xml: &str, split_source: bool) -> Result<Vec<Headline>, String> {
+    parse_styled(xml, Style { split_source, digest: false })
+}
+
+/// Parse a digest feed: the outlet comes off the end of each title.
+pub fn parse_digest(xml: &str) -> Result<Vec<Headline>, String> {
+    parse_styled(xml, Style { split_source: false, digest: true })
+}
+
+pub fn parse_styled(xml: &str, style: Style) -> Result<Vec<Headline>, String> {
     // A feed that prefixes every Atom element (`<atom:entry>`) reads like
     // a bare one once the prefix is dropped.
     let unprefixed;
@@ -28,7 +47,7 @@ pub fn parse(xml: &str, split_source: bool) -> Result<Vec<Headline>, String> {
             // `chunk` starts right after `<item` / `<entry`: attributes or `>`.
             let body = &chunk[chunk.find('>')? + 1..];
             let body = body.split_once(close).map_or(body, |(b, _)| b);
-            parse_item(body, is_atom, split_source)
+            parse_item(body, is_atom, style)
         })
         .collect();
     Ok(rows)
@@ -92,7 +111,7 @@ fn has_element(xml: &str, name: &str) -> bool {
 
 /// One `<item>` / `<entry>` body as a row; None without a title or an http
 /// link.
-fn parse_item(body: &str, is_atom: bool, split_source: bool) -> Option<Headline> {
+fn parse_item(body: &str, is_atom: bool, style: Style) -> Option<Headline> {
     let mut title = clean_text(element_text(body, "title")?);
     if title.is_empty() {
         return None;
@@ -103,18 +122,33 @@ fn parse_item(body: &str, is_atom: bool, split_source: bool) -> Option<Headline>
     } else {
         element_text(body, "source").map(clean_text).unwrap_or_default()
     };
-    if split_source {
+    if style.split_source {
         if let Some((head, tail)) = split_google_source(&title) {
             title = head;
             source = tail;
         }
     }
-    let summary = element_text(body, "description")
+    if style.digest {
+        if let Some((head, outlet)) = trailing_outlet(&title) {
+            title = head;
+            source = outlet;
+        }
+    }
+    let mut summary = element_text(body, "description")
         .or_else(|| element_text(body, "summary"))
         .or_else(|| element_text(body, "content"))
         .or_else(|| element_text(body, "content:encoded"))
         .map(|d| truncate(&clean_text(d), SUMMARY_CHARS))
         .unwrap_or_default();
+    // A description of `Outlet: headline` (a digest's): the outlet is the
+    // row's publisher when nothing named one, and a description that is
+    // only the headline again is no summary.
+    if let Some((outlet, rest)) = outlet_prefix(&title, &summary) {
+        if source.is_empty() {
+            source = outlet;
+        }
+        summary = rest;
+    }
     let published = element_text(body, "pubDate")
         .and_then(|d| parse_rfc822(d.trim()))
         .or_else(|| element_text(body, "published").and_then(|d| parse_rfc3339(d.trim())))
@@ -122,8 +156,216 @@ fn parse_item(body: &str, is_atom: bool, split_source: bool) -> Option<Headline>
         .or_else(|| element_text(body, "dc:date").and_then(|d| parse_rfc3339(d.trim())));
     // The model stamps `source_id` when the rows land: one reader serves
     // every feed.
-    Some(Headline { title, link, source, source_id: String::new(), published, points: None, comments: None, summary, discussion: None })
+    Some(Headline {
+        title,
+        link,
+        source,
+        source_id: String::new(),
+        published,
+        points: None,
+        comments: None,
+        summary,
+        discussion: None,
+        image: image_url(body),
+    })
 }
+
+/// The story's picture, when the item carries one: a `<media:content>`
+/// that is an image (its `medium` or `type` says so, or neither is given),
+/// a `<media:thumbnail>`, an `<enclosure>` with an image type, else the
+/// first `<img>` in the description or content. Only an http(s) URL
+/// counts.
+fn image_url(body: &str) -> Option<String> {
+    media_image(body, "media:content", true)
+        .or_else(|| media_image(body, "media:thumbnail", false))
+        .or_else(|| media_image(body, "enclosure", true))
+        .or_else(|| inline_image(body))
+}
+
+/// The `url` of the first `<tag>` element that is an image. `typed`: the
+/// element carries a `medium` or `type`, and it must say image when it
+/// does (an enclosure must say so; a media:content with neither is taken
+/// as one). Every such element is looked at, not just the first: a feed
+/// may list a video before its still.
+fn media_image(body: &str, tag: &str, typed: bool) -> Option<String> {
+    let open = format!("<{tag}");
+    let mut from = 0;
+    while let Some(pos) = body[from..].find(&open) {
+        let at = from + pos;
+        let after = &body[at + open.len()..];
+        let next = after.chars().next()?;
+        from = at + open.len();
+        if next != '>' && next != '/' && !next.is_whitespace() {
+            continue;
+        }
+        let tag_end = after.find('>')?;
+        let attrs = &after[..tag_end];
+        if typed {
+            let medium = attribute(attrs, "medium");
+            let kind = attribute(attrs, "type");
+            let says_image = medium.as_deref() == Some("image") || kind.as_deref().is_some_and(|t| t.starts_with("image/"));
+            let says_nothing = medium.is_none() && kind.is_none() && tag == "media:content";
+            if !says_image && !says_nothing {
+                continue;
+            }
+        }
+        if let Some(url) = attribute(attrs, "url").map(|u| decode_entities(&u)) {
+            if is_http_url(&url) {
+                return Some(url);
+            }
+        }
+    }
+    None
+}
+
+/// The first `<img src>` in the item's HTML description or content that is
+/// not a tiny one (a permalink icon, a tracking pixel: anything whose
+/// `width` or `height` says under `MIN_IMAGE_PX`). Tags and attributes in
+/// any case, values quoted or not.
+fn inline_image(body: &str) -> Option<String> {
+    let html = element_text(body, "description")
+        .or_else(|| element_text(body, "content:encoded"))
+        .or_else(|| element_text(body, "content"))?;
+    // CDATA markers dropped and entities decoded: feeds double-encode HTML.
+    let html = decode_entities(&html.replace("<![CDATA[", "").replace("]]>", ""));
+    // ASCII lowercasing keeps every byte offset, so positions found in the
+    // lowered copy index the original.
+    let lower = html.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(pos) = lower[from..].find("<img") {
+        let at = from + pos + 4;
+        let Some(tag_end) = lower[at..].find('>') else { break };
+        let attrs = &html[at..at + tag_end];
+        from = at + tag_end;
+        if is_tiny(attrs) {
+            continue;
+        }
+        if let Some(src) = attribute_ci(attrs, "src").map(|u| decode_entities(&u)) {
+            if is_http_url(&src) {
+                return Some(src);
+            }
+        }
+    }
+    None
+}
+
+/// Under this many pixels on a side an image is an icon, not a picture.
+const MIN_IMAGE_PX: f64 = 50.0;
+
+/// Whether an `<img>`'s `width` or `height` attribute says it is an icon.
+fn is_tiny(attrs: &str) -> bool {
+    ["width", "height"].iter().any(|key| {
+        attribute_ci(attrs, key)
+            .and_then(|v| v.trim().trim_end_matches("px").trim().parse::<f64>().ok())
+            .is_some_and(|px| px < MIN_IMAGE_PX)
+    })
+}
+
+/// `attribute` for HTML: the name in any case, the value quoted or bare
+/// (ending at whitespace).
+fn attribute_ci(attrs: &str, name: &str) -> Option<String> {
+    let lower = attrs.to_ascii_lowercase();
+    let key = format!("{}=", name.to_ascii_lowercase());
+    let mut from = 0;
+    while let Some(pos) = lower[from..].find(&key) {
+        let at = from + pos;
+        let before_ok = at == 0 || lower[..at].ends_with(|c: char| c.is_whitespace());
+        from = at + key.len();
+        if !before_ok {
+            continue;
+        }
+        let rest = &attrs[at + key.len()..];
+        let value = match rest.chars().next()? {
+            quote @ ('"' | '\'') => {
+                let value = &rest[1..];
+                &value[..value.find(quote)?]
+            }
+            _ => rest.split(|c: char| c.is_whitespace()).next().unwrap_or(""),
+        };
+        return Some(value.to_string());
+    }
+    None
+}
+
+/// `Outlet: headline …` in a description whose remainder opens with the
+/// item's own title: the outlet, and what is left after the headline
+/// (empty when the description was the headline alone). None when the
+/// description does not have that shape.
+fn outlet_prefix(title: &str, summary: &str) -> Option<(String, String)> {
+    // The colon alone: a stripped `<BR>` may have left no space after it.
+    let (outlet, rest) = summary.split_once(':')?;
+    let outlet = outlet.trim();
+    let rest = rest.trim_start();
+    if !looks_like_name(outlet) {
+        return None;
+    }
+    let title = title.trim().trim_end_matches('…').trim();
+    let head: String = title.chars().take(TITLE_MATCH_CHARS).collect();
+    if head.is_empty() || !rest.to_lowercase().starts_with(&head.to_lowercase()) {
+        return None;
+    }
+    let rest = rest.trim();
+    // What follows the headline, compared character by character (a
+    // lowercase form can differ in length from its original, so byte
+    // offsets of one never index the other).
+    let remainder = strip_prefix_ci(rest, title).unwrap_or("").trim();
+    let remainder = remainder.trim_start_matches(['—', '-', '·', ':', ',']).trim();
+    Some((outlet.to_string(), remainder.to_string()))
+}
+
+/// `text` after `prefix`, matched case-insensitively character by
+/// character; None when `text` does not start with it.
+fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    let mut rest = text;
+    for want in prefix.chars() {
+        let got = rest.chars().next()?;
+        if !got.to_lowercase().eq(want.to_lowercase()) {
+            return None;
+        }
+        rest = &rest[got.len_utf8()..];
+    }
+    Some(rest)
+}
+
+/// A digest title's trailing ` (Author/Outlet)` or ` (Outlet)`: the title
+/// without it, and the outlet (the last `/`-separated part). None when the
+/// title does not end that way, or what is in the parentheses is too long
+/// to be a name.
+fn trailing_outlet(title: &str) -> Option<(String, String)> {
+    let title = title.trim();
+    let inner_end = title.strip_suffix(')')?;
+    let open = inner_end.rfind('(')?;
+    let inner = inner_end[open + 1..].trim();
+    let head = inner_end[..open].trim_end();
+    if inner.is_empty() || head.is_empty() || inner.chars().count() > OUTLET_CHARS || inner.contains('(') {
+        return None;
+    }
+    let outlet = inner.rsplit('/').next().unwrap_or(inner).trim();
+    if outlet.is_empty() {
+        return None;
+    }
+    Some((head.to_string(), outlet.to_string()))
+}
+
+/// Whether `text` reads as an outlet's name rather than the start of a
+/// sentence: a few words, each capitalised or a number (`Financial Times`,
+/// `9to5Mac`, `The Verge`), connectors aside; no sentence punctuation.
+fn looks_like_name(text: &str) -> bool {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() || text.chars().count() > OUTLET_CHARS || text.contains(['.', '!', '?']) {
+        return false;
+    }
+    words.iter().all(|word| {
+        matches!(*word, "of" | "the" | "and" | "de" | "for" | "&")
+            || word.chars().next().is_some_and(|c| c.is_uppercase() || c.is_ascii_digit())
+    })
+}
+
+/// An outlet's name is a few words: anything longer is a sentence with a
+/// colon in it.
+const OUTLET_CHARS: usize = 40;
+/// How much of the headline the description must open with.
+const TITLE_MATCH_CHARS: usize = 24;
 
 /// Google News titles end in ` - Source`; the last dash is the separator.
 fn split_google_source(title: &str) -> Option<(String, String)> {
@@ -665,5 +907,82 @@ mod tests {
         assert_eq!(parse_rfc3339("2026-09-16"), None);
         assert_eq!(days_from_civil(1970, 1, 1), 0);
         assert_eq!(days_from_civil(2000, 3, 1), 11_017);
+    }
+
+    #[test]
+    fn a_digest_description_of_outlet_colon_headline_names_the_outlet_and_is_no_summary() {
+        let item = |title: &str, desc: &str| {
+            let xml = format!("<rss><channel><item><title>{title}</title><link>https://x/1</link><description><![CDATA[{desc}]]></description></item></channel></rss>");
+            let row = parse(&xml, false).unwrap().remove(0);
+            (row.source, row.summary)
+        };
+        assert_eq!(
+            item("A look at the rapid integration of AI into warfare", r#"<a href="https://ft.com/x">Financial Times</a>: A look at the rapid integration of AI into warfare"#),
+            ("Financial Times".into(), String::new())
+        );
+        assert_eq!(
+            item("Huawei plans to launch a chip", "Reuters: Huawei plans to launch a chip — More: The Verge, Bloomberg"),
+            ("Reuters".into(), "More: The Verge, Bloomberg".into()),
+            "what follows the headline is the summary"
+        );
+        assert_eq!(item("Plain story", "Plain story with a longer description"), (String::new(), "Plain story with a longer description".into()), "no outlet prefix");
+        assert_eq!(
+            item("İstanbul’s “big” plan — done", "Reuters: İSTANBUL’S “BIG” PLAN — done · more"),
+            ("Reuters".into(), "more".into()),
+            "a headline whose lowercase form changes length still matches, character by character"
+        );
+        assert_eq!(strip_prefix_ci("Straße x", "STRASSE"), None, "no byte slicing across a case change");
+        assert_eq!(
+            item("Rust 2.0 is out", "The team said: Rust 2.0 is out today"),
+            (String::new(), "The team said: Rust 2.0 is out today".into()),
+            "a colon inside a sentence is not an outlet"
+        );
+        let xml = r#"<rss><channel><item><title>T</title><link>https://x/1</link><source url="https://s">Named</source><description>Other: T</description></item></channel></rss>"#;
+        let row = parse(xml, false).unwrap().remove(0);
+        assert_eq!((row.source.as_str(), row.summary.as_str()), ("Named", ""), "a source element wins over the prefix; the repeated headline is still no summary");
+    }
+
+    #[test]
+    fn a_digest_feed_takes_the_outlet_off_the_end_of_the_title() {
+        let xml = concat!(
+            "<rss><channel>",
+            "<item><title>A look at AI in warfare (Financial Times)</title><link>https://x/1</link>",
+            r#"<description><![CDATA[<A HREF="https://ft.com/">Financial Times</A>:<BR><B><A HREF="https://ft.com/x">A look at AI in warfare</A></B>]]></description></item>"#,
+            "<item><title>Scam apps used LLM replies (Yael Grauer/The Verge)</title><link>https://x/2</link></item>",
+            "<item><title>No outlet here</title><link>https://x/3</link></item>",
+            "<item><title>Rust 1.0 released (2015)</title><link>https://x/4</link></item>",
+            "</channel></rss>"
+        );
+        let rows = parse_digest(xml).unwrap();
+        assert_eq!((rows[0].title.as_str(), rows[0].source.as_str(), rows[0].summary.as_str()), ("A look at AI in warfare", "Financial Times", ""));
+        assert_eq!((rows[1].title.as_str(), rows[1].source.as_str()), ("Scam apps used LLM replies", "The Verge"), "the outlet is the last part");
+        assert_eq!((rows[2].title.as_str(), rows[2].source.as_str()), ("No outlet here", ""));
+        assert_eq!((rows[3].title.as_str(), rows[3].source.as_str()), ("Rust 1.0 released", "2015"), "a digest's parenthetical is always its outlet");
+        let plain = parse(xml, false).unwrap();
+        assert_eq!(plain[0].title, "A look at AI in warfare (Financial Times)", "a plain feed keeps its titles");
+        assert_eq!(plain[0].source, "", "and the description's headline no longer matches a title that still carries the outlet");
+        assert_eq!(trailing_outlet("Title (a very long parenthetical that is clearly a sentence and not an outlet name)"), None);
+        assert_eq!(trailing_outlet("(Only)"), None, "nothing left of the title");
+    }
+
+    #[test]
+    fn images_come_from_media_content_thumbnail_enclosure_or_the_first_img() {
+        let item = |inner: &str| format!("<rss><channel><item><title>t</title><link>https://x/1</link>{inner}</item></channel></rss>");
+        let img = |inner: &str| parse(&item(inner), false).unwrap()[0].image.clone();
+        assert_eq!(img(r#"<media:content url="https://cdn/a.jpg" medium="image"/>"#).as_deref(), Some("https://cdn/a.jpg"));
+        assert_eq!(img(r#"<media:content url="https://cdn/v.mp4" medium="video"/><media:content url="https://cdn/b.jpg" type="image/jpeg"/>"#).as_deref(), Some("https://cdn/b.jpg"), "the video is skipped");
+        assert_eq!(img(r#"<media:content url="https://cdn/c.jpg"/>"#).as_deref(), Some("https://cdn/c.jpg"), "untyped media:content is taken as an image");
+        assert_eq!(img(r#"<media:thumbnail url="https://cdn/t.png" width="100"/>"#).as_deref(), Some("https://cdn/t.png"));
+        assert_eq!(img(r#"<enclosure url="https://cdn/e.jpg" type="image/jpeg" length="1"/>"#).as_deref(), Some("https://cdn/e.jpg"));
+        assert_eq!(img(r#"<enclosure url="https://cdn/e.mp3" type="audio/mpeg"/>"#), None, "an audio enclosure is not a picture");
+        assert_eq!(img(r#"<description><![CDATA[<p>Hi</p><img src="https://cdn/d.jpg?a=1&amp;b=2" alt=""/>]]></description>"#).as_deref(), Some("https://cdn/d.jpg?a=1&b=2"));
+        assert_eq!(img("<description>&lt;img src=&quot;https://cdn/dd.jpg&quot;&gt;</description>").as_deref(), Some("https://cdn/dd.jpg"), "double-encoded HTML");
+        assert_eq!(img(r#"<media:content url="ftp://cdn/a.jpg" medium="image"/><description>text</description>"#), None, "only http(s)");
+        assert_eq!(img(r#"<media:thumbnail url="https://cdn/t.png"/><media:content url="https://cdn/a.jpg" medium="image"/>"#).as_deref(), Some("https://cdn/a.jpg"), "media:content wins over the thumbnail");
+        assert_eq!(img(r#"<description><![CDATA[<IMG WIDTH=11 HEIGHT=12 SRC="http://x/pml.png"> text <img src="https://cdn/real.jpg" width="600px">]]></description>"#).as_deref(), Some("https://cdn/real.jpg"), "an icon is skipped, any case, bare values");
+        assert_eq!(img(r#"<description><![CDATA[<img width='1' height='1' src="https://t/pixel.gif">]]></description>"#), None, "a tracking pixel is not a picture");
+        assert_eq!(img(r#"<description><![CDATA[<IMG SRC="https://cdn/Up.JPG">]]></description>"#).as_deref(), Some("https://cdn/Up.JPG"), "the URL keeps its case");
+        let google = include_str!("../tests/fixtures/google.xml");
+        assert!(parse(google, true).unwrap().iter().all(|r| r.image.is_none()), "Google News carries no pictures");
     }
 }

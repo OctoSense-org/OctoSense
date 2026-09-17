@@ -1,19 +1,20 @@
 //! The in-app article reader: the platform's native web view (WKWebView on
 //! macOS and iOS, Android's WebView) glued to this widget's page rect while
-//! the pane is open. No platform reports navigation at this revision, so
-//! the bar shows the link's host, Back and Close; the page itself is the
-//! web view's own affair. The overlay belongs to the window that owns the
-//! widget's draw pass: the standalone window, or the host's window for an
-//! in-process module, and it only moves or hides when this widget draws or
-//! is told to. So while the pane is open a watchdog runs on a slow timer:
-//! every half second it asks for a redraw and checks that the redraw it
-//! asked for last time drew this widget; a tick that finds no draw (the
-//! tile is on a hidden workspace, another tile went fullscreen) takes the
-//! overlay off the window, and the next draw puts it back. Two redraws of
-//! the tile a second while reading, none when the pane is closed: a closed
-//! pane runs no timer.
+//! the pane is open, under a bar in the Apple News manner: a round back
+//! button, the link's host centred (no platform reports navigation at this
+//! revision, so there is no page title), and a `•••` button for the story's
+//! actions. The overlay belongs to the window that owns the widget's draw
+//! pass: the standalone window, or the host's window for an in-process
+//! module, and it only moves or hides when this widget draws or is told
+//! to. So while the pane is open a watchdog runs on a slow timer: every
+//! half second it asks for a redraw and checks that the redraw it asked for
+//! last time drew this widget; a tick that finds no draw (the tile is on a
+//! hidden workspace, another tile went fullscreen) takes the overlay off
+//! the window, and the next draw puts it back. Two redraws of the tile a
+//! second while reading, none when the pane is closed: a closed pane runs
+//! no timer.
 
-use crate::model::host_of;
+use crate::model::{host_of, Skin};
 use makepad_widgets::*;
 
 /// The watchdog's period: how long the overlay may outlive its tile.
@@ -23,39 +24,75 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // The bar's buttons: the host's line icons in the glass ink, the size
-    // of the list's refresh button.
-    let BackButton = glass.IconButton{width: 34 height: 34 text: "" spacing: 0
+    let c_ground = #(Skin::for_vm(vm).ground)
+    let c_card = #(Skin::for_vm(vm).card)
+    let c_ink = #(Skin::for_vm(vm).ink)
+    let c_secondary = #(Skin::for_vm(vm).secondary)
+    let c_accent = #(Skin::for_vm(vm).accent)
+    let c_clear = #(Vec4f::from_u32(0x00000000))
+
+    // The bar's buttons: round lenses carrying the host's line icons in the
+    // skin's ink, centred.
+    let ReaderButton = glass.IconButton{width: 40 height: 40 text: "" spacing: 0 padding: 0 align: Center
         icon_walk: Walk{width: 16 height: 16}
-        draw_icon +: {svg: crate_resource("self:resources/icons/chevron-left.svg") color: #xf8fbff}
-    }
-    let CloseButton = glass.IconButton{width: 34 height: 34 text: "" spacing: 0
-        icon_walk: Walk{width: 16 height: 16}
-        draw_icon +: {svg: crate_resource("self:resources/icons/close.svg") color: #xf8fbff}
+        draw_bg +: {border_radius: uniform(20.0)}
+        draw_icon +: {color: c_ink}
     }
 
     mod.widgets.ArticleReaderBase = #(ArticleReader::register_widget(vm))
     mod.widgets.ArticleReader = set_type_default() do mod.widgets.ArticleReaderBase{
-        width: Fill height: Fill flow: Down spacing: 8
-        bar := glass.NavBar{margin: Inset{left: 12 right: 12}
-            back := BackButton{}
-            host := glass.Caption{width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis}
-            close := CloseButton{}
+        width: Fill height: Fill flow: Overlay
+        SolidView{width: Fill height: Fill draw_bg.color: c_ground}
+        View{width: Fill height: Fill flow: Down
+            bar := View{width: Fill height: 56 flow: Right spacing: 8 align: Align{y: 0.5} padding: Inset{left: 10 right: 10}
+                show_bg: true draw_bg.color: c_ground
+                back := ReaderButton{draw_icon.svg: crate_resource("self:resources/icons/chevron-left.svg")}
+                View{width: Fill height: Fit flow: Down align: Align{x: 0.5}
+                    host := Label{width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis align: Align{x: 0.5}
+                        draw_text +: {color: c_ink text_style: theme.font_bold{font_size: 13}}}
+                    hint := Label{width: Fill padding: 0 max_lines: 1 text: "Article" align: Align{x: 0.5}
+                        draw_text +: {color: c_secondary text_style: theme.font_regular{font_size: 10}}}
+                }
+                more := ReaderButton{draw_icon.svg: crate_resource("self:resources/icons/more.svg")}
+            }
+            // The page's ground until the web view covers it; the overlay is
+            // glued to this view's rect, not the whole widget's, so the bar
+            // stays above it.
+            // The web view covers this while a page is up. When a load
+            // fails the overlay is taken off and this is what is left, so
+            // it says so instead of showing a blank pane.
+            page := SolidView{width: Fill height: Fill draw_bg.color: c_card
+                failure := View{visible: false width: Fill height: Fill flow: Down spacing: 6
+                    align: Align{x: 0.5 y: 0.5} padding: Inset{left: 32 right: 32}
+                    Label{width: Fill align: Align{x: 0.5} text: "Couldn't load this page"
+                        draw_text +: {color: c_ink text_style: theme.font_bold{font_size: 16}}}
+                    reason := Label{width: Fill align: Align{x: 0.5} max_lines: 3
+                        draw_text +: {color: c_secondary text_style: theme.font_regular{font_size: 13}}}
+                    retry := ButtonFlat{width: Fit height: 40 margin: Inset{top: 6} padding: Inset{left: 14 right: 14}
+                        text: "Try again" align: Center
+                        draw_bg +: {
+                            border_size: uniform(0.0)
+                            color: uniform(c_clear) color_hover: uniform(c_clear)
+                            color_down: uniform(#00000018) color_focus: uniform(c_clear)
+                            border_color: uniform(c_clear) border_color_hover: uniform(c_clear)
+                            border_color_down: uniform(c_clear) border_color_focus: uniform(c_clear)
+                        }
+                        draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent
+                            color_focus: c_accent text_style: theme.font_regular{font_size: 15}}}
+                }
+            }
         }
-        // The page's ground until the web view covers it; the overlay is
-        // glued to this view's rect, not the whole widget's, so the bar
-        // stays above it.
-        page := SolidView{width: Fill height: Fill draw_bg.color: #101623}
     }
 }
 
-/// What the reader tells its parent: the person closed it, so the list
-/// comes back.
+/// What the reader tells its parent: the person closed it, so the page
+/// comes back; or asked for the story's actions.
 #[derive(Clone, Debug, Default)]
 pub enum ReaderAction {
     #[default]
     None,
     Closed,
+    More,
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -83,6 +120,11 @@ pub struct ArticleReader {
     /// Whether this widget drew since the watchdog last looked.
     #[rust]
     drawn: bool,
+    /// Set when the platform reported that the page did not load. The web
+    /// view is taken off the window while this is set, so the pane shows
+    /// the failure instead of the web view's empty background.
+    #[rust]
+    failed: bool,
 }
 
 impl ArticleReader {
@@ -94,13 +136,14 @@ impl ArticleReader {
 
     /// Show `url` in the pane.
     pub fn open(&mut self, cx: &mut Cx, url: &str) {
-        let id = self.browser_id();
-        if self.spawned {
-            cx.system_browser(id).set_url(url, false);
-        } else {
-            cx.system_browser(id).spawn(url);
-            self.spawned = true;
-        }
+        // Navigable: a story link is often a redirector (Google News RSS
+        // links are), and a page's own links are part of reading it. Spawn
+        // carries that policy and loads the url, and is idempotent for a
+        // browser that already exists — so every open states the policy
+        // rather than trusting a view created earlier to still carry it.
+        cx.system_browser(self.browser_id()).spawn_navigable(url);
+        self.spawned = true;
+        self.clear_failure(cx);
         self.url = Some(url.to_string());
         self.open = true;
         self.view.label(cx, ids!(host)).set_text(cx, &host_of(url));
@@ -113,6 +156,31 @@ impl ArticleReader {
         if self.timer.is_none() {
             self.timer = Some(cx.start_interval(WATCHDOG_SECONDS));
         }
+    }
+
+    /// Put the pane back in its loading state: the failure is off and the
+    /// web view may cover the page again.
+    fn clear_failure(&mut self, cx: &mut Cx) {
+        if self.failed {
+            self.failed = false;
+            self.view.widget(cx, ids!(failure)).set_visible(cx, false);
+        }
+    }
+
+    /// The platform could not load `url`. Take the web view off the window
+    /// — it has nothing to show — and say so in its place.
+    fn show_failure(&mut self, cx: &mut Cx, reason: &str) {
+        self.failed = true;
+        self.hide_overlay(cx);
+        let host = self.url.as_deref().map(host_of).unwrap_or_default();
+        let reason = if reason.is_empty() {
+            host.clone()
+        } else {
+            format!("{host} — {reason}")
+        };
+        self.view.label(cx, ids!(reason)).set_text(cx, &reason);
+        self.view.widget(cx, ids!(failure)).set_visible(cx, true);
+        self.view.redraw(cx);
     }
 
     /// Hide the pane and its overlay; the parent hears `ReaderAction::Closed`.
@@ -147,8 +215,7 @@ impl ArticleReader {
     }
 
     /// The link on show, if the pane was ever opened.
-    #[cfg(test)]
-    pub(crate) fn url(&self) -> Option<&str> {
+    pub fn url(&self) -> Option<&str> {
         self.url.as_deref()
     }
 
@@ -209,11 +276,27 @@ impl Widget for ArticleReader {
             self.on_tick(cx);
         }
         if let Event::Actions(actions) = event {
-            if self.view.button(cx, ids!(back)).clicked(actions) && self.spawned {
-                cx.system_browser(self.browser_id()).history_go(-1);
-            }
-            if self.view.button(cx, ids!(close)).clicked(actions) {
+            if self.view.button(cx, ids!(back)).clicked(actions) {
                 self.close(cx);
+            }
+            if self.view.button(cx, ids!(more)).clicked(actions) {
+                cx.widget_action(self.widget_uid(), ReaderAction::More);
+            }
+            if self.view.button(cx, ids!(retry)).clicked(actions) {
+                if let Some(url) = self.url.clone() {
+                    self.open(cx, &url);
+                }
+            }
+            // The platform reports a failed main-frame load for one browser;
+            // only this widget's own failures belong to this pane.
+            for action in actions {
+                if let Some(err) = action.downcast_ref::<
+                    makepad_widgets::makepad_platform::event::NativeSystemBrowserPageError,
+                >() {
+                    if err.browser_id == self.browser_id().0.get_value() && self.open {
+                        self.show_failure(cx, &err.description);
+                    }
+                }
             }
         }
     }
@@ -225,9 +308,12 @@ impl Widget for ArticleReader {
         // the host's desk lands here as a redraw. A closed pane whose
         // overlay is already off sends nothing: a draw costs it no op.
         if step.is_done() && self.spawned && (self.open || self.overlay_visible) {
+            // A failed pane keeps the web view off the window: it has
+            // nothing to show, and it would cover the failure.
+            let show = self.open && !self.failed;
             let area = self.page_area(cx);
-            cx.system_browser(self.browser_id()).update(area, self.open);
-            if self.open {
+            cx.system_browser(self.browser_id()).update(area, show);
+            if show {
                 self.overlay_visible = true;
                 self.drawn = true;
             }

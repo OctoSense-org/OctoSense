@@ -101,6 +101,47 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   phone; provide a usable Photos library/import setup; test portrait, landscape,
   appearance changes and persistence without a desktop checkout.
 
+- [ ] **MOBILE-05 — P1: An Android HOME intent stops the shell presenting frames.**
+
+  On the OnePlus 6T with the framework at `d4502ef`, a HOME intent delivered
+  to the running activity (`adb shell input keyevent KEYCODE_HOME`, or the
+  system's Home while an app is open) leaves the shell alive but blank: the
+  JNI intent-extras pass runs (`android_jni.rs:685` logs the proxy state),
+  the shell's own `[phone] home intent` line never follows, later gestures
+  are still recognised (`gesture commit HomeUp` is logged) but nothing is
+  drawn again until the process is force-stopped. Reproduced four times on
+  2026-09-17, twice with only Photos or nothing open, so it is not the News
+  module. The earlier note that the Home role worked was against the
+  previous fork revision.
+
+  Acceptance: a HOME intent shows the home page and the shell keeps
+  drawing; the intent path in the fork's activity and JNI is checked for
+  the surface or event-loop state it disturbs.
+
+- [ ] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
+
+  The host's storage root (`src/octosense/paths.rs`, NEWS-09) and the News
+  reader call framework APIs the pinned revision `d4502ef` does not have:
+  `home::platform_data_dir`, `CxSystemBrowser::spawn_navigable` and the
+  `NativeSystemBrowserPageError` action, with their Android activity and
+  JNI side and the `news` app icon. They are published on the fork's
+  `feat/news-reader-platform` branch
+  (`6973b6850dac2e70abc0e5a0b1a230c99158d728`, three commits on `d4502ef`),
+  not on its `main`. Until the pin moves, this tree builds only against a
+  `../makepad` checkout of that branch, and
+  `tools/setup-native.py --check` rejects the checkout.
+
+  The revision is pinned as a chain, so the manifests here cannot move
+  alone: Octoscript's crates and Octoscript-Makepad (`runtime.json`, its
+  `Cargo.toml`) name the same framework revision, and the runtime's verify
+  step rejects an application manifest that names another.
+
+  Acceptance: the branch merged to the fork's `main`; Octoscript and
+  Octoscript-Makepad released on that revision; `native-runtime.lock.json`
+  and the `rev` of every makepad, Octoscript and runtime dependency here
+  moved to the released revisions; `python3 tools/setup-native.py --check
+  --cargo-manifest Cargo.toml` passes on clean checkouts.
+
 ## UPSTREAM-01: Remove retired-pass compatibility adapter
 
 Makepad 74b63be8 `platform/src/draw_list.rs:485` indexes a freed draw list from
@@ -124,11 +165,11 @@ list is hidden only by wrapping it in a view (News keeps its list in a
 
 - [ ] **NEWS-01 — P2: Open links in the system browser on Linux, Android and iOS.**
 
-  Phase 2's reader covers the phones: where the platform has a native web
-  view (macOS, iOS, Android) a headline opens in the app's own reader pane,
-  so the `Cx::open_url` stub matters only for the system-browser tier, which
-  comes after the reader wherever there is one and is the only tier left on
-  Linux (no web view there, NEWS-04). `open_url` is a stub on Linux, Android
+  Phase 2's reader covers the phones, and phase 3 puts it first: where the
+  platform has a native web view (macOS, iOS, Android) a headline opens in
+  the app's own reader, so the `Cx::open_url` stub matters only for the
+  system-browser tier behind `Open in Browser`, and it is the only tier left
+  on Linux (no web view there, NEWS-04). `open_url` is a stub on Linux, Android
   and iOS in the pinned framework (`platform/src/os/linux/windowing_backend.rs`,
   `platform/src/os/linux/direct/linux_direct.rs`,
   `platform/src/os/linux/android/android.rs`, `platform/src/os/apple/ios/ios.rs`);
@@ -139,13 +180,31 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   adopt the revision through the normal sync workflow, and verify a News
   headline reaches the system browser on all three.
 
-- [ ] **NEWS-02 — P3: Edit user feeds in the app.**
+- [x] **NEWS-02 — P3: Edit user feeds in the app.**
 
-  User feeds are read once at start from the `feeds.json` storage value, with
-  no editor and no live re-read.
+  Done in phase 3 (2026-09-16): the Following page lists every source with a
+  follow toggle, removes the person's own feeds, and adds one from a form; it
+  writes `feeds.json` in the same shape and fetches the new source at once.
 
-  Acceptance: a sheet in the full face lists the feeds with add and remove,
-  writes the same JSON shape back to the storage jail, and refetches the tabs.
+- [ ] **NEWS-07 — P3: Rounded corners on a hero's picture.**
+
+  A section's hero draws its picture inset in the card: the framework's
+  `Image` has no corner radius and a rounded view clips rectangularly, so an
+  edge-to-edge picture would poke out of the card's rounded top.
+
+  Acceptance: a rounded image draw (a radius on `DrawImage`, or a rounded
+  clip) in the framework fork, and the hero's picture bleeding to the card's
+  edges under its rounded corners, as Apple News draws it.
+
+- [ ] **NEWS-08 — P3: Pictures for Hacker News and Google News stories.**
+
+  Phase 3 shows a picture only when the feed carries one; Hacker News and
+  Google News RSS carry none, so most of Today is text. Fetching each
+  article's `og:image` was set aside as one request per headline.
+
+  Acceptance: a bounded, cached page-head fetch for stories without a feed
+  picture (first N visible rows, one small ranged request each, a per-link
+  cache in the jail), showing the picture when it decodes.
 
 - [ ] **NEWS-03 — P3: Open links in the running Browser instead of a new tile.**
 
@@ -169,15 +228,25 @@ list is hidden only by wrapping it in a view (News keeps its list in a
 
 - [ ] **NEWS-05 — P2: Check the web view plumbing on an Android device, and on iOS.**
 
-  The reader drives `cx.system_browser`: WKWebView on macOS and iOS, the
-  Android WebView through JNI. Only macOS was exercised. On Android the
-  WebView attaches inside OctoSense's own activity, not the framework's, so
-  its attachment there is unverified; iOS likewise, once the iOS build
-  compiles again (MOBILE-01).
+  Android checked on the OnePlus 6T on 2026-09-17: a headline opens in the
+  Android WebView inside OctoSense's activity, placed at the reader's page
+  rect, and Back returns to the list. GitHub pages first painted at about a
+  third of the view: the activity enabled `setLoadWithOverviewMode`, and a
+  page whose DOM overflows its declared `width=device-width` (412 CSS px
+  wide, 1094 px of content) was zoomed out to fit the overflow (DevTools:
+  `visualViewport.scale` 0.377; Hacker News and BBC stayed at 1). The fork's
+  `MakepadActivity.ensureSystemBrowser` now turns overview mode off and
+  enables pinch zoom without the zoom buttons; GitHub paints at full width
+  on the device. The same session gave the reader a navigable web view
+  (`spawn_navigable`: the default spawn, made for web app cards, cancels
+  every hop on Android, so a redirector link never reached its article) and
+  a failure pane: a failed main-frame load takes the overlay off and shows
+  the host, the platform's reason and `Try again`, seen on the device with
+  the network off. These changes are on the fork's
+  `feat/news-reader-platform` branch, not in this repository (MOBILE-06).
+  iOS is still open (MOBILE-01).
 
-  Acceptance: on an Android phone, tap a headline in the News app opened from
-  its home tile and see the page render inside the app, with Back and Close
-  working; the same on an iOS device.
+  Acceptance: the fork revision adopted (MOBILE-06); the same check on iOS.
 
 - [ ] **NEWS-06 — P2: Keyboard focus while the reader's web view is attached.**
 
@@ -201,3 +270,24 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   keyboard-free Close that always works, which it does today); verify ⌘W
   and the workspace keys with the reader open in the module tile, and that
   the overlay then leaves the window with its tile (the reader's watchdog).
+
+- [ ] **NEWS-09 — P1: Module storage was read-only on the phone.**
+
+  Every storage write on the device failed with `storage create directory
+  failed: Read-only file system (os error 30)`, so the headline cache,
+  `saved.json`, `hidden.json` and `feeds.json` never persisted. Two causes:
+  the framework's native storage root is `$MAKEPAD_HOME` or
+  `$HOME/.makepad`, and `HOME` is not writable for an Android app; and the
+  host sets `MAKEPAD_HOME` for its own process to `paths::home()`, which on
+  Android resolved to `/.octosense`. Fixed on 2026-09-17: the fork's Android
+  backend records the app's files directory before `Event::Startup`
+  (`makepad_platform::home::set_platform_data_dir`, used by
+  `makepad_home()` when `MAKEPAD_HOME` is unset), and the host's
+  `octosense::paths::home()` prefers `platform_data_dir()`. Verified on the
+  device: no write errors, and a saved story survives a force-stop and
+  relaunch. The host's theme choice is stored the same way, so the
+  earlier "dark mode not persisted" report likely has this cause too
+  (not rechecked).
+
+  Acceptance: the fork revision adopted (MOBILE-06); existing phones keep
+  no state from before (it was never written).

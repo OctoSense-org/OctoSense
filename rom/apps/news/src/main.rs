@@ -12,7 +12,11 @@
 pub use makepad_widgets;
 use makepad_ai_services::port::{AiServicePort, PortEvent};
 use makepad_widgets::*;
-use octosense_news::{ai, model::Hosting, view::NewsView};
+use octosense_news::{
+    ai,
+    model::{force_skin, Hosting},
+    view::NewsView,
+};
 
 app_main!(App);
 
@@ -142,6 +146,16 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+        // Dev flags for looking at the skins in a plain window: a window of
+        // its own has no host palette, so `--dark` forces the dark skin
+        // and `--light` the light one. Before the crate's modules, which
+        // splice the skin's colours when they are evaluated.
+        let args: Vec<String> = std::env::args().collect();
+        if args.iter().any(|a| a == "--dark") {
+            force_skin(Some(false));
+        } else if args.iter().any(|a| a == "--light") {
+            force_skin(Some(true));
+        }
         makepad_widgets::script_mod(vm);
         makepad_wm_theme::apply(vm);
         octosense_news::reader::script_mod(vm);

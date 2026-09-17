@@ -56,6 +56,7 @@ fn row(hit: Hit) -> Option<Headline> {
         comments,
         summary,
         discussion,
+        image: None,
     })
 }
 

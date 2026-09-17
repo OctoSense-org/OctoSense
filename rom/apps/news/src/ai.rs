@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn the_context_line_names_the_tab_its_rows_and_status() {
         let mut m = model_with_rows();
-        assert_eq!(context_line(&m), "News: All tab, 9 rows, Updated just now");
+        assert_eq!(context_line(&m), "News: Today tab, 9 rows, Updated just now");
         m.select_tab(2);
         assert_eq!(context_line(&m), "News: TechMeme tab, 3 rows, Updated just now");
     }

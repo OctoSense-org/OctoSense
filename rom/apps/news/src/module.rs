@@ -136,7 +136,7 @@ mod tests {
             let view = root.borrow::<NewsView>().unwrap();
             assert_eq!(view.face(&iso.cx), HostedViewMode::Tile, "the module root switched faces from the host's message");
             assert!(view.has_pending_loads(), "the jail is read on the start");
-            assert_eq!(view.ai_summary(), "News: All tab, 0 rows, Loading", "three fetches in flight, nothing landed");
+            assert_eq!(view.ai_summary(), "News: Today tab, 0 rows, Loading", "three fetches in flight, nothing landed");
         }
         let call = ServiceCall { call_id: "c1".into(), tool: "headlines".into(), args: String::new() };
         match executor.execute(&mut iso.cx, &call) {
