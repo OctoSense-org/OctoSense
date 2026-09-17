@@ -46,6 +46,7 @@ mod run_view;
 mod shell;
 mod theme;
 mod tile;
+mod wm_reply;
 
 /// The standalone mobile shell: the Android phone shell fills the window
 /// and nothing else is offered — no desk bar, no style switcher, no
@@ -580,6 +581,14 @@ impl App {
     // --------------------------------------------------------------
 
     fn launch_app(&mut self, cx: &mut Cx, app_id: &str) {
+        self.launch_app_with_args(cx, app_id, &[]);
+    }
+
+    /// `launch_app` with arguments appended to the app's own — a `Launch`
+    /// request's `args`, URLs for the Browser. Arguments mean a NEW window:
+    /// neither a running instance nor a warm one, which started without
+    /// them, can take them, so both shortcuts stand aside.
+    fn launch_app_with_args(&mut self, cx: &mut Cx, app_id: &str, extra_args: &[String]) {
         let Some(app) = crate::clients::find_app(app_id) else {
             log!("octosense: no app '{}' in the registry", app_id);
             self.notify(cx, "App unavailable", &format!("Register '{app_id}' in your app catalog to launch it."));
@@ -591,7 +600,7 @@ impl App {
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
         // matches `\b<pattern>\b` case-insensitively against the window's
         // CLASS OR TITLE and focuses the first hit.
-        if app.policy == LaunchPolicy::OrFocus {
+        if app.policy == LaunchPolicy::OrFocus && extra_args.is_empty() {
             let pattern = app.id.clone();
             let pattern = pattern.as_str();
             let mut existing: Vec<ClientId> = self
@@ -625,6 +634,12 @@ impl App {
         // isolate of its own — never a process, never the pool.
         if self.apps.hosting(app_id) == Hosting::Module {
             if let Some(module) = self.apps.module(app_id) {
+                if !extra_args.is_empty() {
+                    // The gap: `launch_module` takes no arguments, so a
+                    // sender that needs them must open the module through
+                    // its OpenSchema instead.
+                    log!("wm: {} runs in-process; launch arguments {:?} are not forwarded", app_id, extra_args);
+                }
                 self.launch_module(cx, module);
                 return;
             }
@@ -639,7 +654,7 @@ impl App {
 
         // THE POOL: a standby instance of this app becomes the window now,
         // already drawn, and the pool tops itself back up behind it.
-        if self.adopt_warm(cx, app_id) {
+        if extra_args.is_empty() && self.adopt_warm(cx, app_id) {
             return;
         }
 
@@ -659,7 +674,7 @@ impl App {
             hub_port,
             cwd.as_ref(),
             (app.id == "terminal").then_some(term_env.as_str()),
-            &[],
+            extra_args,
             false,
             lines,
         ) {
@@ -1083,9 +1098,14 @@ impl App {
             WmRequest::Preview { app, path } => {
                 self.handle_preview_request(cx, client, app.clone(), path.clone());
             }
+            // A named app the catalog cannot launch here is answered, not
+            // dropped: the requester falls back to what it can do itself.
+            WmRequest::Open { app: Some(app), path } if !Self::launchable(app) => {
+                self.reply_unavailable(cx, client, app, path);
+            }
             WmRequest::Open { .. } => {
                 if let Some(open) = preview::OpenRequest::from_request(&req) {
-                    self.open_request(cx, open);
+                    self.open_request(cx, Some(client), open);
                 }
             }
             // The REQUESTER hiding its own panel. A stray close from
@@ -1102,9 +1122,17 @@ impl App {
                     self.hide_active_preview(cx);
                 }
             }
-            WmRequest::Launch { app, .. } => {
-                let app = app.clone();
-                self.launch_app(cx, &app);
+            // A requester that predates the envelope (Files asking for a
+            // Terminal) hears nothing from the reply, so the person is told
+            // as `launch_app` tells them; an `Open` requester handles the
+            // reply itself.
+            WmRequest::Launch { app, .. } if !Self::launchable(app) => {
+                self.reply_unavailable(cx, client, app, "");
+                self.notify(cx, "App unavailable", &format!("Register '{app}' in your app catalog to launch it."));
+            }
+            WmRequest::Launch { app, args } => {
+                let (app, args) = (app.clone(), args.clone());
+                self.launch_app_with_args(cx, &app, &args);
             }
             WmRequest::Title { title } => {
                 if let Some(slot) = self.state_mut().clients.get_mut(&client) {
@@ -1118,8 +1146,6 @@ impl App {
                 }
             }
             WmRequest::Notify { title, body } => {
-                // The notifications surface is the shell-UI lane's; until
-                // it lands the notification is at least not lost.
                 log!("wm: notify from client {}: {} — {}", client, title, body);
                 let (app, now) = (self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default(), cx.seconds_since_app_start());
                 self.state_mut().phone.shade.post(&app, title, body, now, vec!["Open".into()]);
@@ -1147,7 +1173,10 @@ impl App {
     /// A client asked us to open a file in its associated app as a normal
     /// tiled window (`WmRequest::Open`). `WmRequest::Preview` (Quick Look)
     /// goes through `handle_preview_request`'s warm-viewer cache instead.
-    fn open_request(&mut self, cx: &mut Cx, req: preview::OpenRequest) {
+    /// `requester` is the client to answer when nothing opens (a spawn
+    /// failure, a module-only target on a host without processes); the
+    /// assistant's `open` tool has none, its result says what happened.
+    fn open_request(&mut self, cx: &mut Cx, requester: Option<ClientId>, req: preview::OpenRequest) {
         let hub_port = self.state_mut().hub_port;
         let id = self.next_id;
         self.next_id += 1;
@@ -1157,6 +1186,9 @@ impl App {
             Ok(slot) => slot,
             Err(err) => {
                 log!("wm: open request failed: {}", err);
+                if let Some(client) = requester {
+                    self.reply_unavailable(cx, client, &req.app, &req.path.to_string_lossy());
+                }
                 return;
             }
         };
@@ -1180,13 +1212,38 @@ impl App {
     /// gone or has not connected yet, so a caller whose message MUST land
     /// (a Quick-Look retarget) can park it for `HubEvent::Connected`.
     fn send_wm_event(&mut self, client: ClientId, ev: WmEvent) -> bool {
+        self.send_custom_to_client(client, ev.to_json())
+    }
+
+    /// One JSON message to a process client as `StudioToApp::Custom`.
+    /// False when the client is gone or has no socket yet.
+    fn send_custom_to_client(&mut self, client: ClientId, json: String) -> bool {
         if let Some(slot) = self.state_mut().clients.get(&client) {
             if let Some(sender) = &slot.sender {
-                crate::hub::send_to_app(sender, vec![StudioToApp::Custom(ev.to_json())]);
+                crate::hub::send_to_app(sender, vec![StudioToApp::Custom(json)]);
                 return true;
             }
         }
         false
+    }
+
+    /// Whether `app` can be launched from this catalog on this host: a
+    /// linked module when hosted as one, else an available process.
+    fn launchable(app: &str) -> bool {
+        clients::find_app(app).is_some_and(|def| crate::apps::is_launchable(&def))
+    }
+
+    /// Tell the requester that `app` cannot be launched from this catalog:
+    /// the `wm_unavailable` envelope, into a module's isolate or over a
+    /// process's socket. What to do instead is the requester's call.
+    fn reply_unavailable(&mut self, cx: &mut Cx, client: ClientId, app: &str, path: &str) {
+        let json = wm_reply::WmUnavailable { app: app.to_string(), path: path.to_string() }.to_json();
+        let told = if self.module_host.is_module(client) {
+            self.module_host.send_custom(cx, client, json)
+        } else {
+            self.send_custom_to_client(client, json)
+        };
+        log!("wm: {app} is not launchable here; told client {client}: {told}");
     }
 
     /// Retarget a warm viewer at `path`. A viewer spawned moments ago has
@@ -2234,7 +2291,7 @@ impl App {
                     match preview::OpenRequest::from_request(&req) {
                         Some(open) if clients::find_app(&open.app).is_some() => {
                             let app = open.app.clone();
-                            self.open_request(cx, open);
+                            self.open_request(cx, None, open);
                             ToolResult::ok(id, format!("opening {path} in {app}"), "opening")
                         }
                         _ => ToolResult::refused(id, format!("no app can open {path}")),
@@ -4271,6 +4328,19 @@ impl MatchEvent for App {
                     self.update_bar(cx);
                 }
                 _ => {}
+            }
+            // A module root asking the window manager: the request is a
+            // widget action posted from inside its isolate, attributed by
+            // the root's uid and handled exactly as a process's would be.
+            if let Some(req) = wa.action.downcast_ref::<WmRequest>() {
+                if let Some(client) = self.module_host.client_of_root_uid(wa.widget_uid) {
+                    let req = req.clone();
+                    self.on_wm_request(cx, client, req);
+                    continue;
+                }
+                // A child widget posting instead of its root is attributed
+                // to nobody: say so rather than lose the request silently.
+                log!("wm: WmRequest from widget {:?} matches no module root", wa.widget_uid);
             }
             match wa.cast::<MpRunViewAction>() {
                 MpRunViewAction::ForwardToApp { client, msg_bin } => {
