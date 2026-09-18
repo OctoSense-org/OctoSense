@@ -101,7 +101,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   phone; provide a usable Photos library/import setup; test portrait, landscape,
   appearance changes and persistence without a desktop checkout.
 
-- [ ] **MOBILE-05 — P1: An Android HOME intent stops the shell presenting frames.**
+- [ ] **MOBILE-05 — P2: An Android HOME intent stops the shell presenting frames (not reproduced since).**
 
   On the OnePlus 6T with the framework at `d4502ef`, a HOME intent delivered
   to the running activity (`adb shell input keyevent KEYCODE_HOME`, or the
@@ -114,9 +114,27 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   module. The earlier note that the Home role worked was against the
   previous fork revision.
 
-  Acceptance: a HOME intent shows the home page and the shell keeps
-  drawing; the intent path in the fork's activity and JNI is checked for
-  the surface or event-loop state it disturbs.
+  Not reproduced later the same day on the fork's `feat/news-reader-platform`
+  (`6973b68`) with the host at `0c1314d`, built with the fork's tool:
+  seven HOME deliveries (from the home page, from the News reader with
+  its web view attached, from Photos, three in a row, and after a forced
+  in-process activity re-creation) each logged `[phone] home intent`,
+  showed the home page and kept presenting frames. What the original
+  report does establish: the intent-extras pass runs only from
+  `activityOnCreate`, so in the failing runs the HOME press *re-created*
+  the activity in the live process (the main loop quits on `Destroy`, and
+  `android_entry` starts a second `Cx` in the same pid); that path was
+  exercised here by a font-scale change (`settings put system font_scale
+  1.15`) and drew correctly. No logcat of a failing run survives, and the
+  fork tree carried uncommitted edits at the time, so the cause is not
+  known. Diagnostics for the next sighting: capture `adb logcat -v time`
+  across the press; this ROM logs `vendor.debug.egl.swapinterval` once per
+  `eglSwapBuffers`, so a count of those lines is a frame counter, and an
+  `android_jni.rs … proxy` line after the press means the activity was
+  re-created rather than handed `onNewIntent`.
+
+  Acceptance: a fresh reproduction with logcat, or the item closed after a
+  week without one.
 
 - [ ] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
 
