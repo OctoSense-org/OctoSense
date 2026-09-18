@@ -71,6 +71,7 @@ public class AgentPlatformService extends Service {
     }
 
     @Override public IBinder onBind(Intent intent) { return binder; }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) { return START_STICKY; }
 
     // ---- gate -------------------------------------------------------------
 

@@ -39,6 +39,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
+        android:name=".AgentApplication"
         android:label="OctoSense Agent"
         android:persistent="true"
         android:directBootAware="true"
