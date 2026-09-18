@@ -375,7 +375,7 @@ public class AgentPlatformService extends Service {
         if (args == null || args.length == 0) {
             pw.println("OctoSense agent platform, protocol " + PROTOCOL_VERSION);
             pw.println("capabilities " + capabilities().getStringArrayList("capabilities"));
-            pw.println("commands: tasks | snapshot <taskId> <path> | screen <path> | tap <x> <y> | swipe <x0> <y0> <x1> <y1> <ms>");
+            pw.println("commands: tasks | snapshot <taskId> [maxWidth] | screen [maxWidth] | tap <x> <y> | swipe <x0> <y0> <x1> <y1> <ms>");
             pw.println("          type <text> | key <code> | get <table> <name> | put <table> <name> <value>");
             pw.println("          start-task <id> | remove-task <id> | force-stop <pkg> | notifications | qs | collapse | audit");
             return;
@@ -384,12 +384,11 @@ public class AgentPlatformService extends Service {
         try {
             Bundle r = dumpCommand(args);
             if (r.containsKey("png")) {
+                // A system app cannot write where the shell reads, so the image
+                // travels in the dump output; scripts/agent-test.sh decodes it.
                 byte[] png = r.getByteArray("png");
-                // screen <path> [maxWidth] | snapshot <taskId> <path>
-                String path = args[0].equals("snapshot") ? args[2] : args[1];
-                try (java.io.FileOutputStream out = new java.io.FileOutputStream(path)) { out.write(png); }
                 r.remove("png");
-                r.putString("path", path);
+                r.putString("png_base64", android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP));
             }
             for (String k : r.keySet()) pw.println(k + "=" + r.get(k));
         } catch (Exception e) {
@@ -403,9 +402,8 @@ public class AgentPlatformService extends Service {
     private Bundle dumpCommand(String[] a) throws Exception {
         switch (a[0]) {
             case "tasks": return tasks(a.length > 1 ? Integer.parseInt(a[1]) : 16);
-            case "snapshot": return taskSnapshot(Integer.parseInt(a[1]), 540);
-            case "screen": return screen(a.length > 2 ? Integer.parseInt(a[2]) : 0);
-            // (the path is consumed by dump(); a[1])
+            case "snapshot": return taskSnapshot(Integer.parseInt(a[1]), a.length > 2 ? Integer.parseInt(a[2]) : 540);
+            case "screen": return screen(a.length > 1 ? Integer.parseInt(a[1]) : 0);
             case "tap": return tap(Float.parseFloat(a[1]), Float.parseFloat(a[2]));
             case "swipe": return swipe(Float.parseFloat(a[1]), Float.parseFloat(a[2]), Float.parseFloat(a[3]), Float.parseFloat(a[4]), Integer.parseInt(a[5]));
             case "type": return typeText(String.join(" ", Arrays.copyOfRange(a, 1, a.length)));
