@@ -25,7 +25,10 @@ This repository was split from the desktop [OctoSense](https://github.com/OctoSe
 Requires Rust stable, an installed Android SDK/toolchain and a device on ADB.
 Keep AppCards at `../Octosense-Service-AppCards` for the Mail module. Build
 `cargo-makepad` from the exact sibling revision selected by the shared runtime;
-it carries this app's Java activity (HOME, GPS, share and deep-link intents):
+it carries this app's Java activity (the system browser, HOME, GPS, share and
+deep-link intents), so upstream's tool builds an APK that panics on the first
+News tap — [docs/build-tool.md](docs/build-tool.md) has the measured
+difference and the failure:
 
 ```sh
 python3 tools/setup-native.py --check --cargo-manifest Cargo.toml
@@ -34,12 +37,20 @@ cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
   --sdk-path=/path/to/existing/android_sdk build -p octosense --release
 ```
 
+To have plain `cargo makepad` be that tool, install it over the stock one, and
+again whenever the fork's tool code or Java changes:
+
+```sh
+cargo install --path ../makepad/tools/cargo_makepad --force
+```
+
 For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
 booted simulator receives the app) — iOS needs `mobile-only` passed by hand,
 Android gets it from `build.rs`:
 
-```
-../makepad-fork/target/debug/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
+```sh
+../makepad/target/release/cargo-makepad makepad apple ios \
+  --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
 ```
 
 `run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
