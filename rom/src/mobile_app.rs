@@ -713,7 +713,8 @@ impl App {
                 self.android_haptic(cx,"long_press");
                 let hidden=self.state_mut().phone.android.hidden_tiles.len() as i64;
                 let columns=crate::mobile_tiles::grid_columns(false) as i64;
-                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden)),("columns",makepad_strict_json::Value::Int(columns))]);
+                let system_panel=makepad_strict_json::Value::Bool(self.state_mut().phone.android.system_panel);
+                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden)),("columns",makepad_strict_json::Value::Int(columns)),("system_panel",system_panel)]);
                 return true;
             }
         }
@@ -760,6 +761,7 @@ impl App {
             // query; with the field merely focused (the way a pull opens it)
             // a pull still closes it.
             body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && phone.search_query.is_empty()),
+            shade: !phone.android.system_panel,
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws

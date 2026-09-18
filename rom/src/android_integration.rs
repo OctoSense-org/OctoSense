@@ -80,6 +80,10 @@ pub struct AndroidState {
     pub font_scale: f64,
     /// Android's "remove animations" (animator scale 0): no launch effect.
     pub reduce_motion: bool,
+    /// Every pull-down belongs to the system-wide OctoSense panel: the
+    /// shell's own shade stays closed on Android (placements `launcher_shade`
+    /// false).
+    pub system_panel: bool,
     /// The person's app pairs (None: the seeds) and the tiles they hid.
     pub pairs: Option<Arc<Vec<(String, Vec<String>)>>>,
     pub hidden_tiles: Arc<Vec<String>>,
@@ -717,6 +721,7 @@ impl App {
         crate::mobile_groups::set_seeds(pairs.as_deref());
         crate::mobile_tiles::set_hidden_tiles(&hidden_tiles);
         crate::mobile_tiles::set_grid_columns(value.get("columns").and_then(Value::as_i64).unwrap_or(0).max(0) as usize);
+        android.system_panel = value.get("launcher_shade").and_then(Value::as_bool) == Some(false);
         android.pairs = pairs.map(Arc::new);
         android.hidden_tiles = Arc::new(hidden_tiles);
         self.state_mut().phone.groups.reseed();

@@ -77,7 +77,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | App pair tile | long press | Change either app, or remove the pair |
 | Folder tile | long press | Remove one app, or the folder |
 | App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
-| Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, System setup, Show hidden tiles |
+| Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, Pull-downs (launcher shade or system-wide panel), System setup, Show hidden tiles |
 
 A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field follows the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
 

@@ -691,7 +691,7 @@ impl PhoneSurface {
             return;
         }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
-        let Some((_,text))=phone.hints.pending() else {return};
+        let Some((_,text))=phone.hints.pending(phone.android.system_panel) else {return};
         // A single line above the dock, quiet enough to ignore; it leaves
         // once the gesture it names has been used.
         let dock=Self::home_dock(screen);
@@ -884,7 +884,7 @@ impl PhoneSurface {
             self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
             self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
         }
-        crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);
+        if !phone.android.system_panel {crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);}
         crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);
         // The battery icon: three quick taps switch the frame-time reporter.
         if phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
