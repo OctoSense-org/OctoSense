@@ -1,0 +1,25 @@
+// Prebuilt OctoSense apps, re-signed with this ROM's platform certificate at
+// build time (android_app_import with certificate: "platform"), so signature
+// permissions between them and the framework resolve.
+
+android_app_import {
+    name: "OctoSenseHome",
+    apk: "prebuilt/OctoSenseHome.apk",
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
+    name: "OctoSenseBridge",
+    apk: "prebuilt/OctoSenseBridge.apk",
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
