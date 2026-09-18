@@ -47,7 +47,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[cfg(any(feature = "app-sheets", target_os = "android", target_os = "ios"))]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(any(feature = "app-photos", target_os = "android", target_os = "ios"))]
-    out.push(&makepad_photos::PHOTOS_MODULE);
+    out.push(&octosense_photos::PHOTOS_MODULE);
     #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(any(feature = "app-news", target_os = "android", target_os = "ios"))]

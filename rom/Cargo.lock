@@ -4010,16 +4010,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "makepad-image-tiles"
-version = "0.1.0"
-dependencies = [
- "makepad-network",
- "makepad-platform-video",
- "makepad-sqlite",
- "makepad-widgets",
-]
-
-[[package]]
 name = "makepad-jni-sys"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4110,18 +4100,6 @@ name = "makepad-pdf-parse"
 version = "1.0.0"
 dependencies = [
  "makepad-zune-inflate",
-]
-
-[[package]]
-name = "makepad-photos"
-version = "0.1.0"
-dependencies = [
- "makepad-ai-services",
- "makepad-app-module",
- "makepad-image-tiles",
- "makepad-strict-json",
- "makepad-widgets",
- "makepad-wm-theme",
 ]
 
 [[package]]
@@ -5379,7 +5357,6 @@ dependencies = [
  "makepad-aichat",
  "makepad-app-module",
  "makepad-network",
- "makepad-photos",
  "makepad-sheets",
  "makepad-strict-json",
  "makepad-studio-protocol",
@@ -5388,6 +5365,7 @@ dependencies = [
  "makepad-wm-theme",
  "octosense-appcard",
  "octosense-news",
+ "octosense-photos",
  "octosense-reference",
 ]
 
@@ -5410,6 +5388,16 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+]
+
+[[package]]
+name = "octosense-photos"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
