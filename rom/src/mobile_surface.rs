@@ -828,7 +828,8 @@ impl PhoneSurface {
                     if phone.screen==PhoneScreen::Recents {self.hits.push((card,PhoneHit::Card(*client)));}
                 }
             }
-            if phone.order.is_empty() {self.label(cx,screen,"No recent apps",20.0,false,ink);}
+            if phone.order.is_empty() && (phone.android.recent_apps.is_empty() || !phone.android.usage_access) {self.label(cx,screen,"No recent apps",20.0,false,ink);}
+            self.draw_android_recents(cx,state,screen);
         }
         if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         self.draw_groups_overlay(cx,state,screen);
@@ -873,12 +874,61 @@ impl PhoneSurface {
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
+        if let Some(launch)=phone.launch.as_ref() {
+            // The tapped icon grows from its place towards the middle and
+            // fades as the page dims under it; Android's own window
+            // transition takes over from there.
+            let t=launch.t.clamp(0.0,1.0);
+            let eased=1.0-(1.0-t)*(1.0-t);
+            self.rounded(cx,screen,0.0,alpha(rgb(0,0,0),(0.45*eased) as f32));
+            let size=launch.origin.size.x.min(launch.origin.size.y).max(24.0);
+            let from=dvec2(launch.origin.pos.x+launch.origin.size.x*0.5,launch.origin.pos.y+size*0.5);
+            let to=dvec2(screen.pos.x+screen.size.x*0.5,screen.pos.y+screen.size.y*0.42);
+            let centre=from+(to-from)*eased;
+            let grown=size*(1.0+2.4*eased);
+            let r=rect(centre.x-grown*0.5,centre.y-grown*0.5,grown,grown);
+            self.draw_launcher_icon(cx,state,&launch.app,r,rgb(255,255,255),(1.0-t*t) as f32);
+        }
         self.publish_accessibility(cx,state);
         if perf {
             crate::mobile_perf::span(cx.cx,ch.shade,clock);
             // Above the shade, inside the navigation band's top edge.
             let pane=rect(screen.pos.x,screen.pos.y,screen.size.x,screen.size.y-24.0);
             let _=self.perf_graph.draw_walk(cx,&mut Scope::empty(),Walk::abs_rect(pane));
+        }
+    }
+    /// Under the hosted apps' cards, the Android apps used lately (usage
+    /// access lets the shell know them): a row of icons that relaunch them.
+    /// Without the access, one card that opens the setting.
+    fn draw_android_recents(&mut self,cx:&mut Cx2d,state:&WmState,screen:Rect) {
+        if !cfg!(target_os="android") {return;}
+        let phone=&state.phone;
+        let a=phone.overview as f32;
+        let white=rgb(255,255,255);
+        // Under the cards' rounded bottom, above the navigation band.
+        let row_h=76.0;
+        let y=screen.pos.y+screen.size.y-24.0-row_h+30.0;
+        let width=(screen.size.x-48.0).min(520.0);
+        let x0=screen.pos.x+(screen.size.x-width)*0.5;
+        let live=phone.screen==PhoneScreen::Recents;
+        if !phone.android.usage_access {
+            let r=rect(x0,y,width,row_h-10.0);
+            self.rounded(cx,r,18.0,alpha(white,0.12*a));
+            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+8.0,r.size.x-36.0,26.0),true,14.0,alpha(white,a),HAlign::Left,"Android apps can show here too");
+            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+36.0,r.size.x-36.0,24.0),false,12.0,alpha(white,0.8*a),HAlign::Left,"Allow usage access in Settings to see them");
+            if live {self.hits.push((r,PhoneHit::Shade(crate::mobile_shade::ShadeHit::Settings("usage_access"))));}
+            return;
+        }
+        if phone.android.recent_apps.is_empty() {return;}
+        self.d.label(cx,rect(x0,y-24.0,width,20.0),false,12.0,alpha(white,0.75*a),HAlign::Left,"Recent Android apps");
+        let n=phone.android.recent_apps.len().min(6);
+        let cell=width/6.0;
+        for (i,id) in phone.android.recent_apps.iter().take(n).enumerate() {
+            let r=rect(x0+i as f64*cell,y,cell,row_h);
+            let label=phone.android.rows.iter().find(|(app,_)|app==id).map(|(_,l)|l.as_str()).unwrap_or("");
+            self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-48.0)*0.5,r.pos.y,48.0,48.0),white,a);
+            self.label(cx,rect(r.pos.x,r.pos.y+52.0,cell,18.0),label,10.5,false,alpha(white,a));
+            if live {self.hits.push((r,PhoneHit::App(id.clone())));}
         }
     }
     /// Where the shell keyboard sits while it is up (or sliding up).

@@ -78,6 +78,10 @@ pub struct AndroidState {
     pub system_dark: Option<bool>,
     /// Android's text size preference (1 is the default size).
     pub font_scale: f64,
+    /// Recently used Android apps (newest first) for Recents, and whether
+    /// usage access is granted so they can be known at all.
+    pub recent_apps: Arc<Vec<String>>,
+    pub usage_access: bool,
     /// The hit regions published as accessibility nodes, by node index.
     pub a11y_hits: Vec<crate::mobile::PhoneHit>,
 }
@@ -322,7 +326,14 @@ impl App {
                 if app.shortcut { "shortcut" } else { "launch" },
                 vec![("app", s(id))],
             );
-            self.state_mut().phone.navigate(PhoneScreen::Home);
+            // The icon the person tapped grows out of its place while the
+            // app's window comes up; from the shade or a tile there is none.
+            let origin = self.desk(cx).borrow::<crate::desk::WmDesk>().and_then(|desk| {
+                desk.phone_hit_rect(&crate::mobile::PhoneHit::App(id.to_string())).or_else(|| desk.phone_hit_rect(&crate::mobile::PhoneHit::TileApp(id.to_string())))
+            });
+            let phone = &mut self.state_mut().phone;
+            phone.launch = origin.map(|origin| crate::mobile::LaunchFx { app: id.to_string(), origin, t: 0.0 });
+            phone.navigate(PhoneScreen::Home);
         }
         true
     }
@@ -630,6 +641,12 @@ impl App {
                     let (title, body) = result_copy(&string(&value, "reason"));
                     self.notify(cx, title, &body);
                 }
+            }
+            "launcher.recent_apps" => {
+                let apps = value.get("apps").and_then(Value::as_arr).map(|items| items.iter().filter_map(|v| v.as_str().map(str::to_string)).take(8).collect::<Vec<_>>()).unwrap_or_default();
+                let android = &mut self.state_mut().phone.android;
+                android.usage_access = boolean(&value, "granted");
+                android.recent_apps = Arc::new(apps);
             }
             "a11y.activate" => {
                 // A screen reader activated a node: the same action as a tap.

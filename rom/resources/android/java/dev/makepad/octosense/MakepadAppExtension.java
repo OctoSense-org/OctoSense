@@ -204,10 +204,57 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             controller.setSystemBarsAppearance(shellDark?0:mask,mask);
         }
     }
+    private boolean openUsageAccess() {
+        try {
+            Intent intent=new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(intent);
+            return true;
+        } catch(Exception e) { return false; }
+    }
     private void emitUiMode() {
         Configuration configuration=activity.getResources().getConfiguration();
         boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
         emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f)));
+    }
+    /** Recently used Android apps for the shell's Recents, newest first, when usage access is granted. */
+    private void publishRecentApps() {
+        boolean granted=false;
+        ArrayList<String> ids=new ArrayList<>();
+        try {
+            android.app.AppOpsManager ops=(android.app.AppOpsManager)activity.getSystemService(Context.APP_OPS_SERVICE);
+            int mode=ops.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),activity.getPackageName());
+            granted=mode==android.app.AppOpsManager.MODE_ALLOWED || (mode==android.app.AppOpsManager.MODE_DEFAULT
+                    && activity.checkSelfPermission(android.Manifest.permission.PACKAGE_USAGE_STATS)==PackageManager.PERMISSION_GRANTED);
+            if(granted) {
+                android.app.usage.UsageStatsManager usage=(android.app.usage.UsageStatsManager)activity.getSystemService(Context.USAGE_STATS_SERVICE);
+                long now=System.currentTimeMillis();
+                android.app.usage.UsageEvents events=usage.queryEvents(now-24L*3600_000L,now);
+                android.app.usage.UsageEvents.Event event=new android.app.usage.UsageEvents.Event();
+                HashMap<String,Long> latest=new HashMap<>();
+                while(events.getNextEvent(event)) {
+                    int type=event.getEventType();
+                    if(type==android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED || type==android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND)
+                        latest.put(event.getPackageName(),event.getTimeStamp());
+                }
+                ArrayList<Map.Entry<String,Long>> order=new ArrayList<>(latest.entrySet());
+                order.sort((a,b) -> Long.compare(b.getValue(),a.getValue()));
+                long me=users.getSerialNumberForUser(android.os.Process.myUserHandle());
+                for(Map.Entry<String,Long> entry:order) {
+                    String pkg=entry.getKey();
+                    if(pkg.equals(activity.getPackageName())) continue;
+                    String found=null;
+                    for(Map.Entry<String,LauncherActivityInfo> app:apps.entrySet()) {
+                        if(!app.getValue().getComponentName().getPackageName().equals(pkg)) continue;
+                        if(found==null || app.getValue().getUser().equals(android.os.Process.myUserHandle())) found=app.getKey();
+                    }
+                    if(found!=null && !ids.contains(found)) ids.add(found);
+                    if(ids.size()>=8) break;
+                }
+                if(me<0) ids.clear();
+            }
+        } catch(Exception e) { ids.clear(); }
+        emit("launcher.recent_apps",json("granted",granted,"apps",new JSONArray(ids)));
     }
     private void emitHints() {
         JSONArray seen=new JSONArray();
@@ -367,6 +414,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             case "catalog": refreshCatalog(); break;
             case "widgets_snapshot": widgets.refresh();break;
             case "haptic": { String kind=command.optString("kind","tick"); main.post(() -> haptic(kind)); break; }
+            case "recent_apps": publishRecentApps(); break;
             case "system_bars": shellDark=command.optBoolean("dark",false); main.post(this::applyWindowChrome); break;
             case "hint_seen": {
                 String hint=command.optString("hint","");
@@ -441,7 +489,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 String destination=operation.equals("settings") ? "home" : operation.equals("bridge_settings") ? "access" : command.getString("destination");
                 main.post(() -> {
                     if(destroyed || activity.isFinishing()) return;
-                    boolean opened=dev.makepad.octosense.contracts.SystemSettings.open(activity,destination);
+                    boolean opened="usage_access".equals(destination)?openUsageAccess():dev.makepad.octosense.contracts.SystemSettings.open(activity,destination);
                     result(id,opened ? Protocol.COMPLETED : Protocol.UNSUPPORTED,opened ? "settings_opened" : "setting_unavailable");
                 }); break;
             }
@@ -784,7 +832,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     @Override public void onResume() {
         resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); requestResync();
         main.post(this::applyWindowChrome);
-        offer(() -> {emitUiMode();emitHints();flushEvents();});
+        offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
     @Override public void onPause() { resumed=false;closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause(); }
     @Override public boolean onActivityResult(int request,int result,Intent data) {return widgets.onActivityResult(request,result,data);}

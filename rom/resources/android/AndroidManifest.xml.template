@@ -23,6 +23,8 @@
     android:versionCode="{version_code}"
     android:versionName="{version_name}">
     <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
+    <!-- Usage access (granted by the person in Settings) lets Recents list the Android apps used lately. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <application
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"

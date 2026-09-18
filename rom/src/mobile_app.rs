@@ -477,7 +477,14 @@ impl App {
             }
             PhoneHit::Divider=>{}
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
-            PhoneHit::Recents=>self.state_mut().phone.navigate(PhoneScreen::Recents),
+            PhoneHit::Recents=>{
+                self.state_mut().phone.navigate(PhoneScreen::Recents);
+                // Recents also lists the Android apps used lately: ask for the latest.
+                if cfg!(target_os="android") {self.android_command(cx,"launcher","recent_apps",vec![]);}
+            }
+            PhoneHit::Shade(ShadeHit::Settings("usage_access"))=>{
+                self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s("usage_access"))]);
+            }
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
             PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
             #[cfg(not(mobile_only))]

@@ -135,6 +135,7 @@ impl WmDesk {
         self.phone_ui.focus_search(cx,phone);
     }
     pub fn phone_search_scroll_max(&self)->f64 {self.phone_ui.search_scroll_max}
+
     /// A frame from `client` landed in the given face: that face's capture
     /// re-records on the next draw. A frame that belongs to neither (a stale
     /// size while the client switches faces) is left out of both.

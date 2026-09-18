@@ -31,6 +31,14 @@ pub enum PhoneHit {
     Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
 }
 
+/// The launch effect of an Android app (`PhoneState::launch`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LaunchFx {
+    pub app: String,
+    pub origin: Rect,
+    /// 0 at the tap, 1 when done (about a quarter of a second).
+    pub t: f64,
+}
 /// An icon being dragged on the home page.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HomeDrag {
@@ -76,6 +84,9 @@ pub struct PhoneState {
     /// A home-page icon lifted by a long press and following the finger
     /// (mobile_app.rs `finish_home_drag` puts it down).
     pub drag: Option<HomeDrag>,
+    /// An Android app just launched: its icon grows out of its place and
+    /// the page dims while Android brings the app's window up.
+    pub launch: Option<LaunchFx>,
     /// Frame-trace boundaries: include the final settling frame, while
     /// keeping the separate one-second status refreshes out of a gesture.
     pub(crate) animation_active: bool,
@@ -143,6 +154,7 @@ impl Default for PhoneState {
             gesture_out: None,
             hints: Default::default(),
             drag: None,
+            launch: None,
             exclusions: Default::default(),
             shade: Default::default(),
             pages: Default::default(),
@@ -213,6 +225,10 @@ impl PhoneState {
             self.page += (target - self.page) * t;
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
+        }
+        if let Some(launch) = self.launch.as_mut() {
+            launch.t += dt / 0.26;
+            if launch.t >= 1.0 { self.launch = None; } else { active = true; }
         }
         // A flicked drawer coasts and slows (about a second from a fast
         // flick), stopping dead at either end of the list.
