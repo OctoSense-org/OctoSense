@@ -232,9 +232,10 @@ On 2026-09-18:
 - **The sources carry marks**: Hacker News' Y, TechMeme's T, Google News'
   paper, the RSS symbol for a feed of the person's own (`resources/icons/
   hn.svg`, `techmeme.svg`, `google-news.svg`, `feed.svg`, single-colour).
-  A Today section header shows its source's mark in the provenance colour
-  the stories' dots use; a Following row shows it white on the coloured
-  disc, where a feed of the person's own keeps its initial.
+  A Today section header and a source's own page title show the source's
+  mark in the provenance colour the stories' dots use; a Following row
+  shows it white on the coloured disc, where a feed of the person's own
+  keeps its initial.
 
 From the check on the Android device, on 2026-09-17:
 

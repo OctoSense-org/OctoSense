@@ -160,9 +160,20 @@ script_mod! {
     // so the segments of a group touch.
     let Item = View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16}}
 
-    // The OctoSense mark (the website's eight-petal `Mark`, in the site's
-    // green, `--green` in its stylesheet) sits before the front page's
-    // title; the other pages' titles are text alone.
+    // The sources' marks — Hacker News' Y, TechMeme's T, Google News'
+    // paper, the RSS symbol for a feed of the person's own — one widget
+    // each, the row showing the one its source id names (`show_source_mark`).
+    // In a page title and a section header each wears its provenance
+    // colour, the same as the stories' dots; on the Following page's
+    // coloured disc they are white.
+    let c_hn = #(Vec4f::from_u32(0xff6600ff))
+    let c_techmeme = #(Vec4f::from_u32(0x2bb5a0ff))
+    let c_google = #(Vec4f::from_u32(0x4285f4ff))
+    let c_feed = #(Vec4f::from_u32(0x7d8aa5ff))
+    let SourceMark = View{visible: false width: Fit height: Fit}
+    // A page's title: the OctoSense mark (the website's eight-petal `Mark`,
+    // in the site's green, `--green` in its stylesheet) before the front
+    // page's, a source's mark before its own page's, text alone elsewhere.
     let c_brand = #(Vec4f::from_u32(0x6a8058ff))
     let TitleRow = Item{padding: Inset{left: 16 right: 16 top: 14 bottom: 6} spacing: 2
         head := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
@@ -170,22 +181,16 @@ script_mod! {
                 Icon{icon_walk: Walk{width: 30 height: 30}
                     draw_icon +: {svg: crate_resource("self:resources/icons/octosense.svg") color: c_brand}}
             }
+            hn := SourceMark{Icon{icon_walk: Walk{width: 30 height: 30} draw_icon +: {svg: crate_resource("self:resources/icons/hn.svg") color: c_hn}}}
+            techmeme := SourceMark{Icon{icon_walk: Walk{width: 30 height: 30} draw_icon +: {svg: crate_resource("self:resources/icons/techmeme.svg") color: c_techmeme}}}
+            google := SourceMark{Icon{icon_walk: Walk{width: 30 height: 30} draw_icon +: {svg: crate_resource("self:resources/icons/google-news.svg") color: c_google}}}
+            feed := SourceMark{Icon{icon_walk: Walk{width: 30 height: 30} draw_icon +: {svg: crate_resource("self:resources/icons/feed.svg") color: c_feed}}}
             title := PageTitleText{}
         }
         caption := Caption{}
     }
     // The title of a pushed page starts under the floating back button.
     let TitleBelowBarRow = TitleRow{padding: Inset{left: 16 right: 16 top: 62 bottom: 6}}
-    // The sources' marks — Hacker News' Y, TechMeme's T, Google News'
-    // paper, the RSS symbol for a feed of the person's own — one widget
-    // each, the row showing the one its source id names (`show_source_mark`).
-    // In a section header each wears its provenance colour, the same as the
-    // stories' dots; on the Following page's coloured disc they are white.
-    let c_hn = #(Vec4f::from_u32(0xff6600ff))
-    let c_techmeme = #(Vec4f::from_u32(0x2bb5a0ff))
-    let c_google = #(Vec4f::from_u32(0x4285f4ff))
-    let c_feed = #(Vec4f::from_u32(0x7d8aa5ff))
-    let SourceMark = View{visible: false width: Fit height: Fit}
     let SectionRow = Item{padding: Inset{left: 16 right: 16 top: 22 bottom: 10}
         header := View{width: Fill height: Fit flow: Right spacing: 10 align: Align{y: 0.5} cursor: MouseCursor.Hand
             marks := View{width: Fit height: Fit
@@ -382,12 +387,21 @@ script_mod! {
 
 /// One entry of the list, whatever the page: the template it draws with
 /// and what it shows.
+/// What sits before a page's title: the OctoSense mark on the front page,
+/// a source's own mark on its page, nothing on Following and Saved.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum TitleMark {
+    None,
+    Octo,
+    Source(usize),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Item {
-    /// A page's title and caption; `mark` puts the OctoSense mark before
-    /// the text (the front page reads mark + News); `below_bar` on a
-    /// pushed page, whose back button floats above.
-    Title { text: String, caption: String, mark: bool, below_bar: bool },
+    /// A page's title and caption, with a mark before the text (the front
+    /// page reads the OctoSense mark + News, a source's page its mark +
+    /// name); `below_bar` on a pushed page, whose back button floats above.
+    Title { text: String, caption: String, mark: TitleMark, below_bar: bool },
     /// A Today section's header: the source's name and caption.
     Section { source: usize },
     /// A section's (or a page's) first story.
@@ -1045,7 +1059,7 @@ impl NewsView {
         match self.nav.page() {
             Page::Today => {
                 let caption = format!("{} · {}", date_line(now_unix()), self.model.status_text(0));
-                items.push(Item::Title { text: "News".into(), caption, mark: true, below_bar: false });
+                items.push(Item::Title { text: "News".into(), caption, mark: TitleMark::Octo, below_bar: false });
                 if let Some(text) = self.model.error_text(0) {
                     items.push(Item::Status { text });
                 }
@@ -1073,7 +1087,7 @@ impl NewsView {
             Page::Source(source) => {
                 let def = &self.model.sources[source].def;
                 let caption = format!("{} · {}", section_caption(def), self.model.status_text(source + 1));
-                items.push(Item::Title { text: def.label.clone(), caption, mark: false, below_bar: true });
+                items.push(Item::Title { text: def.label.clone(), caption, mark: TitleMark::Source(source), below_bar: true });
                 if let Some(text) = self.model.error_text(source + 1) {
                     items.push(Item::Status { text });
                 }
@@ -1088,7 +1102,7 @@ impl NewsView {
             Page::Following => {
                 let n = self.model.followed_sources().len();
                 let caption = format!("{} of {} sources on Today", n, self.model.sources.len());
-                items.push(Item::Title { text: "Following".into(), caption, mark: false, below_bar: false });
+                items.push(Item::Title { text: "Following".into(), caption, mark: TitleMark::None, below_bar: false });
                 items.push(Item::CapTop);
                 items.extend((0..self.model.sources.len()).map(|source| Item::Source { source }));
                 items.push(Item::CapBottom);
@@ -1097,7 +1111,7 @@ impl NewsView {
             Page::Saved => {
                 let n = self.model.saved.len();
                 let caption = if n == 1 { "1 story".to_string() } else { format!("{n} stories") };
-                items.push(Item::Title { text: "Saved".into(), caption, mark: false, below_bar: false });
+                items.push(Item::Title { text: "Saved".into(), caption, mark: TitleMark::None, below_bar: false });
                 if n == 0 {
                     items.push(Item::Empty { text: "Stories you save appear here.".into() });
                 } else {
@@ -1237,7 +1251,13 @@ impl NewsView {
             let item = list.item(cx, index, entry.template());
             match &entry {
                 Item::Title { text, caption, mark, .. } => {
-                    item.widget(cx, ids!(mark)).set_visible(cx, *mark);
+                    item.widget(cx, ids!(mark)).set_visible(cx, *mark == TitleMark::Octo);
+                    let source_id = match mark {
+                        TitleMark::Source(source) => self.model.sources[*source].def.id.as_str(),
+                        _ => "",
+                    };
+                    let known = show_source_mark(cx, &item, source_id);
+                    item.widget(cx, ids!(feed)).set_visible(cx, !known && matches!(mark, TitleMark::Source(_)));
                     item.label(cx, ids!(title)).set_text(cx, text);
                     item.label(cx, ids!(caption)).set_text(cx, caption);
                 }
@@ -1660,7 +1680,7 @@ mod tests {
             assert_eq!(view.pending_open_url(), None);
             assert_eq!(view.nav().page(), Page::Today);
             assert!(
-                matches!(view.items().first(), Some(Item::Title { text, mark: true, below_bar: false, .. }) if text == "News"),
+                matches!(view.items().first(), Some(Item::Title { text, mark: TitleMark::Octo, below_bar: false, .. }) if text == "News"),
                 "the front page is titled with the OctoSense mark and News"
             );
             assert!(view.items().iter().any(|i| matches!(i, Item::Empty { .. })), "nothing landed: the placeholder shows");
@@ -1736,7 +1756,10 @@ mod tests {
                 let view = root.borrow::<NewsView>().unwrap();
                 assert_eq!(view.nav().page(), Page::Source(1));
                 assert_eq!(view.model().tab, 2, "the tick refreshes the page's source");
-                assert!(matches!(view.items().first(), Some(Item::Title { text, below_bar: true, .. }) if text == "TechMeme"));
+                assert!(
+                    matches!(view.items().first(), Some(Item::Title { text, mark: TitleMark::Source(1), below_bar: true, .. }) if text == "TechMeme"),
+                    "a source's page is titled with its own mark"
+                );
                 assert!(matches!(&view.items()[1], Item::Hero { row } if row.title == "t1"));
                 assert!(matches!(view.items().iter().rev().nth(1), Some(Item::CapBottom)));
             }
