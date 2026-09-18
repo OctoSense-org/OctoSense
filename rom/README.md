@@ -51,6 +51,8 @@ kernel's `sign-file` and `extract-cert` host tools need the OpenSSL headers).
   first boot. USB debugging is off after the wipe: enable Developer options
   and USB debugging once; the pre-authorised key (`PRODUCT_ADB_KEYS`) then
   needs no prompt.
+- The agent is a persistent app: Android refuses `adb install` updates for it
+  (INSTALL_FAILED_INVALID_APK), so agent changes ship only in a ROM build.
 - Updating a system app on the phone: sign the APK with the platform key
   (`apksigner` with the bundled JDK at
   `~/.local/share/octosense/android-tools/makepad-android/openjdk`) and
