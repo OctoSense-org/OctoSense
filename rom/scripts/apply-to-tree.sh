@@ -11,3 +11,4 @@ echo "applied to $TREE"
 
 python3 "$HERE/patches/lineage-kernel-out-prefix.py" "$TREE"
 python3 "$HERE/patches/lineage-no-trebuchet.py" "$TREE"
+python3 "$HERE/patches/aosp-no-launcher3-phony.py" "$TREE"
