@@ -11,10 +11,6 @@ export GOGC=100
 export GOMEMLIMIT=48GiB
 export BUILD_NUMBER=octosense-rom
 export LINEAGE_BUILDTYPE=UNOFFICIAL
-export CCACHE_EXEC=/usr/bin/ccache
-export USE_CCACHE=1
-export CCACHE_DIR=/exports/ccache
-mkdir -p /exports/rom-build "$CCACHE_DIR"
 source build/envsetup.sh
 lunch lineage_enchilada-bp1a-userdebug
 build/soong/soong_ui.bash --dumpvars-mode \
@@ -24,6 +20,7 @@ cat /exports/rom-build/product-configuration.txt
 case "$1" in
     preflight) exit 0 ;;
     bacon) ;;
+    module) shift; m -j64 "$@" 2>&1 | tail -c 400000 > /exports/rom-build/module.log; echo "module build exit ${PIPESTATUS[0]}" >> /exports/rom-build/module.log; exit 0 ;;
     *) echo 'Use preflight or bacon' >&2; exit 2 ;;
 esac
 date -u +%FT%TZ > /exports/rom-build/started.txt
