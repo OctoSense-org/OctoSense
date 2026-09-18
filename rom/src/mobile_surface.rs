@@ -463,6 +463,7 @@ impl PhoneSurface {
         let style=state.style.target;
         let ios=style==DesktopStyle::Ios;
         self.use_fonts(ios);
+        self.d.set_text_scale(phone.android.font_scale);
         self.pressed=phone.gesture.as_ref().filter(|g|(g.last-g.start).length()<12.0).and_then(|g|g.hit.clone());
         let opacity=if still {1.0} else {(1.0-phone.openness*0.85) as f32};
         if opacity<0.01 {return;}
@@ -713,6 +714,7 @@ impl PhoneSurface {
         let ch=crate::mobile_perf::channels(cx.cx);
         let mut clock=std::time::Instant::now();
         let phone=&state.phone;
+        self.d.set_text_scale(phone.android.font_scale);
         self.pressed=phone.gesture.as_ref().and_then(|g|g.hit.clone());
         let ios=state.style.target==DesktopStyle::Ios;
         let ink=if (phone.screen==PhoneScreen::App || phone.screen==PhoneScreen::Drawer || !ios) && !state.style.dark {rgb(25,25,30)}else{rgb(255,255,255)};

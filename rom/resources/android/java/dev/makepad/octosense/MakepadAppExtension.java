@@ -202,7 +202,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private void emitUiMode() {
         Configuration configuration=activity.getResources().getConfiguration();
         boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
-        emit("launcher.ui_mode",json("dark",night));
+        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f)));
     }
     private void emitHints() {
         JSONArray seen=new JSONArray();

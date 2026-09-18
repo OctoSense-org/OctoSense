@@ -76,6 +76,8 @@ pub struct AndroidState {
     /// it, while a resume that reports the same value leaves the person's
     /// own Dark mode choice alone.
     pub system_dark: Option<bool>,
+    /// Android's text size preference (1 is the default size).
+    pub font_scale: f64,
 }
 #[derive(Default)]
 pub struct AndroidRuntime {
@@ -635,6 +637,9 @@ impl App {
                 // Android's night mode changed (or was read on resume): the
                 // shell follows it, as every stock launcher does.
                 let dark = boolean(&value, "dark");
+                if let Some(percent) = value.get("font_scale_percent").and_then(Value::as_i64) {
+                    self.state_mut().phone.android.font_scale = percent as f64 / 100.0;
+                }
                 let changed = self.state_mut().phone.android.system_dark != Some(dark);
                 self.state_mut().phone.android.system_dark = Some(dark);
                 if changed && self.state_mut().style.dark != dark && self.state_mut().style.target.supports_dark() {

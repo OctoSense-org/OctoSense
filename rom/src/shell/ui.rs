@@ -845,6 +845,10 @@ pub struct ShellDraw {
     /// The material every surface drawn through this kit paints with —
     /// `set_material`; the flat one until `App::apply_material_to_chrome`
     /// (main.rs) hands over another.
+    /// The platform's text size preference (Android's font scale), applied
+    /// to every label drawn through this kit; 0 until set, meaning 1.
+    #[rust]
+    text_scale: f64,
     #[rust]
     material: MaterialTokens,
     #[rust]
@@ -1032,7 +1036,28 @@ impl ShellDraw {
 
     /// One line inside a box: horizontally per `align`, vertically centered
     /// on the ink — what every QML label in the kit does.
+    /// The person's text size preference: labels grow with it, within the
+    /// room the shell's fixed layout has (a quarter more at most).
+    pub fn set_text_scale(&mut self, scale: f64) {
+        self.text_scale = if scale > 0.0 { scale.clamp(0.85, 1.25) } else { 0.0 };
+    }
+    fn text_scale(&self) -> f64 {
+        if self.text_scale > 0.0 { self.text_scale } else { 1.0 }
+    }
     pub fn label(
+        &mut self,
+        cx: &mut Cx2d,
+        r: Rect,
+        bold: bool,
+        px: f64,
+        color: Vec4f,
+        align: HAlign,
+        s: &str,
+    ) {
+        let px = px * self.text_scale();
+        self.label_px(cx, r, bold, px, color, align, s);
+    }
+    fn label_px(
         &mut self,
         cx: &mut Cx2d,
         r: Rect,
@@ -1070,8 +1095,9 @@ impl ShellDraw {
         align: HAlign,
         s: &str,
     ) {
+        let px = px * self.text_scale();
         let s = self.elide(cx, bold, px, s, r.size.x);
-        self.label(cx, r, bold, px, color, align, &s);
+        self.label_px(cx, r, bold, px, color, align, &s);
     }
 
     // ---------------------------------------------------------- material
