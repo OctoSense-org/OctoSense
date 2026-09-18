@@ -85,6 +85,18 @@ impl WmDesk {
     pub(super) fn draw_window_surface(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32) {
         self.draw_window_surface_band(cx, frame, rect, rect, radius);
     }
+    /// The strips outside the safe area (under Android's transparent system
+    /// bars): a presented scene recording stops at the safe area's edges, so
+    /// the wallpaper is drawn into them again, one thin quad each.
+    fn draw_inset_bands(&mut self, cx: &mut Cx2d, phone: &crate::mobile::PhoneState, full: Rect, screen: Rect, style: crate::desktop::DesktopStyle, dark: bool, wallpaper: bool) {
+        if !wallpaper {return;}
+        let top=Rect{pos:full.pos,size:dvec2(full.size.x,(screen.pos.y-full.pos.y).max(0.0))};
+        let from=screen.pos.y+screen.size.y;
+        let bottom=Rect{pos:dvec2(full.pos.x,from),size:dvec2(full.size.x,(full.pos.y+full.size.y-from).max(0.0))};
+        for band in [top,bottom] {
+            self.phone_ui.wallpaper_band(cx,full,band,style,dark,phone.wallpaper_phase);
+        }
+    }
     /// `band` of the frame recorded over `rect`, drawn in place: the rows a
     /// cached scene still shows beside an opaque sheet.
     fn draw_window_surface_band(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, band: Rect, radius: f32) {
@@ -237,9 +249,10 @@ impl WmDesk {
             }
             if !shown {
                 let (headline,detail)=if client.is_none() && !gave_up {
-                    ("Tap to open", String::new())
-                } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
-                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,headline,&detail);
+                    let label=crate::clients::find_app(slot.app).map(|a|a.label).unwrap_or_else(||slot.app.to_string());
+                    crate::mobile_tiles::idle_text(slot.app,&label)
+                } else { let (h,d)=crate::mobile_tiles::placeholder_text(&status,connected,gave_up); (h.to_string(),d) };
+                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,&headline,&detail);
                 self.phone_content(shown_rect);
             }
         }
@@ -363,6 +376,7 @@ impl WmDesk {
                 }
                 _ => self.draw_window_surface(cx,&cached.frame,full,0.0),
             }
+            self.draw_inset_bands(cx,&phone,full,screen,style,dark,plan.wallpaper && !covered);
             if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
         }
         if record {cache.as_mut().unwrap().frame.begin(cx,full);}
@@ -397,6 +411,7 @@ impl WmDesk {
         if plan.home && !hit {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
+            state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }
         self.phone_ui.publish_home_geometry(cx,state,full,screen);
         if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
@@ -408,6 +423,7 @@ impl WmDesk {
             let blur=self.compositor.as_mut().unwrap().finish(cx,screen,Some((screen,4.0))).0;
             cached.frame.end(cx);
             self.draw_window_surface(cx,&cached.frame,full,0.0);
+            self.draw_inset_bands(cx,&phone,full,screen,style,dark,plan.wallpaper);
             if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
             cached.key=Some(key);
             cached.blur=blur.clone();

@@ -7,6 +7,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
+import android.view.Window;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
@@ -93,6 +98,10 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private volatile boolean destroyed;
     private boolean resumed;
     private int reconnectAttempt;
+    /** The shell's appearance, for the system-bar icons and the native dialogs. */
+    private volatile boolean shellDark;
+    /** Which first-use hints the person has already found (mobile_hints.rs). */
+    private final SharedPreferences hints;
     private final LinkedHashMap<String,String[]> outbound=new LinkedHashMap<>();
     private boolean flushScheduled;
     private boolean resyncNeeded;
@@ -143,8 +152,62 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 Intent.ACTION_MANAGED_PROFILE_UNLOCKED,Intent.ACTION_MANAGED_PROFILE_ADDED,Intent.ACTION_MANAGED_PROFILE_REMOVED,Intent.ACTION_USER_UNLOCKED}) profileEvents.addAction(action);
         if(android.os.Build.VERSION.SDK_INT>=33) activity.registerReceiver(profileCallback,profileEvents,Context.RECEIVER_EXPORTED);
         else activity.registerReceiver(profileCallback,profileEvents);
+        hints=activity.getSharedPreferences("octosense-hints",Context.MODE_PRIVATE);
+        activity.registerComponentCallbacks(new android.content.ComponentCallbacks() {
+            @Override public void onConfigurationChanged(Configuration configuration) { offer(MakepadAppExtension.this::emitUiMode); }
+            @Override public void onLowMemory() {}
+        });
         refreshCatalog();
         onIntent(activity.getIntent());
+    }
+    /** A native dialog in the shell's appearance rather than the device default. */
+    private AlertDialog.Builder dialog(boolean dark) {
+        int theme=dark?android.R.style.Theme_DeviceDefault_Dialog_Alert:android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+        return new AlertDialog.Builder(activity,theme);
+    }
+    /** A committed shell gesture or a long press: the platform's own haptic, honouring the system touch-feedback setting. */
+    private void haptic(String kind) {
+        if(destroyed||activity.isFinishing()) return;
+        Window window=activity.getWindow();
+        View view=window==null?null:window.getDecorView();
+        if(view==null) return;
+        int constant;
+        switch(kind) {
+            case "long_press": constant=HapticFeedbackConstants.LONG_PRESS; break;
+            case "confirm": constant=android.os.Build.VERSION.SDK_INT>=30?HapticFeedbackConstants.CONFIRM:HapticFeedbackConstants.CONTEXT_CLICK; break;
+            default: constant=HapticFeedbackConstants.CLOCK_TICK; break;
+        }
+        view.performHapticFeedback(constant);
+    }
+    /**
+     * Edge-to-edge: the system bars are transparent over the shell's own
+     * wallpaper and their icons follow the shell's appearance, so the shell
+     * draws no second status bar and no second navigation pill. Makepad
+     * reports the bars as safe-area insets; the shell lays out inside them.
+     */
+    private void applyWindowChrome() {
+        if(destroyed||activity.isFinishing()) return;
+        Window window=activity.getWindow();
+        if(window==null||android.os.Build.VERSION.SDK_INT<30) return;
+        window.setDecorFitsSystemWindows(false);
+        window.setStatusBarColor(android.graphics.Color.TRANSPARENT);
+        window.setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+        window.setNavigationBarContrastEnforced(false);
+        android.view.WindowInsetsController controller=window.getInsetsController();
+        if(controller!=null) {
+            int mask=android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            controller.setSystemBarsAppearance(shellDark?0:mask,mask);
+        }
+    }
+    private void emitUiMode() {
+        Configuration configuration=activity.getResources().getConfiguration();
+        boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
+        emit("launcher.ui_mode",json("dark",night));
+    }
+    private void emitHints() {
+        JSONArray seen=new JSONArray();
+        for(String key:new String[]{"search","shade","recents"}) if(hints.getBoolean(key,false)) seen.put(key);
+        emit("launcher.hints",json("seen",seen));
     }
     private boolean offer(Runnable task) {
         if(destroyed) return false;
@@ -297,10 +360,17 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         switch(operation) {
             case "catalog": refreshCatalog(); break;
             case "widgets_snapshot": widgets.refresh();break;
-            case "menu": placementMenu(command.getString("app"),command.optString("hosted_label","")); break;
+            case "haptic": { String kind=command.optString("kind","tick"); main.post(() -> haptic(kind)); break; }
+            case "system_bars": shellDark=command.optBoolean("dark",false); main.post(this::applyWindowChrome); break;
+            case "hint_seen": {
+                String hint=command.optString("hint","");
+                if(!hint.isEmpty()&&hint.length()<32) hints.edit().putBoolean(hint,true).apply();
+                break;
+            }
+            case "menu": placementMenu(command.getString("app"),command.optString("hosted_label",""),command.optBoolean("dark",false)); break;
             case "home_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
-                new AlertDialog.Builder(activity).setTitle("Home").setItems(new String[]{"Widgets","Wallpaper","System setup"},(dialog,which) -> {
+                dialog(command.optBoolean("dark",false)).setTitle("Home").setItems(new String[]{"Widgets","Wallpaper","System setup"},(dialog,which) -> {
                     if(which==0) widgets.show();
                     else if(which==2) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");
                     else try {activity.startActivity(new Intent(Intent.ACTION_SET_WALLPAPER));}
@@ -429,7 +499,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         placementSnapshot=model;
         emit("launcher.placements",model);
     }
-    private void placementMenu(String identity,String hostedLabel) throws Exception {
+    private void placementMenu(String identity,String hostedLabel,boolean dark) throws Exception {
         // Hosted labels come from the in-process Rust launchable-app catalog.
         // Android component/profile identities still resolve through LauncherApps.
         boolean hosted=LauncherPlacements.isHosted(identity)&&!hostedLabel.isEmpty()&&hostedLabel.length()<=256;
@@ -443,11 +513,29 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(favorite || hosted || app!=null || shortcut!=null) {labels.add(favorite?"Remove from Home":"Add to Home");actions.add(favorite?-1:-2);}
         if(hosted || app!=null || shortcut!=null) for(int slot=0;slot<4;slot++) {labels.add("Place in dock position "+(slot+1));actions.add(slot);}
         if(docked) {labels.add("Remove from dock");actions.add(-3);}
+        // An installed Android app also offers what its own launcher would.
+        boolean androidApp=!hosted && app!=null;
+        boolean removable=androidApp && (app.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM)==0;
+        if(androidApp) {labels.add("App info");actions.add(-4);}
+        if(removable) {labels.add("Uninstall");actions.add(-5);}
         main.post(() -> {
             if(destroyed || !resumed || activity.isFinishing()) return;
             closePlacementMenu();
-            placementDialog=new AlertDialog.Builder(activity).setTitle(label).setItems(labels.toArray(new String[0]),(dialog,which) -> {
+            placementDialog=dialog(dark).setTitle(label).setItems(labels.toArray(new String[0]),(dialog,which) -> {
                 int action=actions.get(which);
+                if(action==-4) {
+                    try {launcher.startAppDetailsActivity(app.getComponentName(),app.getUser(),null,null);}
+                    catch(Exception e) {result(0,Protocol.UNSUPPORTED,"setting_unavailable");}
+                    return;
+                }
+                if(action==-5) {
+                    try {
+                        Intent uninstall=new Intent(Intent.ACTION_DELETE,android.net.Uri.parse("package:"+app.getComponentName().getPackageName()));
+                        uninstall.putExtra(Intent.EXTRA_USER,app.getUser());
+                        activity.startActivity(uninstall);
+                    } catch(Exception e) {result(0,Protocol.UNSUPPORTED,"operation_failed");}
+                    return;
+                }
                 if(!offer(() -> {
                     try {
                         if(action>=0 || action==-2) {
@@ -668,7 +756,11 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             default: emit("bridge.result",json("id",id,"status",Protocol.UNSUPPORTED,"reason","unknown_bridge_operation"));
         }
     }
-    @Override public void onResume() { resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); requestResync(); offer(this::flushEvents); }
+    @Override public void onResume() {
+        resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); requestResync();
+        main.post(this::applyWindowChrome);
+        offer(() -> {emitUiMode();emitHints();flushEvents();});
+    }
     @Override public void onPause() { resumed=false;closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause(); }
     @Override public boolean onActivityResult(int request,int result,Intent data) {return widgets.onActivityResult(request,result,data);}
     @Override public boolean onBackPressed() {return replyComposer.close()||widgets.hide();}

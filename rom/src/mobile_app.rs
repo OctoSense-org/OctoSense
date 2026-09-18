@@ -445,7 +445,7 @@ impl App {
     }
     /// Light <-> Dark for the phone shell and every hosted app, keeping the
     /// App Library's search field focused if it was.
-    fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
+    pub(crate) fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
         let focused=self.state_mut().phone.search_focused;
         self.toggle_desktop_appearance(cx);
         if focused {
@@ -511,8 +511,13 @@ impl App {
             }
             // The shade's Dark mode tile is the appearance the desk bar's
             // Light/Dark used to set; the shade keeps every other toggle.
-            PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>self.toggle_phone_appearance(cx),
+            PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>{
+                self.android_haptic(cx,"tick");
+                self.toggle_phone_appearance(cx);
+                self.android_system_bars(cx);
+            }
             PhoneHit::Shade(hit)=>{
+                if matches!(hit,ShadeHit::Toggle(_)) {self.android_haptic(cx,"tick");}
                 if !self.android_shade_action(cx, &hit) { self.state_mut().phone.shade.tap(hit); }
             },
             PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
@@ -544,12 +549,17 @@ impl App {
     pub(crate) fn phone_home_intent(&mut self,cx:&mut Cx) {
         if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
         log!("[phone] home intent");
-        {
+        let already_home={
             let phone=&mut self.state_mut().phone;
+            let settled=phone.screen==PhoneScreen::Home && phone.shade.open<0.001 && phone.groups.open.is_none();
             phone.shade.close();
             phone.groups.close();
-        }
+            settled
+        };
         self.phone_action(cx,PhoneHit::Home);
+        // A second Home on a settled home page goes to the primary page,
+        // as stock launchers do; the first one only brings the page back.
+        if already_home && self.state_mut().phone.pages.current()!=0 {self.state_mut().phone.pages.jump(0);}
         self.redraw_all(cx);
     }
     fn type_phone_key(&mut self,cx:&mut Cx,key:&str) {
@@ -628,10 +638,12 @@ impl App {
                     && phone.shade.open<0.001 && (press.abs-gesture.start).length()<12.0
                     && (gesture.last-gesture.start).length()<12.0
             });
+            let dark=makepad_strict_json::Value::Bool(self.state_mut().style.dark);
             if let Some(destination)=shade_settings {
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.gesture_out=None;
                 self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
                 self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s(destination))]);
                 return true;
             }
@@ -639,7 +651,8 @@ impl App {
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.gesture_out=None;
                 self.phone_gestures.cancel();
-                let mut fields=vec![("app",makepad_strict_json::s(&app))];
+                self.android_haptic(cx,"long_press");
+                let mut fields=vec![("app",makepad_strict_json::s(&app)),("dark",dark)];
                 if let Some(hosted)=crate::shell::launcher::apps().iter().find(|item|item.id.trim_start_matches("apps.")==app) {
                     fields.push(("hosted_label",makepad_strict_json::s(&hosted.label)));
                 }
@@ -650,7 +663,8 @@ impl App {
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.gesture_out=None;
                 self.phone_gestures.cancel();
-                self.android_command(cx,"launcher","home_menu",vec![]);
+                self.android_haptic(cx,"long_press");
+                self.android_command(cx,"launcher","home_menu",vec![("dark",dark)]);
                 return true;
             }
         }
@@ -724,6 +738,13 @@ impl App {
     /// opens the App Library with its search field focused; the same pull on
     /// the library closes it.
     fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
+        // A committed navigation gets a light tick; a page swipe is too
+        // frequent for one and already shows where it went.
+        if !matches!(kind, GestureKind::Page(_)) { self.android_haptic(cx, "tick"); }
+        self.state_mut().phone.hints.saw(kind);
+        if let Some(key) = self.state_mut().phone.hints.just_seen.take() {
+            if cfg!(target_os = "android") { self.android_command(cx, "launcher", "hint_seen", vec![("hint", makepad_strict_json::s(key))]); }
+        }
         match kind {
             GestureKind::HomeUp => {
                 let android = self.state_mut().style.target == desktop::DesktopStyle::Android;
@@ -789,6 +810,8 @@ impl App {
                 if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) {return false;}
+                phone.search_velocity=0.0;
+                phone.search_track=Some((p.y,time));
                 if shell || hit.is_some() || old!=PhoneScreen::App {
                     phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
                     phone.gesture_out=None;
@@ -810,6 +833,12 @@ impl App {
                     Self::drive_gesture(phone,out,from);
                 }else if from==PhoneScreen::Drawer {
                     phone.search_scroll=(phone.search_scroll.min(search_scroll_max)-last.y).clamp(0.0,search_scroll_max);
+                    // The flick speed: a short average of the finger's recent samples.
+                    if let Some((y0,t0))=phone.search_track {
+                        let dt=time-t0;
+                        if dt>0.0005 {phone.search_velocity=phone.search_velocity*0.5+(p.y-y0)/dt*0.5;}
+                    }
+                    phone.search_track=Some((p.y,time));
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
                     else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
@@ -819,6 +848,12 @@ impl App {
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;
+                // A drawer scroll lifted at speed keeps going; a lift after a
+                // pause, or anything else, stops it.
+                let coasting=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0
+                    && phone.search_track.is_some_and(|(_,t0)|time-t0<0.08) && phone.search_velocity.abs()>250.0;
+                if !coasting {phone.search_velocity=0.0;}
+                phone.search_track=None;
                 if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
                     let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
                         && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));

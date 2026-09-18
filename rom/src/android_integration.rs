@@ -69,6 +69,10 @@ pub struct AndroidState {
     pub capabilities: Arc<HashSet<String>>,
     pub connected: bool,
     pub connection_reason: String,
+    /// Android's night mode as last reported: the shell follows a change of
+    /// it, while a resume that reports the same value leaves the person's
+    /// own Dark mode choice alone.
+    pub system_dark: Option<bool>,
 }
 #[derive(Default)]
 pub struct AndroidRuntime {
@@ -91,6 +95,38 @@ pub struct AndroidRuntime {
 struct IconLoaded {
     path: String,
     result: RefCell<Option<Result<ImageBuffer, ImageError>>>,
+}
+/// What the shell tells the person when an Android operation fails, from
+/// the bridge's machine-readable reason. The reason stays in the log; the
+/// card says what happened and what to do next.
+pub(crate) fn result_copy(reason: &str) -> (&'static str, String) {
+    let body = match reason {
+        "app_unavailable" => "This app is no longer installed, or its profile is not available.",
+        "app_disabled_or_profile_locked" => "The app is disabled, or its work profile is paused. Turn it on in Android's Settings.",
+        "shortcut_unavailable" => "The shortcut was removed by its app.",
+        "profile_locked" => "Unlock the work profile first.",
+        "permission_denied" => "OctoSense does not have permission for this yet. Open System setup to grant it.",
+        "setting_unavailable" => "This device has no screen for that setting.",
+        "home_placement_limit_or_identity" => "The home page is full, or this item can no longer be placed.",
+        "home_placement_storage_unavailable" => "Home layout could not be saved. Your change will be lost when the shell restarts.",
+        "operation_failed" | "invalid_command" | "unknown_channel" => "The action did not complete. Try again in a moment.",
+        _ => "",
+    };
+    let title = match reason {
+        "app_unavailable" | "shortcut_unavailable" => "App unavailable",
+        "app_disabled_or_profile_locked" | "profile_locked" => "App can't open",
+        "permission_denied" => "Permission needed",
+        "setting_unavailable" => "Setting unavailable",
+        "home_placement_limit_or_identity" | "home_placement_storage_unavailable" => "Home layout",
+        _ => "Couldn't do that",
+    };
+    if body.is_empty() {
+        let plain = reason.replace('_', " ");
+        let mut chars = plain.chars();
+        let plain = match chars.next() { Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(), None => String::new() };
+        return (title, if plain.is_empty() { "The action did not complete.".into() } else { format!("{plain}.") });
+    }
+    (title, body.to_string())
 }
 fn string(v: &Value, k: &str) -> String {
     v.get(k).and_then(Value::as_str).unwrap_or("").to_owned()
@@ -212,6 +248,20 @@ impl App {
         fields.push(("id", Value::Int(self.android_runtime.next_command)));
         fields.push(("operation", s(operation)));
         cx.android_integration(channel, &obj(fields).to_json());
+    }
+    /// A short haptic on Android for a committed shell action (`kind` is
+    /// `tick`, `confirm` or `long_press`); nothing elsewhere.
+    pub(crate) fn android_haptic(&mut self, cx: &mut Cx, kind: &str) {
+        if !cfg!(target_os = "android") { return; }
+        if self.state.as_ref().is_none_or(|state| !state.style.target.mobile()) { return; }
+        self.android_command(cx, "launcher", "haptic", vec![("kind", s(kind))]);
+    }
+    /// Tell the activity which system-bar icon colour the shell wants: dark
+    /// icons over the light shell, light icons over the dark one.
+    pub(crate) fn android_system_bars(&mut self, cx: &mut Cx) {
+        if !cfg!(target_os = "android") { return; }
+        let dark = self.state.as_ref().is_some_and(|state| state.style.dark);
+        self.android_command(cx, "launcher", "system_bars", vec![("dark", Value::Bool(dark))]);
     }
     pub(crate) fn android_launch(&mut self, cx: &mut Cx, id: &str) -> bool {
         let Some(app) = self
@@ -558,12 +608,24 @@ impl App {
             "bridge.result" | "launcher.result" => {
                 let status = value.get("status").and_then(Value::as_i64).unwrap_or(9);
                 if status > 1 {
-                    self.notify(
-                        cx,
-                        "Android operation unavailable",
-                        &string(&value, "reason"),
-                    );
+                    let (title, body) = result_copy(&string(&value, "reason"));
+                    self.notify(cx, title, &body);
                 }
+            }
+            "launcher.hints" => {
+                let seen = value.get("seen").and_then(Value::as_arr).map(|items| items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+                self.state_mut().phone.hints.load(seen.into_iter());
+            }
+            "launcher.ui_mode" => {
+                // Android's night mode changed (or was read on resume): the
+                // shell follows it, as every stock launcher does.
+                let dark = boolean(&value, "dark");
+                let changed = self.state_mut().phone.android.system_dark != Some(dark);
+                self.state_mut().phone.android.system_dark = Some(dark);
+                if changed && self.state_mut().style.dark != dark && self.state_mut().style.target.supports_dark() {
+                    self.toggle_phone_appearance(cx);
+                }
+                self.android_system_bars(cx);
             }
             _ => {}
         }

@@ -200,10 +200,18 @@ script_mod! {
             android: instance(0.0)
             dark: instance(0.0)
             phase: instance(0.0)
+            // A band of the full wallpaper drawn on its own (the strips under
+            // Android's system bars): where this quad sits in the full
+            // picture, and the full picture's aspect.
+            win_ox: instance(0.0)
+            win_oy: instance(0.0)
+            win_sx: instance(1.0)
+            win_sy: instance(1.0)
+            win_aspect: instance(1.0)
             pixel: fn() {
-                let p=self.pos
+                let p=self.pos*vec2(self.win_sx,self.win_sy)+vec2(self.win_ox,self.win_oy)
                 let t=self.phase
-                let aspect=self.rect_size.x/max(self.rect_size.y,1.0)
+                let aspect=self.win_aspect
                 let q=(p-0.5)*vec2(aspect,1.0)
                 let dim=1.0-self.dark*0.64
                 // One style per pixel: the other's terms were computed and
@@ -357,10 +365,22 @@ impl PhoneSurface {
         self.d.text_bold.text_style=if ios {self.ios_bold.clone()}else{self.android_bold.clone()};
     }
     pub fn draw_wallpaper(&mut self, cx: &mut Cx2d, screen: Rect, style: DesktopStyle, dark: bool, phase: f64) {
+        self.wallpaper_band(cx,screen,screen,style,dark,phase);
+    }
+    /// `band` of the wallpaper that fills `full`, drawn alone: the rows
+    /// under the system bars, which the cached home scene does not cover.
+    pub fn wallpaper_band(&mut self, cx: &mut Cx2d, full: Rect, band: Rect, style: DesktopStyle, dark: bool, phase: f64) {
+        if band.size.x<0.5 || band.size.y<0.5 {return;}
+        let size=dvec2(full.size.x.max(1.0),full.size.y.max(1.0));
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(android), &[if style==DesktopStyle::Android {1.0}else{0.0}]);
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(dark), &[if dark {1.0}else{0.0}]);
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(phase), &[phase as f32]);
-        self.wallpaper.draw_abs(cx,screen);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_ox), &[((band.pos.x-full.pos.x)/size.x) as f32]);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_oy), &[((band.pos.y-full.pos.y)/size.y) as f32]);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_sx), &[(band.size.x/size.x) as f32]);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_sy), &[(band.size.y/size.y) as f32]);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_aspect), &[(size.x/size.y) as f32]);
+        self.wallpaper.draw_abs(cx,band);
     }
     pub fn home_dock(screen: Rect) -> Rect {
         let landscape=screen.size.x>screen.size.y;
@@ -443,6 +463,7 @@ impl PhoneSurface {
         let style=state.style.target;
         let ios=style==DesktopStyle::Ios;
         self.use_fonts(ios);
+        self.pressed=phone.gesture.as_ref().filter(|g|(g.last-g.start).length()<12.0).and_then(|g|g.hit.clone());
         let opacity=if still {1.0} else {(1.0-phone.openness*0.85) as f32};
         if opacity<0.01 {return;}
         let landscape=screen.size.x>screen.size.y;
@@ -529,6 +550,40 @@ impl PhoneSurface {
         // The page indicator: the glance glyph, a dot per apps page, the
         // library glyph; tapping one jumps there (the library dot opens it).
         self.draw_page_indicator(cx,phone,dock,screen,ink,opacity,home);
+        if home {self.draw_home_pull(cx,state,screen,dark,ink,opacity);}
+    }
+    /// What the home page shows while a finger pulls it down for the App
+    /// Library: the page dims and a search field slides in from the top, so
+    /// the pull has something to follow before it commits (40 % of the way).
+    /// Idle, the same spot carries the first-use hint for a gesture the
+    /// person has not found yet (mobile_hints.rs).
+    fn draw_home_pull(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, dark: bool, ink: Vec4f, opacity: f32) {
+        let phone=&state.phone;
+        let pill_w=(screen.size.x-48.0).min(420.0);
+        let x=screen.pos.x+(screen.size.x-pill_w)*0.5;
+        if let Some(crate::mobile_gestures::ShellGesture::HomeSearch{progress})=phone.gesture_out {
+            if progress<=0.0 {return;}
+            let p=progress as f32;
+            // Eased: most of the motion happens early, like the finger.
+            let eased=1.0-(1.0-p)*(1.0-p);
+            self.rounded(cx,screen,0.0,alpha(rgb(0,0,0),0.28*eased*opacity));
+            let y=screen.pos.y+8.0+(eased as f64)*52.0;
+            let pill=rect(x,y,pill_w,48.0);
+            let face=if dark {rgb(44,46,60)} else {rgb(255,255,255)};
+            self.rounded(cx,pill,24.0,alpha(face,(0.35+0.65*eased)*opacity));
+            let text_ink=if dark {rgb(255,255,255)} else {rgb(60,60,70)};
+            self.d.icon_centered(cx,Ico::Search,rect(pill.pos.x+14.0,pill.pos.y,28.0,48.0),18.0,alpha(text_ink,eased*opacity));
+            self.d.label(cx,rect(pill.pos.x+48.0,pill.pos.y,pill_w-60.0,48.0),false,15.0,alpha(text_ink,eased*opacity),HAlign::Left,if progress>=0.4 {"Release for your apps"} else {"Pull for your apps"});
+            return;
+        }
+        if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
+        let Some((_,text))=phone.hints.pending() else {return};
+        // A single line above the dock, quiet enough to ignore; it leaves
+        // once the gesture it names has been used.
+        let dock=Self::home_dock(screen);
+        let pill=rect(x,dock.pos.y-64.0,pill_w,30.0);
+        self.rounded(cx,pill,15.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
+        self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
     }
     /// Android's app drawer: a sheet with every launchable app on one grid.
     fn draw_android_drawer(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
@@ -562,6 +617,13 @@ impl PhoneSurface {
     fn draw_launcher_icon(&mut self,cx:&mut Cx2d,state:&WmState,id:&str,r:Rect,ink:Vec4f,opacity:f32) {
         let app=state.phone.android.apps.iter().find(|app|app.id==id);
         let opacity=if app.is_some_and(|app|app.locked||app.suspended) {opacity*0.45}else{opacity};
+        // The finger is on this icon: it sinks a little and dims, so a tap
+        // reads as a press before the app opens (or the menu comes up).
+        let pressed=self.pressed.as_ref().is_some_and(|hit| matches!(hit, PhoneHit::App(a)|PhoneHit::TileApp(a) if a==id));
+        let (r,opacity)=if pressed {
+            let inset=r.size.x*0.07;
+            (rect(r.pos.x+inset,r.pos.y+inset,r.size.x-inset*2.0,r.size.y-inset*2.0),opacity*0.72)
+        } else {(r,opacity)};
         if let Some(texture)=app.and_then(|app|state.phone.android.icons.get(&app.icon)) {
             if cfg!(target_os="android") {self.home_icon_bounds.push((id.to_string(),r));}
             self.android_icon.draw_vars.set_texture(0,texture);
@@ -640,13 +702,20 @@ impl PhoneSurface {
         let ios=state.style.target==DesktopStyle::Ios;
         let ink=if (phone.screen==PhoneScreen::App || phone.screen==PhoneScreen::Drawer || !ios) && !state.style.dark {rgb(25,25,30)}else{rgb(255,255,255)};
         let status_h=if screen.size.x>screen.size.y {24.0}else{42.0};
-        if phone.screen==PhoneScreen::App {self.rounded(cx,rect(screen.pos.x,screen.pos.y,screen.size.x,status_h),0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
-        self.label(cx,rect(screen.pos.x+16.0,screen.pos.y,62.0,status_h),&phone.clock,13.0,true,ink);
-        if ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-45.0,screen.pos.y+7.0,90.0,23.0),12.0,rgb(0,0,0));}
-        if !ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-5.0,screen.pos.y+13.0,10.0,10.0),5.0,rgb(0,0,0));}
-        self.d.icon_centered(cx,Ico::Wifi,rect(screen.pos.x+screen.size.x-69.0,screen.pos.y,22.0,status_h),14.0,ink);
-        self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
-        self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
+        // On Android the system's own status bar sits in the top inset, over
+        // the wallpaper: the shell draws no second clock, signal or battery
+        // under it, and an open app's status colour fills the inset too.
+        let android=cfg!(target_os="android");
+        let status_bg=if android {rect(screen.pos.x,screen.pos.y-phone.insets.top,screen.size.x,status_h+phone.insets.top)} else {rect(screen.pos.x,screen.pos.y,screen.size.x,status_h)};
+        if phone.screen==PhoneScreen::App {self.rounded(cx,status_bg,0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
+        if !android {
+            self.label(cx,rect(screen.pos.x+16.0,screen.pos.y,62.0,status_h),&phone.clock,13.0,true,ink);
+            if ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-45.0,screen.pos.y+7.0,90.0,23.0),12.0,rgb(0,0,0));}
+            if !ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-5.0,screen.pos.y+13.0,10.0,10.0),5.0,rgb(0,0,0));}
+            self.d.icon_centered(cx,Ico::Wifi,rect(screen.pos.x+screen.size.x-69.0,screen.pos.y,22.0,status_h),14.0,ink);
+            self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
+            self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
+        }
         crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);
         crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);
         // The battery icon: three quick taps switch the frame-time reporter.
@@ -669,12 +738,17 @@ impl PhoneSurface {
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop.clone());}
         let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
         if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
-            self.rounded(cx,bottom,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
+            let band=if android {rect(bottom.pos.x,bottom.pos.y,bottom.size.x,bottom.size.y+phone.insets.bottom)} else {bottom};
+            self.rounded(cx,band,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
         }
         let nav_ink=if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
             if state.style.dark {rgb(238,238,242)}else{rgb(30,30,34)}
         }else if phone.screen==PhoneScreen::Drawer && !state.style.dark {rgb(30,30,34)}else{rgb(255,255,255)};
-        self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
+        // Android's own navigation (buttons or its pill) lives in the bottom
+        // inset; the shell's pill would be a second one right above it.
+        if !(android && phone.insets.bottom>0.0) {
+            self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
+        }
         self.hits.push((bottom,PhoneHit::Home));
         if !ios && phone.keyboard>0.5 {
             let back=rect(bottom.pos.x+12.0,bottom.pos.y-10.0,40.0,34.0);

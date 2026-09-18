@@ -379,6 +379,18 @@ pub fn wanted_face(client: ClientId, foreground: Option<ClientId>, home_settled:
     }
 }
 
+/// What a tile says before its app has ever been opened this session:
+/// what the app is for, and that a tap starts it. "Tap to open" alone
+/// told the person nothing they could not see.
+pub fn idle_text(app: &str, label: &str) -> (String, String) {
+    match app {
+        "appcard" => ("Ask anything".into(), "Your assistant answers here".into()),
+        "photos" => ("Your photos".into(), "Recent pictures show here".into()),
+        "sheets" => ("Your sheets".into(), "The last sheet you worked on".into()),
+        "mail" => ("Inbox".into(), "New mail lands here".into()),
+        _ => (label.to_string(), "Tap to open".into()),
+    }
+}
 /// The text a tile shows while its client has nothing to draw yet, from
 /// the launcher's own status line (cargo's progress, the first-exec scan).
 pub fn placeholder_text(status: &str, connected: bool, gave_up: bool) -> (&'static str, String) {

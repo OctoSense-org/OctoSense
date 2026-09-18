@@ -64,8 +64,12 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | App Library | pull down | back to the home page |
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
 | Side edges | swipe in | Back |
+| App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
+| Empty home | long press | Widgets, Wallpaper, System setup |
 
-A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick.
+A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field follows the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
+
+The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
 
 ## Mail preview on Android
 

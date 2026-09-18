@@ -25,6 +25,7 @@ mod mobile;
 mod android_integration;
 mod mobile_surface;
 mod mobile_gestures;
+mod mobile_hints;
 mod mobile_app;
 mod mobile_tiles;
 mod mobile_shade;

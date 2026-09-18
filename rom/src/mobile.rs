@@ -46,6 +46,9 @@ pub struct PhoneGesture {
 #[derive(Clone)]
 pub struct PhoneState {
     pub android: crate::android_integration::AndroidState,
+    /// Which hidden gestures the person has found (mobile_hints.rs): the
+    /// home page shows one short hint at a time until they have.
+    pub hints: crate::mobile_hints::Hints,
     pub clock: String,
     /// The frame clock of the last stepped frame (the shade stamps its
     /// cards on it).
@@ -74,6 +77,13 @@ pub struct PhoneState {
     pub search_query: String,
     pub search_focused: bool,
     pub search_scroll: f64,
+    /// The drawer keeps scrolling after a flick: points per second, decaying
+    /// in `step`; the surface publishes how far the list can scroll.
+    pub search_velocity: f64,
+    pub search_scroll_limit: f64,
+    /// The last finger sample on the drawer (y, time) the velocity is
+    /// measured against.
+    pub search_track: Option<(f64, f64)>,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -111,6 +121,7 @@ impl Default for PhoneState {
             animation_active: false, draw_active: false,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
+            search_velocity: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -118,6 +129,7 @@ impl Default for PhoneState {
             viewport: Rect::default(), insets: SafeInsets::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
+            hints: Default::default(),
             exclusions: Default::default(),
             shade: Default::default(),
             pages: Default::default(),
@@ -188,6 +200,17 @@ impl PhoneState {
             self.page += (target - self.page) * t;
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
+        }
+        // A flicked drawer coasts and slows (about a second from a fast
+        // flick), stopping dead at either end of the list.
+        if self.search_velocity != 0.0 {
+            if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
+                let before = self.search_scroll;
+                self.search_scroll = (self.search_scroll - self.search_velocity * dt).clamp(0.0, self.search_scroll_limit);
+                self.search_velocity *= (-dt * 4.0).exp();
+                if self.search_velocity.abs() < 30.0 || self.search_scroll == before { self.search_velocity = 0.0; }
+                active = true;
+            } else { self.search_velocity = 0.0; }
         }
         active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
         self.absorb_docked(crate::mobile_island::take_docked());
