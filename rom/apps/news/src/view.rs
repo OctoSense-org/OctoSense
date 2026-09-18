@@ -160,14 +160,40 @@ script_mod! {
     // so the segments of a group touch.
     let Item = View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16}}
 
+    // The OctoSense mark (the website's eight-petal `Mark`, in the site's
+    // green, `--green` in its stylesheet) sits before the front page's
+    // title; the other pages' titles are text alone.
+    let c_brand = #(Vec4f::from_u32(0x6a8058ff))
     let TitleRow = Item{padding: Inset{left: 16 right: 16 top: 14 bottom: 6} spacing: 2
-        title := PageTitleText{}
+        head := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+            mark := View{visible: false width: Fit height: Fit
+                Icon{icon_walk: Walk{width: 30 height: 30}
+                    draw_icon +: {svg: crate_resource("self:resources/icons/octosense.svg") color: c_brand}}
+            }
+            title := PageTitleText{}
+        }
         caption := Caption{}
     }
     // The title of a pushed page starts under the floating back button.
     let TitleBelowBarRow = TitleRow{padding: Inset{left: 16 right: 16 top: 62 bottom: 6}}
+    // The sources' marks — Hacker News' Y, TechMeme's T, Google News'
+    // paper, the RSS symbol for a feed of the person's own — one widget
+    // each, the row showing the one its source id names (`show_source_mark`).
+    // In a section header each wears its provenance colour, the same as the
+    // stories' dots; on the Following page's coloured disc they are white.
+    let c_hn = #(Vec4f::from_u32(0xff6600ff))
+    let c_techmeme = #(Vec4f::from_u32(0x2bb5a0ff))
+    let c_google = #(Vec4f::from_u32(0x4285f4ff))
+    let c_feed = #(Vec4f::from_u32(0x7d8aa5ff))
+    let SourceMark = View{visible: false width: Fit height: Fit}
     let SectionRow = Item{padding: Inset{left: 16 right: 16 top: 22 bottom: 10}
-        header := View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5} cursor: MouseCursor.Hand
+        header := View{width: Fill height: Fit flow: Right spacing: 10 align: Align{y: 0.5} cursor: MouseCursor.Hand
+            marks := View{width: Fit height: Fit
+                hn := SourceMark{Icon{icon_walk: Walk{width: 26 height: 26} draw_icon +: {svg: crate_resource("self:resources/icons/hn.svg") color: c_hn}}}
+                techmeme := SourceMark{Icon{icon_walk: Walk{width: 26 height: 26} draw_icon +: {svg: crate_resource("self:resources/icons/techmeme.svg") color: c_techmeme}}}
+                google := SourceMark{Icon{icon_walk: Walk{width: 26 height: 26} draw_icon +: {svg: crate_resource("self:resources/icons/google-news.svg") color: c_google}}}
+                feed := SourceMark{Icon{icon_walk: Walk{width: 26 height: 26} draw_icon +: {svg: crate_resource("self:resources/icons/feed.svg") color: c_feed}}}
+            }
             View{width: Fill height: Fit flow: Down spacing: 2
                 name := SectionText{}
                 caption := Caption{draw_text.text_style: theme.font_regular{font_size: 12}}
@@ -229,7 +255,12 @@ script_mod! {
         card := Segment{padding: Inset{left: 14 right: 10}
             hairline := Hairline{}
             row := View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{top: 10 bottom: 10} cursor: MouseCursor.Hand
+                // A built-in source's mark on its disc; a feed of the
+                // person's own keeps its initial.
                 mono := RoundedView{width: 40 height: 40 align: Center draw_bg +: {color: #7d8aa5 border_radius: 20.0}
+                    hn := SourceMark{Icon{icon_walk: Walk{width: 22 height: 22} draw_icon +: {svg: crate_resource("self:resources/icons/hn.svg") color: #ffffff}}}
+                    techmeme := SourceMark{Icon{icon_walk: Walk{width: 22 height: 22} draw_icon +: {svg: crate_resource("self:resources/icons/techmeme.svg") color: #ffffff}}}
+                    google := SourceMark{Icon{icon_walk: Walk{width: 22 height: 22} draw_icon +: {svg: crate_resource("self:resources/icons/google-news.svg") color: #ffffff}}}
                     initial := Label{padding: 0 draw_text +: {color: #ffffff text_style: theme.font_bold{font_size: 17}}}
                 }
                 View{width: Fill height: Fit flow: Down spacing: 2
@@ -353,9 +384,10 @@ script_mod! {
 /// and what it shows.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Item {
-    /// A page's title and caption; `below_bar` on a pushed page, whose
-    /// back button floats above.
-    Title { text: String, caption: String, below_bar: bool },
+    /// A page's title and caption; `mark` puts the OctoSense mark before
+    /// the text (the front page reads mark + News); `below_bar` on a
+    /// pushed page, whose back button floats above.
+    Title { text: String, caption: String, mark: bool, below_bar: bool },
     /// A Today section's header: the source's name and caption.
     Section { source: usize },
     /// A section's (or a page's) first story.
@@ -1013,7 +1045,7 @@ impl NewsView {
         match self.nav.page() {
             Page::Today => {
                 let caption = format!("{} · {}", date_line(now_unix()), self.model.status_text(0));
-                items.push(Item::Title { text: "Today".into(), caption, below_bar: false });
+                items.push(Item::Title { text: "News".into(), caption, mark: true, below_bar: false });
                 if let Some(text) = self.model.error_text(0) {
                     items.push(Item::Status { text });
                 }
@@ -1041,7 +1073,7 @@ impl NewsView {
             Page::Source(source) => {
                 let def = &self.model.sources[source].def;
                 let caption = format!("{} · {}", section_caption(def), self.model.status_text(source + 1));
-                items.push(Item::Title { text: def.label.clone(), caption, below_bar: true });
+                items.push(Item::Title { text: def.label.clone(), caption, mark: false, below_bar: true });
                 if let Some(text) = self.model.error_text(source + 1) {
                     items.push(Item::Status { text });
                 }
@@ -1056,7 +1088,7 @@ impl NewsView {
             Page::Following => {
                 let n = self.model.followed_sources().len();
                 let caption = format!("{} of {} sources on Today", n, self.model.sources.len());
-                items.push(Item::Title { text: "Following".into(), caption, below_bar: false });
+                items.push(Item::Title { text: "Following".into(), caption, mark: false, below_bar: false });
                 items.push(Item::CapTop);
                 items.extend((0..self.model.sources.len()).map(|source| Item::Source { source }));
                 items.push(Item::CapBottom);
@@ -1065,7 +1097,7 @@ impl NewsView {
             Page::Saved => {
                 let n = self.model.saved.len();
                 let caption = if n == 1 { "1 story".to_string() } else { format!("{n} stories") };
-                items.push(Item::Title { text: "Saved".into(), caption, below_bar: false });
+                items.push(Item::Title { text: "Saved".into(), caption, mark: false, below_bar: false });
                 if n == 0 {
                     items.push(Item::Empty { text: "Stories you save appear here.".into() });
                 } else {
@@ -1204,12 +1236,15 @@ impl NewsView {
             let Some(entry) = self.items.get(index).cloned() else { continue };
             let item = list.item(cx, index, entry.template());
             match &entry {
-                Item::Title { text, caption, .. } => {
+                Item::Title { text, caption, mark, .. } => {
+                    item.widget(cx, ids!(mark)).set_visible(cx, *mark);
                     item.label(cx, ids!(title)).set_text(cx, text);
                     item.label(cx, ids!(caption)).set_text(cx, caption);
                 }
                 Item::Section { source } => {
                     let def = &self.model.sources[*source].def;
+                    let known = show_source_mark(cx, &item, &def.id);
+                    item.widget(cx, ids!(feed)).set_visible(cx, !known);
                     item.label(cx, ids!(name)).set_text(cx, &def.label);
                     item.label(cx, ids!(caption)).set_text(cx, &section_caption(def));
                 }
@@ -1236,6 +1271,8 @@ impl NewsView {
                     let user = *source >= builtin_count();
                     let mono = item.widget(cx, ids!(mono));
                     tint(cx, mono, source_color(&def.id));
+                    let known = show_source_mark(cx, &item, &def.id);
+                    item.widget(cx, ids!(initial)).set_visible(cx, !known);
                     item.label(cx, ids!(initial)).set_text(cx, &initial(&def.label));
                     item.label(cx, ids!(label)).set_text(cx, &def.label);
                     item.label(cx, ids!(host)).set_text(cx, &host_of(&def.url));
@@ -1378,6 +1415,19 @@ fn tapped(cx: &Cx, item: &WidgetRef, id: &[LiveId], actions: &Actions) -> bool {
 fn tint(cx: &mut Cx, mut widget: WidgetRef, rgba: u32) {
     let color = Vec4f::from_u32(rgba);
     script_apply_eval!(cx, widget, { draw_bg.color: #(color) });
+}
+
+/// Shows the mark of the built-in source `id` names among an item's `hn`,
+/// `techmeme` and `google` marks and hides the others; whether one was
+/// shown, so a feed of the person's own can keep its own sign.
+fn show_source_mark(cx: &mut Cx, item: &WidgetRef, id: &str) -> bool {
+    let mut shown = false;
+    for (mark, own) in [(ids!(hn), "hn"), (ids!(techmeme), "techmeme"), (ids!(google), "google")] {
+        let on = id == own;
+        item.widget(cx, mark).set_visible(cx, on);
+        shown |= on;
+    }
+    shown
 }
 
 /// A page's rows as one card group: a hero first when `hero`, compacts
@@ -1609,7 +1659,10 @@ mod tests {
             assert!(!view.reader_open(cx));
             assert_eq!(view.pending_open_url(), None);
             assert_eq!(view.nav().page(), Page::Today);
-            assert!(matches!(view.items().first(), Some(Item::Title { text, below_bar: false, .. }) if text == "Today"));
+            assert!(
+                matches!(view.items().first(), Some(Item::Title { text, mark: true, below_bar: false, .. }) if text == "News"),
+                "the front page is titled with the OctoSense mark and News"
+            );
             assert!(view.items().iter().any(|i| matches!(i, Item::Empty { .. })), "nothing landed: the placeholder shows");
             assert!(matches!(view.items().last(), Some(Item::Spacer)), "room for the bar");
             drop(view);

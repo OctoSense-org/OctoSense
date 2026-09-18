@@ -221,6 +221,21 @@ Where the code settled differently from the text above, on 2026-09-16:
 - **Standalone dev flags**: `--phone` and `--tile` as before, plus `--dark`
   and `--light` to force a skin in a window that has no host palette.
 
+On 2026-09-18:
+
+- **The front page is titled with the OctoSense mark and "News"**, not
+  "Today" — the website's eight-petal mark (`Mark.astro`, baked to plain
+  paths in `resources/icons/octosense.svg`) in the website's green
+  (`--green`, `#6a8058`) before the word, at the title's height. The
+  bottom bar's tab is still "Today", and the other pages' titles are text
+  alone.
+- **The sources carry marks**: Hacker News' Y, TechMeme's T, Google News'
+  paper, the RSS symbol for a feed of the person's own (`resources/icons/
+  hn.svg`, `techmeme.svg`, `google-news.svg`, `feed.svg`, single-colour).
+  A Today section header shows its source's mark in the provenance colour
+  the stories' dots use; a Following row shows it white on the coloured
+  disc, where a feed of the person's own keeps its initial.
+
 From the check on the Android device, on 2026-09-17:
 
 - **The reader's web view navigates.** It is spawned with
