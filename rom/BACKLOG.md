@@ -58,14 +58,38 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 
 ## Mobile platform follow-ups
 
-- [ ] **MOBILE-01 — P2: Restore iOS compilation in the pinned framework.**
+- [ ] **MOBILE-01 — P2: Bring up iOS.**
 
-  The 2026-09-09 cross-check fails in Makepad's `platform/src/os/apple/metal.rs`
-  because two paths reference the macOS-only module on iOS. Correct this in the
-  source fork and adopt a published revision through the normal sync workflow.
+  The 2026-09-09 cross-check failed in Makepad's `platform/src/os/apple/metal.rs`
+  and `ios.rs`; on the framework pinned since MOBILE-06 (`03091405`)
+  `cargo check --locked -p octosense --lib --target aarch64-apple-ios` passes,
+  with the mobile features and the News crate too.
 
-  Acceptance: `cargo check --locked -p octosense --lib --target aarch64-apple-ios`
-  passes, followed by iOS startup, safe-area and touch verification.
+  First run on 2026-09-17, iPhone 16 Pro simulator (iOS 17.0.1), built with
+  the fork's tool: `cargo-makepad makepad apple ios --org=dev.makepad
+  --app=octosense run-sim -p octosense --features mobile-only` (iOS needs
+  the feature: `build.rs` turns `mobile_only` on for Android alone). The
+  shell starts, applies the safe-area insets (top 62, bottom 34), draws the
+  home page, and `--test-action launch-news` opens News with headlines
+  fetched over the network; storage lands in `$HOME/.octosense/storage`
+  inside the app container, so there is no iOS twin of NEWS-09. Packaging
+  needed a tool fix: this crate builds `src/main.rs` as a lib and a bin,
+  so the binary carries two identical font-asset manifests and the Apple
+  packager refused the duplicate (fork branch `fix/font-manifest-lib-and-bin`).
+
+  Not yet checked: touch, the reader's WKWebView (NEWS-05), rotation. Xcode
+  27 here ships no Simulator.app and `simctl` injects no input, so the
+  simulator runs headless; touches need either a physical device or a
+  `--test-action` that synthesises them. The paired iPhone 16 Pro
+  (`00008140-001A104E3813C01C`) is not in the existing provisioning
+  profiles (team `SFVQ5V48GD`, `rs.robius.*`), so `run-device` needs a new
+  profile from Xcode first. Also seen: the AppCard banner and icon are off
+  the first home page on the iPhone's shorter safe area (layout budget, to
+  confirm), and the shell keeps its own light/dark toggle rather than the
+  system appearance.
+
+  Acceptance: touch, rotation and the reader checked on the simulator with
+  synthesised input or on the device; the tool fix merged and re-pinned.
 
 - [ ] **MOBILE-02 — P2: Adopt the upstream Android compositor orientation fix.**
 
@@ -168,9 +192,8 @@ style switching to iOS; the call stack is in
 `src/octosense/retired_passes.rs` before GPU submission. Once upstream ignores
 retired roots/slots, remove the adapter and rerun the all-style GPU smoke.
 
-The iOS check on this revision is still blocked in upstream `ios.rs`: missing
-`Cx::recover_after_caught_panic` and `IosApp::set_deferred_system_gesture_edges`.
-This supersedes the earlier Metal compile diagnostics in MOBILE-01.
+The iOS check is no longer blocked: on the revision pinned since MOBILE-06 the
+iOS target compiles (MOBILE-01).
 
 ## UPSTREAM-02: PortalList ignores set_visible
 

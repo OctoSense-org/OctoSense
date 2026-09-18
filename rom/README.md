@@ -31,6 +31,14 @@ cargo build --manifest-path ../makepad-fork/tools/cargo_makepad/Cargo.toml
 ../makepad-fork/target/debug/cargo-makepad makepad android run -p octosense --release
 ```
 
+For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
+booted simulator receives the app) — iOS needs `mobile-only` passed by hand,
+Android gets it from `build.rs`:
+
+```
+../makepad-fork/target/debug/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
+```
+
 `run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
 
 ### Make it the Home app
