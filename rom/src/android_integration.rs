@@ -78,6 +78,9 @@ pub struct AndroidState {
     pub system_dark: Option<bool>,
     /// Android's text size preference (1 is the default size).
     pub font_scale: f64,
+    /// The person's app pairs (None: the seeds) and the tiles they hid.
+    pub pairs: Option<Arc<Vec<(String, Vec<String>)>>>,
+    pub hidden_tiles: Arc<Vec<String>>,
     /// Recently used Android apps (newest first) for Recents, and whether
     /// usage access is granted so they can be known at all.
     pub recent_apps: Arc<Vec<String>>,
@@ -697,6 +700,18 @@ impl App {
         android.dock = Arc::new(dock);
         android.hidden_hosted = Arc::new(hidden_hosted);
         android.order = Arc::new(order);
+        // Pairs and hidden tiles: explicit once edited, the seeds before.
+        let pairs = value.get("pairs").and_then(Value::as_arr).map(|items| items.iter().filter_map(|item| {
+            let name = item.get("name")?.as_str()?.to_string();
+            let apps: Vec<String> = item.get("apps")?.as_arr()?.iter().filter_map(|a| a.as_str().filter(|a| hosted_identity(a)).map(str::to_string)).collect();
+            Some((name, apps))
+        }).take(16).collect::<Vec<_>>());
+        let hidden_tiles: Vec<String> = value.get("hidden_tiles").and_then(Value::as_arr).map(|items| items.iter().filter_map(|a| a.as_str().filter(|a| hosted_identity(a)).map(str::to_string)).take(16).collect()).unwrap_or_default();
+        crate::mobile_groups::set_seeds(pairs.as_deref());
+        crate::mobile_tiles::set_hidden_tiles(&hidden_tiles);
+        android.pairs = pairs.map(Arc::new);
+        android.hidden_tiles = Arc::new(hidden_tiles);
+        self.state_mut().phone.groups.reseed();
     }
     /// A finished home-page drag: the new order of every favourite (applied
     /// at once locally, then stored by Android), or the dock slot it landed on.

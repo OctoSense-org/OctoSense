@@ -441,10 +441,20 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 }
                 break;
             }
+            case "pair_menu": pairMenu(command); break;
+            case "tile_menu": main.post(() -> {
+                if(destroyed || activity.isFinishing()) return;
+                String app=command.optString("app",""),label=command.optString("label",app);
+                dialog(command.optBoolean("dark",false)).setTitle(label).setItems(new String[]{"Remove tile from Home"},(dialog,which) ->
+                    placementEdit(() -> placements().hideTile(app,true))).setNegativeButton("Cancel",null).show();
+            }); break;
             case "home_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
-                dialog(command.optBoolean("dark",false)).setTitle("Home").setItems(new String[]{"Widgets","Wallpaper","System setup"},(dialog,which) -> {
+                boolean hiddenTiles=command.optInt("hidden_tiles",0)>0;
+                String[] items=hiddenTiles?new String[]{"Widgets","Wallpaper","System setup","Show hidden tiles"}:new String[]{"Widgets","Wallpaper","System setup"};
+                dialog(command.optBoolean("dark",false)).setTitle("Home").setItems(items,(dialog,which) -> {
                     if(which==0) widgets.show();
+                    else if(which==3) placementEdit(() -> placements().hideTile(null,false));
                     else if(which==2) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");
                     else try {activity.startActivity(new Intent(Intent.ACTION_SET_WALLPAPER));}
                     catch(android.content.ActivityNotFoundException e) {
@@ -571,6 +581,59 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         model.put("epoch",session).put("revision",++placementRevision);
         placementSnapshot=model;
         emit("launcher.placements",model);
+    }
+    private interface PlacementEdit { void run() throws Exception; }
+    /** A placement change from a dialog: on the worker, published, with the same failure copy as the icon menu. */
+    private void placementEdit(PlacementEdit edit) {
+        if(!offer(() -> {
+            try {edit.run();publishPlacements();}
+            catch(IllegalArgumentException e) {result(0,Protocol.INVALID_ARGUMENT,"home_placement_limit_or_identity");}
+            catch(Exception e) {
+                placements=null;
+                result(0,Protocol.UNCERTAIN,"home_placement_storage_unavailable");
+                try {publishPlacements();} catch(Exception ignored) {}
+            }
+        })) {queueCommandLoss.set(true);scheduleRecovery();}
+    }
+    /** A pair tile's menu: change either app (from the hosted catalog) or take the pair off the page. */
+    private void pairMenu(JSONObject command) {
+        main.post(() -> {
+            if(destroyed || activity.isFinishing()) return;
+            try {
+                String name=command.getString("name");boolean dark=command.optBoolean("dark",false);
+                JSONArray catalog=command.getJSONArray("catalog"),pairs=command.getJSONArray("pairs");
+                JSONObject current=null;
+                for(int index=0;index<pairs.length();index++) if(pairs.getJSONObject(index).getString("name").equals(name)) current=pairs.getJSONObject(index);
+                if(current==null) return;
+                JSONArray apps=current.getJSONArray("apps");
+                String[] labels=new String[catalog.length()],ids=new String[catalog.length()];
+                for(int index=0;index<catalog.length();index++) {ids[index]=catalog.getJSONObject(index).getString("id");labels[index]=catalog.getJSONObject(index).getString("label");}
+                java.util.function.Function<String,String> labelOf=id -> {for(int i=0;i<ids.length;i++) if(ids[i].equals(id)) return labels[i];return id;};
+                String[] items={"First app: "+labelOf.apply(apps.getString(0)),"Second app: "+labelOf.apply(apps.getString(1)),"Remove pair from Home"};
+                dialog(dark).setTitle(name+" · App pair").setItems(items,(dialog,which) -> {
+                    try {
+                        if(which==2) {
+                            JSONArray next=new JSONArray();
+                            for(int index=0;index<pairs.length();index++) if(!pairs.getJSONObject(index).getString("name").equals(name)) next.put(pairs.getJSONObject(index));
+                            placementEdit(() -> placements().setPairs(next));
+                            return;
+                        }
+                        int slot=which;
+                        dialog(dark).setTitle(slot==0?"First app":"Second app").setItems(labels,(picker,choice) -> {
+                            try {
+                                JSONArray chosen=new JSONArray().put(slot==0?ids[choice]:apps.getString(0)).put(slot==1?ids[choice]:apps.getString(1));
+                                JSONArray next=new JSONArray();
+                                for(int index=0;index<pairs.length();index++) {
+                                    JSONObject pair=pairs.getJSONObject(index);
+                                    next.put(pair.getString("name").equals(name)?new JSONObject().put("name",name).put("apps",chosen):pair);
+                                }
+                                placementEdit(() -> placements().setPairs(next));
+                            } catch(JSONException ignored) {}
+                        }).setNegativeButton("Cancel",null).show();
+                    } catch(JSONException ignored) {}
+                }).setNegativeButton("Cancel",null).show();
+            } catch(JSONException ignored) {}
+        });
     }
     private void placementMenu(String identity,String hostedLabel,boolean dark) throws Exception {
         // Hosted labels come from the in-process Rust launchable-app catalog.

@@ -29,6 +29,9 @@ public final class LauncherPlacements {
     private ArrayList<String> hiddenHosted=new ArrayList<>();
     /** The person's own order of the home page's icons (hosted and Android ids alike); ids missing here keep the default order after the listed ones. */
     private ArrayList<String> order=new ArrayList<>();
+    /** The person's app pairs as {name, apps:[a,b]} once edited (null: the shell's seeds), and the tiles taken off the page. */
+    private JSONArray pairs=null;
+    private ArrayList<String> hiddenTiles=new ArrayList<>();
 
     public LauncherPlacements(File path) throws IOException,JSONException {
         file=new AtomicFile(path);
@@ -54,6 +57,9 @@ public final class LauncherPlacements {
         hiddenHosted=version==1?new ArrayList<>():read(stored.getJSONArray("hidden_hosted"),128,true);
         order=stored.has("order")?read(stored.getJSONArray("order"),256,true):new ArrayList<>();
         order.removeIf(String::isEmpty);
+        pairs=stored.has("pairs")?stored.getJSONArray("pairs"):null;
+        hiddenTiles=stored.has("hidden_tiles")?read(stored.getJSONArray("hidden_tiles"),16,true):new ArrayList<>();
+        hiddenTiles.removeIf(String::isEmpty);
         for(String id:hiddenHosted) if(!isHosted(id)) throw new IOException("Invalid hidden hosted identity");
         // A v1 file is read without rewriting it. Its original dock grammar
         // remains strict; v2 adds hosted IDs and deliberately empty slots.
@@ -100,10 +106,44 @@ public final class LauncherPlacements {
     public static boolean isHosted(String id) {
         return id!=null && id.matches("[a-z][a-z0-9_-]{0,127}");
     }
-    private static JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
-        return new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order));
+    private JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
+        JSONObject model=new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order))
+                .put("hidden_tiles",new JSONArray(hiddenTiles));
+        if(pairs!=null) model.put("pairs",pairs);
+        return model;
     }
     public JSONObject snapshot() throws JSONException {return model(favorites,dock,hiddenHosted,order);}
+    /** The whole list of pairs after an edit: names of at most 32 characters, two distinct hosted apps each, at most 16 pairs. */
+    public void setPairs(JSONArray next) throws IOException,JSONException {
+        synchronized(IO_LOCK) {
+        reload();
+        if(next.length()>16) throw new IllegalArgumentException("Too many pairs");
+        for(int index=0;index<next.length();index++) {
+            JSONObject pair=next.getJSONObject(index);
+            String name=pair.getString("name");JSONArray apps=pair.getJSONArray("apps");
+            if(name.isEmpty() || name.length()>32 || apps.length()!=2 || apps.getString(0).equals(apps.getString(1))) throw new IllegalArgumentException("Invalid pair");
+            for(int a=0;a<2;a++) if(!isHosted(apps.getString(a))) throw new IllegalArgumentException("Invalid pair app");
+        }
+        pairs=next;
+        persist();
+        }
+    }
+    /** A tile taken off the home page (or put back); `null` puts every tile back. */
+    public void hideTile(String app,boolean hidden) throws IOException,JSONException {
+        synchronized(IO_LOCK) {
+        reload();
+        if(app==null) hiddenTiles.clear();
+        else {
+            if(!isHosted(app)) throw new IllegalArgumentException("Invalid tile");
+            hiddenTiles.remove(app);
+            if(hidden) {if(hiddenTiles.size()>=16) throw new IllegalArgumentException("Too many hidden tiles");hiddenTiles.add(app);}
+        }
+        persist();
+        }
+    }
+    private void persist() throws IOException,JSONException {
+        write(model(favorites,dock,hiddenHosted,order).toString().getBytes(StandardCharsets.UTF_8));
+    }
     /** The whole home order after a drag: every id checked, no duplicates, at most 256. */
     public void reorder(ArrayList<String> next) throws IOException,JSONException {
         synchronized(IO_LOCK) {
@@ -160,7 +200,10 @@ public final class LauncherPlacements {
     }
     private void save(ArrayList<String> nextFavorites,ArrayList<String> nextDock,ArrayList<String> nextHidden,ArrayList<String> nextOrder) throws IOException,JSONException {
         if(nextFavorites.equals(favorites) && nextDock.equals(dock) && nextHidden.equals(hiddenHosted) && nextOrder.equals(order)) return;
-        byte[] bytes=model(nextFavorites,nextDock,nextHidden,nextOrder).toString().getBytes(StandardCharsets.UTF_8);
+        write(model(nextFavorites,nextDock,nextHidden,nextOrder).toString().getBytes(StandardCharsets.UTF_8));
+        favorites=nextFavorites;dock=nextDock;hiddenHosted=nextHidden;order=nextOrder;
+    }
+    private void write(byte[] bytes) throws IOException {
         if(bytes.length>MAX_BYTES) throw new IllegalArgumentException("Placements exceed storage limit");
         FileOutputStream stream=null;
         try {
@@ -168,7 +211,6 @@ public final class LauncherPlacements {
             try(FileInputStream input=file.openRead()) {
                 if(!java.util.Arrays.equals(bytes,readBytes(input))) throw new IOException("Placement write not retained");
             }
-            favorites=nextFavorites;dock=nextDock;hiddenHosted=nextHidden;order=nextOrder;
         } catch(IOException|RuntimeException e) {if(stream!=null) file.failWrite(stream);throw e;}
     }
 }

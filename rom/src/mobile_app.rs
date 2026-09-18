@@ -640,6 +640,15 @@ impl App {
                 Some(PhoneHit::App(id)) if cfg!(target_os="android") => Some(id.clone()),
                 _=>None,
             });
+            // A pair tile or an app tile on the home page: their own menus.
+            let tile=phone.gesture.as_ref().filter(|gesture| {
+                cfg!(target_os="android") && phone.touch==Some(press.uid) && gesture.screen==PhoneScreen::Home
+                    && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            }).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::Group(name))=>Some((true,name.clone())),
+                Some(PhoneHit::TileApp(app))=>Some((false,app.clone())),
+                _=>None,
+            });
             let empty_home=cfg!(target_os="android") && phone.gesture.as_ref().is_some_and(|gesture| {
                 phone.touch==Some(press.uid) && gesture.screen==PhoneScreen::Home && gesture.hit.is_none()
                     && phone.shade.open<0.001 && (press.abs-gesture.start).length()<12.0
@@ -675,12 +684,31 @@ impl App {
                 self.open_app_menu(cx,&app);
                 return true;
             }
+            if let Some((is_pair,name))=tile {
+                use makepad_strict_json::{obj,s,Value};
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
+                let catalog: Vec<Value>=crate::shell::launcher::apps().iter()
+                    .map(|a|obj(vec![("id",s(a.id.trim_start_matches("apps."))),("label",s(&a.label))])).collect();
+                if is_pair {
+                    let pairs: Vec<Value>=crate::mobile_groups::seeds().iter()
+                        .map(|(n,apps)|obj(vec![("name",s(*n)),("apps",Value::Arr(apps.iter().map(|a|s(a)).collect()))])).collect();
+                    self.android_command(cx,"launcher","pair_menu",vec![("name",s(&name)),("dark",dark),("catalog",Value::Arr(catalog)),("pairs",Value::Arr(pairs))]);
+                } else {
+                    let label=crate::clients::find_app(&name).map(|a|a.label).unwrap_or_else(||name.clone());
+                    self.android_command(cx,"launcher","tile_menu",vec![("app",s(&name)),("label",s(&label)),("dark",dark)]);
+                }
+                return true;
+            }
             if empty_home {
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.gesture_out=None;
                 self.phone_gestures.cancel();
                 self.android_haptic(cx,"long_press");
-                self.android_command(cx,"launcher","home_menu",vec![("dark",dark)]);
+                let hidden=self.state_mut().phone.android.hidden_tiles.len() as i64;
+                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden))]);
                 return true;
             }
         }

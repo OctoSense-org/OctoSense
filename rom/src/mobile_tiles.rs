@@ -27,6 +27,11 @@ pub const TILE_APPS: [(&str, TileKind); 4] =
 pub fn is_tile_app(app: &str) -> bool {
     TILE_APPS.iter().any(|(id, _)| *id == app)
 }
+/// Tiles the person took off the home page (Android's placements journal);
+/// the app keeps its icon.
+static HIDDEN_TILES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+pub fn set_hidden_tiles(apps: &[String]) { *HIDDEN_TILES.write().unwrap() = apps.to_vec(); }
+pub fn tile_hidden(app: &str) -> bool { HIDDEN_TILES.read().unwrap().iter().any(|a| a == app) }
 
 /// Screen margin around the home content (iOS and Android both use 16pt).
 pub const HOME_MARGIN: f64 = 16.0;
@@ -71,7 +76,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
     let m = HOME_MARGIN;
     let left = screen.pos.x + m;
     let width = (screen.size.x - m * 2.0).max(1.0);
-    let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id)).collect();
+    let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id) && !tile_hidden(id)).collect();
     let groups = crate::mobile_groups::GroupsState::placed(apps);
     let mut tiles = Vec::new();
     if landscape {
