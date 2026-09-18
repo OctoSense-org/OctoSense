@@ -84,18 +84,33 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   after a delay, through the app's own `handle_event`. With
   `launch-news` and `taps:200,376@6;31,129@12` a headline opens the reader
   (the WKWebView attached at the page rect, the article rendered) and Back
-  returns to Today with the overlay gone. Not yet checked: rotation, a
-  real finger, and the phone shell's gestures. The paired iPhone 16 Pro
-  (`00008140-001A104E3813C01C`) is not in the existing provisioning
-  profiles (team `SFVQ5V48GD`, `rs.robius.*`), so `run-device` needs a new
-  profile from Xcode first. Also seen: the AppCard banner and icon are off
-  the first home page on the iPhone's shorter safe area (layout budget, to
-  confirm), and the shell keeps its own light/dark toggle rather than the
-  system appearance.
+  returns to Today with the overlay gone.
 
-  Acceptance: rotation and the shell's gestures checked on the simulator
-  with synthesised input or on the device; the tool fix merged and
-  re-pinned.
+  On the iPhone 16 Pro itself (iOS 26.6.1) the same evening, signed with
+  a Personal Team profile minted by `xcodebuild -allowProvisioningUpdates`
+  on a throwaway project: the first build crashed at startup with
+  `EXC_BAD_ACCESS` in `PhoneSurface::script_new` — a main-thread stack
+  overflow, since iOS gives the main thread 1 MB and the widget tree is
+  built through nested `script_apply`/`script_new` calls (the simulator
+  inherits macOS's 8 MB). `.cargo/config.toml` now links aarch64-apple-ios
+  with a 16 MB main-thread stack; the shell then starts, and the home
+  swipe, News and Photos work by hand. Two device-only faults followed:
+  every storage write failed with `Operation not permitted` (the container
+  root is not writable on a device; the simulator allowed it) — fixed in
+  the fork's `feat/ios-bringup` by recording Application Support as the
+  platform data directory, the NEWS-09 shape — and `http://` feed
+  pictures were refused by App Transport Security — fixed with
+  `resources/apple/Info.plist` merged into the bundle
+  (`package.metadata.makepad.ios.info_plist`). With both, the log shows no
+  storage or ATS errors. Not yet checked: rotation and the reader on the
+  device. Also seen: the AppCard banner and icon are off the first home
+  page on the iPhone's shorter safe area (layout budget, to confirm), and
+  the shell keeps its own light/dark toggle rather than the system
+  appearance. The deep stack at startup is worth its own item: a 16 MB
+  main thread is a workaround for frames the widget build should not need.
+
+  Acceptance: rotation and the reader checked on the device; the fork's
+  `feat/ios-bringup` (packager fix, iOS storage root) merged and re-pinned.
 
 - [ ] **MOBILE-02 — P2: Adopt the upstream Android compositor orientation fix.**
 
