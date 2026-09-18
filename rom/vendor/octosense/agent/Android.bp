@@ -20,5 +20,5 @@ android_app {
     optimize: {
         enabled: false,
     },
-    required: ["privapp-permissions-octosense.xml"],
+    // The privapp allowlist ships through PRODUCT_COPY_FILES in octosense.mk.
 }
