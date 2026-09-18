@@ -1,6 +1,7 @@
 pub mod model;
 mod ui;
 pub mod view;
+mod zoom;
 use makepad_app_module::{
     makepad_ai_services::wire::{ServiceCall, ServiceManifest, ToolResult},
     AppModule, ExecOutcome, InstanceHandles, InstanceParts, OpenSchema, ServiceExecutor,
