@@ -309,7 +309,7 @@ public class AgentPlatformService extends Service {
 
     // ---- apps -------------------------------------------------------------
 
-    Bundle startActivity(Intent intent) {
+    Bundle launch(Intent intent) {
         if (intent == null) return fail("failed");
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(intent);
@@ -358,7 +358,7 @@ public class AgentPlatformService extends Service {
         @Override public Bundle pressKey(int k) { return guarded("key", () -> AgentPlatformService.this.pressKey(k)); }
         @Override public Bundle getSetting(String t, String n) { return guarded("getSetting", () -> AgentPlatformService.this.getSetting(t, n)); }
         @Override public Bundle putSetting(String t, String n, String v) { return guarded("putSetting", () -> AgentPlatformService.this.putSetting(t, n, v)); }
-        @Override public Bundle startActivity(Intent i) { return guarded("startActivity", () -> AgentPlatformService.this.startActivity(i)); }
+        @Override public Bundle startActivity(Intent i) { return guarded("startActivity", () -> launch(i)); }
         @Override public Bundle startTask(int id) { return guarded("startTask", () -> AgentPlatformService.this.startTask(id)); }
         @Override public Bundle removeTask(int id) { return guarded("removeTask", () -> AgentPlatformService.this.removeTask(id)); }
         @Override public Bundle forceStop(String p) { return guarded("forceStop", () -> AgentPlatformService.this.forceStop(p)); }
