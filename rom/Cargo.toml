@@ -46,18 +46,18 @@ path = "src/main.rs"
 libc = "0.2"
 # `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c", features = ["appcard", "maps"] }
-makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
-makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
-makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0", features = ["appcard", "maps"] }
+makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
+makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
 # The AI services wire only: the WM relays frames between the aichat child and the apps.
-makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
-makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
+makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
 # In-process hosting (aicontrol §3): the module contract, the palette applied
 # into each instance's isolate, and the modules this build links.
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c", default-features = false, optional = true }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0" }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0", default-features = false, optional = true }
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
@@ -69,7 +69,7 @@ octosense-news = { path = "apps/news", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
-makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c", default-features = false, optional = true }
+makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0", default-features = false, optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
@@ -77,7 +77,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard" }
 octosense-news = { path = "apps/news" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "030914056c10a5e33ae156567864b15f57d8679c", default-features = false }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "bb45d4115762d27f05137d1420907fa166831bd0", default-features = false }
 octosense-photos = { path = "apps/photos" }
 
 [features]
