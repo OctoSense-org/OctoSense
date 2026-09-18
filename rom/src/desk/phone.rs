@@ -228,7 +228,8 @@ impl WmDesk {
                     let mut capture=stored.tile.take().unwrap_or_else(||Capture::new(cx,style,dark));
                     // Not confirmed yet: keep the child driven at the tile
                     // viewport every frame; confirmed: only when it drew.
-                    if !ready || self.client_arriving(client) || capture.stale(slot.rect.size,style,dark) {
+                    if !ready || self.client_arriving(client) || capture.stale(slot.rect.size,style,dark)
+                        || capture.frame.redraw_requested(cx, cx.draw_event) {
                         self.record_capture(cx,scope,client,&mut capture,slot.rect,false);
                         capture.settle(slot.rect.size,style,dark);
                     } else {

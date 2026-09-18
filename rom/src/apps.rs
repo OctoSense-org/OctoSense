@@ -48,7 +48,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[cfg(any(feature = "app-sheets", target_os = "android", target_os = "ios"))]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(any(feature = "app-photos", target_os = "android", target_os = "ios"))]
-    out.push(&makepad_photos::PHOTOS_MODULE);
+    out.push(&octosense_photos::PHOTOS_MODULE);
     #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
@@ -57,6 +57,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_robrix::module::ROBRIX_MODULE);
     #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
     out.push(&octosense_finance::FINANCE_MODULE);
+    #[cfg(any(feature = "app-news", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_news::NEWS_MODULE);
     out
 }
 
@@ -180,7 +182,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "robrix", "finance"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "robrix", "finance", "news"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

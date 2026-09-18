@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged over the Info.plist cargo-makepad generates for the iOS bundle
+  (package.metadata.makepad.ios.info_plist in Cargo.toml).
+
+  The reader opens whatever page a feed links to in a web view, plain http
+  included, so web content is exempt from App Transport Security. The
+  app's own connections are not: feeds are fetched over https and feed
+  pictures are asked for over https whatever the feed says (feed.rs).
+-->
+<plist version="1.0">
+<dict>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+  </dict>
+</dict>
+</plist>

@@ -48,6 +48,7 @@ mod run_view;
 mod shell;
 mod theme;
 mod tile;
+mod wm_reply;
 
 /// The standalone mobile shell: the Android phone shell fills the window
 /// and nothing else is offered — no desk bar, no style switcher, no
@@ -436,6 +437,12 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     test_page: Option<(Timer, i64)>,
+    /// `--test-action taps:<x>,<y>@<s>[;…]`: touch for a run that has none
+    /// (the headless iOS simulator first of all). Each entry puts a finger
+    /// down at window point (x, y) <s> seconds after startup and lifts it
+    /// a beat later, through the same event path as a real touch.
+    #[rust]
+    test_taps: Vec<(Timer, Vec2d, makepad_platform::event::TouchState)>,
     /// When each warm client was last ticked. Kept apart from `WarmFrame`
     /// because the FIRST ticks are what make a frame possible at all — see
     /// `pump_warm`.
@@ -626,6 +633,14 @@ impl App {
     // --------------------------------------------------------------
 
     fn launch_app(&mut self, cx: &mut Cx, app_id: &str) {
+        self.launch_app_with_args(cx, app_id, &[]);
+    }
+
+    /// `launch_app` with arguments appended to the app's own — a `Launch`
+    /// request's `args`, URLs for the Browser. Arguments mean a NEW window:
+    /// neither a running instance nor a warm one, which started without
+    /// them, can take them, so both shortcuts stand aside.
+    fn launch_app_with_args(&mut self, cx: &mut Cx, app_id: &str, extra_args: &[String]) {
         let Some(app) = crate::clients::find_app(app_id) else {
             log!("octosense: no app '{}' in the registry", app_id);
             self.notify(cx, "App unavailable", &format!("Register '{app_id}' in your app catalog to launch it."));
@@ -637,7 +652,7 @@ impl App {
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
         // matches `\b<pattern>\b` case-insensitively against the window's
         // CLASS OR TITLE and focuses the first hit.
-        if app.policy == LaunchPolicy::OrFocus {
+        if app.policy == LaunchPolicy::OrFocus && extra_args.is_empty() {
             let pattern = app.id.clone();
             let pattern = pattern.as_str();
             let mut existing: Vec<ClientId> = self
@@ -671,6 +686,12 @@ impl App {
         // isolate of its own — never a process, never the pool.
         if self.apps.hosting(app_id) == Hosting::Module {
             if let Some(module) = self.apps.module(app_id) {
+                if !extra_args.is_empty() {
+                    // The gap: `launch_module` takes no arguments, so a
+                    // sender that needs them must open the module through
+                    // its OpenSchema instead.
+                    log!("wm: {} runs in-process; launch arguments {:?} are not forwarded", app_id, extra_args);
+                }
                 self.launch_module(cx, module);
                 return;
             }
@@ -685,7 +706,7 @@ impl App {
 
         // THE POOL: a standby instance of this app becomes the window now,
         // already drawn, and the pool tops itself back up behind it.
-        if self.adopt_warm(cx, app_id) {
+        if extra_args.is_empty() && self.adopt_warm(cx, app_id) {
             return;
         }
 
@@ -705,7 +726,7 @@ impl App {
             hub_port,
             cwd.as_ref(),
             (app.id == "terminal").then_some(term_env.as_str()),
-            &[],
+            extra_args,
             false,
             lines,
         ) {
@@ -1129,9 +1150,14 @@ impl App {
             WmRequest::Preview { app, path } => {
                 self.handle_preview_request(cx, client, app.clone(), path.clone());
             }
+            // A named app the catalog cannot launch here is answered, not
+            // dropped: the requester falls back to what it can do itself.
+            WmRequest::Open { app: Some(app), path } if !Self::launchable(app) => {
+                self.reply_unavailable(cx, client, app, path);
+            }
             WmRequest::Open { .. } => {
                 if let Some(open) = preview::OpenRequest::from_request(&req) {
-                    self.open_request(cx, open);
+                    self.open_request(cx, Some(client), open);
                 }
             }
             // The REQUESTER hiding its own panel. A stray close from
@@ -1148,9 +1174,17 @@ impl App {
                     self.hide_active_preview(cx);
                 }
             }
-            WmRequest::Launch { app, .. } => {
-                let app = app.clone();
-                self.launch_app(cx, &app);
+            // A requester that predates the envelope (Files asking for a
+            // Terminal) hears nothing from the reply, so the person is told
+            // as `launch_app` tells them; an `Open` requester handles the
+            // reply itself.
+            WmRequest::Launch { app, .. } if !Self::launchable(app) => {
+                self.reply_unavailable(cx, client, app, "");
+                self.notify(cx, "App unavailable", &format!("Register '{app}' in your app catalog to launch it."));
+            }
+            WmRequest::Launch { app, args } => {
+                let (app, args) = (app.clone(), args.clone());
+                self.launch_app_with_args(cx, &app, &args);
             }
             WmRequest::Title { title } => {
                 if let Some(slot) = self.state_mut().clients.get_mut(&client) {
@@ -1164,8 +1198,6 @@ impl App {
                 }
             }
             WmRequest::Notify { title, body } => {
-                // The notifications surface is the shell-UI lane's; until
-                // it lands the notification is at least not lost.
                 log!("wm: notify from client {}: {} — {}", client, title, body);
                 let (app, now) = (self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default(), cx.seconds_since_app_start());
                 self.state_mut().phone.shade.post(&app, title, body, now, vec!["Open".into()]);
@@ -1193,7 +1225,10 @@ impl App {
     /// A client asked us to open a file in its associated app as a normal
     /// tiled window (`WmRequest::Open`). `WmRequest::Preview` (Quick Look)
     /// goes through `handle_preview_request`'s warm-viewer cache instead.
-    fn open_request(&mut self, cx: &mut Cx, req: preview::OpenRequest) {
+    /// `requester` is the client to answer when nothing opens (a spawn
+    /// failure, a module-only target on a host without processes); the
+    /// assistant's `open` tool has none, its result says what happened.
+    fn open_request(&mut self, cx: &mut Cx, requester: Option<ClientId>, req: preview::OpenRequest) {
         let hub_port = self.state_mut().hub_port;
         let id = self.next_id;
         self.next_id += 1;
@@ -1203,6 +1238,9 @@ impl App {
             Ok(slot) => slot,
             Err(err) => {
                 log!("wm: open request failed: {}", err);
+                if let Some(client) = requester {
+                    self.reply_unavailable(cx, client, &req.app, &req.path.to_string_lossy());
+                }
                 return;
             }
         };
@@ -1226,13 +1264,38 @@ impl App {
     /// gone or has not connected yet, so a caller whose message MUST land
     /// (a Quick-Look retarget) can park it for `HubEvent::Connected`.
     fn send_wm_event(&mut self, client: ClientId, ev: WmEvent) -> bool {
+        self.send_custom_to_client(client, ev.to_json())
+    }
+
+    /// One JSON message to a process client as `StudioToApp::Custom`.
+    /// False when the client is gone or has no socket yet.
+    fn send_custom_to_client(&mut self, client: ClientId, json: String) -> bool {
         if let Some(slot) = self.state_mut().clients.get(&client) {
             if let Some(sender) = &slot.sender {
-                crate::hub::send_to_app(sender, vec![StudioToApp::Custom(ev.to_json())]);
+                crate::hub::send_to_app(sender, vec![StudioToApp::Custom(json)]);
                 return true;
             }
         }
         false
+    }
+
+    /// Whether `app` can be launched from this catalog on this host: a
+    /// linked module when hosted as one, else an available process.
+    fn launchable(app: &str) -> bool {
+        clients::find_app(app).is_some_and(|def| crate::apps::is_launchable(&def))
+    }
+
+    /// Tell the requester that `app` cannot be launched from this catalog:
+    /// the `wm_unavailable` envelope, into a module's isolate or over a
+    /// process's socket. What to do instead is the requester's call.
+    fn reply_unavailable(&mut self, cx: &mut Cx, client: ClientId, app: &str, path: &str) {
+        let json = wm_reply::WmUnavailable { app: app.to_string(), path: path.to_string() }.to_json();
+        let told = if self.module_host.is_module(client) {
+            self.module_host.send_custom(cx, client, json)
+        } else {
+            self.send_custom_to_client(client, json)
+        };
+        log!("wm: {app} is not launchable here; told client {client}: {told}");
     }
 
     /// Retarget a warm viewer at `path`. A viewer spawned moments ago has
@@ -2291,7 +2354,7 @@ impl App {
                     match preview::OpenRequest::from_request(&req) {
                         Some(open) if clients::find_app(&open.app).is_some() => {
                             let app = open.app.clone();
-                            self.open_request(cx, open);
+                            self.open_request(cx, None, open);
                             ToolResult::ok(id, format!("opening {path} in {app}"), "opening")
                         }
                         _ => ToolResult::refused(id, format!("no app can open {path}")),
@@ -3684,6 +3747,31 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// One synthetic finger at `at`, entering the app through the same
+    /// `handle_event` as a platform touch, so the phone's gestures, the
+    /// desk and the modules see nothing unusual about it.
+    fn synthetic_touch(&mut self, cx: &mut Cx, at: Vec2d, state: makepad_platform::event::TouchState) {
+        use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
+        let time = cx.seconds_since_app_start();
+        let event = Event::TouchUpdate(TouchUpdateEvent {
+            time,
+            window_id: CxWindowPool::id_zero(),
+            modifiers: Default::default(),
+            touches: vec![TouchPoint {
+                state,
+                abs: at,
+                time,
+                uid: 0x7e57,
+                rotation_angle: 0.0,
+                force: 0.0,
+                radius: dvec2(1.0, 1.0),
+                handled: Default::default(),
+                sweep_lock: Default::default(),
+            }],
+        });
+        self.handle_event(cx, &event);
+    }
+
     /// The test actions' timers: a `capture:` tick writes the next frame; a
     /// due `ask-appcard:` sends its text to the appcard instance's executor
     /// exactly as the assistant's `ask` call would.
@@ -3740,6 +3828,17 @@ impl App {
                 self.test_page = None;
                 self.state_mut().phone.pages.jump(n);
                 self.animate_phone(cx);
+            }
+        }
+        if let Some(pos) = self.test_taps.iter().position(|(t, _, _)| t.is_timer(te).is_some()) {
+            use makepad_platform::event::TouchState;
+            let (_, at, state) = self.test_taps.remove(pos);
+            self.synthetic_touch(cx, at, state);
+            // The finger lifts a beat later, as a real tap's does; a
+            // hold is measured from the touch times.
+            if state == TouchState::Start {
+                let timer = cx.start_timeout(0.08);
+                self.test_taps.push((timer, at, TouchState::Stop));
             }
         }
         let Some(pos) = self.test_asks.iter().position(|(t, _)| t.is_timer(te).is_some()) else {
@@ -3822,6 +3921,23 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // taps:<x>,<y>@<s>[;…]: a finger down and up at window
+                    // point (x, y) <s> seconds after startup, for a run with
+                    // no touch input — the headless iOS simulator first of all.
+                    if let Some(spec) = name.strip_prefix("taps:") {
+                        match parse_test_taps(spec) {
+                            Ok(taps) => {
+                                for (delay, at) in taps {
+                                    log!("wm: --test-action tap {:?} in {}s", at, delay);
+                                    let timer = cx.start_timeout(delay);
+                                    self.test_taps.push((timer, at, makepad_platform::event::TouchState::Start));
+                                }
+                            }
+                            Err(error) => log!("wm: --test-action taps: {}", error),
+                        }
+                        i += 2;
+                        continue;
+                    }
                     // ask-appcard:<text>: submit <text> to the hosted AppCard's
                     // composer (its `ask` tool over the bus) after a delay —
                     // `OCTOSENSE_TEST_ASK_DELAY` seconds, default 25 — so the
@@ -3872,6 +3988,26 @@ impl App {
             }
         }
     }
+}
+
+/// `--test-action taps:` entries: `<x>,<y>@<seconds>` separated by `;`,
+/// blanks around every number tolerated. An entry that does not read so
+/// fails the whole list, named, rather than tapping somewhere else.
+fn parse_test_taps(spec: &str) -> Result<Vec<(f64, Vec2d)>, String> {
+    spec.split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let parsed = entry.split_once('@').and_then(|(point, delay)| {
+                let (x, y) = point.split_once(',')?;
+                Some((
+                    delay.trim().parse::<f64>().ok()?,
+                    dvec2(x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?),
+                ))
+            });
+            parsed.ok_or_else(|| format!("tap {entry:?} is not <x>,<y>@<seconds>"))
+        })
+        .collect()
 }
 
 /// Names accepted by `--test-action`. Anything the keymap binds is
@@ -4006,6 +4142,22 @@ fn os_list_result(call_id: &str, rows: &[OsAppRow]) -> ToolResult {
         format!("{} apps, {} running", rows.len(), running),
     )
     .with_data(rows.to_vec().serialize_json())
+}
+
+#[cfg(test)]
+mod test_action_tests {
+    use super::*;
+
+    #[test]
+    fn taps_parse_as_points_with_delays_and_reject_a_bad_entry() {
+        let taps = parse_test_taps("200,300@6; 40.5 , 800 @ 9.25").unwrap();
+        assert_eq!(taps, vec![(6.0, dvec2(200.0, 300.0)), (9.25, dvec2(40.5, 800.0))]);
+        assert_eq!(parse_test_taps("").unwrap(), vec![]);
+        let error = parse_test_taps("200,300@6;nonsense").unwrap_err();
+        assert!(error.contains("nonsense"), "{error}");
+        assert!(parse_test_taps("200,300").is_err(), "a tap needs its delay");
+        assert!(parse_test_taps("200@6").is_err(), "a tap needs both coordinates");
+    }
 }
 
 #[cfg(test)]
@@ -4387,6 +4539,19 @@ impl MatchEvent for App {
                     self.update_bar(cx);
                 }
                 _ => {}
+            }
+            // A module root asking the window manager: the request is a
+            // widget action posted from inside its isolate, attributed by
+            // the root's uid and handled exactly as a process's would be.
+            if let Some(req) = wa.action.downcast_ref::<WmRequest>() {
+                if let Some(client) = self.module_host.client_of_root_uid(wa.widget_uid) {
+                    let req = req.clone();
+                    self.on_wm_request(cx, client, req);
+                    continue;
+                }
+                // A child widget posting instead of its root is attributed
+                // to nobody: say so rather than lose the request silently.
+                log!("wm: WmRequest from widget {:?} matches no module root", wa.widget_uid);
             }
             match wa.cast::<MpRunViewAction>() {
                 MpRunViewAction::ForwardToApp { client, msg_bin } => {

@@ -16,7 +16,7 @@ to check the local dependency graph. Existing platform rendering backends remain
 part of their applications; the framework controls the shared VM and UI sources.
 
 
-The OctoSense phone shell: an Android app with home pages, live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, and hosted apps (Reference, Sheets, Photos, AppCard and Mail) drawn in-process. It uses the runtime selected by [Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad), including its pinned underlying Makepad fork.
+The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
 This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
@@ -34,7 +34,15 @@ cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
   --sdk-path=/path/to/existing/android_sdk build -p octosense --release
 ```
 
-`build` makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, AppCard and Mail are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen. The Mail preview instructions below install a separate test package.
+For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
+booted simulator receives the app) — iOS needs `mobile-only` passed by hand,
+Android gets it from `build.rs`:
+
+```
+../makepad-fork/target/debug/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
+```
+
+`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
 
 ### Make it the Home app
 
@@ -116,6 +124,13 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 
 `--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`, `ask-appcard:<text>`) and `capture:<path>` writes the presented frame every 5 s, so a scripted run can be looked at without a screen. A plain `cargo run` is the universal desktop shell of the desktop repository; it is kept building here but is not this repository's product.
 
+## Photos
+
+The bundled Photos app has separate Library and Collections tabs, a photo viewer,
+editable albums, favorites, People, search, and automatic Memory slideshows.
+It starts with 19 offline sample photos, including the generated family portraits.
+See [Photos usage, adding photos, and device validation](docs/photos.md).
+
 ## Performance
 
 Target on the OnePlus 6 (Android 15, Adreno 630, 60 Hz): **≥ 55 fps with p95 frame intervals ≤ 20 ms** on every shell transition, and an idle screen that presents about once a second. As of 16 September 2026 the shade (open/close), pages, Group open/close, Recents both ways (empty and populated) and AppCard opening pass warm and fresh-process blocks; native SystemUI still shows no early skipped refresh where a few of ours do. The measured reason for the remaining early skips is the GPU's DVFS floor (257 MHz for the first ~120 ms of a gesture), so the working rule is: a transition frame must cost ≤ ~4.5 ms of GPU at 710 MHz. The unchanged Vulkan backend is slower (it serialises CPU and GPU and the clock never ramps under it) and is not a route to the target.
@@ -133,7 +148,7 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 - `src/mobile*.rs` — the phone shell: state and navigation (`mobile.rs`), the gesture recognizer (`mobile_gestures.rs`), the surface that draws home, drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups, the shade, the island, the thinking octopus, the perf monitor.
 - `src/desk/phone.rs` — the desk's phone composition: hosted-app captures, the kept home scene and its blur pyramid, the compositor path.
 - `resources/android/AndroidManifest.xml.template` — the activity (Home role, share and deep-link intents).
-- `apps/appcard`, `apps/reference` — the hosted modules built into the APK.
+- `apps/appcard`, `apps/news`, `apps/photos`, `apps/reference` — the local hosted modules built into the APK. News is laid out after Apple News: a Today page with a section per source (Hacker News, TechMeme, Google News and up to four RSS or Atom feeds), a Following page that switches sources on and off and adds or removes feeds, a Saved page, Search, and a floating glass bottom bar; a light skin, and a dark one when the host is dark. A tap opens the story in the app's own reader on the platform's web view, and the story's `•••` sheet saves it, opens it in the Browser app when the host has one, or copies its link. It draws a wide home tile. Its design and hosting notes are in `docs/plans/2026-09-16-news-app-design.md`, `2026-09-16-news-app-phase2-design.md` and `2026-09-16-news-app-phase3-design.md`.
 - `docs/` — records and recipes; `docs/android/` the performance and launcher records.
 
 ## Dependencies

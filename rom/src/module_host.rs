@@ -162,6 +162,25 @@ impl ModuleHost {
             .min()
     }
 
+    /// The instance whose root minted this widget uid, if any: how a
+    /// widget action posted by a module root is attributed to its client.
+    pub fn client_of_root_uid(&self, uid: WidgetUid) -> Option<ClientId> {
+        self.instances.values().find(|i| i.root.widget_uid() == uid).map(|i| i.client)
+    }
+
+    /// Deliver a JSON message to an instance as `Event::Custom`, inside its
+    /// isolate: the module half of what `send_wm_event` does for a process.
+    /// False when no instance has this client id.
+    pub fn send_custom(&mut self, cx: &mut Cx, client: ClientId, json: String) -> bool {
+        let Some((root, vm_id)) = self.instances.get(&client).map(|i| (i.root.clone(), i.vm_id)) else {
+            return false;
+        };
+        let entry = enter_isolate(cx, vm_id);
+        root.handle_event(cx, &Event::Custom(json), &mut Scope::empty());
+        leave_isolate(cx, entry);
+        true
+    }
+
     pub fn len(&self) -> usize {
         self.instances.len()
     }
@@ -265,5 +284,34 @@ mod style_tests {
             assert!(vm.take_errors().is_empty());
         });
         host.teardown(&mut cx,1);
+    }
+}
+
+#[cfg(all(test, feature = "mobile-apps"))]
+mod channel_tests {
+    use super::*;
+
+    /// The two halves of the host channel a module's `WmRequest` and the
+    /// `wm_unavailable` reply travel: a root's widget uid names its client,
+    /// and a json message reaches the instance as `Event::Custom` inside
+    /// its isolate.
+    #[test]
+    fn a_root_uid_names_its_client_and_a_custom_event_reaches_the_instance() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = ModuleHost::default();
+        host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+        let module = &octosense_news::NEWS_MODULE;
+        host.create(&mut cx, 7, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        let root = host.get(7).unwrap().root.clone();
+        assert_eq!(host.client_of_root_uid(root.widget_uid()), Some(7));
+        assert_eq!(host.client_of_root_uid(WidgetUid(0)), None, "a uid no root minted names nobody");
+        let json = crate::wm_reply::WmUnavailable { app: "browser".into(), path: "https://x/a".into() }.to_json();
+        assert!(host.send_custom(&mut cx, 7, json.clone()));
+        assert!(!host.send_custom(&mut cx, 8, json), "no instance, nothing sent");
+        cx.with_script_vm_id_trusted(host.get(7).unwrap().vm_id, |vm| assert!(vm.take_errors().is_empty()));
+        // The last refs into the isolate's heap go before the heap does.
+        drop(root);
+        assert!(host.teardown(&mut cx, 7));
     }
 }

@@ -24,6 +24,14 @@
     "policy": "focus"
   },
   {
+    "id": "news",
+    "label": "News",
+    "manifest": "../apps/news/Cargo.toml",
+    "package": "octosense-news",
+    "bin": "octosense-news",
+    "policy": "focus"
+  },
+  {
     "id": "browser",
     "label": "Browser",
     "manifest": "../../makepad/Cargo.toml",

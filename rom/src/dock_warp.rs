@@ -128,6 +128,10 @@ impl WindowFrame {
         self.pass.draw_pass_id()
     }
     pub fn texture(&self) -> &Texture { &self.texture }
+    /// Async module content can change without a process frame announcement.
+    pub fn redraw_requested(&self, cx: &Cx, event: &DrawEvent) -> bool {
+        event.draw_list_will_redraw(cx, self.list.id())
+    }
     /// Reuse recorded content without drawing it again. Refresh the dependency
     /// when the consumer's draw list is re-recorded, including before the
     /// producer's first GPU paint. Unlike a live pass, this is not dirtied just
@@ -275,6 +279,25 @@ impl DockWarp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capture_refreshes_for_content_redraws_but_not_unrelated_updates() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut frame = WindowFrame::new(&mut cx);
+        let content = DrawList::new(&mut cx);
+        let unrelated = DrawList::new(&mut cx);
+        cx.draw_lists[content.id()].codeflow_parent_id = Some(frame.list.id());
+        assert!(!frame.redraw_requested(&cx, &DrawEvent::default()));
+        let mut event = DrawEvent::default();
+        event.draw_lists.push(unrelated.id());
+        assert!(!frame.redraw_requested(&cx, &event));
+        event.draw_lists.push(content.id());
+        assert!(frame.redraw_requested(&cx, &event));
+        cx.passes[frame.pass_id()].paint_dirty = false;
+        frame.freeze(&mut cx);
+        assert!(frame.frozen());
+        assert!(frame.redraw_requested(&cx, &event));
+    }
+
     #[test]
     fn reversal_keeps_the_same_surface_and_progress() {
         let source = Rect {
