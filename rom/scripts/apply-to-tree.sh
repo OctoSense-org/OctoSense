@@ -10,3 +10,4 @@ grep -q 'vendor/octosense/octosense.mk' "$PRODUCT" || printf '\n# OctoSense ROM 
 echo "applied to $TREE"
 
 python3 "$HERE/patches/lineage-kernel-out-prefix.py" "$TREE"
+python3 "$HERE/patches/lineage-no-trebuchet.py" "$TREE"
