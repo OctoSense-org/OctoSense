@@ -287,6 +287,7 @@ pub struct PhoneSurface {
     #[rust] scrub: Vec<(char,f64)>,
     #[rust] scrub_rect: Rect,
     #[rust] a11y_packet: String,
+    #[rust] a11y_last: Option<std::time::Instant>,
     #[rust] widget_layout: String,
     #[rust] home_icon_bounds: Vec<(String,Rect)>,
     #[rust] home_layout_packet: String,
@@ -359,6 +360,17 @@ impl PhoneSurface {
     /// screen reader can read and activate the shell. Sent only on change.
     pub(crate) fn publish_accessibility(&mut self,cx:&mut Cx2d,state:&WmState) {
         if !cfg!(target_os="android") {return;}
+        // Only settled frames: while a finger scrolls or a surface animates,
+        // the bounds change every frame and each packet costs a JNI hop and
+        // a JSON parse on the UI thread. The frame after the motion stops
+        // publishes the final layout.
+        if state.phone.gesture.is_some() || state.phone.drag.is_some() {return;}
+        // A fling or a settling page changes the bounds every frame too: at
+        // most four packets a second, and the idle clock tick publishes the
+        // final layout once everything has stopped.
+        let now=std::time::Instant::now();
+        if self.a11y_last.is_some_and(|last| now.duration_since(last).as_millis()<250) {return;}
+        self.a11y_last=Some(now);
         use makepad_strict_json::{obj,s,Value};
         let dpi=cx.current_dpi_factor();
         let mut nodes=Vec::new();

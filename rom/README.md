@@ -56,7 +56,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 | Where | Gesture | Does |
 |---|---|---|
-| Home page, middle | pull down | App Library with its search field |
+| Home page, middle | pull down | App Library (the same page as the swipe up from the bottom band) |
 | Home page, right quarter | pull down | the shade's Controls (Wi-Fi, brightness, …) |
 | Home page, left quarter | pull down | the shade's Notifications |
 | Top edge, left / right | pull down | Notifications / Controls (as well) |

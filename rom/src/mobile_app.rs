@@ -901,10 +901,9 @@ impl App {
             // and the shell goes home only when it declines.
             GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
             GestureKind::HomeSearch => match from {
-                PhoneScreen::Home => {
-                    self.phone_action(cx, PhoneHit::Drawer);
-                    if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
-                }
+                // The same App Library page as the swipe up from the bottom:
+                // the grid with its search field at rest, a tap away.
+                PhoneScreen::Home => self.phone_action(cx, PhoneHit::Drawer),
                 PhoneScreen::Drawer => {
                     // Closing drops the search focus and its keyboard with it.
                     if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
