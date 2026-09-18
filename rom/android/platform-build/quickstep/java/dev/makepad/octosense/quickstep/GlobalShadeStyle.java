@@ -27,21 +27,24 @@ public final class GlobalShadeStyle {
         this.context = context;
         dark = (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                 == Configuration.UI_MODE_NIGHT_YES;
-        background = dark ? 0xff10191d : 0xfff2f5f2;
-        surface = dark ? 0xff1c282d : 0xffffffff;
-        elevated = dark ? 0xff28373d : 0xffe6ece7;
-        text = dark ? 0xfff2f6f3 : 0xff172b28;
-        muted = dark ? 0xffb4c4c1 : 0xff536761;
-        accent = dark ? 0xffb5efd6 : 0xff185d47;
-        onAccent = dark ? 0xff103c2c : 0xffffffff;
-        outline = dark ? 0xff3b4c50 : 0xffced9d1;
+        // The launcher's shade language (mobile_shade.rs): a deep violet
+        // ground, cards of #2C2E3E over it, ink #F5F5FA, and the Material
+        // purple #6750A4 as the one accent, white on it, in both appearances.
+        background = dark ? 0xff181624 : 0xfff3effa;
+        surface = dark ? 0xff2c2e3e : 0xffffffff;
+        elevated = dark ? 0xff3a3c52 : 0xffe9e3f6;
+        text = dark ? 0xfff5f5fa : 0xff1a1a22;
+        muted = dark ? 0xffbab6cc : 0xff5c5870;
+        accent = 0xff6750a4;
+        onAccent = 0xffffffff;
+        outline = dark ? 0xff413e58 : 0xffd6cfe8;
     }
     public int dp(float value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
     public GradientDrawable shape(int color, int radius) {
         GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d;
     }
     public Drawable touch(int color, int radius) {
-        return new RippleDrawable(ColorStateList.valueOf(dark ? 0x24ffffff : 0x20185d47), shape(color, radius), shape(0xffffffff, radius));
+        return new RippleDrawable(ColorStateList.valueOf(dark ? 0x28ffffff : 0x246750a4), shape(color, radius), shape(0xffffffff, radius));
     }
     public TextView label(String value, int size, int color) {
         TextView v = new TextView(context); v.setText(value); v.setTextSize(size); v.setTextColor(color);
