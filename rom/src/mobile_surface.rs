@@ -332,7 +332,8 @@ impl PhoneSurface {
             PhoneHit::GroupClose=>"Close".into(),
             PhoneHit::OpenBoth(_)=>"Open both".into(),
             PhoneHit::Split(_)=>"Split".into(),
-            PhoneHit::Divider|PhoneHit::Perf|PhoneHit::Scrub=>return None,
+            PhoneHit::Divider|PhoneHit::Perf=>return None,
+            PhoneHit::Scrub=>"Letter index, drag to jump through the apps".into(),
             PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Notifications))=>"Notifications".into(),
             PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Controls))=>"Controls".into(),
             PhoneHit::Shade(ShadeHit::Sheet)=>return None,
@@ -696,8 +697,8 @@ impl PhoneSurface {
         let pill=self.draw_search(cx,state,screen,ink);
         if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
         let mut top=pill.pos.y+pill.size.y+18.0;
-        let columns=if landscape {7}else{4};
-        let size=if landscape {44.0}else{60.0};
+        let columns=mobile_tiles::grid_columns(landscape);
+        let size=if landscape {44.0}else if columns>4 {54.0}else{60.0};
         // Suggestions: the Android apps used lately (usage access), one row
         // above the alphabet, like a stock drawer's first row.
         let suggested: Vec<String>=if state.phone.android.usage_access {state.phone.android.recent_apps.iter().take(columns).cloned().collect()} else {Vec::new()};
@@ -721,7 +722,7 @@ impl PhoneSurface {
         // Keep the icon, its label and a touch gap inside each scrollable row.
         let row_h=((bottom-top)/rows.max(1) as f64).clamp(size+36.0,104.0);
         self.search_scroll_max=(rows as f64*row_h-(bottom-top)).max(0.0);
-        let scroll=state.phone.search_scroll.clamp(0.0,self.search_scroll_max);
+        let scroll=state.phone.search_scroll.clamp(0.0,self.search_scroll_max)-state.phone.search_stretch;
         cx.begin_turtle(Walk::abs_rect(rect(screen.pos.x,top,screen.size.x,(bottom-top).max(0.0))),Layout::default());
         for (index,(id,label)) in ids.iter().enumerate() {
             let r=rect(screen.pos.x+12.0+(index%columns)as f64*cell,top+(index/columns)as f64*row_h-scroll,cell,row_h);

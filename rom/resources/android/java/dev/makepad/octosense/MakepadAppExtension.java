@@ -457,12 +457,16 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 // appearance rather than Android's wallpaper it never shows.
                 boolean dark=command.optBoolean("dark",false);
                 String appearance=dark?"Light appearance":"Dark appearance";
-                String[] items=hiddenTiles?new String[]{"Widgets",appearance,"System setup","Show hidden tiles"}:new String[]{"Widgets",appearance,"System setup"};
+                int columns=command.optInt("columns",4);
+                String grid=columns>=5?"Grid: 4 columns":"Grid: 5 columns";
+                int nextColumns=columns>=5?4:5;
+                String[] items=hiddenTiles?new String[]{"Widgets",appearance,grid,"System setup","Show hidden tiles"}:new String[]{"Widgets",appearance,grid,"System setup"};
                 dialog(dark).setTitle("Home").setItems(items,(dialog,which) -> {
                     if(which==0) widgets.show();
                     else if(which==1) emit("launcher.appearance_toggle",json());
-                    else if(which==2) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");
-                    else if(which==3) placementEdit(() -> placements().hideTile(null,false));
+                    else if(which==2) placementEdit(() -> placements().setColumns(nextColumns));
+                    else if(which==3) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");
+                    else if(which==4) placementEdit(() -> placements().hideTile(null,false));
                 }).setNegativeButton("Cancel",null).show();
             });break;
             case "launch": {

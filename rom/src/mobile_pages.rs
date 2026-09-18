@@ -125,6 +125,9 @@ pub struct PagesState {
     pub index: f64,
     /// Extra offset while a swipe is in progress (springs back on cancel).
     pub drag: f64,
+    /// The settle's speed (pages per second): a lightly damped spring, so a
+    /// page lands with a hint of overshoot instead of a dead stop.
+    velocity: f64,
     /// Where `index` is heading (a page position).
     target: i64,
     /// A commit or a jump reached the library: the shell opens it once.
@@ -141,7 +144,7 @@ pub struct PagesState {
 
 impl Default for PagesState {
     fn default() -> Self {
-        Self { pages: Vec::new(), index: 0.0, drag: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, date: String::new() }
+        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, date: String::new() }
     }
 }
 
@@ -281,13 +284,19 @@ impl PagesState {
             }
             _ => {}
         }
-        if dragging { return true; }
+        if dragging { self.velocity = 0.0; return true; }
         let t = 1.0 - (-dt * 16.0).exp();
         self.drag += (0.0 - self.drag) * t;
         if self.drag.abs() < 0.001 { self.drag = 0.0; }
         let target = self.target as f64;
-        self.index += (target - self.index) * t;
-        if (target - self.index).abs() < 0.001 { self.index = target; }
+        // Damping ratio 0.8: about a third of a page per second of overshoot
+        // at most, gone within a quarter second.
+        let k: f64 = 420.0;
+        let c = 2.0 * k.sqrt() * 0.8;
+        let dt = dt.min(1.0 / 30.0);
+        self.velocity += ((target - self.index) * k - self.velocity * c) * dt;
+        self.index += self.velocity * dt;
+        if (target - self.index).abs() < 0.0015 && self.velocity.abs() < 0.03 { self.index = target; self.velocity = 0.0; }
         self.drag != 0.0 || self.index != target
     }
 

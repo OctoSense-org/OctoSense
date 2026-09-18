@@ -709,7 +709,8 @@ impl App {
                 self.phone_gestures.cancel();
                 self.android_haptic(cx,"long_press");
                 let hidden=self.state_mut().phone.android.hidden_tiles.len() as i64;
-                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden))]);
+                let columns=crate::mobile_tiles::grid_columns(false) as i64;
+                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden)),("columns",makepad_strict_json::Value::Int(columns))]);
                 return true;
             }
         }
@@ -991,7 +992,11 @@ impl App {
                         if (scroll-phone.search_scroll).abs()>0.5 {phone.search_scroll=scroll;self.android_haptic(cx,"tick");}
                     }
                 }else if from==PhoneScreen::Drawer {
-                    phone.search_scroll=(phone.search_scroll.min(search_scroll_max)-last.y).clamp(0.0,search_scroll_max);
+                    // Past either end the list stretches a little instead of stopping.
+                    let next=phone.search_scroll.min(search_scroll_max)-last.y;
+                    if next<0.0 {phone.search_stretch=(phone.search_stretch-next*0.45).min(72.0);phone.search_scroll=0.0;}
+                    else if next>search_scroll_max {phone.search_stretch=(phone.search_stretch-(next-search_scroll_max)*0.45).max(-72.0);phone.search_scroll=search_scroll_max;}
+                    else {phone.search_scroll=next;}
                     // The flick speed: a short average of the finger's recent samples.
                     if let Some((y0,t0))=phone.search_track {
                         let dt=time-t0;

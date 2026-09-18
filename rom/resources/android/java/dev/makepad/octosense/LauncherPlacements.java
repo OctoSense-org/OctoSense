@@ -32,6 +32,8 @@ public final class LauncherPlacements {
     /** The person's app pairs as {name, apps:[a,b]} once edited (null: the shell's seeds), and the tiles taken off the page. */
     private JSONArray pairs=null;
     private ArrayList<String> hiddenTiles=new ArrayList<>();
+    /** The portrait grid's columns, 4 or 5 (0: the shell's default). */
+    private int columns=0;
 
     public LauncherPlacements(File path) throws IOException,JSONException {
         file=new AtomicFile(path);
@@ -60,6 +62,8 @@ public final class LauncherPlacements {
         pairs=stored.has("pairs")?stored.getJSONArray("pairs"):null;
         hiddenTiles=stored.has("hidden_tiles")?read(stored.getJSONArray("hidden_tiles"),16,true):new ArrayList<>();
         hiddenTiles.removeIf(String::isEmpty);
+        columns=stored.optInt("columns",0);
+        if(columns!=0 && (columns<4 || columns>5)) columns=0;
         for(String id:hiddenHosted) if(!isHosted(id)) throw new IOException("Invalid hidden hosted identity");
         // A v1 file is read without rewriting it. Its original dock grammar
         // remains strict; v2 adds hosted IDs and deliberately empty slots.
@@ -108,7 +112,7 @@ public final class LauncherPlacements {
     }
     private JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
         JSONObject model=new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order))
-                .put("hidden_tiles",new JSONArray(hiddenTiles));
+                .put("hidden_tiles",new JSONArray(hiddenTiles)).put("columns",columns);
         if(pairs!=null) model.put("pairs",pairs);
         return model;
     }
@@ -139,6 +143,14 @@ public final class LauncherPlacements {
             hiddenTiles.remove(app);
             if(hidden) {if(hiddenTiles.size()>=16) throw new IllegalArgumentException("Too many hidden tiles");hiddenTiles.add(app);}
         }
+        persist();
+        }
+    }
+    public void setColumns(int next) throws IOException,JSONException {
+        synchronized(IO_LOCK) {
+        reload();
+        if(next!=0 && (next<4 || next>5)) throw new IllegalArgumentException("Invalid grid");
+        columns=next;
         persist();
         }
     }

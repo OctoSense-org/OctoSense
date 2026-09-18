@@ -716,6 +716,7 @@ impl App {
         let hidden_tiles: Vec<String> = value.get("hidden_tiles").and_then(Value::as_arr).map(|items| items.iter().filter_map(|a| a.as_str().filter(|a| hosted_identity(a)).map(str::to_string)).take(16).collect()).unwrap_or_default();
         crate::mobile_groups::set_seeds(pairs.as_deref());
         crate::mobile_tiles::set_hidden_tiles(&hidden_tiles);
+        crate::mobile_tiles::set_grid_columns(value.get("columns").and_then(Value::as_i64).unwrap_or(0).max(0) as usize);
         android.pairs = pairs.map(Arc::new);
         android.hidden_tiles = Arc::new(hidden_tiles);
         self.state_mut().phone.groups.reseed();

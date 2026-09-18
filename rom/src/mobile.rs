@@ -107,6 +107,9 @@ pub struct PhoneState {
     /// The drawer keeps scrolling after a flick: points per second, decaying
     /// in `step`; the surface publishes how far the list can scroll.
     pub search_velocity: f64,
+    /// The drawer pulled past its top (positive) or bottom (negative): a
+    /// stretch that eases back after the lift.
+    pub search_stretch: f64,
     pub search_scroll_limit: f64,
     /// The last finger sample on the drawer (y, time) the velocity is
     /// measured against.
@@ -148,7 +151,7 @@ impl Default for PhoneState {
             animation_active: false, draw_active: false,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_launch: None, search_focused: false, search_scroll: 0.0,
-            search_velocity: 0.0, search_scroll_limit: 0.0, search_track: None,
+            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -236,6 +239,11 @@ impl PhoneState {
         }
         // A flicked drawer coasts and slows (about a second from a fast
         // flick), stopping dead at either end of the list.
+        if self.search_stretch != 0.0 && self.gesture.is_none() {
+            self.search_stretch *= (-dt * 14.0).exp();
+            if self.search_stretch.abs() < 0.3 { self.search_stretch = 0.0; }
+            active = true;
+        }
         if self.search_velocity != 0.0 {
             if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
                 let before = self.search_scroll;
