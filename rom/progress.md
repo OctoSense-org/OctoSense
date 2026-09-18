@@ -1,4 +1,47 @@
-# MakeOS progress
+# Photos continuation — 2026-09-17
+
+- Ran the required Superpowers bootstrap and recovered the existing plan and notes.
+- Checked the merged application state and connected Android device.
+- Requested the user's preferred next direction while inspecting the existing implementation.
+- Baseline Photos tests passed (12 total). Stated phone-photo import as the default
+  next milestone after allowing time for the optional direction question.
+- User clarified the next feature: Library zoom with mobile pinch and desktop
+  scrolling, using the supplied Makepad Photos implementation as reference.
+- Removed the preliminary import-only plan/test (its run failed on the missing
+  import module as expected); no production import code or dependencies changed.
+- TDD red: the four zoom tests plus a new view controller regression failed on the
+  missing LibraryZoom/PinchTracker types, zoom fields and apply_zoom, as intended.
+- Implemented bounded scale with density hysteresis, two-contact pinch tracking that
+  holds the touch stream until the last finger lifts, nine reusable square grid cells,
+  anchored reflow, wheel zoom over the grid only, and a desktop-only zoom slider.
+- Green: 10 unit + 9 model/persistence + 2 UI/catalog tests pass, plus
+  `cargo check --features mobile-only,app-photos --locked` and rustfmt.
+- The maintainer tried the change on a device build and confirmed the zoom works.
+  This session captured no new screenshots or device logs for it.
+- Documented the gesture, the zoom module, and the stale `PortalList` drag-state
+  caveat in `docs/photos.md`; committed the work on `feature/photos-zoom`.
+
+# Photos app progress — 2026-09-16
+
+- Asked three initial product questions before implementation. Read brainstorming, frontend, and planning skills. Began screenshot and architecture research.
+- Preserved the historical planning records and recorded the new Photos task separately.
+- All three product choices are confirmed. Inspected the five App Store screenshots and documented the native module design in `docs/plans/2026-09-16-photos.md`.
+- Added the Photos crate and test-first model API. Initial run failed on the five missing behaviors as expected; implemented albums, favorites, catalog reconciliation/search, and deterministic Memories. All 7 model tests now pass.
+- Bundled 19 catalog photos: 6 generated individual portraits, the group photo, and 12 landscape/nature samples. Original image files remain unchanged.
+- Cargo offline resolution initially lacked the pinned Git revision; approved normal Cargo resolution succeeded. The runtime verifier needed sandbox escalation for Cargo cache access. One sample URL returned 404 and was replaced with a working photo.
+
+- Implemented the native Collections/Library/editor/viewer UI and local shell integration. Added UI initialization and embedded-catalog tests; these caught enum/import issues before device installation.
+- Saved the currently installed APK to `target/photos-validation/octosense-before.apk`. It contains only `libmakepad.so` (no bundled octos kernel). Located an existing Android SDK/NDK and started the full shell build.
+
+- Android release build succeeded and was installed with `adb install -r`, preserving app data. Tested native Library/Collections, scrolling, viewer next/previous/swipe, favorites, metadata search, People, album creation/rename/membership/cancel/delete, and Memory advance/pause.
+- User asked for centered text/icons and no separate ADB permission prompts. Continued with existing ADB authorization. Replaced missing text glyphs with SVG icons; centered controls, People labels, and Memory captions. Fixed inherited Label padding that clipped captions, grid sizing from the active list layout, empty image cells, group-photo crops, and selected navigation surfaces.
+- Verified album/favorite persistence across force-stop/restart and APK replacements. Removed the temporary test album and favorite afterward. Automatic Memory frames advanced from 1/7 to 2/7; paused screenshots were byte-identical across 3.5 seconds.
+- Final verification: 8 model/persistence tests + 2 UI/catalog tests passed; bundled-module registry test passed; `cargo check --features mobile-only,app-photos --offline` passed; shared runtime graph check passed; Android release APK built successfully. No app errors/panics/shader failures in the captured final process logs.
+- Added `docs/photos.md`, image provenance, README entry, and instructions for extending the photo catalog. Verified all seven family asset copies match their original SHA-256 hashes. Formatting/whitespace checks pass. Device screenshots and logs are under `target/photos-validation/`; the final app is installed and left on Collections. No commits or pushes were made.
+
+---
+
+# MakeOS progress (historical)
 
 ## 2026-09-04 — Scoping
 - Ran the requested Superpowers bootstrap.
