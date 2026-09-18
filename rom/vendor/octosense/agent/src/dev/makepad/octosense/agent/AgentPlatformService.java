@@ -385,7 +385,8 @@ public class AgentPlatformService extends Service {
             Bundle r = dumpCommand(args);
             if (r.containsKey("png")) {
                 byte[] png = r.getByteArray("png");
-                String path = args[args.length - 1];
+                // screen <path> [maxWidth] | snapshot <taskId> <path>
+                String path = args[0].equals("snapshot") ? args[2] : args[1];
                 try (java.io.FileOutputStream out = new java.io.FileOutputStream(path)) { out.write(png); }
                 r.remove("png");
                 r.putString("path", path);
@@ -404,6 +405,7 @@ public class AgentPlatformService extends Service {
             case "tasks": return tasks(a.length > 1 ? Integer.parseInt(a[1]) : 16);
             case "snapshot": return taskSnapshot(Integer.parseInt(a[1]), 540);
             case "screen": return screen(a.length > 2 ? Integer.parseInt(a[2]) : 0);
+            // (the path is consumed by dump(); a[1])
             case "tap": return tap(Float.parseFloat(a[1]), Float.parseFloat(a[2]));
             case "swipe": return swipe(Float.parseFloat(a[1]), Float.parseFloat(a[2]), Float.parseFloat(a[3]), Float.parseFloat(a[4]), Integer.parseInt(a[5]));
             case "type": return typeText(String.join(" ", Arrays.copyOfRange(a, 1, a.length)));
