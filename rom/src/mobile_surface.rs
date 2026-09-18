@@ -532,6 +532,11 @@ impl PhoneSurface {
             for (index,id) in phone.pages.page_ids(k).iter().enumerate() {
                 let label=ids.iter().find(|(i,_)|i==id).map(|(_,l)|l.as_str()).unwrap_or("Unavailable app");
                 let r=rect(page.favorites.pos.x+dx+(index%page.columns)as f64*cell,page.favorites.pos.y+(index/page.columns)as f64*page.row_height,cell,page.row_height);
+                if phone.drag.as_ref().is_some_and(|d|d.app==*id) {
+                    // The lifted icon's slot: a faint ring where it came from.
+                    self.rounded(cx,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),(size*0.5) as f32,alpha(ink,0.12*opacity));
+                    continue;
+                }
                 self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),ink,opacity);
                 self.label(cx,rect(r.pos.x,r.pos.y+size+4.0,cell,20.0),label,11.0,false,alpha(ink,opacity));
                 if home {self.hits.push((r,PhoneHit::App(id.clone())));}
@@ -551,6 +556,16 @@ impl PhoneSurface {
         // library glyph; tapping one jumps there (the library dot opens it).
         self.draw_page_indicator(cx,phone,dock,screen,ink,opacity,home);
         if home {self.draw_home_pull(cx,state,screen,dark,ink,opacity);}
+        if let Some(drag)=phone.drag.as_ref().filter(|_|home) {
+            // The dragged icon rides under the finger, a little larger, over
+            // everything else on the page; the dock lights up when it can
+            // take it.
+            let size=68.0;
+            if dock.contains(drag.pos) {self.rounded(cx,dock,20.0,alpha(ink,0.10*opacity));}
+            let r=rect(drag.pos.x-size*0.5,drag.pos.y-size*0.5-16.0,size,size);
+            self.rounded(cx,rect(r.pos.x+3.0,r.pos.y+6.0,size,size),(size*0.5) as f32,alpha(rgb(0,0,0),0.28*opacity));
+            self.draw_launcher_icon(cx,state,&drag.app,r,ink,opacity);
+        }
     }
     /// What the home page shows while a finger pulls it down for the App
     /// Library: the page dims and a search field slides in from the top, so

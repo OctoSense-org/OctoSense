@@ -325,7 +325,7 @@ impl WmDesk {
         let cache_scene=(matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
                 && (phone.openness<0.001 || phone.overview>0.001)
             || phone.screen==PhoneScreen::App && phone.overview>0.001)
-            && phone.keyboard<0.5
+            && phone.keyboard<0.5 && phone.drag.is_none()
             && !(phone.shade.open>0.001 && phone.groups.window_visible())
             && phone.pages.position()==phone.pages.current() as f64;
         let key=(full,screen,cx.current_dpi_factor(),style,dark);

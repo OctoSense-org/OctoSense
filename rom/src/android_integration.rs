@@ -56,6 +56,9 @@ pub struct AndroidState {
     pub favorites: Arc<Vec<String>>,
     pub dock: Arc<Vec<String>>,
     pub hidden_hosted: Arc<Vec<String>>,
+    /// The person's own order of the home page's icons (a drag's result);
+    /// ids not listed keep the default order after the listed ones.
+    pub order: Arc<Vec<String>>,
     pub widgets: Arc<Vec<AndroidWidget>>,
     pub widget_epoch: String,
     pub widget_revision: u64,
@@ -189,7 +192,7 @@ mod placement_tests {
         }
     }
 }
-fn decode_placements(value: &Value) -> Option<(Vec<String>, Vec<String>, Vec<String>)> {
+fn decode_placements(value: &Value) -> Option<(Vec<String>, Vec<String>, Vec<String>, Vec<String>)> {
     let version = value.get("version")?.as_u64()?;
     if version != 1 && version != 2 {
         return None;
@@ -207,6 +210,7 @@ fn decode_placements(value: &Value) -> Option<(Vec<String>, Vec<String>, Vec<Str
                 let native = id.starts_with("android:") || id.starts_with("android-shortcut:");
                 let valid = match key {
                     "hidden_hosted" => hosted_identity(id),
+                    "order" => native || hosted_identity(id),
                     "dock" => {
                         native
                             || if version == 1 {
@@ -234,7 +238,8 @@ fn decode_placements(value: &Value) -> Option<(Vec<String>, Vec<String>, Vec<Str
     } else {
         read("hidden_hosted", 128)?
     };
-    Some((favorites, dock, hidden))
+    let order = if value.get("order").is_some() { read("order", 256)? } else { Vec::new() };
+    Some((favorites, dock, hidden, order))
 }
 impl App {
     pub(crate) fn android_command(
@@ -642,7 +647,7 @@ impl App {
         {
             return;
         }
-        let Some((favorites, dock, hidden_hosted)) = decode_placements(value) else {
+        let Some((favorites, dock, hidden_hosted, order)) = decode_placements(value) else {
             return;
         };
         self.android_runtime.placement_epoch = epoch;
@@ -651,6 +656,27 @@ impl App {
         android.favorites = Arc::new(favorites);
         android.dock = Arc::new(dock);
         android.hidden_hosted = Arc::new(hidden_hosted);
+        android.order = Arc::new(order);
+    }
+    /// A finished home-page drag: the new order of every favourite (applied
+    /// at once locally, then stored by Android), or the dock slot it landed on.
+    pub(crate) fn android_reorder(&mut self, cx: &mut Cx, order: Vec<String>) {
+        self.state_mut().phone.android.order = Arc::new(order.clone());
+        if cfg!(target_os = "android") {
+            self.android_command(cx, "launcher", "reorder", vec![("order", Value::Arr(order.iter().map(|id| s(id)).collect()))]);
+        }
+    }
+    pub(crate) fn android_dock(&mut self, cx: &mut Cx, app: &str, slot: usize) {
+        {
+            let android = &mut self.state_mut().phone.android;
+            let mut dock: Vec<String> = (0..4).map(|i| android.dock.get(i).cloned().unwrap_or_else(|| crate::mobile_surface::PINNED[i].to_string())).collect();
+            for entry in dock.iter_mut() { if entry == app { entry.clear(); } }
+            dock[slot.min(3)] = app.to_string();
+            android.dock = Arc::new(dock);
+        }
+        if cfg!(target_os = "android") {
+            self.android_command(cx, "launcher", "dock", vec![("app", s(app)), ("slot", Value::Int(slot.min(3) as i64))]);
+        }
     }
     fn android_widgets(&mut self, value: &Value) {
         let epoch = string(value, "epoch");

@@ -31,6 +31,15 @@ pub enum PhoneHit {
     Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
 }
 
+/// An icon being dragged on the home page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HomeDrag {
+    pub app: String,
+    pub start: Vec2d,
+    pub pos: Vec2d,
+    /// The finger travelled: a lift without moving opens the icon's menu.
+    pub moved: bool,
+}
 #[derive(Clone)]
 pub struct PhoneGesture {
     pub start: Vec2d,
@@ -64,6 +73,9 @@ pub struct PhoneState {
     pub page: f64,
     pub dismiss_y: f64,
     pub gesture: Option<PhoneGesture>,
+    /// A home-page icon lifted by a long press and following the finger
+    /// (mobile_app.rs `finish_home_drag` puts it down).
+    pub drag: Option<HomeDrag>,
     /// Frame-trace boundaries: include the final settling frame, while
     /// keeping the separate one-second status refreshes out of a gesture.
     pub(crate) animation_active: bool,
@@ -130,6 +142,7 @@ impl Default for PhoneState {
             tiles: HomeTiles::default(),
             gesture_out: None,
             hints: Default::default(),
+            drag: None,
             exclusions: Default::default(),
             shade: Default::default(),
             pages: Default::default(),

@@ -262,7 +262,10 @@ impl PagesState {
                 let sign = match dir { Dir::Left => 1.0, Dir::Right => -1.0 };
                 let raw = sign * progress.max(0.0) * SWIPE_FRACTION;
                 let (lo, hi) = ((-1.0 - self.index).min(0.0), (lib - self.index).max(0.0));
-                self.drag = raw.clamp(lo, hi);
+                // Past either end the page gives a little and stiffens, so
+                // the end is felt rather than hit (it springs back on lift).
+                let over = if raw < lo { raw - lo } else if raw > hi { raw - hi } else { 0.0 };
+                self.drag = raw.clamp(lo, hi) + over.signum() * 0.16 * (1.0 - (-over.abs() / 0.16).exp());
                 dragging = true;
             }
             Some(ShellGesture::Commit(GestureKind::Page(dir))) => {
@@ -337,6 +340,12 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     let dock: [&str; 4] = std::array::from_fn(|index| phone.android.dock.get(index).map(String::as_str).unwrap_or(PINNED[index]));
     let mut favorites: Vec<String> = ids.iter().filter(|(id, _)| !dock.contains(&id.as_str()) && !phone.android.hidden_hosted.contains(id)).map(|(id, _)| id.clone()).collect();
     favorites.extend(phone.android.favorites.iter().filter(|id| !dock.contains(&id.as_str())).cloned());
+    // The person's own order (a drag), listed ids first; the rest follow in
+    // the default order.
+    if !phone.android.order.is_empty() {
+        let order = &phone.android.order;
+        favorites.sort_by_key(|id| order.iter().position(|o| o == id).unwrap_or(usize::MAX));
+    }
     let capacity0 = PhoneSurface::home_layout(style, screen).capacity;
     let spill = mobile_tiles::home_layout_for_apps(screen, PhoneSurface::home_top(style, screen), PhoneSurface::home_dock(screen), &[]);
     let widgets: Vec<_>=phone.android.widgets.iter().map(|widget|widget.id).collect();

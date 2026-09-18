@@ -648,15 +648,24 @@ impl App {
                 return true;
             }
             if let Some(app)=app {
+                let (start,on_page)={
+                    let phone=&self.state_mut().phone;
+                    let k=phone.pages.current();
+                    (phone.gesture.as_ref().map(|g|g.start).unwrap_or(press.abs),
+                     phone.gesture.as_ref().is_some_and(|g|g.screen==PhoneScreen::Home) && k>=0 && phone.pages.page_ids(k).iter().any(|id|*id==app))
+                };
                 self.state_mut().phone.gesture=None;
                 self.state_mut().phone.gesture_out=None;
                 self.phone_gestures.cancel();
                 self.android_haptic(cx,"long_press");
-                let mut fields=vec![("app",makepad_strict_json::s(&app)),("dark",dark)];
-                if let Some(hosted)=crate::shell::launcher::apps().iter().find(|item|item.id.trim_start_matches("apps.")==app) {
-                    fields.push(("hosted_label",makepad_strict_json::s(&hosted.label)));
+                if on_page {
+                    // A favourite lifts off the page and follows the finger;
+                    // a lift without moving opens its menu instead.
+                    self.state_mut().phone.drag=Some(crate::mobile::HomeDrag{app,start,pos:press.abs,moved:false});
+                    self.animate_phone(cx);
+                    return true;
                 }
-                self.android_command(cx,"launcher","menu",fields);
+                self.open_app_menu(cx,&app);
                 return true;
             }
             if empty_home {
@@ -737,6 +746,58 @@ impl App {
     /// and the pages are their own surfaces' work. A pull on the home page
     /// opens the App Library with its search field focused; the same pull on
     /// the library closes it.
+    /// The native placement menu for an icon (Add/Remove from Home, the
+    /// dock, App info, Uninstall), in the shell's appearance.
+    fn open_app_menu(&mut self,cx:&mut Cx,app:&str) {
+        let dark=makepad_strict_json::Value::Bool(self.state_mut().style.dark);
+        let mut fields=vec![("app",makepad_strict_json::s(app)),("dark",dark)];
+        if let Some(hosted)=crate::shell::launcher::apps().iter().find(|item|item.id.trim_start_matches("apps.")==app) {
+            fields.push(("hosted_label",makepad_strict_json::s(&hosted.label)));
+        }
+        self.android_command(cx,"launcher","menu",fields);
+    }
+    /// The finger lifted from a dragged icon: on a dock slot it docks, on a
+    /// favourites cell the whole order moves around it, anywhere else it
+    /// springs back. Without any movement the icon's menu opens.
+    fn finish_home_drag(&mut self,cx:&mut Cx,drag:crate::mobile::HomeDrag,p:Vec2d) {
+        if !drag.moved {self.open_app_menu(cx,&drag.app);return;}
+        let (screen,style)={let s=self.state_mut();(s.phone.viewport,s.style.target)};
+        let dock=crate::mobile_surface::PhoneSurface::home_dock(screen);
+        if dock.contains(p) {
+            let slot=((p.x-dock.pos.x)/(dock.size.x/4.0)).floor().clamp(0.0,3.0) as usize;
+            self.android_dock(cx,&drag.app,slot);
+            self.android_haptic(cx,"confirm");
+            return;
+        }
+        let phone=&self.state_mut().phone;
+        let k=phone.pages.current();
+        if k<0 || k>=phone.pages.library_index() || phone.pages.widget_id(k).is_some() {return;}
+        let layout=if k==0 {crate::mobile_surface::PhoneSurface::home_layout(style,screen)} else {
+            crate::mobile_tiles::home_layout_for_apps(screen,crate::mobile_surface::PhoneSurface::home_top(style,screen),dock,&[])
+        };
+        let fav=layout.favorites;
+        if layout.columns==0 || layout.row_height<1.0 || p.x<fav.pos.x || p.x>fav.pos.x+fav.size.x || p.y<fav.pos.y-layout.row_height*0.5 {return;}
+        let cell=fav.size.x/layout.columns as f64;
+        let col=((p.x-fav.pos.x)/cell).floor().clamp(0.0,layout.columns as f64-1.0) as usize;
+        let row=((p.y-fav.pos.y)/layout.row_height).floor().max(0.0) as usize;
+        // The favourites run page by page; the drop is an index in that run.
+        let mut order: Vec<String>=Vec::new();
+        let mut offset=0usize;
+        for j in phone.pages.positions() {
+            if j<0 || j>=phone.pages.library_index() || phone.pages.widget_id(j).is_some() {continue;}
+            if j<k {offset+=phone.pages.page_ids(j).len();}
+            order.extend(phone.pages.page_ids(j).iter().cloned());
+        }
+        let on_page=phone.pages.page_ids(k).len();
+        let Some(from)=order.iter().position(|id|*id==drag.app) else {return};
+        order.remove(from);
+        let mut to=offset+(row*layout.columns+col).min(on_page);
+        if to>from {to-=1;}
+        let to=to.min(order.len());
+        order.insert(to,drag.app.clone());
+        self.android_reorder(cx,order);
+        self.android_haptic(cx,"confirm");
+    }
     fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
         // A committed navigation gets a light tick; a page swipe is too
         // frequent for one and already shows where it went.
@@ -799,6 +860,24 @@ impl App {
         let Some(state)=self.state.as_mut() else {return false};
         let phone=&mut state.phone;
         let screen=phone.viewport;
+        if phone.drag.is_some() {
+            match phase {
+                PhonePointerPhase::Move=>{
+                    let drag=phone.drag.as_mut().unwrap();
+                    drag.pos=p;
+                    if (p-drag.start).length()>12.0 {drag.moved=true;}
+                    self.animate_phone(cx);
+                    return true;
+                }
+                PhonePointerPhase::Up=>{
+                    let drag=phone.drag.take().unwrap();
+                    self.finish_home_drag(cx,drag,p);
+                    self.animate_phone(cx);
+                    return true;
+                }
+                _=>{}
+            }
+        }
         match phase {
             PhonePointerPhase::Down=>{
                 if !primary {return phone.screen!=PhoneScreen::App;}

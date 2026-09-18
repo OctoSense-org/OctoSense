@@ -368,6 +368,25 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 break;
             }
             case "menu": placementMenu(command.getString("app"),command.optString("hosted_label",""),command.optBoolean("dark",false)); break;
+            // A drag on the home page: the whole new order, or a drop on a dock slot.
+            case "reorder": case "dock": {
+                try {
+                    if(operation.equals("dock")) placements().dock(command.getString("app"),command.getInt("slot"));
+                    else {
+                        JSONArray items=command.getJSONArray("order");ArrayList<String> next=new ArrayList<>();
+                        for(int index=0;index<items.length();index++) next.add(items.getString(index));
+                        placements().reorder(next);
+                    }
+                    publishPlacements();
+                    result(id,Protocol.COMPLETED,"placed");
+                } catch(IllegalArgumentException e) {result(id,Protocol.INVALID_ARGUMENT,"home_placement_limit_or_identity");}
+                catch(Exception e) {
+                    placements=null;
+                    result(id,Protocol.UNCERTAIN,"home_placement_storage_unavailable");
+                    try {publishPlacements();} catch(Exception ignored) {}
+                }
+                break;
+            }
             case "home_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
                 dialog(command.optBoolean("dark",false)).setTitle("Home").setItems(new String[]{"Widgets","Wallpaper","System setup"},(dialog,which) -> {

@@ -27,6 +27,8 @@ public final class LauncherPlacements {
     private ArrayList<String> favorites=new ArrayList<>();
     private ArrayList<String> dock=new ArrayList<>();
     private ArrayList<String> hiddenHosted=new ArrayList<>();
+    /** The person's own order of the home page's icons (hosted and Android ids alike); ids missing here keep the default order after the listed ones. */
+    private ArrayList<String> order=new ArrayList<>();
 
     public LauncherPlacements(File path) throws IOException,JSONException {
         file=new AtomicFile(path);
@@ -50,6 +52,8 @@ public final class LauncherPlacements {
         dock=read(stored.getJSONArray("dock"),4,true);
         if(dock.size()!=4) throw new IOException("Invalid dock size");
         hiddenHosted=version==1?new ArrayList<>():read(stored.getJSONArray("hidden_hosted"),128,true);
+        order=stored.has("order")?read(stored.getJSONArray("order"),256,true):new ArrayList<>();
+        order.removeIf(String::isEmpty);
         for(String id:hiddenHosted) if(!isHosted(id)) throw new IOException("Invalid hidden hosted identity");
         // A v1 file is read without rewriting it. Its original dock grammar
         // remains strict; v2 adds hosted IDs and deliberately empty slots.
@@ -96,10 +100,20 @@ public final class LauncherPlacements {
     public static boolean isHosted(String id) {
         return id!=null && id.matches("[a-z][a-z0-9_-]{0,127}");
     }
-    private static JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden) throws JSONException {
-        return new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden));
+    private static JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
+        return new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order));
     }
-    public JSONObject snapshot() throws JSONException {return model(favorites,dock,hiddenHosted);}
+    public JSONObject snapshot() throws JSONException {return model(favorites,dock,hiddenHosted,order);}
+    /** The whole home order after a drag: every id checked, no duplicates, at most 256. */
+    public void reorder(ArrayList<String> next) throws IOException,JSONException {
+        synchronized(IO_LOCK) {
+        reload();
+        if(next.size()>256) throw new IllegalArgumentException("Too many placements");
+        HashSet<String> seen=new HashSet<>();
+        for(String id:next) {requireIdentity(id,true);if(!seen.add(id)) throw new IllegalArgumentException("Duplicate placement");}
+        save(new ArrayList<>(favorites),new ArrayList<>(dock),new ArrayList<>(hiddenHosted),next);
+        }
+    }
     public boolean isFavorite(String id) {return isHosted(id)?!hiddenHosted.contains(id):favorites.contains(id);}
     public boolean isDocked(String id) {return dock.contains(id);}
     public boolean isPlaced(String id) {return isFavorite(id)||isDocked(id);}
@@ -142,8 +156,11 @@ public final class LauncherPlacements {
         for(int index=0;index<4;index++) if(next.get(index).equals(id)) next.set(index,"");
     }
     private void save(ArrayList<String> nextFavorites,ArrayList<String> nextDock,ArrayList<String> nextHidden) throws IOException,JSONException {
-        if(nextFavorites.equals(favorites) && nextDock.equals(dock) && nextHidden.equals(hiddenHosted)) return;
-        byte[] bytes=model(nextFavorites,nextDock,nextHidden).toString().getBytes(StandardCharsets.UTF_8);
+        save(nextFavorites,nextDock,nextHidden,new ArrayList<>(order));
+    }
+    private void save(ArrayList<String> nextFavorites,ArrayList<String> nextDock,ArrayList<String> nextHidden,ArrayList<String> nextOrder) throws IOException,JSONException {
+        if(nextFavorites.equals(favorites) && nextDock.equals(dock) && nextHidden.equals(hiddenHosted) && nextOrder.equals(order)) return;
+        byte[] bytes=model(nextFavorites,nextDock,nextHidden,nextOrder).toString().getBytes(StandardCharsets.UTF_8);
         if(bytes.length>MAX_BYTES) throw new IllegalArgumentException("Placements exceed storage limit");
         FileOutputStream stream=null;
         try {
@@ -151,7 +168,7 @@ public final class LauncherPlacements {
             try(FileInputStream input=file.openRead()) {
                 if(!java.util.Arrays.equals(bytes,readBytes(input))) throw new IOException("Placement write not retained");
             }
-            favorites=nextFavorites;dock=nextDock;hiddenHosted=nextHidden;
+            favorites=nextFavorites;dock=nextDock;hiddenHosted=nextHidden;order=nextOrder;
         } catch(IOException|RuntimeException e) {if(stream!=null) file.failWrite(stream);throw e;}
     }
 }
