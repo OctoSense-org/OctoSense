@@ -659,6 +659,10 @@ impl App {
                 let hit = usize::try_from(index).ok().and_then(|i| self.state_mut().phone.android.a11y_hits.get(i).cloned());
                 if let Some(hit) = hit { self.phone_action(cx, hit); }
             }
+            "launcher.appearance_toggle" => {
+                self.toggle_phone_appearance(cx);
+                self.android_system_bars(cx);
+            }
             "launcher.hints" => {
                 let seen = value.get("seen").and_then(Value::as_arr).map(|items| items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
                 self.state_mut().phone.hints.load(seen.into_iter());
