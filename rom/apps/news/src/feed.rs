@@ -174,12 +174,19 @@ fn parse_item(body: &str, is_atom: bool, style: Style) -> Option<Headline> {
 /// that is an image (its `medium` or `type` says so, or neither is given),
 /// a `<media:thumbnail>`, an `<enclosure>` with an image type, else the
 /// first `<img>` in the description or content. Only an http(s) URL
-/// counts.
+/// counts, and it is asked for over https whatever the feed says: feeds
+/// still carry plain http picture links (TechMeme's), the app's own
+/// connections are held to transport security on Apple platforms, and a
+/// picture host without https costs the story its picture, not its row.
 fn image_url(body: &str) -> Option<String> {
     media_image(body, "media:content", true)
         .or_else(|| media_image(body, "media:thumbnail", false))
         .or_else(|| media_image(body, "enclosure", true))
         .or_else(|| inline_image(body))
+        .map(|url| match url.strip_prefix("http://") {
+            Some(rest) => format!("https://{rest}"),
+            None => url,
+        })
 }
 
 /// The `url` of the first `<tag>` element that is an image. `typed`: the
@@ -978,6 +985,8 @@ mod tests {
         assert_eq!(img(r#"<description><![CDATA[<p>Hi</p><img src="https://cdn/d.jpg?a=1&amp;b=2" alt=""/>]]></description>"#).as_deref(), Some("https://cdn/d.jpg?a=1&b=2"));
         assert_eq!(img("<description>&lt;img src=&quot;https://cdn/dd.jpg&quot;&gt;</description>").as_deref(), Some("https://cdn/dd.jpg"), "double-encoded HTML");
         assert_eq!(img(r#"<media:content url="ftp://cdn/a.jpg" medium="image"/><description>text</description>"#), None, "only http(s)");
+        assert_eq!(img(r#"<media:content url="http://cdn/plain.jpg" medium="image"/>"#).as_deref(), Some("https://cdn/plain.jpg"), "a picture is asked for over https whatever the feed says");
+        assert_eq!(img(r#"<description>&lt;img src=&quot;http://cdn/inline.jpg&quot;&gt;</description>"#).as_deref(), Some("https://cdn/inline.jpg"), "inline pictures too");
         assert_eq!(img(r#"<media:thumbnail url="https://cdn/t.png"/><media:content url="https://cdn/a.jpg" medium="image"/>"#).as_deref(), Some("https://cdn/a.jpg"), "media:content wins over the thumbnail");
         assert_eq!(img(r#"<description><![CDATA[<IMG WIDTH=11 HEIGHT=12 SRC="http://x/pml.png"> text <img src="https://cdn/real.jpg" width="600px">]]></description>"#).as_deref(), Some("https://cdn/real.jpg"), "an icon is skipped, any case, bare values");
         assert_eq!(img(r#"<description><![CDATA[<img width='1' height='1' src="https://t/pixel.gif">]]></description>"#), None, "a tracking pixel is not a picture");
