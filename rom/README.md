@@ -65,8 +65,9 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
 | Side edges | swipe in | Back |
 | App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
-| Home-page icon | long press, then drag | Reorder the page (drop on a cell) or dock it (drop on the dock) |
+| Home-page icon | long press, then drag | Reorder the page (drop between icons), dock it (drop on the dock), make a folder (drop on another icon) or add to one (drop on a folder tile) |
 | App pair tile | long press | Change either app, or remove the pair |
+| Folder tile | long press | Remove one app, or the folder |
 | App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
 | Empty home | long press | Widgets, Wallpaper, System setup |
 

@@ -39,12 +39,22 @@ pub fn seeds() -> Vec<(&'static str, Vec<String>)> {
     if let Some(own) = SEEDS.read().unwrap().as_ref() { return own.clone(); }
     SEED_GROUPS.iter().map(|(name, apps)| (*name, apps.iter().map(|a| a.to_string()).collect())).collect()
 }
-/// The person's pairs (None: back to the seeds). A name is at most 32
-/// characters and a pair exactly two distinct apps; anything else is dropped.
+/// The person's pairs and folders (None: back to the seeds). A name is at
+/// most 32 characters and a group two to eight distinct apps; anything
+/// else is dropped.
 pub fn set_seeds(pairs: Option<&[(String, Vec<String>)]>) {
     *SEEDS.write().unwrap() = pairs.map(|pairs| pairs.iter()
-        .filter(|(name, apps)| !name.is_empty() && name.chars().count() <= 32 && apps.len() == 2 && apps[0] != apps[1])
+        .filter(|(name, apps)| !name.is_empty() && name.chars().count() <= 32 && (2..=8).contains(&apps.len())
+            && apps.iter().enumerate().all(|(i, a)| !apps[..i].contains(a)))
         .map(|(name, apps)| (intern(name), apps.clone())).collect());
+}
+/// A name for a new folder that no group has yet: the two labels, then a
+/// number if that is taken.
+pub fn fresh_name(first: &str, second: &str) -> String {
+    let base: String = format!("{first} & {second}").chars().take(28).collect();
+    let taken = seeds();
+    if !taken.iter().any(|(n, _)| *n == base) { return base; }
+    (2..100).map(|k| format!("{base} {k}")).find(|n| !taken.iter().any(|(t, _)| t == n)).unwrap_or(base)
 }
 
 /// Height of a group tile in portrait: a chip under the app tiles that

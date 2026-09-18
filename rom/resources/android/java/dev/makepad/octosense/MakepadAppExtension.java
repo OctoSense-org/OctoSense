@@ -442,6 +442,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 break;
             }
             case "pair_menu": pairMenu(command); break;
+            case "pairs_set": { JSONArray next=command.getJSONArray("pairs"); placementEdit(() -> placements().setPairs(next)); break; }
             case "tile_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
                 String app=command.optString("app",""),label=command.optString("label",app);
@@ -609,6 +610,27 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 String[] labels=new String[catalog.length()],ids=new String[catalog.length()];
                 for(int index=0;index<catalog.length();index++) {ids[index]=catalog.getJSONObject(index).getString("id");labels[index]=catalog.getJSONObject(index).getString("label");}
                 java.util.function.Function<String,String> labelOf=id -> {for(int i=0;i<ids.length;i++) if(ids[i].equals(id)) return labels[i];return id;};
+                if(apps.length()>2) {
+                    // A folder: take a member out, or the whole folder off the page.
+                    String[] folderItems=new String[apps.length()+1];
+                    for(int index=0;index<apps.length();index++) folderItems[index]="Remove "+labelOf.apply(apps.getString(index));
+                    folderItems[apps.length()]="Remove folder from Home";
+                    dialog(dark).setTitle(name+" · Folder").setItems(folderItems,(dialog,which) -> {
+                        try {
+                            JSONArray next=new JSONArray();
+                            for(int index=0;index<pairs.length();index++) {
+                                JSONObject pair=pairs.getJSONObject(index);
+                                if(!pair.getString("name").equals(name)) {next.put(pair);continue;}
+                                if(which==apps.length()) continue;
+                                JSONArray kept=new JSONArray();
+                                for(int a=0;a<apps.length();a++) if(a!=which) kept.put(apps.getString(a));
+                                next.put(new JSONObject().put("name",name).put("apps",kept));
+                            }
+                            placementEdit(() -> placements().setPairs(next));
+                        } catch(JSONException ignored) {}
+                    }).setNegativeButton("Cancel",null).show();
+                    return;
+                }
                 String[] items={"First app: "+labelOf.apply(apps.getString(0)),"Second app: "+labelOf.apply(apps.getString(1)),"Remove pair from Home"};
                 dialog(dark).setTitle(name+" · App pair").setItems(items,(dialog,which) -> {
                     try {

@@ -121,8 +121,9 @@ public final class LauncherPlacements {
         for(int index=0;index<next.length();index++) {
             JSONObject pair=next.getJSONObject(index);
             String name=pair.getString("name");JSONArray apps=pair.getJSONArray("apps");
-            if(name.isEmpty() || name.length()>32 || apps.length()!=2 || apps.getString(0).equals(apps.getString(1))) throw new IllegalArgumentException("Invalid pair");
-            for(int a=0;a<2;a++) if(!isHosted(apps.getString(a))) throw new IllegalArgumentException("Invalid pair app");
+            if(name.isEmpty() || name.length()>32 || apps.length()<2 || apps.length()>8) throw new IllegalArgumentException("Invalid pair");
+            HashSet<String> members=new HashSet<>();
+            for(int a=0;a<apps.length();a++) if(!isHosted(apps.getString(a)) || !members.add(apps.getString(a))) throw new IllegalArgumentException("Invalid pair app");
         }
         pairs=next;
         persist();

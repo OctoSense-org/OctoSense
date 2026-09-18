@@ -810,11 +810,36 @@ impl App {
         let layout=if k==0 {crate::mobile_surface::PhoneSurface::home_layout(style,screen)} else {
             crate::mobile_tiles::home_layout_for_apps(screen,crate::mobile_surface::PhoneSurface::home_top(style,screen),dock,&[])
         };
+        // On a folder's tile: the app joins it.
+        if let Some(slot)=layout.tiles.iter().find(|slot|matches!(slot.kind,crate::mobile_tiles::TileKind::Group(_)) && slot.rect.contains(p)) {
+            let name=slot.app.to_string();
+            let mut groups=crate::mobile_groups::seeds();
+            if let Some((_,apps))=groups.iter_mut().find(|(n,_)|*n==name) {
+                if apps.len()<8 && !apps.contains(&drag.app) {apps.push(drag.app.clone());}
+            }
+            self.set_home_groups(cx,groups);
+            return;
+        }
         let fav=layout.favorites;
         if layout.columns==0 || layout.row_height<1.0 || p.x<fav.pos.x || p.x>fav.pos.x+fav.size.x || p.y<fav.pos.y-layout.row_height*0.5 {return;}
         let cell=fav.size.x/layout.columns as f64;
         let col=((p.x-fav.pos.x)/cell).floor().clamp(0.0,layout.columns as f64-1.0) as usize;
         let row=((p.y-fav.pos.y)/layout.row_height).floor().max(0.0) as usize;
+        // Right on another icon (its inner two thirds): the two make a folder.
+        {
+            let icon=60.0;
+            let target=rect(fav.pos.x+col as f64*cell+(cell-icon)*0.5+icon*0.17,fav.pos.y+row as f64*layout.row_height+icon*0.17,icon*0.66,icon*0.66);
+            let index=row*layout.columns+col;
+            let other=phone.pages.page_ids(k).get(index).cloned().filter(|other|*other!=drag.app);
+            if let (Some(other),true)=(other,target.contains(p)) {
+                let label=|id:&str| crate::clients::find_app(id).map(|a|a.label).unwrap_or_else(||id.to_string());
+                let name=crate::mobile_groups::fresh_name(&label(&drag.app),&label(&other));
+                let mut groups=crate::mobile_groups::seeds();
+                groups.push((Box::leak(name.into_boxed_str()),vec![drag.app.clone(),other]));
+                self.set_home_groups(cx,groups);
+                return;
+            }
+        }
         // The favourites run page by page; the drop is an index in that run.
         let mut order: Vec<String>=Vec::new();
         let mut offset=0usize;
@@ -832,6 +857,18 @@ impl App {
         order.insert(to,drag.app.clone());
         self.android_reorder(cx,order);
         self.android_haptic(cx,"confirm");
+    }
+    /// A drag made or grew a folder: the shell shows it at once and Android
+    /// stores the whole list of pairs and folders.
+    fn set_home_groups(&mut self,cx:&mut Cx,groups:Vec<(&'static str,Vec<String>)>) {
+        use makepad_strict_json::{obj,s,Value};
+        let owned: Vec<(String,Vec<String>)>=groups.iter().map(|(n,a)|(n.to_string(),a.clone())).collect();
+        crate::mobile_groups::set_seeds(Some(&owned));
+        self.state_mut().phone.groups.reseed();
+        let pairs: Vec<Value>=owned.iter().map(|(n,apps)|obj(vec![("name",s(n)),("apps",Value::Arr(apps.iter().map(|a|s(a)).collect()))])).collect();
+        if cfg!(target_os="android") {self.android_command(cx,"launcher","pairs_set",vec![("pairs",Value::Arr(pairs))]);}
+        self.android_haptic(cx,"confirm");
+        self.animate_phone(cx);
     }
     fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
         // A committed navigation gets a light tick; a page swipe is too
