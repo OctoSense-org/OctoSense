@@ -159,12 +159,3 @@ octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
 makepad-widgets = { path = "../makepad/widgets" }
-
-[patch.crates-io]
-
-# Use the canonical AppCards source, including its unified SQLite storage.
-[patch."https://github.com/OctoSense-org/Octoscript-AppCard.git"]
-octos-app = { path = "../Octosense-Service-AppCards/app/app" }
-
-[patch."https://github.com/octos-org/octos.git"]
-octos-core = { path = "../Octosense-Service-AppCards/octos/crates/octos-core" }
