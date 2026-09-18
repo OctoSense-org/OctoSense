@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged over the Info.plist cargo-makepad generates for the iOS bundle
+  (package.metadata.makepad.ios.info_plist in Cargo.toml).
+
+  News shows pictures and pages from whatever sites its feeds link to, and
+  feeds still carry plain http URLs (TechMeme's pictures, for one); App
+  Transport Security would refuse every one of them.
+-->
+<plist version="1.0">
+<dict>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
+</dict>
+</plist>

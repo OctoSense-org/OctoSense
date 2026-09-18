@@ -23,6 +23,11 @@ default-run = "octosense"
 product_name = "OctoSense"
 identifier = "dev.makepad.octosense"
 
+# Merged over the Info.plist cargo-makepad generates for the iOS bundle:
+# the App Transport Security exception News needs (see the file).
+[package.metadata.makepad.ios]
+info_plist = "resources/apple/Info.plist"
+
 # Android builds this entry point as a shared library. Declaring it explicitly
 # avoids cargo-makepad's generated wrapper duplicating our workspace section.
 [lib]

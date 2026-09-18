@@ -6,3 +6,10 @@ MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 
 # AppCards embeds assets from the pinned sibling framework, including Git builds.
 OCTOSENSE_WORKSPACE = { value = "..", relative = true }
+
+# iOS gives the main thread a 1 MB stack, and the shell's widget tree is
+# built on it through nested script_apply/script_new calls that overflowed
+# it on an iPhone 16 Pro (the simulator inherits macOS's 8 MB and never
+# showed it). The linker's stack_size sets the main thread's stack at exec.
+[target.aarch64-apple-ios]
+rustflags = ["-C", "link-arg=-Wl,-stack_size,0x1000000"]
