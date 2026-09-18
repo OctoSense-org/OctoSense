@@ -44,7 +44,7 @@ pub struct ShadeNote {
 pub enum Toggle { Wifi, Bluetooth, Torch, RotationLock, DoNotDisturb, DarkMode }
 impl Toggle {
     pub const ALL: [Toggle; 6] = [Toggle::Wifi, Toggle::Bluetooth, Toggle::Torch, Toggle::RotationLock, Toggle::DoNotDisturb, Toggle::DarkMode];
-    fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self { Toggle::Wifi => "Wi-Fi", Toggle::Bluetooth => "Bluetooth", Toggle::Torch => "Torch", Toggle::RotationLock => "Rotation", Toggle::DoNotDisturb => "DND", Toggle::DarkMode => "Dark mode" }
     }
     fn index(self) -> usize { Toggle::ALL.iter().position(|t| *t == self).unwrap_or(0) }

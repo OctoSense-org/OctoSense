@@ -78,6 +78,8 @@ pub struct AndroidState {
     pub system_dark: Option<bool>,
     /// Android's text size preference (1 is the default size).
     pub font_scale: f64,
+    /// The hit regions published as accessibility nodes, by node index.
+    pub a11y_hits: Vec<crate::mobile::PhoneHit>,
 }
 #[derive(Default)]
 pub struct AndroidRuntime {
@@ -628,6 +630,12 @@ impl App {
                     let (title, body) = result_copy(&string(&value, "reason"));
                     self.notify(cx, title, &body);
                 }
+            }
+            "a11y.activate" => {
+                // A screen reader activated a node: the same action as a tap.
+                let index = value.get("index").and_then(Value::as_i64).unwrap_or(-1);
+                let hit = usize::try_from(index).ok().and_then(|i| self.state_mut().phone.android.a11y_hits.get(i).cloned());
+                if let Some(hit) = hit { self.phone_action(cx, hit); }
             }
             "launcher.hints" => {
                 let seen = value.get("seen").and_then(Value::as_arr).map(|items| items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();

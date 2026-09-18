@@ -452,7 +452,7 @@ impl App {
             if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
         }
     }
-    fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
+    pub(crate) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
             PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
                 if self.android_launch(cx, &app) { self.animate_phone(cx); return; }

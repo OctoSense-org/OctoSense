@@ -102,6 +102,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private volatile boolean shellDark;
     /** Which first-use hints the person has already found (mobile_hints.rs). */
     private final SharedPreferences hints;
+    /** The shell's hit regions as accessibility nodes (ShellAccessibility.java). */
+    private final ShellAccessibility accessibility;
     private final LinkedHashMap<String,String[]> outbound=new LinkedHashMap<>();
     private boolean flushScheduled;
     private boolean resyncNeeded;
@@ -153,6 +155,9 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(android.os.Build.VERSION.SDK_INT>=33) activity.registerReceiver(profileCallback,profileEvents,Context.RECEIVER_EXPORTED);
         else activity.registerReceiver(profileCallback,profileEvents);
         hints=activity.getSharedPreferences("octosense-hints",Context.MODE_PRIVATE);
+        accessibility=new ShellAccessibility(activity,index -> emit("a11y.activate",json("index",index)));
+        activity.getApplicationOverlay().addView(accessibility,new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         activity.registerComponentCallbacks(new android.content.ComponentCallbacks() {
             @Override public void onConfigurationChanged(Configuration configuration) { offer(MakepadAppExtension.this::emitUiMode); }
             @Override public void onLowMemory() {}
@@ -336,6 +341,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         // renderer coalesces unchanged layouts; native state is cached already.
         if("widgets.layout".equals(channel)) {widgets.layout(payload);return;}
         if("home.layout".equals(channel)) {homeGeometry.layout(payload);return;}
+        if("a11y.layout".equals(channel)) {accessibility.layout(payload);return;}
         if(!offer(() -> {
             long id=0;
             String resultChannel="bridge".equals(channel) ? "bridge.result" : "launcher.result";

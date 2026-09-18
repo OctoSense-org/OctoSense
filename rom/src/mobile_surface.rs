@@ -279,6 +279,10 @@ pub struct PhoneSurface {
     #[live] android_icon: DrawImage,
     #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
+    /// The hits published as accessibility nodes this frame, in node order
+    /// (an activation from the platform names a node by its index).
+    #[rust] pub a11y_hits: Vec<PhoneHit>,
+    #[rust] a11y_packet: String,
     #[rust] widget_layout: String,
     #[rust] home_icon_bounds: Vec<(String,Rect)>,
     #[rust] home_layout_packet: String,
@@ -291,6 +295,83 @@ pub struct PhoneSurface {
     #[redraw] #[rust] area: Area,
 }
 impl PhoneSurface {
+    /// What a screen reader calls a hit region, or None for regions that are
+    /// not controls (the shade's backdrop, the split divider, the bench tap).
+    fn accessibility_label(state:&WmState,hit:&PhoneHit)->Option<String> {
+        use crate::mobile_shade::ShadeHit;
+        use crate::mobile_island::IslandHit;
+        let phone=&state.phone;
+        let app_label=|id:&str| -> String {
+            phone.android.rows.iter().find(|(i,_)|i==id).map(|(_,l)|l.clone())
+                .or_else(||crate::clients::find_app(id).map(|a|a.label))
+                .unwrap_or_else(||id.to_string())
+        };
+        Some(match hit {
+            PhoneHit::App(id)|PhoneHit::TileApp(id)|PhoneHit::GroupApp(_,id)=>app_label(id),
+            PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
+            PhoneHit::Home=>"Home".into(),
+            PhoneHit::Recents=>"Recents".into(),
+            PhoneHit::Drawer=>"All apps".into(),
+            PhoneHit::Back=>"Back".into(),
+            PhoneHit::Key(key)=>match key.as_str() {"backspace"=>"Backspace".into(),"return"=>"Return".into()," "=>"Space".into(),k=>k.to_string()},
+            PhoneHit::Shift=>"Shift".into(),
+            PhoneHit::Symbols=>"Symbols".into(),
+            PhoneHit::HideKeyboard=>"Hide keyboard".into(),
+            PhoneHit::ClearSearch=>"Clear search".into(),
+            PhoneHit::CancelSearch=>"Cancel search".into(),
+            PhoneHit::Page(n)=>if *n<0 {"Glance page".into()} else if *n==phone.pages.library_index() {"App Library".into()} else {format!("Page {}",n+1)},
+            PhoneHit::Island(IslandHit::Toggle)=>"Live activity".into(),
+            PhoneHit::Island(IslandHit::Action(_,index))=>format!("Live activity action {}",index+1),
+            PhoneHit::Island(IslandHit::Collapse)=>return None,
+            PhoneHit::Island(IslandHit::Clock)=>"Clock".into(),
+            PhoneHit::Group(name)=>format!("{name}, app pair"),
+            PhoneHit::GroupClose=>"Close".into(),
+            PhoneHit::OpenBoth(_)=>"Open both".into(),
+            PhoneHit::Split(_)=>"Split".into(),
+            PhoneHit::Divider|PhoneHit::Perf=>return None,
+            PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Notifications))=>"Notifications".into(),
+            PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Controls))=>"Controls".into(),
+            PhoneHit::Shade(ShadeHit::Sheet)=>return None,
+            PhoneHit::Shade(ShadeHit::Backdrop)=>"Close the shade".into(),
+            PhoneHit::Shade(ShadeHit::Note(id))=>phone.shade.notifications.iter().find(|n|n.id==*id)
+                .map(|n|format!("{}: {}. {}",n.app_label,n.title,n.body)).unwrap_or_else(||"Notification".into()),
+            PhoneHit::Shade(ShadeHit::Action(id,index))=>phone.shade.notifications.iter().find(|n|n.id==*id)
+                .and_then(|n|n.actions.get(*index).cloned()).unwrap_or_else(||"Clear".into()),
+            PhoneHit::Shade(ShadeHit::ClearAll)=>"Clear all notifications".into(),
+            PhoneHit::Shade(ShadeHit::Brightness)=>format!("Brightness, {} percent",(phone.shade.brightness*100.0).round() as i64),
+            PhoneHit::Shade(ShadeHit::Volume)=>format!("Volume, {} percent",(phone.shade.volume*100.0).round() as i64),
+            PhoneHit::Shade(ShadeHit::Toggle(t))=>format!("{}, {}",t.label(),if phone.shade.toggled(*t) {"on"} else {"off"}),
+            PhoneHit::Shade(ShadeHit::SystemAccess)=>"System access".into(),
+            PhoneHit::Shade(ShadeHit::Settings(name))=>format!("{} settings",name),
+            #[cfg(not(mobile_only))] PhoneHit::Rotate=>"Rotate".into(),
+            #[cfg(not(mobile_only))] PhoneHit::Style=>"Style".into(),
+            #[cfg(not(mobile_only))] PhoneHit::Appearance=>"Appearance".into(),
+            #[cfg(not(mobile_only))] PhoneHit::Desktop=>"Desktop".into(),
+        })
+    }
+    /// Every tappable region of this frame, as the platform's virtual
+    /// accessibility nodes (Android: `ShellAccessibility.java`), so a
+    /// screen reader can read and activate the shell. Sent only on change.
+    pub(crate) fn publish_accessibility(&mut self,cx:&mut Cx2d,state:&WmState) {
+        if !cfg!(target_os="android") {return;}
+        use makepad_strict_json::{obj,s,Value};
+        let dpi=cx.current_dpi_factor();
+        let mut nodes=Vec::new();
+        let mut hits=Vec::new();
+        for (r,hit) in &self.hits {
+            if r.size.x<1.0 || r.size.y<1.0 || hits.contains(hit) || nodes.len()>=200 {continue;}
+            let Some(label)=Self::accessibility_label(state,hit) else {continue};
+            nodes.push(obj(vec![("i",Value::Int(hits.len() as i64)),("l",s(&label)),
+                ("b",Value::Arr([r.pos.x,r.pos.y,r.size.x,r.size.y].iter().map(|v|Value::Int((v*dpi).round() as i64)).collect()))]));
+            hits.push(hit.clone());
+        }
+        let packet=obj(vec![("nodes",Value::Arr(nodes))]).to_json();
+        if packet!=self.a11y_packet {
+            cx.android_integration("a11y.layout",&packet);
+            self.a11y_packet=packet;
+        }
+        self.a11y_hits=hits;
+    }
     pub(crate) fn publish_home_geometry(&mut self,cx:&mut Cx2d,state:&WmState,full:Rect,screen:Rect) {
         if !cfg!(target_os="android") || full.size.x<=0.0 || full.size.y<=0.0 {return;}
         use makepad_strict_json::{obj,s,Value};
@@ -792,6 +873,7 @@ impl PhoneSurface {
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
+        self.publish_accessibility(cx,state);
         if perf {
             crate::mobile_perf::span(cx.cx,ch.shade,clock);
             // Above the shade, inside the navigation band's top edge.

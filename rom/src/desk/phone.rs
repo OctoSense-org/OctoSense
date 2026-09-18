@@ -559,6 +559,10 @@ impl WmDesk {
             quad.opacity=1.0; quad.radius=0.0; quad.y_flip=0.0;
             quad.draw_abs(cx,r);
         });
+        // The published accessibility nodes, for an activation to look up.
+        if let Some(state)=scope.data.get_mut::<WmState>() {
+            if state.phone.android.a11y_hits!=self.phone_ui.a11y_hits {state.phone.android.a11y_hits=self.phone_ui.a11y_hits.clone();}
+        }
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
         let state=scope.data.get_mut::<WmState>().unwrap();
