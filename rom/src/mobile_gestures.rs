@@ -119,7 +119,12 @@ impl SafeInsets {
 /// `body`: the middle of the screen is the shell's to recognise gestures
 /// in — the home page, and the App Library while it is not scrolling search
 /// results; over an app it belongs to the app.
-pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool }
+pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool,
+    /// The shell's own shade is in use. Off when the system-wide OctoSense
+    /// panel owns every pull-down: the top band and the home page's side
+    /// columns then stop opening the shell's shade (the columns pull the
+    /// App Library like the middle).
+    pub shade: bool }
 
 /// Where the finger touched down: the band decides the family of gesture
 /// it can become. `Body` is the middle of the home page (a pull opens
@@ -257,6 +262,7 @@ impl GestureRecognizer {
         let clear = |edge: Edge| !exclusions.excludes(p, edge);
         if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
         if p.y <= top + m.top_band {
+            if !ctx.shade { return None; }
             let side = if p.x < left + s.size.x * 0.5 { ShadeSide::Notifications } else { ShadeSide::Controls };
             return clear(Edge::Top).then_some(Origin::Top(side));
         }
@@ -266,7 +272,8 @@ impl GestureRecognizer {
         match ctx.phone {
             PhoneScreen::Home => {
                 let column = s.size.x * 0.25;
-                if p.x < left + column { Some(Origin::Column(ShadeSide::Notifications)) }
+                if !ctx.shade { Some(Origin::Body) }
+                else if p.x < left + column { Some(Origin::Column(ShadeSide::Notifications)) }
                 else if p.x > right - column { Some(Origin::Column(ShadeSide::Controls)) }
                 else { Some(Origin::Body) }
             }
@@ -365,7 +372,17 @@ mod tests {
     use FingerPhase::*;
 
     fn screen() -> Rect { Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) } }
-    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer) } }
+    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), shade: true } }
+    #[test]
+    fn without_the_shell_shade_every_home_pull_is_the_library_and_the_top_band_is_nobodys() {
+        let ctx = GestureContext { shade: false, ..ctx(PhoneScreen::Home) };
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &ExclusionZones::default(), &swipe((380.0, 300.0), (383.0, 360.0), 0.5, 6));
+        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "{out:?}");
+        let mut rec = GestureRecognizer::default();
+        let out = drive(&mut rec, &ctx, &ExclusionZones::default(), &swipe((100.0, 10.0), (103.0, 200.0), 0.3, 6));
+        assert!(out.iter().all(|g| g.is_none()), "{out:?}");
+    }
     /// Feed a finger path; each step is (phase, x, y, time).
     fn drive(rec: &mut GestureRecognizer, ctx: &GestureContext, ex: &ExclusionZones, steps: &[(FingerPhase, f64, f64, f64)]) -> Vec<Option<ShellGesture>> {
         steps.iter().map(|&(phase, x, y, t)| rec.feed(phase, dvec2(x, y), t, ctx, ex)).collect()

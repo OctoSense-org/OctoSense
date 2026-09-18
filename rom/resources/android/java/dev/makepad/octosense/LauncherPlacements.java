@@ -34,6 +34,8 @@ public final class LauncherPlacements {
     private ArrayList<String> hiddenTiles=new ArrayList<>();
     /** The portrait grid's columns, 4 or 5 (0: the shell's default). */
     private int columns=0;
+    /** The shell's own shade answers the home page's pulls; false hands every pull-down to the system-wide OctoSense panel. */
+    private boolean launcherShade=true;
 
     public LauncherPlacements(File path) throws IOException,JSONException {
         file=new AtomicFile(path);
@@ -63,6 +65,7 @@ public final class LauncherPlacements {
         hiddenTiles=stored.has("hidden_tiles")?read(stored.getJSONArray("hidden_tiles"),16,true):new ArrayList<>();
         hiddenTiles.removeIf(String::isEmpty);
         columns=stored.optInt("columns",0);
+        launcherShade=stored.optBoolean("launcher_shade",true);
         if(columns!=0 && (columns<4 || columns>5)) columns=0;
         for(String id:hiddenHosted) if(!isHosted(id)) throw new IOException("Invalid hidden hosted identity");
         // A v1 file is read without rewriting it. Its original dock grammar
@@ -112,7 +115,7 @@ public final class LauncherPlacements {
     }
     private JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
         JSONObject model=new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order))
-                .put("hidden_tiles",new JSONArray(hiddenTiles)).put("columns",columns);
+                .put("hidden_tiles",new JSONArray(hiddenTiles)).put("columns",columns).put("launcher_shade",launcherShade);
         if(pairs!=null) model.put("pairs",pairs);
         return model;
     }
@@ -145,6 +148,9 @@ public final class LauncherPlacements {
         }
         persist();
         }
+    }
+    public void setLauncherShade(boolean next) throws IOException,JSONException {
+        synchronized(IO_LOCK) { reload(); launcherShade=next; persist(); }
     }
     public void setColumns(int next) throws IOException,JSONException {
         synchronized(IO_LOCK) {

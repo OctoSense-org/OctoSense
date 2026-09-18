@@ -25,9 +25,12 @@ impl Hints {
     pub const KINDS: [&'static str; 3] = ["search", "shade", "recents"];
     pub fn all_seen(&self) -> bool { self.search && self.shade && self.recents }
     /// The hint to show now, in the order a new person meets the shell.
-    pub fn pending(&self) -> Option<(&'static str, &'static str)> {
+    /// `system_panel`: the system-wide OctoSense panel owns the pull-downs,
+    /// so the shade hint names the top edge instead of the corners.
+    pub fn pending(&self, system_panel: bool) -> Option<(&'static str, &'static str)> {
         if !self.known { return None; }
         if !self.search { return Some(("search", "Pull down for your apps and search")); }
+        if !self.shade && system_panel { return Some(("shade", "Pull from the very top edge for notifications and controls")); }
         if !self.shade { return Some(("shade", "Pull from a top corner for notifications and controls")); }
         if !self.recents { return Some(("recents", "Swipe up from the bottom and hold for Recents")); }
         None
@@ -63,18 +66,19 @@ mod tests {
     #[test]
     fn hints_show_in_order_and_only_once_known() {
         let mut h = Hints::default();
-        assert_eq!(h.pending(), None);
+        assert_eq!(h.pending(false), None);
         h.load(std::iter::empty());
-        assert_eq!(h.pending().map(|p| p.0), Some("search"));
+        assert_eq!(h.pending(false).map(|p| p.0), Some("search"));
         h.saw(GestureKind::HomeSearch);
         assert_eq!(h.just_seen, Some("search"));
-        assert_eq!(h.pending().map(|p| p.0), Some("shade"));
+        assert_eq!(h.pending(false).map(|p| p.0), Some("shade"));
+        assert!(h.pending(true).unwrap().1.contains("top edge"));
         h.saw(GestureKind::Page(crate::mobile_gestures::Dir::Left));
-        assert_eq!(h.pending().map(|p| p.0), Some("shade"));
+        assert_eq!(h.pending(false).map(|p| p.0), Some("shade"));
         h.saw(GestureKind::Shade(ShadeSide::Controls));
         h.saw(GestureKind::Switcher);
         assert!(h.all_seen());
-        assert_eq!(h.pending(), None);
+        assert_eq!(h.pending(false), None);
     }
     #[test]
     fn loading_marks_only_known_keys() {
