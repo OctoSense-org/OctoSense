@@ -77,10 +77,15 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   so the binary carries two identical font-asset manifests and the Apple
   packager refused the duplicate (fork branch `fix/font-manifest-lib-and-bin`).
 
-  Not yet checked: touch, the reader's WKWebView (NEWS-05), rotation. Xcode
-  27 here ships no Simulator.app and `simctl` injects no input, so the
-  simulator runs headless; touches need either a physical device or a
-  `--test-action` that synthesises them. The paired iPhone 16 Pro
+  Touch and the reader are checked through `--test-action
+  taps:<x>,<y>@<s>[;…]`, added the same day: Xcode 27 here ships no
+  Simulator.app and `simctl` injects no input, so the simulator runs
+  headless, and the action puts a finger down and up at a window point
+  after a delay, through the app's own `handle_event`. With
+  `launch-news` and `taps:200,376@6;31,129@12` a headline opens the reader
+  (the WKWebView attached at the page rect, the article rendered) and Back
+  returns to Today with the overlay gone. Not yet checked: rotation, a
+  real finger, and the phone shell's gestures. The paired iPhone 16 Pro
   (`00008140-001A104E3813C01C`) is not in the existing provisioning
   profiles (team `SFVQ5V48GD`, `rs.robius.*`), so `run-device` needs a new
   profile from Xcode first. Also seen: the AppCard banner and icon are off
@@ -88,8 +93,9 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   confirm), and the shell keeps its own light/dark toggle rather than the
   system appearance.
 
-  Acceptance: touch, rotation and the reader checked on the simulator with
-  synthesised input or on the device; the tool fix merged and re-pinned.
+  Acceptance: rotation and the shell's gestures checked on the simulator
+  with synthesised input or on the device; the tool fix merged and
+  re-pinned.
 
 - [ ] **MOBILE-02 — P2: Adopt the upstream Android compositor orientation fix.**
 
@@ -286,9 +292,16 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   `feat/news-reader-platform` branch, not in this repository (MOBILE-06).
   iOS is still open (MOBILE-01).
 
-  The fork revision is pinned since MOBILE-06 (2026-09-17).
+  The fork revision is pinned since MOBILE-06 (2026-09-17). iOS checked on
+  the iPhone 16 Pro simulator the same evening (MOBILE-01): a headline
+  opens the reader on the WKWebView inside OctoSense's window and Back
+  returns to the list. The page-error report is Android-only at this
+  revision, so a failed load on iOS leaves the pane blank instead of
+  showing the failure pane.
 
-  Acceptance: the same check on iOS.
+  Acceptance: the same check on an iOS device; `webView:didFailProvisional-
+  Navigation:` reported as `NativeSystemBrowserPageError` on the Apple
+  backends so the failure pane shows there too.
 
 - [ ] **NEWS-06 — P2: Keyboard focus while the reader's web view is attached.**
 

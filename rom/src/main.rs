@@ -391,6 +391,12 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     test_page: Option<(Timer, i64)>,
+    /// `--test-action taps:<x>,<y>@<s>[;…]`: touch for a run that has none
+    /// (the headless iOS simulator first of all). Each entry puts a finger
+    /// down at window point (x, y) <s> seconds after startup and lifts it
+    /// a beat later, through the same event path as a real touch.
+    #[rust]
+    test_taps: Vec<(Timer, Vec2d, makepad_platform::event::TouchState)>,
     /// When each warm client was last ticked. Kept apart from `WarmFrame`
     /// because the FIRST ticks are what make a frame possible at all — see
     /// `pump_warm`.
@@ -3684,6 +3690,31 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// One synthetic finger at `at`, entering the app through the same
+    /// `handle_event` as a platform touch, so the phone's gestures, the
+    /// desk and the modules see nothing unusual about it.
+    fn synthetic_touch(&mut self, cx: &mut Cx, at: Vec2d, state: makepad_platform::event::TouchState) {
+        use makepad_platform::event::{TouchPoint, TouchUpdateEvent};
+        let time = cx.seconds_since_app_start();
+        let event = Event::TouchUpdate(TouchUpdateEvent {
+            time,
+            window_id: CxWindowPool::id_zero(),
+            modifiers: Default::default(),
+            touches: vec![TouchPoint {
+                state,
+                abs: at,
+                time,
+                uid: 0x7e57,
+                rotation_angle: 0.0,
+                force: 0.0,
+                radius: dvec2(1.0, 1.0),
+                handled: Default::default(),
+                sweep_lock: Default::default(),
+            }],
+        });
+        self.handle_event(cx, &event);
+    }
+
     /// The test actions' timers: a `capture:` tick writes the next frame; a
     /// due `ask-appcard:` sends its text to the appcard instance's executor
     /// exactly as the assistant's `ask` call would.
@@ -3702,6 +3733,17 @@ impl App {
                 self.test_page = None;
                 self.state_mut().phone.pages.jump(n);
                 self.animate_phone(cx);
+            }
+        }
+        if let Some(pos) = self.test_taps.iter().position(|(t, _, _)| t.is_timer(te).is_some()) {
+            use makepad_platform::event::TouchState;
+            let (_, at, state) = self.test_taps.remove(pos);
+            self.synthetic_touch(cx, at, state);
+            // The finger lifts a beat later, as a real tap's does; a
+            // hold is measured from the touch times.
+            if state == TouchState::Start {
+                let timer = cx.start_timeout(0.08);
+                self.test_taps.push((timer, at, TouchState::Stop));
             }
         }
         let Some(pos) = self.test_asks.iter().position(|(t, _)| t.is_timer(te).is_some()) else {
@@ -3765,6 +3807,23 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // taps:<x>,<y>@<s>[;…]: a finger down and up at window
+                    // point (x, y) <s> seconds after startup, for a run with
+                    // no touch input — the headless iOS simulator first of all.
+                    if let Some(spec) = name.strip_prefix("taps:") {
+                        match parse_test_taps(spec) {
+                            Ok(taps) => {
+                                for (delay, at) in taps {
+                                    log!("wm: --test-action tap {:?} in {}s", at, delay);
+                                    let timer = cx.start_timeout(delay);
+                                    self.test_taps.push((timer, at, makepad_platform::event::TouchState::Start));
+                                }
+                            }
+                            Err(error) => log!("wm: --test-action taps: {}", error),
+                        }
+                        i += 2;
+                        continue;
+                    }
                     // ask-appcard:<text>: submit <text> to the hosted AppCard's
                     // composer (its `ask` tool over the bus) after a delay —
                     // `OCTOSENSE_TEST_ASK_DELAY` seconds, default 25 — so the
@@ -3815,6 +3874,26 @@ impl App {
             }
         }
     }
+}
+
+/// `--test-action taps:` entries: `<x>,<y>@<seconds>` separated by `;`,
+/// blanks around every number tolerated. An entry that does not read so
+/// fails the whole list, named, rather than tapping somewhere else.
+fn parse_test_taps(spec: &str) -> Result<Vec<(f64, Vec2d)>, String> {
+    spec.split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            let parsed = entry.split_once('@').and_then(|(point, delay)| {
+                let (x, y) = point.split_once(',')?;
+                Some((
+                    delay.trim().parse::<f64>().ok()?,
+                    dvec2(x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?),
+                ))
+            });
+            parsed.ok_or_else(|| format!("tap {entry:?} is not <x>,<y>@<seconds>"))
+        })
+        .collect()
 }
 
 /// Names accepted by `--test-action`. Anything the keymap binds is
@@ -3949,6 +4028,22 @@ fn os_list_result(call_id: &str, rows: &[OsAppRow]) -> ToolResult {
         format!("{} apps, {} running", rows.len(), running),
     )
     .with_data(rows.to_vec().serialize_json())
+}
+
+#[cfg(test)]
+mod test_action_tests {
+    use super::*;
+
+    #[test]
+    fn taps_parse_as_points_with_delays_and_reject_a_bad_entry() {
+        let taps = parse_test_taps("200,300@6; 40.5 , 800 @ 9.25").unwrap();
+        assert_eq!(taps, vec![(6.0, dvec2(200.0, 300.0)), (9.25, dvec2(40.5, 800.0))]);
+        assert_eq!(parse_test_taps("").unwrap(), vec![]);
+        let error = parse_test_taps("200,300@6;nonsense").unwrap_err();
+        assert!(error.contains("nonsense"), "{error}");
+        assert!(parse_test_taps("200,300").is_err(), "a tap needs its delay");
+        assert!(parse_test_taps("200@6").is_err(), "a tap needs both coordinates");
+    }
 }
 
 #[cfg(test)]
