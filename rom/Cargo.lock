@@ -5484,7 +5484,6 @@ dependencies = [
 [[package]]
 name = "octosense-mail"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=2c070cbcc5d92bd0234f6eaa17564f2579e68c44#2c070cbcc5d92bd0234f6eaa17564f2579e68c44"
 dependencies = [
  "base64 0.22.1",
  "chrono",

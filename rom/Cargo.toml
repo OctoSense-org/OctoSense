@@ -60,7 +60,7 @@ makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev =
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a", default-features = false, optional = true }
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
-octosense-mail = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "2c070cbcc5d92bd0234f6eaa17564f2579e68c44", optional = true }
+octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
@@ -76,7 +76,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-mail = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "2c070cbcc5d92bd0234f6eaa17564f2579e68c44" }
+octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
 octosense-news = { path = "apps/news" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a", default-features = false }

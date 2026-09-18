@@ -115,15 +115,15 @@ app_main!(
 );
     };
 }
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
 macro_rules! octosense_main_with_finance {
     ($($extra:literal),* $(,)?) => { octosense_main!("octosense_finance/resources/ux/Inter-400.ttf", "octosense_finance/resources/ux/Inter-600.ttf", "octosense_finance/resources/ux/Inter-700.ttf", "octosense_finance/resources/ux/NotoSansSC-Regular.ttf", $($extra),*); };
 }
-#[cfg(not(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios"))))]
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-finance")))]
 macro_rules! octosense_main_with_finance {
     ($($extra:literal),* $(,)?) => { octosense_main!($($extra),*); };
 }
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios")))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!(
         "octosense_robrix/resources/fonts/system_latin.ttf",
@@ -133,7 +133,7 @@ macro_rules! octosense_main_with_robrix {
         $($extra),*
     ); };
 }
-#[cfg(not(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios"))))]
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-robrix")))]
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
 }
@@ -4668,7 +4668,7 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios")))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
         if let Some(client) = self.module_host.client_of_module("robrix") {
             let foreground = self.state.as_ref().map(|state| {
                 !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
@@ -4692,7 +4692,7 @@ impl AppMain for App {
                 }
             }
         }
-        #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
         if let Some(client) = self.module_host.client_of_module("finance") {
             let foreground = self.state.as_ref().map(|state| {
                 !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
