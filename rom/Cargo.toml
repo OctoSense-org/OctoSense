@@ -64,9 +64,16 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 # NoModel and the tool console (the child process keeps the real models).
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false, optional = true }
 
+# Matrix is native-only; both shells consume the same AppCards application.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+octosense-finance = { path = "../Octosense-Service-AppCards/apps/finance/native", optional = true }
+octosense-robrix = { path = "../Octosense-Service-AppCards/apps/robrix/native", default-features = false, optional = true }
+
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+octosense-finance = { path = "../Octosense-Service-AppCards/apps/finance/native" }
+octosense-robrix = { path = "../Octosense-Service-AppCards/apps/robrix/native", default-features = false }
 octosense-reference = { path = "apps/reference" }
 octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
@@ -74,15 +81,17 @@ makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
 
 [features]
-default = []
+default = ["app-robrix", "app-finance"]
 # The standalone mobile shell: the Android phone shell fills the window, no
 # desk bar, no style switcher, no desktop styles. Android builds get it
 # without the flag (build.rs turns the same `mobile_only` cfg on for
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail"]
+mobile-apps = ["app-finance", "app-robrix", "app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail"]
 app-mail = ["dep:octosense-mail"]
+app-robrix = ["dep:octosense-robrix"]
+app-finance = ["dep:octosense-finance"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
@@ -149,3 +158,18 @@ octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
 makepad-widgets = { path = "../makepad/widgets" }
+
+# Robrix's Matrix/TSP compatibility patches must be owned by the host workspace.
+[patch."https://github.com/ruma/ruma"]
+ruma = { git = "https://github.com/project-robius/ruma.git", rev = "98196b1db32d3393216f31d2c085a7082bd1d28d" }
+
+[patch.crates-io]
+sqlx = { git = "https://github.com/project-robius/sqlx.git", rev = "345c0446a0eee02acec01ec4635e3945fdf4693b" }
+askar-storage = { git = "https://github.com/openwallet-foundation/askar.git", rev = "49086e28d1995966bb2b2054d2450a76f19bda30" }
+
+# Use the canonical AppCards source, including its unified SQLite storage.
+[patch."https://github.com/OctoSense-org/Octoscript-AppCard.git"]
+octos-app = { path = "../Octosense-Service-AppCards/app/app" }
+
+[patch."https://github.com/octos-org/octos.git"]
+octos-core = { path = "../Octosense-Service-AppCards/octos/crates/octos-core" }

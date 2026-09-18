@@ -454,7 +454,8 @@ impl App {
     }
     fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
-            PhoneHit::App(app)=>{
+            PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
+                if self.android_launch(cx, &app) { self.animate_phone(cx); return; }
                 // A running window of the app, a home tile's own client
                 // included: the same client opens, never a second one.
                 let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
@@ -511,7 +512,9 @@ impl App {
             // The shade's Dark mode tile is the appearance the desk bar's
             // Light/Dark used to set; the shade keeps every other toggle.
             PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>self.toggle_phone_appearance(cx),
-            PhoneHit::Shade(hit)=>self.state_mut().phone.shade.tap(hit),
+            PhoneHit::Shade(hit)=>{
+                if !self.android_shade_action(cx, &hit) { self.state_mut().phone.shade.tap(hit); }
+            },
             PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
             PhoneHit::Perf=>{crate::mobile_perf::battery_tap(cx,host::now());}
         }
@@ -601,6 +604,56 @@ impl App {
     }
     pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {
         if !self.state_mut().style.target.mobile() {return false;}
+        if let Event::LongPress(press) = event {
+            let phone=&self.state_mut().phone;
+            let shade_settings=if cfg!(target_os="android") {phone.gesture.as_ref().filter(|gesture|
+                phone.touch==Some(press.uid) && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            ).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::Wifi)))=>Some("wifi"),
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::Bluetooth)))=>Some("bluetooth"),
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::DoNotDisturb)))=>Some("dnd"),
+                Some(PhoneHit::Shade(ShadeHit::Brightness))=>Some("display"),
+                Some(PhoneHit::Shade(ShadeHit::Volume))=>Some("sound"),
+                _=>None,
+            })} else {None};
+            let app=phone.gesture.as_ref().filter(|gesture| {
+                phone.touch==Some(press.uid) && matches!(gesture.screen,PhoneScreen::Home|PhoneScreen::Drawer)
+                    && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            }).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::App(id)) if cfg!(target_os="android") => Some(id.clone()),
+                _=>None,
+            });
+            let empty_home=cfg!(target_os="android") && phone.gesture.as_ref().is_some_and(|gesture| {
+                phone.touch==Some(press.uid) && gesture.screen==PhoneScreen::Home && gesture.hit.is_none()
+                    && phone.shade.open<0.001 && (press.abs-gesture.start).length()<12.0
+                    && (gesture.last-gesture.start).length()<12.0
+            });
+            if let Some(destination)=shade_settings {
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s(destination))]);
+                return true;
+            }
+            if let Some(app)=app {
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                let mut fields=vec![("app",makepad_strict_json::s(&app))];
+                if let Some(hosted)=crate::shell::launcher::apps().iter().find(|item|item.id.trim_start_matches("apps.")==app) {
+                    fields.push(("hosted_label",makepad_strict_json::s(&hosted.label)));
+                }
+                self.android_command(cx,"launcher","menu",fields);
+                return true;
+            }
+            if empty_home {
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_command(cx,"launcher","home_menu",vec![]);
+                return true;
+            }
+        }
         if let Event::TouchUpdate(update) = event {
             use makepad_platform::event::TouchState;
             let owned = self.state_mut().phone.touch;
@@ -755,7 +808,7 @@ impl App {
                 phone.gesture_out=out;
                 if let Some(out)=out {
                     Self::drive_gesture(phone,out,from);
-                }else if from==PhoneScreen::Drawer && (phone.search_focused || !phone.search_query.is_empty()) {
+                }else if from==PhoneScreen::Drawer {
                     phone.search_scroll=(phone.search_scroll.min(search_scroll_max)-last.y).clamp(0.0,search_scroll_max);
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
@@ -766,7 +819,18 @@ impl App {
             PhonePointerPhase::Up=>{
                 let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
                 let delta=p-g.start;
-                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {phone.shade.release(h,delta,time-g.time);self.animate_phone(cx);return true;}
+                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
+                    let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
+                        && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));
+                    if native_dismiss {
+                        if let ShadeHit::Note(id)=h {
+                            if let Some(note)=phone.shade.notifications.iter_mut().find(|note|note.id==*id) {note.offset=0.0;note.revealed=false;}
+                        }
+                        phone.shade.release(h,dvec2(0.0,delta.y),(time-g.time).max(0.3));
+                    } else {phone.shade.release(h,delta,time-g.time);}
+                    self.android_shade_release(cx,h,delta,time-g.time);
+                    self.animate_phone(cx);return true;
+                }
                 let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
                 phone.gesture_out=out;
                 self.gesture_out_age=0;
@@ -796,7 +860,7 @@ impl App {
             PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Home && phone.pages.on_glance()=>{
                 phone.pages.scroll_glance(scroll,phone.viewport.size.y);self.animate_phone(cx);true
             }
-            PhonePointerPhase::Scroll if phone.searching()=>{
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Drawer=>{
                 phone.search_scroll=(phone.search_scroll.min(search_scroll_max)+scroll).clamp(0.0,search_scroll_max);
                 self.animate_phone(cx);true
             }

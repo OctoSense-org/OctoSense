@@ -137,3 +137,17 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 Tests: `cargo test --features mobile-only mobile -- --test-threads=1` runs the shell's unit tests (gestures, pages, island, shade, groups, tiles). `docs/validation.md` and `docs/android/validation-record.md` hold the device validation.
 
 State lives under `~/.octosense` on desktop and the app's data directory on Android; `OCTOSENSE_HOME` relocates it.
+
+## Robrix Matrix module
+
+Robrix2 is imported into the sibling AppCards repository at
+`apps/robrix/native` and linked as `octosense-robrix`. It uses this launcher's
+locked Octoscript-Makepad release and opens as an embedded module by default.
+Run `cargo run --release -- --test-action launch-robrix`; for the macOS phone
+shell add `--features mobile-apps,mobile-only` before `--`.
+
+The AppCards checkout and its `octos` submodule are required. The accompanying
+AppCard/octos rusqlite 0.37 update unifies SQLite with the Matrix SDK. Both
+launchers patch the legacy AppCard Git dependencies to that canonical checkout.
+See the [Robrix app](../Octosense-Service-AppCards/apps/robrix/README.md) for
+Android build instructions, the message AppCard format and validation scope.

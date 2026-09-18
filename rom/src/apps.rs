@@ -9,7 +9,8 @@
 //! linked module is still launched as a process unless
 //! `~/.makepad/wm/apps.splash` says otherwise (a settings file, never an
 //! environment variable) or a dev run passes `--module <id>`. The uber
-//! builds ignore the switch: everything is a module there.
+//! builds ignore the switch: everything is a module there. Robrix is linked
+//! and module-hosted by default on native desktop as well.
 
 use makepad_app_module::AppModule;
 use std::collections::HashMap;
@@ -52,6 +53,10 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
     out.push(&octosense_mail::MAIL_MODULE);
+    #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios")))]
+    out.push(&octosense_robrix::module::ROBRIX_MODULE);
+    #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
+    out.push(&octosense_finance::FINANCE_MODULE);
     out
 }
 
@@ -118,6 +123,9 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
+        if matches!(id, "robrix" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+            return Hosting::Module;
+        }
         match self.overrides.get(id) {
             Some(Hosting::Module) if self.module(id).is_some() => Hosting::Module,
             _ => Hosting::Process,
@@ -172,7 +180,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "robrix", "finance"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

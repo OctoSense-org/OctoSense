@@ -9,7 +9,7 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
-    App(String), Card(ClientId), Home, Recents, Drawer, Back,
+    App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Back,
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
     #[cfg(not(mobile_only))] Rotate,
@@ -45,6 +45,7 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
+    pub android: crate::android_integration::AndroidState,
     pub clock: String,
     /// The frame clock of the last stepped frame (the shade stamps its
     /// cards on it).
@@ -121,7 +122,8 @@ impl Default for PhoneState {
             shade: Default::default(),
             pages: Default::default(),
             island: Default::default(),
-            groups: Default::default() }
+            groups: Default::default(),
+            android: Default::default() }
     }
 }
 impl PhoneState {

@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION" android:protectionLevel="signature" />
+    <application android:label="OctoSense Quickstep integration" android:icon="@android:drawable/ic_menu_manage" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
+        <service android:name=".HomeIntegrationService" android:exported="true" android:permission="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION" />
+    </application>
+    <queries><package android:name="dev.makepad.octosense" /></queries>
+</manifest>

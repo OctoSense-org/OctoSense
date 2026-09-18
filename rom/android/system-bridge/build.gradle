@@ -1,0 +1,54 @@
+plugins { id 'com.android.application' }
+def managedKeystore = System.getenv('OCTOSENSE_KEYSTORE')
+def signingValue = { String name ->
+    def value = System.getenv(name)
+    if (!value) throw new GradleException("Set ${name} when using OCTOSENSE_KEYSTORE.")
+    value
+}
+android {
+    namespace 'dev.makepad.octosense.bridge'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'dev.makepad.octosense.bridge'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        octosense {
+            storeFile rootProject.file(managedKeystore ?: '../../makepad/tools/cargo_makepad/debug.keystore')
+            storePassword managedKeystore ? signingValue('OCTOSENSE_KEYSTORE_PASSWORD') : 'android'
+            keyAlias managedKeystore ? signingValue('OCTOSENSE_KEY_ALIAS') : 'androiddebugkey'
+            keyPassword managedKeystore ? (System.getenv('OCTOSENSE_KEY_PASSWORD') ?: storePassword) : 'android'
+        }
+    }
+    buildTypes {
+        release {
+            if (managedKeystore) signingConfig signingConfigs.octosense
+            minifyEnabled false
+        }
+        prototype {
+            initWith release
+            signingConfig signingConfigs.octosense
+            versionNameSuffix '-prototype'
+            matchingFallbacks = ['release']
+        }
+        validation {
+            initWith prototype
+            versionNameSuffix '-validation'
+            matchingFallbacks = ['release']
+        }
+    }
+    buildFeatures { aidl true }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+dependencies {
+    implementation project(':contracts')
+    implementation 'com.github.topjohnwu.libsu:core:6.0.0'
+    implementation 'com.github.topjohnwu.libsu:service:6.0.0'
+}

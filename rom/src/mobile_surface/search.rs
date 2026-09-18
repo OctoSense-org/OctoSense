@@ -241,13 +241,13 @@ impl PhoneSurface {
                 continue;
             }
             let row = rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, 56.0);
-            self.icons.draw(
+            self.draw_launcher_icon(
                 cx,
+                state,
                 id,
-                state.style.target,
                 rect(row.pos.x + 4.0, y + 6.0, 44.0, 44.0),
-                1.0,
                 ink,
+                1.0,
             );
             self.d.label_elided(
                 cx,

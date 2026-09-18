@@ -1,0 +1,77 @@
+// BEGIN OCTOSENSE ADR0001
+java_library {
+    name: "OctoSenseQuickstepContracts",
+    srcs: [
+        "octosense/contracts/java/**/*.java",
+        "octosense/contracts/aidl/**/*.aidl",
+    ],
+    aidl: {
+        local_include_dirs: ["octosense/contracts/aidl"],
+    },
+    sdk_version: "current",
+    min_sdk_version: "31",
+}
+
+// Keep the native dependency graph while using a distinct BuildConfig and
+// an observer that permits Recents to live outside the default Home package.
+android_library {
+    name: "OctoSenseQuickStepLib",
+    defaults: [
+        "launcher_compose_defaults",
+        "quickstep_compose_defaults",
+    ],
+    srcs: [
+        ":launcher-src",
+        ":launcher-quickstep-src",
+        ":launcher-quickstep-dagger",
+        "octosense/java/**/*.java",
+    ],
+    exclude_srcs: [
+        "quickstep/src/com/android/quickstep/OverviewComponentObserver.java",
+        "quickstep/src/com/android/quickstep/FallbackSwipeHandler.java",
+        "quickstep/src/com/android/quickstep/TouchInteractionService.java",
+    ],
+    resource_dirs: [],
+    libs: ["framework-statsd.stubs.module_lib"],
+    static_libs: [
+        "SystemUI-statsd",
+        "QuickstepResLib",
+        "OctoSenseQuickstepContracts",
+    ],
+    manifest: "quickstep/AndroidManifest.xml",
+    platform_apis: true,
+    plugins: ["dagger2-compiler"],
+    min_sdk_version: "current",
+    use_resource_processor: false,
+}
+
+android_app {
+    name: "OctoSenseQuickstep",
+    static_libs: ["OctoSenseQuickStepLib"],
+    package_name: "dev.makepad.octosense.quickstep",
+    // The source manifest has this identity too, so the manifest merger resolves
+    // applicationId placeholders before AAPT sees the result. Native R classes
+    // remain supplied by the static libraries' com.android.launcher3 namespace.
+    platform_apis: true,
+    min_sdk_version: "current",
+    target_sdk_version: "current",
+    privileged: true,
+    system_ext_specific: true,
+    // Build-only signer. The exported APK must be signed with the existing
+    // OctoSense key on the host before a separately approved deployment.
+    certificate: "testkey",
+    optimize: {
+        proguard_flags_files: [":launcher-proguard-rules"],
+        enabled: true,
+        shrink_resources: true,
+    },
+    resource_dirs: [
+        "octosense/res",
+        "quickstep/res",
+    ],
+    manifest: "octosense/AndroidManifest.xml",
+    additional_manifests: ["AndroidManifest-common.xml"],
+    required: ["launcher.quickstep.protolog.pb"],
+}
+
+// END OCTOSENSE ADR0001

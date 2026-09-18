@@ -108,6 +108,7 @@ impl WmDesk {
             .is_some_and(|view| view.arrival_fade() < 1.0)
     }
     pub fn phone_hit(&self,p:Vec2d)->Option<PhoneHit> {self.phone_ui.hit(p)}
+    pub(crate) fn phone_hit_rect(&self,hit:&PhoneHit)->Option<Rect> {self.phone_ui.hit_rect(hit)}
     pub fn phone_search_event(&mut self,cx:&mut Cx,event:&Event,state:&mut WmState)->bool {
         let enabled=state.style.target.mobile() && state.phone.screen==PhoneScreen::Drawer;
         self.phone_ui.search_event(cx,event,&mut state.phone,enabled)
@@ -259,6 +260,7 @@ impl WmDesk {
         state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
         let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
+        self.phone_ui.sync_native_widgets(cx,state,full,screen);
         state.phone.order.retain(|c|state.clients.contains_key(c));
         if state.phone.client.is_some_and(|c|!state.clients.contains_key(&c)) {
             state.phone.client=state.phone.order.first().copied();
@@ -396,6 +398,7 @@ impl WmDesk {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
         }
+        self.phone_ui.publish_home_geometry(cx,state,full,screen);
         if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
         if record {
             // The scene is complete: its pyramid, to the deepest level an

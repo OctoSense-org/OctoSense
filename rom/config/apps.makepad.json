@@ -1,11 +1,27 @@
 [
   {
+    "id": "finance",
+    "label": "Finance",
+    "manifest": "../../Octosense-Service-AppCards/apps/finance/Cargo.toml",
+    "package": "octosense-finance",
+    "bin": "octosense-finance",
+    "policy": "focus"
+  },
+  {
     "id": "reference",
     "label": "Reference",
     "manifest": "../apps/reference/Cargo.toml",
     "package": "octosense-reference",
     "bin": "octosense-reference",
     "policy": "new"
+  },
+  {
+    "id": "robrix",
+    "label": "Robrix",
+    "manifest": "../../Octosense-Service-AppCards/apps/robrix/native/Cargo.toml",
+    "package": "octosense-robrix",
+    "bin": "octosense-robrix",
+    "policy": "focus"
   },
   {
     "id": "browser",
@@ -111,7 +127,7 @@
     "label": "Route",
     "manifest": "../../makepad/Cargo.toml",
     "package": "makepad-app-route",
-    "bin": "makepad-app-route",
+    "bin": "route",
     "policy": "focus"
   },
   {

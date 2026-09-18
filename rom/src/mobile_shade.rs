@@ -12,6 +12,7 @@
 use crate::mobile_gestures::{Dir, GestureKind, ShadeSide, ShellGesture};
 use crate::{desk::WmState, desktop::{DesktopStyle, DrawDesktopChrome}, mobile::PhoneHit, octosense::style::AppIconDraw, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussBlurSnapshot, GaussRoundedView}, *};
+use crate::android_integration::AndroidState;
 
 /// One notification card. `time` is seconds since app start when it was
 /// posted, so the card shows a relative age.
@@ -20,11 +21,15 @@ pub struct ShadeNote {
     pub id: u64,
     /// The posting app's id (`wm` for the shell's own).
     pub app: String,
+    /// PackageManager presentation for an Android notification, when available.
+    pub app_label: String,
+    pub app_icon: String,
     pub title: String,
     pub body: String,
     pub time: f64,
     /// Action buttons a left swipe reveals, by label.
     pub actions: Vec<String>,
+    pub dismissible: bool,
     /// The card's horizontal swipe offset in points (right: dismissing,
     /// left: revealing the actions), animated back or away on release.
     pub offset: f64,
@@ -63,6 +68,8 @@ pub enum ShadeHit {
     Brightness,
     Volume,
     Toggle(Toggle),
+    SystemAccess,
+    Settings(&'static str),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,6 +97,12 @@ pub struct ShadeState {
     /// The shell's appearance, mirrored from `WmState::style.dark` by the
     /// app whenever it changes (the tile reads it; tapping goes to the app).
     pub dark: bool,
+    pub control_enabled: [bool; 6],
+    pub slider_enabled: [bool; 2],
+    pub network_summary: String,
+    pub notification_access: bool,
+    pub bridge_connected: bool,
+    pub battery_saver: bool,
     /// Per-toggle 0..1 shape animation (pill → rounded rectangle).
     toggle_anim: [f64; 6],
     /// Battery percent and charging, from the status sampler the bar uses.
@@ -112,6 +125,9 @@ impl Default for ShadeState {
             notifications: Vec::new(), next_id: 0,
             brightness: 0.62, volume: 0.45, wifi: true, bluetooth: false, torch: false, rotation_lock: false, do_not_disturb: false, dark: false,
             toggle_anim: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            control_enabled: if cfg!(target_os = "android") {[false,false,false,false,false,true]} else {[true;6]},
+            slider_enabled: [!cfg!(target_os = "android");2],
+            network_summary: "Connecting to Android…".into(), notification_access: false, bridge_connected: false, battery_saver: false,
             battery: None, now: 0.0, pulling: false, drag: None, dragging_note: None, seeded: false,
         }
     }
@@ -150,13 +166,14 @@ impl ShadeState {
     /// mirror into here. Returns the card id.
     pub fn post(&mut self, app: &str, title: &str, body: &str, now: f64, actions: Vec<String>) -> u64 {
         self.next_id += 1;
-        self.notifications.insert(0, ShadeNote { id: self.next_id, app: app.into(), title: title.into(), body: body.into(), time: now, actions, offset: 0.0, revealed: false });
+        self.notifications.insert(0, ShadeNote { id: self.next_id, app: app.into(), app_label: String::new(), app_icon: String::new(), title: title.into(), body: body.into(), time: now, actions, dismissible: true, offset: 0.0, revealed: false });
         self.next_id
     }
     /// Demo content until Android's real notifications are wired: shown
     /// the first time the shade opens onto an empty list.
     pub fn seed_fixtures(&mut self) {
         self.seeded = true;
+        if cfg!(target_os = "android") { return; }
         let now = self.now;
         self.post("photos", "Memories", "A new memory from this day last year is ready to watch.", now - 240.0, vec!["Watch".into()]);
         self.post("terminal", "Build finished", "octosense — release build completed in 4m 12s", now - 900.0, vec!["Open".into(), "Rerun".into()]);
@@ -197,6 +214,7 @@ impl ShadeState {
             ShadeHit::Open(side) => self.open_on(side),
             ShadeHit::Backdrop => self.close(),
             ShadeHit::Sheet => {}
+            ShadeHit::SystemAccess | ShadeHit::Settings(_) => {}
             ShadeHit::Note(id) => {
                 if let Some(n) = self.notifications.iter_mut().find(|n| n.id == id) { n.revealed = false; }
             }
@@ -247,8 +265,8 @@ impl ShadeState {
                 }
                 self.dragging_note = Some(*id);
                 if let Some(n) = self.notifications.iter_mut().find(|n| n.id == *id) {
-                    let base = if n.revealed { -(n.actions.len() as f64 + 1.0) * ACTION_W } else { 0.0 };
-                    let min = -(n.actions.len() as f64 + 1.0) * ACTION_W - 20.0;
+                    let base = if n.revealed { -(n.actions.len() as f64 + if n.dismissible {1.0} else {0.0}) * ACTION_W } else { 0.0 };
+                    let min = -(n.actions.len() as f64 + if n.dismissible {1.0} else {0.0}) * ACTION_W - 20.0;
                     n.offset = (base + delta.x).clamp(min, screen.size.x);
                 }
             }
@@ -289,8 +307,8 @@ impl ShadeState {
                     return;
                 }
                 let Some(n) = self.notifications.iter_mut().find(|n| n.id == *id) else { return };
-                let reveal_w = (n.actions.len() as f64 + 1.0) * ACTION_W;
-                if n.offset > 96.0 || (fast && delta.x > 40.0) {
+                let reveal_w = (n.actions.len() as f64 + if n.dismissible {1.0} else {0.0}) * ACTION_W;
+                if n.dismissible && (n.offset > 96.0 || (fast && delta.x > 40.0)) {
                     let id = *id;
                     self.dismiss(id);
                 } else if n.offset < -reveal_w * 0.4 {
@@ -329,7 +347,7 @@ impl ShadeState {
         }
         for n in &mut self.notifications {
             if self.dragging_note == Some(n.id) { continue; }
-            let target = if n.revealed { -(n.actions.len() as f64 + 1.0) * ACTION_W } else { 0.0 };
+            let target = if n.revealed { -(n.actions.len() as f64 + if n.dismissible {1.0} else {0.0}) * ACTION_W } else { 0.0 };
             n.offset += (target - n.offset) * t;
             if (n.offset - target).abs() < 0.3 { n.offset = target; }
             active |= n.offset != target;
@@ -426,14 +444,24 @@ pub struct ShadeContentCache {
 
 /// Everything the recorded content depends on. Card ages tick by the
 /// minute, so the minute is part of it.
-fn content_key(shade: &ShadeState, clock: &str, dark: bool, ios: bool, size: Vec2d, dpi: f64) -> u64 {
+fn content_key(shade: &ShadeState, android: &AndroidState, clock: &str, dark: bool, ios: bool, size: Vec2d, dpi: f64) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    format!("{:?}", shade.notifications).hash(&mut h);
+    for note in &shade.notifications {
+        (note.id, &note.app, &note.app_label, &note.app_icon, &note.title, &note.body, &note.actions).hash(&mut h);
+        note.time.to_bits().hash(&mut h);
+        note.offset.to_bits().hash(&mut h);
+        note.revealed.hash(&mut h);
+        note.dismissible.hash(&mut h);
+        android.icons.contains_key(&note.app_icon).hash(&mut h);
+    }
     shade.dragging_note.hash(&mut h);
     for t in Toggle::ALL { shade.toggled(t).hash(&mut h); }
     shade.brightness.to_bits().hash(&mut h);
     shade.volume.to_bits().hash(&mut h);
+    shade.control_enabled.hash(&mut h);
+    shade.slider_enabled.hash(&mut h);
+    (&shade.network_summary, shade.notification_access, shade.bridge_connected, shade.battery_saver).hash(&mut h);
     shade.page.to_bits().hash(&mut h);
     shade.battery.hash(&mut h);
     for n in &shade.notifications { ((shade.now - n.time) / 60.0).floor().to_bits().hash(&mut h); }
@@ -446,7 +474,7 @@ fn content_key(shade: &ShadeState, clock: &str, dark: bool, ios: bool, size: Vec
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, cache: &mut ShadeContentCache, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
+pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, cache: &mut ShadeContentCache, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
     let shade = &state.phone.shade;
     let style = state.style.target;
     let dark = state.style.dark;
@@ -463,13 +491,13 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     // first pull finds it; a moving frame whose key does not fit draws live
     // rather than paying a record inside the gesture.
     let settled = rect(screen.pos.x, screen.pos.y, content.size.x, content.size.y);
-    let key = content_key(shade, &state.phone.clock, dark, ios, content.size, cx.current_dpi_factor());
+    let key = content_key(shade, &state.phone.android, &state.phone.clock, dark, ios, content.size, cx.current_dpi_factor());
     if shade.open < 0.001 {
         if covered && cache.key != Some(key) {
             let mut scratch = Vec::new();
             let frame = cache.frame.get_or_insert_with(|| crate::dock_warp::WindowFrame::new_with_name(cx, "wm_phone_shade_content"));
             frame.begin(cx, settled);
-            draw_content(cx, d, chrome, icons, &mut scratch, state, screen, settled, ink, accent, card);
+            draw_content(cx, d, chrome, icons, native_icon, &mut scratch, state, screen, settled, ink, accent, card);
             frame.end(cx);
             cache.key = Some(key);
         }
@@ -505,12 +533,12 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
     } else if !moving && covered {
         let frame = cache.frame.get_or_insert_with(|| crate::dock_warp::WindowFrame::new_with_name(cx, "wm_phone_shade_content"));
         frame.begin(cx, settled);
-        draw_content(cx, d, chrome, icons, hits, state, screen, settled, ink, accent, card);
+        draw_content(cx, d, chrome, icons, native_icon, hits, state, screen, settled, ink, accent, card);
         frame.end(cx);
         cache.key = Some(key);
         present(cx, frame.texture(), content);
     } else {
-        draw_content(cx, d, chrome, icons, hits, state, screen, content, ink, accent, card);
+        draw_content(cx, d, chrome, icons, native_icon, hits, state, screen, content, ink, accent, card);
     }
     // Page dots and the drag handle along the sheet's bottom edge.
     let by = sheet.pos.y + sheet.size.y;
@@ -524,7 +552,7 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
 /// The status line, then the notifications page and the controls page,
 /// side by side across `shade.page`, in `content`.
 #[allow(clippy::too_many_arguments)]
-fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, content: Rect, ink: Vec4f, accent: Vec4f, card: Vec4f) {
+fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, content: Rect, ink: Vec4f, accent: Vec4f, card: Vec4f) {
     let shade = &state.phone.shade;
     let style = state.style.target;
     let dark = state.style.dark;
@@ -544,7 +572,7 @@ fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome
         rounded(chrome, cx, rect(bx, by, 24.0, 12.0), 3.0, alpha(ink, 0.45));
         rounded(chrome, cx, rect(bx + 24.5, by + 3.5, 2.0, 5.0), 1.0, alpha(ink, 0.45));
         rounded(chrome, cx, rect(bx + 2.0, by + 2.0, 20.0 * (percent.min(100) as f64 / 100.0).max(0.05), 8.0), 1.5, if percent <= 20 && !charging { rgb(228, 66, 52) } else { ink });
-        if page == 0 { draw_notifications(cx, d, chrome, icons, hits, shade, style, dark, ink, accent, card, rect(*x, content.pos.y, w, content.size.y)); }
+        if page == 0 { draw_notifications(cx, d, chrome, icons, native_icon, hits, shade, &state.phone.android, style, dark, ink, accent, card, rect(*x, content.pos.y, w, content.size.y)); }
         else { draw_controls(cx, d, chrome, hits, shade, dark, ink, accent, card, rect(*x, content.pos.y, w, content.size.y)); }
     }
 }
@@ -555,7 +583,7 @@ fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome
 /// pay it inside its first frames (glyph atlas packing under `draw_overlay`,
 /// ~30 ms of a 55 ms frame on the OnePlus 6T). The live shade is untouched:
 /// its fixtures still seed on the first real open.
-pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, state: &WmState, screen: Rect) {
+pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, state: &WmState, screen: Rect) {
     let mut shade = state.phone.shade.clone();
     if shade.notifications.is_empty() { shade.seed_fixtures(); }
     let style = state.style.target;
@@ -568,17 +596,17 @@ pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome,
     let page = rect(x, screen.pos.y, screen.size.x, screen.size.y);
     d.label(cx, rect(x + 24.0, page.pos.y + 14.0, 200.0, 30.0), true, 22.0, clear, HAlign::Left, &state.phone.clock);
     d.label(cx, rect(x + 24.0, page.pos.y + 14.0, 200.0, 30.0), false, 13.0, clear, HAlign::Right, "0123456789% charging");
-    draw_notifications(cx, d, chrome, icons, &mut hits, &shade, style, state.style.dark, clear, accent, clear, page);
+    draw_notifications(cx, d, chrome, icons, native_icon, &mut hits, &shade, &state.phone.android, style, state.style.dark, clear, accent, clear, page);
     draw_controls(cx, d, chrome, &mut hits, &shade, state.style.dark, clear, accent, clear, rect(x + screen.size.x, screen.pos.y, screen.size.x, screen.size.y));
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, style: DesktopStyle, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
+fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, android: &AndroidState, style: DesktopStyle, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
     let x = page.pos.x;
     let w = page.size.x;
     let head = rect(x + 24.0, page.pos.y + 58.0, w - 48.0, 30.0);
     d.label(cx, head, true, 17.0, ink, HAlign::Left, "Notifications");
-    if !shade.notifications.is_empty() {
+    if shade.notifications.iter().any(|note| note.dismissible) {
         let pill = rect(head.pos.x + head.size.x - 84.0, head.pos.y, 84.0, 30.0);
         rounded(chrome, cx, pill, 15.0, alpha(ink, 0.10));
         d.label(cx, pill, false, 12.5, ink, HAlign::Center, "Clear all");
@@ -586,7 +614,18 @@ fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktop
     }
     let mut y = head.pos.y + 44.0;
     let bottom = page.pos.y + page.size.y - 48.0;
-    if shade.notifications.is_empty() {
+    if cfg!(target_os = "android") {
+        let setup = rect(x + 16.0, y, w - 32.0, if shade.notification_access {44.0} else {80.0});
+        rounded(chrome,cx,setup,16.0,alpha(accent,0.13));
+        let title=if shade.notification_access {"Notification settings  ›"} else if shade.bridge_connected {"Enable notifications  ›"} else {"Connect notification access  ›"};
+        d.label(cx,rect(setup.pos.x+16.0,y+7.0,setup.size.x-32.0,30.0),true,14.0,accent,HAlign::Left,title);
+        if !shade.notification_access {
+            d.label(cx,rect(setup.pos.x+16.0,y+38.0,setup.size.x-32.0,28.0),false,12.0,ink,HAlign::Left,"Read, reply and dismiss from Home");
+        }
+        hits.push((setup,PhoneHit::Shade(ShadeHit::Settings("notifications"))));
+        y += setup.size.y + 12.0;
+    }
+    if shade.notifications.is_empty() && (!cfg!(target_os = "android") || shade.notification_access) {
         d.label(cx, rect(x, page.pos.y + page.size.y * 0.4, w, 30.0), false, 15.0, alpha(ink, 0.5), HAlign::Center, "No notifications");
     }
     for n in &shade.notifications {
@@ -599,14 +638,14 @@ fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktop
         // The action strip behind the card, revealed by a left swipe.
         if n.offset < -8.0 {
             let mut labels: Vec<&str> = n.actions.iter().map(|s| s.as_str()).collect();
-            labels.push("Clear");
+            if n.dismissible { labels.push("Clear"); }
             let strip_w = (labels.len() as f64) * ACTION_W;
             let visible = (-n.offset).min(strip_w);
             for (i, label) in labels.iter().enumerate() {
                 let bx = slot.pos.x + slot.size.x - strip_w + i as f64 * ACTION_W;
                 let r = rect(bx + 6.0, slot.pos.y + 8.0, ACTION_W - 12.0, h - 16.0);
                 if bx + ACTION_W <= slot.pos.x + slot.size.x - visible + 1.0 { continue; }
-                let last = i + 1 == labels.len();
+                let last = n.dismissible && i + 1 == labels.len();
                 rounded(chrome, cx, r, 16.0, if last { alpha(rgb(228, 66, 52), 0.9) } else { accent });
                 d.label_elided(cx, r, true, 12.5, rgb(255, 255, 255), HAlign::Center, label);
                 hits.push((r, PhoneHit::Shade(ShadeHit::Action(n.id, i))));
@@ -617,14 +656,20 @@ fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktop
         rounded(chrome, cx, r, CARD_RADIUS, alpha(card, fade));
         let ink_f = alpha(ink, fade);
         let icon = rect(r.pos.x + 16.0, r.pos.y + 16.0, 40.0, 40.0);
-        if n.app == "wm" || crate::clients::find_app(&n.app).is_none() {
+        if let Some(texture) = android.icons.get(&n.app_icon) {
+            native_icon.draw_vars.set_texture(0, texture);
+            native_icon.opacity = fade;
+            native_icon.draw_abs(cx, icon);
+        } else if n.app == "wm" || crate::clients::find_app(&n.app).is_none() {
             rounded(chrome, cx, icon, 12.0, alpha(accent, 0.9 * fade));
             d.icon_centered(cx, Ico::Bell, icon, 20.0, alpha(rgb(255, 255, 255), fade));
         } else {
             icons.draw(cx, &n.app, style, icon, fade, ink_f);
         }
         let tx = r.pos.x + 68.0;
-        d.label_elided(cx, rect(tx, r.pos.y + 14.0, text_w - 40.0, 16.0), false, 11.0, alpha(ink, 0.6 * fade), HAlign::Left, &app_label(&n.app));
+        let fallback;
+        let label=if n.app_label.is_empty() {fallback=app_label(&n.app);fallback.as_str()} else {n.app_label.as_str()};
+        d.label_elided(cx, rect(tx, r.pos.y + 14.0, text_w - 40.0, 16.0), false, 11.0, alpha(ink, 0.6 * fade), HAlign::Left, label);
         let when = age(shade.now, n.time);
         d.label(cx, rect(tx + text_w - 40.0, r.pos.y + 14.0, 40.0, 16.0), false, 11.0, alpha(ink, 0.5 * fade), HAlign::Right, &when);
         d.label_elided(cx, rect(tx, r.pos.y + 32.0, text_w, 22.0), true, 14.5, ink_f, HAlign::Left, &n.title);
@@ -643,14 +688,29 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
     let x = page.pos.x;
     let w = page.size.x;
     d.label(cx, rect(x + 24.0, page.pos.y + 58.0, w - 48.0, 30.0), true, 17.0, ink, HAlign::Left, "Controls");
+    if cfg!(target_os = "android") {
+        let access=rect(x+w-144.0,page.pos.y+58.0,120.0,30.0);
+        d.label(cx,access,false,12.0,accent,HAlign::Right,"System setup");
+        hits.push((access,PhoneHit::Shade(ShadeHit::SystemAccess)));
+    }
+    if cfg!(target_os = "android") {
+        let network=rect(x+24.0,page.pos.y+94.0,w-48.0,28.0);
+        d.label_elided(cx,network,false,12.0,accent,HAlign::Left,&shade.network_summary);
+        hits.push((network,PhoneHit::Shade(ShadeHit::Settings("internet"))));
+    }
     for (hit, value, ico) in [(ShadeHit::Brightness, shade.brightness, Ico::Brightness), (ShadeHit::Volume, shade.volume, if shade.volume < 0.01 { Ico::Volume0 } else if shade.volume < 0.5 { Ico::Volume1 } else { Ico::Volume3 })] {
+        let enabled=shade.slider_enabled[if hit==ShadeHit::Brightness {0} else {1}];
         let track = ShadeState::slider_track(page, hit.clone());
         rounded(chrome, cx, track, 23.0, card);
         let fill = rect(track.pos.x, track.pos.y, (track.size.x * value).max(46.0), track.size.y);
-        rounded(chrome, cx, fill, 23.0, alpha(accent, 0.92));
+        rounded(chrome, cx, fill, 23.0, alpha(accent, if enabled {0.92} else {0.2}));
         d.icon_centered(cx, ico, rect(track.pos.x + 4.0, track.pos.y, 40.0, track.size.y), 20.0, rgb(255, 255, 255));
         d.label(cx, rect(track.pos.x, track.pos.y, track.size.x - 18.0, track.size.y), false, 12.5, alpha(ink, 0.7), HAlign::Right, &format!("{}%", (value * 100.0).round() as u32));
-        hits.push((rect(track.pos.x - 8.0, track.pos.y - 6.0, track.size.x + 16.0, track.size.y + 12.0), PhoneHit::Shade(hit)));
+        let target=if enabled {hit.clone()} else {ShadeHit::Settings(if hit==ShadeHit::Brightness {"brightness"} else {"sound"})};
+        hits.push((rect(track.pos.x - 8.0, track.pos.y - 6.0, track.size.x + 16.0, track.size.y + 12.0), PhoneHit::Shade(target)));
+        if !enabled {
+            d.label(cx,rect(track.pos.x+48.0,track.pos.y,track.size.x-120.0,track.size.y),false,12.0,ink,HAlign::Left,"Tap to set up");
+        }
     }
     // Android 16 style toggles: a pill at rest, a rounded rectangle on.
     for (i, t) in Toggle::ALL.iter().enumerate() {
@@ -659,7 +719,7 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
         let radius = (cell.size.y * 0.5) as f32 * (1.0 - on) + 16.0 * on;
         let face = if on > 0.5 { alpha(accent, 0.5 + on * 0.5) } else if dark { alpha(rgb(255, 255, 255), 0.10 + on * 0.5) } else { alpha(card, 1.0) };
         rounded(chrome, cx, cell, radius, face);
-        let fg = if on > 0.5 { rgb(255, 255, 255) } else { ink };
+        let fg = alpha(if on > 0.5 { rgb(255, 255, 255) } else { ink },if shade.control_enabled[i] {1.0} else {0.75});
         let ico = match t {
             Toggle::Wifi => if shade.wifi { Ico::Wifi } else { Ico::WifiOff },
             Toggle::Bluetooth => if shade.bluetooth { Ico::Bluetooth } else { Ico::BluetoothOff },
@@ -671,8 +731,26 @@ fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrom
         d.icon_centered(cx, ico, rect(cell.pos.x + 10.0, cell.pos.y, 30.0, cell.size.y), 18.0, fg);
         let text = rect(cell.pos.x + 42.0, cell.pos.y, cell.size.x - 50.0, cell.size.y);
         let (tw, size) = if cell.size.x < 110.0 { (text.size.x, 11.0) } else { (text.size.x, 12.5) };
-        d.label_elided(cx, rect(text.pos.x, text.pos.y, tw, text.size.y), false, size, fg, HAlign::Left, t.label());
+        d.label_elided(cx, rect(text.pos.x, text.pos.y, tw, if cfg!(target_os="android") {38.0} else {text.size.y}), false, size, fg, HAlign::Left, t.label());
+        if cfg!(target_os="android") {
+            let hint=if shade.control_enabled[i] {if shade.toggled(*t) {"On"} else {"Off"}} else if matches!(t,Toggle::Wifi|Toggle::Bluetooth|Toggle::DoNotDisturb) {"Settings"} else {"Set up"};
+            d.label_elided(cx,rect(text.pos.x,text.pos.y+34.0,tw,20.0),false,10.0,fg,HAlign::Left,hint);
+        }
         hits.push((cell, PhoneHit::Shade(ShadeHit::Toggle(*t))));
+    }
+    if cfg!(target_os="android") {
+        for (i,(label,destination)) in [
+            ("Wi-Fi & mobile data", "internet"), ("Pair Bluetooth", "bluetooth"),
+            ("Hotspot", "hotspot"), ("VPN", "vpn"),
+            (if shade.battery_saver {"Battery saver · On"} else {"Battery saver"}, "battery"), ("Display & sleep", "display"),
+            ("Sound & vibration", "sound"), ("Accessibility", "accessibility"),
+        ].iter().enumerate() {
+            let cell=rect(x+20.0+(i%2) as f64*(w-30.0)/2.0,page.pos.y+426.0+(i/2) as f64*52.0,(w-50.0)/2.0,44.0);
+            if cell.pos.y+cell.size.y > page.pos.y+page.size.y-48.0 {continue;}
+            rounded(chrome,cx,cell,14.0,card);
+            d.label_elided(cx,rect(cell.pos.x+12.0,cell.pos.y,cell.size.x-24.0,cell.size.y),false,12.0,ink,HAlign::Left,label);
+            hits.push((cell,PhoneHit::Shade(ShadeHit::Settings(destination))));
+        }
     }
 }
 
@@ -684,6 +762,37 @@ mod tests {
     fn settle(s: &mut ShadeState) { for _ in 0..120 { s.step(1.0 / 60.0, None, 100.0); } }
     /// The frame's exclusion zones as the desk rebuilds them: cleared, then the shade's.
     fn zones(s: &ShadeState) -> ExclusionZones { let mut ex = ExclusionZones::default(); if let Some(z) = s.exclusion(screen()) { ex.add(z, [true; 4]); } ex }
+
+    #[test]
+    fn connection_access_and_dismissibility_invalidate_cached_shade() {
+        let mut shade=ShadeState::default();
+        let android=AndroidState::default();
+        let key=|shade:&ShadeState|content_key(shade,&android,"9:41",false,false,screen().size,1.0);
+        let mut before=key(&shade);
+        shade.network_summary="Wi-Fi · Connected".into(); assert_ne!(before,key(&shade)); before=key(&shade);
+        shade.notification_access=true; assert_ne!(before,key(&shade)); before=key(&shade);
+        shade.bridge_connected=true; assert_ne!(before,key(&shade));
+        let id=shade.post("test","Ongoing","",0.0,vec![]);
+        before=key(&shade); shade.notifications[0].dismissible=false; assert_ne!(before,key(&shade));
+        shade.drag(&ShadeHit::Note(id),dvec2(200.0,200.0),dvec2(160.0,0.0),screen());
+        shade.release(&ShadeHit::Note(id),dvec2(160.0,0.0),0.2);
+        assert_eq!(shade.notifications.len(),1,"ongoing notification dismissed locally");
+    }
+
+    #[test]
+    fn native_notification_presentation_invalidates_recorded_shade_content() {
+        let mut shade=ShadeState::default();
+        let mut android=AndroidState::default();
+        shade.post("example.package","Title","Body",1.0,vec![]);
+        let key=|shade:&ShadeState,android:&AndroidState|content_key(shade,android,"9:41",false,false,screen().size,1.0);
+        let initial=key(&shade,&android);
+        shade.notifications[0].app_label="Actual app name".into();
+        let label=key(&shade,&android);assert_ne!(initial,label);
+        shade.notifications[0].app_icon="/owned/icon.png".into();
+        let icon=key(&shade,&android);assert_ne!(label,icon);
+        android.catalog_revision+=1;
+        assert_eq!(icon,key(&shade,&android),"unrelated catalog updates do not invalidate recorded notification content");
+    }
 
     #[test]
     fn pull_progress_drives_open_and_commit_finishes_it() {

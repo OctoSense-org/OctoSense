@@ -22,6 +22,7 @@ mod desktop;
 mod desktop_app;
 mod snap;
 mod mobile;
+mod android_integration;
 mod mobile_surface;
 mod mobile_gestures;
 mod mobile_app;
@@ -74,6 +75,7 @@ use shell::menu::{MenuSkin, ShellMenu, ShellMenuAction};
 use shell::panels::ShellPanelAction;
 use ai_bus::{AiBus, Route};
 use apps::{AppRegistry, Hosting};
+use android_integration::AndroidRuntime;
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
 use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream};
 use module_host::ModuleHost;
@@ -88,6 +90,7 @@ app_main!(
     font_set: International,
     font_assets: [
         "makepad_widgets/resources/jetbrains_mono_variable.ttf",
+
         "makepad_widgets/resources/NotoColorEmoji.ttf",
         // The faces the AppCard module's L0 kit names by file
         // (`crate_resource("makepad_widgets:resources/<face>.ttf")`): the
@@ -110,8 +113,30 @@ app_main!(
 );
     };
 }
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
+macro_rules! octosense_main_with_finance {
+    ($($extra:literal),* $(,)?) => { octosense_main!("octosense_finance/resources/ux/Inter-400.ttf", "octosense_finance/resources/ux/Inter-600.ttf", "octosense_finance/resources/ux/Inter-700.ttf", "octosense_finance/resources/ux/NotoSansSC-Regular.ttf", $($extra),*); };
+}
+#[cfg(not(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios"))))]
+macro_rules! octosense_main_with_finance {
+    ($($extra:literal),* $(,)?) => { octosense_main!($($extra),*); };
+}
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios")))]
+macro_rules! octosense_main_with_robrix {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!(
+        "octosense_robrix/resources/fonts/system_latin.ttf",
+        "octosense_robrix/resources/fonts/system_cjk.ttc",
+        "octosense_robrix/resources/fonts/NotoColorEmoji.ttf",
+        "octosense_robrix/resources/fonts/LiberationMono-Regular.ttf",
+        $($extra),*
+    ); };
+}
+#[cfg(not(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios"))))]
+macro_rules! octosense_main_with_robrix {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
+}
 #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
-octosense_main!(
+octosense_main_with_robrix!(
     "octosense_mail/resources/ux/Inter-200.ttf",
     "octosense_mail/resources/ux/Inter-300.ttf",
     "octosense_mail/resources/ux/Inter-400.ttf",
@@ -120,7 +145,7 @@ octosense_main!(
     "octosense_mail/resources/ux/Inter-700.ttf",
 );
 #[cfg(not(any(feature = "app-mail", target_os = "android", target_os = "ios")))]
-octosense_main!();
+octosense_main_with_robrix!();
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -312,6 +337,8 @@ pub struct App {
     ui: WidgetRef,
     #[rust]
     state: Option<WmState>,
+    #[rust]
+    android_runtime: AndroidRuntime,
     #[rust]
     snap_hover_timer: Timer,
     /// A keyboard focus that could not land yet (the tile hadn't drawn);
@@ -1982,6 +2009,10 @@ impl App {
                 .and_then(|config| config.get("mail_endpoint").and_then(|v| v.as_str()).map(str::to_owned))
                 .map(|endpoint| schema.validate(&format!("{{\"endpoint\":{}}}", makepad_strict_json::Value::Str(endpoint).to_json()), &[]))
         } else { None };
+        let configured_open = std::env::var("MAKEPAD_APP_CONFIG").ok()
+            .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
+            .and_then(|config| config.get("module_open").and_then(|v| v.get(module.id())).map(|v| v.to_json()))
+            .map(|json| schema.validate(&json, &[])).or(configured_open);
         let open = match configured_open.unwrap_or_else(|| schema.empty_open()) {
             Ok(open) => open,
             Err(e) => {
@@ -4155,6 +4186,8 @@ impl MatchEvent for App {
         }
         self.tick = cx.start_interval(1.0);
         mobile_perf::init_from_env(cx);
+        #[cfg(target_os = "android")]
+        self.android_command(cx, "launcher", "catalog", vec![]);
         // The warm pool's pump. Started even when the pool is off: it
         // costs one no-op wakeup and keeps the timer id stable.
         if self.warm_pool.enabled() {
@@ -4469,6 +4502,19 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-robrix", target_os = "android", target_os = "ios")))]
+        if let Some(client) = self.module_host.client_of_module("robrix") {
+            let foreground = self.state.as_ref().map(|state| {
+                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
+            }).unwrap_or(false);
+            if let Some(instance) = self.module_host.get(client) {
+                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
+                if let Some(mut robrix) = instance.root.borrow_mut::<octosense_robrix::module::RobrixModuleView>() {
+                    robrix.set_foreground(cx, foreground);
+                }
+                makepad_widgets::widget_async::leave_isolate(cx, entry);
+            }
+        }
         #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
         if let Some(client) = self.module_host.client_of_module("mail") {
             let foreground = self.state.as_ref().map(|state| {
@@ -4478,6 +4524,19 @@ impl AppMain for App {
                 if let Some(mut mail) = instance.root.borrow_mut::<octosense_mail::MailView>() {
                     mail.set_foreground(cx, foreground);
                 }
+            }
+        }
+        #[cfg(all(not(target_arch = "wasm32"), any(feature = "app-finance", target_os = "android", target_os = "ios")))]
+        if let Some(client) = self.module_host.client_of_module("finance") {
+            let foreground = self.state.as_ref().map(|state| {
+                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
+            }).unwrap_or(false);
+            if let Some(instance) = self.module_host.get(client) {
+                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
+                if let Some(mut finance) = instance.root.borrow_mut::<octosense_finance::FinanceView>() {
+                    finance.set_foreground(cx, foreground);
+                }
+                makepad_widgets::widget_async::leave_isolate(cx, entry);
             }
         }
         // Recording belongs to the WM, including on Home and in an OS menu.
@@ -4493,6 +4552,7 @@ impl AppMain for App {
             }
         }
         mobile_perf::saw_event(event);
+        if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
         if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);

@@ -1,0 +1,12 @@
+plugins {
+    id 'com.android.application' version '8.9.2' apply false
+    id 'com.android.library' version '8.9.2' apply false
+}
+
+subprojects {
+    configurations.configureEach {
+        if (name.endsWith('CompileClasspath') || name.endsWith('RuntimeClasspath')) {
+            resolutionStrategy.activateDependencyLocking()
+        }
+    }
+}
