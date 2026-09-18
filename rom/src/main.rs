@@ -22,8 +22,10 @@ mod desktop;
 mod desktop_app;
 mod snap;
 mod mobile;
+mod android_integration;
 mod mobile_surface;
 mod mobile_gestures;
+mod mobile_hints;
 mod mobile_app;
 mod mobile_tiles;
 mod mobile_shade;
@@ -75,6 +77,7 @@ use shell::menu::{MenuSkin, ShellMenu, ShellMenuAction};
 use shell::panels::ShellPanelAction;
 use ai_bus::{AiBus, Route};
 use apps::{AppRegistry, Hosting};
+use android_integration::AndroidRuntime;
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
 use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream};
 use module_host::ModuleHost;
@@ -82,11 +85,14 @@ use pane_links::{PaneCall, PaneLinks};
 use makepad_widgets::ai_slot::AiSlotRequests;
 use shell::ai_pane::ShellAiPane;
 
+macro_rules! octosense_main {
+    ($($extra:literal),* $(,)?) => {
 app_main!(
     App,
     font_set: International,
     font_assets: [
         "makepad_widgets/resources/jetbrains_mono_variable.ttf",
+
         "makepad_widgets/resources/NotoColorEmoji.ttf",
         // The faces the AppCard module's L0 kit names by file
         // (`crate_resource("makepad_widgets:resources/<face>.ttf")`): the
@@ -104,8 +110,44 @@ app_main!(
         "makepad_widgets/resources/Montserrat-SemiBold.ttf",
         "makepad_widgets/resources/Serif-Regular.ttf",
         "makepad_widgets/resources/Serif-Bold.ttf",
+        $($extra),*
     ]
 );
+    };
+}
+#[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
+macro_rules! octosense_main_with_finance {
+    ($($extra:literal),* $(,)?) => { octosense_main!("octosense_finance/resources/ux/Inter-400.ttf", "octosense_finance/resources/ux/Inter-600.ttf", "octosense_finance/resources/ux/Inter-700.ttf", "octosense_finance/resources/ux/NotoSansSC-Regular.ttf", $($extra),*); };
+}
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-finance")))]
+macro_rules! octosense_main_with_finance {
+    ($($extra:literal),* $(,)?) => { octosense_main!($($extra),*); };
+}
+#[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
+macro_rules! octosense_main_with_robrix {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!(
+        "octosense_robrix/resources/fonts/system_latin.ttf",
+        "octosense_robrix/resources/fonts/system_cjk.ttc",
+        "octosense_robrix/resources/fonts/NotoColorEmoji.ttf",
+        "octosense_robrix/resources/fonts/LiberationMono-Regular.ttf",
+        $($extra),*
+    ); };
+}
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-robrix")))]
+macro_rules! octosense_main_with_robrix {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
+}
+#[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
+octosense_main_with_robrix!(
+    "octosense_mail/resources/ux/Inter-200.ttf",
+    "octosense_mail/resources/ux/Inter-300.ttf",
+    "octosense_mail/resources/ux/Inter-400.ttf",
+    "octosense_mail/resources/ux/Inter-500.ttf",
+    "octosense_mail/resources/ux/Inter-600.ttf",
+    "octosense_mail/resources/ux/Inter-700.ttf",
+);
+#[cfg(not(any(feature = "app-mail", target_os = "android", target_os = "ios")))]
+octosense_main_with_robrix!();
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -298,6 +340,8 @@ pub struct App {
     #[rust]
     state: Option<WmState>,
     #[rust]
+    android_runtime: AndroidRuntime,
+    #[rust]
     snap_hover_timer: Timer,
     /// A keyboard focus that could not land yet (the tile hadn't drawn);
     /// re-asserted when that client's first frame arrives.
@@ -387,6 +431,8 @@ pub struct App {
     /// at without a screen (the GPU readback does not need one).
     #[rust]
     test_capture: Option<(Timer, std::path::PathBuf)>,
+    #[rust] test_capture_ticket: Option<ReadbackTicket>,
+    #[rust] test_recording: bool,
     /// `--test-action page:<n>`: the home page to jump to, once the phone
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
@@ -2020,7 +2066,18 @@ impl App {
     /// a tile in the layout, a local endpoint on the bus. The ordinary
     /// launch path minus everything a process needs.
     fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
-        let open = match module.open_schema().empty_open() {
+        let schema = module.open_schema();
+        let configured_open = if module.id() == "mail" {
+            std::env::var("MAKEPAD_APP_CONFIG").ok()
+                .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
+                .and_then(|config| config.get("mail_endpoint").and_then(|v| v.as_str()).map(str::to_owned))
+                .map(|endpoint| schema.validate(&format!("{{\"endpoint\":{}}}", makepad_strict_json::Value::Str(endpoint).to_json()), &[]))
+        } else { None };
+        let configured_open = std::env::var("MAKEPAD_APP_CONFIG").ok()
+            .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
+            .and_then(|config| config.get("module_open").and_then(|v| v.get(module.id())).map(|v| v.to_json()))
+            .map(|json| schema.validate(&json, &[])).or(configured_open);
+        let open = match configured_open.unwrap_or_else(|| schema.empty_open()) {
             Ok(open) => open,
             Err(e) => {
                 log!("wm: {} cannot open without arguments: {}", module.id(), e);
@@ -3719,12 +3776,50 @@ impl App {
     /// due `ask-appcard:` sends its text to the appcard instance's executor
     /// exactly as the assistant's `ask` call would.
     fn fire_test_timers(&mut self, cx: &mut Cx, te: &TimerEvent) {
-        if let Some((timer, path)) = &self.test_capture {
+        if let Some((timer, path)) = self.test_capture.clone() {
             if timer.is_timer(te).is_some() {
-                let tmp = path.with_extension("part.png");
-                cx.capture_next_frame_to_file(tmp);
-                // The previous capture is complete by now: promote it.
-                let _ = std::fs::rename(path.with_extension("part.png"), path);
+                #[cfg(not(target_os = "android"))]
+                {
+                    let tmp = path.with_extension("part.png");
+                    cx.capture_next_frame_to_file(tmp);
+                    let _ = std::fs::rename(path.with_extension("part.png"), path);
+                }
+                #[cfg(target_os = "android")]
+                {
+                    for result in cx.try_take_texture_readbacks() {
+                        if Some(result.ticket) != self.test_capture_ticket { continue; }
+                        self.test_capture_ticket = None;
+                        let output = if self.test_recording {
+                            let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+                            path.join(format!("{timestamp}.png"))
+                        } else { path.clone() };
+                        match cx.task_pool().submit(Lane::Heavy, move || {
+                            let Ok(bytes) = result.data else { return; };
+                            let mut rgba = Vec::with_capacity(result.width * result.height * 4);
+                            for y in 0..result.height {
+                                let row = match result.origin { ReadbackOrigin::TopLeft => y, ReadbackOrigin::BottomLeft => result.height - 1 - y };
+                                for pixel in bytes[row*result.stride..row*result.stride+result.width*4].chunks_exact(4) {
+                                    match result.channel_order {
+                                        ReadbackChannelOrder::Rgba => rgba.extend_from_slice(pixel),
+                                        ReadbackChannelOrder::Bgra => rgba.extend_from_slice(&[pixel[2],pixel[1],pixel[0],pixel[3]]),
+                                    }
+                                }
+                            }
+                            if let Ok(png) = Cx::encode_rgba_as_png(result.width as u32, result.height as u32, &rgba) {
+                                let tmp = output.with_extension("part.png");
+                                if std::fs::write(&tmp,png).is_ok() { let _ = std::fs::rename(tmp,output); }
+                            }
+                        }) { Ok(task) => task.detach(), Err(error) => log!("wm: capture worker unavailable: {error}") }
+                    }
+                    if self.test_capture_ticket.is_none() {
+                        let focus = self.state_mut().layout.focused_client();
+                        let texture = focus.and_then(|client|self.desk(cx).borrow::<WmDesk>().and_then(|desk|desk.phone_client_texture(client)));
+                        if let Some(texture) = texture {
+                            self.test_capture_ticket = texture.read_back(cx, ReadbackRequest::default()).ok();
+                            cx.redraw_all();
+                        }
+                    }
+                }
             }
         }
         if let Some((timer, n)) = &self.test_page {
@@ -3768,7 +3863,16 @@ impl App {
     /// binding can be driven from a script even where the host OS keeps a
     /// chord for itself.
     fn run_test_actions(&mut self, cx: &mut Cx) {
-        let args: Vec<String> = std::env::args().collect();
+        let mut args: Vec<String> = std::env::args().collect();
+        if let Ok(config) = std::env::var("MAKEPAD_APP_CONFIG") {
+            if let Ok(config) = makepad_strict_json::parse(config.as_bytes()) {
+                if let Some(actions) = config.get("test_actions").and_then(|v| v.as_arr()) {
+                    for action in actions.iter().filter_map(|v| v.as_str()) {
+                        args.extend(["--test-action".into(), action.into()]);
+                    }
+                }
+            }
+        }
         let mut i = 0;
         while i < args.len() {
             if args[i] == "--test-action" {
@@ -3790,6 +3894,16 @@ impl App {
                         log!("wm: --test-action capture -> {}", path);
                         let timer = cx.start_interval(5.0);
                         self.test_capture = Some((timer, std::path::PathBuf::from(path)));
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(target_os = "android")]
+                    if let Some(path) = name.strip_prefix("record:") {
+                        let path = std::path::PathBuf::from(path);
+                        if std::fs::create_dir_all(&path).is_ok() {
+                            self.test_recording = true;
+                            self.test_capture = Some((cx.start_interval(0.1), path));
+                        }
                         i += 2;
                         continue;
                     }
@@ -4225,6 +4339,8 @@ impl MatchEvent for App {
         }
         self.tick = cx.start_interval(1.0);
         mobile_perf::init_from_env(cx);
+        #[cfg(target_os = "android")]
+        self.android_command(cx, "launcher", "catalog", vec![]);
         // The warm pool's pump. Started even when the pool is off: it
         // costs one no-op wakeup and keeps the timer id stable.
         if self.warm_pool.enabled() {
@@ -4552,6 +4668,43 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
+        if let Some(client) = self.module_host.client_of_module("robrix") {
+            let foreground = self.state.as_ref().map(|state| {
+                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
+            }).unwrap_or(false);
+            if let Some(instance) = self.module_host.get(client) {
+                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
+                if let Some(mut robrix) = instance.root.borrow_mut::<octosense_robrix::module::RobrixModuleView>() {
+                    robrix.set_foreground(cx, foreground);
+                }
+                makepad_widgets::widget_async::leave_isolate(cx, entry);
+            }
+        }
+        #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
+        if let Some(client) = self.module_host.client_of_module("mail") {
+            let foreground = self.state.as_ref().map(|state| {
+                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
+            }).unwrap_or(false);
+            if let Some(instance) = self.module_host.get(client) {
+                if let Some(mut mail) = instance.root.borrow_mut::<octosense_mail::MailView>() {
+                    mail.set_foreground(cx, foreground);
+                }
+            }
+        }
+        #[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
+        if let Some(client) = self.module_host.client_of_module("finance") {
+            let foreground = self.state.as_ref().map(|state| {
+                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
+            }).unwrap_or(false);
+            if let Some(instance) = self.module_host.get(client) {
+                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
+                if let Some(mut finance) = instance.root.borrow_mut::<octosense_finance::FinanceView>() {
+                    finance.set_foreground(cx, foreground);
+                }
+                makepad_widgets::widget_async::leave_isolate(cx, entry);
+            }
+        }
         // Recording belongs to the WM, including on Home and in an OS menu.
         // Forwarding this chord also starts a recorder in the focused child.
         if let Event::KeyDown(e) | Event::KeyUp(e) = event {
@@ -4565,6 +4718,7 @@ impl AppMain for App {
             }
         }
         mobile_perf::saw_event(event);
+        if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
         if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);

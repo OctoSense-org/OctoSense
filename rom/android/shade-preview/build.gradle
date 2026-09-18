@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' }
+def panelSource = tasks.register('copyPanelSource', Sync) {
+    from('../platform-build/quickstep/java') {
+        include '**/GlobalShadePanel.java', '**/GlobalShadeStyle.java', '**/GlobalShadeSettingsActivity.java'
+    }
+    into layout.buildDirectory.dir('generated/panel')
+}
+android {
+    namespace 'dev.makepad.octosense.shadepreview'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    defaultConfig {
+        applicationId 'dev.makepad.octosense.shadepreview'
+        minSdk 35
+        targetSdk 35
+        versionCode 1
+        versionName '1.0-design-validation'
+    }
+    signingConfigs {
+        fixture {
+            storeFile rootProject.file('../../makepad/tools/cargo_makepad/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+    buildTypes { debug { signingConfig signingConfigs.fixture } }
+    sourceSets.main.java.srcDir layout.buildDirectory.dir('generated/panel')
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+tasks.named('preBuild').configure { dependsOn panelSource }
+dependencies { implementation project(':contracts') }

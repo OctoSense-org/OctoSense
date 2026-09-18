@@ -1,0 +1,21 @@
+plugins { id 'com.android.library' }
+android {
+    namespace 'dev.makepad.octosense.contracts'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+    defaultConfig { minSdk 26 }
+    buildFeatures { aidl true; buildConfig false }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+tasks.register('exportHomeContracts', Copy) {
+    dependsOn 'bundleReleaseAar'
+    from({ zipTree(layout.buildDirectory.file('outputs/aar/contracts-release.aar').get().asFile) }) {
+        include 'classes.jar'
+        rename 'classes.jar', 'octosense-contracts.jar'
+    }
+    into rootProject.file('../resources/android/libs')
+}

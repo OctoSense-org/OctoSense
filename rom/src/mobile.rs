@@ -9,7 +9,7 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
-    App(String), Card(ClientId), Home, Recents, Drawer, Back,
+    App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Back,
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
     #[cfg(not(mobile_only))] Rotate,
@@ -29,8 +29,27 @@ pub enum PhoneHit {
     /// the window's scrim, a pair's "Open both", a Recents card's split
     /// button and the split divider.
     Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
+    /// The app drawer's letter column: a finger on it jumps the list.
+    Scrub,
 }
 
+/// The launch effect of an Android app (`PhoneState::launch`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LaunchFx {
+    pub app: String,
+    pub origin: Rect,
+    /// 0 at the tap, 1 when done (about a quarter of a second).
+    pub t: f64,
+}
+/// An icon being dragged on the home page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HomeDrag {
+    pub app: String,
+    pub start: Vec2d,
+    pub pos: Vec2d,
+    /// The finger travelled: a lift without moving opens the icon's menu.
+    pub moved: bool,
+}
 #[derive(Clone)]
 pub struct PhoneGesture {
     pub start: Vec2d,
@@ -45,6 +64,10 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
+    pub android: crate::android_integration::AndroidState,
+    /// Which hidden gestures the person has found (mobile_hints.rs): the
+    /// home page shows one short hint at a time until they have.
+    pub hints: crate::mobile_hints::Hints,
     pub clock: String,
     /// The frame clock of the last stepped frame (the shade stamps its
     /// cards on it).
@@ -60,6 +83,12 @@ pub struct PhoneState {
     pub page: f64,
     pub dismiss_y: f64,
     pub gesture: Option<PhoneGesture>,
+    /// A home-page icon lifted by a long press and following the finger
+    /// (mobile_app.rs `finish_home_drag` puts it down).
+    pub drag: Option<HomeDrag>,
+    /// An Android app just launched: its icon grows out of its place and
+    /// the page dims while Android brings the app's window up.
+    pub launch: Option<LaunchFx>,
     /// Frame-trace boundaries: include the final settling frame, while
     /// keeping the separate one-second status refreshes out of a gesture.
     pub(crate) animation_active: bool,
@@ -71,8 +100,20 @@ pub struct PhoneState {
     pub keyboard_sent_height: f64,
     pub keyboard_client: Option<ClientId>,
     pub search_query: String,
+    /// Return in the search field: the app to open (mobile_app.rs takes it).
+    pub search_launch: Option<String>,
     pub search_focused: bool,
     pub search_scroll: f64,
+    /// The drawer keeps scrolling after a flick: points per second, decaying
+    /// in `step`; the surface publishes how far the list can scroll.
+    pub search_velocity: f64,
+    /// The drawer pulled past its top (positive) or bottom (negative): a
+    /// stretch that eases back after the lift.
+    pub search_stretch: f64,
+    pub search_scroll_limit: f64,
+    /// The last finger sample on the drawer (y, time) the velocity is
+    /// measured against.
+    pub search_track: Option<(f64, f64)>,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -109,7 +150,8 @@ impl Default for PhoneState {
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
-            search_query: String::new(), search_focused: false, search_scroll: 0.0,
+            search_query: String::new(), search_launch: None, search_focused: false, search_scroll: 0.0,
+            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -117,11 +159,15 @@ impl Default for PhoneState {
             viewport: Rect::default(), insets: SafeInsets::default(),
             tiles: HomeTiles::default(),
             gesture_out: None,
+            hints: Default::default(),
+            drag: None,
+            launch: None,
             exclusions: Default::default(),
             shade: Default::default(),
             pages: Default::default(),
             island: Default::default(),
-            groups: Default::default() }
+            groups: Default::default(),
+            android: Default::default() }
     }
 }
 impl PhoneState {
@@ -186,6 +232,26 @@ impl PhoneState {
             self.page += (target - self.page) * t;
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
+        }
+        if let Some(launch) = self.launch.as_mut() {
+            launch.t += dt / 0.26;
+            if launch.t >= 1.0 { self.launch = None; } else { active = true; }
+        }
+        // A flicked drawer coasts and slows (about a second from a fast
+        // flick), stopping dead at either end of the list.
+        if self.search_stretch != 0.0 && self.gesture.is_none() {
+            self.search_stretch *= (-dt * 14.0).exp();
+            if self.search_stretch.abs() < 0.3 { self.search_stretch = 0.0; }
+            active = true;
+        }
+        if self.search_velocity != 0.0 {
+            if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
+                let before = self.search_scroll;
+                self.search_scroll = (self.search_scroll - self.search_velocity * dt).clamp(0.0, self.search_scroll_limit);
+                self.search_velocity *= (-dt * 4.0).exp();
+                if self.search_velocity.abs() < 30.0 || self.search_scroll == before { self.search_velocity = 0.0; }
+                active = true;
+            } else { self.search_velocity = 0.0; }
         }
         active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
         self.absorb_docked(crate::mobile_island::take_docked());

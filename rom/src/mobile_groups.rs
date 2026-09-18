@@ -24,6 +24,39 @@ pub const SEED_GROUPS: [(&str, &[&str]); 2] = [
     ("Media", &["photos", "appcard"]),
 ];
 
+/// The pairs in effect: the person's own (Android's placements journal,
+/// `set_seeds`) or the seeds above. Names are interned so the layout can
+/// keep naming tiles by `&'static str`.
+static SEEDS: std::sync::RwLock<Option<Vec<(&'static str, Vec<String>)>>> = std::sync::RwLock::new(None);
+static NAMES: std::sync::RwLock<Vec<&'static str>> = std::sync::RwLock::new(Vec::new());
+fn intern(name: &str) -> &'static str {
+    if let Some(known) = NAMES.read().unwrap().iter().find(|n| **n == name) { return known; }
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    NAMES.write().unwrap().push(leaked);
+    leaked
+}
+pub fn seeds() -> Vec<(&'static str, Vec<String>)> {
+    if let Some(own) = SEEDS.read().unwrap().as_ref() { return own.clone(); }
+    SEED_GROUPS.iter().map(|(name, apps)| (*name, apps.iter().map(|a| a.to_string()).collect())).collect()
+}
+/// The person's pairs and folders (None: back to the seeds). A name is at
+/// most 32 characters and a group two to eight distinct apps; anything
+/// else is dropped.
+pub fn set_seeds(pairs: Option<&[(String, Vec<String>)]>) {
+    *SEEDS.write().unwrap() = pairs.map(|pairs| pairs.iter()
+        .filter(|(name, apps)| !name.is_empty() && name.chars().count() <= 32 && (2..=8).contains(&apps.len())
+            && apps.iter().enumerate().all(|(i, a)| !apps[..i].contains(a)))
+        .map(|(name, apps)| (intern(name), apps.clone())).collect());
+}
+/// A name for a new folder that no group has yet: the two labels, then a
+/// number if that is taken.
+pub fn fresh_name(first: &str, second: &str) -> String {
+    let base: String = format!("{first} & {second}").chars().take(28).collect();
+    let taken = seeds();
+    if !taken.iter().any(|(n, _)| *n == base) { return base; }
+    (2..100).map(|k| format!("{base} {k}")).find(|n| !taken.iter().any(|(t, _)| t == n)).unwrap_or(base)
+}
+
 /// Height of a group tile in portrait: a chip under the app tiles that
 /// still leaves the favorites their rows.
 pub const GROUP_TILE_HEIGHT: f64 = 76.0;
@@ -138,13 +171,19 @@ pub struct GroupsState {
 impl Default for GroupsState {
     fn default() -> Self {
         Self {
-            groups: SEED_GROUPS.iter().map(|(name, apps)| TileGroup::new(name, apps)).collect(),
+            groups: seeds().iter().map(|(name, apps)| TileGroup::new(name, &apps.iter().map(String::as_str).collect::<Vec<_>>())).collect(),
             open: None, openness: 0.0, split: None, pick: None, origin: None, closing: None,
         }
     }
 }
 
 impl GroupsState {
+    /// The pairs changed (`set_seeds`): rebuild the groups, closing a window
+    /// whose group is gone.
+    pub fn reseed(&mut self) {
+        self.groups = seeds().iter().map(|(name, apps)| TileGroup::new(name, &apps.iter().map(String::as_str).collect::<Vec<_>>())).collect();
+        if self.open.as_deref().is_some_and(|name| self.get(name).is_none()) { self.close(); }
+    }
     pub fn get(&self, name: &str) -> Option<&TileGroup> { self.groups.iter().find(|g| g.name == name) }
     pub fn get_mut(&mut self, name: &str) -> Option<&mut TileGroup> { self.groups.iter_mut().find(|g| g.name == name) }
     /// The group whose window is on screen: the open one, or the one still
@@ -156,7 +195,7 @@ impl GroupsState {
     /// Names of the seeded groups this catalog can show (two or more
     /// members present), in seed order.
     pub fn placed(available: &[&str]) -> Vec<&'static str> {
-        SEED_GROUPS.iter().filter(|(_, apps)| apps.iter().filter(|a| available.contains(a)).count() >= 2).map(|(name, _)| *name).collect()
+        seeds().iter().filter(|(_, apps)| apps.iter().filter(|a| available.contains(&a.as_str())).count() >= 2).map(|(name, _)| *name).collect()
     }
     pub fn open_group(&mut self, name: &str, tile: Rect) {
         if self.get(name).is_none() { return; }

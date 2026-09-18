@@ -1,5 +1,5 @@
 //! Swipeable home pages: the glance page pinned left of the first apps page,
-//! one or more pages of app icons, and the App Library at the right end.
+//! one or more pages of app icons, native widget pages, and the App Library.
 //!
 //! The page model and the pager animation are plain state (`PagesState`)
 //! that `PhoneState::step` drives from the shell gesture contract
@@ -9,7 +9,7 @@
 //! (`PhoneHit::Page`) and by `--test-action page:<n>`.
 //!
 //! Positions: apps page `k` is at `k`, the glance page at -1, the library at
-//! `apps_count`. Reaching the library position opens the existing Drawer /
+//! `apps_count + widget_count`. Reaching the library position opens the existing Drawer /
 //! App Library screen; the pager then rests on the last apps page again so
 //! coming home lands where the person left.
 //!
@@ -29,13 +29,15 @@ use crate::{
 };
 use makepad_widgets::*;
 
-/// One page of the pager, in pager order (glance, apps..., library).
+/// One page of the pager, in pager order (glance, apps..., widgets..., library).
 #[derive(Clone, Debug, PartialEq)]
 pub enum HomePage {
     /// The feed of cards left of the first page (position -1).
     Glance,
     /// A page of app icons; page 0 also carries the live tiles.
     Apps { ids: Vec<String> },
+    /// An Android widget remains a native view on its own Home page.
+    Widget { id: i32 },
     /// The App Library / drawer, the right end of the pager.
     Library,
 }
@@ -123,6 +125,9 @@ pub struct PagesState {
     pub index: f64,
     /// Extra offset while a swipe is in progress (springs back on cancel).
     pub drag: f64,
+    /// The settle's speed (pages per second): a lightly damped spring, so a
+    /// page lands with a hint of overshoot instead of a dead stop.
+    velocity: f64,
     /// Where `index` is heading (a page position).
     target: i64,
     /// A commit or a jump reached the library: the shell opens it once.
@@ -139,7 +144,7 @@ pub struct PagesState {
 
 impl Default for PagesState {
     fn default() -> Self {
-        Self { pages: Vec::new(), index: 0.0, drag: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, date: String::new() }
+        Self { pages: Vec::new(), index: 0.0, drag: 0.0, velocity: 0.0, target: 0, open_library: false, pending: None, feed: GlanceFeed::default(), glance_scroll: 0.0, date: String::new() }
     }
 }
 
@@ -163,7 +168,7 @@ impl PagesState {
         self.pages.iter().filter(|p| matches!(p, HomePage::Apps { .. })).count()
     }
     pub fn library_index(&self) -> i64 {
-        self.apps_count() as i64
+        self.pages.len().saturating_sub(2) as i64
     }
     fn known(&self) -> bool {
         !self.pages.is_empty()
@@ -171,10 +176,14 @@ impl PagesState {
     /// The ids on apps page `k`, empty for any other position.
     pub fn page_ids(&self, k: i64) -> &[String] {
         if k < 0 { return &[]; }
-        match self.pages.iter().filter(|p| matches!(p, HomePage::Apps { .. })).nth(k as usize) {
+        match self.pages.get(k as usize + 1) {
             Some(HomePage::Apps { ids }) => ids,
             _ => &[],
         }
+    }
+    pub fn widget_id(&self, k: i64) -> Option<i32> {
+        if k<0 {return None;}
+        match self.pages.get(k as usize+1) {Some(HomePage::Widget{id})=>Some(*id),_=>None}
     }
     /// Where the pager is right now, drag included.
     pub fn position(&self) -> f64 {
@@ -205,8 +214,26 @@ impl PagesState {
     /// or a tap opens the library, never a layout change (the first frame
     /// after a style switch can still be the old window size).
     pub fn sync(&mut self, favorites: &[String], capacity0: usize, capacity_n: usize) {
-        let pages = assign_pages(favorites, capacity0, capacity_n);
-        if pages != self.pages { self.pages = pages; }
+        self.sync_widgets(favorites,capacity0,capacity_n,&[]);
+    }
+    pub fn sync_widgets(&mut self, favorites: &[String], capacity0: usize, capacity_n: usize, widgets: &[i32]) {
+        let current_widget=self.widget_id(self.current());
+        let target_widget=self.widget_id(self.target);
+        let mut pages = assign_pages(favorites, capacity0, capacity_n);
+        pages.pop();
+        pages.extend(widgets.iter().take(16).map(|id|HomePage::Widget{id:*id}));
+        pages.push(HomePage::Library);
+        if pages != self.pages {
+            if let Some(id)=current_widget {
+                if let Some(position)=pages.iter().position(|page|matches!(page,HomePage::Widget{id:other} if *other==id)) {
+                    self.index+=(position as i64-1-self.current()) as f64;
+                }
+            }
+            if let Some(id)=target_widget {
+                if let Some(position)=pages.iter().position(|page|matches!(page,HomePage::Widget{id:other} if *other==id)) {self.target=position as i64-1;}
+            }
+            self.pages = pages;
+        }
         let last = (self.library_index() - 1).max(0);
         if let Some(n) = self.pending.take() {
             self.target = n.clamp(-1, last);
@@ -238,7 +265,10 @@ impl PagesState {
                 let sign = match dir { Dir::Left => 1.0, Dir::Right => -1.0 };
                 let raw = sign * progress.max(0.0) * SWIPE_FRACTION;
                 let (lo, hi) = ((-1.0 - self.index).min(0.0), (lib - self.index).max(0.0));
-                self.drag = raw.clamp(lo, hi);
+                // Past either end the page gives a little and stiffens, so
+                // the end is felt rather than hit (it springs back on lift).
+                let over = if raw < lo { raw - lo } else if raw > hi { raw - hi } else { 0.0 };
+                self.drag = raw.clamp(lo, hi) + over.signum() * 0.16 * (1.0 - (-over.abs() / 0.16).exp());
                 dragging = true;
             }
             Some(ShellGesture::Commit(GestureKind::Page(dir))) => {
@@ -254,13 +284,19 @@ impl PagesState {
             }
             _ => {}
         }
-        if dragging { return true; }
+        if dragging { self.velocity = 0.0; return true; }
         let t = 1.0 - (-dt * 16.0).exp();
         self.drag += (0.0 - self.drag) * t;
         if self.drag.abs() < 0.001 { self.drag = 0.0; }
         let target = self.target as f64;
-        self.index += (target - self.index) * t;
-        if (target - self.index).abs() < 0.001 { self.index = target; }
+        // Damping ratio 0.8: about a third of a page per second of overshoot
+        // at most, gone within a quarter second.
+        let k: f64 = 420.0;
+        let c = 2.0 * k.sqrt() * 0.8;
+        let dt = dt.min(1.0 / 30.0);
+        self.velocity += ((target - self.index) * k - self.velocity * c) * dt;
+        self.index += self.velocity * dt;
+        if (target - self.index).abs() < 0.0015 && self.velocity.abs() < 0.03 { self.index = target; self.velocity = 0.0; }
         self.drag != 0.0 || self.index != target
     }
 
@@ -310,10 +346,19 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     if screen.size.x < 1.0 || screen.size.y < 1.0 { return; }
     let apps = crate::shell::launcher::apps();
     let ids: Vec<(String, String)> = apps.iter().map(|a| (a.id.trim_start_matches("apps.").to_string(), a.label.clone())).collect();
-    let favorites: Vec<String> = ids.iter().filter(|(id, _)| !PINNED.contains(&id.as_str())).map(|(id, _)| id.clone()).collect();
+    let dock: [&str; 4] = std::array::from_fn(|index| phone.android.dock.get(index).map(String::as_str).unwrap_or(PINNED[index]));
+    let mut favorites: Vec<String> = ids.iter().filter(|(id, _)| !dock.contains(&id.as_str()) && !phone.android.hidden_hosted.contains(id)).map(|(id, _)| id.clone()).collect();
+    favorites.extend(phone.android.favorites.iter().filter(|id| !dock.contains(&id.as_str())).cloned());
+    // The person's own order (a drag), listed ids first; the rest follow in
+    // the default order.
+    if !phone.android.order.is_empty() {
+        let order = &phone.android.order;
+        favorites.sort_by_key(|id| order.iter().position(|o| o == id).unwrap_or(usize::MAX));
+    }
     let capacity0 = PhoneSurface::home_layout(style, screen).capacity;
     let spill = mobile_tiles::home_layout_for_apps(screen, PhoneSurface::home_top(style, screen), PhoneSurface::home_dock(screen), &[]);
-    phone.pages.sync(&favorites, capacity0, spill.capacity.max(1));
+    let widgets: Vec<_>=phone.android.widgets.iter().map(|widget|widget.id).collect();
+    phone.pages.sync_widgets(&favorites, capacity0, spill.capacity.max(1),&widgets);
     // The date changes once a day; the string compare is the cheap check.
     let date = crate::host::fallback_clock(true);
     let weekday = crate::host::fallback_clock(false);
@@ -430,16 +475,17 @@ impl PhoneSurface {
     pub fn draw_page_indicator(&mut self, cx: &mut Cx2d, phone: &PhoneState, dock: Rect, screen: Rect, ink: Vec4f, opacity: f32, hits: bool) {
         let pages = &phone.pages;
         let current = pages.current();
-        let count = pages.apps_count();
-        let cell = 22.0;
+        let count = pages.library_index() as usize;
+        // Each dot's slot is a 44-point touch target; the dots stay small.
+        let cell = 44.0_f64.min((screen.size.x-24.0)/(count+2).max(1) as f64);
         let total = (count + 2) as f64 * cell;
         let left = screen.pos.x + (screen.size.x - total) * 0.5;
         let y = dock.pos.y - 30.0;
         for (n, k) in pages.positions().enumerate() {
-            let slot = rect(left + n as f64 * cell, y, cell, 24.0);
+            let slot = rect(left + n as f64 * cell, y - 10.0, cell, 44.0);
             let active = k == current;
             let a = if active { 1.0 } else { 0.45 } * opacity;
-            let c = dvec2(slot.pos.x + cell * 0.5, slot.pos.y + 12.0);
+            let c = dvec2(slot.pos.x + cell * 0.5, slot.pos.y + 22.0);
             if k < 0 {
                 // The glance page: a small card with two lines of text.
                 let g = rect(c.x - 6.0, c.y - 6.0, 12.0, 12.0);
@@ -503,6 +549,33 @@ mod tests {
     }
 
     #[test]
+    fn widgets_keep_identity_and_library_navigation_after_removal() {
+        let mut state=PagesState::default();
+        state.sync_widgets(&ids(12),8,12,&[71,93]);
+        assert_eq!(state.apps_count(),2);
+        assert_eq!(state.library_index(),4);
+        assert_eq!(state.widget_id(2),Some(71));
+        assert_eq!(state.widget_id(3),Some(93));
+        assert!(state.page_ids(2).is_empty());
+        assert_eq!(state.page_ids(1),&ids(12)[8..]);
+        state.jump(3);settle(&mut state);
+        assert_eq!(state.current(),3);
+        state.sync_widgets(&ids(24),8,12,&[71,93]);
+        assert_eq!(state.widget_id(state.current()),Some(93),"installing apps keeps the visible widget identity");
+        state.sync_widgets(&ids(12),8,12,&[71,93]);
+        assert_eq!(state.current(),3);
+        state.sync_widgets(&ids(12),8,12,&[71]);
+        assert_eq!(state.current(),2);
+        assert_eq!(state.widget_id(state.current()),Some(71));
+        assert_eq!(state.library_index(),3);
+        state.jump(3);
+        assert!(state.open_library);
+        state.sync_widgets(&ids(12),8,12,&[]);
+        assert_eq!(state.library_index(),2);
+        assert_eq!(state.current(),1);
+    }
+
+    #[test]
     fn swipes_commit_cancel_and_clamp_at_both_ends() {
         let mut p = PagesState::default();
         p.sync(&ids(12), 8, 12);
@@ -527,7 +600,10 @@ mod tests {
         assert_eq!(p.index, -1.0);
         assert!(p.on_glance());
         p.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Right, progress: 1.0 }));
-        assert_eq!(p.drag, 0.0, "no dragging past the glance page");
+        assert!(p.drag < 0.0 && p.drag > -0.16, "past the glance page the pager only stretches a little: {}", p.drag);
+        p.step(1.0 / 60.0, Some(ShellGesture::Cancel(GestureKind::Page(Dir::Right))));
+        settle(&mut p);
+        assert_eq!((p.index, p.drag), (-1.0, 0.0), "and springs back on lift");
         assert!(!p.take_library_request());
         // Left past the last apps page reaches the library exactly once,
         // and the pager rests on the last apps page underneath it.

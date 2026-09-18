@@ -22,13 +22,16 @@ This repository was split from the desktop [OctoSense](https://github.com/OctoSe
 
 ## Build and run on a phone
 
-Rust stable, the Makepad Android toolchain, a device on ADB. The build tool is the fork's `cargo-makepad` — build it from the fork's `main` (the same revision `Cargo.toml` pins), since it carries this app's Java activity (HOME-intent forwarding, GPS, share and deep-link intents):
+Requires Rust stable, an installed Android SDK/toolchain and a device on ADB.
+Keep AppCards at `../Octosense-Service-AppCards` for the Mail module. Build
+`cargo-makepad` from the exact sibling revision selected by the shared runtime;
+it carries this app's Java activity (HOME, GPS, share and deep-link intents):
 
 ```sh
-git clone https://github.com/OctoSense-org/makepad.git ../makepad-fork
-cargo build --manifest-path ../makepad-fork/tools/cargo_makepad/Cargo.toml
-../makepad-fork/target/debug/cargo-makepad makepad android install-toolchain
-../makepad-fork/target/debug/cargo-makepad makepad android run -p octosense --release
+python3 tools/setup-native.py --check --cargo-manifest Cargo.toml
+cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
+../makepad/target/release/cargo-makepad makepad android \
+  --sdk-path=/path/to/existing/android_sdk build -p octosense --release
 ```
 
 For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
@@ -61,16 +64,54 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 | Where | Gesture | Does |
 |---|---|---|
-| Home page, middle | pull down | App Library with its search field |
+| Home page, middle | pull down | App Library (the same page as the swipe up from the bottom band) |
 | Home page, right quarter | pull down | the shade's Controls (Wi-Fi, brightness, …) |
 | Home page, left quarter | pull down | the shade's Notifications |
 | Top edge, left / right | pull down | Notifications / Controls (as well) |
 | Home page | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
-| App Library | pull down | back to the home page |
+| App Library | drag | scrolls the grid; past either end it stretches and springs back (Back or Home closes it) |
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
 | Side edges | swipe in | Back |
+| App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
+| Home-page icon | long press, then drag | Reorder the page (drop between icons), dock it (drop on the dock), make a folder (drop on another icon) or add to one (drop on a folder tile) |
+| App pair tile | long press | Change either app, or remove the pair |
+| Folder tile | long press | Remove one app, or the folder |
+| App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
+| Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, System setup, Show hidden tiles |
 
-A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick.
+A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field follows the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
+
+The App Library ranks names that start with what you typed first and Return opens the best match; a letter column on its right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
+
+## Mail preview on Android
+
+Mail is an in-process AppModule from the sibling
+`../Octosense-Service-AppCards/apps/mail/native`. It uses the same locked
+Octoscript-Makepad release as this launcher. The default Rust backend connects
+directly from Android to Gmail using verified POP3/TLS, with private on-device
+accounts, cached mail and drafts. No Mac service or USB connection is needed at
+runtime. Android renders native inbox/search/compose/settings and a platform
+WebView for full-length plain and HTML messages.
+
+With the already-installed Android SDK, build a separate preview package:
+
+```sh
+cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
+../makepad/target/release/cargo-makepad makepad android \
+  --sdk-path=/path/to/existing/android_sdk \
+  --package-name=dev.makepad.octosense.mailpreview --app-label='OctoSense Mail' \
+  build -p octosense --release
+```
+
+Use `apps/mail/scripts/open_android.py` in the AppCards repository to install
+and open the APK, as described in the [Mail app](../Octosense-Service-AppCards/apps/mail/README.md#standalone-android-mail).
+Use `--demo --probe` for isolated fictional mail and measured touch testing;
+`--record --demo` enables timestamped app-owned GPU frames. WebView needs its
+own page snapshot when making a video. Account provisioning uses the on-device
+settings or a private one-time `--bootstrap` file. `--companion` explicitly opts
+into the older USB Mac service. The preview package preserves the installed
+launcher and Home role. Android SMTP has not been live-send verified; IMAP sync
+and external attachment previews remain desktop-only.
 
 ## Run on a desktop
 
@@ -112,10 +153,24 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 
 ## Dependencies
 
-- Framework: `OctoSense-org/makepad`, pinned by revision in `Cargo.toml` to the fork's `main` (one revision across OctoSense-mobile, Octoscript-AppCard and Octoscript-Makepad). Every crate of that URL, including the ones the AppCard kits reach through other URLs, is redirected onto the same revision by the `[patch]` sections so a single `makepad-widgets` exists.
+- Framework: the exact Octoscript-Makepad release selected by `native-runtime.lock.json`. Its `runtime.json` pins Makepad and Octoscript. Cargo patches resolve the prepared siblings, with one widgets/platform/script graph; do not substitute a moving branch.
 - `OctoSense-org/Octoscript-AppCard` (`octos-app`, the hosted AppCard) and, through it, `Octoscript`, `Octoscript-Makepad` (component kits) and a few chart/diagram crates.
 - The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at build time (above).
 
 Tests: `cargo test --features mobile-only mobile -- --test-threads=1` runs the shell's unit tests (gestures, pages, island, shade, groups, tiles). `docs/validation.md` and `docs/android/validation-record.md` hold the device validation.
 
 State lives under `~/.octosense` on desktop and the app's data directory on Android; `OCTOSENSE_HOME` relocates it.
+
+## Robrix Matrix module
+
+Robrix2 is imported into the sibling AppCards repository at
+`apps/robrix/native` and linked as `octosense-robrix`. It uses this launcher's
+locked Octoscript-Makepad release and opens as an embedded module by default.
+Run `cargo run --release -- --test-action launch-robrix`; for the macOS phone
+shell add `--features mobile-apps,mobile-only` before `--`.
+
+The AppCards checkout and its `octos` submodule are required. The accompanying
+AppCard/octos rusqlite 0.37 update unifies SQLite with the Matrix SDK. Both
+launchers patch the legacy AppCard Git dependencies to that canonical checkout.
+See the [Robrix app](../Octosense-Service-AppCards/apps/robrix/README.md) for
+Android build instructions, the message AppCard format and validation scope.

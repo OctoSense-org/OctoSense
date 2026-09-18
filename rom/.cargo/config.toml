@@ -7,6 +7,10 @@ MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 # AppCards embeds assets from the pinned sibling framework, including Git builds.
 OCTOSENSE_WORKSPACE = { value = "..", relative = true }
 
+# The locked aws-lc-sys supports its CC builder on Android arm64. Use the
+# installed NDK Clang directly; no additional CMake installation is needed.
+AWS_LC_SYS_CMAKE_BUILDER_aarch64_linux_android = "0"
+
 # iOS gives the main thread a 1 MB stack, and the shell's widget tree is
 # built on it through nested script_apply/script_new calls that overflowed
 # it on an iPhone 16 Pro (the simulator inherits macOS's 8 MB and never

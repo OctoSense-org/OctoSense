@@ -125,10 +125,10 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
 /// it can become. `Body` is the middle of the home page (a pull opens
 /// search, a horizontal drag turns a page); `Column` its left or right
 /// quarter, where a pull is the shade's side — notifications on the left,
-/// controls on the right — without reaching for the top edge; `Library`
-/// the App Library's body, where a pull closes it.
+/// controls on the right — without reaching for the top edge. The App
+/// Library's body is its own: drags there scroll the grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), Library }
+enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide) }
 
 #[derive(Clone, Debug)]
 struct Track {
@@ -270,7 +270,9 @@ impl GestureRecognizer {
                 else if p.x > right - column { Some(Origin::Column(ShadeSide::Controls)) }
                 else { Some(Origin::Body) }
             }
-            PhoneScreen::Drawer => Some(Origin::Library),
+            // The App Library's body is its own: a drag scrolls the grid and
+            // stretches past its ends; nothing there closes it.
+            PhoneScreen::Drawer => None,
             _ => None,
         }
     }
@@ -299,7 +301,7 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
                 else { None }
             }
-            Origin::Library => (d.y > 0.0 && ay > ax * 1.2).then_some(GestureKind::HomeSearch),
+
         }
     }
 
@@ -506,20 +508,21 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Home), &ExclusionZones::default(), &swipe((380.0, 300.0), (383.0, 360.0), 0.5, 6));
         assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Shade(ShadeSide::Controls)), "{out:?}");
+        // In the library the same pull is the grid's own scroll, not a gesture.
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((200.0, 300.0), (203.0, 360.0), 0.5, 6));
-        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch), "{out:?}");
+        assert!(out.iter().all(|g| g.is_none()), "{out:?}");
         // The same 60 points up from the bottom band is not a home swipe yet.
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::App), &ExclusionZones::default(), &swipe((200.0, 880.0), (203.0, 820.0), 0.5, 6));
         assert_eq!(last(&out), ShellGesture::Cancel(GestureKind::HomeUp), "{out:?}");
     }
     #[test]
-    fn a_library_downward_drag_closes_it_and_nothing_else_is_a_shell_gesture_there() {
+    fn nothing_in_the_library_body_is_a_shell_gesture() {
+        // A downward drag stays the grid's (it scrolls, and stretches at the top).
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
-        assert!(matches!(out[2], Some(ShellGesture::HomeSearch { .. })), "{:?}", out[2]);
-        assert_eq!(last(&out), ShellGesture::Commit(GestureKind::HomeSearch));
+        assert!(out.iter().all(|g| g.is_none()), "a library pull is not a gesture: {out:?}");
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((300.0, 400.0), (120.0, 410.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "no pages in the library: {out:?}");

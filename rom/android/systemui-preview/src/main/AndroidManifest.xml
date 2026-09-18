@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Public observation/audio only: this fixture receives no system identity. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <application android:label="OctoSense controls test" android:allowBackup="false"
+        android:theme="@style/Theme.OctoSense.System">
+        <activity android:name="com.android.systemui.octosense.OctoSenseSystemActivity"
+            android:exported="true" android:showWhenLocked="false" />
+    </application>
+</manifest>

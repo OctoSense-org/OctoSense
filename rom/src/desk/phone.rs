@@ -76,8 +76,26 @@ pub(super) struct PhoneSceneBackdrop {
 }
 
 impl WmDesk {
+    /// App-owned GPU drawable for Android's capture hook (no system screen capture).
+    #[cfg(target_os = "android")]
+    pub fn phone_client_texture(&self, client: ClientId) -> Option<Texture> {
+        self.phone_frames.get(&client)?.full.as_ref().map(|capture|capture.frame.texture().clone())
+    }
+
     pub(super) fn draw_window_surface(&mut self, cx: &mut Cx2d, frame: &WindowFrame, rect: Rect, radius: f32) {
         self.draw_window_surface_band(cx, frame, rect, rect, radius);
+    }
+    /// The strips outside the safe area (under Android's transparent system
+    /// bars): a presented scene recording stops at the safe area's edges, so
+    /// the wallpaper is drawn into them again, one thin quad each.
+    fn draw_inset_bands(&mut self, cx: &mut Cx2d, phone: &crate::mobile::PhoneState, full: Rect, screen: Rect, style: crate::desktop::DesktopStyle, dark: bool, wallpaper: bool) {
+        if !wallpaper {return;}
+        let top=Rect{pos:full.pos,size:dvec2(full.size.x,(screen.pos.y-full.pos.y).max(0.0))};
+        let from=screen.pos.y+screen.size.y;
+        let bottom=Rect{pos:dvec2(full.pos.x,from),size:dvec2(full.size.x,(full.pos.y+full.size.y-from).max(0.0))};
+        for band in [top,bottom] {
+            self.phone_ui.wallpaper_band(cx,full,band,style,dark,phone.wallpaper_phase);
+        }
     }
     /// `band` of the frame recorded over `rect`, drawn in place: the rows a
     /// cached scene still shows beside an opaque sheet.
@@ -102,6 +120,7 @@ impl WmDesk {
             .is_some_and(|view| view.arrival_fade() < 1.0)
     }
     pub fn phone_hit(&self,p:Vec2d)->Option<PhoneHit> {self.phone_ui.hit(p)}
+    pub(crate) fn phone_hit_rect(&self,hit:&PhoneHit)->Option<Rect> {self.phone_ui.hit_rect(hit)}
     pub fn phone_search_event(&mut self,cx:&mut Cx,event:&Event,state:&mut WmState)->bool {
         let enabled=state.style.target.mobile() && state.phone.screen==PhoneScreen::Drawer;
         self.phone_ui.search_event(cx,event,&mut state.phone,enabled)
@@ -116,6 +135,9 @@ impl WmDesk {
         self.phone_ui.focus_search(cx,phone);
     }
     pub fn phone_search_scroll_max(&self)->f64 {self.phone_ui.search_scroll_max}
+    /// The drawer scroll that brings the letter at `y` on the scrubber to the top.
+    pub fn phone_scrub_scroll(&self,y:f64)->Option<f64> {self.phone_ui.scrub_scroll(y)}
+
     /// A frame from `client` landed in the given face: that face's capture
     /// re-records on the next draw. A frame that belongs to neither (a stale
     /// size while the client switches faces) is left out of both.
@@ -231,9 +253,10 @@ impl WmDesk {
             }
             if !shown {
                 let (headline,detail)=if client.is_none() && !gave_up {
-                    ("Tap to open", String::new())
-                } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
-                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,headline,&detail);
+                    let label=crate::clients::find_app(slot.app).map(|a|a.label).unwrap_or_else(||slot.app.to_string());
+                    crate::mobile_tiles::idle_text(slot.app,&label)
+                } else { let (h,d)=crate::mobile_tiles::placeholder_text(&status,connected,gave_up); (h.to_string(),d) };
+                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,&headline,&detail);
                 self.phone_content(shown_rect);
             }
         }
@@ -254,6 +277,7 @@ impl WmDesk {
         state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
         let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
         crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
+        self.phone_ui.sync_native_widgets(cx,state,full,screen);
         state.phone.order.retain(|c|state.clients.contains_key(c));
         if state.phone.client.is_some_and(|c|!state.clients.contains_key(&c)) {
             state.phone.client=state.phone.order.first().copied();
@@ -305,7 +329,7 @@ impl WmDesk {
         let cache_scene=(matches!(phone.screen,PhoneScreen::Home|PhoneScreen::Recents)
                 && (phone.openness<0.001 || phone.overview>0.001)
             || phone.screen==PhoneScreen::App && phone.overview>0.001)
-            && phone.keyboard<0.5
+            && phone.keyboard<0.5 && phone.drag.is_none()
             && !(phone.shade.open>0.001 && phone.groups.window_visible())
             && phone.pages.position()==phone.pages.current() as f64;
         let key=(full,screen,cx.current_dpi_factor(),style,dark);
@@ -356,6 +380,7 @@ impl WmDesk {
                 }
                 _ => self.draw_window_surface(cx,&cached.frame,full,0.0),
             }
+            self.draw_inset_bands(cx,&phone,full,screen,style,dark,plan.wallpaper && !covered);
             if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
         }
         if record {cache.as_mut().unwrap().frame.begin(cx,full);}
@@ -390,7 +415,9 @@ impl WmDesk {
         if plan.home && !hit {
             self.phone_ui.draw_home(cx,state,screen,home_backdrop,record);
             self.phone_content(screen);
+            state.phone.search_scroll_limit=self.phone_ui.search_scroll_max;
         }
+        self.phone_ui.publish_home_geometry(cx,state,full,screen);
         if plan.home && !hit && phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
         if record {
             // The scene is complete: its pyramid, to the deepest level an
@@ -400,6 +427,7 @@ impl WmDesk {
             let blur=self.compositor.as_mut().unwrap().finish(cx,screen,Some((screen,4.0))).0;
             cached.frame.end(cx);
             self.draw_window_surface(cx,&cached.frame,full,0.0);
+            self.draw_inset_bands(cx,&phone,full,screen,style,dark,plan.wallpaper);
             if phone.openness>0.001 {self.phone_ui.d.solid(cx,screen,crate::shell::alpha(crate::shell::rgb(0,0,0),(0.35*phone.openness) as f32));}
             cached.key=Some(key);
             cached.blur=blur.clone();
@@ -535,6 +563,10 @@ impl WmDesk {
             quad.opacity=1.0; quad.radius=0.0; quad.y_flip=0.0;
             quad.draw_abs(cx,r);
         });
+        // The published accessibility nodes, for an activation to look up.
+        if let Some(state)=scope.data.get_mut::<WmState>() {
+            if state.phone.android.a11y_hits!=self.phone_ui.a11y_hits {state.phone.android.a11y_hits=self.phone_ui.a11y_hits.clone();}
+        }
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
         let state=scope.data.get_mut::<WmState>().unwrap();

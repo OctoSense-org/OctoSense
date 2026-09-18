@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright 2026 OctoSense. Apache-2.0. -->
+<resources>
+    <string name="octosense_brand" translatable="false">OCTOSENSE</string>
+    <string name="octosense_system_label" translatable="false">OctoSense System</string>
+    <string name="octosense_device">Device controls</string>
+    <string name="octosense_close">Close</string>
+    <string name="octosense_connection">Your connection</string>
+    <string name="octosense_checking">Checking connection</string>
+    <string name="octosense_connected">Connected · Network setup</string>
+    <string name="octosense_offline">Offline · Set up a connection</string>
+    <string name="octosense_sign_in">Sign in to this network</string>
+    <string name="octosense_no_internet">Connected without internet</string>
+    <string name="octosense_brightness">Brightness</string>
+    <string name="octosense_auto_brightness">Automatic brightness · Display settings</string>
+    <string name="octosense_volume">Media volume</string>
+    <string name="octosense_rotation">Rotation lock</string>
+    <string name="octosense_wifi">Wi-Fi networks</string>
+    <string name="octosense_bluetooth">Pair Bluetooth</string>
+    <string name="octosense_mobile">Mobile network</string>
+    <string name="octosense_hotspot">Hotspot</string>
+    <string name="octosense_vpn">VPN</string>
+    <string name="octosense_battery">Battery saver</string>
+    <string name="octosense_display">Display</string>
+    <string name="octosense_sound">Sound</string>
+    <string name="octosense_dnd">Do Not Disturb</string>
+    <string name="octosense_accessibility">Accessibility</string>
+    <string name="octosense_setup">OctoSense permission setup</string>
+    <string name="octosense_action_failed">Could not apply this change. Open its settings to continue.</string>
+    <color name="octosense_surface">#f1f6f7</color>
+    <color name="octosense_card">#deeaee</color>
+    <color name="octosense_text">#12232e</color>
+    <color name="octosense_muted">#475f6d</color>
+    <color name="octosense_accent">#126c63</color>
+    <color name="octosense_on_accent">#ffffff</color>
+    <color name="octosense_disabled">#c3d3d9</color>
+    <style name="Theme.OctoSense.System" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">@color/octosense_accent</item>
+        <item name="android:windowBackground">@color/octosense_surface</item>
+        <item name="android:statusBarColor">@color/octosense_surface</item>
+        <item name="android:navigationBarColor">@color/octosense_surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

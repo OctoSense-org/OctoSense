@@ -29,6 +29,18 @@ pub const TILE_APPS: [(&str, TileKind); 5] =
 pub fn is_tile_app(app: &str) -> bool {
     TILE_APPS.iter().any(|(id, _)| *id == app)
 }
+/// Tiles the person took off the home page (Android's placements journal);
+/// the app keeps its icon.
+static HIDDEN_TILES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+pub fn set_hidden_tiles(apps: &[String]) { *HIDDEN_TILES.write().unwrap() = apps.to_vec(); }
+/// The portrait grid's columns (the person's choice, 4 or 5; 0 = the
+/// default 4). Landscape always has seven.
+static GRID_COLUMNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub fn set_grid_columns(columns: usize) { GRID_COLUMNS.store(if (4..=5).contains(&columns) { columns } else { 0 }, std::sync::atomic::Ordering::Relaxed); }
+pub fn grid_columns(landscape: bool) -> usize {
+    if landscape { 7 } else { match GRID_COLUMNS.load(std::sync::atomic::Ordering::Relaxed) { 5 => 5, _ => 4 } }
+}
+pub fn tile_hidden(app: &str) -> bool { HIDDEN_TILES.read().unwrap().iter().any(|a| a == app) }
 
 /// Screen margin around the home content (iOS and Android both use 16pt).
 pub const HOME_MARGIN: f64 = 16.0;
@@ -85,7 +97,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
     let m = HOME_MARGIN;
     let left = screen.pos.x + m;
     let width = (screen.size.x - m * 2.0).max(1.0);
-    let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id)).collect();
+    let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id) && !tile_hidden(id)).collect();
     let groups = crate::mobile_groups::GroupsState::placed(apps);
     let mut tiles = Vec::new();
     if landscape {
@@ -147,7 +159,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
             tiles.push(TileSlot { app: name, kind: TileKind::Group(name), rect: Rect { pos: dvec2(left + col * (s + TILE_GAP), bottom + row * (gh + TILE_GAP)), size: dvec2(w, gh) } });
         }
     }
-    let columns = if landscape { 7 } else { 4 };
+    let columns = grid_columns(landscape);
     let fav_top = tiles.iter().map(|slot| slot.rect.pos.y + slot.rect.size.y + TILE_GAP + TILE_TO_FAVORITES)
         .fold(top, f64::max);
     let fav_bottom = dock.pos.y - FAVORITES_STRIP;
@@ -406,6 +418,18 @@ pub fn wanted_face(client: ClientId, foreground: Option<ClientId>, home_settled:
     }
 }
 
+/// What a tile says before its app has ever been opened this session:
+/// what the app is for, and that a tap starts it. "Tap to open" alone
+/// told the person nothing they could not see.
+pub fn idle_text(app: &str, label: &str) -> (String, String) {
+    match app {
+        "appcard" => ("Ask anything".into(), "Your assistant answers here".into()),
+        "photos" => ("Your photos".into(), "Recent pictures show here".into()),
+        "sheets" => ("Your sheets".into(), "The last sheet you worked on".into()),
+        "mail" => ("Inbox".into(), "New mail lands here".into()),
+        _ => (label.to_string(), "Tap to open".into()),
+    }
+}
 /// The text a tile shows while its client has nothing to draw yet, from
 /// the launcher's own status line (cargo's progress, the first-exec scan).
 pub fn placeholder_text(status: &str, connected: bool, gave_up: bool) -> (&'static str, String) {

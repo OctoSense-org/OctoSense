@@ -1,0 +1,22 @@
+pluginManagement {
+    if (org.gradle.util.GradleVersion.current() != org.gradle.util.GradleVersion.version('8.11.1')) {
+        throw new GradleException('OctoSense Android requires the pinned Gradle 8.11.1 distribution.')
+    }
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        exclusiveContent {
+            forRepository { maven { url = uri('https://jitpack.io') } }
+            filter { includeGroup('com.github.topjohnwu.libsu') }
+        }
+    }
+}
+rootProject.name = 'OctoSenseAndroid'
+include ':contracts', ':system-bridge', ':quickstep'
+// Isolated UI validation; never uses the platform SystemUI package or shared UID.
+include ':systemui-preview'
+include ':shade-preview'
