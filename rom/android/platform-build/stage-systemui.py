@@ -83,8 +83,8 @@ def generate(read, inputs):
     styles = style(styles, 'TextAppearance.StatusBar.Clock', {'android:fontFamily':'sans-serif-medium', 'android:letterSpacing':'0.02'})
     changes['res/values/styles.xml'] = styles
     colors = read('res/values/colors.xml')
-    for name, value in {'global_actions_lite_background':'#101c25', 'global_actions_lite_button_background':'#20313e',
-        'global_actions_lite_button_background_focused':'#25655f', 'global_actions_lite_text':'#f2f7f8'}.items():
+    for name, value in {'global_actions_lite_background':'#181624', 'global_actions_lite_button_background':'#2c2e3e',
+        'global_actions_lite_button_background_focused':'#6750a4', 'global_actions_lite_text':'#f5f5fa'}.items():
         colors, count = re.subn(r'(<color name="' + name + r'">)[^<]*(</color>)',lambda m:m[1]+value+m[2],colors)
         assert count == 1
     changes['res/values/colors.xml'] = colors

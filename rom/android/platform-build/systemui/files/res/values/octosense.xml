@@ -27,13 +27,13 @@
     <string name="octosense_accessibility">Accessibility</string>
     <string name="octosense_setup">OctoSense permission setup</string>
     <string name="octosense_action_failed">Could not apply this change. Open its settings to continue.</string>
-    <color name="octosense_surface">#f1f6f7</color>
-    <color name="octosense_card">#deeaee</color>
-    <color name="octosense_text">#12232e</color>
-    <color name="octosense_muted">#475f6d</color>
-    <color name="octosense_accent">#126c63</color>
+    <color name="octosense_surface">#f3effa</color>
+    <color name="octosense_card">#e9e3f6</color>
+    <color name="octosense_text">#1a1a22</color>
+    <color name="octosense_muted">#5c5870</color>
+    <color name="octosense_accent">#6750a4</color>
     <color name="octosense_on_accent">#ffffff</color>
-    <color name="octosense_disabled">#c3d3d9</color>
+    <color name="octosense_disabled">#d6cfe8</color>
     <style name="Theme.OctoSense.System" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:colorAccent">@color/octosense_accent</item>
         <item name="android:windowBackground">@color/octosense_surface</item>

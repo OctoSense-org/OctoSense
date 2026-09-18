@@ -121,6 +121,7 @@
     <queries>
         <package android:name="dev.makepad.octosense.bridge" />
         <package android:name="dev.makepad.octosense.quickstep" />
+        <package android:name="dev.makepad.octosense.agent" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>

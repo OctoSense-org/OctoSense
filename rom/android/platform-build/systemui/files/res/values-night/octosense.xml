@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Copyright 2026 OctoSense. Apache-2.0. -->
 <resources>
-    <color name="octosense_surface">#101c25</color>
-    <color name="octosense_card">#20313e</color>
-    <color name="octosense_text">#f2f7f8</color>
-    <color name="octosense_muted">#b3c4cf</color>
-    <color name="octosense_accent">#81ded3</color>
-    <color name="octosense_on_accent">#123732</color>
-    <color name="octosense_disabled">#304652</color>
+    <color name="octosense_surface">#181624</color>
+    <color name="octosense_card">#2c2e3e</color>
+    <color name="octosense_text">#f5f5fa</color>
+    <color name="octosense_muted">#bab6cc</color>
+    <color name="octosense_accent">#d0bcff</color>
+    <color name="octosense_on_accent">#381e72</color>
+    <color name="octosense_disabled">#413e58</color>
     <style name="Theme.OctoSense.System" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:colorAccent">@color/octosense_accent</item>
         <item name="android:windowBackground">@color/octosense_surface</item>

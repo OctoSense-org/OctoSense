@@ -80,6 +80,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private final Map<String,LauncherActivityInfo> apps=new HashMap<>();
     private final Map<String,ShortcutInfo> shortcuts=new HashMap<>();
     private ISystemBridge bridge;
+    private dev.makepad.octosense.agent.AgentPlatformClient agent;
     private long catalogRevision;
     private LauncherPlacements placements;
     private File placementFile;
@@ -156,6 +157,11 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         else activity.registerReceiver(profileCallback,profileEvents);
         hints=activity.getSharedPreferences("octosense-hints",Context.MODE_PRIVATE);
         accessibility=new ShellAccessibility(activity,index -> emit("a11y.activate",json("index",index)));
+        // The ROM's agent platform: real tasks for Recents when present, nothing lost when absent.
+        agent=new dev.makepad.octosense.agent.AgentPlatformClient(activity,state -> {
+            emit("agent.connection",json("state",state));
+            if(state.equals("connected")) offer(this::publishRecentApps);
+        });
         activity.getApplicationOverlay().addView(accessibility,new android.widget.FrameLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         activity.registerComponentCallbacks(new android.content.ComponentCallbacks() {
@@ -222,6 +228,19 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private void publishRecentApps() {
         boolean granted=false;
         ArrayList<String> ids=new ArrayList<>();
+        if(agent!=null && agent.has("tasks")) {
+            // The agent platform lists the real task stack, no usage access needed.
+            for(dev.makepad.octosense.agent.AgentPlatformClient.Task task:agent.recentTasks(8)) {
+                String found=null;
+                for(Map.Entry<String,LauncherActivityInfo> app:apps.entrySet()) {
+                    if(!app.getValue().getComponentName().getPackageName().equals(task.pkg)) continue;
+                    if(found==null || app.getValue().getUser().equals(android.os.Process.myUserHandle())) found=app.getKey();
+                }
+                if(found!=null && !ids.contains(found)) ids.add(found);
+            }
+            emit("launcher.recent_apps",json("granted",true,"apps",new JSONArray(ids)));
+            return;
+        }
         try {
             android.app.AppOpsManager ops=(android.app.AppOpsManager)activity.getSystemService(Context.APP_OPS_SERVICE);
             int mode=ops.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),activity.getPackageName());
@@ -924,7 +943,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onResume() {
-        resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); requestResync();
+        resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); main.post(() -> { if(!destroyed && agent!=null) agent.bind(); }); requestResync();
         main.post(this::applyWindowChrome);
         offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
@@ -957,6 +976,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         replyComposer.close();
         homeGeometry.onDestroy();
         widgets.onDestroy();
+        if(agent!=null) agent.unbind();
         if(validationRemote!=null) try {validationRemote.close();} catch(java.io.IOException ignored) {}
         launcher.unregisterCallback(packageCallback);
         activity.unregisterReceiver(profileCallback);
