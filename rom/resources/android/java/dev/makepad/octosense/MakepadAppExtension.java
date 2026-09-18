@@ -225,6 +225,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion));
     }
     /** Recently used Android apps for the shell's Recents, newest first, when usage access is granted. */
+    @SuppressWarnings("deprecation")
     private void publishRecentApps() {
         boolean granted=false;
         ArrayList<String> ids=new ArrayList<>();
@@ -243,7 +244,11 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
         try {
             android.app.AppOpsManager ops=(android.app.AppOpsManager)activity.getSystemService(Context.APP_OPS_SERVICE);
-            int mode=ops.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),activity.getPackageName());
+            // checkOpNoThrow, not unsafeCheckOpNoThrow: the latter arrived in
+            // API 29, and calling it on Android 9 is a NoSuchMethodError that
+            // the catch below does not see and that took the shell down at
+            // its first resume. The two answer the same question.
+            int mode=ops.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,android.os.Process.myUid(),activity.getPackageName());
             granted=mode==android.app.AppOpsManager.MODE_ALLOWED || (mode==android.app.AppOpsManager.MODE_DEFAULT
                     && activity.checkSelfPermission(android.Manifest.permission.PACKAGE_USAGE_STATS)==PackageManager.PERMISSION_GRANTED);
             if(granted) {
