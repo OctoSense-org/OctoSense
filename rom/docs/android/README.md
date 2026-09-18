@@ -14,3 +14,4 @@ Engineering records for the phone shell on the OnePlus 6 bench (15–16 Septembe
 - [perf-findings-oneplus-6t.md](perf-findings-oneplus-6t.md) — the earlier OnePlus 6T / Android 11 findings; keep its numbers apart from the OnePlus 6 ones.
 - [validation-record.md](validation-record.md) — the bench's validation log: exact patches and APK hashes, run blocks, rejections.
 - [vulkan-probe-record.md](vulkan-probe-record.md) — the unchanged Vulkan backend on the same phone, with its kgsl trace.
+- [../build-tool.md](../build-tool.md) — why the fork's `cargo-makepad` is part of the framework: how its activity differs from upstream's, what a stock tool breaks, keeping `cargo makepad` on the fork's tool.
