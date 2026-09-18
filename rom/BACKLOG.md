@@ -102,15 +102,34 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   pictures were refused by App Transport Security — fixed with
   `resources/apple/Info.plist` merged into the bundle
   (`package.metadata.makepad.ios.info_plist`). With both, the log shows no
-  storage or ATS errors. Not yet checked: rotation and the reader on the
-  device. Also seen: the AppCard banner and icon are off the first home
-  page on the iPhone's shorter safe area (layout budget, to confirm), and
-  the shell keeps its own light/dark toggle rather than the system
-  appearance. The deep stack at startup is worth its own item: a 16 MB
-  main thread is a workaround for frames the widget build should not need.
+  storage or ATS errors, and by hand on the phone: feed pictures show,
+  Today's headlines are there at once after a relaunch, and a headline
+  opens the reader and Back returns. The transport-security exception
+  was then narrowed to web content only, with feed pictures asked for
+  over https (`feed.rs`). Not yet checked: rotation. Also seen: the
+  AppCard banner and icon are off the first home page on the iPhone's
+  shorter safe area (layout budget, to confirm), and the shell keeps its
+  own light/dark toggle rather than the system appearance. The deep stack
+  at startup is MOBILE-07.
 
-  Acceptance: rotation and the reader checked on the device; the fork's
-  `feat/ios-bringup` (packager fix, iOS storage root) merged and re-pinned.
+  Acceptance: rotation checked on the device; the fork's `feat/ios-bringup`
+  (packager fix, iOS storage root) merged and re-pinned.
+
+- [ ] **MOBILE-07 — P2: Startup builds the widget tree on a deep stack.**
+
+  On an iPhone 16 Pro the first device build crashed with `EXC_BAD_ACCESS`
+  in `PhoneSurface::script_new`, reached through nested
+  `script_apply → on_after_apply → script_new` frames while the shell's
+  widget tree was built: iOS gives the main thread 1 MB, and the build
+  needed more. `.cargo/config.toml` links iOS with a 16 MB main thread,
+  which is a workaround: the frames should not be that large or that
+  deep. Measure the stack the build takes (a probe in `script_new`, or
+  `pthread_get_stacksize_np` against the stack pointer at the deepest
+  point), find the big frames (large structs built by value, likely
+  `PhoneSurface`), and box or stage them so the default stack suffices.
+
+  Acceptance: the shell starts on an iPhone with the linker's stack_size
+  removed.
 
 - [ ] **MOBILE-02 — P2: Adopt the upstream Android compositor orientation fix.**
 
@@ -287,7 +306,7 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   it in `OpenPolicy::for_platform`, and a headline opening in the reader on a
   Linux desktop.
 
-- [ ] **NEWS-05 — P2: Check the web view plumbing on an Android device, and on iOS.**
+- [x] **NEWS-05 — P2: Check the web view plumbing on an Android device, and on iOS.**
 
   Android checked on the OnePlus 6T on 2026-09-17: a headline opens in the
   Android WebView inside OctoSense's activity, placed at the reader's page
@@ -308,15 +327,22 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   iOS is still open (MOBILE-01).
 
   The fork revision is pinned since MOBILE-06 (2026-09-17). iOS checked on
-  the iPhone 16 Pro simulator the same evening (MOBILE-01): a headline
-  opens the reader on the WKWebView inside OctoSense's window and Back
-  returns to the list. The page-error report is Android-only at this
-  revision, so a failed load on iOS leaves the pane blank instead of
-  showing the failure pane.
+  the iPhone 16 Pro simulator the same evening and on the phone itself
+  (MOBILE-01): a headline opens the reader on the WKWebView inside
+  OctoSense's window and Back returns to the list. The page-error report
+  is Android-only at this revision: NEWS-10.
 
-  Acceptance: the same check on an iOS device; `webView:didFailProvisional-
-  Navigation:` reported as `NativeSystemBrowserPageError` on the Apple
-  backends so the failure pane shows there too.
+- [ ] **NEWS-10 — P3: The failure pane on the Apple backends.**
+
+  A failed main-frame load is reported as `NativeSystemBrowserPageError`
+  by the Android WebView alone, so on iOS and macOS a page that does not
+  load leaves the reader's pane blank instead of showing the host, the
+  reason and `Try again`.
+
+  Acceptance: `webView:didFailProvisionalNavigation:` (and
+  `didFailNavigation:`) on the Apple backends' WKWebView delegate reported
+  as the same action; the failure pane seen on the phone with the network
+  off.
 
 - [ ] **NEWS-06 — P2: Keyboard focus while the reader's web view is attached.**
 
