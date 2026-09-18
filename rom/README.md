@@ -61,7 +61,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | Home page, left quarter | pull down | the shade's Notifications |
 | Top edge, left / right | pull down | Notifications / Controls (as well) |
 | Home page | swipe sideways | pages: Glance ⇠ apps ⇢ App Library |
-| App Library | pull down | back to the home page |
+| App Library | drag | scrolls the grid; past either end it stretches and springs back (Back or Home closes it) |
 | Bottom band (above the system's) | swipe up / hold / sideways | Home / Recents / quick switch |
 | Side edges | swipe in | Back |
 | App icon | long press | Add to / remove from Home, dock, App info, Uninstall |
