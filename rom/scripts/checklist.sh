@@ -13,8 +13,10 @@ check "home role is OctoSense" "$(sh cmd package resolve-activity --brief -c and
 check "launcher is a privileged system app" "$(sh pm path dev.makepad.octosense | grep -c system_ext/priv-app)" 1
 check "bridge is a privileged system app" "$(sh pm path dev.makepad.octosense.bridge | grep -c system_ext/priv-app)" 1
 check "bridge has notification access" "$(sh settings get secure enabled_notification_listeners | grep -c dev.makepad.octosense.bridge)" 1
-check "Recents is the OctoSense fork" "$(sh 'cmd overlay dump 2>/dev/null | grep -c OctoSenseFrameworkOverlay' )" 1
-check "Trebuchet absent" "$(sh pm list packages | grep -c com.android.launcher3)" 0
+check "framework overlay enabled" "$(sh 'cmd overlay list' | grep -c '^\[x\] dev.makepad.octosense.overlay.framework')" 1
+check "Trebuchet absent" "$(sh pm list packages | grep -c '^package:com.android.launcher3$')" 0
+check "agent service installed" "$(sh pm path dev.makepad.octosense.agent | grep -c system_ext/priv-app)" 1
+check "purple palette provisioned" "$(sh settings get secure theme_customization_overlay_packages | grep -c 6750A4)" 1
 check "Magisk absent" "$(sh pm list packages | grep -c com.topjohnwu.magisk)" 0
 check "keyguard present" "$(sh dumpsys window | grep -c 'mDreamingLockscreen\|KeyguardController')" 1
 echo "passed $ok, failed $fail"; [ "$fail" -eq 0 ]
