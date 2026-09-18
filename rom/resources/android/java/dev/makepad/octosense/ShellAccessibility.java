@@ -34,6 +34,8 @@ final class ShellAccessibility extends View {
             if(id==View.NO_ID || id==AccessibilityNodeProvider.HOST_VIEW_ID) {
                 AccessibilityNodeInfo host=AccessibilityNodeInfo.obtain(ShellAccessibility.this);
                 ShellAccessibility.this.onInitializeAccessibilityNodeInfo(host);
+                host.setClassName("android.view.ViewGroup");
+                host.setContentDescription(null);
                 for(Node node:nodes) host.addChild(ShellAccessibility.this,node.index);
                 return host;
             }
@@ -85,10 +87,11 @@ final class ShellAccessibility extends View {
     ShellAccessibility(Context context,Activate activate) {
         super(context);
         this.activate=activate;
+        // The host itself says nothing: a described host is what a screen
+        // reader would focus as one big element instead of its children.
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
         setClickable(false);
         setFocusable(false);
-        setContentDescription("OctoSense");
     }
     @Override public AccessibilityNodeProvider getAccessibilityNodeProvider() { return provider; }
     /** Touches are the surface's. */
