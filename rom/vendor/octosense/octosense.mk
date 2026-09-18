@@ -5,6 +5,7 @@
 PRODUCT_PACKAGES += \
     OctoSenseHome \
     OctoSenseBridge \
+    OctoSenseAgent \
     OctoSenseFrameworkOverlay
 
 # The native Quickstep fork with the OctoSense panel and Recents, staged into

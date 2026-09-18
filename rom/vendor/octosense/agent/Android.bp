@@ -1,0 +1,24 @@
+// The OctoSense agent platform service: one persistent, platform-signed
+// privileged process that gives agent code the framework's hidden APIs
+// (tasks and snapshots, screen capture, input injection, secure settings,
+// task control, the status bar) behind a single Binder surface. See
+// docs/agent-service.md.
+android_app {
+    name: "OctoSenseAgent",
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.aidl",
+    ],
+    aidl: {
+        local_include_dirs: ["src"],
+    },
+    manifest: "AndroidManifest.xml",
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+    optimize: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-octosense.xml"],
+}

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.makepad.octosense.agent"
+    android:versionCode="1"
+    android:versionName="0.1">
+
+    <!-- Only OctoSense's own platform-signed apps may bind. -->
+    <permission android:name="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM"
+        android:protectionLevel="signature" />
+
+    <!-- tasks -->
+    <uses-permission android:name="android.permission.REAL_GET_TASKS" />
+    <uses-permission android:name="android.permission.MANAGE_ACTIVITY_TASKS" />
+    <uses-permission android:name="android.permission.START_TASKS_FROM_RECENTS" />
+    <uses-permission android:name="android.permission.REMOVE_TASKS" />
+    <uses-permission android:name="android.permission.STOP_APP_SWITCHES" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
+    <!-- screen -->
+    <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
+    <uses-permission android:name="android.permission.READ_FRAME_BUFFER" />
+    <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" />
+    <!-- input -->
+    <uses-permission android:name="android.permission.INJECT_EVENTS" />
+    <!-- settings -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+    <uses-permission android:name="android.permission.DEVICE_POWER" />
+    <!-- notifications -->
+    <uses-permission android:name="android.permission.MANAGE_NOTIFICATIONS" />
+    <!-- apps -->
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
+    <!-- statusbar -->
+    <uses-permission android:name="android.permission.STATUS_BAR" />
+    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:label="OctoSense Agent"
+        android:persistent="true"
+        android:directBootAware="true"
+        android:defaultToDeviceProtectedStorage="true"
+        android:allowBackup="false"
+        android:supportsRtl="true">
+
+        <service android:name=".AgentPlatformService"
+            android:exported="true"
+            android:directBootAware="true"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM">
+            <intent-filter>
+                <action android:name="dev.makepad.octosense.agent.AGENT_PLATFORM" />
+            </intent-filter>
+        </service>
+
+        <!-- First-boot provisioning: the OctoSense palette and the shell's defaults. -->
+        <receiver android:name=".ProvisionReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

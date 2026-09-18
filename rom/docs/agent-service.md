@@ -41,3 +41,27 @@ the same bridge contracts the launcher already uses.
 `scripts/` on the host: build, flash the boot and system images, run the
 device checklist, capture screens. Each capability lands with a checklist
 entry that exercises it on the bench phone.
+
+## Implementation (vendor/octosense/agent)
+
+`OctoSenseAgent` builds in the ROM tree with `platform_apis: true`, so it uses the
+hidden framework surface directly: `ActivityTaskManager.getTasks` and
+`getTaskSnapshot` (tasks), `IWindowManager.captureDisplay` with a synchronous
+`ScreenCapture` listener (screen, the path SystemUI's own screenshot takes),
+`InputManager.injectInputEvent` (input), the three settings tables (settings),
+`startActivityFromRecents` / `removeTask` / `forceStopPackage` (apps) and
+`StatusBarManager`'s hidden expand and collapse (statusbar). `tree` is absent
+until the accessibility bridge lands.
+
+Callers must be platform-signed and one of the OctoSense packages; results are
+Bundles with `ok` and a `reason` (`denied`, `keyguard`, `unavailable`, `failed`).
+Input is refused while the keyguard is showing. The last 200 calls are kept in
+an audit log (`getAuditLog`).
+
+On the bench phone the service answers `dumpsys` too, so every capability can be
+driven from adb without a client: `scripts/agent-test.sh`.
+
+`ProvisionReceiver` runs once per user on boot and seeds the Material You
+palette with the launcher's purple (0x6750A4, tonal spot), which SettingsProvider
+has no default for. The same setting was applied by hand on the LineageOS phone
+on 18 Sep 2026 and turned its shade purple immediately.
