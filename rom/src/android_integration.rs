@@ -158,7 +158,17 @@ mod placement_tests {
     use super::*;
 
     fn decode(text: &str) -> Option<(Vec<String>, Vec<String>, Vec<String>)> {
-        decode_placements(&makepad_strict_json::parse(text.as_bytes()).unwrap())
+        decode_placements(&makepad_strict_json::parse(text.as_bytes()).unwrap()).map(|(f, d, h, _)| (f, d, h))
+    }
+    #[test]
+    fn placements_carry_an_optional_order_of_hosted_and_android_ids() {
+        let text = r#"{"version":2,"favorites":["android:0:a/b"],"dock":["","","",""],"hidden_hosted":[],"order":["sheets","android:0:a/b"]}"#;
+        let (_, _, _, order) = decode_placements(&makepad_strict_json::parse(text.as_bytes()).unwrap()).unwrap();
+        assert_eq!(order, vec!["sheets".to_string(), "android:0:a/b".to_string()]);
+        let without = r#"{"version":2,"favorites":[],"dock":["","","",""],"hidden_hosted":[]}"#;
+        assert!(decode_placements(&makepad_strict_json::parse(without.as_bytes()).unwrap()).unwrap().3.is_empty());
+        let bad = r#"{"version":2,"favorites":[],"dock":["","","",""],"hidden_hosted":[],"order":["Not An Id"]}"#;
+        assert!(decode_placements(&makepad_strict_json::parse(bad.as_bytes()).unwrap()).is_none());
     }
     #[test]
     fn legacy_placements_keep_native_identity_and_default_hosted_visibility() {

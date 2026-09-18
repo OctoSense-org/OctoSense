@@ -590,7 +590,10 @@ mod tests {
         assert_eq!(p.index, -1.0);
         assert!(p.on_glance());
         p.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Right, progress: 1.0 }));
-        assert_eq!(p.drag, 0.0, "no dragging past the glance page");
+        assert!(p.drag < 0.0 && p.drag > -0.16, "past the glance page the pager only stretches a little: {}", p.drag);
+        p.step(1.0 / 60.0, Some(ShellGesture::Cancel(GestureKind::Page(Dir::Right))));
+        settle(&mut p);
+        assert_eq!((p.index, p.drag), (-1.0, 0.0), "and springs back on lift");
         assert!(!p.take_library_request());
         // Left past the last apps page reaches the library exactly once,
         // and the pager rests on the last apps page underneath it.
