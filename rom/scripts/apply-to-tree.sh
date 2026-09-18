@@ -8,3 +8,5 @@ rsync -a --delete "$HERE/vendor/octosense/" "$TREE/vendor/octosense/"
 PRODUCT="$TREE/device/oneplus/enchilada/lineage_enchilada.mk"
 grep -q 'vendor/octosense/octosense.mk' "$PRODUCT" || printf '\n# OctoSense ROM layer\n$(call inherit-product, vendor/octosense/octosense.mk)\n' >> "$PRODUCT"
 echo "applied to $TREE"
+
+python3 "$HERE/patches/lineage-kernel-out-prefix.py" "$TREE"
