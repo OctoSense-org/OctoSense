@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+<title>Techmeme</title>
+<link>https://www.techmeme.com/</link>
+<description>Tech Web, page A1</description>
+<item>
+<title><![CDATA[Acme &amp; Co launches "Widget 2" for $99]]></title>
+<link>https://www.techmeme.com/260916/p1#a260916p1</link>
+<guid>https://www.techmeme.com/260916/p1#a260916p1</guid>
+<pubDate>Wed, 16 Sep 2026 08:15:01 -0400</pubDate>
+<description><![CDATA[<a href="https://example.com/a">Example</a>: Acme launches <b>Widget 2</b> &mdash; a $99 device.]]></description>
+</item>
+<item>
+<title>Second story with &lt;brackets&gt;</title>
+<link>https://www.techmeme.com/260916/p2#a260916p2</link>
+<pubDate>Wed, 16 Sep 2026 07:00:00 GMT</pubDate>
+<description>Plain text description.</description>
+</item>
+<item>
+<title></title>
+<link>https://www.techmeme.com/skipped</link>
+</item>
+<item>
+<title>No link item is skipped</title>
+</item>
+</channel>
+</rss>

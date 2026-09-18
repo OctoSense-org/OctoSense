@@ -18,9 +18,15 @@ pub fn home() -> PathBuf {
     let custom = std::env::var_os("OCTOSENSE_HOME")
         .or_else(|| std::env::var_os("MAKEOS_HOME"))
         .map(PathBuf::from);
-    let user = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from);
+    // Where the platform gives the app a data directory of its own (Android's
+    // files directory, reported before startup), that is the home: `HOME`
+    // there is not writable, and the shell's settings and every module's
+    // storage would fail with a read-only file system.
+    let user = makepad_widgets::makepad_platform::home::platform_data_dir().or_else(|| {
+        std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+    });
     let path = resolve_home(custom.as_deref(), user.as_deref());
     if path.is_absolute() {
         path

@@ -5364,6 +5364,7 @@ dependencies = [
  "makepad-wm-api",
  "makepad-wm-theme",
  "octosense-appcard",
+ "octosense-news",
  "octosense-photos",
  "octosense-reference",
 ]
@@ -5376,6 +5377,17 @@ dependencies = [
  "makepad-widgets",
  "octos-app",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-news"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
 ]
 
 [[package]]

@@ -1004,6 +1004,22 @@ mod tests {
         assert_eq!(args, ["--stdin-loop", "$(literal)"]);
     }
 
+    /// A launch's extra arguments (a URL from `WmRequest::Launch`, a file
+    /// to open) come last, after `--stdin-loop` and the app's own args,
+    /// for a cargo launch and an installed binary alike.
+    #[test]
+    fn launch_extra_arguments_come_after_the_apps_own() {
+        let apps = crate::octosense::catalog::parse_catalog(br#"[
+            {"id":"ref","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","args":["two words"]},
+            {"id":"installed","label":"Installed","executable":"/usr/bin/true","args":["--demo"]}
+        ]"#, Path::new("/catalog")).unwrap();
+        let extra = ["https://x/a".to_string()];
+        let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &extra).unwrap();
+        assert_eq!(&args[args.len() - 3..], ["--stdin-loop", "two words", "https://x/a"]);
+        let (_, args) = launch_argv(&apps[1], None, &extra).unwrap();
+        assert_eq!(args, ["--stdin-loop", "--demo", "https://x/a"]);
+    }
+
     #[test]
     fn the_default_catalog_keeps_the_local_reference_app() {
         let apps = crate::octosense::catalog::parse_catalog(include_bytes!("../config/apps.json"), Path::new("/catalog")).unwrap();
