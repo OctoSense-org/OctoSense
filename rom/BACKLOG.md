@@ -101,40 +101,37 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   phone; provide a usable Photos library/import setup; test portrait, landscape,
   appearance changes and persistence without a desktop checkout.
 
-- [ ] **MOBILE-05 — P2: An Android HOME intent stops the shell presenting frames (not reproduced since).**
+- [x] **MOBILE-05 — P1: An Android HOME intent stops the shell presenting frames.**
 
-  On the OnePlus 6T with the framework at `d4502ef`, a HOME intent delivered
-  to the running activity (`adb shell input keyevent KEYCODE_HOME`, or the
-  system's Home while an app is open) leaves the shell alive but blank: the
-  JNI intent-extras pass runs (`android_jni.rs:685` logs the proxy state),
-  the shell's own `[phone] home intent` line never follows, later gestures
-  are still recognised (`gesture commit HomeUp` is logged) but nothing is
-  drawn again until the process is force-stopped. Reproduced four times on
-  2026-09-17, twice with only Photos or nothing open, so it is not the News
-  module. The earlier note that the Home role worked was against the
-  previous fork revision.
+  On the OnePlus 6T a HOME intent delivered to the running activity
+  (`adb shell input keyevent KEYCODE_HOME`, or the system's Home while an
+  app is open) left the shell alive but blank: touches were still
+  recognised but nothing was drawn until the process was force-stopped.
+  Reproduced on 2026-09-17 with logcat and `dumpsys activity`: two
+  `MakepadApp` records in one process. A launcher started by a plain
+  component intent (`am start -n`, which the build tool and the reset
+  recipe use) lives in a *standard* task, and Android never reuses a
+  standard task for a home-type start, so the Home button created a second
+  instance in the home task. The framework keeps one `Cx` and one surface:
+  the new instance's surface was adopted, then the old instance was stopped
+  and its `surfaceDestroyed` tore that surface down. This is why the
+  `activityOnCreate` intent-extras pass ran after the press and
+  `[phone] home intent` never followed (the HOME intent was the new
+  instance's launch intent, not an `onNewIntent`). It did not reproduce
+  while the running instance had itself been started by a HOME intent.
 
-  Not reproduced later the same day on the fork's `feat/news-reader-platform`
-  (`6973b68`) with the host at `0c1314d`, built with the fork's tool:
-  seven HOME deliveries (from the home page, from the News reader with
-  its web view attached, from Photos, three in a row, and after a forced
-  in-process activity re-creation) each logged `[phone] home intent`,
-  showed the home page and kept presenting frames. What the original
-  report does establish: the intent-extras pass runs only from
-  `activityOnCreate`, so in the failing runs the HOME press *re-created*
-  the activity in the live process (the main loop quits on `Destroy`, and
-  `android_entry` starts a second `Cx` in the same pid); that path was
-  exercised here by a font-scale change (`settings put system font_scale
-  1.15`) and drew correctly. No logcat of a failing run survives, and the
-  fork tree carried uncommitted edits at the time, so the cause is not
-  known. Diagnostics for the next sighting: capture `adb logcat -v time`
-  across the press; this ROM logs `vendor.debug.egl.swapinterval` once per
-  `eglSwapBuffers`, so a count of those lines is a frame counter, and an
-  `android_jni.rs … proxy` line after the press means the activity was
-  re-created rather than handed `onNewIntent`.
+  Fixed on 2026-09-17 in the fork (`feat/news-reader-platform`,
+  `5c5b6b443`): the newest `MakepadActivity` owns the native side and an
+  instance it replaces is superseded — its surface and lifecycle callbacks
+  no longer reach native, and it finishes — and `initChoreographer` no
+  longer starts a second render loop. Checked on the device: force-stop,
+  `am start -n`, HOME shows the home page and keeps presenting frames, one
+  activity record remains, and a later HOME reaches `onNewIntent`. A
+  launcher started as Android would start it (`am start -a
+  android.intent.action.MAIN -c android.intent.category.HOME`, no `-n`)
+  never hits the path at all.
 
-  Acceptance: a fresh reproduction with logcat, or the item closed after a
-  week without one.
+  Acceptance: the fork revision adopted (MOBILE-06).
 
 - [ ] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
 
@@ -144,7 +141,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   `NativeSystemBrowserPageError` action, with their Android activity and
   JNI side and the `news` app icon. They are published on the fork's
   `feat/news-reader-platform` branch
-  (`6973b6850dac2e70abc0e5a0b1a230c99158d728`, three commits on `d4502ef`),
+  (`5c5b6b443`, four commits on `d4502ef`),
   not on its `main`. Until the pin moves, this tree builds only against a
   `../makepad` checkout of that branch, and
   `tools/setup-native.py --check` rejects the checkout.
