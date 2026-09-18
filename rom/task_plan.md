@@ -1,4 +1,48 @@
-# MakeOS scoping plan
+# Photos continuation — 2026-09-17
+
+## Objective
+Make the Photos Library grid zoomable with pinch on mobile and scrolling on
+desktop, following `/Users/guofoo/git/mp/makepad/apps/photos` where useful.
+
+## Phases
+1. Recover prior scope, inspect the current implementation, and establish the test/device baseline — complete; 12 Photos tests pass.
+2. Inspect reference Photos zoom and document the implementation/validation steps — complete; see `docs/plans/2026-09-17-photos-library-zoom.md`.
+3. Implement Library zoom and verify its affected behaviors — complete; 21 Photos tests, shell compile check, and formatting pass.
+4. Validate on the connected phone and update documentation — the maintainer confirmed the zoom on a device build; `docs/photos.md` records the behavior, the checks, and the stale `PortalList` drag-state caveat. No new device evidence was captured by this session.
+
+## Current context
+- Main includes Photos PR #12 at `325eaa2`; no tracked application code changes at session start.
+- Library, Collections, albums, search, People, Memories, and home-card previews were completed previously.
+- User selected Library zoom: pinch on mobile and scrollbar on desktop, and supplied the Makepad Photos reference.
+- OnePlus 6T `19f8cedf` is connected.
+- Removed this session's preliminary import plan and failing test; no import application code was written.
+
+---
+
+# Previous task — OctoSense Photos (2026-09-16)
+
+## Objective
+Build a working Photos app within OctoSense-mobile, guided by Apple's Photos App Store screenshots. Separate the camera Library from Collections (user albums and automatically generated Memories). Prefer OctoSense AppCards, widgets, and Octoscripts; consult `/Users/guofoo/git/mp/makepad/apps/photos` as a reference.
+
+## Phases
+1. Clarify data source, interactions, and validation platform; inspect reference screenshots and local architecture — complete.
+2. Document the design, reuse decisions, and implementation plan — complete.
+3. Implement the Photos data model, persistence, native UI, and shell integration — complete.
+4. Verify functional flows and visual layout on the chosen platform(s); fix defects — complete on the connected OnePlus 6T.
+5. Document run instructions, scope, and validation evidence — complete; see `docs/photos.md`.
+
+## Working constraints
+- User requested clarifying questions before implementation and autonomous continuation to a working app.
+- Preserve the untracked image-generation script and all generated family photos.
+- Keep existing unrelated code, historical planning records, and the reference Makepad checkout intact.
+- Confirmed: sample images plus generated portraits, full album/viewer/Memories interactions, and validation on the connected OnePlus 6T.
+
+## Errors
+- Initial combined skill/repository output was truncated; subsequent reads are bounded and grouped by topic.
+
+---
+
+# MakeOS scoping plan (historical)
 
 ## Objective
 Implement the agreed minimal standalone MakeOS project derived from Makepad's `apps/wm`, runnable with `cargo run`, with process hosting and explicit tracking/sync of copied upstream files. User approved the proposed first milestone.

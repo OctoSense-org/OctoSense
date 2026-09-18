@@ -102,6 +102,11 @@ script_mod! {
             editor_caption := mod.widgets.PhotosLabel {text: "Select photos for this album" draw_text.color: #77777f draw_text.text_style.font_size: 13}
         }
         message := mod.widgets.PhotosLabel {visible: false width: Fill margin: Inset{left: 18 right: 18 bottom: 8} draw_text.wrap: Words draw_text.color: #c14444 text: ""}
+        // Desktop zoom: the same density the pinch reaches, on a knob.
+        zoom_bar := View {visible: false width: Fill height: 40 flow: Right spacing: 12 padding: Inset{left: 20 right: 20 top: 0 bottom: 6} align: Align{y: 0.5}
+            zoom_caption := mod.widgets.PhotosLabel {text: "Zoom" draw_text.color: #85858b draw_text.text_style.font_size: 12}
+            zoom_slider := Slider {width: Fill height: 28 min: 0.0 max: 1.0 default: 0.5 text: ""}
+        }
         body := View {width: Fill height: Fill flow: Overlay
             list := PortalList {
                 width: Fill height: Fill
@@ -134,10 +139,17 @@ script_mod! {
                     second := mod.widgets.PhotosAlbumTile {count.visible: false title.align: Align{x: 0.5 y: 0.5}}
                     third := mod.widgets.PhotosAlbumTile {count.visible: false title.align: Align{x: 0.5 y: 0.5}}
                 }
+                // Nine reusable cells; the view shows as many as the zoom asks for.
                 Grid := View {width: Fill height: 132 flow: Right spacing: 2 padding: Inset{bottom: 2}
                     first := mod.widgets.PhotosCell {}
                     second := mod.widgets.PhotosCell {}
                     third := mod.widgets.PhotosCell {}
+                    fourth := mod.widgets.PhotosCell {visible: false}
+                    fifth := mod.widgets.PhotosCell {visible: false}
+                    sixth := mod.widgets.PhotosCell {visible: false}
+                    seventh := mod.widgets.PhotosCell {visible: false}
+                    eighth := mod.widgets.PhotosCell {visible: false}
+                    ninth := mod.widgets.PhotosCell {visible: false}
                 }
                 Utility := View {width: Fill height: 64 padding: Inset{left: 18 right: 18 top: 4 bottom: 8}
                     favorite_collection := mod.widgets.PhotosButton {width: Fill height: Fill text: "Favorites"}

@@ -1,4 +1,5 @@
 use crate::model::{self, Memory, Photo, Store};
+use crate::zoom::{LibraryZoom, PinchTracker};
 use makepad_widgets::kit::*;
 use makepad_widgets::*;
 use std::{
@@ -11,6 +12,33 @@ include!(concat!(env!("OUT_DIR"), "/photo_assets.rs"));
 
 const PLUS_ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="#007aff" stroke-width="2" stroke-linecap="round"/></svg>"##;
 const HEART_ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z" fill="none" stroke="#007aff" stroke-width="1.8" stroke-linejoin="round"/></svg>"##;
+/// The Library's density at zoom 1.0, and the layout every other collection
+/// keeps. `Grid` rows carry one cell per slot; extra slots stay hidden.
+const DEFAULT_GRID_COLUMNS: usize = 3;
+
+/// The zoom slider is for pointer platforms; a touch device pinches instead.
+fn shows_zoom_slider(os: &OsType) -> bool {
+    matches!(
+        os,
+        OsType::Windows | OsType::Macos | OsType::LinuxWindow(_) | OsType::LinuxDirect
+    )
+}
+
+/// The Grid row's cell slots, in draw order.
+fn grid_slots() -> [LiveId; 9] {
+    [
+        id!(first),
+        id!(second),
+        id!(third),
+        id!(fourth),
+        id!(fifth),
+        id!(sixth),
+        id!(seventh),
+        id!(eighth),
+        id!(ninth),
+    ]
+}
+
 const HEART_FILLED_ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z" fill="#007aff"/></svg>"##;
 
 #[derive(Clone, Default, PartialEq)]
@@ -87,6 +115,18 @@ pub struct PhotosView {
     confirming_delete: bool,
     #[rust]
     image_keys: HashMap<WidgetUid, String>,
+    #[rust]
+    zoom: LibraryZoom,
+    #[rust]
+    pinch: PinchTracker,
+    /// The photo a running zoom holds, with the screen offset of its row.
+    #[rust]
+    zoom_anchor: Option<(String, f64)>,
+    /// Grid geometry from the last draw, so a gesture knows what it grabbed.
+    #[rust]
+    grid_rect: Rect,
+    #[rust]
+    row_rects: Vec<(usize, Rect)>,
 }
 
 impl PhotosView {
@@ -229,8 +269,21 @@ impl PhotosView {
         }
     }
 
-    fn rebuild(&mut self, cx: &mut Cx) {
+    /// Photos per grid row. Only the Library zooms; the other collections
+    /// keep the layout their tiles were designed for.
+    fn grid_columns(&self) -> usize {
+        if self.route == Route::Library {
+            self.zoom.columns()
+        } else {
+            DEFAULT_GRID_COLUMNS
+        }
+    }
+
+    fn rebuild_rows(&mut self) {
+        let columns = self.grid_columns();
         self.rows.clear();
+        // The drawn geometry belongs to the rows we are replacing.
+        self.row_rects.clear();
         if self.route == Route::Collections {
             if !self.memories.is_empty() {
                 self.rows
@@ -301,23 +354,75 @@ impl PhotosView {
                         month_title(&month),
                         format!("{} photos", ids.len()),
                     ));
-                    for chunk in ids.chunks(3) {
+                    for chunk in ids.chunks(columns) {
                         self.rows.push(Row::Grid(chunk.to_vec()));
                     }
                 }
             } else {
-                for chunk in self.photo_ids.chunks(3) {
+                for chunk in self.photo_ids.chunks(columns) {
                     self.rows.push(Row::Grid(chunk.to_vec()));
                 }
             }
             self.rows
                 .push(Row::End(format!("{} photos", self.photo_ids.len())));
         }
+    }
+
+    fn rebuild(&mut self, cx: &mut Cx) {
+        self.rebuild_rows();
         self.view
             .portal_list(cx, ids!(list))
             .set_first_id_and_scroll(0, 0.0);
         self.sync_chrome(cx);
         self.view.redraw(cx);
+    }
+
+    /// Reflows the grid at the current zoom, leaving the anchored photo where
+    /// the gesture found it instead of jumping back to the top of the library.
+    fn apply_zoom(&mut self, cx: &mut Cx) {
+        self.rebuild_rows();
+        if let Some((id, offset)) = self.zoom_anchor.clone() {
+            if let Some(row) = self
+                .rows
+                .iter()
+                .position(|row| matches!(row, Row::Grid(ids) if ids.iter().any(|i| *i == id)))
+            {
+                self.view
+                    .portal_list(cx, ids!(list))
+                    .set_first_id_and_scroll(row, offset);
+            }
+        }
+        self.view
+            .slider(cx, ids!(zoom_slider))
+            .set_value(cx, self.zoom.normalized());
+        self.view.redraw(cx);
+    }
+
+    /// The desktop knob, driving the state the gestures drive. The photo at the
+    /// top of the grid stands in for the pointer the knob does not have.
+    fn set_zoom_position(&mut self, cx: &mut Cx, position: f64) {
+        if let Some(anchor) = self.anchor_at(self.grid_rect.pos + dvec2(1.0, 1.0)) {
+            self.zoom_anchor = Some(anchor);
+        }
+        self.zoom.set_normalized(position);
+        self.apply_zoom(cx);
+    }
+
+    /// The photo drawn under `pos`, with the screen offset of its row, so a
+    /// reflow can put that photo back under the fingers.
+    fn anchor_at(&self, pos: DVec2) -> Option<(String, f64)> {
+        let columns = self.grid_columns() as f64;
+        self.row_rects.iter().find_map(|(index, rect)| {
+            if pos.y < rect.pos.y || pos.y > rect.pos.y + rect.size.y {
+                return None;
+            }
+            let Some(Row::Grid(ids)) = self.rows.get(*index) else {
+                return None;
+            };
+            let column = ((pos.x - rect.pos.x) / rect.size.x.max(1.0) * columns).floor();
+            let column = (column.max(0.0) as usize).min(ids.len().checked_sub(1)?);
+            Some((ids[column].clone(), rect.pos.y - self.grid_rect.pos.y))
+        })
     }
 
     fn sync_chrome(&mut self, cx: &mut Cx) {
@@ -333,6 +438,7 @@ impl PhotosView {
                 id!(editor_bar),
                 id!(editor_footer),
                 id!(footer),
+                id!(zoom_bar),
             ] {
                 self.view.widget(cx, &[id]).set_visible(cx, false);
             }
@@ -346,6 +452,12 @@ impl PhotosView {
             }
             return;
         }
+        // The knob mirrors the pinch, where there is a pointer to drag it with.
+        let zooming = self.route == Route::Library && shows_zoom_slider(cx.os_type());
+        self.view.view(cx, ids!(zoom_bar)).set_visible(cx, zooming);
+        self.view
+            .slider(cx, ids!(zoom_slider))
+            .set_value(cx, self.zoom.normalized());
         let viewer = self.route == Route::Viewer;
         let editor = self.route == Route::Editor;
         let root = matches!(self.route, Route::Library | Route::Collections);
@@ -535,14 +647,18 @@ impl PhotosView {
                 }
             }
             Row::Grid(ids) => {
+                let columns = self.grid_columns();
+                // Square cells: the row's own bottom padding keeps the gutter.
+                let side = ((width - 2.0 * (columns - 1) as f64) / columns as f64).max(24.0);
                 if let Some(mut row) = item.borrow_mut::<View>() {
-                    row.walk.height = Size::Fixed(((width - 4.0) / 3.0).max(76.0));
+                    row.walk.height = Size::Fixed(side + 2.0);
                 }
-                for (i, slot) in [id!(first), id!(second), id!(third)]
-                    .into_iter()
-                    .enumerate()
-                {
+                for (i, slot) in grid_slots().into_iter().enumerate() {
                     let cell = item.widget(cx, &[slot]);
+                    cell.set_visible(cx, i < columns);
+                    if i >= columns {
+                        continue;
+                    }
                     let id = ids.get(i);
                     self.set_image(cx, cell.image(cx, ids!(image)), id.map(String::as_str));
                     let mark = if self.route == Route::Editor {
@@ -668,6 +784,9 @@ impl PhotosView {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if let Some(position) = self.view.slider(cx, ids!(zoom_slider)).slided(actions) {
+            self.set_zoom_position(cx, position);
+        }
         if let Some(index) = self
             .view
             .kit_bottom_navigation(cx, ids!(navigation))
@@ -815,10 +934,7 @@ impl PhotosView {
                     }
                 }
                 Row::Grid(ids) => {
-                    for (i, slot) in [id!(first), id!(second), id!(third)]
-                        .into_iter()
-                        .enumerate()
-                    {
+                    for (i, slot) in grid_slots().into_iter().enumerate() {
                         if tapped(&item, cx, &[slot], actions) {
                             if let Some(id) = ids.get(i) {
                                 if self.route == Route::Editor {
@@ -906,7 +1022,9 @@ impl Widget for PhotosView {
         self.initialize(cx);
         while let Some(widget) = self.view.draw_walk(cx, scope, walk).step() {
             if let Some(mut list) = widget.borrow_mut::<PortalList>() {
-                let width = cx.turtle().rect().size.x.max(1.0);
+                self.grid_rect = cx.turtle().rect();
+                let width = self.grid_rect.size.x.max(1.0);
+                self.row_rects.clear();
                 list.set_item_range(cx, 0, self.rows.len());
                 while let Some(index) = list.next_visible_item(cx) {
                     let Some(row) = self.rows.get(index).cloned() else {
@@ -925,6 +1043,9 @@ impl Widget for PhotosView {
                     let item = list.item(cx, index, template);
                     self.fill_row(cx, &item, &row, width);
                     item.draw_all(cx, &mut Scope::empty());
+                    if matches!(row, Row::Grid(_)) {
+                        self.row_rects.push((index, item.area().rect(cx)));
+                    }
                 }
             }
         }
@@ -953,6 +1074,34 @@ impl Widget for PhotosView {
             self.view.handle_event(cx, event, scope);
             return;
         }
+        // Zoom belongs to the Library grid: a pinch or a wheel notch over the
+        // photos resizes them instead of scrolling the list or opening a photo.
+        if self.route == Route::Library {
+            match event {
+                Event::TouchUpdate(touch) => {
+                    let pinch = self.pinch.update(touch, self.grid_rect, self.zoom.scale());
+                    if pinch.began {
+                        self.zoom_anchor = self.anchor_at(pinch.center);
+                    }
+                    if let Some(scale) = pinch.scale {
+                        self.zoom.set_scale(scale);
+                        self.apply_zoom(cx);
+                    }
+                    if pinch.consumed {
+                        return;
+                    }
+                }
+                Event::Scroll(scroll) if self.grid_rect.contains(scroll.abs) => {
+                    if let Some(anchor) = self.anchor_at(scroll.abs) {
+                        self.zoom_anchor = Some(anchor);
+                    }
+                    self.zoom.wheel(scroll.scroll.y);
+                    self.apply_zoom(cx);
+                    return;
+                }
+                _ => {}
+            }
+        }
         if !matches!(self.route, Route::Library | Route::Collections) && event.back_pressed() {
             self.go_back(cx);
         }
@@ -978,6 +1127,11 @@ impl Widget for PhotosView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use makepad_widgets::makepad_platform::event::{
+        ScrollEvent, ScrollPhase, TouchPoint, TouchState, TouchUpdateEvent,
+    };
+    use makepad_widgets::makepad_platform::LinuxWindowParams;
+    use std::cell::Cell;
 
     #[test]
     fn home_card_round_trip_preserves_the_album_draft() {
@@ -1064,5 +1218,245 @@ mod tests {
         assert_eq!(view.viewer_index, 1);
         assert!(!view.playing);
         assert!(view.view.widget(&mut cx, ids!(viewer)).visible());
+    }
+
+    /// The photo count of every grid row, so density changes read at a glance.
+    fn grid_widths(rows: &[Row]) -> Vec<usize> {
+        rows.iter()
+            .filter_map(|row| match row {
+                Row::Grid(ids) => Some(ids.len()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A drawn Library of two dozen photos from one month, without the
+    /// on-disk storage or image decoding a real one would load.
+    fn library(cx: &mut Cx) -> WidgetRef {
+        let mut root = WidgetRef::empty();
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::script_mod(vm);
+            let value = script_eval!(vm, {use mod.widgets.* PhotosView{}});
+            root = WidgetRef::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+        });
+        {
+            let mut view = root.borrow_mut::<PhotosView>().unwrap();
+            view.initialized = true;
+            view.catalog = (0..24)
+                .map(|i| Photo {
+                    id: format!("p{i:02}"),
+                    file: String::new(),
+                    title: format!("Photo {i}"),
+                    date: "2026-09-04".into(),
+                    location: "Home".into(),
+                    people: Vec::new(),
+                    tags: Vec::new(),
+                    moment: "Morning".into(),
+                })
+                .collect();
+            view.route = Route::Library;
+            view.rebuild(cx);
+            // Stand in for the last draw: the grid viewport, and its first row
+            // of photos sitting at the top of it.
+            view.grid_rect = Rect {
+                pos: dvec2(0.0, 100.0),
+                size: dvec2(300.0, 400.0),
+            };
+            view.row_rects = vec![(
+                1,
+                Rect {
+                    pos: dvec2(0.0, 100.0),
+                    size: dvec2(300.0, 100.0),
+                },
+            )];
+        }
+        root
+    }
+
+    fn scroll(abs: DVec2, delta_y: f64) -> Event {
+        Event::Scroll(ScrollEvent {
+            window_id: WindowId(0, 0),
+            scroll: dvec2(0.0, delta_y),
+            abs,
+            modifiers: KeyModifiers::default(),
+            handled_x: Cell::new(false),
+            handled_y: Cell::new(false),
+            is_mouse: true,
+            time: 1.0,
+            phase: ScrollPhase::None,
+        })
+    }
+
+    fn touch(points: &[(u64, TouchState, f64, f64)]) -> Event {
+        Event::TouchUpdate(TouchUpdateEvent {
+            time: 1.0,
+            window_id: WindowId(0, 0),
+            modifiers: KeyModifiers::default(),
+            touches: points
+                .iter()
+                .map(|&(uid, state, x, y)| TouchPoint {
+                    uid,
+                    state,
+                    abs: dvec2(x, y),
+                    time: 1.0,
+                    rotation_angle: 0.0,
+                    force: 1.0,
+                    radius: dvec2(1.0, 1.0),
+                    handled: Cell::new(Area::Empty),
+                    sweep_lock: Cell::new(Area::Empty),
+                })
+                .collect(),
+        })
+    }
+
+    #[test]
+    fn library_zoom_reflows_rows_and_holds_the_focal_photo() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = library(&mut cx);
+        let mut view = root.borrow_mut::<PhotosView>().unwrap();
+        assert_eq!(grid_widths(&view.rows), vec![3; 8]);
+
+        // Zooming out reflows the same photos into denser rows and keeps the
+        // photo the gesture started on in view instead of jumping to the top.
+        view.zoom_anchor = Some(("p12".into(), 0.0));
+        view.zoom.set_scale(0.5);
+        view.apply_zoom(&mut cx);
+        assert_eq!(grid_widths(&view.rows), vec![6; 4]);
+        let first = view.view.portal_list(&mut cx, ids!(list)).first_id();
+        assert!(
+            matches!(view.rows.get(first), Some(Row::Grid(ids)) if ids.iter().any(|id| id == "p12")),
+            "row {first} should hold the focal photo"
+        );
+
+        // Zooming all the way in keeps that same photo anchored.
+        view.zoom.set_scale(3.0);
+        view.apply_zoom(&mut cx);
+        assert_eq!(grid_widths(&view.rows), vec![1; 24]);
+        let first = view.view.portal_list(&mut cx, ids!(list)).first_id();
+        assert!(
+            matches!(view.rows.get(first), Some(Row::Grid(ids)) if ids.iter().any(|id| id == "p12")),
+            "row {first} should hold the focal photo"
+        );
+
+        // Other collections keep the fixed three-photo layout.
+        view.route = Route::Favorites;
+        view.store.favorites = view.catalog.iter().map(|p| p.id.clone()).collect();
+        view.rebuild(&mut cx);
+        assert_eq!(grid_widths(&view.rows), vec![3; 8]);
+    }
+
+    #[test]
+    fn only_a_wheel_over_the_library_grid_zooms_it() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = library(&mut cx);
+        let mut view = root.borrow_mut::<PhotosView>().unwrap();
+
+        // A notch over the photos shows more of them, anchored on the photo
+        // under the pointer rather than snapping back to the top.
+        view.handle_event(
+            &mut cx,
+            &scroll(dvec2(150.0, 150.0), 200.0),
+            &mut Scope::empty(),
+        );
+        let zoomed = view.zoom.columns();
+        assert!(zoomed > DEFAULT_GRID_COLUMNS);
+        assert_eq!(
+            view.zoom_anchor.as_ref().map(|(id, _)| id.as_str()),
+            Some("p01")
+        );
+        assert_eq!(grid_widths(&view.rows).first().copied(), Some(zoomed));
+
+        // Above the grid the wheel still belongs to the page.
+        view.handle_event(
+            &mut cx,
+            &scroll(dvec2(150.0, 20.0), 200.0),
+            &mut Scope::empty(),
+        );
+        assert_eq!(view.zoom.columns(), zoomed);
+
+        // Collections never zoom, wherever the pointer is.
+        view.route = Route::Collections;
+        view.handle_event(
+            &mut cx,
+            &scroll(dvec2(150.0, 150.0), 200.0),
+            &mut Scope::empty(),
+        );
+        assert_eq!(view.zoom.columns(), zoomed);
+    }
+
+    #[test]
+    fn the_zoom_slider_is_desktop_only_and_drives_the_same_density() {
+        // A phone zooms with its fingers; the knob is for pointer platforms.
+        // Android and iOS take the same default-false arm as Unknown, which is
+        // the only non-desktop OsType constructible outside the platform crate.
+        assert!(shows_zoom_slider(&OsType::Macos));
+        assert!(shows_zoom_slider(&OsType::Windows));
+        assert!(shows_zoom_slider(&OsType::LinuxDirect));
+        assert!(shows_zoom_slider(&OsType::LinuxWindow(
+            LinuxWindowParams::default()
+        )));
+        assert!(!shows_zoom_slider(&OsType::Unknown));
+
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = library(&mut cx);
+        let mut view = root.borrow_mut::<PhotosView>().unwrap();
+        view.set_zoom_position(&mut cx, 0.0);
+        assert_eq!(view.zoom.columns(), 9);
+        assert_eq!(grid_widths(&view.rows).first().copied(), Some(9));
+
+        // A gesture moves the knob too, so the two never disagree.
+        view.handle_event(
+            &mut cx,
+            &scroll(dvec2(150.0, 150.0), -10_000.0),
+            &mut Scope::empty(),
+        );
+        assert_eq!(view.zoom.columns(), 1);
+        assert_eq!(
+            view.view.slider(&mut cx, ids!(zoom_slider)).value(),
+            Some(1.0)
+        );
+    }
+
+    #[test]
+    fn a_library_pinch_resizes_the_grid_around_its_midpoint() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = library(&mut cx);
+        let mut view = root.borrow_mut::<PhotosView>().unwrap();
+
+        for points in [
+            vec![(1, TouchState::Start, 100.0, 150.0)],
+            vec![
+                (1, TouchState::Stable, 100.0, 150.0),
+                (2, TouchState::Start, 200.0, 150.0),
+            ],
+        ] {
+            view.handle_event(&mut cx, &touch(&points), &mut Scope::empty());
+        }
+        // The gesture holds the photo under its midpoint.
+        assert_eq!(
+            view.zoom_anchor.as_ref().map(|(id, _)| id.as_str()),
+            Some("p01")
+        );
+        assert_eq!(grid_widths(&view.rows), vec![3; 8]);
+
+        // Spreading the fingers makes the photos bigger and the rows shorter.
+        view.handle_event(
+            &mut cx,
+            &touch(&[
+                (1, TouchState::Move, 50.0, 150.0),
+                (2, TouchState::Move, 250.0, 150.0),
+            ]),
+            &mut Scope::empty(),
+        );
+        let zoomed = view.zoom.columns();
+        assert!(zoomed < DEFAULT_GRID_COLUMNS);
+        assert_eq!(grid_widths(&view.rows).first().copied(), Some(zoomed));
+        let first = view.view.portal_list(&mut cx, ids!(list)).first_id();
+        assert!(
+            matches!(view.rows.get(first), Some(Row::Grid(ids)) if ids.iter().any(|id| id == "p01")),
+            "row {first} should hold the focal photo"
+        );
     }
 }

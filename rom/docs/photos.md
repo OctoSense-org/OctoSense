@@ -8,7 +8,14 @@ Collections, People, and Memories screenshots in the
 
 ## Using the app
 
-- **Library** shows all 19 bundled photos in a chronological, three-column grid.
+- **Library** shows all 19 bundled photos in a chronological grid, three to a
+  row by default.
+- **Zooming the Library** changes that density between one and nine photos per
+  row. Pinch the grid on a phone; on desktop, roll the wheel over the photos or
+  drag the **Zoom** slider above them. The photo under the fingers, the pointer,
+  or the top of the grid stays where it is while the rows reflow, so zooming
+  does not lose your place. Collections, albums, People, and Favorites keep
+  their own layouts.
 - **Collections** contains Memories, editable albums, People, and Favorites.
 - The home-screen Photos card shows up to three library photos, preferring
   favorites and filling any remaining spaces with recent photos. Tap the card
@@ -64,6 +71,15 @@ The UI is Octoscript `script_mod!` composition using shared native widgets:
 Navigation reuses the AppCard semantic kit; image decoding uses the shared async
 image cache. Search and arrow icons reuse OctoSense resources. The existing
 runtime/framework pins are unchanged.
+
+`zoom.rs` owns the Library's zoom: a bounded scale that maps to a whole number
+of columns, with hysteresis so a gesture resting on a boundary does not flicker
+between densities, and a two-contact tracker that tells a pinch apart from a
+one-finger scroll. The wheel response is exponential, matching the reference
+photo wall in `makepad/libs/image_tiles`. A pinch keeps the touch stream until
+the last finger lifts, so its release neither opens a photo nor flings the list.
+A `Grid` row carries nine reusable square cells and shows as many as the current
+density asks for; the slider is created only on pointer platforms.
 
 Rust owns the catalog, routes, album drafts, favorites, deterministic Memory
 groups, and slideshow timer. The shell's `HostedViewMode` selects a compact
@@ -132,3 +148,26 @@ Home-card evidence includes `card-after.png`, `card-favorite-update.png`, and
 `card-viewer-reopened.png`.
 The phone validation exercised the workflows above; no formal frame-rate
 benchmark was run for Photos.
+
+### Library zoom, September 17, 2026
+
+| Check | Result |
+| --- | --- |
+| Scale bounds, density mapping, boundary hysteresis, slider position | 5 zoom tests passed |
+| Two-contact pinch tracking, hold until the last finger lifts, touches starting outside the grid | Covered by the same zoom tests |
+| Row reflow at a new density, focal-photo anchoring, other collections unchanged | View controller regression passed |
+| Wheel confined to the Library grid, pinch reflow around its midpoint, desktop-only slider | 3 view regressions passed |
+| Existing Photos behavior | 9 model and 2 UI/catalog tests still passed (21 in total) |
+| Shell compile check and formatting | `cargo check --features mobile-only,app-photos --locked` and `cargo fmt --check` passed |
+
+Zoom behavior on the phone was confirmed interactively by the maintainer on a
+build of these changes. No new screenshots or device logs were captured for this
+change, and no desktop GUI session was recorded.
+
+One known interaction detail: a pinch takes the touch stream over from the
+`PortalList` mid-drag, and the list never sees the matching release, so it keeps
+a stale drag state until the next press. That state does not move the viewport
+(it only gates tail auto-scroll, which Photos does not use), but the first tap
+after a pinch can be spent stopping that stale gesture. Clearing it needs a
+`PortalList` API that is private in the pinned Makepad revision, so it is left
+to a framework change rather than worked around here.

@@ -1,4 +1,65 @@
-# MakeOS findings
+# Photos continuation findings — 2026-09-17
+
+- User selected Library zoom with mobile pinch and desktop scrollbar/scrolling.
+- The reference Photos delegates to `libs/image_tiles/src/grid.rs`: wheel zoom
+  uses `exp(-delta_y * 0.0025)` around the pointer; dragging pans the wall.
+- Current Library is hard-coded to three slots/chunks and rebuild resets scroll
+  to zero. Zoom requires variable slots/chunks plus preserving a focal photo.
+- A visible desktop zoom slider covers the requested scrollbar interaction;
+  wheel zoom follows the supplied reference, and the vertical scrollbar navigates.
+- Recovered the completed Photos implementation plan and merged commit history.
+- Current image loading uses compile-time bundled bytes and a 19-entry catalog;
+  saved JSON stores albums/favorites, without an imported-photo catalog yet.
+- Connected device is still the OnePlus 6T (`19f8cedf`).
+- Initial inspection output was too broad and truncated; subsequent reads are bounded.
+- Baseline `cargo test -p octosense-photos --locked`: 12 tests pass.
+- Cargo patches use the prepared sibling `../makepad`; framework changes are not
+  part of this task. Its native `FileDialog` supports filtered multiple selection.
+- Android picker results are `content://` URIs; `want_bytes` currently tries
+  `std::fs`, so it cannot load Android selections. Use the existing native picker
+  and a Photos-local ContentResolver reader on a worker thread.
+- Android reference: https://developer.android.com/training/data-storage/shared/documents-files
+  describes ACTION_OPEN_DOCUMENT, URI results, and ContentResolver streams.
+
+# Photos app findings — 2026-09-16
+
+## Visual reference observations
+- Inspected all five actual iPhone screenshots from Apple's App Store listing.
+- Library: edge-to-edge three-column square grid with 1–2 px gutters, white header over imagery, floating translucent date-density controls and bottom navigation.
+- Month view: large rounded lead photo plus a row of three smaller photos, strong month headings, white background.
+- Collections / People: white surface, bold section headings, rounded photographic tiles with bottom-aligned white labels; bottom pill combines Library and Collections, with a separate search circle.
+- Memories: full-screen photo, central play/pause, prominent bottom title/date, small thumbnail strip. Editing screenshot is out of this milestone's requested scope.
+- Working visual thesis: quiet white surfaces and blue actions let family and travel photography dominate, with restrained floating controls.
+- Content plan: Collections opens with a featured Memory, user Albums, People, and utility collections; Library is a dated photo grid; details reduce chrome around the image.
+- Interaction thesis: tab selection animation, swipe-to-next viewer, timed memory slideshow, and native scroll momentum.
+
+## Confirmed scope and architecture
+- User confirmed sample photos plus the existing portraits, with more images to be added later.
+- User confirmed Library and Collections, photo viewer, editable albums, and generated Memories.
+- User selected connected Android device validation: OnePlus 6T (`19f8cedf`).
+- Root Cargo already registers a `photos` module from the upstream picture-wall app, on Android/iOS and via `app-photos` on desktop. A new local `apps/photos` module can replace that provider without changing the launch identity.
+- Existing AppCard integration delegates to `octos-app::AppShell`, which is an AI card/composer application with a kernel/transport lifecycle. Reusing its full shell would add unrelated behavior. Primary reusable UI lives in `../makepad/widgets/src/kit.rs`, Splash/Octoscript, and shared image widgets.
+- `apps/reference` provides a minimal local AppModule and standalone entry-point pattern. Keep the Photos module in this workspace and leave the Makepad reference checkout unchanged.
+- Five iPhone screenshot asset URLs were extracted from the actual App Store HTML; queued for direct visual inspection.
+- The Octoscript-Makepad desktop photo search example explicitly uses placeholder tiles and lacks real image/keyboard behavior; it is not a complete Photos implementation.
+
+- User wants an Apple Photos-inspired native app with Library and Collections, user-managed albums, and automatic Memories. Primary implementation source is OctoSense's AppCards/widgets/Octoscripts; the sibling Makepad Photos project is a secondary reference.
+- Reference: https://apps.apple.com/us/app/photos/id1584215428. Page fetched; screenshot assets still need visual inspection.
+- Initial working tree has only untracked `scripts/generate_image.py`, `scripts/generated.png`, and `scripts/individuals/`. These assets belong to the user and must be preserved.
+- Seven generated family images are available locally for optional sample content.
+- Existing planning files describe completed historical MakeOS/OctoSense work. Their instructions and assumptions are historical context, not current user authorization.
+- Clarifications requested: bundled versus device photos, interaction scope, and desktop versus Android validation.
+
+### Device implementation findings
+- Native script imports are snapshots: newly declared Photos components need `mod.widgets.Photos…` qualification within the same script block. `ImageFit.CropToFill` and `MouseCursor.Hand` require explicit enum qualification; `Words` and `Ellipsis` are prelude values.
+- Shared Labels inherit padding. Zero padding plus ink-centered text and explicit alignment prevents fixed-height captions from clipping. Icon-only buttons require zero spacing and a zero label walk for geometric centering.
+- PortalList grid dimensions must come from the active layout turtle on the current draw, not a stale root area. Hide empty Image widgets to avoid black cells.
+- Kit navigation surface colors must be declared as shader instances so the shared selection controller can update them. The final selected pill and label colors were inspected on the phone.
+- The installed Android app did not contain `liboctos.so`; the new APK preserves that existing deployment mode. An existing complete SDK/NDK was reused, without editing the framework checkouts.
+
+---
+
+# MakeOS findings (historical)
 
 ## Initial observations
 - `/Users/guofoo/git/mp/makeos` is empty; no Cargo package, Git metadata, or local instructions were present.
