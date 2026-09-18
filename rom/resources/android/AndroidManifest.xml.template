@@ -93,6 +93,8 @@
         </activity>
     </application>
     <uses-permission android:name="dev.makepad.octosense.permission.BIND_SYSTEM_BRIDGE" />
+    <!-- The OctoSense ROM's agent platform (signature permission; absent elsewhere). -->
+    <uses-permission android:name="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
     <uses-permission android:name="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION" />
     <uses-permission android:name="android.permission.BIND_APPWIDGET" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
