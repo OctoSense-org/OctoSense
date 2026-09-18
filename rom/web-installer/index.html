@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OctoSense Installer</title>
+<style>
+  :root { --bg:#f3effa; --surface:#ffffff; --text:#1a1a22; --muted:#5c5870; --accent:#6750a4; --on-accent:#fff; --outline:#d6cfe8; --ok:#1b7f4b; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#181624; --surface:#2c2e3e; --text:#f5f5fa; --muted:#bab6cc; --outline:#413e58; } }
+  :root[data-theme="dark"] { --bg:#181624; --surface:#2c2e3e; --text:#f5f5fa; --muted:#bab6cc; --outline:#413e58; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:32px 16px; }
+  h1 { font-size:28px; margin:0 0 4px; } .sub { color:var(--muted); margin:0 0 24px; }
+  section { background:var(--surface); border:1px solid var(--outline); border-radius:16px; padding:20px; margin:0 0 16px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  button { background:var(--accent); color:var(--on-accent); border:0; border-radius:999px; padding:10px 20px; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--outline); }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:0; } dt { color:var(--muted); }
+  progress { width:100%; height:10px; accent-color:var(--accent); }
+  pre { background:var(--bg); border-radius:10px; padding:12px; max-height:220px; overflow:auto; font-size:13px; white-space:pre-wrap; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  label { display:flex; gap:8px; align-items:center; }
+  ol { padding-left:20px; margin:0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>OctoSense Installer</h1>
+  <p class="sub">Installs or updates the OctoSense ROM on a OnePlus 6 from this browser over USB. Chrome or Edge on a computer; no adb or fastboot needed.</p>
+
+  <section>
+    <h2>1. Put the phone in bootloader mode</h2>
+    <ol>
+      <li>Power off, then hold <b>Volume Up + Volume Down + Power</b> until the bootloader screen appears.</li>
+      <li>Plug the phone into this computer.</li>
+      <li>First install only: the bootloader must be unlocked (OEM unlocking in Developer options, then <i>Unlock</i> below; this wipes the phone).</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>2. Connect</h2>
+    <div class="row">
+      <button id="connect">Connect phone</button>
+      <span id="unsupported" class="bad" hidden>This browser has no WebUSB. Use Chrome or Edge.</span>
+    </div>
+    <dl id="info" hidden>
+      <dt>Device</dt><dd id="product"></dd>
+      <dt>Serial</dt><dd id="serial"></dd>
+      <dt>Slot</dt><dd id="slot"></dd>
+      <dt>Unlocked</dt><dd id="unlocked"></dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>3. Install</h2>
+    <dl id="release"></dl>
+    <div class="row" style="margin-top:12px">
+      <label><input type="checkbox" id="wipe"> Erase user data (required on the first install over LineageOS)</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="install" disabled>Install</button>
+      <button id="unlock" class="secondary" disabled>Unlock bootloader</button>
+      <button id="reboot" class="secondary" disabled>Reboot</button>
+    </div>
+    <p id="stage" style="margin:12px 0 4px"></p>
+    <progress id="bar" value="0" max="1" hidden></progress>
+    <pre id="log"></pre>
+  </section>
+</main>
+
+<script type="module">
+import { FastbootDevice, setDebugLevel } from "./fastboot.mjs";
+
+const $ = (id) => document.getElementById(id);
+const log = (m, cls) => { const line = document.createElement("div"); if (cls) line.className = cls; line.textContent = m; $("log").append(line); $("log").scrollTop = 1e9; };
+const stage = (m) => { $("stage").textContent = m; };
+
+// Sparse images go over in pieces this size: a long single transfer is what
+// fails on marginal USB links, and a failed piece is retried alone.
+const SPLIT_BYTES = 50 * 1024 * 1024;
+const RETRIES = 6;
+
+const device = new FastbootDevice();
+device._getDownloadSize = async () => SPLIT_BYTES;
+setDebugLevel(1);
+
+let manifest = null;
+
+async function loadManifest() {
+  const res = await fetch("manifest.json", { cache: "no-store" });
+  manifest = await res.json();
+  const dl = $("release"); dl.innerHTML = "";
+  const add = (k, v) => { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.append(dt, dd); };
+  add("Release", manifest.name);
+  add("Built", manifest.built);
+  add("Device", manifest.device);
+  add("Partitions", manifest.images.map(i => i.partition).join(", "));
+}
+
+async function sha256(blob) {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function fetchImage(image) {
+  stage(`Downloading ${image.file}`);
+  const res = await fetch(image.file, { cache: "force-cache" });
+  if (!res.ok) throw new Error(`${image.file}: HTTP ${res.status}`);
+  const blob = await res.blob();
+  if (blob.size < 64 * 1024 * 1024) { // small images are verified whole; big ones by size
+    const sum = await sha256(blob);
+    if (sum !== image.sha256) throw new Error(`${image.file}: checksum mismatch`);
+  } else if (blob.size !== image.size) {
+    throw new Error(`${image.file}: size mismatch`);
+  }
+  return blob;
+}
+
+async function flashWithRetry(partition, blob) {
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
+    try {
+      $("bar").hidden = false;
+      await device.flashBlob(partition, blob, (p) => { $("bar").value = p; });
+      log(`${partition}: written`, "ok");
+      return;
+    } catch (e) {
+      log(`${partition}: attempt ${attempt} failed: ${e.message}`, "bad");
+      if (attempt === RETRIES) throw e;
+      stage("Waiting for the phone to answer again...");
+      await device.waitForConnect();
+    }
+  }
+}
+
+$("connect").onclick = async () => {
+  try {
+    await device.connect();
+    const v = async (n) => { try { return await device.getVariable(n); } catch { return "?"; } };
+    $("product").textContent = await v("product");
+    $("serial").textContent = await v("serialno");
+    $("slot").textContent = await v("current-slot");
+    $("unlocked").textContent = await v("unlocked");
+    $("info").hidden = false;
+    const okDevice = manifest && manifest.device === $("product").textContent;
+    $("install").disabled = !okDevice;
+    $("unlock").disabled = $("unlocked").textContent === "yes";
+    $("reboot").disabled = false;
+    log(okDevice ? "Phone matches this release." : `This release is for ${manifest && manifest.device}, the phone reports ${$("product").textContent}.`, okDevice ? "ok" : "bad");
+  } catch (e) { log(`Connect failed: ${e.message}`, "bad"); }
+};
+
+$("unlock").onclick = async () => {
+  try { stage("Confirm the unlock on the phone with the volume and power keys."); await device.runCommand("flashing unlock"); log("Unlock command sent; the phone wipes and reboots to the bootloader.", "ok"); }
+  catch (e) { log(`Unlock failed: ${e.message}`, "bad"); }
+};
+
+$("reboot").onclick = async () => { try { await device.reboot(""); log("Rebooting."); } catch (e) { log(`Reboot failed: ${e.message}`, "bad"); } };
+
+$("install").onclick = async () => {
+  $("install").disabled = true;
+  try {
+    for (const image of manifest.images) {
+      const blob = await fetchImage(image);
+      stage(`Flashing ${image.partition} (${(blob.size / 1048576).toFixed(0)} MB)`);
+      await flashWithRetry(image.partition, blob);
+    }
+    if ($("wipe").checked) {
+      stage("Erasing user data");
+      await device.runCommand("erase:userdata");
+      log("userdata erased; Android formats it on first boot.", "ok");
+    }
+    stage("Done. Rebooting into OctoSense.");
+    await device.reboot("");
+    log("Installed. First boot after a wipe takes a few minutes.", "ok");
+  } catch (e) {
+    stage("Install failed.");
+    log(`Install failed: ${e.message}`, "bad");
+    $("install").disabled = false;
+  }
+};
+
+if (!navigator.usb) { $("unsupported").hidden = false; $("connect").disabled = true; }
+loadManifest().catch(e => log(`No manifest.json next to this page: ${e.message}`, "bad"));
+</script>
+</body>
+</html>
