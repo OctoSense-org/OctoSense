@@ -15,10 +15,8 @@ PRODUCT_PACKAGES += OctoSenseQuickstep
 PRODUCT_COPY_FILES += \
     vendor/octosense/privapp-permissions-octosense.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/permissions/privapp-permissions-octosense.xml
 
-# OctoSense is the Home app out of the box: the upstream launcher package is not
-# installed (patches/lineage-no-trebuchet.py honours this variable).
-OCTOSENSE_NO_TREBUCHET := true
-
+# OctoSense is the Home app out of the box: patches/lineage-no-trebuchet.py keeps
+# the upstream launcher package out whenever this layer is present.
 PRODUCT_PRODUCT_PROPERTIES += \
     ro.octosense.rom=1
 

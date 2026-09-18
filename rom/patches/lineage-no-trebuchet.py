@@ -14,7 +14,16 @@ PRODUCT_PACKAGES += \\
 PRODUCT_DEXPREOPT_SPEED_APPS += \\
     TrebuchetQuickStep
 endif"""
-new = """else ifneq ($(OCTOSENSE_NO_TREBUCHET),true)
+# The layer's presence decides: octosense.mk is inherited after this file is parsed,
+# so a variable set there would come too late for make's ifneq.
+stale = """else ifneq ($(OCTOSENSE_NO_TREBUCHET),true)
+PRODUCT_PACKAGES += \\
+    TrebuchetQuickStep
+
+PRODUCT_DEXPREOPT_SPEED_APPS += \\
+    TrebuchetQuickStep
+endif"""
+new = """else ifeq ($(wildcard vendor/octosense/octosense.mk),)
 PRODUCT_PACKAGES += \\
     TrebuchetQuickStep
 
@@ -23,6 +32,9 @@ PRODUCT_DEXPREOPT_SPEED_APPS += \\
 endif"""
 if new in text:
     print("trebuchet: already patched")
+elif stale in text:
+    path.write_text(text.replace(stale, new))
+    print("trebuchet: repatched")
 elif text.count(old) == 1:
     path.write_text(text.replace(old, new))
     print("trebuchet: patched")
