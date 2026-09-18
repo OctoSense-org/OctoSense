@@ -112,8 +112,11 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   own light/dark toggle rather than the system appearance. The deep stack
   at startup is MOBILE-07.
 
-  Acceptance: rotation checked on the device; the fork's `feat/ios-bringup`
-  (packager fix, iOS storage root) merged and re-pinned.
+  The fork's `feat/ios-bringup` (packager fix, iOS storage root) is merged
+  (makepad#13) and pinned since 2026-09-18: framework `bb45d411`,
+  Octoscript `fda29037`, Octoscript-Makepad `1925c5f7`.
+
+  Acceptance: rotation checked on the device.
 
 - [ ] **MOBILE-07 — P2: Startup builds the widget tree on a deep stack.**
 
