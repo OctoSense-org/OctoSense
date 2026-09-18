@@ -25,3 +25,11 @@ OctoSense-mobile's `android/platform-build` (`stage-quickstep.py`,
 Keys are the ROM's identity: keep `~/octosense-adr0001/keys` backed up and out
 of any repository. The first flash from LineageOS wipes user data because the
 signers differ.
+
+## Host chroot notes
+
+The build runs in an Ubuntu 24.04 chroot (`~/octosense-adr0001/rootfs`) on a
+26.04 host. The chroot has no `gpgv`, so apt cannot verify the archive; packages
+are added by downloading the 24.04 `.deb` files and `dpkg -i` inside the chroot.
+Added so far: `libssl3t64` and `libssl-dev` 3.0.13-0ubuntu3.15 (the msm-4.9
+kernel's `sign-file` and `extract-cert` host tools need the OpenSSL headers).
