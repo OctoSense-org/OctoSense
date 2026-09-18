@@ -133,7 +133,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 
   Acceptance: the fork revision adopted (MOBILE-06).
 
-- [ ] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
+- [x] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
 
   The host's storage root (`src/octosense/paths.rs`, NEWS-09) and the News
   reader call framework APIs the pinned revision `d4502ef` does not have:
@@ -151,11 +151,13 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   `Cargo.toml`) name the same framework revision, and the runtime's verify
   step rejects an application manifest that names another.
 
-  Acceptance: the branch merged to the fork's `main`; Octoscript and
-  Octoscript-Makepad released on that revision; `native-runtime.lock.json`
-  and the `rev` of every makepad, Octoscript and runtime dependency here
-  moved to the released revisions; `python3 tools/setup-native.py --check
-  --cargo-manifest Cargo.toml` passes on clean checkouts.
+  Done on 2026-09-17: the branch merged to the fork's `main` as
+  `03091405` (OctoSense-org/makepad#12); Octoscript pinned to it at
+  `68f65cd3` (Octoscript#31); Octoscript-Makepad released at `77c1e50b`
+  (Octoscript-Makepad#24) naming both; `native-runtime.lock.json` and the
+  makepad `rev` in the five manifests here moved to those revisions, and
+  `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
+  passes with the siblings at the released commits.
 
 ## UPSTREAM-01: Remove retired-pass compatibility adapter
 
@@ -261,7 +263,9 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   `feat/news-reader-platform` branch, not in this repository (MOBILE-06).
   iOS is still open (MOBILE-01).
 
-  Acceptance: the fork revision adopted (MOBILE-06); the same check on iOS.
+  The fork revision is pinned since MOBILE-06 (2026-09-17).
+
+  Acceptance: the same check on iOS.
 
 - [ ] **NEWS-06 — P2: Keyboard focus while the reader's web view is attached.**
 
@@ -286,7 +290,7 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   and the workspace keys with the reader open in the module tile, and that
   the overlay then leaves the window with its tile (the reader's watchdog).
 
-- [ ] **NEWS-09 — P1: Module storage was read-only on the phone.**
+- [x] **NEWS-09 — P1: Module storage was read-only on the phone.**
 
   Every storage write on the device failed with `storage create directory
   failed: Read-only file system (os error 30)`, so the headline cache,
@@ -304,5 +308,5 @@ list is hidden only by wrapping it in a view (News keeps its list in a
   earlier "dark mode not persisted" report likely has this cause too
   (not rechecked).
 
-  Acceptance: the fork revision adopted (MOBILE-06); existing phones keep
-  no state from before (it was never written).
+  The fork revision is pinned since MOBILE-06 (2026-09-17). Existing phones
+  keep no state from before (it was never written).
