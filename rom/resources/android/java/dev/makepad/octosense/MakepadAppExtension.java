@@ -215,7 +215,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private void emitUiMode() {
         Configuration configuration=activity.getResources().getConfiguration();
         boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
-        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f)));
+        boolean reduceMotion=Settings.Global.getFloat(activity.getContentResolver(),Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f;
+        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion));
     }
     /** Recently used Android apps for the shell's Recents, newest first, when usage access is granted. */
     private void publishRecentApps() {

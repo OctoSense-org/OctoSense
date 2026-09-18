@@ -135,6 +135,8 @@ impl WmDesk {
         self.phone_ui.focus_search(cx,phone);
     }
     pub fn phone_search_scroll_max(&self)->f64 {self.phone_ui.search_scroll_max}
+    /// The drawer scroll that brings the letter at `y` on the scrubber to the top.
+    pub fn phone_scrub_scroll(&self,y:f64)->Option<f64> {self.phone_ui.scrub_scroll(y)}
 
     /// A frame from `client` landed in the given face: that face's capture
     /// re-records on the next draw. A frame that belongs to neither (a stale

@@ -467,15 +467,16 @@ impl PhoneSurface {
         let pages = &phone.pages;
         let current = pages.current();
         let count = pages.library_index() as usize;
-        let cell = 22.0_f64.min((screen.size.x-24.0)/(count+2).max(1) as f64);
+        // Each dot's slot is a 44-point touch target; the dots stay small.
+        let cell = 44.0_f64.min((screen.size.x-24.0)/(count+2).max(1) as f64);
         let total = (count + 2) as f64 * cell;
         let left = screen.pos.x + (screen.size.x - total) * 0.5;
         let y = dock.pos.y - 30.0;
         for (n, k) in pages.positions().enumerate() {
-            let slot = rect(left + n as f64 * cell, y, cell, 24.0);
+            let slot = rect(left + n as f64 * cell, y - 10.0, cell, 44.0);
             let active = k == current;
             let a = if active { 1.0 } else { 0.45 } * opacity;
-            let c = dvec2(slot.pos.x + cell * 0.5, slot.pos.y + 12.0);
+            let c = dvec2(slot.pos.x + cell * 0.5, slot.pos.y + 22.0);
             if k < 0 {
                 // The glance page: a small card with two lines of text.
                 let g = rect(c.x - 6.0, c.y - 6.0, 12.0, 12.0);

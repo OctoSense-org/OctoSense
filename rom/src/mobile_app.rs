@@ -475,7 +475,7 @@ impl App {
             PhoneHit::Split(client)=>{
                 if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
             }
-            PhoneHit::Divider=>{}
+            PhoneHit::Divider|PhoneHit::Scrub=>{}
             PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
             PhoneHit::Recents=>{
                 self.state_mut().phone.navigate(PhoneScreen::Recents);
@@ -617,6 +617,7 @@ impl App {
             self.sync_phone_keyboard(cx);
             self.animate_phone(cx);
         }
+        if let Some(app)=self.state_mut().phone.search_launch.take() {self.phone_action(cx,PhoneHit::App(app));}
         handled
     }
     pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {
@@ -927,7 +928,7 @@ impl App {
                 return true;
             }
         }
-        let (hit,search_scroll_max)=self.desk(cx).borrow::<WmDesk>().map(|d|(d.phone_hit(p),d.phone_search_scroll_max())).unwrap_or_default();
+        let (hit,search_scroll_max,scrub_at)=self.desk(cx).borrow::<WmDesk>().map(|d|(d.phone_hit(p),d.phone_search_scroll_max(),d.phone_scrub_scroll(p.y))).unwrap_or_default();
         let ctx=self.gesture_context(cx);
         let Some(state)=self.state.as_mut() else {return false};
         let phone=&mut state.phone;
@@ -963,6 +964,9 @@ impl App {
                 if !shell && !screen.contains(p) {return false;}
                 phone.search_velocity=0.0;
                 phone.search_track=Some((p.y,time));
+                if hit==Some(PhoneHit::Scrub) {
+                    if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
+                }
                 if shell || hit.is_some() || old!=PhoneScreen::App {
                     phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
                     phone.gesture_out=None;
@@ -982,6 +986,10 @@ impl App {
                 phone.gesture_out=out;
                 if let Some(out)=out {
                     Self::drive_gesture(phone,out,from);
+                }else if from==PhoneScreen::Drawer && g.hit==Some(PhoneHit::Scrub) {
+                    if let Some(scroll)=scrub_at {
+                        if (scroll-phone.search_scroll).abs()>0.5 {phone.search_scroll=scroll;self.android_haptic(cx,"tick");}
+                    }
                 }else if from==PhoneScreen::Drawer {
                     phone.search_scroll=(phone.search_scroll.min(search_scroll_max)-last.y).clamp(0.0,search_scroll_max);
                     // The flick speed: a short average of the finger's recent samples.

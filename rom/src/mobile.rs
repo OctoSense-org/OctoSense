@@ -29,6 +29,8 @@ pub enum PhoneHit {
     /// the window's scrim, a pair's "Open both", a Recents card's split
     /// button and the split divider.
     Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
+    /// The app drawer's letter column: a finger on it jumps the list.
+    Scrub,
 }
 
 /// The launch effect of an Android app (`PhoneState::launch`).
@@ -98,6 +100,8 @@ pub struct PhoneState {
     pub keyboard_sent_height: f64,
     pub keyboard_client: Option<ClientId>,
     pub search_query: String,
+    /// Return in the search field: the app to open (mobile_app.rs takes it).
+    pub search_launch: Option<String>,
     pub search_focused: bool,
     pub search_scroll: f64,
     /// The drawer keeps scrolling after a flick: points per second, decaying
@@ -143,7 +147,7 @@ impl Default for PhoneState {
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
-            search_query: String::new(), search_focused: false, search_scroll: 0.0,
+            search_query: String::new(), search_launch: None, search_focused: false, search_scroll: 0.0,
             search_velocity: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,

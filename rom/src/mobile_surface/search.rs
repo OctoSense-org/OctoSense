@@ -11,8 +11,19 @@ fn matching_apps<'a>(apps: &'a [(String, String)], query: &str) -> Vec<&'a (Stri
             words.iter().all(|word| name.contains(word))
         })
         .collect();
-    found.sort_by_cached_key(|(_, label)| label.to_lowercase());
+    // What the person typed first is most likely the start of a name: labels
+    // beginning with the first word come first, then the rest alphabetically.
+    let first = words.first().cloned().unwrap_or_default();
+    found.sort_by_cached_key(|(_, label)| {
+        let lower = label.to_lowercase();
+        (!lower.starts_with(&first), !lower.split_whitespace().any(|w| w.starts_with(&first)), lower)
+    });
     found
+}
+/// The result Return launches: the best match for the query, if any.
+pub fn top_hit(apps: &[(String, String)], query: &str) -> Option<String> {
+    if query.trim().is_empty() { return None; }
+    matching_apps(apps, query).first().map(|(id, _)| id.clone())
 }
 
 impl PhoneSurface {
@@ -106,6 +117,13 @@ impl PhoneSurface {
         let actions =
             cx.capture_actions(|cx| self.search.handle_event(cx, event, &mut Scope::empty()));
         if input.returned(&actions).is_some() || input.escaped(&actions) {
+            // Return opens the best match; Escape only closes the field.
+            if input.returned(&actions).is_some() {
+                let apps: Vec<(String, String)> = if phone.android.rows.is_empty() {
+                    crate::shell::launcher::apps().iter().map(|a| (a.id.trim_start_matches("apps.").to_string(), a.label.clone())).collect()
+                } else { phone.android.rows.to_vec() };
+                phone.search_launch = top_hit(&apps, &input.text());
+            }
             self.dismiss_search(cx, phone, input.escaped(&actions));
         } else {
             phone.search_focused = cx.has_key_focus(input.area());

@@ -78,6 +78,8 @@ pub struct AndroidState {
     pub system_dark: Option<bool>,
     /// Android's text size preference (1 is the default size).
     pub font_scale: f64,
+    /// Android's "remove animations" (animator scale 0): no launch effect.
+    pub reduce_motion: bool,
     /// The person's app pairs (None: the seeds) and the tiles they hid.
     pub pairs: Option<Arc<Vec<(String, Vec<String>)>>>,
     pub hidden_tiles: Arc<Vec<String>>,
@@ -668,6 +670,7 @@ impl App {
                 if let Some(percent) = value.get("font_scale_percent").and_then(Value::as_i64) {
                     self.state_mut().phone.android.font_scale = percent as f64 / 100.0;
                 }
+                self.state_mut().phone.android.reduce_motion = boolean(&value, "reduce_motion");
                 let changed = self.state_mut().phone.android.system_dark != Some(dark);
                 self.state_mut().phone.android.system_dark = Some(dark);
                 if changed && self.state_mut().style.dark != dark && self.state_mut().style.target.supports_dark() {

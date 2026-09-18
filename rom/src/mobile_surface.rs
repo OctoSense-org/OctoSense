@@ -282,6 +282,10 @@ pub struct PhoneSurface {
     /// The hits published as accessibility nodes this frame, in node order
     /// (an activation from the platform names a node by its index).
     #[rust] pub a11y_hits: Vec<PhoneHit>,
+    /// The drawer's letter column: each initial with the scroll that brings
+    /// its first app to the top, and the column's rect.
+    #[rust] scrub: Vec<(char,f64)>,
+    #[rust] scrub_rect: Rect,
     #[rust] a11y_packet: String,
     #[rust] widget_layout: String,
     #[rust] home_icon_bounds: Vec<(String,Rect)>,
@@ -328,7 +332,7 @@ impl PhoneSurface {
             PhoneHit::GroupClose=>"Close".into(),
             PhoneHit::OpenBoth(_)=>"Open both".into(),
             PhoneHit::Split(_)=>"Split".into(),
-            PhoneHit::Divider|PhoneHit::Perf=>return None,
+            PhoneHit::Divider|PhoneHit::Perf|PhoneHit::Scrub=>return None,
             PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Notifications))=>"Notifications".into(),
             PhoneHit::Shade(ShadeHit::Open(crate::mobile_gestures::ShadeSide::Controls))=>"Controls".into(),
             PhoneHit::Shade(ShadeHit::Sheet)=>return None,
@@ -691,12 +695,29 @@ impl PhoneSurface {
         let ink=if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)};
         let pill=self.draw_search(cx,state,screen,ink);
         if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
-        let top=pill.pos.y+pill.size.y+18.0;
+        let mut top=pill.pos.y+pill.size.y+18.0;
         let columns=if landscape {7}else{4};
-        let cell=(screen.size.x-24.0)/columns as f64;
+        let size=if landscape {44.0}else{60.0};
+        // Suggestions: the Android apps used lately (usage access), one row
+        // above the alphabet, like a stock drawer's first row.
+        let suggested: Vec<String>=if state.phone.android.usage_access {state.phone.android.recent_apps.iter().take(columns).cloned().collect()} else {Vec::new()};
+        if !suggested.is_empty() && !landscape {
+            let cell=(screen.size.x-48.0)/columns as f64;
+            self.d.label(cx,rect(screen.pos.x+16.0,top-6.0,200.0,18.0),false,11.0,alpha(ink,0.7),HAlign::Left,"Suggested");
+            for (index,id) in suggested.iter().enumerate() {
+                let r=rect(screen.pos.x+12.0+index as f64*cell,top+16.0,cell,size+24.0);
+                let label=ids.iter().find(|(i,_)|i==id).map(|(_,l)|l.as_str()).unwrap_or("");
+                self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-size)*0.5,r.pos.y,size,size),ink,1.0);
+                self.label(cx,rect(r.pos.x,r.pos.y+size+4.0,cell,20.0),label,11.0,false,ink);
+                self.hits.push((r,PhoneHit::App(id.clone())));
+            }
+            top+=size+58.0;
+        }
+        // The letter column on the right: a finger on it jumps the grid.
+        let scrub_w=if landscape {0.0} else {22.0};
+        let cell=(screen.size.x-24.0-scrub_w)/columns as f64;
         let rows=(ids.len()+columns-1)/columns;
         let bottom=screen.pos.y+screen.size.y-38.0;
-        let size=if landscape {44.0}else{60.0};
         // Keep the icon, its label and a touch gap inside each scrollable row.
         let row_h=((bottom-top)/rows.max(1) as f64).clamp(size+36.0,104.0);
         self.search_scroll_max=(rows as f64*row_h-(bottom-top)).max(0.0);
@@ -710,6 +731,32 @@ impl PhoneSurface {
             self.hits.push((r,PhoneHit::App(id.clone())));
         }
         cx.end_turtle();
+        self.scrub.clear();
+        if scrub_w>0.0 && self.search_scroll_max>0.0 {
+            for (index,(_,label)) in ids.iter().enumerate() {
+                let initial=label.chars().next().map(|c|c.to_uppercase().next().unwrap_or(c)).unwrap_or('#');
+                let initial=if initial.is_ascii_alphabetic() {initial} else {'#'};
+                if self.scrub.iter().any(|(c,_)|*c==initial) {continue;}
+                self.scrub.push((initial,((index/columns) as f64*row_h).min(self.search_scroll_max)));
+            }
+            let column=rect(screen.pos.x+screen.size.x-12.0-scrub_w,top,scrub_w+12.0,(bottom-top).max(0.0));
+            self.scrub_rect=column;
+            let step=(column.size.y/self.scrub.len().max(1) as f64).min(20.0);
+            let y0=column.pos.y+(column.size.y-step*self.scrub.len() as f64)*0.5;
+            for (n,(letter,scroll_to)) in self.scrub.iter().enumerate() {
+                let near=(scroll-scroll_to).abs()<row_h*0.5;
+                self.d.label(cx,rect(column.pos.x,y0+n as f64*step,scrub_w,step),near,9.5,alpha(ink,if near {1.0} else {0.55}),HAlign::Center,&letter.to_string());
+            }
+            self.hits.push((column,PhoneHit::Scrub));
+        } else {self.scrub_rect=Rect::default();}
+    }
+    /// The drawer scroll for the letter under `y` on the scrubber.
+    pub fn scrub_scroll(&self,y:f64)->Option<f64> {
+        if self.scrub.is_empty() || self.scrub_rect.size.y<1.0 {return None;}
+        let step=(self.scrub_rect.size.y/self.scrub.len() as f64).min(20.0);
+        let y0=self.scrub_rect.pos.y+(self.scrub_rect.size.y-step*self.scrub.len() as f64)*0.5;
+        let n=(((y-y0)/step).floor() as i64).clamp(0,self.scrub.len() as i64-1) as usize;
+        Some(self.scrub[n].1)
     }
     fn draw_launcher_icon(&mut self,cx:&mut Cx2d,state:&WmState,id:&str,r:Rect,ink:Vec4f,opacity:f32) {
         let app=state.phone.android.apps.iter().find(|app|app.id==id);
@@ -727,6 +774,16 @@ impl PhoneSurface {
             self.android_icon.opacity=opacity;
             self.android_icon.draw_abs(cx,r);
         } else {self.icons.draw(cx,id,state.style.target,r,opacity,ink);}
+        // A dot for an app with a notification in the shade (its package or
+        // its identity posted it).
+        let noted=state.phone.shade.notifications.iter().any(|note| note.app==id
+            || app.is_some_and(|a| a.component.split('/').next()==Some(note.app.as_str())));
+        if noted && opacity>0.5 {
+            let d=r.size.x*0.24;
+            self.rounded(cx,rect(r.pos.x+r.size.x-d*0.9,r.pos.y-d*0.1,d,d),(d*0.5) as f32,alpha(rgb(255,255,255),opacity));
+            let inner=d*0.7;
+            self.rounded(cx,rect(r.pos.x+r.size.x-d*0.9+(d-inner)*0.5,r.pos.y-d*0.1+(d-inner)*0.5,inner,inner),(inner*0.5) as f32,alpha(rgb(235,86,80),opacity));
+        }
     }
     /// iOS's App Library: a search field over category cards, each card a
     /// folder with three large icons and a mini grid of the rest. Every
@@ -874,7 +931,7 @@ impl PhoneSurface {
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
         crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
-        if let Some(launch)=phone.launch.as_ref() {
+        if let Some(launch)=phone.launch.as_ref().filter(|_|!phone.android.reduce_motion) {
             // The tapped icon grows from its place towards the middle and
             // fades as the page dims under it; Android's own window
             // transition takes over from there.
