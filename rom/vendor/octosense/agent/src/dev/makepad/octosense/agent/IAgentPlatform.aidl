@@ -46,4 +46,14 @@ interface IAgentPlatform {
 
     /** The last calls, newest first: who, what, outcome. */
     Bundle getAuditLog(int max);
+
+    /** update: what the latest GitHub release offers against what runs now
+     *  (rom_newer, home_newer, rom_offered, home_offered). Blocking network call. */
+    Bundle checkUpdate();
+    /** update: start installing "rom", "home" or "all" in the background; poll getUpdateStatus. */
+    Bundle applyUpdate(String part);
+    /** update: rom_phase, rom_progress, rom_error, home_state, running, slot. */
+    Bundle getUpdateStatus();
+    /** update: restart into the updated slot once rom_phase is updated_need_reboot. */
+    Bundle rebootToUpdate();
 }

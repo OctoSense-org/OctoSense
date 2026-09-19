@@ -136,6 +136,7 @@ public class AgentPlatformService extends Service {
         if (has("android.permission.WRITE_SECURE_SETTINGS")) caps.add("settings");
         if (has("android.permission.START_TASKS_FROM_RECENTS")) caps.add("apps");
         if (has("android.permission.STATUS_BAR")) caps.add("statusbar");
+        if (has("android.permission.REBOOT") && has("android.permission.INSTALL_PACKAGES")) caps.add("update");
         // "tree" (the system-wide accessibility node tree) needs an
         // AccessibilityService; it lands with the ShellAccessibility bridge.
         b.putStringArrayList("capabilities", caps);
@@ -338,6 +339,25 @@ public class AgentPlatformService extends Service {
     Bundle expandQuickSettings() { statusBar.expandSettingsPanel(); return ok(); }
     Bundle collapsePanels() { statusBar.collapsePanels(); return ok(); }
 
+    // ---- update -----------------------------------------------------------
+
+    private static Updater updater() { return AgentApplication.get().updater(); }
+
+    /** "rom", "home" or "all": starts in the background and returns at once. */
+    Bundle applyUpdateAsync(String part) {
+        String what = part == null ? "all" : part;
+        AgentApplication.get().work().execute(() -> {
+            try {
+                Bundle check = updater().check();
+                if (!what.equals("rom") && check.getBoolean("home_newer")) updater().applyHome();
+                if (!what.equals("home") && check.getBoolean("rom_newer")) updater().applyRom();
+            } catch (Exception e) {
+                Log.w(TAG, "update apply failed", e);
+            }
+        });
+        return ok();
+    }
+
     synchronized Bundle auditLog(int max) {
         Bundle r = ok();
         ArrayList<String> lines = new ArrayList<>();
@@ -367,6 +387,10 @@ public class AgentPlatformService extends Service {
         @Override public Bundle expandQuickSettings() { return guarded("expandQuickSettings", AgentPlatformService.this::expandQuickSettings); }
         @Override public Bundle collapsePanels() { return guarded("collapsePanels", AgentPlatformService.this::collapsePanels); }
         @Override public Bundle getAuditLog(int max) { return guarded("audit", () -> auditLog(max)); }
+        @Override public Bundle checkUpdate() { return guarded("updateCheck", () -> updater().check()); }
+        @Override public Bundle applyUpdate(String part) { return guarded("updateApply", () -> applyUpdateAsync(part)); }
+        @Override public Bundle getUpdateStatus() { return guarded("updateStatus", () -> updater().status()); }
+        @Override public Bundle rebootToUpdate() { return guarded("updateReboot", () -> updater().reboot()); }
     };
 
     // ---- dumpsys harness --------------------------------------------------
@@ -378,6 +402,7 @@ public class AgentPlatformService extends Service {
             pw.println("commands: tasks | snapshot <taskId> [maxWidth] | screen [maxWidth] | tap <x> <y> | swipe <x0> <y0> <x1> <y1> <ms>");
             pw.println("          type <text> | key <code> | get <table> <name> | put <table> <name> <value>");
             pw.println("          start-task <id> | remove-task <id> | force-stop <pkg> | notifications | qs | collapse | audit");
+            pw.println("          update-check | update-apply [rom|home|all|force-rom] | update-status | update-cancel | update-reboot");
             return;
         }
         long token = Binder.clearCallingIdentity();
@@ -417,6 +442,14 @@ public class AgentPlatformService extends Service {
             case "qs": return expandQuickSettings();
             case "collapse": return collapsePanels();
             case "audit": return auditLog(50);
+            case "update-check": return updater().check();
+            // force-rom skips the newer-than check: reinstalls the offered build into the other slot.
+            case "update-apply":
+                if (a.length > 1 && a[1].equals("force-rom")) return updater().applyRom();
+                return applyUpdateAsync(a.length > 1 ? a[1] : "all");
+            case "update-status": return updater().status();
+            case "update-cancel": return updater().cancel();
+            case "update-reboot": return updater().reboot();
             default: return fail("unknown command " + a[0]);
         }
     }

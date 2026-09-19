@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Runtime permissions granted to OctoSense system apps on first boot. -->
+<exceptions>
+    <exception package="dev.makepad.octosense.agent">
+        <!-- The updater's "available / installing / restart" notification. -->
+        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false"/>
+    </exception>
+</exceptions>

@@ -37,6 +37,12 @@
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- update: fetch releases, install the Home app, restart into the new slot -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REBOOT" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".AgentApplication"
@@ -55,6 +61,11 @@
                 <action android:name="dev.makepad.octosense.agent.AGENT_PLATFORM" />
             </intent-filter>
         </service>
+
+        <service android:name=".UpdateJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <receiver android:name=".UpdateActionReceiver" android:exported="false" />
 
         <!-- First-boot provisioning: the OctoSense palette and the shell's defaults. -->
         <receiver android:name=".ProvisionReceiver" android:exported="false">

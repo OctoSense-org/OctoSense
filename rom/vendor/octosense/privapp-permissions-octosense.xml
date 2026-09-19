@@ -49,5 +49,7 @@
         <permission name="android.permission.STATUS_BAR"/>
         <permission name="android.permission.STATUS_BAR_SERVICE"/>
         <permission name="android.permission.FORCE_STOP_PACKAGES"/>
+        <permission name="android.permission.INSTALL_PACKAGES"/>
+        <permission name="android.permission.REBOOT"/>
     </privapp-permissions>
 </permissions>
