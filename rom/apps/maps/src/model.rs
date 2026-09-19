@@ -225,6 +225,13 @@ impl MapsModel {
         self.settings.units.or_else(of_place).unwrap_or_default()
     }
 
+    /// The units for one place that is not the selected one (a result row).
+    pub fn units_for(&self, place: &Place) -> Units {
+        self.settings
+            .units
+            .unwrap_or_else(|| Units::for_country(&place.country_code))
+    }
+
     fn next_id(&mut self, what: &str) -> LiveId {
         self.seq += 1;
         LiveId::from_str(&format!("maps_{what}_{}", self.seq))
@@ -1261,6 +1268,22 @@ mod tests {
         assert_eq!(model.units(), Units::Metric);
         model.settings.units = Some(Units::Imperial);
         assert_eq!(model.units(), Units::Imperial);
+    }
+
+    #[test]
+    fn a_result_is_measured_in_its_own_countrys_units() {
+        let mut model = MapsModel::default();
+        // No place is selected while the results are listed.
+        assert_eq!(
+            model.units_for(&place("Saratoga Library", "US")),
+            Units::Imperial
+        );
+        assert_eq!(model.units_for(&place("Rijksmuseum", "NL")), Units::Metric);
+        model.settings.units = Some(Units::Metric);
+        assert_eq!(
+            model.units_for(&place("Saratoga Library", "US")),
+            Units::Metric
+        );
     }
 
     #[test]

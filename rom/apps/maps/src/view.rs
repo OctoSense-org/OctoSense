@@ -1031,7 +1031,7 @@ impl MapsView {
         self.view
             .label(cx, ids!(sheet_title))
             .set_text(cx, &place.name);
-        let distance = self.distance_to(place.pos);
+        let distance = self.distance_to(place.pos, self.model.units());
         let subtitle = [place.category.as_str(), distance.as_str()]
             .into_iter()
             .filter(|part| !part.is_empty())
@@ -1066,12 +1066,12 @@ impl MapsView {
         }
     }
 
-    /// How far a point is from the last fix, in the person's units; nothing
-    /// before there is a fix to measure from.
-    fn distance_to(&self, pos: LonLat) -> String {
+    /// How far a point is from the last fix; nothing before there is a fix
+    /// to measure from.
+    fn distance_to(&self, pos: LonLat, units: Units) -> String {
         self.model
             .fix()
-            .map(|fix| distance_text(haversine_m(fix, pos), self.model.units()))
+            .map(|fix| distance_text(haversine_m(fix, pos), units))
             .unwrap_or_default()
     }
 
@@ -1974,8 +1974,9 @@ impl MapsView {
                         &place.address
                     };
                     item.label(cx, ids!(address)).set_text(cx, line);
+                    let units = self.model.units_for(place);
                     item.label(cx, ids!(distance))
-                        .set_text(cx, &self.distance_to(place.pos));
+                        .set_text(cx, &self.distance_to(place.pos, units));
                     show_kind(cx, &item, place.kind);
                 }
                 ResultItem::Status { text, retry } => {
