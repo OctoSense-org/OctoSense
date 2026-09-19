@@ -118,11 +118,21 @@ async function fetchImage(image) {
   return blob;
 }
 
-async function flashWithRetry(partition, blob) {
+// Some partitions exist once, without a slot suffix, even though the bootloader
+// may answer has-slot for them (vbmeta on the OnePlus 6: `flash:vbmeta_b` fails,
+// `flash:vbmeta` works). The manifest marks those `"slot": false`.
+async function flashUnslotted(partition, blob) {
+  const buffer = await blob.arrayBuffer();
+  await device.upload(partition, buffer, (p) => { $("bar").value = p; });
+  await device.runCommand(`flash:${partition}`);
+}
+
+async function flashWithRetry(partition, blob, slotted = true) {
   for (let attempt = 1; attempt <= RETRIES; attempt++) {
     try {
       $("bar").hidden = false;
-      await device.flashBlob(partition, blob, (p) => { $("bar").value = p; });
+      if (slotted) await device.flashBlob(partition, blob, (p) => { $("bar").value = p; });
+      else await flashUnslotted(partition, blob);
       log(`${partition}: written`, "ok");
       return;
     } catch (e) {
@@ -165,7 +175,7 @@ $("install").onclick = async () => {
     for (const image of manifest.images) {
       const blob = await fetchImage(image);
       stage(`Flashing ${image.partition} (${(blob.size / 1048576).toFixed(0)} MB)`);
-      await flashWithRetry(image.partition, blob);
+      await flashWithRetry(image.partition, blob, image.slot !== false);
     }
     if ($("wipe").checked) {
       stage("Erasing user data");
