@@ -5557,6 +5557,7 @@ dependencies = [
 name = "octosense-maps"
 version = "0.1.0"
 dependencies = [
+ "makepad-ai-services",
  "makepad-app-module",
  "makepad-map-nav",
  "makepad-widgets",

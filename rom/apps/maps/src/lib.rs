@@ -12,7 +12,12 @@ pub mod module;
 pub mod places;
 pub mod routing;
 pub mod sheet;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod view;
+
+pub use module::{MapsModule, MAPS_MODULE};
+pub use view::MapsView;
 
 /// The hosted vector archive the map reads over HTTP range requests: the
 /// one the framework's route app falls back to when it has no local map.

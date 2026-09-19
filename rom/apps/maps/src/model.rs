@@ -617,6 +617,68 @@ fn route_state(mode: Mode, body: Result<String, String>) -> RouteState {
     }
 }
 
+/// How long the locate button waits for a first fix before giving up.
+pub const LOCATION_FIX_TIMEOUT_SECONDS: f64 = 20.0;
+
+/// The locate button's state, after the framework's route app: nothing
+/// asked for, waiting for a first fix, or fixes flowing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LocationState {
+    #[default]
+    Idle,
+    Waiting,
+    Active,
+}
+
+/// What a tap on the locate button (or Directions wanting a fix) means.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationAsk {
+    /// Start the platform's updates and the timeout.
+    Start,
+    /// Fixes are flowing: fly to the last one.
+    Recenter,
+    /// Already waiting.
+    Ignore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationFix {
+    First,
+    Update,
+    /// A fix nobody asked for: updates were stopped, one was still on its way.
+    Ignore,
+}
+
+impl LocationState {
+    pub fn asked(&mut self) -> LocationAsk {
+        match self {
+            LocationState::Idle => {
+                *self = LocationState::Waiting;
+                LocationAsk::Start
+            }
+            LocationState::Waiting => LocationAsk::Ignore,
+            LocationState::Active => LocationAsk::Recenter,
+        }
+    }
+
+    pub fn received_fix(&mut self) -> LocationFix {
+        match self {
+            LocationState::Idle => LocationFix::Ignore,
+            LocationState::Waiting => {
+                *self = LocationState::Active;
+                LocationFix::First
+            }
+            LocationState::Active => LocationFix::Update,
+        }
+    }
+
+    /// An error or the timeout: back to idle. `false` when nothing was
+    /// wanted, so a stray error says nothing to the person.
+    pub fn failed(&mut self) -> bool {
+        std::mem::take(self) != LocationState::Idle
+    }
+}
+
 /// The text of a fetched body, or why it is not one: the trust boundary
 /// between the network and the parsers. Only a 200 whose body is present,
 /// under the cap and UTF-8 gets through.
@@ -1183,6 +1245,25 @@ mod tests {
         let mut model = MapsModel::default();
         model.load_state(br#"{"center_lon":500.0,"center_lat":95.0,"zoom":99.0}"#);
         assert_eq!(model.settings, Settings::default());
+    }
+
+    #[test]
+    fn the_locate_button_asks_once_then_recentres() {
+        let mut location = LocationState::default();
+        // A fix or an error nobody asked for is nothing.
+        assert_eq!(location.received_fix(), LocationFix::Ignore);
+        assert!(!location.failed());
+        assert_eq!(location.asked(), LocationAsk::Start);
+        assert_eq!(location.asked(), LocationAsk::Ignore, "already waiting");
+        assert_eq!(location.received_fix(), LocationFix::First);
+        assert_eq!(location.received_fix(), LocationFix::Update);
+        assert_eq!(location.asked(), LocationAsk::Recenter);
+        // Denied, unavailable or timed out: the next tap starts over.
+        assert!(location.failed());
+        assert_eq!(location, LocationState::Idle);
+        assert_eq!(location.asked(), LocationAsk::Start);
+        assert!(location.failed());
+        assert!(!location.failed());
     }
 
     #[test]
