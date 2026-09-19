@@ -6,7 +6,11 @@
 # phone into bootloader mode when adb answers, and opens the installer page.
 set -euo pipefail
 TAG=${1:?build tag}; D=${2:-cfb7c9e3}
-HOST=ubuntu@<build-host>; KEY=$HOME/home/ssh-key/octosense.pem
+# The build host lives in a local, uncommitted file: ~/.config/octosense/build.env
+# with OCTOSENSE_BUILD_HOST=user@host and OCTOSENSE_BUILD_KEY=<ssh key path>.
+[ -f "$HOME/.config/octosense/build.env" ] && . "$HOME/.config/octosense/build.env"
+HOST=${OCTOSENSE_BUILD_HOST:?set OCTOSENSE_BUILD_HOST in ~/.config/octosense/build.env}
+KEY=${OCTOSENSE_BUILD_KEY:?set OCTOSENSE_BUILD_KEY in ~/.config/octosense/build.env}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 BUILDS=$HOME/home/octosense-org/rom-builds; DIR=$BUILDS/$TAG; SERVE=$BUILDS/serve
 ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}

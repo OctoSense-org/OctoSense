@@ -1,1 +1,2 @@
 vendor/octosense/prebuilt/*.apk
+vendor/octosense/adb_keys/*.pub

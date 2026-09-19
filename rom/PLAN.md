@@ -6,7 +6,7 @@ touch the same build tree.
 
 ## Phase 0 — prerequisites (done 18 Sep 2026)
 
-- Host `ubuntu@<build-host>`: LineageOS 22.2 tree pinned to the phone's
+- The build host (address in the uncommitted `~/.config/octosense/build.env`): LineageOS 22.2 tree pinned to the phone's
   installed nightly, OnePlus vendor blobs (TheMuppets, LFS pulled), kernel source.
 - OctoSense platform, APK and APEX keys generated (`scripts/make-keys.sh`).
 - This repository; `scripts/build-rom.sh` runs inside the host's chroot.

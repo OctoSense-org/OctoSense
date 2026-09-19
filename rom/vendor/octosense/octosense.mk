@@ -21,7 +21,10 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PRODUCT_PROPERTIES += \
     ro.octosense.rom=1
 
-# The bench Mac's adb public key is pre-authorised in recovery and in Android
-# (/adb_keys), so a freshly wiped phone and the recovery answer adb without a
-# tap on the screen. Public keys only; add one file per trusted machine.
-PRODUCT_ADB_KEYS := vendor/octosense/adb_keys/bench-mac.pub
+# Bench builds only: a machine's adb public key placed (uncommitted) at
+# vendor/octosense/adb_keys/bench.pub is pre-authorised in recovery and Android
+# (/adb_keys), so a wiped bench phone answers adb without a tap. Public releases
+# are built without it: a published ROM must not trust anyone's computer.
+ifneq ($(wildcard vendor/octosense/adb_keys/bench.pub),)
+PRODUCT_ADB_KEYS := vendor/octosense/adb_keys/bench.pub
+endif
