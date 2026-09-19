@@ -18,8 +18,12 @@ pub fn decode_polyline5(encoded: &str) -> Vec<LonLat> {
     let (mut lat, mut lon) = (0i64, 0i64);
     // A torn tail ends the line at the last whole point.
     while let (Some(dlat), Some(dlon)) = (next_delta(&mut bytes), next_delta(&mut bytes)) {
-        lat += dlat;
-        lon += dlon;
+        // A sum that leaves the type ends the line, as a torn tail does.
+        let (Some(next_lat), Some(next_lon)) = (lat.checked_add(dlat), lon.checked_add(dlon))
+        else {
+            break;
+        };
+        (lat, lon) = (next_lat, next_lon);
         points.push(LonLat::new(lon as f64 * 1e-5, lat as f64 * 1e-5));
     }
     points
@@ -36,8 +40,9 @@ fn next_delta(bytes: &mut impl Iterator<Item = u8>) -> Option<i64> {
         if group < 0x20 {
             break;
         }
-        // Nothing the services send is this long; a hostile string is.
-        if shift > 60 {
+        // The whole globe is 26 bits of fifth decimals; nothing the
+        // services send is longer than this, and a hostile string is.
+        if shift > 35 {
             return None;
         }
     }
@@ -274,6 +279,16 @@ mod tests {
         assert!(decode_polyline5("").is_empty());
         // The sample cut in the middle of its second point: the first stands.
         assert_eq!(decode_polyline5("_p~iF~ps|U_ulL").len(), 1);
+    }
+
+    #[test]
+    fn a_hostile_line_ends_where_it_stops_making_sense() {
+        // A varint that never ends, and deltas as large as the bound allows,
+        // over and over: no panic, and nothing after the nonsense.
+        assert!(decode_polyline5(&"~".repeat(64)).is_empty());
+        let huge = "~~~~~~]".repeat(200_000);
+        let points = decode_polyline5(&huge);
+        assert!(points.len() <= 100_000);
     }
 
     #[test]

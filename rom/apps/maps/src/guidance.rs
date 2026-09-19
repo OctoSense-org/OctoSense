@@ -165,12 +165,14 @@ impl ActiveNav {
         }
     }
 
-    /// The reroute's answer: guidance starts over on the new route.
+    /// The reroute's answer: guidance starts over on the new route. When
+    /// the asking may resume is left as it was: a driver in a car park is
+    /// still off the new line, which starts at the nearest road, and would
+    /// otherwise ask again every few seconds. Back on a route forgets it.
     pub fn replace_route(&mut self, directions: Directions) {
         self.session = NavSession::new(directions.route.clone());
         self.directions = directions;
         self.sim_progress_m = 0.0;
-        self.reroute_asked_at = None;
     }
 }
 
@@ -436,6 +438,26 @@ mod tests {
         let tick = nav.feed(astray, None, 1.0);
         assert_eq!(tick.state, NavState::OffRoute);
         assert_eq!(tick.position, astray);
+    }
+
+    #[test]
+    fn a_new_route_the_driver_is_still_off_does_not_ask_again_at_once() {
+        let directions = l_shaped();
+        let on_route = point_at(&directions.route, 300.0);
+        let car_park = LonLat::new(on_route.lon - 2.0 * STEP_LON, on_route.lat);
+        let mut nav = ActiveNav::new(directions, false);
+        nav.feed(on_route, None, 1.0);
+        assert!((0..8).any(|_| nav.feed(car_park, None, 1.0).needs_reroute));
+        // The answer starts at the road; the car is still in the car park.
+        nav.replace_route(l_shaped());
+        let asks = (0..10)
+            .filter(|_| nav.feed(car_park, None, 1.0).needs_reroute)
+            .count();
+        assert_eq!(asks, 0, "not before the retry interval");
+        let later = (0..10)
+            .filter(|_| nav.feed(car_park, None, 1.0).needs_reroute)
+            .count();
+        assert_eq!(later, 1, "once it has lasted");
     }
 
     #[test]

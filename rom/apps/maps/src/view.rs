@@ -64,6 +64,11 @@ const ROUTE_MARGIN: f64 = 36.0;
 /// down it.
 const NAV_ZOOM: f64 = 17.0;
 const NAV_TILT: f64 = 55.0;
+/// What the banner and its margin take of the top of the viewport, at its
+/// tallest: two lines of instruction.
+const NAV_BANNER_HEIGHT: f64 = 120.0;
+/// What the navigation bar and its margin take of the bottom.
+const NAV_BAR_HEIGHT: f64 = 96.0;
 /// How far ahead of the puck the chase camera looks, so the puck sits below
 /// the middle and the road ahead fills the screen.
 const NAV_LEAD_M: f64 = 60.0;
@@ -281,6 +286,22 @@ script_mod! {
         // `debug_cam`: the camera readout is a workbench tool.
         map := MapView{width: Fill height: Fill min_zoom: 3.0 max_zoom: 20.0 buildings_3d: true debug_cam: false}
 
+        // The licence's line, where the data's readers look for it, on a
+        // backing so it reads over any map: on every screen that shows the
+        // map, just above whatever is at the bottom of it (`render` and the
+        // sheet set the padding). Under the layers, so a sheet on its way
+        // up covers it rather than the other way round.
+        attribution_slot := View{width: Fill height: Fill flow: Down padding: Inset{left: 12}
+            View{width: Fill height: Fill}
+            RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 3 bottom: 3}
+                draw_bg +: {color: c_card border_radius: uniform(6.0)}
+                attribution := Caption{text: "© OpenStreetMap contributors" draw_text.text_style: theme.font_regular{font_size: 10}}
+            }
+            // As tall as what the line has to clear: a height can be set at
+            // run time, a padding cannot (`Inset` is not in that scope).
+            attribution_gap := View{width: Fill height: 14}
+        }
+
         // Explore: no ground of its own, so the map beneath keeps its touches.
         explore := View{width: Fill height: Fill flow: Down padding: Inset{left: 12 right: 12 top: 10 bottom: 14}
             pill := Floating{height: 48 flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 16 right: 16} cursor: MouseCursor.Hand
@@ -293,14 +314,7 @@ script_mod! {
             }
             View{width: Fill height: Fill}
             View{width: Fill height: Fit flow: Right align: Align{y: 1.0}
-                // The licence's line, where the data's readers look for it,
-                // on a backing so it reads over any map.
-                View{width: Fill height: Fit
-                    RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 3 bottom: 3}
-                        draw_bg +: {color: c_card border_radius: uniform(6.0)}
-                        attribution := Caption{text: "© OpenStreetMap contributors" draw_text.text_style: theme.font_regular{font_size: 10}}
-                    }
-                }
+                View{width: Fill height: Fit}
                 View{width: Fit height: Fit flow: Down spacing: 12
                     compass := Fab{visible: false draw_icon +: {svg: crate_resource("self:resources/icons/compass.svg") color: c_accent}}
                     locate := Fab{draw_icon.svg: crate_resource("self:resources/icons/locate.svg")}
@@ -468,7 +482,9 @@ script_mod! {
         }
 
         // What the app has to say in passing, over any screen.
-        View{width: Fill height: Fit align: Align{x: 0.5} padding: Inset{top: 68}
+        View{width: Fill height: Fit flow: Down align: Align{x: 0.5}
+            // As tall as what the line sits under (`status_top`).
+            status_gap := View{width: Fill height: 68}
             status := Floating{visible: false width: Fit padding: Inset{left: 16 right: 16 top: 9 bottom: 9}
                 draw_bg +: {border_radius: uniform(18.0)}
                 status_text := Text{draw_text.text_style: theme.font_regular{font_size: 13}}
@@ -617,6 +633,9 @@ pub struct MapsView {
     /// A new route is on its way: the banner says so.
     #[rust]
     rerouting: bool,
+    /// Whether the map is drawing a route's line.
+    #[rust]
+    route_on_map: bool,
     /// The map theme last applied, so a skin change re-applies it.
     #[rust]
     map_theme: Option<u32>,
@@ -752,7 +771,10 @@ impl MapsView {
 
     /// The settings changed: they are written once they stop changing.
     fn settings_changed(&mut self, cx: &mut Cx) {
-        if self.storage.is_none() {
+        // No jail, nothing to write; and while the saved state is still
+        // being read, the start's own camera move must not overwrite it
+        // with the defaults if the read is slow or fails.
+        if self.storage.is_none() || self.load.is_some() {
             return;
         }
         if let Some(timer) = self.save_timer.take() {
@@ -861,7 +883,10 @@ impl MapsView {
             Some(Request::Route(mode)) => {
                 // The shown tab's route goes on the map; then the next tab's
                 // is asked for, one at a time.
-                if mode == self.model.mode() {
+                // Only on Directions: a reply that lands after the person
+                // went back to the place is kept for the next visit, and
+                // the map stays the place's.
+                if mode == self.model.mode() && self.model.screen() == Screen::Directions {
                     self.show_route(cx);
                 }
                 self.pump_routes(cx);
@@ -952,6 +977,8 @@ impl MapsView {
         };
         self.sheet.set(Detent::Peek);
         self.sheet_height = self.sheet.height(self.viewport.1);
+        // On the widget too: the last place may have left it at half or full.
+        self.apply_sheet_height(cx);
         let map = self.map(cx);
         let marker = MapMarker::new(
             PLACE_MARKER,
@@ -1105,11 +1132,13 @@ impl MapsView {
         map.set_markers(cx, markers);
         let Some(directions) = self.model.directions() else {
             map.clear_route(cx);
+            self.route_on_map = false;
             return;
         };
         let points = &directions.route.points;
         let line: Vec<(f64, f64)> = points.iter().map(|p| (p.lon, p.lat)).collect();
         map.set_route(cx, &line);
+        self.route_on_map = true;
         if let Some(bounds) = Bounds::of(points) {
             let insets = Insets {
                 top: DIRECTIONS_CARD_HEIGHT + ROUTE_MARGIN,
@@ -1123,6 +1152,11 @@ impl MapsView {
             map.set_tilt(cx, 0.0);
             map.fly_to(cx, camera.center.lon, camera.center.lat, camera.zoom);
         }
+    }
+
+    fn clear_route(&mut self, cx: &mut Cx) {
+        self.map(cx).clear_route(cx);
+        self.route_on_map = false;
     }
 
     /// A mode's tab was picked.
@@ -1209,7 +1243,21 @@ impl MapsView {
                 ),
                 false,
             ),
-            RouteState::Failed(why) => (why.clone(), mode.label().to_string(), true),
+            // What failed is the title; why, when the model says, goes under
+            // it, where a long reason has the room.
+            RouteState::Failed(why) => match why.split_once(": ") {
+                Some((what, reason)) => (
+                    what.to_string(),
+                    // A platform's sentence ends in a full stop; this line goes on.
+                    format!(
+                        "{} · {}",
+                        sentence_case(reason.trim_end_matches('.')),
+                        mode.label()
+                    ),
+                    true,
+                ),
+                None => (why.clone(), mode.label().to_string(), true),
+            },
             RouteState::Idle | RouteState::Loading => (
                 "Finding the best route…".into(),
                 mode.label().to_string(),
@@ -1327,10 +1375,32 @@ impl MapsView {
             (Some(nav), false, Some(fix)) => Some(nav.feed(fix, None, 0.0)),
             _ => None,
         };
-        if let Some(tick) = tick {
-            self.apply_tick(cx, tick);
+        match tick {
+            Some(tick) => self.apply_tick(cx, tick),
+            // A live start from a chosen place, before any fix: the banner
+            // waits in words of its own, not the last drive's.
+            None => self.await_first_fix(cx),
         }
         self.render(cx);
+    }
+
+    /// The banner and the bar before guidance has a position to go on.
+    fn await_first_fix(&mut self, cx: &mut Cx) {
+        let (time, rest) = match self.nav.as_ref().map(|nav| &nav.directions().route) {
+            Some(route) => (
+                duration_text(route.duration_s),
+                distance_text(route.length_m, self.model.units()),
+            ),
+            None => Default::default(),
+        };
+        let banner = self.view.widget(cx, ids!(banner));
+        show_arrow(cx, &banner, Arrow::Depart);
+        self.view.label(cx, ids!(banner_distance)).set_text(cx, "");
+        self.view
+            .label(cx, ids!(banner_text))
+            .set_text(cx, "Waiting for your location…");
+        self.view.label(cx, ids!(nav_time)).set_text(cx, &time);
+        self.view.label(cx, ids!(nav_rest)).set_text(cx, &rest);
     }
 
     /// One frame of the preview.
@@ -1399,18 +1469,20 @@ impl MapsView {
         if let Some(arrow) = tick.arrow {
             show_arrow(cx, &banner, arrow);
         }
-        self.view
-            .label(cx, ids!(nav_time))
-            .set_text(cx, &duration_text(tick.remaining_s));
-        let mut rest = distance_text(tick.remaining_m, units);
-        if let Some(now) = local_minutes_of_day() {
-            rest = format!("{rest} · {}", arrival_text(now, tick.remaining_s));
-        }
+        let (time, rest) = if tick.state == NavState::Arrived {
+            // And stays so, whatever fixes follow while the car is parked.
+            ("Arrived".to_string(), String::new())
+        } else {
+            let mut rest = distance_text(tick.remaining_m, units);
+            if let Some(now) = local_minutes_of_day() {
+                rest = format!("{rest} · {}", arrival_text(now, tick.remaining_s));
+            }
+            (duration_text(tick.remaining_s), rest)
+        };
+        self.view.label(cx, ids!(nav_time)).set_text(cx, &time);
         self.view.label(cx, ids!(nav_rest)).set_text(cx, &rest);
         if tick.state == NavState::Arrived && self.model.screen() == Screen::Navigating {
             self.model.arrive();
-            self.view.label(cx, ids!(nav_time)).set_text(cx, "Arrived");
-            self.view.label(cx, ids!(nav_rest)).set_text(cx, "");
             self.render(cx);
         }
         self.view.redraw(cx);
@@ -1565,6 +1637,19 @@ impl MapsView {
         let height = self.sheet_height;
         let mut sheet = self.sheet_widget(cx);
         script_apply_eval!(cx, sheet, { height: #(height) });
+        self.place_attribution(cx);
+    }
+
+    /// The licence's line sits just above what is at the bottom of the
+    /// screen, and is not drawn where there is no map to credit.
+    fn place_attribution(&mut self, cx: &mut Cx) {
+        let screen = self.model.screen();
+        let bottom = attribution_bottom(screen, self.sheet_height);
+        let mut gap = self.view.widget(cx, ids!(attribution_gap));
+        script_apply_eval!(cx, gap, { height: #(bottom) });
+        self.view
+            .widget(cx, ids!(attribution_slot))
+            .set_visible(cx, !matches!(screen, Screen::Search { .. }));
     }
 
     fn apply_sheet_height(&mut self, cx: &mut Cx) {
@@ -1679,8 +1764,9 @@ impl MapsView {
         if kind == LocationFix::First {
             self.stop_location_timeout(cx);
             self.hide_status(cx);
-            // Directions fits the route instead, once it has one.
-            if !routing {
+            // A cold start takes seconds: by now the person may be looking
+            // at a place, a route or a preview, and the camera is theirs.
+            if self.model.screen() == Screen::Explore && self.nav.is_none() {
                 map.fly_to(cx, fix.lon, fix.lat, LOCATE_ZOOM);
             }
             self.render(cx);
@@ -1712,6 +1798,10 @@ impl MapsView {
     // ---- The status line ----
 
     fn show_status(&mut self, cx: &mut Cx, text: &str) {
+        // Under the pill, the directions card or the banner: never on it.
+        let top = status_top(self.model.screen());
+        let mut gap = self.view.widget(cx, ids!(status_gap));
+        script_apply_eval!(cx, gap, { height: #(top) });
         self.view.label(cx, ids!(status_text)).set_text(cx, text);
         self.view.widget(cx, ids!(status)).set_visible(cx, true);
         if let Some(timer) = self.status_timer.take() {
@@ -1773,17 +1863,16 @@ impl MapsView {
             (Screen::Navigating, Screen::Directions) => self.enter_directions(cx),
             // Done: the place the drive was to.
             (Screen::Arrived, Screen::Place) => {
-                self.map(cx).clear_route(cx);
+                self.clear_route(cx);
                 self.show_place(cx);
             }
             (_, Screen::Explore) => {
-                let map = self.map(cx);
-                map.set_markers(cx, Vec::new());
-                map.clear_route(cx);
+                self.map(cx).set_markers(cx, Vec::new());
+                self.clear_route(cx);
             }
             // The route goes, the place's pin and sheet come back.
             (Screen::Directions, Screen::Place) => {
-                self.map(cx).clear_route(cx);
+                self.clear_route(cx);
                 self.show_place(cx);
             }
             // Search left without a pick: the trip is as it was.
@@ -1861,6 +1950,7 @@ impl MapsView {
         if screen == Screen::Directions {
             self.fill_directions(cx);
         }
+        self.place_attribution(cx);
         self.view.redraw(cx);
     }
 
@@ -2088,6 +2178,35 @@ fn show_kind(cx: &mut Cx, item: &WidgetRef, kind: PlaceKind) {
     }
 }
 
+/// `timed out` as `Timed out`.
+fn sentence_case(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// How far up from the bottom the licence's line sits: clear of the sheet
+/// or the navigation bar, whichever the screen has.
+fn attribution_bottom(screen: Screen, sheet_height: f64) -> f64 {
+    const GAP: f64 = 8.0;
+    match screen {
+        Screen::Place | Screen::Directions => sheet_height + GAP,
+        Screen::Navigating | Screen::Arrived => NAV_BAR_HEIGHT + GAP,
+        Screen::Explore | Screen::Search { .. } => 14.0,
+    }
+}
+
+/// How far down the status line sits: under what the screen has at its top.
+fn status_top(screen: Screen) -> f64 {
+    match screen {
+        Screen::Directions => DIRECTIONS_CARD_HEIGHT + 12.0,
+        Screen::Navigating | Screen::Arrived => NAV_BANNER_HEIGHT + 12.0,
+        Screen::Explore | Screen::Search { .. } | Screen::Place => TOP_BAR_HEIGHT - 2.0,
+    }
+}
+
 /// The point `meters` from `from` along `bearing_deg`: near enough on a
 /// plane, at the distances a camera leads by.
 fn lead(from: LonLat, bearing_deg: f64, meters: f64) -> LonLat {
@@ -2296,11 +2415,20 @@ mod tests {
     /// network: nothing lands but what a test injects.
     fn with_view(test: impl FnOnce(&mut Cx, &WidgetRef)) {
         let (mut iso, root) = isolate_root();
+        // A property applied at run time is script too, and a name it
+        // cannot resolve only logs, unless a sink is installed before it
+        // runs: every test ends with nothing in it.
+        iso.with_vm(|vm| vm.bx.captured_errors = Some(Vec::new()));
         iso.entered(|cx| {
             root.handle_event(cx, &Event::Custom(String::new()), &mut Scope::empty());
             test(cx, &root);
             root.borrow_mut::<MapsView>().unwrap().shutdown(cx);
         });
+        let errors = iso.with_vm(|vm| vm.take_errors());
+        assert!(
+            errors.is_empty(),
+            "script errors while the view ran: {errors:?}"
+        );
         iso.teardown(root);
     }
 
@@ -2684,6 +2812,26 @@ mod tests {
     }
 
     #[test]
+    fn a_route_that_could_not_be_fetched_says_what_failed_and_under_it_why() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            let id = in_flight(&view, Request::Route(Mode::Car));
+            view.handle_reply(cx, id, Err("could not connect to the server.".into()));
+            assert_eq!(
+                view.view.label(cx, ids!(route_title)).text(),
+                "Couldn't get directions"
+            );
+            assert_eq!(
+                view.view.label(cx, ids!(route_subtitle)).text(),
+                "Could not connect to the server · Drive"
+            );
+            assert!(view.view.widget(cx, ids!(route_retry)).visible());
+            assert!(!view.view.widget(cx, ids!(start)).visible());
+        });
+    }
+
+    #[test]
     fn without_a_fix_directions_wait_for_one_or_for_a_chosen_start() {
         with_view(|cx, root| {
             to_directions(cx, root, false);
@@ -2839,6 +2987,158 @@ mod tests {
             assert!(view.view.widget(cx, ids!(place_layer)).visible());
             assert!(!view.view.widget(cx, ids!(nav_layer)).visible());
         });
+    }
+
+    #[test]
+    fn a_route_that_lands_after_the_person_left_directions_waits_for_the_next_visit() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            assert!(back_pressed(cx, root));
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert_eq!(view.model().screen(), Screen::Place);
+            // The car's route was in flight when the person went back.
+            land_route(cx, &mut view, Mode::Car, CAR);
+            assert!(!view.route_on_map, "the map is still the place's");
+            assert!(
+                routes_in_flight(&view).is_empty(),
+                "nothing more asked for off Directions"
+            );
+            // Directions again: the route is there, no request needed for it.
+            view.open_directions(cx);
+            assert!(view.route_on_map);
+            assert_eq!(view.view.label(cx, ids!(route_title)).text(), "10 min");
+            assert_eq!(routes_in_flight(&view), vec![Mode::Walk]);
+        });
+    }
+
+    #[test]
+    fn a_live_drive_arrives_and_stays_arrived() {
+        with_view(|cx, root| {
+            with_a_route(cx, root);
+            root.borrow_mut::<MapsView>()
+                .unwrap()
+                .start_navigation(cx, false);
+            let route = root
+                .borrow::<MapsView>()
+                .unwrap()
+                .model()
+                .directions()
+                .unwrap()
+                .route
+                .clone();
+            let fix_along = |meters: f64, second: f64| {
+                let mut event = fix_at(crate::guidance::point_at(&route, meters));
+                if let Event::LocationUpdate(fix) = &mut event {
+                    fix.time = 1_000.0 + second;
+                }
+                event
+            };
+            // Down the route in hops the session's matching window follows.
+            let mut along = 0.0;
+            let mut second = 0.0;
+            while along < route.length_m {
+                along = (along + 200.0).min(route.length_m);
+                second += 10.0;
+                root.handle_event(cx, &fix_along(along, second), &mut Scope::empty());
+            }
+            {
+                let view = root.borrow::<MapsView>().unwrap();
+                assert_eq!(view.model().screen(), Screen::Arrived);
+                assert_eq!(view.view.label(cx, ids!(nav_time)).text(), "Arrived");
+                assert!(view.view.widget(cx, ids!(done)).visible());
+            }
+            // Parked: the fixes keep coming, and nothing changes.
+            root.handle_event(
+                cx,
+                &fix_along(route.length_m, second + 10.0),
+                &mut Scope::empty(),
+            );
+            let view = root.borrow::<MapsView>().unwrap();
+            assert_eq!(view.view.label(cx, ids!(nav_time)).text(), "Arrived");
+            assert_eq!(view.view.label(cx, ids!(nav_rest)).text(), "");
+            assert_eq!(
+                view.view.label(cx, ids!(banner_text)).text(),
+                "You have arrived"
+            );
+        });
+    }
+
+    #[test]
+    fn the_licences_line_is_on_every_screen_that_shows_the_map() {
+        with_view(|cx, root| {
+            let slot =
+                |view: &MapsView, cx: &Cx| view.view.widget(cx, ids!(attribution_slot)).visible();
+            with_a_route(cx, root);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert!(slot(&view, cx), "Directions");
+            view.start_navigation(cx, true);
+            assert!(slot(&view, cx), "Navigation");
+            view.open_search(cx, SearchTarget::Destination);
+            assert!(!slot(&view, cx), "Search has no map to credit");
+        });
+        // Clear of the sheet wherever it is, and of the bar.
+        assert_eq!(attribution_bottom(Screen::Explore, 132.0), 14.0);
+        assert_eq!(attribution_bottom(Screen::Place, 132.0), 140.0);
+        assert_eq!(attribution_bottom(Screen::Directions, 360.0), 368.0);
+        assert!(attribution_bottom(Screen::Navigating, 132.0) > NAV_BAR_HEIGHT);
+    }
+
+    #[test]
+    fn a_live_start_with_no_fix_waits_in_words_of_its_own() {
+        with_view(|cx, root| {
+            // A drive to its end first, so the banner has old words to keep.
+            with_a_route(cx, root);
+            {
+                let mut view = root.borrow_mut::<MapsView>().unwrap();
+                view.start_navigation(cx, true);
+                let mut time = 0.0;
+                while view.model().screen() != Screen::Arrived {
+                    time += 0.5;
+                    view.tick_preview(cx, time);
+                }
+            }
+            assert!(back_pressed(cx, root));
+            // The fix is lost, and the next drive starts from a chosen place.
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            view.model.forget_fix();
+            view.open_directions(cx);
+            view.open_search(cx, SearchTarget::Origin);
+            view.set_query(cx, "library");
+            view.search_now(cx);
+            let id = in_flight(&view, Request::Search);
+            view.handle_reply(cx, id, Ok(SEARCH_REPLY.into()));
+            view.pick_result(cx, 1);
+            land_route(cx, &mut view, Mode::Car, CAR);
+            view.start_navigation(cx, false);
+            assert_eq!(view.model().screen(), Screen::Navigating);
+            assert_eq!(
+                view.view.label(cx, ids!(banner_text)).text(),
+                "Waiting for your location…"
+            );
+            assert_eq!(view.view.label(cx, ids!(nav_time)).text(), "10 min");
+        });
+    }
+
+    #[test]
+    fn nothing_is_written_while_the_saved_state_is_still_being_read() {
+        with_view(|cx, root| {
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            let jail = cx.storage("maps.test");
+            view.set_storage(cx, jail);
+            assert!(view.has_pending_load());
+            view.settings_changed(cx);
+            assert!(view.save_timer.is_none(), "the read is still out");
+            view.load = None;
+            view.settings_changed(cx);
+            assert!(view.save_timer.is_some());
+        });
+    }
+
+    #[test]
+    fn the_status_line_sits_under_what_the_screen_has_at_its_top() {
+        assert!(status_top(Screen::Explore) < status_top(Screen::Navigating));
+        assert!(status_top(Screen::Navigating) < status_top(Screen::Directions));
+        assert!(status_top(Screen::Directions) > DIRECTIONS_CARD_HEIGHT);
     }
 
     #[test]

@@ -355,6 +355,10 @@ impl MapsModel {
         };
         // Back from Directions and in again: the same trip, its routes kept.
         if self.destination != End::Place(place.clone()) {
+            // After a swap the place was the origin: not a trip from it to it.
+            if self.origin == End::Place(place.clone()) {
+                self.origin = End::MyLocation;
+            }
             self.destination = End::Place(place);
             self.clear_routes();
         }
@@ -477,12 +481,20 @@ impl MapsModel {
                     .and_then(|text| places::parse(&text))
                     .ok()
                     .and_then(|places| places.into_iter().next());
-                if let (Some(found), Some(pin)) = (found, self.place.as_mut()) {
+                if let (Some(found), Some(pin)) = (found, self.place.clone()) {
                     // Where the finger was, not where the street's own point is.
-                    *pin = Place {
+                    let named = Place {
                         pos: pin.pos,
                         ..found
                     };
+                    // An end of the route that is this pin has its name too:
+                    // Directions may have opened before the answer came.
+                    for end in [&mut self.origin, &mut self.destination] {
+                        if *end == End::Place(pin.clone()) {
+                            *end = End::Place(named.clone());
+                        }
+                    }
+                    self.place = Some(named);
                 }
             }
             Request::Route(mode) => self.routes[mode.index()] = route_state(mode, body),
@@ -495,6 +507,12 @@ impl MapsModel {
             }
         }
         Some(request)
+    }
+
+    /// The device lost its fix (a test's way to a drive that starts without one).
+    #[cfg(test)]
+    pub(crate) fn forget_fix(&mut self) {
+        self.fix = None;
     }
 
     /// What is in flight, oldest first.
@@ -1128,6 +1146,33 @@ mod tests {
             "Santa Clara University Library"
         );
         assert!(matches!(model.route(Mode::Car), RouteState::Idle));
+    }
+
+    #[test]
+    fn a_swap_and_a_way_back_do_not_make_a_trip_from_a_place_to_itself() {
+        let mut model = at_directions();
+        model.swap_ends();
+        assert!(model.back());
+        assert_eq!(model.screen(), Screen::Place);
+        model.open_directions();
+        assert_eq!(model.origin(), &End::MyLocation);
+        assert_eq!(model.destination().label(), "Santa Clara University");
+    }
+
+    #[test]
+    fn a_pin_named_after_directions_opened_names_the_routes_end_too() {
+        let mut model = MapsModel::default();
+        model.set_fix(LonLat::new(-121.9, 37.35));
+        let (id, _) = model.drop_pin(SAN_JOSE);
+        model.open_directions();
+        assert_eq!(model.destination().label(), "Dropped pin");
+        land_route(&mut model, Mode::Car, CAR);
+        model.complete(id, Ok(REVERSE_REPLY.into()));
+        assert_eq!(model.destination().label(), "East Santa Clara Street");
+        // The same trip: back and in again keeps its route.
+        assert!(model.back());
+        model.open_directions();
+        assert!(model.route(Mode::Car).directions().is_some());
     }
 
     #[test]

@@ -163,16 +163,18 @@ pub fn parse(mode: Mode, json: &str) -> Result<Directions, RouteError> {
     let length_m = cum_dist_m[cum_dist_m.len() - 1];
 
     let last_point = points.len() - 1;
-    let mut steps: Vec<Step> = Vec::new();
-    let mut maneuvers: Vec<Maneuver> = Vec::new();
-    let mut maneuver_steps = Vec::new();
-    let mut reached = 0usize;
-    for wire_step in wire
+    let wire_steps: Vec<StepWire> = wire
         .legs
         .unwrap_or_default()
         .into_iter()
         .flat_map(|leg| leg.steps.unwrap_or_default())
-    {
+        .collect();
+    let last_step = wire_steps.len().saturating_sub(1);
+    let mut steps: Vec<Step> = Vec::new();
+    let mut maneuvers: Vec<Maneuver> = Vec::new();
+    let mut maneuver_steps = Vec::new();
+    let mut reached = 0usize;
+    for (step_index, wire_step) in wire_steps.into_iter().enumerate() {
         let distance_m = wire_step.distance.unwrap_or(0.0).max(0.0);
         let m = wire_step.maneuver.unwrap_or_default();
         let (kind_name, modifier) = (
@@ -197,16 +199,20 @@ pub fn parse(mode: Mode, json: &str) -> Result<Directions, RouteError> {
             text: step_text(kind, kind_name, modifier, name, m.bearing_after),
             distance_m,
         });
-        let Some(kind) = kind else { continue };
         let at = match m.location.as_deref() {
             Some([lon, lat, ..]) if lon.is_finite() && lat.is_finite() => LonLat::new(*lon, *lat),
             _ => points[reached],
         };
+        // Every step moves the search on, a turn or not, so a line that
+        // passes a vertex twice pins a later turn to the later pass. Only
+        // the first step is the line's start and only the last its end: a
+        // leg's own depart or arrive in between is wherever it says.
         reached = match kind {
-            ManeuverKind::Depart => 0,
-            ManeuverKind::Arrive => last_point,
+            Some(ManeuverKind::Depart) if step_index == 0 => 0,
+            Some(ManeuverKind::Arrive) if step_index == last_step => last_point,
             _ => vertex_at(&points, reached, at),
         };
+        let Some(kind) = kind else { continue };
         maneuvers.push(Maneuver {
             kind,
             at,
@@ -494,6 +500,28 @@ mod tests {
         {
             assert_eq!(Arrow::of(m.kind), steps[step].arrow, "{m:?}");
         }
+    }
+
+    #[test]
+    fn indices_run_forward_whatever_the_steps_say() {
+        // Two legs' worth of steps over the documented sample's three
+        // points: a depart and an arrive in the middle, and a step that is
+        // no turn between two that are.
+        let reply = r#"{"code":"Ok","routes":[{"geometry":"_p~iF~ps|U_ulLnnqC_mqNvxq`@","duration":100,"legs":[{"steps":[
+            {"name":"A","distance":10,"maneuver":{"type":"depart","location":[-120.2,38.5]}},
+            {"name":"B","distance":10,"maneuver":{"type":"new name","modifier":"straight","location":[-120.95,40.7]}},
+            {"name":"B","distance":0,"maneuver":{"type":"arrive","location":[-120.95,40.7]}},
+            {"name":"B","distance":10,"maneuver":{"type":"depart","location":[-120.95,40.7]}},
+            {"name":"C","distance":10,"maneuver":{"type":"turn","modifier":"left","location":[-126.453,43.252]}},
+            {"name":"C","distance":0,"maneuver":{"type":"arrive","location":[-126.453,43.252]}}
+        ]}]}]}"#;
+        let route = parse(Mode::Car, reply).unwrap().route;
+        let indices: Vec<usize> = route.maneuvers.iter().map(|m| m.point_index).collect();
+        assert_eq!(indices, vec![0, 1, 1, 2, 2], "{:?}", route.maneuvers);
+        assert!(route
+            .maneuvers
+            .windows(2)
+            .all(|w| w[1].dist_m >= w[0].dist_m));
     }
 
     #[test]
