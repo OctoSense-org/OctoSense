@@ -470,8 +470,10 @@ found on the way. `docs/maps.md` describes what is there.
 
   Verified on the OnePlus 6T on 2026-09-18 with a release APK built against
   the branch, whose tree is identical to the pinned revision's: see
-  `docs/maps.md`. The APK of the pinned build was made on 2026-09-19 and not
-  yet run: no phone was attached.
+  `docs/maps.md`. The APK of the pinned build was run on a Pixel 7 Pro
+  (Android 17) on 2026-09-19: the map, Locate and the puck, search, places,
+  directions and a preview drive all work, with no panic and no skipped
+  draws. Mail opens; Sheets and the AppCard nav card were not reached.
 
 - [x] **MAPS-12 — P1: The map draws no tiles on Android (framework; fixed in the fork, pinned by MAPS-16).**
 
@@ -531,8 +533,10 @@ found on the way. `docs/maps.md` describes what is there.
   1.2, so search, places and the map work there. The server answers plain
   HTTP too, and the manifest would allow it, but a route request carries
   both ends of a trip and stays on HTTPS. Goes away with services of our
-  own (MAPS-08) or a phone on Android 10 or later; until one of those,
-  directions, the preview and a real drive are unverified on a phone.
+  own (MAPS-08) or a phone on Android 10 or later. Confirmed on 2026-09-19:
+  on a Pixel 7 Pro (Android 17) the same build gets its routes, and
+  directions and the preview drive work there. A real drive is still
+  unverified on any phone.
 
 - [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
 

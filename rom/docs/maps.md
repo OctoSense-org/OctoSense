@@ -172,6 +172,22 @@ failed` with **Retry**. So routes on a drawn map, the preview, a real drive
 with a reroute, and pinch, rotate and tilt (adb has no multi-touch) are
 still unverified on a phone.
 
+On a Pixel 7 Pro (Android 17) on 2026-09-19, the release APK of the pinned
+build, in the shell's dark mode: the app opens in full with the dark map;
+Locate, the puck, search and the place sheet work as on the OnePlus; and
+the part Android 9 could not reach works too. Directions to a searched
+place give a time for each of the three modes, draw the route and fit it
+between the card and the sheet, and **Preview** drives it: the turn banner
+with its arrow and distance, the tilted heading-up camera with 3D
+buildings, the puck on the line, and the time, distance and arrival
+counting down. No panic and no skipped draws in the log. Mail opens on the
+same build. Found there and fixed: the time left was the banner's dark
+green on the dark bar (contrast 1.8); it has its own colour now, with a
+test that every text colour reads against its card in both skins. Still
+not done on any phone: **Start** over a real drive with a reroute, and
+pinch, rotate and tilt. Not opened with the framework fixes: Sheets and the
+AppCard nav card (the phone's USB link dropped).
+
 The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
 the map there), `--fix lat,lon` (the device is there, for a desk with no
 GPS), and `--show <state>` to open on a state without driving the window:
