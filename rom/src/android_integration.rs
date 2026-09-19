@@ -737,7 +737,11 @@ impl App {
     pub(crate) fn android_dock(&mut self, cx: &mut Cx, app: &str, slot: usize) {
         {
             let android = &mut self.state_mut().phone.android;
-            let mut dock: Vec<String> = (0..4).map(|i| android.dock.get(i).cloned().unwrap_or_else(|| crate::mobile_surface::PINNED[i].to_string())).collect();
+            // From the dock as it stands, stand-ins included: docking one app
+            // must not send News and OctosMap back to the pages.
+            let apps = crate::shell::launcher::apps();
+            let has = |id: &str| apps.iter().any(|a| a.id.trim_start_matches("apps.") == id);
+            let mut dock: Vec<String> = crate::mobile_surface::dock_ids(&android.dock, has).iter().map(|id| id.to_string()).collect();
             for entry in dock.iter_mut() { if entry == app { entry.clear(); } }
             dock[slot.min(3)] = app.to_string();
             android.dock = Arc::new(dock);
