@@ -180,13 +180,15 @@ place give a time for each of the three modes, draw the route and fit it
 between the card and the sheet, and **Preview** drives it: the turn banner
 with its arrow and distance, the tilted heading-up camera with 3D
 buildings, the puck on the line, and the time, distance and arrival
-counting down. No panic and no skipped draws in the log. Mail opens on the
-same build. Found there and fixed: the time left was the banner's dark
-green on the dark bar (contrast 1.8); it has its own colour now, with a
-test that every text colour reads against its card in both skins. Still
-not done on any phone: **Start** over a real drive with a reroute, and
-pinch, rotate and tilt. Not opened with the framework fixes: Sheets and the
-AppCard nav card (the phone's USB link dropped).
+counting down. No panic and no skipped draws in the log. Mail, Sheets and
+AppCard open on the same build. Found there and fixed: the time left was
+the banner's dark green on the dark bar (contrast 1.8); it has its own
+colour now, seen on the phone, with a test that every text colour reads
+against its card in both skins. Still not done on any phone: **Start** over
+a real drive with a reroute, and pinch, rotate and tilt. The AppCard nav
+card, which shares the map, cannot be reached on this APK: it has no
+bundled assistant kernel, so AppCard stays on its reconnecting screen
+(`docs/android-appcard-build.md`).
 
 The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
 the map there), `--fix lat,lon` (the device is there, for a desk with no

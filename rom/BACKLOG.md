@@ -473,7 +473,9 @@ found on the way. `docs/maps.md` describes what is there.
   `docs/maps.md`. The APK of the pinned build was run on a Pixel 7 Pro
   (Android 17) on 2026-09-19: the map, Locate and the puck, search, places,
   directions and a preview drive all work, with no panic and no skipped
-  draws. Mail opens; Sheets and the AppCard nav card were not reached.
+  draws. Mail, Sheets and AppCard open. The AppCard nav card, the other
+  user of the map, needs an APK with the assistant kernel bundled and has
+  not been seen with these fixes.
 
 - [x] **MAPS-12 — P1: The map draws no tiles on Android (framework; fixed in the fork, pinned by MAPS-16).**
 
