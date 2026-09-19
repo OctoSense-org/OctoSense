@@ -67,6 +67,9 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 # News: headlines from Hacker News, TechMeme, Google News and the person's
 # own feeds, in a tab per source; a wide home tile on the phone.
 octosense-news = { path = "apps/news", optional = true }
+# OctosMap: a map under a search bar, places, directions by car, on foot and
+# by bike, and turn-by-turn navigation.
+octosense-maps = { path = "apps/maps", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
@@ -79,6 +82,7 @@ octosense-reference = { path = "apps/reference" }
 octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
 octosense-news = { path = "apps/news" }
+octosense-maps = { path = "apps/maps" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a", default-features = false }
 octosense-photos = { path = "apps/photos" }
 
@@ -90,7 +94,7 @@ default = []
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps"]
 app-mail = ["dep:octosense-mail"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
@@ -101,6 +105,8 @@ app-photos = ["dep:octosense-photos"]
 app-appcard = ["dep:octosense-appcard"]
 # The News module (headlines in a tile) linked in.
 app-news = ["dep:octosense-news"]
+# The OctosMap module (maps, places, directions, navigation) linked in.
+app-maps = ["dep:octosense-maps"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]

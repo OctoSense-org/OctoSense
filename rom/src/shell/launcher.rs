@@ -56,7 +56,7 @@ fn icon_for(id: &str) -> Option<Ico> {
         "image" => Ico::Monitor,
         "video" => Ico::Play,
         "pdf" => Ico::Check,
-        "route" => Ico::Globe,
+        "route" | "maps" => Ico::Globe,
         "mixer" => Ico::Speaker,
         "vj" => Ico::Headphone,
         "photos" => Ico::Photo,

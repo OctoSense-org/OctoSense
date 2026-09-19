@@ -5518,6 +5518,7 @@ dependencies = [
  "makepad-wm-theme",
  "octosense-appcard",
  "octosense-mail",
+ "octosense-maps",
  "octosense-news",
  "octosense-photos",
  "octosense-reference",

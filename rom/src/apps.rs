@@ -55,6 +55,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_mail::MAIL_MODULE);
     #[cfg(any(feature = "app-news", target_os = "android", target_os = "ios"))]
     out.push(&octosense_news::NEWS_MODULE);
+    #[cfg(any(feature = "app-maps", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_maps::MAPS_MODULE);
     out
 }
 
@@ -178,7 +180,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "news"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

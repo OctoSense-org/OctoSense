@@ -8,6 +8,9 @@
   included, so web content is exempt from App Transport Security. The
   app's own connections are not: feeds are fetched over https and feed
   pictures are asked for over https whatever the feed says (feed.rs).
+
+  OctosMap shows where the device is and navigates from there: iOS asks the
+  person with this sentence the first time the locate button is tapped.
 -->
 <plist version="1.0">
 <dict>
@@ -16,5 +19,7 @@
     <key>NSAllowsArbitraryLoadsInWebContent</key>
     <true/>
   </dict>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>OctosMap shows where you are on the map and gives directions from there.</string>
 </dict>
 </plist>
