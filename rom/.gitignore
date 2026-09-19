@@ -9,3 +9,4 @@ __pycache__/
 # Local model weights and partial downloads belong outside the repository.
 *.gguf
 *.gguf.part
+/.claude/
