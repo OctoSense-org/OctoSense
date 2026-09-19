@@ -22,7 +22,7 @@ use crate::model::{
 use crate::places::{self, coordinates_text, Place, PlaceKind};
 use crate::routing::{Arrow, Mode};
 use crate::sheet::{Detent, Sheet};
-use crate::HOSTED_TILES;
+use crate::{HOSTED_OCEAN, HOSTED_TILES};
 use makepad_map_nav::nav::NavState;
 use makepad_widgets::makepad_platform::event::TouchState;
 use makepad_widgets::makepad_platform::storage::{
@@ -697,6 +697,11 @@ impl MapsView {
         self.started = true;
         let map = self.map(cx);
         map.set_source_config(cx, TileSourceConfig::http_archive(HOSTED_TILES));
+        let ocean = HOSTED_OCEAN
+            .iter()
+            .map(|url| OverlaySource::new("ocean", TileSourceConfig::http_archive(*url)))
+            .collect();
+        map.set_overlays(cx, ocean);
         self.apply_settings(cx);
         let settings = &self.model.settings;
         map.set_center(cx, settings.center.lon, settings.center.lat);
