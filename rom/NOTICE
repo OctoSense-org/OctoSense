@@ -1,0 +1,30 @@
+octosense-rom
+Copyright 2026 The OctoSense Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+The license covers the build scripts, patches, configuration and sources in
+this repository that were written for OctoSense.
+
+Third-party components
+----------------------
+
+* LineageOS and AOSP: this repository contains scripts, patches and overlays
+  applied to LineageOS (https://lineageos.org/) and Android Open Source Project
+  (https://source.android.com/) source trees. Those trees, the code built from
+  them and any files taken from them keep their own licenses (mostly the
+  Apache License, Version 2.0, with components under GPL-2.0 such as the Linux
+  kernel, and other licenses as noted in their sources).
+* Prebuilt APKs: the APKs placed under vendor/octosense/prebuilt/ at build
+  time (for example OctoSenseHome.apk and OctoSenseBridge.apk) are not part of
+  this repository and are covered by the licenses of the projects they are
+  built from.
+* web-installer/fastboot.mjs: a bundled build of android-fastboot 1.1.3
+  (https://github.com/kdrag0n/fastboot.js), Copyright (c) 2021 Danny Lin,
+  licensed under the MIT License (see LICENSES/android-fastboot-MIT.txt).
+  The bundle includes:
+  - zip.js, Copyright (c) 2021 Gildas Lormeau, BSD-3-Clause license;
+  - JZlib, Copyright (c) JCraft, Inc., BSD-style license;
+  - SJCL (Stanford JavaScript Crypto Library), Copyright (c) Emily Stark,
+    Mike Hamburg, Dan Boneh, Stanford University, BSD license.
+  The copyright and license notices of these bundled libraries are retained
+  in the file.
