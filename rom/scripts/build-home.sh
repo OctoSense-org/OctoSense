@@ -29,6 +29,10 @@ done
 ln -sfn octoscript-makepad-repin "$ROOT/octoscript-makepad"
 # ...and splash.md from a sibling "makepad".
 ln -sfn makepad-pinned "$ROOT/makepad"
+# Octoscript-AppCard's design kits carry a designer's local font paths
+# ("file:/Users/<name>/Library/Fonts/..."); strip the directory in the mirror's copy.
+find "$ROOT/cargo/git/checkouts" -path '*octoscript-appcard*' -path '*/lab/core/kits/*' -name '*.json' \
+  -exec grep -l 'file:/Users/' {} + 2>/dev/null | while read -r f; do sed -i '' -E 's#file:/Users/[^/"]+/Library/Fonts/#file:#g' "$f"; done
 export CARGO_HOME=$ROOT/cargo
 cd "$ROOT/$(basename "$MOBILE")"
 sed -i '' -e 's|path = "\.\./makepad/|path = "../makepad-pinned/|g' -e 's|path = "\.\./octoscript-makepad/|path = "../octoscript-makepad-repin/|g' -e 's|path = "\.\./octoscript/|path = "../octoscript-pinned/|g' Cargo.toml
