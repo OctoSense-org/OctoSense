@@ -134,12 +134,23 @@ cargo run --features mobile-only,mobile-apps -- --module maps \
   --test-action launch-maps
 ```
 
-Verified on 2026-09-19 on macOS: the log reads `modules linked: [..., "maps"]`
+Verified on 2026-09-18 on macOS: the log reads `modules linked: [..., "maps"]`
 and `launched maps as client 1 (in-process)`; the app draws under the shell's
 status bar and above its gesture bar; a tap delivered by the shell
 (`--test-action taps:200,76@9`) opens Search; the home grid shows the app
-with the route app's icon. Not yet run on a phone: the GPS fix, the touch
-gestures on the map, the soft keyboard in the search field, and a real drive.
+with the route app's icon.
+
+On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch:
+the module is linked (`modules linked: [..., "maps"]`) and launches
+in-process; News and OctosMap sit in the dock's bottom row with Photos; the
+app's interface draws inside the shell's safe area; a tap on Locate brings a
+GPS fix within seconds (location events do reach an in-process app). Two
+framework problems stop it there, both in the fork and both written up in
+`BACKLOG.md`: the map draws no tiles on Android (MAPS-12, the Android
+network backend's silent cancel) and opening the app can freeze the shell
+(MAPS-13, the GL backend unwrapping a pass with no draw list). Not yet run
+on a phone because of them: search with the soft keyboard, the place sheet
+and directions over a drawn map, a preview, and a real drive.
 
 The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
 the map there), `--fix lat,lon` (the device is there, for a desk with no

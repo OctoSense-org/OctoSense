@@ -12,6 +12,7 @@
 - Task 16: opened in the phone shell on macOS, in-process (`--module maps --test-action launch-maps`, the shell's frame capture and its `taps:` action, an isolated `OCTOSENSE_HOME`). Found there and fixed: the sea was the page's colour (two ocean overlays), and the home icon was the generic one (the shell's icon wrapper draws the route app's art for `maps`).
 - A whole-feature review and a pass of my own over the view: thirteen fixes, listed in the plan. The view's tests now fail on a run-time script error, which is how two broken padding updates would have been caught. 95 tests in the crate.
 - The FOSSGIS routing server was down for a while during the review (refused from outside this network too); the app's error path was seen working on screen.
+- Task 17, in part, on the OnePlus 6T: linked, launched in-process, GPS fix arrives, dock row as asked (News, OctosMap, Photos). Blocked by two framework problems found and traced there: no tiles on Android (MAPS-12) and a GL-backend panic that freezes the shell when the app opens (MAPS-13). Both are small fixes in the fork, which needs the person's decision.
 - A temporary worktree used to check that on `main` shared the target directory and left Photos' build output pointing at it; `cargo clean -p octosense-photos` put it right. No source was touched.
 
 ---

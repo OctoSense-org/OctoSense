@@ -450,6 +450,74 @@ found on the way. `docs/maps.md` describes what is there.
   released product needs hosted tiles, a geocoder and a router it may rely
   on. The URLs are constants in `apps/maps/src/{lib,places,routing}.rs`.
 
+- [ ] **MAPS-12 — P1: The map draws no tiles on Android (framework).**
+
+  Found on the OnePlus 6T on 2026-09-18. OctosMap runs in-process, its
+  interface works, GPS fixes arrive, and the phone's network returns proper
+  range replies for the archive (`curl -r` from the device: 206 with a
+  matching `Content-Range`). The map fetches the archive's index and a range
+  or two, then asks for nothing more, and logs no error. The cause is in the
+  fork's Android network backend, against what `MapView`'s HTTP archive
+  reader (`widgets/src/map/archive.rs`) expects of a platform:
+
+  1. The reader marks a request `dispatched` on
+     `NetworkResponse::HttpProgress`. Android never emits one (only the
+     desktop and web backends do), so every range request looks
+     undispatched.
+  2. On a change of tile priorities (any camera move, the first included)
+     `requeue_undispatched` cancels every undispatched range request and
+     waits for the cancellation to come back as an `HttpError`, on which it
+     queues the read again. `AndroidNetworkShimBackend::http_cancel`
+     (`platform/src/os/linux/android/android_network.rs`) forgets the
+     request and emits nothing, so the read is lost and its tiles never
+     load.
+
+  The framework's route app would fail the same way on Android. The fix is
+  in the fork: emit an `HttpError` (cancelled) from `http_cancel`, and
+  ideally an `HttpProgress` when the Java side starts reading a body. A few
+  lines, then the usual re-pin chain. Not done here: this work was agreed
+  to make no framework changes. Until then OctosMap on a phone is a working
+  interface over a blank map. The L0 `nav` card's map works on the same
+  phone because it uses `MapView`'s other tile path (`use_network: true`,
+  live Overpass), which could serve as a stopgap on Android at a cost in
+  CPU, memory and detail.
+
+- [ ] **MAPS-13 — P1: Opening OctosMap can freeze the shell on Android (framework).**
+
+  Found on the OnePlus 6T on 2026-09-18. About 0.3 s after OctosMap opens,
+  as its opening animation ends, the render thread panics and the launcher
+  keeps its last frame until it is force-stopped:
+
+  `platform/src/os/linux/opengl.rs:1166` —
+  `self.passes[draw_pass_id].main_draw_list_id.unwrap()` on `None`, from
+  `Cx::draw_pass_to_texture` ← `handle_repaint`.
+
+  Proven: the GL backend unwraps a pass that has no draw list, where the
+  Metal backend (`apple/metal.rs:1168`) takes the same case with an
+  `if let` and draws nothing, which is why no desktop run ever crashed.
+  Android repaints detached passes (`CxDrawPassParent::None`) through the
+  same function, and the shell holds several that are never drawn on this
+  phone: the blur chain's `gauss_scene`, `gauss_mip_N` and
+  `gauss_smooth_mip_N_M`, all listed with no draw list by a temporary
+  trace. It is not the dock: a build with OctosMap back on its page crashed
+  the same way, from the page, from the dock and from the app drawer, as
+  the first app and as the second. It began after the app had saved a
+  street-level camera (a Locate tap flew the map to zoom 15.5); the three
+  launches before that, at the default wide camera, did not crash.
+
+  Suspected, not proven: something dirties every pass in that frame, and
+  `MapView::insert_ready_tile` calls `cx.redraw_all()` when a tile becomes
+  ready (`widgets/src/map/view.rs:6758`). At the saved camera part of the
+  tile data is in the archive's disk cache and can be ready that fast; at
+  the default camera no tile ever arrives on Android (MAPS-12). No tile is
+  logged before the panic, so this is an inference from the code.
+
+  The fix is in the fork: `opengl.rs` should do what `metal.rs` does for a
+  pass with no draw list. One line, then the re-pin chain. Until then, do
+  not open OctosMap on a phone build; if the launcher freezes,
+  `adb shell am force-stop dev.makepad.octosense`. Clearing the saved
+  camera would hide it again only until the next street-level launch.
+
 - [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
 
   OSRM answers `alternatives=true` and more than two coordinates; the model
