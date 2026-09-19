@@ -37,6 +37,9 @@ script_mod! {
 pub struct App {
     #[live]
     ui: WidgetRef,
+    /// `--show place:<query>`: the first result opens when it lands.
+    #[rust]
+    open_first_result: bool,
 }
 
 /// `--at lat,lon`, the order a person reads coordinates in.
@@ -71,18 +74,25 @@ impl MatchEvent for App {
         }
         makepad_wm_api::set_title(cx, "OctosMap");
         // `--show <state>`: open on a state a screenshot wants, without
-        // driving the window there by hand.
+        // driving the window there by hand. `layers`; `search:<query>`, the
+        // results of a search; `place:<query>`, its first result's sheet.
         let show = args
             .iter()
             .position(|a| a == "--show")
-            .and_then(|i| args.get(i + 1));
+            .and_then(|i| args.get(i + 1))
+            .cloned();
         if let (Some(state), Some(mut view)) = (
             show,
             self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>(),
         ) {
-            match state.as_str() {
-                "layers" => view.open_layers(cx),
-                other => log!("maps: --show {other} is not a state"),
+            match state.split_once(':') {
+                None if state == "layers" => view.open_layers(cx),
+                Some(("search", query)) => view.search_for(cx, query),
+                Some(("place", query)) => {
+                    view.search_for(cx, query);
+                    self.open_first_result = true;
+                }
+                _ => log!("maps: --show {state} is not a state"),
             }
         }
     }
@@ -121,5 +131,13 @@ impl AppMain for App {
         }
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
+        if self.open_first_result {
+            if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
+                if !view.model().results.is_empty() {
+                    self.open_first_result = false;
+                    view.pick_result(cx, 0);
+                }
+            }
+        }
     }
 }

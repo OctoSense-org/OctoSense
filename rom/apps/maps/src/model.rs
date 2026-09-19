@@ -497,6 +497,12 @@ impl MapsModel {
         Some(request)
     }
 
+    /// What is in flight, oldest first.
+    #[cfg(test)]
+    pub(crate) fn in_flight(&self) -> Vec<(LiveId, Request)> {
+        self.in_flight.clone()
+    }
+
     /// Requests that were superseded since the last call: cancel them.
     pub fn superseded(&mut self) -> Vec<LiveId> {
         std::mem::take(&mut self.cancelled)
