@@ -1,0 +1,202 @@
+# OctosMap
+
+`apps/maps` is the maps AppModule of the OctoSense phone shell: a full-screen
+map under a search bar, a place sheet that slides up from the bottom,
+directions by car, on foot and by bike, and turn-by-turn navigation. The
+layout follows the [Google Maps listing](https://apps.apple.com/us/app/google-maps/id585027354).
+Its launcher id is `maps`, its label **OctosMap**, and it opens from the home
+grid and the App Library's Productivity card. It has no home tile yet
+(MAPS-03).
+
+It is built on the framework's route app (`../makepad/apps/route`): the same
+`MapView`, the same hosted vector archive, the same navigation session and
+location handling, under a phone interface of its own. The design and the
+plan are `docs/plans/2026-09-18-octosmap-design.md` and
+`docs/plans/2026-09-18-octosmap.md`.
+
+## Using the app
+
+- **The map** pans with a finger, zooms with a pinch, and rotates and tilts
+  with two fingers. A **compass** appears while it is not north-up and flat;
+  a tap puts it back.
+- **Locate** (bottom right) asks for the device's location the first time,
+  then flies to the fix and draws the puck; after that a tap recentres. If
+  location is off or no fix comes in twenty seconds the app says so, and the
+  next tap tries again.
+- **Layers** (top right) sets the dark map (it follows the shell's light or
+  dark mode until it is flipped), 3D buildings, labels, and miles or
+  kilometres. Distances are in the units of the destination's country until
+  the switch is used.
+- **Search here** opens a page of its own. Results appear a moment after the
+  typing pauses, or on Return: a place's kind, name and address, and how far
+  it is once there is a fix. A failed search says why and offers **Retry**.
+- A result opens its **place**: a pin, the map moved so the pin sits between
+  the search bar and the sheet, and the sheet at its lowest with the name,
+  the category, the distance and **Directions**. Drag the sheet's head, or tap
+  it, for the address and the coordinates. A tap on the bare map, the back
+  arrow or the back gesture lets go of the place.
+- **A long press** on the map drops a pin at once; the reverse lookup then
+  names it.
+- **Directions** shows both ends on a card, with a swap button, and a tab for
+  driving, walking and cycling, each with its time. The shown tab's route is
+  drawn and fitted between the card and the sheet; the sheet gives the time,
+  the distance and every step. Tap an end to search for another. With no
+  location the app asks for one, and a starting point can be chosen instead.
+  A mode with no route says so on its own tab and offers **Retry**.
+- **Start** navigates over live fixes; **Preview** drives the same screen
+  with a simulated drive of between twenty and ninety seconds. The banner
+  shows the next turn's arrow, how far it is and what to do; the bar shows
+  the time and distance left and the arrival time. The map chases the puck,
+  tilted and heading-up; dragging it pauses the chase and shows **Recentre**.
+  Off the route for more than a few seconds the banner reads `Rerouting…`
+  and a new route is fetched from the current position. Arrival shows
+  **Done**, which goes back to the place; **End** goes back to the routes.
+- The back gesture walks back one screen at a time and leaves the app from
+  the map.
+
+The app reopens where the map last was, with the layer switches as they were
+left.
+
+## Services and their terms
+
+OctosMap has no backend of its own. It uses public, keyless services, all of
+them OpenStreetMap data, and the map carries the licence's line
+(`© OpenStreetMap contributors`).
+
+| Need | Service |
+|---|---|
+| Base map | `https://makepad.nl/maps/world-20260903.mkmap`, the framework's hosted vector archive, read over HTTP range requests |
+| The sea | Two overlay archives beside it, `ocean-low` and `ocean-high`, drawn as the map's `ocean` layer: the base archive has no water of its own at the far zooms |
+| Search, reverse lookup | Photon, `https://photon.komoot.io` |
+| Routing | The FOSSGIS OSRM servers, `https://routing.openstreetmap.de/routed-{car,foot,bike}` |
+| Location | The platform: CoreLocation, Android's `LocationManager` |
+
+These are fair-use servers, not a contract. The app names itself in a
+`User-Agent` on every request, sends a search only after a 300 ms pause in
+the typing, cancels a request it no longer wants, asks for one route at a
+time (the shown tab's first), keeps a route per mode until an end changes,
+and caps every reply at 4 MiB. A product build needs services of its own
+(MAPS-08). The framework route app's own search and routing API was not
+used: it covers Europe only (probed on 2026-09-18).
+
+There is no satellite view: `MapView` has no imagery mode (MAPS-07).
+
+## Implementation and storage
+
+| File | Owns |
+|---|---|
+| `src/geo.rs` | The polyline decoder, the camera that fits a box into the room the panels leave, distance, duration and arrival text; distances and bearings are the navigation library's |
+| `src/places.rs` | Photon's URLs and GeoJSON as `Place` rows |
+| `src/routing.rs` | OSRM's URLs and replies as the framework's `Route`, plus the step list |
+| `src/guidance.rs` | The framework's `NavSession` fed by fixes or the simulated drive, one `NavTick` per position; the reroute rule |
+| `src/sheet.rs` | The sheet's three heights, its drag and its snap |
+| `src/model.rs` | The screen state machine, the requests in flight, the settings, the skin |
+| `src/view.rs` | `MapsView`: one persistent `MapView` and a layer per screen |
+| `src/module.rs` | The `AppModule` the shell links |
+| `src/main.rs` | The standalone window and its dev flags |
+
+Everything that is not drawing is pure Rust with no widget in sight and is
+tested without a window; the view is tested in an isolate with injected
+replies and fixes, as News is. No test touches the network: the parsers read
+`tests/fixtures`, saved from the live services.
+
+The map is never rebuilt: the screens are layers over it that the model
+shows or hides. That is the reason this is a native module and not the L0
+`nav` card: a card's state change regenerates its widgets and tears the map
+down.
+
+The one file the app keeps, `state` in its storage jail, holds the last
+camera and the layer switches, every field optional. It is written two
+seconds after the last change and on shutdown.
+
+The module declares `storage`, `net` and `location`. Android's manifest
+already has both location permissions and the platform asks the person on
+the first `start_location_updates`; iOS asks with the sentence in
+`resources/apple/Info.plist`.
+
+## Build and validation
+
+```sh
+cargo test -p octosense-maps
+cargo check --locked --workspace --features mobile-apps
+cargo test --features mobile-apps --bin octosense \
+  bundled_apps_open_without_catalog_files_or_child_processes
+
+# Standalone desktop development window, phone-sized
+cargo run -p octosense-maps -- --phone
+```
+
+In the phone shell on a desktop, hosted in-process as a phone hosts it (the
+desktop launches catalog apps as child processes unless told otherwise):
+
+```sh
+cargo run --features mobile-only,mobile-apps -- --module maps \
+  --test-action launch-maps
+```
+
+Verified on 2026-09-18 on macOS: the log reads `modules linked: [..., "maps"]`
+and `launched maps as client 1 (in-process)`; the app draws under the shell's
+status bar and above its gesture bar; a tap delivered by the shell
+(`--test-action taps:200,76@9`) opens Search; the home grid shows the app
+with the route app's icon.
+
+On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch
+built against the fork's `fix/android-map-archive` branch: four framework
+fixes this app needs on a phone, pinned since 2026-09-19 (`BACKLOG.md`
+MAPS-16, `docs/makepad-fork.md`). The pinned revision's tree is identical
+to the branch that was tested; the APK of the pinned build has not been run
+on a phone yet.
+
+- the module is linked (`modules linked: [..., "maps"]`) and launches
+  in-process; News and OctosMap sit in the dock's bottom row with Photos;
+- the app opens in the same frame as News and Photos, inside the shell's
+  safe area, with no panic in the log;
+- the map draws in full from the hosted archive: roads, fills, water,
+  buildings, labels, the one-way arrows;
+- Locate brings a GPS fix within seconds, flies to it and draws the puck
+  with its heading wedge;
+- a long press drops a pin, the reverse lookup names it, and the sheet
+  gives the kind, the distance and **Directions**;
+- search with the soft keyboard lists places with their distances in miles,
+  and a result opens its place with the keyboard put away;
+- the map pans under a finger.
+
+Against the revision pinned before 2026-09-19 (`45d541339`) the same app
+draws no tiles (MAPS-12), freezes the shell as it opens (MAPS-13), draws no
+roads or fills (MAPS-14) and no puck (MAPS-15).
+
+Directions do not work on this phone: the public router accepts TLS 1.3
+only and Android 9 stops at 1.2 (MAPS-17). The Directions screen opens
+with both ends and says `Couldn't get directions · Secure connection
+failed` with **Retry**. So routes on a drawn map, the preview, a real drive
+with a reroute, and pinch, rotate and tilt (adb has no multi-touch) are
+still unverified on a phone.
+
+On a Pixel 7 Pro (Android 17) on 2026-09-19, the release APK of the pinned
+build, in the shell's dark mode: the app opens in full with the dark map;
+Locate, the puck, search and the place sheet work as on the OnePlus; and
+the part Android 9 could not reach works too. Directions to a searched
+place give a time for each of the three modes, draw the route and fit it
+between the card and the sheet, and **Preview** drives it: the turn banner
+with its arrow and distance, the tilted heading-up camera with 3D
+buildings, the puck on the line, and the time, distance and arrival
+counting down. No panic and no skipped draws in the log. Mail, Sheets and
+AppCard open on the same build. Found there and fixed: the time left was
+the banner's dark green on the dark bar (contrast 1.8); it has its own
+colour now, seen on the phone, with a test that every text colour reads
+against its card in both skins. Still not done on any phone: **Start** over
+a real drive with a reroute, and pinch, rotate and tilt. The AppCard nav
+card, which shares the map, cannot be reached on this APK: it has no
+bundled assistant kernel, so AppCard stays on its reconnecting screen
+(`docs/android-appcard-build.md`).
+
+The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
+the map there), `--fix lat,lon` (the device is there, for a desk with no
+GPS), and `--show <state>` to open on a state without driving the window:
+`layers`, `search:<query>`, `place:<query>`, `directions:<query>`,
+`preview:<query>`. For example, a simulated drive from downtown San Jose:
+
+```sh
+cargo run -p octosense-maps -- --phone --at 37.3382,-121.8863 \
+  --fix 37.3382,-121.8863 --show "preview:santa clara university"
+```

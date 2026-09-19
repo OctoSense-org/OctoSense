@@ -184,7 +184,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
 pub const LIBRARY_GROUPS: [(&str, &[&str]); 5] = [
     ("Utilities", &["clock", "weather", "appcard", "news", "terminal", "files", "task"]),
     ("Creativity", &["photos", "mixer", "score", "vj", "fab", "fabric"]),
-    ("Productivity", &["sheets", "browser", "route", "studio"]),
+    ("Productivity", &["sheets", "browser", "route", "maps", "studio"]),
     ("Media", &["video", "image", "pdf"]),
     ("Other", &[]),
 ];

@@ -1,0 +1,21 @@
+[package]
+name = "octosense-maps"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The arrival time is the C library's local time (`localtime_r`), as the
+# shell's clock is.
+libc = "0.2"
+# `maps`: the MapView vector-tile renderer and its archive readers.
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22", features = ["maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22" }
+# The executor half of the module contract: its manifest and call types.
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22" }
+# The route, its maneuvers and the session that map-matches a position onto
+# it. No dependencies of its own; the routes come from OSRM (routing.rs).
+makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "c31667a9debaf7005cf33c6d2b47dd009ad7ee22" }

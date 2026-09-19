@@ -390,3 +390,169 @@ list is hidden only by wrapping it in a view (News keeps its list in a
 
   The fork revision is pinned since MOBILE-06 (2026-09-17). Existing phones
   keep no state from before (it was never written).
+
+## OctosMap follow-ups
+
+Left out of v1 by decision (`docs/plans/2026-09-18-octosmap-design.md`), or
+found on the way. `docs/maps.md` describes what is there.
+
+- [ ] **MAPS-01 — P2: Saved places and recent searches.**
+
+  Home, Work and starred places, and the last searches, offered under the
+  search field before anything is typed. They belong in the app's storage
+  jail beside `state`.
+
+- [ ] **MAPS-02 — P2: Nearby category chips.**
+
+  Restaurants, Coffee, Gas, Groceries under the search bar, backed by an
+  Overpass query around the map's centre, with a pin per result. The
+  framework already has the query and its mirrors (`widgets/src/splash.rs`,
+  `sys.places`).
+
+- [ ] **MAPS-03 — P2: A wide home tile.**
+
+  News and Photos draw one; OctosMap opens from the home grid and the App
+  Library. A tile needs a `HostedView` with a `tile:` face in `MapsView`, a
+  `TILE_APPS` entry and an `idle_text` arm in `src/mobile_tiles.rs`, and the
+  home layout checked with a fourth wide tile. A commute line (`Home · 22
+  min`) needs MAPS-01 first; a small live map is heavier than the other
+  tiles.
+
+- [ ] **MAPS-04 — P2: The assistant's tools.**
+
+  `search_places`, `directions` and `start_navigation` on the module's
+  `ServiceExecutor`, which declines every call today, so the assistant and
+  the AppCard brain can drive the app instead of the L0 `nav` card.
+
+- [ ] **MAPS-05 — P2: Spoken guidance.**
+
+  The banner's text is the sentence to speak; the framework's route app
+  speaks its own through `makepad-converse`, which is desktop-only there.
+
+- [ ] **MAPS-06 — P3: Tap a point of interest on the base map.**
+
+  `MapViewAction::PinTapped` fires for an overlay layer's pins only (the
+  EV-charger layer); the base map's shops and stations have no tap target at
+  this revision. A long press and the reverse lookup pick a spot today. The
+  fix is in the framework's `MapView`.
+
+- [ ] **MAPS-07 — P3: What `MapView` lacks.**
+
+  No fit-to-bounds (the app computes the camera in `geo::fit_camera`),
+  markers with no icon, label or selected state, and no satellite imagery.
+  Each would be a framework change adopted through the normal sync workflow.
+
+- [ ] **MAPS-08 — P1 before any release: services of OctoSense's own.**
+
+  The tiles (`makepad.nl`), Photon and the FOSSGIS OSRM servers are public
+  fair-use servers with no contract. The app behaves (a `User-Agent`, a
+  debounce, one route at a time, cancelled requests, capped replies), but a
+  released product needs hosted tiles, a geocoder and a router it may rely
+  on. The URLs are constants in `apps/maps/src/{lib,places,routing}.rs`.
+
+- [x] **MAPS-16 — P1: Adopt the fork's `fix/android-map-archive` branch.**
+
+  Adopted on 2026-09-19. The four framework fixes OctosMap needs on a
+  phone (MAPS-12 to MAPS-15) merged into the fork's `main` as
+  `OctoSense-org/makepad#15` (`c31667a9d`); `Octoscript-Makepad#28` named
+  that revision in `runtime.json` (`709c97a2f`); and this repo's
+  `native-runtime.lock.json` and six manifests moved with it. `Cargo.lock`
+  did not change. What the fixes mean for the other apps, which of them are
+  candidates for upstream Makepad, and the steps of a pin move are in
+  `docs/makepad-fork.md`.
+
+  | Commit | Fixes |
+  |---|---|
+  | `b163a29ea` opengl: draw nothing for a pass that has no draw list | MAPS-13 |
+  | `2733ad531` android: report a cancelled HTTP request and mark requests dispatched | MAPS-12 |
+  | `5d10a3fec` opengl: bind compact vertex formats | MAPS-14 |
+  | `e0bd59cf6` map: the navigation layer clears only its own puck | MAPS-15 |
+
+  Verified on the OnePlus 6T on 2026-09-18 with a release APK built against
+  the branch, whose tree is identical to the pinned revision's: see
+  `docs/maps.md`. The APK of the pinned build was run on a Pixel 7 Pro
+  (Android 17) on 2026-09-19: the map, Locate and the puck, search, places,
+  directions and a preview drive all work, with no panic and no skipped
+  draws. Mail, Sheets and AppCard open. The AppCard nav card, the other
+  user of the map, needs an APK with the assistant kernel bundled and has
+  not been seen with these fixes.
+
+- [x] **MAPS-12 — P1: The map draws no tiles on Android (framework; fixed in the fork, pinned by MAPS-16).**
+
+  `MapView`'s HTTP archive reader (`widgets/src/map/archive.rs`) cancels
+  its undispatched range requests when tile priorities change and queues
+  the read again when the cancellation comes back as an `HttpError`; it
+  marks a request dispatched on its first `HttpProgress`.
+  `AndroidNetworkShimBackend::http_cancel` forgot the request and emitted
+  nothing, and Android never sent a progress event, so the first camera
+  move lost every read and no tile loaded. The framework's route app
+  failed the same way. The fix emits the error from `http_cancel` and one
+  progress event when a request is handed to Java, which cannot withdraw
+  it.
+
+- [x] **MAPS-13 — P1: Opening OctosMap froze the shell on Android (framework; fixed in the fork, pinned by MAPS-16).**
+
+  About 0.3 s after the app opened, as its opening animation ended, the
+  render thread panicked at `platform/src/os/linux/opengl.rs:1166`
+  (`main_draw_list_id.unwrap()` on `None`) and the launcher kept its last
+  frame: the app as a translucent card at about 97% of its size, which
+  reads as "the app opens smaller than the others". The Metal backend takes
+  a pass with no draw list with an `if let`; the GL backend now does the
+  same, clearing the pass's dirty flag. With the fix the app opens in the
+  same frame as News and Photos, and the log shows neither the panic nor
+  the "no draw list" error, so the pass was a parentless one (the shell's
+  never-drawn blur chain), as suspected. Recovery on a build without the
+  fix: `adb shell am force-stop dev.makepad.octosense`.
+
+- [x] **MAPS-14 — P1: Roads and area fills do not draw on the native GL backend (framework; fixed in the fork, pinned by MAPS-16).**
+
+  Found once MAPS-12 let tiles load: the phone drew building outlines,
+  labels and icons over a bare background, and logged `opengl: compact
+  vertex formats are not implemented; skipping draw`. The map's roads,
+  fills, faces and roofs use compact vertex records (half floats, shorts,
+  normalized bytes); the GLSL generator already declares typed attributes
+  for them and the WebGL backend binds them, but the native GL backend
+  (Linux and Android) still assumed packed `f32` lanes and skipped those
+  draws. The fix builds the typed attribute table and pointer calls there
+  too.
+
+- [x] **MAPS-15 — P1: A puck set with `MapView::set_puck` never draws (framework; fixed in the fork, pinned by MAPS-16).**
+
+  The fork's navigation layer (`widgets/src/map/nav.rs`, the L0 `nav`
+  card's) runs at the top of every draw and, with `nav_mode` off, cleared
+  whatever puck was on the overlay. OctosMap's location dot and its
+  guidance puck were therefore missing on every platform; the desktop
+  verification on 2026-09-18 missed it. The layer now clears only the
+  vehicle it placed itself.
+
+- [ ] **MAPS-17 — P2: No directions on Android 9: the public router speaks TLS 1.3 only.**
+
+  `routing.openstreetmap.de` (and `router.project-osrm.org`, the same
+  machine) refuses a TLS 1.2 handshake; Android's platform TLS reaches 1.3
+  from Android 10. On the Android 9 test phone every route request ends in
+  `Couldn't get directions · Secure connection failed` with **Retry**,
+  which is the right thing to say. Photon and the tile host accept TLS
+  1.2, so search, places and the map work there. The server answers plain
+  HTTP too, and the manifest would allow it, but a route request carries
+  both ends of a trip and stays on HTTPS. Goes away with services of our
+  own (MAPS-08) or a phone on Android 10 or later. Confirmed on 2026-09-19:
+  on a Pixel 7 Pro (Android 17) the same build gets its routes, and
+  directions and the preview drive work there. A real drive is still
+  unverified on any phone.
+
+- [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
+
+  OSRM answers `alternatives=true` and more than two coordinates; the model
+  holds one route per mode between two ends. Transit needs another service.
+
+- [ ] **MAPS-10 — P3: Offline regions.**
+
+  The framework bakes a region with `map_build` and routes and searches it
+  offline with `map_nav`; a bake needs a desktop (about 3 GiB free and
+  minutes of CPU for one city), so a region would be baked there and copied
+  to the phone.
+
+- [ ] **MAPS-11 — P3: Keep the screen awake while navigating.**
+
+  Nothing in the pinned platform holds a wake lock; the phone dims on its
+  usual timer mid-drive.

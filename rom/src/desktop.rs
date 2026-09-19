@@ -902,7 +902,7 @@ pub fn app_icon(id: &str) -> Ico {
         "mixer" => Ico::Speaker,
         "vj" => Ico::Headphone,
         "score" => Ico::Bell,
-        "route" => Ico::Globe,
+        "route" | "maps" => Ico::Globe,
         "fabric" => Ico::Shirt,
         "fab" => Ico::Refresh,
         "studio" => Ico::Moon,

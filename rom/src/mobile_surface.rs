@@ -242,8 +242,38 @@ script_mod! {
     }
 }
 
-/// The dock's four apps, left to right.
+/// The dock's four apps, left to right, until the person arranges their own.
 pub const PINNED: [&str; 4] = ["browser", "files", "photos", "terminal"];
+
+/// What takes a pinned app's slot on a device that does not have that app.
+/// A phone links no browser, files or terminal, and its dock was Photos
+/// alone; with these it is News, OctosMap and Photos. A desktop, which has
+/// all four pinned apps, keeps them.
+pub const DOCK_STAND_INS: [&str; 2] = ["news", "maps"];
+
+/// The dock's four slots, left to right: the saved arrangement, else the
+/// pinned app; and wherever that names an app this device does not have,
+/// the next stand-in it does have that is not docked already. A slot the
+/// person emptied stays empty. The saved arrangement is no sign of a choice
+/// by itself: the Android launcher store seeds it with the pinned four, so
+/// on a phone it names a browser, files and a terminal that are not there.
+pub fn dock_ids<'a>(saved: &'a [String], has: impl Fn(&str) -> bool) -> [&'a str; 4] {
+    // An Android app or shortcut is the system's to have, not the catalog's.
+    let present = |id: &str| id.starts_with("android:") || id.starts_with("android-shortcut:") || has(id);
+    let mut dock: [&'a str; 4] = std::array::from_fn(|index| saved.get(index).map(String::as_str).unwrap_or(PINNED[index]));
+    let mut stand_ins = DOCK_STAND_INS.iter().copied().filter(|id| has(id));
+    for index in 0..4 {
+        if dock[index].is_empty() || present(dock[index]) { continue; }
+        // The next one not docked already, by the person or by this loop.
+        while let Some(stand_in) = stand_ins.next() {
+            if !dock.contains(&stand_in) {
+                dock[index] = stand_in;
+                break;
+            }
+        }
+    }
+    dock
+}
 
 #[derive(Script, ScriptHook, Widget)]
 pub struct PhoneSurface {
@@ -644,7 +674,7 @@ impl PhoneSurface {
         let dock=Self::home_dock(screen);
         if ios {self.glass.draw_surface_with_backdrop(cx,dock,backdrop,opacity);}
         let cell=dock.size.x/4.0;
-        let dock_ids: [&str; 4]=std::array::from_fn(|index|phone.android.dock.get(index).map(String::as_str).unwrap_or(PINNED[index]));
+        let dock_ids=dock_ids(&phone.android.dock,|id|ids.iter().any(|(app,_)|app==id));
         for (index,id) in dock_ids.iter().enumerate() {
             if !ids.iter().any(|(app,_)|app==*id) && !id.starts_with("android:") && !id.starts_with("android-shortcut:") {continue;}
             let r=rect(dock.pos.x+index as f64*cell,dock.pos.y,cell,dock.size.y);
@@ -1105,6 +1135,37 @@ impl Widget for PhoneSurface {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_desktop_keeps_its_pinned_dock_and_a_phone_gets_stand_ins_for_what_it_lacks() {
+        let none: Vec<String> = Vec::new();
+        let desktop = |id: &str| PINNED.contains(&id) || DOCK_STAND_INS.contains(&id);
+        assert_eq!(super::dock_ids(&none, desktop), PINNED);
+        // A phone links the modules only.
+        let phone = |id: &str| ["reference", "sheets", "photos", "appcard", "mail", "news", "maps"].contains(&id);
+        assert_eq!(super::dock_ids(&none, phone), ["news", "maps", "photos", "terminal"]);
+        // A real phone: the launcher store has seeded the dock with the pinned four.
+        let seeded: Vec<String> = PINNED.iter().map(|id| id.to_string()).collect();
+        assert_eq!(super::dock_ids(&seeded, phone), ["news", "maps", "photos", "terminal"]);
+        assert_eq!(super::dock_ids(&seeded, desktop), PINNED);
+        // A build without OctosMap: News alone stands in.
+        let older = |id: &str| ["photos", "news"].contains(&id);
+        assert_eq!(super::dock_ids(&none, older), ["news", "files", "photos", "terminal"]);
+    }
+
+    #[test]
+    fn the_persons_own_dock_wins_and_is_not_doubled_by_a_stand_in() {
+        let phone = |id: &str| ["photos", "mail", "news", "maps"].contains(&id);
+        // Mail dragged into the first slot, the second emptied, the rest never touched.
+        let saved = vec!["mail".to_string(), String::new()];
+        assert_eq!(super::dock_ids(&saved, phone), ["mail", "", "photos", "news"]);
+        // OctosMap placed by hand is not offered again as a stand-in.
+        let saved = vec!["maps".to_string()];
+        assert_eq!(super::dock_ids(&saved, phone), ["maps", "news", "photos", "terminal"]);
+        // An Android app in a slot is there, whatever the catalog says.
+        let saved = vec!["android:10:example/.Main".to_string(), "browser".to_string()];
+        assert_eq!(super::dock_ids(&saved, phone), ["android:10:example/.Main", "news", "photos", "maps"]);
+    }
+
     use super::*;
 
     #[test]

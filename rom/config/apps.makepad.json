@@ -16,6 +16,14 @@
     "policy": "focus"
   },
   {
+    "id": "maps",
+    "label": "OctosMap",
+    "manifest": "../apps/maps/Cargo.toml",
+    "package": "octosense-maps",
+    "bin": "octosense-maps",
+    "policy": "focus"
+  },
+  {
     "id": "browser",
     "label": "Browser",
     "manifest": "../../makepad/Cargo.toml",

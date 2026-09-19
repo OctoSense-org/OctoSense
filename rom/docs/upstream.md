@@ -1,5 +1,11 @@
 # Updating the Makepad import
 
+> This page predates the fork. The framework is now pinned to
+> `OctoSense-org/makepad` through the shared runtime lock, not to official
+> Makepad, so the statements below that the active source is
+> `makepad/makepad` and that no framework fork is required no longer hold.
+> The current arrangement is in [makepad-fork.md](makepad-fork.md).
+
 OctoSense maintains the WM source, icons and bundled wallpaper plus the original license notice.
 `upstream/makepad.json` records their original paths and SHA-256 hashes at one
 full Makepad commit. The hashes describe **pristine upstream content**, so local

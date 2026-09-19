@@ -23,7 +23,7 @@ use crate::{
     desktop::DesktopStyle,
     mobile::{PhoneHit, PhoneState},
     mobile_gestures::{Dir, GestureKind, ShellGesture},
-    mobile_surface::{PhoneSurface, PINNED},
+    mobile_surface::{dock_ids, PhoneSurface},
     mobile_tiles,
     shell::{alpha, rgb, ui::{rect, HAlign, Ico}},
 };
@@ -346,7 +346,8 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     if screen.size.x < 1.0 || screen.size.y < 1.0 { return; }
     let apps = crate::shell::launcher::apps();
     let ids: Vec<(String, String)> = apps.iter().map(|a| (a.id.trim_start_matches("apps.").to_string(), a.label.clone())).collect();
-    let dock: [&str; 4] = std::array::from_fn(|index| phone.android.dock.get(index).map(String::as_str).unwrap_or(PINNED[index]));
+    // The dock as drawn, stand-ins included: what is docked is not also an icon on a page.
+    let dock = dock_ids(&phone.android.dock, |id| ids.iter().any(|(app, _)| app == id));
     let mut favorites: Vec<String> = ids.iter().filter(|(id, _)| !dock.contains(&id.as_str()) && !phone.android.hidden_hosted.contains(id)).map(|(id, _)| id.clone()).collect();
     favorites.extend(phone.android.favorites.iter().filter(|id| !dock.contains(&id.as_str())).cloned());
     // The person's own order (a drag), listed ids first; the rest follow in

@@ -1,3 +1,27 @@
+# OctosMap — 2026-09-18
+
+- Investigated with read-only agents (two stalled and were rerun narrower): the route app and its data plane, the shell's module contract with News as the template, the AppCards `nav` card. Probed the services by hand.
+- Asked the person six decisions up front, then ran unattended as asked.
+- Task 1 spike: the hosted archive draws downtown San Jose with streets, buildings and labels; no second tile source needed.
+- Tasks 2–7, each red then green: `geo` 12 tests, `places` 8, `routing` 7, `guidance` 7, `sheet` 6, `model` 17.
+- Tasks 8–11, the view: 27 isolate tests with injected replies and fixes. Each screen looked at in the standalone window on live services. Synthetic clicks were unreliable on this desk, so the window opens on a state by flag (`--show`, `--fix`).
+- Found and fixed on the way: a turn within the session's 3 m look-ahead of the start was never announced (OSRM sets off a metre before a corner); the chase paused with no finger on the screen, because `MapView` reports guidance's own camera moves too.
+- Tasks 12–13: the settings and the last camera in the storage jail; 83 tests in the crate.
+- Task 14: linked into the shell behind `app-maps` (unconditional on Android and iOS), both catalogs, the App Library, the launcher icons, the iOS location sentence. `cargo check --locked --workspace --features mobile-apps` and `tools/setup-native.py --check` pass.
+- `mobile_island::tests::hidden_while_the_shade_is_pulled_or_open` fails on this branch and on `main` (`c5d8987`) alike: not this work's, left alone.
+- Task 16: opened in the phone shell on macOS, in-process (`--module maps --test-action launch-maps`, the shell's frame capture and its `taps:` action, an isolated `OCTOSENSE_HOME`). Found there and fixed: the sea was the page's colour (two ocean overlays), and the home icon was the generic one (the shell's icon wrapper draws the route app's art for `maps`).
+- A whole-feature review and a pass of my own over the view: thirteen fixes, listed in the plan. The view's tests now fail on a run-time script error, which is how two broken padding updates would have been caught. 95 tests in the crate.
+- The FOSSGIS routing server was down for a while during the review (refused from outside this network too); the app's error path was seen working on screen.
+- Task 17, in part, on the OnePlus 6T: linked, launched in-process, GPS fix arrives, dock row as asked (News, OctosMap, Photos). Blocked by two framework problems found and traced there: no tiles on Android (MAPS-12) and a GL-backend panic that freezes the shell when the app opens (MAPS-13). Both are small fixes in the fork, which needs the person's decision.
+- A temporary worktree used to check that on `main` shared the target directory and left Photos' build output pointing at it; `cargo clean -p octosense-photos` put it right. No source was touched.
+- The person said to fix the fork bugs and that the app opened smaller than the others. Four commits on a local fork branch, `fix/android-map-archive` (not pushed): the GL backend's no-draw-list panic (which was also the smaller size: a frozen frame of the opening animation), Android's silent HTTP cancel, compact vertex formats on the native GL backend (roads and fills were skipped), and the navigation layer clearing a host's puck (missing on desktop too, missed earlier).
+- On the OnePlus 6T with an APK built against that branch: opens full size, full map, Locate and puck, dropped pin and reverse lookup, search by soft keyboard, place sheet. Result distances now follow the result's country (a test, red first; 96 in the crate).
+- Directions cannot be verified on this phone: the public router is TLS 1.3 only, Android 9 stops at 1.2 (MAPS-17). Pinch, rotate and tilt need fingers.
+- Merged `origin/main`, pushed, and opened the pull requests: the fork's four fixes (`makepad#15`) and this branch as a draft (`#28`). Unshallowed the fork checkout and wrote up the fork, upstream and the shallow bootstrap in `docs/makepad-fork.md`.
+- 2026-09-19: `makepad#15` merged; `Octoscript-Makepad#28` named the new revision and merged; the pin moved here (lock and six manifests, `Cargo.lock` unchanged). MAPS-12 to MAPS-16 closed. The consumer check fails in this directory only because of the `feat/photos` worktree under `.worktrees/`; it passes on a clean copy. The pinned APK ran on a Pixel 7 Pro (Android 17): all of the OnePlus checks in the dark skin, plus directions and the preview drive, which Android 9 cannot reach. Fixed from it: the navigation bar's time was unreadable in the dark skin (`Skin::go`, a contrast test, 97 in the crate). Mail, Sheets and AppCard open; the colour fix was seen on the phone. The AppCard nav card needs an APK with the assistant kernel and was not seen.
+
+---
+
 # Photos royalty-free expansion — 2026-09-18
 
 - Continued on isolated feat/photos worktree, preserving previous generated scenes and saved albums.
