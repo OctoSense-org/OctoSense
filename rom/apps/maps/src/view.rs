@@ -9,12 +9,16 @@
 //! the host gives it first: a window has a `Startup` event, a module
 //! instance does not.
 
-use crate::geo::{distance_text, fit_camera, haversine_m, Bounds, Insets, LonLat, Units};
+use crate::geo::{
+    distance_text, duration_text, fit_camera, haversine_m, Bounds, Insets, LonLat, Units,
+};
 use crate::model::{
-    body_text, plain_error, LocationAsk, LocationFix, LocationState, MapsModel, Request, Screen,
-    SearchState, SearchTarget, Skin, LOCATION_FIX_TIMEOUT_SECONDS, MAX_BODY_BYTES, USER_AGENT,
+    body_text, plain_error, LocationAsk, LocationFix, LocationState, MapsModel, Request,
+    RouteState, Screen, SearchState, SearchTarget, Skin, LOCATION_FIX_TIMEOUT_SECONDS,
+    MAX_BODY_BYTES, USER_AGENT,
 };
 use crate::places::{self, coordinates_text, Place, PlaceKind};
+use crate::routing::{Arrow, Mode};
 use crate::sheet::{Detent, Sheet};
 use crate::HOSTED_TILES;
 use makepad_widgets::*;
@@ -38,8 +42,18 @@ const SEARCH_DEBOUNCE_SECONDS: f64 = 0.3;
 const TOP_BAR_HEIGHT: f64 = 70.0;
 /// How much of the rest of the way the sheet's height goes each frame.
 const SHEET_EASE: f64 = 0.28;
-/// The selected place's marker.
+/// The selected place's marker, and a route's two ends.
 const PLACE_MARKER: u64 = 1;
+const ORIGIN_MARKER: u64 = 2;
+const DESTINATION_MARKER: u64 = 3;
+/// What the directions card and its margin take of the top of the viewport.
+const DIRECTIONS_CARD_HEIGHT: f64 = 176.0;
+/// The room a fitted route keeps from the viewport's sides and the panels.
+const ROUTE_MARGIN: f64 = 36.0;
+/// A step shorter than this shows no distance: it would read `0 ft`.
+const MIN_STEP_DISTANCE_M: f64 = 5.0;
+/// The closest a short route is shown from.
+const ROUTE_MAX_ZOOM: f64 = 17.0;
 /// The sheet's detail rows: what fits at half height.
 const DETAIL_ROWS: usize = 4;
 
@@ -169,6 +183,54 @@ script_mod! {
         value := Text{width: Fill max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 15}}
     }
 
+    // One end of the route on the directions card: a dot in its colour and
+    // where it is, on a field of its own that opens Search for it.
+    let EndRow = RoundedView{width: Fill height: 40 flow: Right spacing: 10 align: Align{y: 0.5} padding: Inset{left: 12 right: 12} cursor: MouseCursor.Hand
+        draw_bg +: {color: c_field border_radius: uniform(10.0)}
+    }
+    let EndDot = RoundedView{width: 10 height: 10 draw_bg +: {color: c_accent border_radius: uniform(5.0)}}
+    let EndText = Text{width: Fill max_lines: 1 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 15}}
+    // A travel mode's tab: its icon and how long that way takes. Each mode
+    // has the two faces, and `render` shows the one that fits.
+    let ModeTab = Plain{width: Fill height: 36 spacing: 6 icon_walk: Walk{width: 18 height: 18}
+        draw_bg +: {border_radius: uniform(18.0)}
+        draw_icon +: {color: c_secondary}
+        draw_text +: {color: c_secondary color_hover: c_secondary color_down: c_secondary color_focus: c_secondary text_style: theme.font_bold{font_size: 13}}
+    }
+    let ModeTabOn = ModeTab{visible: false
+        draw_bg +: {color: uniform(c_field) color_hover: uniform(c_field) color_down: uniform(c_field) color_focus: uniform(c_field)}
+        draw_icon +: {color: c_accent}
+        draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent}
+    }
+    let ModeSlot = View{width: Fill height: Fit flow: Overlay}
+    // A step's arrow: one icon per way to go, the row showing its own
+    // (`show_arrow`).
+    let ArrowMark = View{visible: false width: Fit height: Fit}
+    let ArrowIcon = Icon{icon_walk: Walk{width: 22 height: 22} draw_icon +: {color: c_ink}}
+    // One line of the directions: its arrow, what to do, and for how far.
+    let StepRow = View{width: Fill height: Fit flow: Down
+        View{width: Fill height: Fit flow: Right spacing: 14 align: Align{y: 0.5} padding: Inset{left: 20 right: 20 top: 12 bottom: 12}
+            View{width: 26 height: 26 align: Center
+                depart := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/depart.svg")}}
+                arrive := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/arrive.svg")}}
+                straight := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/straight.svg")}}
+                slight_left := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/slight-left.svg")}}
+                left := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/turn-left.svg")}}
+                sharp_left := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/sharp-left.svg")}}
+                slight_right := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/slight-right.svg")}}
+                right := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/turn-right.svg")}}
+                sharp_right := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/sharp-right.svg")}}
+                uturn := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/uturn.svg")}}
+                roundabout := ArrowMark{ArrowIcon{draw_icon.svg: crate_resource("self:resources/icons/roundabout.svg")}}
+            }
+            View{width: Fill height: Fit flow: Down spacing: 3
+                text := Text{width: Fill max_lines: 2 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 15}}
+                distance := Caption{draw_text.text_style: theme.font_regular{font_size: 13}}
+            }
+        }
+        View{width: Fill height: Fit padding: Inset{left: 60} Hairline{}}
+    }
+
     mod.widgets.MapsViewBase = #(MapsView::register_widget(vm))
     mod.widgets.MapsView = set_type_default() do mod.widgets.MapsViewBase{
         width: Fill height: Fill flow: Overlay
@@ -243,6 +305,59 @@ script_mod! {
                 detail_1 := DetailRow{}
                 detail_2 := DetailRow{}
                 detail_3 := DetailRow{}
+            }
+        }
+
+        // Directions: the two ends and the modes on a card, the route's
+        // summary and its steps on a sheet, the map between them.
+        directions_layer := View{visible: false width: Fill height: Fill flow: Down
+            View{width: Fill height: Fit padding: Inset{left: 10 right: 10 top: 10}
+                Floating{flow: Down spacing: 8 padding: Inset{left: 4 right: 4 top: 8 bottom: 8}
+                    draw_bg +: {border_radius: uniform(16.0)}
+                    View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
+                        directions_back := BarButton{draw_icon.svg: crate_resource("self:resources/icons/back.svg")}
+                        View{width: Fill height: Fit flow: Down spacing: 6
+                            origin_row := EndRow{EndDot{} origin_text := EndText{}}
+                            destination_row := EndRow{EndDot{draw_bg +: {color: c_alert}} destination_text := EndText{}}
+                        }
+                        swap := BarButton{draw_icon.svg: crate_resource("self:resources/icons/swap.svg")}
+                    }
+                    View{width: Fill height: Fit flow: Right spacing: 6 padding: Inset{left: 8 right: 8}
+                        ModeSlot{
+                            mode_car := ModeTab{draw_icon.svg: crate_resource("self:resources/icons/car.svg")}
+                            mode_car_on := ModeTabOn{draw_icon.svg: crate_resource("self:resources/icons/car.svg")}
+                        }
+                        ModeSlot{
+                            mode_walk := ModeTab{draw_icon.svg: crate_resource("self:resources/icons/walk.svg")}
+                            mode_walk_on := ModeTabOn{draw_icon.svg: crate_resource("self:resources/icons/walk.svg")}
+                        }
+                        ModeSlot{
+                            mode_bike := ModeTab{draw_icon.svg: crate_resource("self:resources/icons/bike.svg")}
+                            mode_bike_on := ModeTabOn{draw_icon.svg: crate_resource("self:resources/icons/bike.svg")}
+                        }
+                    }
+                }
+            }
+            View{width: Fill height: Fill}
+            // The same sheet as a place's, about the route.
+            route_sheet := Floating{height: 132 flow: Down
+                draw_bg +: {border_radius: uniform(20.0)}
+                route_head := View{width: Fill height: Fit flow: Down cursor: MouseCursor.Hand
+                    View{width: Fill height: 18 align: Center
+                        RoundedView{width: 36 height: 4 draw_bg +: {color: c_hairline border_radius: uniform(2.0)}}
+                    }
+                    View{width: Fill height: Fit flow: Down spacing: 4 padding: Inset{left: 20 right: 20 bottom: 12}
+                        route_title := Text{width: Fill max_lines: 1 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: 20}}
+                        route_subtitle := Caption{width: Fill max_lines: 1 text_overflow: Ellipsis draw_text.text_style: theme.font_regular{font_size: 14}}
+                    }
+                }
+                route_actions := View{width: Fill height: Fit flow: Right spacing: 10 padding: Inset{left: 20 right: 20 bottom: 14}
+                    route_retry := TextButton{visible: false text: "Retry"}
+                }
+                Hairline{}
+                steps := PortalList{width: Fill height: Fill
+                    Step := StepRow{}
+                }
             }
         }
 
@@ -522,7 +637,16 @@ impl MapsView {
             Some(Request::Search) => self.render(cx),
             // The dropped pin has a name now.
             Some(Request::Reverse) => self.render(cx),
-            Some(Request::Route(_)) | Some(Request::Reroute) | None => {}
+            Some(Request::Route(mode)) => {
+                // The shown tab's route goes on the map; then the next tab's
+                // is asked for, one at a time.
+                if mode == self.model.mode() {
+                    self.show_route(cx);
+                }
+                self.pump_routes(cx);
+                self.render(cx);
+            }
+            Some(Request::Reroute) | None => {}
         }
     }
 
@@ -577,8 +701,11 @@ impl MapsView {
         self.model.pick_result(index);
         self.cancel_superseded(cx);
         self.leave_search(cx);
-        if self.model.screen() == Screen::Place {
-            self.show_place(cx);
+        match self.model.screen() {
+            Screen::Place => self.show_place(cx),
+            // One of the route's ends was picked.
+            Screen::Directions => self.enter_directions(cx),
+            _ => {}
         }
         self.render(cx);
     }
@@ -699,18 +826,268 @@ impl MapsView {
             .unwrap_or_default()
     }
 
+    // ---- Directions ----
+
+    /// The Directions screen came up, or one of its ends changed: a fix is
+    /// asked for if an end needs one, the routes are asked for, and the map
+    /// shows what there is.
+    fn enter_directions(&mut self, cx: &mut Cx) {
+        self.sheet.set(Detent::Peek);
+        self.sheet_height = self.sheet.height(self.viewport.1);
+        self.apply_sheet_height(cx);
+        if self.model.needs_fix() && self.location == LocationState::Idle {
+            self.ask_location(cx);
+        }
+        self.pump_routes(cx);
+        self.show_route(cx);
+        self.render(cx);
+    }
+
+    /// The place's Directions button.
+    pub fn open_directions(&mut self, cx: &mut Cx) {
+        self.model.open_directions();
+        if self.model.screen() == Screen::Directions {
+            self.enter_directions(cx);
+        }
+    }
+
+    /// Ask for the next route the model wants, if it wants one now.
+    fn pump_routes(&mut self, cx: &mut Cx) {
+        self.cancel_superseded(cx);
+        if let Some((id, _mode, url)) = self.model.next_route_request() {
+            self.send(cx, id, url);
+        }
+    }
+
+    /// The map as Directions wants it: the ends pinned, the shown tab's
+    /// route drawn and fitted between the card and the sheet.
+    fn show_route(&mut self, cx: &mut Cx) {
+        let map = self.map(cx);
+        let skin = Skin::current();
+        let ends = [
+            (
+                ORIGIN_MARKER,
+                self.model.end_pos(self.model.origin()),
+                skin.accent,
+            ),
+            (
+                DESTINATION_MARKER,
+                self.model.end_pos(self.model.destination()),
+                skin.alert,
+            ),
+        ];
+        let markers = ends
+            .into_iter()
+            .filter_map(|(id, pos, color)| Some(MapMarker::new(id, pos?.lon, pos?.lat, color)))
+            .collect();
+        map.set_markers(cx, markers);
+        let Some(directions) = self.model.directions() else {
+            map.clear_route(cx);
+            return;
+        };
+        let points = &directions.route.points;
+        let line: Vec<(f64, f64)> = points.iter().map(|p| (p.lon, p.lat)).collect();
+        map.set_route(cx, &line);
+        if let Some(bounds) = Bounds::of(points) {
+            let insets = Insets {
+                top: DIRECTIONS_CARD_HEIGHT + ROUTE_MARGIN,
+                bottom: self.sheet.height(self.viewport.1) + ROUTE_MARGIN,
+                left: ROUTE_MARGIN,
+                right: ROUTE_MARGIN,
+            };
+            let camera = fit_camera(&bounds, self.viewport, &insets, ROUTE_MAX_ZOOM);
+            // The fit is a flat, north-up one.
+            map.set_rotation(cx, 0.0);
+            map.set_tilt(cx, 0.0);
+            map.fly_to(cx, camera.center.lon, camera.center.lat, camera.zoom);
+        }
+    }
+
+    /// A mode's tab was picked.
+    pub fn set_mode(&mut self, cx: &mut Cx, mode: Mode) {
+        self.model.set_mode(mode);
+        self.pump_routes(cx);
+        self.show_route(cx);
+        self.render(cx);
+    }
+
+    /// The card's swap button.
+    pub(crate) fn swap_ends(&mut self, cx: &mut Cx) {
+        self.model.swap_ends();
+        self.enter_directions(cx);
+    }
+
+    /// The card's texts, the tabs' times and the sheet's summary.
+    fn fill_directions(&mut self, cx: &mut Cx) {
+        let origin = self.model.origin().label().to_string();
+        let destination = self.model.destination().label().to_string();
+        self.view.label(cx, ids!(origin_text)).set_text(cx, &origin);
+        self.view
+            .label(cx, ids!(destination_text))
+            .set_text(cx, &destination);
+        let tabs = [
+            (Mode::Car, ids!(mode_car), ids!(mode_car_on)),
+            (Mode::Walk, ids!(mode_walk), ids!(mode_walk_on)),
+            (Mode::Bike, ids!(mode_bike), ids!(mode_bike_on)),
+        ];
+        let selected = self.model.mode();
+        for (mode, idle, on) in tabs {
+            let time = match self.model.route(mode) {
+                RouteState::Ready(directions) => duration_text(directions.route.duration_s),
+                RouteState::Loading => "…".to_string(),
+                RouteState::Failed(_) => "—".to_string(),
+                RouteState::Idle => String::new(),
+            };
+            for (id, shown) in [(idle, mode != selected), (on, mode == selected)] {
+                let tab = self.view.button(cx, id);
+                tab.set_text(cx, &time);
+                tab.set_visible(cx, shown);
+            }
+        }
+        let (title, subtitle, retry) = self.route_summary();
+        self.view.label(cx, ids!(route_title)).set_text(cx, &title);
+        self.view
+            .label(cx, ids!(route_subtitle))
+            .set_text(cx, &subtitle);
+        self.view
+            .widget(cx, ids!(route_retry))
+            .set_visible(cx, retry);
+        self.view.portal_list(cx, ids!(steps)).redraw(cx);
+    }
+
+    /// The sheet's two lines for the shown tab, and whether Retry belongs.
+    fn route_summary(&self) -> (String, String, bool) {
+        let mode = self.model.mode();
+        if self.model.needs_fix() {
+            // An end is the device's location, and there is no fix.
+            return if self.location == LocationState::Waiting {
+                (
+                    "Finding your location…".into(),
+                    "Or choose a starting point above".into(),
+                    false,
+                )
+            } else {
+                (
+                    "Choose a starting point".into(),
+                    "Your location isn't available".into(),
+                    false,
+                )
+            };
+        }
+        match self.model.route(mode) {
+            RouteState::Ready(directions) => (
+                duration_text(directions.route.duration_s),
+                format!(
+                    "{} · {}",
+                    distance_text(directions.route.length_m, self.model.units()),
+                    mode.label()
+                ),
+                false,
+            ),
+            RouteState::Failed(why) => (why.clone(), mode.label().to_string(), true),
+            RouteState::Idle | RouteState::Loading => (
+                "Finding the best route…".into(),
+                mode.label().to_string(),
+                false,
+            ),
+        }
+    }
+
+    fn draw_steps(&mut self, cx: &mut Cx2d, list: &mut PortalList) {
+        let steps = self
+            .model
+            .directions()
+            .map(|d| d.steps.clone())
+            .unwrap_or_default();
+        let units = self.model.units();
+        list.set_item_range(cx, 0, steps.len());
+        while let Some(index) = list.next_visible_item(cx) {
+            let Some(step) = steps.get(index) else {
+                continue;
+            };
+            let item = list.item(cx, index, live_id!(Step));
+            item.label(cx, ids!(text)).set_text(cx, &step.text);
+            // The arrival goes nowhere further, and a departure of a few
+            // steps rounds to nothing worth printing.
+            let distance = if step.distance_m >= MIN_STEP_DISTANCE_M {
+                distance_text(step.distance_m, units)
+            } else {
+                String::new()
+            };
+            item.label(cx, ids!(distance)).set_text(cx, &distance);
+            show_arrow(cx, &item, step.arrow);
+            item.draw_all(cx, &mut Scope::empty());
+        }
+    }
+
+    fn handle_directions_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(cx, ids!(directions_back)).clicked(actions) {
+            self.back(cx);
+            return;
+        }
+        if self.view.button(cx, ids!(swap)).clicked(actions) {
+            self.swap_ends(cx);
+            return;
+        }
+        let layer = self.view.widget(cx, ids!(directions_layer));
+        if tapped(cx, &layer, ids!(origin_row), actions) {
+            self.open_search(cx, SearchTarget::Origin);
+            return;
+        }
+        if tapped(cx, &layer, ids!(destination_row), actions) {
+            self.open_search(cx, SearchTarget::Destination);
+            return;
+        }
+        let tabs = [
+            (Mode::Car, ids!(mode_car), ids!(mode_car_on)),
+            (Mode::Walk, ids!(mode_walk), ids!(mode_walk_on)),
+            (Mode::Bike, ids!(mode_bike), ids!(mode_bike_on)),
+        ];
+        for (mode, idle, on) in tabs {
+            if self.view.button(cx, idle).clicked(actions)
+                || self.view.button(cx, on).clicked(actions)
+            {
+                self.set_mode(cx, mode);
+            }
+        }
+        if self.view.button(cx, ids!(route_retry)).clicked(actions) {
+            self.model.retry_route(self.model.mode());
+            self.pump_routes(cx);
+            self.render(cx);
+        }
+        self.handle_sheet_drag(cx, actions);
+    }
+
     // ---- The sheet ----
 
-    fn apply_sheet_height(&mut self, cx: &mut Cx) {
+    /// The sheet on screen: the place's, or on Directions the route's.
+    fn sheet_widget(&self, cx: &Cx) -> WidgetRef {
+        if self.model.screen() == Screen::Directions {
+            self.view.widget(cx, ids!(route_sheet))
+        } else {
+            self.view.widget(cx, ids!(sheet))
+        }
+    }
+
+    /// Its height as a property, without asking for a draw.
+    fn set_sheet_height(&mut self, cx: &mut Cx) {
         let height = self.sheet_height;
-        let mut sheet = self.view.widget(cx, ids!(sheet));
+        let mut sheet = self.sheet_widget(cx);
         script_apply_eval!(cx, sheet, { height: #(height) });
+    }
+
+    fn apply_sheet_height(&mut self, cx: &mut Cx) {
+        self.set_sheet_height(cx);
         self.view.redraw(cx);
     }
 
     /// A finger on the sheet's head: it follows, and snaps on release.
     fn handle_sheet_drag(&mut self, cx: &mut Cx, actions: &Actions) {
-        let head = self.view.view(cx, ids!(sheet_head));
+        let head = if self.model.screen() == Screen::Directions {
+            self.view.view(cx, ids!(route_head))
+        } else {
+            self.view.view(cx, ids!(sheet_head))
+        };
         let viewport_h = self.viewport.1;
         if head.finger_down(actions).is_some() {
             self.sheet.drag_start(viewport_h);
@@ -762,7 +1139,7 @@ impl MapsView {
     // ---- Location ----
 
     /// The locate button, or a screen that wants a fix.
-    fn ask_location(&mut self, cx: &mut Cx) {
+    pub fn ask_location(&mut self, cx: &mut Cx) {
         match self.location.asked() {
             LocationAsk::Start => {
                 self.show_status(cx, "Locating…");
@@ -795,10 +1172,19 @@ impl MapsView {
                 fix.accuracy_m,
             )),
         );
+        let routing = self.model.screen() == Screen::Directions;
         if kind == LocationFix::First {
             self.stop_location_timeout(cx);
             self.hide_status(cx);
-            map.fly_to(cx, fix.lon, fix.lat, LOCATE_ZOOM);
+            // Directions fits the route instead, once it has one.
+            if !routing {
+                map.fly_to(cx, fix.lon, fix.lat, LOCATE_ZOOM);
+            }
+            self.render(cx);
+        }
+        if routing {
+            // The fix an end was waiting for; nothing to ask otherwise.
+            self.pump_routes(cx);
             self.render(cx);
         }
     }
@@ -875,8 +1261,20 @@ impl MapsView {
         if matches!(from, Screen::Search { .. }) {
             self.leave_search(cx);
         }
-        if self.model.place().is_none() {
-            self.map(cx).set_markers(cx, Vec::new());
+        match (from, self.model.screen()) {
+            (_, Screen::Explore) => {
+                let map = self.map(cx);
+                map.set_markers(cx, Vec::new());
+                map.clear_route(cx);
+            }
+            // The route goes, the place's pin and sheet come back.
+            (Screen::Directions, Screen::Place) => {
+                self.map(cx).clear_route(cx);
+                self.show_place(cx);
+            }
+            // Search left without a pick: the trip is as it was.
+            (Screen::Search { .. }, Screen::Directions) => self.enter_directions(cx),
+            _ => {}
         }
         self.render(cx);
         true
@@ -898,6 +1296,9 @@ impl MapsView {
         self.view
             .widget(cx, ids!(place_layer))
             .set_visible(cx, screen == Screen::Place);
+        self.view
+            .widget(cx, ids!(directions_layer))
+            .set_visible(cx, screen == Screen::Directions);
         self.view
             .widget(cx, ids!(layers_layer))
             .set_visible(cx, self.layers_open);
@@ -930,6 +1331,9 @@ impl MapsView {
             if let Some(place) = self.model.place().cloned() {
                 self.fill_sheet(cx, &place);
             }
+        }
+        if screen == Screen::Directions {
+            self.fill_directions(cx);
         }
         self.view.redraw(cx);
     }
@@ -1095,6 +1499,10 @@ impl MapsView {
             self.open_search(cx, SearchTarget::Destination);
             return;
         }
+        if self.view.button(cx, ids!(directions)).clicked(actions) {
+            self.open_directions(cx);
+            return;
+        }
         self.handle_sheet_drag(cx, actions);
     }
 
@@ -1146,6 +1554,26 @@ fn show_kind(cx: &mut Cx, item: &WidgetRef, kind: PlaceKind) {
     ];
     for (id, mark) in marks {
         item.widget(cx, id).set_visible(cx, mark == kind);
+    }
+}
+
+/// Shows the mark of `arrow` among a step row's marks and hides the rest.
+fn show_arrow(cx: &mut Cx, item: &WidgetRef, arrow: Arrow) {
+    let marks = [
+        (ids!(depart), Arrow::Depart),
+        (ids!(arrive), Arrow::Arrive),
+        (ids!(straight), Arrow::Straight),
+        (ids!(slight_left), Arrow::SlightLeft),
+        (ids!(left), Arrow::Left),
+        (ids!(sharp_left), Arrow::SharpLeft),
+        (ids!(slight_right), Arrow::SlightRight),
+        (ids!(right), Arrow::Right),
+        (ids!(sharp_right), Arrow::SharpRight),
+        (ids!(uturn), Arrow::UTurn),
+        (ids!(roundabout), Arrow::Roundabout),
+    ];
+    for (id, mark) in marks {
+        item.widget(cx, id).set_visible(cx, mark == arrow);
     }
 }
 
@@ -1221,7 +1649,8 @@ impl Widget for MapsView {
                     Screen::Explore => self.handle_explore_actions(cx, actions),
                     Screen::Search { .. } => self.handle_search_actions(cx, actions),
                     Screen::Place => self.handle_place_actions(cx, actions),
-                    Screen::Directions | Screen::Navigating | Screen::Arrived => {}
+                    Screen::Directions => self.handle_directions_actions(cx, actions),
+                    Screen::Navigating | Screen::Arrived => {}
                 }
             }
             self.handle_map_actions(cx, actions);
@@ -1240,18 +1669,19 @@ impl Widget for MapsView {
             self.viewport = (size.x, size.y);
             if !self.sheet.is_dragging() {
                 self.sheet_height = self.sheet.height(size.y);
-                let height = self.sheet_height;
-                let mut sheet = self.view.widget(cx, ids!(sheet));
-                script_apply_eval!(cx, sheet, { height: #(height) });
+                self.set_sheet_height(cx);
             }
         }
         let results = self.view.portal_list(cx, ids!(results)).widget_uid();
+        let steps = self.view.portal_list(cx, ids!(steps)).widget_uid();
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
-            if step.widget_uid() != results {
-                continue;
-            }
+            let uid = step.widget_uid();
             if let Some(mut list) = step.as_portal_list().borrow_mut() {
-                self.draw_results(cx, &mut list);
+                if uid == results {
+                    self.draw_results(cx, &mut list);
+                } else if uid == steps {
+                    self.draw_steps(cx, &mut list);
+                }
             }
         }
         if self.layers_open {
@@ -1275,6 +1705,10 @@ mod tests {
 
     const SEARCH_REPLY: &str = include_str!("../tests/fixtures/photon-search.json");
     const REVERSE_REPLY: &str = include_str!("../tests/fixtures/photon-reverse.json");
+    const CAR: &str = include_str!("../tests/fixtures/osrm-car.json");
+    const BIKE: &str = include_str!("../tests/fixtures/osrm-bike.json");
+    const FOOT: &str = include_str!("../tests/fixtures/osrm-foot.json");
+    const NO_ROUTE: &str = include_str!("../tests/fixtures/osrm-noroute.json");
     const SAN_JOSE: LonLat = LonLat {
         lon: -121.8863,
         lat: 37.3382,
@@ -1569,6 +2003,187 @@ mod tests {
                 "East Santa Clara Street"
             );
             assert_eq!(view.view.label(cx, ids!(sheet_subtitle)).text(), "Street");
+        });
+    }
+
+    /// A view on Directions to the university, with a fix or without.
+    fn to_directions(cx: &mut Cx, root: &WidgetRef, fix: bool) {
+        if fix {
+            root.borrow_mut::<MapsView>().unwrap().ask_location(cx);
+            root.handle_event(cx, &fix_at(SAN_JOSE), &mut Scope::empty());
+        }
+        let mut view = root.borrow_mut::<MapsView>().unwrap();
+        search(
+            cx,
+            &mut view,
+            "santa clara university",
+            Ok(SEARCH_REPLY.into()),
+        );
+        view.pick_result(cx, 0);
+        view.open_directions(cx);
+    }
+
+    /// The route requests in flight, by mode.
+    fn routes_in_flight(view: &MapsView) -> Vec<Mode> {
+        view.model()
+            .in_flight()
+            .into_iter()
+            .filter_map(|(_, request)| match request {
+                Request::Route(mode) => Some(mode),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn land_route(cx: &mut Cx, view: &mut MapsView, mode: Mode, body: &str) {
+        let id = in_flight(view, Request::Route(mode));
+        view.handle_reply(cx, id, Ok(body.to_string()));
+    }
+
+    #[test]
+    fn directions_ask_for_one_route_at_a_time_and_show_each_tabs_time() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert_eq!(view.model().screen(), Screen::Directions);
+            assert!(view.view.widget(cx, ids!(directions_layer)).visible());
+            assert!(!view.view.widget(cx, ids!(place_layer)).visible());
+            assert_eq!(
+                view.view.label(cx, ids!(origin_text)).text(),
+                "Your location"
+            );
+            assert_eq!(
+                view.view.label(cx, ids!(destination_text)).text(),
+                "Santa Clara University"
+            );
+            // The shown tab's route first, and only it.
+            assert_eq!(routes_in_flight(&view), vec![Mode::Car]);
+            assert_eq!(
+                view.view.label(cx, ids!(route_title)).text(),
+                "Finding the best route…"
+            );
+            assert!(view.view.widget(cx, ids!(mode_car_on)).visible());
+            assert!(!view.view.widget(cx, ids!(mode_car)).visible());
+            assert!(view.view.widget(cx, ids!(mode_walk)).visible());
+            land_route(cx, &mut view, Mode::Car, CAR);
+            assert_eq!(view.view.label(cx, ids!(route_title)).text(), "10 min");
+            assert_eq!(
+                view.view.label(cx, ids!(route_subtitle)).text(),
+                "4.8 mi · Drive"
+            );
+            assert_eq!(view.view.button(cx, ids!(mode_car_on)).text(), "10 min");
+            // Its reply sent the next tab's.
+            assert_eq!(routes_in_flight(&view), vec![Mode::Walk]);
+            assert_eq!(view.view.button(cx, ids!(mode_walk)).text(), "…");
+            land_route(cx, &mut view, Mode::Walk, FOOT);
+            land_route(cx, &mut view, Mode::Bike, BIKE);
+            assert!(routes_in_flight(&view).is_empty());
+            assert_eq!(view.view.button(cx, ids!(mode_bike)).text(), "35 min");
+            // Another tab shows its own route, without asking again.
+            view.set_mode(cx, Mode::Walk);
+            assert_eq!(view.view.label(cx, ids!(route_title)).text(), "1 hr 44 min");
+            assert!(view.view.widget(cx, ids!(mode_walk_on)).visible());
+            assert!(routes_in_flight(&view).is_empty());
+        });
+    }
+
+    #[test]
+    fn no_route_marks_its_tab_only_and_offers_a_retry() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            land_route(cx, &mut view, Mode::Car, NO_ROUTE);
+            assert_eq!(
+                view.view.label(cx, ids!(route_title)).text(),
+                "No route found"
+            );
+            assert!(view.view.widget(cx, ids!(route_retry)).visible());
+            assert_eq!(view.view.button(cx, ids!(mode_car_on)).text(), "—");
+            land_route(cx, &mut view, Mode::Walk, FOOT);
+            assert_eq!(view.view.button(cx, ids!(mode_walk)).text(), "1 hr 44 min");
+            view.set_mode(cx, Mode::Walk);
+            assert!(!view.view.widget(cx, ids!(route_retry)).visible());
+        });
+    }
+
+    #[test]
+    fn without_a_fix_directions_wait_for_one_or_for_a_chosen_start() {
+        with_view(|cx, root| {
+            to_directions(cx, root, false);
+            {
+                let view = root.borrow::<MapsView>().unwrap();
+                // Directions asked for the location itself.
+                assert_eq!(view.location(), LocationState::Waiting);
+                assert!(routes_in_flight(&view).is_empty());
+                assert_eq!(
+                    view.view.label(cx, ids!(route_title)).text(),
+                    "Finding your location…"
+                );
+            }
+            root.handle_event(cx, &fix_at(SAN_JOSE), &mut Scope::empty());
+            assert_eq!(
+                routes_in_flight(&root.borrow::<MapsView>().unwrap()),
+                vec![Mode::Car]
+            );
+        });
+        with_view(|cx, root| {
+            to_directions(cx, root, false);
+            let denied = Event::LocationError(LocationErrorEvent::PermissionDenied);
+            root.handle_event(cx, &denied, &mut Scope::empty());
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert_eq!(
+                view.view.label(cx, ids!(route_title)).text(),
+                "Choose a starting point"
+            );
+            // The origin row's search picks one.
+            view.open_search(cx, SearchTarget::Origin);
+            view.set_query(cx, "library");
+            view.search_now(cx);
+            let id = in_flight(&view, Request::Search);
+            view.handle_reply(cx, id, Ok(SEARCH_REPLY.into()));
+            view.pick_result(cx, 1);
+            assert_eq!(view.model().screen(), Screen::Directions);
+            assert_eq!(
+                view.view.label(cx, ids!(origin_text)).text(),
+                "Santa Clara University Library"
+            );
+            assert_eq!(routes_in_flight(&view), vec![Mode::Car]);
+        });
+    }
+
+    #[test]
+    fn swapping_the_ends_asks_again_the_other_way() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            land_route(cx, &mut view, Mode::Car, CAR);
+            view.swap_ends(cx);
+            assert_eq!(
+                view.view.label(cx, ids!(origin_text)).text(),
+                "Santa Clara University"
+            );
+            assert_eq!(
+                view.view.label(cx, ids!(destination_text)).text(),
+                "Your location"
+            );
+            // The walk that was in flight was for the old ends.
+            assert_eq!(routes_in_flight(&view), vec![Mode::Car]);
+            assert_eq!(
+                view.view.label(cx, ids!(route_title)).text(),
+                "Finding the best route…"
+            );
+        });
+    }
+
+    #[test]
+    fn back_from_directions_is_the_place_again() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            assert!(back_pressed(cx, root));
+            let view = root.borrow::<MapsView>().unwrap();
+            assert_eq!(view.model().screen(), Screen::Place);
+            assert!(view.view.widget(cx, ids!(place_layer)).visible());
+            assert!(!view.view.widget(cx, ids!(directions_layer)).visible());
         });
     }
 

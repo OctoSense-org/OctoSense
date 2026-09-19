@@ -40,11 +40,14 @@ pub struct App {
     /// `--show place:<query>`: the first result opens when it lands.
     #[rust]
     open_first_result: bool,
+    /// `--show directions:<query>`: and then its directions.
+    #[rust]
+    then_directions: bool,
 }
 
-/// `--at lat,lon`, the order a person reads coordinates in.
-fn center_from_args(args: &[String]) -> Option<LonLat> {
-    let value = args.get(args.iter().position(|a| a == "--at")? + 1)?;
+/// `<flag> lat,lon`, the order a person reads coordinates in.
+fn coordinates_arg(args: &[String], flag: &str) -> Option<LonLat> {
+    let value = args.get(args.iter().position(|a| a == flag)? + 1)?;
     let (lat, lon) = value.split_once(',')?;
     Some(LonLat::new(
         lon.trim().parse().ok()?,
@@ -67,15 +70,35 @@ impl MatchEvent for App {
                 .window(cx, ids!(main_window))
                 .resize(cx, dvec2(402.0, 780.0));
         }
-        if let Some(center) = center_from_args(&args) {
+        if let Some(center) = coordinates_arg(&args, "--at") {
             if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
                 view.set_initial_camera(center, AT_ZOOM);
             }
         }
         makepad_wm_api::set_title(cx, "OctosMap");
+        // `--fix lat,lon`: the device is there, for a desk with no GPS. The
+        // locate button is pressed and the fix delivered as the platform
+        // delivers one.
+        if let Some(fix) = coordinates_arg(&args, "--fix") {
+            if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
+                view.ask_location(cx);
+            }
+            let update = LocationUpdateEvent {
+                lon: fix.lon,
+                lat: fix.lat,
+                accuracy_m: 10.0,
+                altitude_m: None,
+                speed_mps: None,
+                heading_deg: None,
+                time: 0.0,
+            };
+            self.ui
+                .handle_event(cx, &Event::LocationUpdate(update), &mut Scope::empty());
+        }
         // `--show <state>`: open on a state a screenshot wants, without
         // driving the window there by hand. `layers`; `search:<query>`, the
-        // results of a search; `place:<query>`, its first result's sheet.
+        // results of a search; `place:<query>`, its first result's sheet;
+        // `directions:<query>`, the routes to it.
         let show = args
             .iter()
             .position(|a| a == "--show")
@@ -91,6 +114,11 @@ impl MatchEvent for App {
                 Some(("place", query)) => {
                     view.search_for(cx, query);
                     self.open_first_result = true;
+                }
+                Some(("directions", query)) => {
+                    view.search_for(cx, query);
+                    self.open_first_result = true;
+                    self.then_directions = true;
                 }
                 _ => log!("maps: --show {state} is not a state"),
             }
@@ -136,6 +164,9 @@ impl AppMain for App {
                 if !view.model().results.is_empty() {
                     self.open_first_result = false;
                     view.pick_result(cx, 0);
+                    if std::mem::take(&mut self.then_directions) {
+                        view.open_directions(cx);
+                    }
                 }
             }
         }
