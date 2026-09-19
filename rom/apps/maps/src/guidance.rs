@@ -8,7 +8,7 @@ use crate::geo::{bearing_deg, LonLat};
 use crate::routing::{Arrow, Directions};
 use makepad_map_nav::geo::bearing_delta_deg;
 use makepad_map_nav::graph::Route;
-use makepad_map_nav::nav::{NavSession, NavState};
+use makepad_map_nav::nav::{ManeuverKind, NavSession, NavState};
 
 /// A preview runs the route this many times faster than the drive would be…
 const SIM_SPEED_MULT: f64 = 6.0;
@@ -20,6 +20,10 @@ const LOOK_AHEAD_M: f64 = 12.0;
 /// How fast the camera turns onto the travel bearing: 1/e of the way per
 /// this fraction of a second.
 const ROTATION_EASE_PER_S: f64 = 3.0;
+/// Until the drive has gone this far, the route's first turn stands. OSRM
+/// often sets off a metre or two before a corner, inside the session's own
+/// look-ahead, which would pass over that turn without ever naming it.
+const START_ZONE_M: f64 = 10.0;
 /// Still off the route this long after asking for a new one (the request
 /// failed, or the new route is no better): ask again.
 const REROUTE_RETRY_S: f64 = 15.0;
@@ -119,12 +123,26 @@ impl ActiveNav {
             self.reroute_asked_at = Some(self.clock_s);
         }
 
+        // At the very start the first turn, however close; then the
+        // session's pick.
+        let first_turn = route
+            .maneuvers
+            .iter()
+            .position(|m| m.kind != ManeuverKind::Depart);
+        let next = if status.progress_m < START_ZONE_M {
+            first_turn.filter(|&m| route.maneuvers[m].dist_m >= status.progress_m)
+        } else {
+            None
+        }
+        .or(status.next_maneuver);
+        let banner_distance_m = next
+            .map(|m| (route.maneuvers[m].dist_m - status.progress_m).max(0.0))
+            .unwrap_or(status.remaining_m);
         let (arrow, banner) = if status.state == NavState::Arrived {
             (Some(Arrow::Arrive), "You have arrived".to_string())
         } else {
             // The turn's line in the list says it better than its kind does.
-            let step = status
-                .next_maneuver
+            let step = next
                 .and_then(|m| self.directions.maneuver_steps.get(m))
                 .and_then(|&s| self.directions.steps.get(s));
             (
@@ -140,7 +158,7 @@ impl ActiveNav {
             state: status.state,
             arrow,
             banner,
-            banner_distance_m: status.dist_to_next_m,
+            banner_distance_m,
             remaining_m: status.remaining_m,
             remaining_s: status.remaining_s,
             needs_reroute,
@@ -191,7 +209,7 @@ mod tests {
     use crate::geo::{cumulative_distances, haversine_m};
     use crate::routing::Step;
     use makepad_map_nav::graph::TravelMode;
-    use makepad_map_nav::nav::{Maneuver, ManeuverKind};
+    use makepad_map_nav::nav::Maneuver;
 
     /// Roughly 50 m of latitude, and of longitude at this latitude.
     const STEP_LAT: f64 = 0.00045;
@@ -279,6 +297,57 @@ mod tests {
             (20.0 / 0.25 - 12.0..=20.0 / 0.25 + 2.0).contains(&(ticks as f64)),
             "{ticks} ticks"
         );
+    }
+
+    /// The L, but setting off two metres before a first corner, as OSRM's
+    /// routes often do: a left onto Oak Street, then the L as before.
+    fn corner_at_the_start() -> Directions {
+        let mut directions = l_shaped();
+        let first = directions.route.points[0];
+        let before = LonLat::new(first.lon - STEP_LON * 0.04, first.lat);
+        directions.route.points.insert(0, before);
+        directions.route.cum_dist_m = cumulative_distances(&directions.route.points).unwrap();
+        directions.route.length_m = *directions.route.cum_dist_m.last().unwrap();
+        let cum = directions.route.cum_dist_m.clone();
+        for maneuver in directions.route.maneuvers.iter_mut().skip(1) {
+            maneuver.point_index += 1;
+            maneuver.dist_m = cum[maneuver.point_index];
+        }
+        let corner = Maneuver {
+            kind: ManeuverKind::TurnLeft,
+            at: first,
+            name: "Oak Street".into(),
+            dist_m: cum[1],
+            point_index: 1,
+        };
+        directions.route.maneuvers.insert(1, corner);
+        directions.steps.insert(
+            1,
+            Step {
+                arrow: Arrow::Left,
+                text: "Turn left onto Oak Street".into(),
+                distance_m: 500.0,
+            },
+        );
+        directions.maneuver_steps = vec![0, 1, 2, 3];
+        directions
+    }
+
+    #[test]
+    fn a_turn_at_the_very_start_is_announced_before_the_next_one() {
+        let directions = corner_at_the_start();
+        assert!(
+            directions.route.maneuvers[1].dist_m < 3.0,
+            "inside the session's look-ahead"
+        );
+        let mut nav = ActiveNav::new(directions.clone(), false);
+        let standing = nav.feed(directions.route.points[0], None, 1.0);
+        assert_eq!(standing.banner, "Turn left onto Oak Street");
+        assert_eq!(standing.arrow, Some(Arrow::Left));
+        assert!(standing.banner_distance_m < 3.0);
+        // Round the corner and up the street: the L's own turn is next.
+        let tick = nav.feed(point_at(&directions.route, 60.0), None, 1.0);
+        assert_eq!(tick.banner, "Turn right onto Elm Street");
     }
 
     #[test]

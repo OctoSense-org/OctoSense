@@ -10,8 +10,10 @@
 //! instance does not.
 
 use crate::geo::{
-    distance_text, duration_text, fit_camera, haversine_m, Bounds, Insets, LonLat, Units,
+    arrival_text, distance_text, duration_text, fit_camera, haversine_m, Bounds, Insets, LonLat,
+    Units,
 };
+use crate::guidance::{ActiveNav, NavTick};
 use crate::model::{
     body_text, plain_error, LocationAsk, LocationFix, LocationState, MapsModel, Request,
     RouteState, Screen, SearchState, SearchTarget, Skin, LOCATION_FIX_TIMEOUT_SECONDS,
@@ -21,6 +23,8 @@ use crate::places::{self, coordinates_text, Place, PlaceKind};
 use crate::routing::{Arrow, Mode};
 use crate::sheet::{Detent, Sheet};
 use crate::HOSTED_TILES;
+use makepad_map_nav::nav::NavState;
+use makepad_widgets::makepad_platform::event::TouchState;
 use makepad_widgets::*;
 
 /// How long a status line (`Locating…`, an error) stays up.
@@ -50,6 +54,20 @@ const DESTINATION_MARKER: u64 = 3;
 const DIRECTIONS_CARD_HEIGHT: f64 = 176.0;
 /// The room a fitted route keeps from the viewport's sides and the panels.
 const ROUTE_MARGIN: f64 = 36.0;
+/// The chase camera: close enough to read the next street, tilted to see
+/// down it.
+const NAV_ZOOM: f64 = 17.0;
+const NAV_TILT: f64 = 55.0;
+/// How far ahead of the puck the chase camera looks, so the puck sits below
+/// the middle and the road ahead fills the screen.
+const NAV_LEAD_M: f64 = 60.0;
+/// The accuracy ring guidance draws: the puck is on the line, not a guess.
+const NAV_PUCK_ACCURACY_M: f64 = 8.0;
+/// A press on the map that moves further than this many pixels is a pan,
+/// not a tap: the chase pauses.
+const PAN_PIXELS: f64 = 8.0;
+/// Between two live fixes when their clocks say nothing useful.
+const DEFAULT_FIX_INTERVAL_S: f64 = 1.0;
 /// A step shorter than this shows no distance: it would read `0 ft`.
 const MIN_STEP_DISTANCE_M: f64 = 5.0;
 /// The closest a short route is shown from.
@@ -72,6 +90,9 @@ script_mod! {
     let c_accent = #(Skin::for_vm(vm).accent)
     let c_on_accent = #(Skin::for_vm(vm).on_accent)
     let c_alert = #(Skin::for_vm(vm).alert)
+    let c_banner = #(Skin::for_vm(vm).banner)
+    // On the banner's green, in either skin.
+    let c_on_banner = #ffffff
     let c_clear = #00000000
 
     // Text without `Label`'s own padding, so rows are as tall as their text.
@@ -108,6 +129,18 @@ script_mod! {
         }
         draw_icon +: {color: c_on_accent}
         draw_text +: {color: c_on_accent color_hover: c_on_accent color_down: c_on_accent color_focus: c_on_accent text_style: theme.font_bold{font_size: 14}}
+    }
+    // Beside the primary action: an outline in the accent.
+    let SecondaryButton = Plain{width: Fit height: 40 padding: Inset{left: 20 right: 20}
+        draw_bg +: {
+            border_size: uniform(1.0) border_radius: uniform(20.0)
+            border_color: uniform(c_hairline) border_color_hover: uniform(c_hairline) border_color_down: uniform(c_hairline) border_color_focus: uniform(c_hairline)
+        }
+        draw_text +: {color: c_accent color_hover: c_accent color_down: c_accent color_focus: c_accent text_style: theme.font_bold{font_size: 14}}
+    }
+    // Ending the drive.
+    let DangerButton = PrimaryButton{
+        draw_bg +: {color: uniform(c_alert) color_hover: uniform(c_alert) color_down: uniform(c_alert) color_focus: uniform(c_alert)}
     }
     // A line of text in the accent: Retry.
     let TextButton = Plain{width: Fit height: 36 padding: Inset{left: 10 right: 10}
@@ -231,6 +264,9 @@ script_mod! {
         View{width: Fill height: Fit padding: Inset{left: 60} Hairline{}}
     }
 
+    // The banner's arrow: the step's, larger and on the green.
+    let BannerArrow = Icon{icon_walk: Walk{width: 36 height: 36} draw_icon +: {color: c_on_banner}}
+
     mod.widgets.MapsViewBase = #(MapsView::register_widget(vm))
     mod.widgets.MapsView = set_type_default() do mod.widgets.MapsViewBase{
         width: Fill height: Fill flow: Overlay
@@ -352,11 +388,55 @@ script_mod! {
                     }
                 }
                 route_actions := View{width: Fill height: Fit flow: Right spacing: 10 padding: Inset{left: 20 right: 20 bottom: 14}
+                    start := PrimaryButton{visible: false text: "Start" draw_icon.svg: crate_resource("self:resources/icons/recenter.svg")}
+                    preview := SecondaryButton{visible: false text: "Preview"}
                     route_retry := TextButton{visible: false text: "Retry"}
                 }
                 Hairline{}
                 steps := PortalList{width: Fill height: Fill
                     Step := StepRow{}
+                }
+            }
+        }
+
+        // Navigation: the next turn on a banner, what is left on a bar, the
+        // map chasing the puck between them.
+        nav_layer := View{visible: false width: Fill height: Fill flow: Down
+            View{width: Fill height: Fit padding: Inset{left: 10 right: 10 top: 10}
+                banner := RoundedShadowView{width: Fill height: Fit flow: Right spacing: 14 align: Align{y: 0.5} padding: Inset{left: 18 right: 18 top: 14 bottom: 14}
+                    draw_bg +: {color: c_banner border_radius: uniform(16.0) shadow_color: #00000040 shadow_radius: uniform(8.0) shadow_offset: uniform(vec2(0.0, 2.0))}
+                    View{width: 44 height: 44 align: Center
+                        depart := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/depart.svg")}}
+                        arrive := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/arrive.svg")}}
+                        straight := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/straight.svg")}}
+                        slight_left := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/slight-left.svg")}}
+                        left := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/turn-left.svg")}}
+                        sharp_left := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/sharp-left.svg")}}
+                        slight_right := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/slight-right.svg")}}
+                        right := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/turn-right.svg")}}
+                        sharp_right := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/sharp-right.svg")}}
+                        uturn := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/uturn.svg")}}
+                        roundabout := ArrowMark{BannerArrow{draw_icon.svg: crate_resource("self:resources/icons/roundabout.svg")}}
+                    }
+                    View{width: Fill height: Fit flow: Down spacing: 2
+                        banner_distance := Text{width: Fill max_lines: 1 draw_text +: {color: c_on_banner text_style: theme.font_bold{font_size: 24}}}
+                        banner_text := Text{width: Fill max_lines: 2 text_overflow: Ellipsis draw_text +: {color: c_on_banner text_style: theme.font_regular{font_size: 16}}}
+                    }
+                }
+            }
+            // No ground of its own: the map keeps its touches.
+            View{width: Fill height: Fill flow: Down align: Align{x: 1.0 y: 1.0} padding: Inset{right: 12 bottom: 12}
+                recenter := Fab{visible: false draw_icon +: {svg: crate_resource("self:resources/icons/recenter.svg") color: c_accent}}
+            }
+            View{width: Fill height: Fit padding: Inset{left: 10 right: 10 bottom: 12}
+                nav_bar := Floating{flow: Right align: Align{y: 0.5} padding: Inset{left: 20 right: 14 top: 14 bottom: 14}
+                    draw_bg +: {border_radius: uniform(20.0)}
+                    View{width: Fill height: Fit flow: Down spacing: 3
+                        nav_time := Text{width: Fill max_lines: 1 draw_text +: {color: c_banner text_style: theme.font_bold{font_size: 22}}}
+                        nav_rest := Caption{width: Fill max_lines: 1 draw_text.text_style: theme.font_regular{font_size: 14}}
+                    }
+                    end := DangerButton{text: "End"}
+                    done := PrimaryButton{visible: false text: "Done"}
                 }
             }
         }
@@ -494,6 +574,27 @@ pub struct MapsView {
     /// camera's room are fractions of it.
     #[rust]
     viewport: (f64, f64),
+    /// Guidance, while navigating or previewing.
+    #[rust]
+    nav: Option<ActiveNav>,
+    /// Runs while a preview drives.
+    #[rust]
+    nav_frame: NextFrame,
+    /// The clock of the preview's last frame, or of the last live fix.
+    #[rust]
+    nav_clock: Option<f64>,
+    /// Whether the camera follows the puck: a pan pauses it.
+    #[rust]
+    chasing: bool,
+    /// Where guidance last put the camera: where Recentre goes back to.
+    #[rust]
+    chase_center: Option<LonLat>,
+    /// Where a press on the bare map began, while the camera is chasing.
+    #[rust]
+    map_press: Option<Vec2d>,
+    /// A new route is on its way: the banner says so.
+    #[rust]
+    rerouting: bool,
     /// The map theme last applied, so a skin change re-applies it.
     #[rust]
     map_theme: Option<u32>,
@@ -516,6 +617,11 @@ impl MapsView {
     #[cfg(test)]
     pub(crate) fn items(&self) -> &[ResultItem] {
         &self.items
+    }
+
+    #[cfg(test)]
+    pub(crate) fn navigating(&self) -> bool {
+        self.nav.is_some()
     }
 
     #[cfg(test)]
@@ -550,6 +656,8 @@ impl MapsView {
         for id in self.model.cancel_all() {
             cx.cancel_http_request(id);
         }
+        // Its frames stop with it.
+        self.nav = None;
         if self.location.failed() {
             cx.stop_location_updates();
         }
@@ -646,7 +754,8 @@ impl MapsView {
                 self.pump_routes(cx);
                 self.render(cx);
             }
-            Some(Request::Reroute) | None => {}
+            Some(Request::Reroute) => self.on_reroute(cx),
+            None => {}
         }
     }
 
@@ -952,6 +1061,9 @@ impl MapsView {
         self.view
             .widget(cx, ids!(route_retry))
             .set_visible(cx, retry);
+        let ready = self.model.directions().is_some();
+        self.view.widget(cx, ids!(start)).set_visible(cx, ready);
+        self.view.widget(cx, ids!(preview)).set_visible(cx, ready);
         self.view.portal_list(cx, ids!(steps)).redraw(cx);
     }
 
@@ -1050,12 +1162,278 @@ impl MapsView {
                 self.set_mode(cx, mode);
             }
         }
+        if self.view.button(cx, ids!(start)).clicked(actions) {
+            self.start_navigation(cx, false);
+            return;
+        }
+        if self.view.button(cx, ids!(preview)).clicked(actions) {
+            self.start_navigation(cx, true);
+            return;
+        }
         if self.view.button(cx, ids!(route_retry)).clicked(actions) {
             self.model.retry_route(self.model.mode());
             self.pump_routes(cx);
             self.render(cx);
         }
         self.handle_sheet_drag(cx, actions);
+    }
+
+    // ---- Navigation ----
+
+    /// Start, over live fixes, or Preview, over the simulated drive.
+    pub fn start_navigation(&mut self, cx: &mut Cx, simulate: bool) {
+        let Some(nav) = self.model.start_navigation(simulate) else {
+            return;
+        };
+        let map = self.map(cx);
+        // The destination stays pinned; the origin is where the puck is.
+        if let Some(to) = self.model.end_pos(self.model.destination()) {
+            let pin = MapMarker::new(DESTINATION_MARKER, to.lon, to.lat, Skin::current().alert);
+            map.set_markers(cx, vec![pin]);
+        }
+        let start = nav.directions().route.points.first().copied();
+        self.nav = Some(nav);
+        self.nav_clock = None;
+        self.rerouting = false;
+        self.chasing = true;
+        // Set, not flown to: a flight would read as a finger's pan.
+        if let Some(start) = start {
+            map.set_center(cx, start.lon, start.lat);
+            self.chase_center = Some(start);
+        }
+        map.set_map_zoom(cx, NAV_ZOOM);
+        map.set_tilt(cx, NAV_TILT);
+        if simulate {
+            self.nav_frame = cx.new_next_frame();
+        } else if self.location == LocationState::Idle {
+            self.ask_location(cx);
+        }
+        // The first banner, before the first fix or frame.
+        let tick = match (self.nav.as_mut(), simulate, self.model.fix()) {
+            (Some(nav), true, _) => Some(nav.tick_sim(0.0)),
+            (Some(nav), false, Some(fix)) => Some(nav.feed(fix, None, 0.0)),
+            _ => None,
+        };
+        if let Some(tick) = tick {
+            self.apply_tick(cx, tick);
+        }
+        self.render(cx);
+    }
+
+    /// One frame of the preview.
+    fn tick_preview(&mut self, cx: &mut Cx, time: f64) {
+        let dt = self.nav_clock.map_or(0.0, |last| time - last);
+        self.nav_clock = Some(time);
+        let Some(nav) = self.nav.as_mut().filter(|nav| nav.simulate()) else {
+            return;
+        };
+        let tick = nav.tick_sim(dt);
+        let arrived = tick.state == NavState::Arrived;
+        self.apply_tick(cx, tick);
+        if !arrived {
+            self.nav_frame = cx.new_next_frame();
+        }
+    }
+
+    /// What one position means on screen: the puck, the chase, the route
+    /// behind it dimmed, the banner and the bar; a reroute asked for when
+    /// guidance wants one; arrival.
+    fn apply_tick(&mut self, cx: &mut Cx, tick: NavTick) {
+        let map = self.map(cx);
+        let at = tick.position;
+        map.set_puck(
+            cx,
+            Some(MapPuck::new(
+                at.lon,
+                at.lat,
+                tick.heading,
+                NAV_PUCK_ACCURACY_M,
+            )),
+        );
+        map.set_route_progress(cx, tick.progress_index);
+        if self.chasing {
+            let ahead = lead(at, tick.rotation, NAV_LEAD_M);
+            map.set_center(cx, ahead.lon, ahead.lat);
+            map.set_rotation(cx, tick.rotation);
+            self.chase_center = Some(ahead);
+        }
+        if tick.needs_reroute {
+            if let Some((id, url)) = self.model.begin_reroute(at) {
+                self.send(cx, id, url);
+                self.rerouting = true;
+            }
+        }
+        let units = self.model.units();
+        let banner = self.view.widget(cx, ids!(banner));
+        if self.rerouting {
+            self.view.label(cx, ids!(banner_distance)).set_text(cx, "");
+            self.view
+                .label(cx, ids!(banner_text))
+                .set_text(cx, "Rerouting…");
+        } else {
+            let distance = if tick.state == NavState::Arrived {
+                String::new()
+            } else {
+                distance_text(tick.banner_distance_m, units)
+            };
+            self.view
+                .label(cx, ids!(banner_distance))
+                .set_text(cx, &distance);
+            self.view
+                .label(cx, ids!(banner_text))
+                .set_text(cx, &tick.banner);
+        }
+        if let Some(arrow) = tick.arrow {
+            show_arrow(cx, &banner, arrow);
+        }
+        self.view
+            .label(cx, ids!(nav_time))
+            .set_text(cx, &duration_text(tick.remaining_s));
+        let mut rest = distance_text(tick.remaining_m, units);
+        if let Some(now) = local_minutes_of_day() {
+            rest = format!("{rest} · {}", arrival_text(now, tick.remaining_s));
+        }
+        self.view.label(cx, ids!(nav_rest)).set_text(cx, &rest);
+        if tick.state == NavState::Arrived && self.model.screen() == Screen::Navigating {
+            self.model.arrive();
+            self.view.label(cx, ids!(nav_time)).set_text(cx, "Arrived");
+            self.view.label(cx, ids!(nav_rest)).set_text(cx, "");
+            self.render(cx);
+        }
+        self.view.redraw(cx);
+    }
+
+    /// A live fix while navigating: guidance takes it.
+    fn feed_nav(&mut self, cx: &mut Cx, fix: &LocationUpdateEvent) {
+        let Some(nav) = self.nav.as_mut().filter(|nav| !nav.simulate()) else {
+            return;
+        };
+        // The fixes' own clock; a platform that sends none, or the same
+        // twice, counts a second.
+        let dt = self
+            .nav_clock
+            .map(|last| fix.time - last)
+            .filter(|dt| *dt > 0.0 && *dt < 60.0)
+            .unwrap_or(DEFAULT_FIX_INTERVAL_S);
+        self.nav_clock = Some(fix.time);
+        let tick = nav.feed(LonLat::new(fix.lon, fix.lat), fix.heading_deg, dt);
+        self.apply_tick(cx, tick);
+    }
+
+    /// The reroute's reply: guidance starts over on the new route, or the
+    /// old one stands and guidance will ask again if the driver stays off it.
+    fn on_reroute(&mut self, cx: &mut Cx) {
+        self.rerouting = false;
+        match (self.model.take_reroute(), self.nav.as_mut()) {
+            (Some(directions), Some(nav)) => {
+                let line: Vec<(f64, f64)> = directions
+                    .route
+                    .points
+                    .iter()
+                    .map(|p| (p.lon, p.lat))
+                    .collect();
+                nav.replace_route(directions);
+                self.map(cx).set_route(cx, &line);
+            }
+            (None, Some(_)) => self.show_status(cx, "Couldn't find a new route"),
+            _ => {}
+        }
+    }
+
+    /// The drive is over, by End, by Done or by the back gesture: the
+    /// camera lies flat again and a preview's puck goes back to the fix.
+    fn end_navigation(&mut self, cx: &mut Cx) {
+        let Some(nav) = self.nav.take() else {
+            return;
+        };
+        self.rerouting = false;
+        self.chasing = false;
+        self.chase_center = None;
+        let map = self.map(cx);
+        map.set_rotation(cx, 0.0);
+        map.set_tilt(cx, 0.0);
+        map.set_route_progress(cx, 0);
+        if nav.simulate() {
+            let puck = self
+                .model
+                .fix()
+                .map(|fix| MapPuck::new(fix.lon, fix.lat, None, NAV_PUCK_ACCURACY_M));
+            map.set_puck(cx, puck);
+        }
+    }
+
+    /// The camera is back on the puck.
+    fn recenter(&mut self, cx: &mut Cx) {
+        self.chasing = true;
+        let map = self.map(cx);
+        map.set_map_zoom(cx, NAV_ZOOM);
+        map.set_tilt(cx, NAV_TILT);
+        if let Some(at) = self.chase_center {
+            map.set_center(cx, at.lon, at.lat);
+        }
+        self.render(cx);
+    }
+
+    /// While the camera chases, a finger that takes hold of the bare map and
+    /// moves it pauses the chase. Watched on the raw pointer events, without
+    /// hit-testing: the map keeps its own capture. (The map reports a
+    /// viewport change for guidance's own moves too, a pass late, so its
+    /// reports cannot tell the two apart.)
+    fn watch_pointer(&mut self, cx: &mut Cx, event: &Event) {
+        if self.nav.is_none() || !self.chasing {
+            self.map_press = None;
+            return;
+        }
+        match event {
+            Event::MouseDown(down) => self.pointer_down(cx, down.abs),
+            Event::MouseMove(moved) => self.pointer_moved(cx, moved.abs),
+            Event::MouseUp(_) => self.map_press = None,
+            Event::TouchUpdate(update) => {
+                for touch in &update.touches {
+                    match touch.state {
+                        TouchState::Start => self.pointer_down(cx, touch.abs),
+                        TouchState::Move => self.pointer_moved(cx, touch.abs),
+                        TouchState::Stop => self.map_press = None,
+                        TouchState::Stable => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn pointer_down(&mut self, cx: &mut Cx, abs: Vec2d) {
+        let inside = |id: &[LiveId]| {
+            let area = self.view.widget(cx, id).area();
+            area.is_valid(cx) && area.rect(cx).contains(abs)
+        };
+        // On the map, and not on what floats over it.
+        if inside(ids!(map)) && !inside(ids!(banner)) && !inside(ids!(nav_bar)) {
+            self.map_press = Some(abs);
+        }
+    }
+
+    fn pointer_moved(&mut self, cx: &mut Cx, abs: Vec2d) {
+        let Some(start) = self.map_press else {
+            return;
+        };
+        if (abs - start).length() > PAN_PIXELS {
+            self.map_press = None;
+            self.chasing = false;
+            self.render(cx);
+        }
+    }
+
+    fn handle_nav_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(cx, ids!(end)).clicked(actions)
+            || self.view.button(cx, ids!(done)).clicked(actions)
+        {
+            self.back(cx);
+            return;
+        }
+        if self.view.button(cx, ids!(recenter)).clicked(actions) {
+            self.recenter(cx);
+        }
     }
 
     // ---- The sheet ----
@@ -1162,16 +1540,28 @@ impl MapsView {
             return;
         }
         self.model.set_fix(LonLat::new(fix.lon, fix.lat));
+        if self.nav.as_ref().is_some_and(|nav| !nav.simulate()) {
+            // Guidance draws the puck, on the line.
+            if kind == LocationFix::First {
+                self.stop_location_timeout(cx);
+                self.hide_status(cx);
+            }
+            self.feed_nav(cx, fix);
+            return;
+        }
         let map = self.map(cx);
-        map.set_puck(
-            cx,
-            Some(MapPuck::new(
-                fix.lon,
-                fix.lat,
-                fix.heading_deg,
-                fix.accuracy_m,
-            )),
-        );
+        // A preview's puck is the preview's.
+        if self.nav.is_none() {
+            map.set_puck(
+                cx,
+                Some(MapPuck::new(
+                    fix.lon,
+                    fix.lat,
+                    fix.heading_deg,
+                    fix.accuracy_m,
+                )),
+            );
+        }
         let routing = self.model.screen() == Screen::Directions;
         if kind == LocationFix::First {
             self.stop_location_timeout(cx);
@@ -1261,7 +1651,18 @@ impl MapsView {
         if matches!(from, Screen::Search { .. }) {
             self.leave_search(cx);
         }
+        if matches!(from, Screen::Navigating | Screen::Arrived) {
+            self.end_navigation(cx);
+        }
         match (from, self.model.screen()) {
+            // End: the routes again, fitted; asked for again if the drive
+            // was rerouted away from them.
+            (Screen::Navigating, Screen::Directions) => self.enter_directions(cx),
+            // Done: the place the drive was to.
+            (Screen::Arrived, Screen::Place) => {
+                self.map(cx).clear_route(cx);
+                self.show_place(cx);
+            }
             (_, Screen::Explore) => {
                 let map = self.map(cx);
                 map.set_markers(cx, Vec::new());
@@ -1299,6 +1700,18 @@ impl MapsView {
         self.view
             .widget(cx, ids!(directions_layer))
             .set_visible(cx, screen == Screen::Directions);
+        let driving = matches!(screen, Screen::Navigating | Screen::Arrived);
+        self.view
+            .widget(cx, ids!(nav_layer))
+            .set_visible(cx, driving);
+        if driving {
+            let arrived = screen == Screen::Arrived;
+            self.view.widget(cx, ids!(end)).set_visible(cx, !arrived);
+            self.view.widget(cx, ids!(done)).set_visible(cx, arrived);
+            self.view
+                .widget(cx, ids!(recenter))
+                .set_visible(cx, !self.chasing && !arrived);
+        }
         self.view
             .widget(cx, ids!(layers_layer))
             .set_visible(cx, self.layers_open);
@@ -1523,9 +1936,12 @@ impl MapsView {
         // The camera moved, by a finger or by the app: the settings keep
         // where it is, and the compass shows when it is not level.
         if let Some((lon, lat, zoom)) = map.viewport_changed(actions) {
-            self.model.settings.center = LonLat::new(lon, lat);
-            self.model.settings.zoom = zoom;
-            self.render(cx);
+            // Where the app reopens: not halfway down a drive.
+            if self.nav.is_none() {
+                self.model.settings.center = LonLat::new(lon, lat);
+                self.model.settings.zoom = zoom;
+                self.render(cx);
+            }
         }
         if map.tilt_changed(actions).is_some() {
             self.render(cx);
@@ -1557,6 +1973,40 @@ fn show_kind(cx: &mut Cx, item: &WidgetRef, kind: PlaceKind) {
     }
 }
 
+/// The point `meters` from `from` along `bearing_deg`: near enough on a
+/// plane, at the distances a camera leads by.
+fn lead(from: LonLat, bearing_deg: f64, meters: f64) -> LonLat {
+    const M_PER_DEGREE: f64 = 111_320.0;
+    let bearing = bearing_deg.to_radians();
+    let north = meters * bearing.cos() / M_PER_DEGREE;
+    let east = meters * bearing.sin() / (M_PER_DEGREE * from.lat.to_radians().cos().max(0.01));
+    LonLat::new(from.lon + east, from.lat + north)
+}
+
+/// The local time of day in minutes, from the C library's local time
+/// (`localtime_r`, the tz data the shell's clock reads); `None` where there
+/// is none, and the bar then shows no arrival time.
+fn local_minutes_of_day() -> Option<u32> {
+    #[cfg(unix)]
+    {
+        // SAFETY: `time` accepts a null out-pointer, and `localtime_r`
+        // writes only into the zeroed `tm` it is handed.
+        let tm = unsafe {
+            let now = libc::time(std::ptr::null_mut());
+            let mut tm: libc::tm = std::mem::zeroed();
+            if libc::localtime_r(&now, &mut tm).is_null() {
+                return None;
+            }
+            tm
+        };
+        Some((tm.tm_hour * 60 + tm.tm_min).clamp(0, 24 * 60 - 1) as u32)
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
 /// Shows the mark of `arrow` among a step row's marks and hides the rest.
 fn show_arrow(cx: &mut Cx, item: &WidgetRef, arrow: Arrow) {
     let marks = [
@@ -1580,6 +2030,7 @@ fn show_arrow(cx: &mut Cx, item: &WidgetRef, arrow: Arrow) {
 impl Widget for MapsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.ensure_started(cx);
+        self.watch_pointer(cx, event);
         match event {
             Event::BackPressed { handled } => {
                 if !handled.get() && self.back(cx) {
@@ -1641,6 +2092,9 @@ impl Widget for MapsView {
         if self.sheet_frame.is_event(event).is_some() {
             self.ease_sheet(cx);
         }
+        if let Some(frame) = self.nav_frame.is_event(event) {
+            self.tick_preview(cx, frame.time);
+        }
         if let Event::Actions(actions) = event {
             if self.layers_open {
                 self.handle_layers_actions(cx, actions);
@@ -1650,7 +2104,7 @@ impl Widget for MapsView {
                     Screen::Search { .. } => self.handle_search_actions(cx, actions),
                     Screen::Place => self.handle_place_actions(cx, actions),
                     Screen::Directions => self.handle_directions_actions(cx, actions),
-                    Screen::Navigating | Screen::Arrived => {}
+                    Screen::Navigating | Screen::Arrived => self.handle_nav_actions(cx, actions),
                 }
             }
             self.handle_map_actions(cx, actions);
@@ -2184,6 +2638,163 @@ mod tests {
             assert_eq!(view.model().screen(), Screen::Place);
             assert!(view.view.widget(cx, ids!(place_layer)).visible());
             assert!(!view.view.widget(cx, ids!(directions_layer)).visible());
+        });
+    }
+
+    /// Directions with the car's route landed and nothing else in flight.
+    fn with_a_route(cx: &mut Cx, root: &WidgetRef) {
+        to_directions(cx, root, true);
+        let mut view = root.borrow_mut::<MapsView>().unwrap();
+        land_route(cx, &mut view, Mode::Car, CAR);
+        land_route(cx, &mut view, Mode::Walk, FOOT);
+        land_route(cx, &mut view, Mode::Bike, BIKE);
+    }
+
+    #[test]
+    fn start_and_preview_need_a_route() {
+        with_view(|cx, root| {
+            to_directions(cx, root, true);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert!(!view.view.widget(cx, ids!(start)).visible());
+            view.start_navigation(cx, true);
+            assert_eq!(
+                view.model().screen(),
+                Screen::Directions,
+                "nothing to drive yet"
+            );
+            land_route(cx, &mut view, Mode::Car, CAR);
+            assert!(view.view.widget(cx, ids!(start)).visible());
+            assert!(view.view.widget(cx, ids!(preview)).visible());
+        });
+    }
+
+    #[test]
+    fn a_preview_drives_the_banner_to_the_arrival_and_done_is_the_place() {
+        with_view(|cx, root| {
+            with_a_route(cx, root);
+            {
+                let mut view = root.borrow_mut::<MapsView>().unwrap();
+                view.start_navigation(cx, true);
+                assert_eq!(view.model().screen(), Screen::Navigating);
+                assert!(view.navigating());
+                assert!(view.view.widget(cx, ids!(nav_layer)).visible());
+                assert!(!view.view.widget(cx, ids!(directions_layer)).visible());
+                assert!(view.view.widget(cx, ids!(end)).visible());
+                assert!(!view.view.widget(cx, ids!(done)).visible());
+                assert!(!view.view.widget(cx, ids!(recenter)).visible(), "chasing");
+                // The first turn, and how far it is.
+                assert_eq!(
+                    view.view.label(cx, ids!(banner_text)).text(),
+                    "Turn right onto North 5th Street"
+                );
+                assert_eq!(view.view.label(cx, ids!(nav_time)).text(), "10 min");
+                let banner = view.view.widget(cx, ids!(banner));
+                assert!(banner.widget(cx, ids!(right)).visible());
+                assert!(!banner.widget(cx, ids!(left)).visible());
+                // Half-second frames to the end: ninety seconds at the most.
+                let mut time = 0.0;
+                for _ in 0..400 {
+                    time += 0.5;
+                    view.tick_preview(cx, time);
+                    if view.model().screen() == Screen::Arrived {
+                        break;
+                    }
+                }
+                assert_eq!(view.model().screen(), Screen::Arrived);
+                assert_eq!(
+                    view.view.label(cx, ids!(banner_text)).text(),
+                    "You have arrived"
+                );
+                assert_eq!(view.view.label(cx, ids!(nav_time)).text(), "Arrived");
+                assert!(view.view.widget(cx, ids!(done)).visible());
+                assert!(!view.view.widget(cx, ids!(end)).visible());
+            }
+            assert!(back_pressed(cx, root), "Done, or the back gesture");
+            let view = root.borrow::<MapsView>().unwrap();
+            assert_eq!(view.model().screen(), Screen::Place);
+            assert!(!view.navigating());
+            assert!(view.view.widget(cx, ids!(place_layer)).visible());
+            assert!(!view.view.widget(cx, ids!(nav_layer)).visible());
+        });
+    }
+
+    #[test]
+    fn end_goes_back_to_the_routes() {
+        with_view(|cx, root| {
+            with_a_route(cx, root);
+            root.borrow_mut::<MapsView>()
+                .unwrap()
+                .start_navigation(cx, true);
+            assert!(back_pressed(cx, root));
+            let view = root.borrow::<MapsView>().unwrap();
+            assert_eq!(view.model().screen(), Screen::Directions);
+            assert!(!view.navigating());
+            assert!(view.view.widget(cx, ids!(directions_layer)).visible());
+            // Nothing was rerouted: the routes are still there.
+            assert_eq!(view.view.label(cx, ids!(route_title)).text(), "10 min");
+            assert!(routes_in_flight(&view).is_empty());
+        });
+    }
+
+    #[test]
+    fn the_chase_camera_leads_the_puck_the_way_it_is_going() {
+        let at = LonLat::new(-121.9, 37.3);
+        let north = lead(at, 0.0, 60.0);
+        assert!((haversine_m(at, north) - 60.0).abs() < 0.5);
+        assert!(north.lat > at.lat && (north.lon - at.lon).abs() < 1e-9);
+        let east = lead(at, 90.0, 60.0);
+        assert!((haversine_m(at, east) - 60.0).abs() < 0.5);
+        assert!(east.lon > at.lon && (east.lat - at.lat).abs() < 1e-9);
+        assert_eq!(lead(at, 200.0, 0.0), at);
+    }
+
+    #[test]
+    fn a_pan_pauses_the_chase_and_recenter_resumes_it() {
+        with_view(|cx, root| {
+            with_a_route(cx, root);
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            view.start_navigation(cx, true);
+            assert!(view.chasing);
+            // A finger on the bare map that barely moves is a tap.
+            view.map_press = Some(dvec2(200.0, 400.0));
+            view.pointer_moved(cx, dvec2(203.0, 402.0));
+            assert!(view.chasing);
+            // One that drags is a pan.
+            view.pointer_moved(cx, dvec2(240.0, 400.0));
+            assert!(!view.chasing);
+            assert!(view.view.widget(cx, ids!(recenter)).visible());
+            // No press, no pan: a move over the map is not a drag.
+            view.recenter(cx);
+            assert!(view.chasing);
+            assert!(!view.view.widget(cx, ids!(recenter)).visible());
+            view.pointer_moved(cx, dvec2(300.0, 300.0));
+            assert!(view.chasing);
+        });
+    }
+
+    #[test]
+    fn a_live_drive_off_the_route_asks_for_a_new_one_once_and_takes_it() {
+        with_view(|cx, root| {
+            with_a_route(cx, root);
+            root.borrow_mut::<MapsView>()
+                .unwrap()
+                .start_navigation(cx, false);
+            // A kilometre south of the route, second after second.
+            let astray = LonLat::new(SAN_JOSE.lon, SAN_JOSE.lat - 0.01);
+            for second in 1..=8 {
+                let mut event = fix_at(astray);
+                if let Event::LocationUpdate(fix) = &mut event {
+                    fix.time = 1_000.0 + second as f64;
+                }
+                root.handle_event(cx, &event, &mut Scope::empty());
+            }
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            let id = in_flight(&view, Request::Reroute);
+            assert_eq!(view.view.label(cx, ids!(banner_text)).text(), "Rerouting…");
+            view.handle_reply(cx, id, Ok(CAR.into()));
+            assert!(!view.rerouting);
+            assert!(view.model().in_flight().is_empty());
+            assert!(view.navigating());
         });
     }
 

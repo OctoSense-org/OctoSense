@@ -5,6 +5,9 @@ edition = "2021"
 publish = false
 
 [dependencies]
+# The arrival time is the C library's local time (`localtime_r`), as the
+# shell's clock is.
+libc = "0.2"
 # `maps`: the MapView vector-tile renderer and its archive readers.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a", features = ["maps"] }
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a" }

@@ -43,6 +43,9 @@ pub struct App {
     /// `--show directions:<query>`: and then its directions.
     #[rust]
     then_directions: bool,
+    /// `--show preview:<query>`: and then a preview, once there is a route.
+    #[rust]
+    then_preview: bool,
 }
 
 /// `<flag> lat,lon`, the order a person reads coordinates in.
@@ -98,7 +101,8 @@ impl MatchEvent for App {
         // `--show <state>`: open on a state a screenshot wants, without
         // driving the window there by hand. `layers`; `search:<query>`, the
         // results of a search; `place:<query>`, its first result's sheet;
-        // `directions:<query>`, the routes to it.
+        // `directions:<query>`, the routes to it; `preview:<query>`, a
+        // simulated drive of the first of them.
         let show = args
             .iter()
             .position(|a| a == "--show")
@@ -119,6 +123,12 @@ impl MatchEvent for App {
                     view.search_for(cx, query);
                     self.open_first_result = true;
                     self.then_directions = true;
+                }
+                Some(("preview", query)) => {
+                    view.search_for(cx, query);
+                    self.open_first_result = true;
+                    self.then_directions = true;
+                    self.then_preview = true;
                 }
                 _ => log!("maps: --show {state} is not a state"),
             }
@@ -159,6 +169,14 @@ impl AppMain for App {
         }
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
+        if self.then_preview && !self.open_first_result {
+            if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
+                if view.model().directions().is_some() {
+                    self.then_preview = false;
+                    view.start_navigation(cx, true);
+                }
+            }
+        }
         if self.open_first_result {
             if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
                 if !view.model().results.is_empty() {
