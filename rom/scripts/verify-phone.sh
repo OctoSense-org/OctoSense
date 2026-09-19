@@ -9,7 +9,11 @@ DIR=$HOME/home/octosense-org/rom-builds/$TAG; OUT=$DIR/verify; mkdir -p "$OUT"
 export ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}
 echo "== waiting for boot"
 for i in $(seq 1 200); do [ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 3; done
-"$ADB" -s "$D" shell "getprop ro.lineage.version; getprop ro.boot.slot_suffix" | tr '\r\n' '  '; echo
+[ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] || { echo "phone not booted; nothing verified" >&2; exit 1; }
+VERSION=$("$ADB" -s "$D" shell getprop ro.lineage.version | tr -d '\r')
+echo "running $VERSION on slot $("$ADB" -s "$D" shell getprop ro.boot.slot_suffix | tr -d '\r')"
+# The tag carries the build date (20260919-f); refuse to record results for another build.
+case "$VERSION" in *"${TAG%%-*}"*) ;; *) echo "phone runs $VERSION, not build $TAG; nothing verified" >&2; exit 1;; esac
 echo "== checklist"; bash "$HERE/scripts/checklist.sh" "$D" | tee "$OUT/checklist.txt"
 echo "== agent"; OUT=$OUT bash "$HERE/scripts/agent-test.sh" "$D" 2>&1 | grep -v "^$\|^SERVICE\|Client:" | tee "$OUT/agent.txt" | tail -12
 echo "== screenshots"
