@@ -78,17 +78,38 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     }
 }
 
+/// The framework's icon identity for one of this shell's apps. Its artwork
+/// is keyed by app id and ships with the framework, which knows its own
+/// apps only: OctosMap, built on the framework's route app, wears route's.
+fn icon_identity(app: &str) -> &str {
+    match app {
+        "maps" => "route",
+        other => other,
+    }
+}
+
 #[derive(Default)]
 pub struct AppIconDraw(app_icon::AppIconDraw);
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
-        self.0.draw(cx, name, style.framework(), rect, opacity, ink);
+        self.0.draw(cx, icon_identity(name), style.framework(), rect, opacity, ink);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn octosmap_wears_the_route_apps_icon_and_every_other_app_its_own() {
+        assert_eq!(icon_identity("maps"), "route");
+        for app in ["news", "photos", "route", "reference", "an-app-nobody-knows"] {
+            assert_eq!(icon_identity(app), app);
+        }
+        // The identity it borrows is one the framework has artwork for.
+        let assets = app_icon::load_assets(UpstreamStyle::Macos);
+        assert!(assets.iter().any(|asset| asset.name == icon_identity("maps")));
+    }
 
     #[test]
     fn octosense_sheet_survives_the_unmodified_upstream_wire_protocol() {
