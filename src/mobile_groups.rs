@@ -404,7 +404,7 @@ impl WmDesk {
         let backdrop = self.compositor.as_mut().unwrap().backdrop(cx, window.panel, 4.0);
         self.phone_ui.group_glass.draw_surface_with_backdrop(cx, window.panel, Some(backdrop), t);
         self.phone_ui.rounded(cx, window.panel, 28.0, alpha(face, 0.55 * t));
-        self.compositor.as_mut().unwrap().content(window.panel);
+        self.phone_content(window.panel);
         let label_a = (t * t).max(0.0);
         self.phone_ui.d.label_elided(cx, window.title, true, 17.0, alpha(ink, label_a), HAlign::Left, &group.name);
         let client_of = |app: &str| state.clients.iter()
@@ -431,7 +431,7 @@ impl WmDesk {
             let name_r = if live { rect(r.pos.x + size * 0.5 + 16.0, r.pos.y + r.size.y - 26.0, r.size.x - size * 0.5 - 24.0, 20.0) } else { rect(r.pos.x + 6.0, r.pos.y + r.size.y * 0.5 + size * 0.5 - 2.0, r.size.x - 12.0, 22.0) };
             if live { self.phone_ui.rounded(cx, rect(name_r.pos.x - 6.0, name_r.pos.y - 2.0, name_r.size.x + 12.0, name_r.size.y + 4.0), 8.0, alpha(face, 0.85 * t)); }
             self.phone_ui.d.label_elided(cx, name_r, true, 13.0, alpha(ink, label_a), if live { HAlign::Left } else { HAlign::Center }, &name);
-            self.compositor.as_mut().unwrap().content(r);
+            self.phone_content(r);
             if groups.open.is_some() { self.phone_ui.hits.push((r, PhoneHit::GroupApp(group.name.clone(), cell.app.clone()))); }
         }
         if let Some(button) = window.open_both {
@@ -439,7 +439,7 @@ impl WmDesk {
             let pressed = self.phone_ui.pressed_hit() == Some(&PhoneHit::OpenBoth(group.name.clone()));
             self.phone_ui.rounded(cx, button, (button.size.y * 0.5) as f32, alpha(accent, (if pressed { 0.75 } else { 1.0 }) * t));
             self.phone_ui.d.label_elided(cx, button, true, 15.0, alpha(rgb(255, 255, 255), label_a), HAlign::Center, "Open both");
-            self.compositor.as_mut().unwrap().content(button);
+            self.phone_content(button);
             if groups.open.is_some() { self.phone_ui.hits.push((button, PhoneHit::OpenBoth(group.name.clone()))); }
         }
     }
