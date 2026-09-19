@@ -10,6 +10,9 @@ KEYS=$HOME/home/ssh-key/octosense-rom-keys
 TOOLS=$HOME/.local/share/octosense/android-tools
 OUT=$HOME/home/octosense-org/rom-builds/home; mkdir -p "$OUT"
 export JAVA_HOME=$TOOLS/makepad-android/openjdk; export PATH=$JAVA_HOME/bin:$PATH
+# Keep the builder's home directory (and so their name) out of the binaries:
+# panic messages and debug paths otherwise embed /Users/<name>/... verbatim.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME/.cargo=/cargo --remap-path-prefix=$HOME=/build"
 cd "$MOBILE"
 # Build against the pinned sibling worktrees (see the UX baseline notes); restore Cargo.toml after.
 cp Cargo.toml /tmp/Cargo.toml.octosense-home
