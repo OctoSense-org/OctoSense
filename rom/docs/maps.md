@@ -142,7 +142,8 @@ with the route app's icon.
 
 On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch
 built against the fork's `fix/android-map-archive` branch (four framework
-fixes this app needs on a phone, not yet pinned: `BACKLOG.md` MAPS-16):
+fixes this app needs on a phone, not yet pinned: `BACKLOG.md` MAPS-16,
+`docs/makepad-fork.md`):
 
 - the module is linked (`modules linked: [..., "maps"]`) and launches
   in-process; News and OctosMap sit in the dock's bottom row with Photos;

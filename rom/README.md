@@ -164,7 +164,7 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 
 ## Dependencies
 
-- Framework: the exact Octoscript-Makepad release selected by `native-runtime.lock.json`. Its `runtime.json` pins Makepad and Octoscript. Cargo patches resolve the prepared siblings, with one widgets/platform/script graph; do not substitute a moving branch.
+- Framework: the exact Octoscript-Makepad release selected by `native-runtime.lock.json`. Its `runtime.json` pins Makepad and Octoscript. Cargo patches resolve the prepared siblings, with one widgets/platform/script graph; do not substitute a moving branch. How the fork relates to upstream Makepad, why the siblings are shallow clones and how a pin moves: [docs/makepad-fork.md](docs/makepad-fork.md).
 - `OctoSense-org/Octoscript-AppCard` (`octos-app`, the hosted AppCard) and, through it, `Octoscript`, `Octoscript-Makepad` (component kits) and a few chart/diagram crates.
 - The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at build time (above).
 

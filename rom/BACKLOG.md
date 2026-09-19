@@ -454,8 +454,11 @@ found on the way. `docs/maps.md` describes what is there.
 
   Four framework fixes OctosMap needs on a phone (MAPS-12 to MAPS-15) are
   four commits on the pinned revision `45d541339`, on the fork's branch
-  `fix/android-map-archive` (pushed on 2026-09-18; no pull request yet, and
-  the fork's `main` is still the pinned revision). Until the pin
+  `fix/android-map-archive` (pull request `OctoSense-org/makepad#15`,
+  opened on 2026-09-18; the fork's `main` is still the pinned revision).
+  What the fixes mean for the other apps, which of them are candidates for
+  upstream Makepad, and the steps of a pin move are in
+  `docs/makepad-fork.md`. Until the pin
   moves, a phone build of this tree against the pinned revision has all
   four problems, and `tools/setup-native.py --check` rejects a `../makepad`
   checkout that is on the branch. The revision is pinned as a chain, as in
