@@ -17,7 +17,7 @@ use crate::guidance::{ActiveNav, NavTick};
 use crate::model::{
     body_text, plain_error, LocationAsk, LocationFix, LocationState, MapsModel, Request,
     RouteState, Screen, SearchState, SearchTarget, Skin, LOCATION_FIX_TIMEOUT_SECONDS,
-    MAX_BODY_BYTES, USER_AGENT,
+    MAX_BODY_BYTES, STATE_KEY, USER_AGENT,
 };
 use crate::places::{self, coordinates_text, Place, PlaceKind};
 use crate::routing::{Arrow, Mode};
@@ -25,6 +25,9 @@ use crate::sheet::{Detent, Sheet};
 use crate::HOSTED_TILES;
 use makepad_map_nav::nav::NavState;
 use makepad_widgets::makepad_platform::event::TouchState;
+use makepad_widgets::makepad_platform::storage::{
+    StorageHandle, StorageRequestId, StorageResponse, StorageResult,
+};
 use makepad_widgets::*;
 
 /// How long a status line (`Locating…`, an error) stays up.
@@ -39,6 +42,9 @@ const LEVEL_DEGREES: f64 = 1.0;
 /// `MapView::set_theme`: its light and its night style.
 const MAP_THEME_LIGHT: u32 = 0;
 const MAP_THEME_NIGHT: u32 = 1;
+/// The settings are written this long after they last changed: a pan is a
+/// hundred changes, and one write.
+const SAVE_DEBOUNCE_SECONDS: f64 = 2.0;
 /// Typing pauses this long before the search goes out: the service's terms
 /// ask for no request per keystroke.
 const SEARCH_DEBOUNCE_SECONDS: f64 = 0.3;
@@ -574,6 +580,22 @@ pub struct MapsView {
     /// camera's room are fractions of it.
     #[rust]
     viewport: (f64, f64),
+    /// The instance's storage jail (module) or its own namespace
+    /// (standalone): the settings and the last camera live there.
+    #[rust]
+    storage: Option<StorageHandle>,
+    /// The read of the saved state, while it is in flight.
+    #[rust]
+    load: Option<StorageRequestId>,
+    /// Writes in flight, so a failure is logged.
+    #[rust]
+    writes: Vec<StorageRequestId>,
+    /// Runs from the last change of the settings to the write that keeps it.
+    #[rust]
+    save_timer: Option<Timer>,
+    /// The app was told where to open (`--at`): the saved camera stays saved.
+    #[rust]
+    camera_given: bool,
     /// Guidance, while navigating or previewing.
     #[rust]
     nav: Option<ActiveNav>,
@@ -645,6 +667,10 @@ impl MapsView {
     /// platform's location updates end; nothing else this widget owns
     /// outlives its isolate.
     pub fn shutdown(&mut self, cx: &mut Cx) {
+        // A change still waiting for its write goes out now.
+        if self.save_timer.is_some() {
+            self.save_now(cx);
+        }
         let timers = [
             self.location_timeout.take(),
             self.status_timer.take(),
@@ -675,7 +701,88 @@ impl MapsView {
         let settings = &self.model.settings;
         map.set_center(cx, settings.center.lon, settings.center.lat);
         map.set_map_zoom(cx, settings.zoom);
+        if let Some(storage) = self.storage.as_ref() {
+            self.load = Some(storage.get(cx, STATE_KEY));
+        }
         self.render(cx);
+    }
+
+    /// A host handed this instance its storage: the settings load from and
+    /// save to it from now on. Call once: a second handle is ignored, so the
+    /// state is read from one jail only. Before the start `ensure_started`
+    /// issues the load; after it the load goes out at once, so a handle
+    /// that arrives late is never a silent no-op.
+    pub fn set_storage(&mut self, cx: &mut Cx, storage: StorageHandle) {
+        if self.storage.is_some() {
+            log!("maps: set_storage called twice; keeping the first jail");
+            return;
+        }
+        self.load = self.started.then(|| storage.get(cx, STATE_KEY));
+        self.storage = Some(storage);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_pending_load(&self) -> bool {
+        self.load.is_some()
+    }
+
+    /// The saved state landed: the switches, and the camera unless the app
+    /// was told where to open or the person has already gone somewhere.
+    pub(crate) fn apply_saved_state(&mut self, cx: &mut Cx, bytes: &[u8]) {
+        let given = self.model.settings.clone();
+        self.model.load_state(bytes);
+        let moved = self.camera_given || self.model.screen() != Screen::Explore;
+        if moved {
+            self.model.settings.center = given.center;
+            self.model.settings.zoom = given.zoom;
+        } else {
+            let settings = &self.model.settings;
+            let map = self.map(cx);
+            map.set_center(cx, settings.center.lon, settings.center.lat);
+            map.set_map_zoom(cx, settings.zoom);
+        }
+        self.apply_settings(cx);
+        self.render(cx);
+    }
+
+    /// The settings changed: they are written once they stop changing.
+    fn settings_changed(&mut self, cx: &mut Cx) {
+        if self.storage.is_none() {
+            return;
+        }
+        if let Some(timer) = self.save_timer.take() {
+            cx.stop_timer(timer);
+        }
+        self.save_timer = Some(cx.start_timeout(SAVE_DEBOUNCE_SECONDS));
+    }
+
+    fn save_now(&mut self, cx: &mut Cx) {
+        if let Some(timer) = self.save_timer.take() {
+            cx.stop_timer(timer);
+        }
+        if let Some(storage) = self.storage.as_ref() {
+            let id = storage.set(cx, STATE_KEY, self.model.saved_state());
+            self.writes.push(id);
+        }
+    }
+
+    fn on_storage(&mut self, cx: &mut Cx, responses: &[StorageResponse]) {
+        for response in responses {
+            if self.load == Some(response.request_id) {
+                self.load = None;
+                match &response.result {
+                    Ok(StorageResult::Value(Some(bytes))) => self.apply_saved_state(cx, bytes),
+                    // Nothing saved yet: the defaults stand.
+                    Ok(_) => {}
+                    Err(e) => log!("maps: could not read {STATE_KEY}: {e}"),
+                }
+            } else if let Some(at) = self.writes.iter().position(|id| *id == response.request_id) {
+                self.writes.remove(at);
+                if let Err(e) = &response.result {
+                    log!("maps: could not save {STATE_KEY}: {e}");
+                }
+            }
+        }
     }
 
     /// Open the layers sheet, as its button does.
@@ -688,6 +795,7 @@ impl MapsView {
     pub fn set_initial_camera(&mut self, center: LonLat, zoom: f64) {
         self.model.settings.center = center;
         self.model.settings.zoom = zoom;
+        self.camera_given = true;
     }
 
     /// The layer switches as the map's own state.
@@ -1855,6 +1963,7 @@ impl MapsView {
         }
         if changed {
             self.apply_settings(cx);
+            self.settings_changed(cx);
         }
     }
 
@@ -1940,6 +2049,7 @@ impl MapsView {
             if self.nav.is_none() {
                 self.model.settings.center = LonLat::new(lon, lat);
                 self.model.settings.zoom = zoom;
+                self.settings_changed(cx);
                 self.render(cx);
             }
         }
@@ -2037,6 +2147,7 @@ impl Widget for MapsView {
                     handled.set(true);
                 }
             }
+            Event::Storage(responses) => self.on_storage(cx, responses),
             Event::LocationUpdate(fix) => self.on_location_update(cx, fix),
             Event::LocationError(error) => {
                 let why = match error {
@@ -2088,6 +2199,13 @@ impl Widget for MapsView {
         {
             self.search_timer = None;
             self.search_now(cx);
+        }
+        if self
+            .save_timer
+            .as_ref()
+            .is_some_and(|t| t.is_event(event).is_some())
+        {
+            self.save_now(cx);
         }
         if self.sheet_frame.is_event(event).is_some() {
             self.ease_sheet(cx);
@@ -2795,6 +2913,56 @@ mod tests {
             assert!(!view.rerouting);
             assert!(view.model().in_flight().is_empty());
             assert!(view.navigating());
+        });
+    }
+
+    #[test]
+    fn a_saved_state_restores_the_switches_and_the_camera() {
+        let saved = br#"{"center_lon":4.8952,"center_lat":52.3702,"zoom":13.5,"imperial":true,"dark_map":true,"buildings_3d":false,"labels":true}"#;
+        with_view(|cx, root| {
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            view.apply_saved_state(cx, saved);
+            let settings = &view.model().settings;
+            assert_eq!(settings.center, LonLat::new(4.8952, 52.3702));
+            assert_eq!(settings.zoom, 13.5);
+            assert_eq!(settings.units, Some(Units::Imperial));
+            assert_eq!(settings.dark_map, Some(true));
+            assert!(!settings.buildings_3d);
+            assert_eq!(view.map_theme, Some(MAP_THEME_NIGHT));
+        });
+        // Told where to open, the app opens there; the switches still load.
+        let (mut iso, root) = isolate_root();
+        iso.entered(|cx| {
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            view.set_initial_camera(SAN_JOSE, 15.0);
+            view.apply_saved_state(cx, saved);
+            assert_eq!(view.model().settings.center, SAN_JOSE);
+            assert_eq!(view.model().settings.zoom, 15.0);
+            assert_eq!(view.model().settings.dark_map, Some(true));
+            view.shutdown(cx);
+        });
+        iso.teardown(root);
+        // Somewhere already: a late load does not pull the map away.
+        with_view(|cx, root| {
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            view.drop_pin(cx, SAN_JOSE);
+            let before = view.model().settings.center;
+            view.apply_saved_state(cx, saved);
+            assert_eq!(view.model().settings.center, before);
+        });
+    }
+
+    #[test]
+    fn the_jail_is_read_once_and_a_second_handle_is_ignored() {
+        with_view(|cx, root| {
+            let mut view = root.borrow_mut::<MapsView>().unwrap();
+            assert!(!view.has_pending_load(), "no jail, nothing to read");
+            let jail = cx.storage("maps.test");
+            view.set_storage(cx, jail);
+            assert!(view.has_pending_load(), "a late handle still loads");
+            let other = cx.storage("maps.other");
+            view.set_storage(cx, other);
+            assert_eq!(view.storage.as_ref().unwrap().namespace(), "maps.test");
         });
     }
 

@@ -73,8 +73,12 @@ impl MatchEvent for App {
                 .window(cx, ids!(main_window))
                 .resize(cx, dvec2(402.0, 780.0));
         }
-        if let Some(center) = coordinates_arg(&args, "--at") {
-            if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
+        // Storage before the first event reaches the view, so its start
+        // reads the saved state in the same pass.
+        let storage = cx.storage("maps");
+        if let Some(mut view) = self.ui.widget(cx, ids!(maps)).borrow_mut::<MapsView>() {
+            view.set_storage(cx, storage);
+            if let Some(center) = coordinates_arg(&args, "--at") {
                 view.set_initial_camera(center, AT_ZOOM);
             }
         }
