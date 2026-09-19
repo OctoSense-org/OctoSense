@@ -792,8 +792,11 @@ pub struct Skin {
     pub accent: Vec4f,
     /// Text and icons on the accent.
     pub on_accent: Vec4f,
-    /// The navigation banner.
+    /// The navigation banner, behind its white text.
     pub banner: Vec4f,
+    /// The time left, as text on a card: the banner's green, light enough
+    /// to read on the dark card.
+    pub go: Vec4f,
     /// The place pin, End, errors.
     pub alert: Vec4f,
 }
@@ -813,6 +816,7 @@ impl Skin {
                 accent: c(0x1a73e8ff),
                 on_accent: c(0xffffffff),
                 banner: c(0x0b8043ff),
+                go: c(0x0b8043ff),
                 alert: c(0xd93025ff),
             }
         } else {
@@ -827,6 +831,7 @@ impl Skin {
                 accent: c(0x8ab4f8ff),
                 on_accent: c(0x202124ff),
                 banner: c(0x0d652dff),
+                go: c(0x81c995ff),
                 alert: c(0xf28b82ff),
             }
         }
@@ -1268,6 +1273,44 @@ mod tests {
         assert_eq!(model.units(), Units::Metric);
         model.settings.units = Some(Units::Imperial);
         assert_eq!(model.units(), Units::Imperial);
+    }
+
+    /// WCAG relative luminance of an opaque colour.
+    fn luminance(colour: Vec4f) -> f32 {
+        let linear = |v: f32| {
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(colour.x) + 0.7152 * linear(colour.y) + 0.0722 * linear(colour.z)
+    }
+
+    fn contrast(a: Vec4f, b: Vec4f) -> f32 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    #[test]
+    fn text_reads_against_its_card_in_both_skins() {
+        for skin in [Skin::for_mode(true), Skin::for_mode(false)] {
+            for (name, colour) in [
+                ("ink", skin.ink),
+                ("secondary", skin.secondary),
+                ("accent", skin.accent),
+                ("go", skin.go),
+                ("alert", skin.alert),
+            ] {
+                let ratio = contrast(colour, skin.card);
+                assert!(
+                    ratio >= 3.0,
+                    "{name} on the card, light={}: contrast {ratio:.2}",
+                    skin.light
+                );
+            }
+            assert!(contrast(Vec4f::from_u32(0xffffffff), skin.banner) >= 4.5);
+        }
     }
 
     #[test]

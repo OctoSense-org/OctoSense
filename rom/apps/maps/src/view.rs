@@ -102,6 +102,7 @@ script_mod! {
     let c_on_accent = #(Skin::for_vm(vm).on_accent)
     let c_alert = #(Skin::for_vm(vm).alert)
     let c_banner = #(Skin::for_vm(vm).banner)
+    let c_go = #(Skin::for_vm(vm).go)
     // On the banner's green, in either skin.
     let c_on_banner = #ffffff
     let c_clear = #00000000
@@ -452,7 +453,7 @@ script_mod! {
                 nav_bar := Floating{flow: Right align: Align{y: 0.5} padding: Inset{left: 20 right: 14 top: 14 bottom: 14}
                     draw_bg +: {border_radius: uniform(20.0)}
                     View{width: Fill height: Fit flow: Down spacing: 3
-                        nav_time := Text{width: Fill max_lines: 1 draw_text +: {color: c_banner text_style: theme.font_bold{font_size: 22}}}
+                        nav_time := Text{width: Fill max_lines: 1 draw_text +: {color: c_go text_style: theme.font_bold{font_size: 22}}}
                         nav_rest := Caption{width: Fill max_lines: 1 draw_text.text_style: theme.font_regular{font_size: 14}}
                     }
                     end := DangerButton{text: "End"}
