@@ -323,7 +323,14 @@ mod tests {
                    available.iter().map(|app| &app.id).collect::<Vec<_>>());
         assert!(model.rows.iter().all(|row| !row.disabled));
         assert!(model.back());
-        model.sel = model.rows.iter().position(|row| row.target == "workspace.desktop").unwrap();
+        // The style rows are the universal build's; the standalone shell
+        // has one style and its workspace menu no Desktop entry to route to.
+        let desktop = model.rows.iter().position(|row| row.target == "workspace.desktop");
+        if crate::MOBILE_ONLY {
+            assert!(desktop.is_none(), "no style rows in the standalone shell");
+            return;
+        }
+        model.sel = desktop.unwrap();
         model.activate();
         assert_eq!(model.path, "desktop");
         assert!(model.rows.iter().any(|row| row.target == "desktop.nextstep"));

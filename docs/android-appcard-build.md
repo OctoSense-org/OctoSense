@@ -25,6 +25,18 @@ on the makepad fork's AppCard framework line and needs three things the stock
    (`octos-app`'s `stdio_spawn`) finds it there and runs `octos serve --stdio`
    with `HOME=<files>/octos-home`.
 
+## The shell an Android build is
+
+Android builds are the standalone mobile shell: the Android phone shell fills
+the screen inside the safe-area insets, with no desk bar (no style dropdown,
+Desktop/Phone toggle, Light/Dark or rotate button) and no desktop style
+compiled in — Light/Dark is the **Dark mode** tile in the shade's controls.
+`build.rs` turns the `mobile_only` cfg on for `target_os = "android"`, so the
+plain `cargo makepad android run` below needs no feature flag. Desktop builds
+stay universal (every desktop style and the bar) unless built with
+`--features mobile-only`, which is the same standalone shell in a phone-sized
+window — the way to check a phone change without the phone.
+
 ## Step by step
 
 ```sh
