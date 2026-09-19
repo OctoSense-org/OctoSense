@@ -13,6 +13,26 @@
 
 ---
 
+# Photos royalty-free expansion — 2026-09-18
+
+- Selected 32 photos spanning animals, architecture, city streets, transport, food, nature, hiking, sports, books and music.
+- Pexels source pages identify the photos as free to use; license: https://www.pexels.com/license/. Each source and photographer is recorded in resources/stock-photos.json.
+- User requested dates across recent months; eight sample dates per month from June through September, none in the future.
+- Existing build.rs embeds all files in photos; existing catalog enables Library, search, Memories and album selection without new UI code.
+
+---
+
+# Photos everyday scenes findings — 2026-09-18
+
+- Portraits inspected individually. Alex: wavy dark hair, stubble. Sofia: long dark hair. James: short white hair, dark glasses. Rose: short silver curls, thin glasses. Noah: school-age boy with tousled brown hair. Lily: school-age girl with long light brown hair.
+- Existing catalog names explicitly identify the six sample characters. Reference portraits in resources/photos are exact original copies.
+- Catalog additions automatically enter Library, People, search, Memories and album selection; no saved-album changes or new app behavior are needed.
+- build.rs embeds the photo directory. Existing UI/catalog regression incorrectly assumes exactly six solo photos; replace this with coverage of six distinct people.
+- Final output: 24 selected PNGs, 64.92 MiB. Three group images needed wider framing; built-in image edits corrected them. Original image outputs remain in the generation directory, and local framing drafts are outside bundled resources under ignored target/photos-scenes-review/drafts.
+- Generation plan: 18 solos across work, school, stadium, market, garden, woodland and coast; 6 groups with pair, trio and four-person compositions.
+
+---
+
 # Photos continuation findings — 2026-09-17
 
 - User selected Library zoom with mobile pinch and desktop scrollbar/scrolling.

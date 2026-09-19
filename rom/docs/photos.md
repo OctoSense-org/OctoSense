@@ -8,7 +8,7 @@ Collections, People, and Memories screenshots in the
 
 ## Using the app
 
-- **Library** shows all 19 bundled photos in a chronological grid, three to a
+- **Library** shows all 75 bundled photos in a chronological grid, three to a
   row by default.
 - **Zooming the Library** changes that density between one and nine photos per
   row. Pinch the grid on a phone; on desktop, roll the wheel over the photos or
@@ -29,8 +29,17 @@ Collections, People, and Memories screenshots in the
 - Tap a Memory to play its photos at three-second intervals. **Pause/Play** and
   previous/next controls remain available. Back exits the viewer.
 
-The first version uses the user's six individual portraits, the original group
-image, and twelve landscape samples. Camera/MediaStore import, cloud sync,
+The sample library uses the user's six individual portraits, the original group
+image, twelve landscape samples, 32 royalty-free Pexels photos, and 24 generated
+everyday scenes based on those portraits. Each person has three new full-body
+individual photos; six more photos show pairs, trios, and groups of four at a
+cafe, garden, market, stadium, beach,
+and woodland trail. The new scenes are included in People, search, Memories,
+and album selection. The Pexels set adds animals, architecture, city streets,
+transport, food, flowers, waterfalls, hiking, sports, books and music, with eight
+sample dates in each month from June through September 2026. Photographer credits
+and licenses are recorded in [SOURCES.md](../apps/photos/resources/SOURCES.md).
+Saved user albums are preserved. Camera/MediaStore import, cloud sync,
 image editing, music, and video export are outside this version. People are
 explicit catalog tags, not facial recognition. Memory groups come from catalog
 events, with a place/month fallback, and require at least two photos. No image
@@ -171,3 +180,37 @@ a stale drag state until the next press. That state does not move the viewport
 after a pinch can be spent stopping that stale gesture. Clearing it needs a
 `PortalList` API that is private in the pinned Makepad revision, so it is left
 to a framework change rather than worked around here.
+
+### Additional everyday scenes, September 18, 2026
+
+Added 24 generated photos: three full-body solo scenes for each of the six
+people, plus two pairs, two trios, and two groups of four. Settings include
+school, office, stadium, market, garden, woodland, cafe, library and coast.
+The built-in image generator used the original individual portraits as identity
+references. All selected images were visually reviewed; three group compositions
+were widened to keep complete heads and shoes in frame.
+
+Prompts, reference mappings, refinement instructions and final hashes are in
+[generated-scenes.json](../apps/photos/resources/generated-scenes.json). The
+24 new PNGs total 64.92 MiB; solo images are 1024×1536 and groups 1536×1024.
+All 43 catalog images decode, all 19 original image files and catalog entries are
+unchanged, and the six portraits still match the supplied originals exactly.
+All 21 Photos tests and formatting/whitespace checks pass. The Android release
+build was subsequently installed on OnePlus 6T `19f8cedf` with `adb install -r`.
+The Library visibly shows 43 photos and the new images, with existing favorites
+preserved. All 24 new PNGs were also verified byte-for-byte inside the APK.
+Device evidence and APK hashes are under `target/photos-scenes-review/device/`.
+
+### Royalty-free photo expansion — September 18, 2026
+
+Added 32 Pexels photographs with credits, license URLs, download URLs and hashes
+in `apps/photos/resources/stock-photos.json`. The library now contains 75 photos.
+Eight additions are dated in each month from June through September 2026.
+The 1200-pixel JPEGs total 5,459,488 bytes; all decode, have distinct hashes, and
+retain their source aspect ratio. Existing 43 assets and their metadata are unchanged.
+
+All 21 Photos tests, formatting and whitespace checks pass. The Android release
+APK was rebuilt, checked for all 32 embedded JPEGs, installed with data preserved
+on OnePlus 6T `19f8cedf`, and launched. Device screenshots verify the 75-photo
+Library, the June section, and the new September Memory. Evidence is in
+`target/photos-stock-review/`.

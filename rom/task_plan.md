@@ -23,6 +23,32 @@ News are.
 
 ---
 
+# Photos royalty-free expansion — 2026-09-18
+
+Goal: Add 32 varied royalty-free photos to feat/photos, eight dated in each of June, July, August and September 2026.
+
+1. Select diverse photos and verify source licensing — complete; Pexels source pages and license checked.
+2. Download, inspect and integrate assets with metadata and provenance — complete; all 32 visually reviewed, sources and hashes recorded.
+3. Validate catalog, dates, embedded assets and Photos regressions — complete; 75 unique catalog entries, 8 additions/month, all 21 tests pass.
+4. Rebuild, install and verify on the connected phone — complete; updated APK installed successfully, Library shows 75 photos, June section and September Memory visually verified.
+
+---
+
+# Photos everyday scenes — 2026-09-18
+
+Goal: Add 24 natural full-body photos based on the six original portraits: three solo scenes per person and six groups of two, three or four people. Work only in feat/photos.
+
+1. Inspect identity references and existing catalog — complete.
+2. Generate and visually review 24 separate images using built-in image_gen — complete; three group compositions refined to preserve full bodies.
+3. Add images, people/event metadata and provenance to the Photos library — complete.
+4. Run catalog and Photos regression checks, inspect final asset set — complete; 21 Photos tests, formatting, whitespace, image decoding and catalog/hash validation passed.
+
+5. Build the Photos branch for the connected OnePlus 6T, install without clearing data, launch Photos and inspect the device screen/logs — complete; installation succeeded and Library visibly shows 43 photos with the new images.
+
+Constraints: preserve original portraits and user albums; keep ages/likeness; retain full bodies including shoes; natural everyday environments; preserve prompts in apps/photos/resources/generated-scenes.json.
+
+---
+
 # Photos continuation — 2026-09-17
 
 ## Objective

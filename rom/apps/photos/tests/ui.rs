@@ -24,6 +24,15 @@ fn bundled_catalog_has_unique_ids_and_real_image_assets() {
         let bytes = octosense_photos::view::photo_bytes(&photo.file).expect("embedded photo");
         assert!(bytes.starts_with(b"\x89PNG") || bytes.starts_with(b"\xff\xd8\xff"));
     }
-    assert_eq!(catalog.iter().filter(|p| p.people.len() == 1).count(), 6);
+    let people: std::collections::BTreeSet<_> = catalog
+        .iter()
+        .flat_map(|photo| photo.people.iter().map(String::as_str))
+        .collect();
+    assert_eq!(
+        people,
+        ["Alex", "Sofia", "James", "Rose", "Noah", "Lily"]
+            .into_iter()
+            .collect()
+    );
     assert!(octosense_photos::model::memories(&catalog).len() >= 3);
 }

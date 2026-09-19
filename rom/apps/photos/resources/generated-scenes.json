@@ -1,0 +1,604 @@
+{
+  "generator": "Built-in image_gen",
+  "generated_on": "2026-09-18",
+  "reference_directory": "photos/",
+  "notes": "Names, dates, places and events are fictional sample metadata. All reference portraits remain unchanged.",
+  "images": [
+    {
+      "id": "alex-office",
+      "file": "alex-office.png",
+      "title": "Before the morning meeting",
+      "date": "2026-09-14",
+      "location": "The office",
+      "people": [
+        "Alex"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "office",
+        "work"
+      ],
+      "moment": "Everyday moments",
+      "reference_files": [
+        "01-adult-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Scene: Alex stands in a bright ordinary office corridor beside the open door to a workspace, wearing a pale blue rolled-sleeve shirt, charcoal chinos and brown casual shoes, holding a closed slim notebook at his side. He has just turned toward a colleague taking the picture, a relaxed small smile; desks, plants and a slightly untidy noticeboard are visible behind him. Soft window light, weekday morning. Portrait 2:3 composition.",
+      "sha256": "a7ff7cea2e6c1aeb71ab4ac7368d03387387e7ddf827fd32c3264f8c4ac903b9"
+    },
+    {
+      "id": "alex-forest",
+      "file": "alex-forest.png",
+      "title": "A pause on the trail",
+      "date": "2026-09-06",
+      "location": "Woodland trail",
+      "people": [
+        "Alex"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "outdoors",
+        "hiking"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "01-adult-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Scene: Alex pauses on a gently winding woodland footpath wearing a muted olive overshirt, grey T-shirt, dark hiking trousers, walking shoes and a small daypack. One foot is slightly ahead as he turns back to the family photographer, sunlight filtering through leaves, fallen leaves and ordinary trail details visible. Portrait 2:3 composition.",
+      "sha256": "39ffb416565af3f8ca6b647d0da3b30721e77a8399cacd7c8fc72dc943b9f647"
+    },
+    {
+      "id": "alex-stadium",
+      "file": "alex-stadium.png",
+      "title": "Ready for kickoff",
+      "date": "2026-09-12",
+      "location": "Local stadium",
+      "people": [
+        "Alex"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "stadium",
+        "football",
+        "weekend"
+      ],
+      "moment": "Saturday at the stadium",
+      "reference_files": [
+        "01-adult-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Scene: Alex stands on a broad concourse next to a small local football stadium, the pitch and rows of seats visible behind him. Casual navy jacket, grey T-shirt, jeans and trainers, hands relaxed, smiling toward the family photographer before the match. Diffuse afternoon light; a few distant spectators, no prominent branding. Portrait 2:3 composition.",
+      "sha256": "bacce0c91dd9837b49345313fe49ad92cc3bd8a016194421f7fdbc3e154a3161"
+    },
+    {
+      "id": "sofia-office",
+      "file": "sofia-office.png",
+      "title": "A little fresh air at lunch",
+      "date": "2026-09-14",
+      "location": "The office",
+      "people": [
+        "Sofia"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "office",
+        "work"
+      ],
+      "moment": "Everyday moments",
+      "reference_files": [
+        "02-adult-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Sofia, the adult woman with long dark brown hair. Scene: Sofia stands on a modest office rooftop terrace during lunch, wearing a soft sage blouse, dark straight-leg trousers and comfortable loafers. She holds a takeaway coffee naturally at waist level and glances toward a colleague photographing her. Planters, a bench and low-rise buildings behind her; warm but ordinary midday light. Portrait 2:3 composition.",
+      "sha256": "9c0b11aa94bed3290d5dc9ead9c0787223168d3a228b6b75800510055bffe9db"
+    },
+    {
+      "id": "sofia-beach",
+      "file": "sofia-beach.png",
+      "title": "Along the boardwalk",
+      "date": "2026-07-12",
+      "location": "By the coast",
+      "people": [
+        "Sofia"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "beach",
+        "seaside",
+        "walk"
+      ],
+      "moment": "Days by the water",
+      "reference_files": [
+        "02-adult-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Sofia, the adult woman with long dark brown hair. Scene: Sofia walks along a weathered wooden beach boardwalk in a loose white linen shirt, light blue full-length trousers and flat sandals. A light breeze moves her hair; she smiles toward the family photographer while walking. Dunes, sea grass, sand and blue-green water are visible, soft late-afternoon light. Portrait 2:3 composition.",
+      "sha256": "ffba6b2863a421cbf924c7c1caca85fe87b96bbfd3568d925feb3c4ae255d784"
+    },
+    {
+      "id": "sofia-market",
+      "file": "sofia-market.png",
+      "title": "Flowers for the weekend",
+      "date": "2026-08-29",
+      "location": "Town market",
+      "people": [
+        "Sofia"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "market",
+        "weekend",
+        "flowers"
+      ],
+      "moment": "A morning at the market",
+      "reference_files": [
+        "02-adult-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Sofia, the adult woman with long dark brown hair. Scene: Sofia stands beside a flower stall at a real neighborhood outdoor farmers market, in a muted rust cotton top, blue jeans and white trainers, a simple canvas shopping tote over one shoulder. She holds a small bunch of seasonal flowers loosely and looks toward the photographer. Produce crates, canvas awnings and softly distant shoppers; overcast daylight. Portrait 2:3 composition.",
+      "sha256": "4988061fa1da9b7adc18c4b6da61c051236791ff757dbc155c0eb25668408f33"
+    },
+    {
+      "id": "james-garden",
+      "file": "james-garden.png",
+      "title": "The long way through the garden",
+      "date": "2026-09-05",
+      "location": "Botanical garden",
+      "people": [
+        "James"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "garden",
+        "outdoors",
+        "walk"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "03-older-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is James, the older man with short white hair and dark rectangular glasses. Scene: James stands beside an old stone path in a botanical garden, wearing his dark rectangular glasses, a pale checked shirt, unbuttoned navy cardigan, tan trousers and walking shoes. His hands rest naturally at his sides and he smiles toward the photographer. Tall grasses, low flowerbeds and mature trees create a believable public garden; soft afternoon light. Portrait 2:3 composition.",
+      "sha256": "cd7f1fdde9d12b0da1963d6dc29c6a5ef919e2e7524d524bc8168bc2939cbe21"
+    },
+    {
+      "id": "james-harbor",
+      "file": "james-harbor.png",
+      "title": "Watching the boats",
+      "date": "2026-07-13",
+      "location": "By the coast",
+      "people": [
+        "James"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "harbor",
+        "seaside",
+        "walk"
+      ],
+      "moment": "Days by the water",
+      "reference_files": [
+        "03-older-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is James, the older man with short white hair and dark rectangular glasses. Scene: James stands on a harbor promenade with small sailboats behind him, wearing his glasses, a navy windbreaker over a light polo shirt, khaki trousers and brown walking shoes. One hand lightly touches a waist-high railing beside him without obscuring his body, the other is relaxed. He turns slightly toward the photographer, soft coastal morning light. Portrait 2:3 composition.",
+      "sha256": "6f5cb6f600f00029d8fef32eae8928112bbc12ff0efbb8636b4b164fdd8ee0f6"
+    },
+    {
+      "id": "james-library",
+      "file": "james-library.png",
+      "title": "A good book for the afternoon",
+      "date": "2026-09-10",
+      "location": "Neighborhood library",
+      "people": [
+        "James"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "library",
+        "books",
+        "town"
+      ],
+      "moment": "Everyday moments",
+      "reference_files": [
+        "03-older-man.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is James, the older man with short white hair and dark rectangular glasses. Scene: James stands outside a small neighborhood library on a tree-lined pavement, wearing his glasses, a forest-green pullover over a checked shirt, grey trousers and brown shoes. He carries two plain-covered library books at his side and smiles naturally toward the photographer. Brick facade, a public bench and autumn leaves behind him, mild overcast daylight. Portrait 2:3 composition.",
+      "sha256": "0d38c4b5f4be787a7b1b83a99a2e6cddddc6fcb15f8e60b848f572eb89803c6d"
+    },
+    {
+      "id": "rose-garden",
+      "file": "rose-garden.png",
+      "title": "Among the late summer flowers",
+      "date": "2026-09-05",
+      "location": "Botanical garden",
+      "people": [
+        "Rose"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "garden",
+        "flowers",
+        "outdoors"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "04-older-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Scene: Rose stands on a gravel path between flowering garden beds, wearing her thin rectangular glasses, a lilac cardigan over a cream blouse, comfortable navy trousers and flat walking shoes. She gently holds a small flower stem still attached to a nearby plant and looks warmly toward the photographer. Real late-summer flowers, a wooden potting shed far behind, soft morning light. Portrait 2:3 composition.",
+      "sha256": "623cccf471407048993abe8df5c34b8915acd6c2946a2e123cd74bd6035937c0"
+    },
+    {
+      "id": "rose-pier",
+      "file": "rose-pier.png",
+      "title": "A breeze by the sea",
+      "date": "2026-07-13",
+      "location": "By the coast",
+      "people": [
+        "Rose"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "pier",
+        "seaside",
+        "walk"
+      ],
+      "moment": "Days by the water",
+      "reference_files": [
+        "04-older-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Scene: Rose stands on a wide wooden seaside pier, wearing her glasses, a pale blue light jacket over a striped shirt, cream trousers and comfortable white walking shoes. A breeze moves her silver hair slightly, she smiles naturally at the photographer with arms relaxed. Sea, a distant beach and ordinary railings visible; gentle late-afternoon sun. Portrait 2:3 composition.",
+      "sha256": "549725c1baba3eca031195447c81456b414005f796cf4e9768c4a448de68344b"
+    },
+    {
+      "id": "rose-market",
+      "file": "rose-market.png",
+      "title": "Saturday shopping",
+      "date": "2026-08-29",
+      "location": "Town market",
+      "people": [
+        "Rose"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "market",
+        "weekend",
+        "shopping"
+      ],
+      "moment": "A morning at the market",
+      "reference_files": [
+        "04-older-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Scene: Rose stands in a small town square beside a farmers-market vegetable stall, wearing her glasses, a muted coral cardigan over a cream top, dark trousers and brown flat shoes. She holds a modest shopping basket at her side, smiling toward the photographer. Wooden produce crates and everyday shoppers in the distance, soft cloudy morning light. Portrait 2:3 composition.",
+      "sha256": "a3d0c77fb309db877860c58a771fdc19f8d8f4990118ee112e0f1889689e6663"
+    },
+    {
+      "id": "noah-school",
+      "file": "noah-school.png",
+      "title": "On the way to class",
+      "date": "2026-09-08",
+      "location": "School courtyard",
+      "people": [
+        "Noah"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "school",
+        "backpack",
+        "morning"
+      ],
+      "moment": "Back to school",
+      "reference_files": [
+        "05-boy.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Noah, the school-age boy with short tousled brown hair. Scene: Noah stands on a school courtyard footpath with a blue backpack, wearing a mustard yellow T-shirt under an open blue hoodie, navy trousers and ordinary trainers. He is photographed by a parent from a natural, slightly lowered viewpoint, cheerful but not exaggerated. A simple school building, bicycle racks and trees in the background; early morning light. Portrait 2:3 composition.",
+      "sha256": "3770715ebfb8c1d6b6e2269bb7c7dc885ee926fd22662f627d540f3572664785"
+    },
+    {
+      "id": "noah-football",
+      "file": "noah-football.png",
+      "title": "After football practice",
+      "date": "2026-09-12",
+      "location": "Local stadium",
+      "people": [
+        "Noah"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "stadium",
+        "football",
+        "sport"
+      ],
+      "moment": "Saturday at the stadium",
+      "reference_files": [
+        "05-boy.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Noah, the school-age boy with short tousled brown hair. Scene: Noah stands on grass at the edge of a modest local football stadium after practice, wearing a plain teal sports shirt, navy sports shorts, long football socks and cleats. One foot rests gently beside a football rather than on top of it, his arms hang naturally, smiling proudly toward a parent. Small bleachers and goalposts behind, ordinary afternoon daylight. Portrait 2:3 composition.",
+      "sha256": "7f301eb2b6b85957c4e755a6a782c1b9fd50f13195aa13566de1f512914f2dfa"
+    },
+    {
+      "id": "noah-trail",
+      "file": "noah-trail.png",
+      "title": "Found the next trail marker",
+      "date": "2026-09-06",
+      "location": "Woodland trail",
+      "people": [
+        "Noah"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "outdoors",
+        "hiking",
+        "weekend"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "05-boy.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Noah, the school-age boy with short tousled brown hair. Scene: Noah pauses on a safe level woodland trail, wearing a rust-orange fleece, comfortable dark trousers, trainers and a small blue daypack. He holds a fallen twig loosely at his side, looking back toward the parent taking his picture. Mossy rocks, ferns and dappled daylight, a relaxed everyday family walk. Portrait 2:3 composition.",
+      "sha256": "cceb4de1f8a638d2fe9bb159b4dc3df2301980be7f6b46a2124bb9363ed9370d"
+    },
+    {
+      "id": "lily-school",
+      "file": "lily-school.png",
+      "title": "A new school morning",
+      "date": "2026-09-08",
+      "location": "School courtyard",
+      "people": [
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "school",
+        "backpack",
+        "morning"
+      ],
+      "moment": "Back to school",
+      "reference_files": [
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Lily, the young school-age girl with long light brown hair. Scene: Lily stands on a garden path just outside an ordinary primary school, wearing a light pink cardigan, a simple blue knee-length casual dress, white socks and everyday trainers, with a small school backpack. Her hands naturally hold the two shoulder straps and she smiles toward a parent taking her picture. Trees, flowerbeds and the school entrance behind, soft morning daylight. Portrait 2:3 composition.",
+      "sha256": "b314a41a02a7f04d4f982fa6f3921a18686c9187199ffccdc1ee67423b189fe1"
+    },
+    {
+      "id": "lily-beach",
+      "file": "lily-beach.png",
+      "title": "A kite by the dunes",
+      "date": "2026-07-12",
+      "location": "By the coast",
+      "people": [
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "beach",
+        "kite",
+        "summer"
+      ],
+      "moment": "Days by the water",
+      "reference_files": [
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Lily, the young school-age girl with long light brown hair. Scene: Lily stands on dry sand near beach dunes, wearing a light yellow short-sleeved cotton top, blue knee-length shorts and casual canvas shoes. She holds a simple kite spool naturally in both hands at waist height, with a small colorful kite and believable string extending into the sky in the distance. Her long hair moves slightly in the sea breeze; a cheerful candid family snapshot, soft afternoon sun. Portrait 2:3 composition.",
+      "sha256": "d76ca6ea180818ec2e21c2e3716a2a669ea3aa650beeef058a0024aa4d9103b9"
+    },
+    {
+      "id": "lily-meadow",
+      "file": "lily-meadow.png",
+      "title": "Daisies along the path",
+      "date": "2026-09-06",
+      "location": "Woodland trail",
+      "people": [
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "outdoors",
+        "meadow",
+        "flowers"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Lily, the young school-age girl with long light brown hair. Scene: Lily stands on a mown grassy path beside a wildflower meadow, wearing a soft coral sweatshirt, comfortable blue jeans and white trainers. She holds a tiny bunch of daisies loosely in one hand and looks toward the parent photographing her, relaxed and delighted. Trees, tall grass and a small picnic blanket in the distance; mild afternoon light. Portrait 2:3 composition.",
+      "sha256": "4d6bce03ed896b727872c2ec187a49e93ee41e9daf7f2faa8c7457d35a9b83b8"
+    },
+    {
+      "id": "alex-sofia-cafe",
+      "file": "alex-sofia-cafe.png",
+      "title": "Coffee on the corner",
+      "date": "2026-08-30",
+      "location": "Neighborhood cafe",
+      "people": [
+        "Alex",
+        "Sofia"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "cafe",
+        "couple",
+        "weekend"
+      ],
+      "moment": "Everyday moments",
+      "reference_files": [
+        "01-adult-man.png",
+        "02-adult-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Image 2 is Sofia, the adult woman with long dark brown hair. Scene: Alex and Sofia stand close together outside a friendly neighborhood cafe with a few outdoor tables. Alex wears a faded blue casual shirt, tan chinos and brown shoes; Sofia wears a cream blouse, olive trousers and flat sandals. Each holds a plain takeaway coffee at waist level, naturally smiling toward the family photographer. Uneven paving, a potted plant and a bicycle in the background, morning light. Landscape 3:2 composition.",
+      "sha256": "e358831c9997130f05a6105e03105f97e4199931a8fd593b7903f0c07d350a5c"
+    },
+    {
+      "id": "james-rose-garden",
+      "file": "james-rose-garden.png",
+      "title": "An afternoon together",
+      "date": "2026-09-05",
+      "location": "Botanical garden",
+      "people": [
+        "James",
+        "Rose"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "garden",
+        "couple",
+        "outdoors"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "03-older-man.png",
+        "04-older-woman.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is James, the older man with short white hair and dark rectangular glasses. Image 2 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Scene: James and Rose stand together on a garden footpath, gently holding hands and looking warmly toward the family photographer. Both retain their reference glasses. James wears a pale checked shirt, navy cardigan, tan trousers and walking shoes; Rose wears a lilac cardigan, cream blouse, navy trousers and flat shoes. Flowerbeds and an old wooden bench nearby, soft afternoon light. Landscape 3:2 composition.",
+      "sha256": "5004577b41dbb9c79150af72fdc5679e7c7dbfa2970053989325b4b035d3914a"
+    },
+    {
+      "id": "alex-noah-lily-stadium",
+      "file": "alex-noah-lily-stadium-wide.png",
+      "title": "Our Saturday team",
+      "date": "2026-09-12",
+      "location": "Local stadium",
+      "people": [
+        "Alex",
+        "Noah",
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "stadium",
+        "family",
+        "football"
+      ],
+      "moment": "Saturday at the stadium",
+      "reference_files": [
+        "01-adult-man.png",
+        "05-boy.png",
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Image 2 is Noah, the school-age boy with short tousled brown hair. Image 3 is Lily, the young school-age girl with long light brown hair. Scene: Alex, Noah and Lily stand together on the wide safe concourse at a modest local football stadium with the pitch and seats behind. Alex in a navy jacket, jeans and trainers stands between the children with one hand resting gently on each child's shoulder; Noah in a teal football shirt, navy shorts, long socks and trainers; Lily in a coral sweatshirt, jeans and trainers. Relaxed proud smiles toward Sofia taking the photograph, soft afternoon daylight. Landscape 3:2 composition.",
+      "refinement": {
+        "input_sha256": "6c9b24ee76666fed61f3f4421137ffccdd7db1483e24d1cbd1a50250a9162713",
+        "prompt": "Edit the supplied photograph ONLY to widen its framing. It is the edit target, and all of its people must retain the same recognizable faces, apparent ages, hair, glasses if any, outfits, body proportions, relative positions, relaxed poses and expressions. Keep the same location, natural light, colors and photorealistic family-snapshot appearance. Move the camera back by about 30%, seamlessly extending the existing scene on every side. CRITICAL: Every person's COMPLETE head and BOTH COMPLETE shoes must be comfortably inside the image. Leave at least 10% of the image height as visible ground below the lowest shoe, and at least 8% as background above the tallest head; the tallest person's head-to-shoe span must occupy no more than 78% of image height. Do not crop hair, toes, heels or soles. Do not add people, change faces, invent props, change outfits, add text, create borders or make a collage. Landscape 3:2 photograph.",
+        "reason": "Wider framing keeps complete heads and shoes inside the photo."
+      },
+      "sha256": "eaad556fd6f7b83b09768f41db6a509689250d7f6e2fb260c910eb404f1e4f1f"
+    },
+    {
+      "id": "sofia-rose-lily-market",
+      "file": "sofia-rose-lily-market-wide.png",
+      "title": "Three generations at the market",
+      "date": "2026-08-29",
+      "location": "Town market",
+      "people": [
+        "Sofia",
+        "Rose",
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "market",
+        "family",
+        "flowers"
+      ],
+      "moment": "A morning at the market",
+      "reference_files": [
+        "02-adult-woman.png",
+        "04-older-woman.png",
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Sofia, the adult woman with long dark brown hair. Image 2 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Image 3 is Lily, the young school-age girl with long light brown hair. Scene: Sofia, Rose and Lily stand in a loose little group beside a flower stall at a neighborhood market. Sofia in a rust top, jeans and trainers carries a canvas tote; Rose with her reference glasses in a coral cardigan, cream blouse, dark trousers and flats; Lily in a pale yellow top, denim trousers and trainers holds a small wrapped bunch of flowers. Their faces turn naturally toward the photographer, with gentle different expressions. Ordinary awnings and produce crates, soft cloudy morning light. Landscape 3:2 composition.",
+      "refinement": {
+        "input_sha256": "84bae86198e2ed7336b6c8ea6d797e16e23859d3916370b837490700642b6ff5",
+        "prompt": "Edit the supplied photograph ONLY to widen its framing. It is the edit target, and all of its people must retain the same recognizable faces, apparent ages, hair, glasses if any, outfits, body proportions, relative positions, relaxed poses and expressions. Keep the same location, natural light, colors and photorealistic family-snapshot appearance. Move the camera back by about 30%, seamlessly extending the existing scene on every side. CRITICAL: Every person's COMPLETE head and BOTH COMPLETE shoes must be comfortably inside the image. Leave at least 10% of the image height as visible ground below the lowest shoe, and at least 8% as background above the tallest head; the tallest person's head-to-shoe span must occupy no more than 78% of image height. Do not crop hair, toes, heels or soles. Do not add people, change faces, invent props, change outfits, add text, create borders or make a collage. Landscape 3:2 photograph.",
+        "reason": "Wider framing keeps complete heads and shoes inside the photo."
+      },
+      "sha256": "1d4e5bac1b669a1122d32da7778572bc7e1a4945d94b14f02d18af88b131c333"
+    },
+    {
+      "id": "family-four-beach",
+      "file": "family-four-beach-wide.png",
+      "title": "One more walk before sunset",
+      "date": "2026-07-12",
+      "location": "By the coast",
+      "people": [
+        "Alex",
+        "Sofia",
+        "Noah",
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "beach",
+        "family",
+        "summer"
+      ],
+      "moment": "Days by the water",
+      "reference_files": [
+        "01-adult-man.png",
+        "02-adult-woman.png",
+        "05-boy.png",
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is Alex, the adult man with short wavy dark brown hair and short dark stubble. Image 2 is Sofia, the adult woman with long dark brown hair. Image 3 is Noah, the school-age boy with short tousled brown hair. Image 4 is Lily, the young school-age girl with long light brown hair. Scene: Alex, Sofia, Noah and Lily stand together on firm sand above the waterline after a beach walk, loosely grouped with comfortable personal spacing, facing the family photographer. Alex wears a pale blue linen shirt, tan shorts and sandals; Sofia a white linen shirt, light blue full-length trousers and flat sandals; Noah a plain teal T-shirt, navy knee-length shorts and canvas shoes; Lily a yellow T-shirt, blue knee-length shorts and canvas shoes. Calm surf, dunes and ordinary beach footprints behind, warm late-afternoon light, naturally varied relaxed smiles. Landscape 3:2 composition.",
+      "refinement": {
+        "input_sha256": "479a85de07a522bd2995a737481e786612476585313e61ef483bb24cc097b3c2",
+        "prompt": "Edit the supplied photograph ONLY to widen its framing. It is the edit target, and all of its people must retain the same recognizable faces, apparent ages, hair, glasses if any, outfits, body proportions, relative positions, relaxed poses and expressions. Keep the same location, natural light, colors and photorealistic family-snapshot appearance. Move the camera back by about 30%, seamlessly extending the existing scene on every side. CRITICAL: Every person's COMPLETE head and BOTH COMPLETE shoes must be comfortably inside the image. Leave at least 10% of the image height as visible ground below the lowest shoe, and at least 8% as background above the tallest head; the tallest person's head-to-shoe span must occupy no more than 78% of image height. Do not crop hair, toes, heels or soles. Do not add people, change faces, invent props, change outfits, add text, create borders or make a collage. Landscape 3:2 photograph.",
+        "reason": "Wider framing keeps complete heads and shoes inside the photo."
+      },
+      "sha256": "bf208500f04aa1553d6b6c245fe783ec307f1efe9c86eab95120b981cae5aa5e"
+    },
+    {
+      "id": "grandparents-children-trail",
+      "file": "grandparents-children-trail.png",
+      "title": "A walk with the grandparents",
+      "date": "2026-09-06",
+      "location": "Woodland trail",
+      "people": [
+        "James",
+        "Rose",
+        "Noah",
+        "Lily"
+      ],
+      "tags": [
+        "family",
+        "generated",
+        "outdoors",
+        "family",
+        "hiking"
+      ],
+      "moment": "A breath of fresh air",
+      "reference_files": [
+        "03-older-man.png",
+        "04-older-woman.png",
+        "05-boy.png",
+        "06-girl.png"
+      ],
+      "prompt": "Create ONE new photorealistic family-album photograph. The supplied portrait image(s) are identity references only, not backgrounds or edit targets. Preserve each referenced person's facial structure, apparent age, skin tone, hair color and recognizable likeness. Keep the children their original age and the older adults their original age; retain the older adults' glasses. Show every main subject fully from head to shoes, with a little space above heads and below feet, physically plausible relaxed bodies, natural hands and limb proportions. Use believable everyday smartphone photography, eye-level perspective, real skin texture and fabric creases, natural available light, moderate depth of field so the setting remains recognizable. A family member casually took this picture; no fashion editorial styling, no artificial cinematic grading, no plastic skin, no studio pose. Exactly the specified main people, no duplicate faces. No text, captions, borders, watermarks, collage or montage. Reference mapping: Image 1 is James, the older man with short white hair and dark rectangular glasses. Image 2 is Rose, the older woman with short softly curled silver hair and thin rectangular glasses. Image 3 is Noah, the school-age boy with short tousled brown hair. Image 4 is Lily, the young school-age girl with long light brown hair. Scene: James, Rose, Noah and Lily pause together at the edge of a forest meadow on a broad safe hiking path. James retains dark glasses and wears a light checked shirt, navy cardigan, tan trousers and walking shoes; Rose retains thin glasses and wears a lilac cardigan, navy trousers and walking shoes; Noah wears an orange fleece, dark trousers, trainers and a small blue backpack; Lily a coral sweatshirt, jeans and trainers. The children stand between their grandparents with natural gentle shoulder contact, all smiling toward the parent taking the picture. Ferns, a wooden trail post without readable text and dappled afternoon light. Landscape 3:2 composition.",
+      "sha256": "59c16d83f0b31c3c63abf16fec55e43e12c09a1493edbd6983554105ea362791"
+    }
+  ],
+  "reference_sha256": {
+    "01-adult-man.png": "bc2a858ef4f9f7f115350d2e035ad85a69cd5951c907cbe81a9d18b001b48572",
+    "02-adult-woman.png": "e1e50c140f674bbf80aae4051efb5bd8835e15b19b4c35d9c7cafe966fdab910",
+    "03-older-man.png": "ef1bc4bde2f82ed3012a37d8466a5f0ce2cbff5020d8e7084977052232e9eff9",
+    "04-older-woman.png": "47d2d25246158cf4a72f57a11dfd6236bf13d966d1f5fc82f497bbfa90d1c237",
+    "05-boy.png": "6c56fd48f39ee183562d5e8932aa25e711a61908e5abd19b701a5bff1b3536cb",
+    "06-girl.png": "98a31369fbb06e12f40c9bbd1b59c180cfe005856ff775aba06cd4633de26838"
+  }
+}

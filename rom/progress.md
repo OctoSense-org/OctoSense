@@ -20,6 +20,43 @@
 
 ---
 
+# Photos royalty-free expansion — 2026-09-18
+
+- Continued on isolated feat/photos worktree, preserving previous generated scenes and saved albums.
+- Selected 32 Pexels images and recorded source URLs, photographers, license links and sample catalog metadata.
+- Source HTML download returns HTTP 403; browser source records are available and image CDN download succeeds.
+- Downloaded and visually reviewed all 32 JPEGs, maximum dimension 1200 px, total 5,459,488 bytes. All decode; source IDs and hashes are distinct.
+- Integrated 75 total photos. Verified eight new dates per month June–September and byte-for-byte preservation of the existing 43 assets and metadata.
+- All 21 Photos tests, formatting and whitespace checks pass. Android rebuild started for OnePlus 6T 19f8cedf.
+- Android release build completed. All 32 exact JPEG byte sequences verified inside the APK, SHA-256 a5105b769737ce1287103c20e457788b165027ac7ec3ac19528fd1f587c88131.
+- Installed with adb install -r and launched successfully on OnePlus 6T. Library visibly reports 75 photos; June has 9 total (8 new plus the original desert), September Memory has 8 new photos. Existing three albums and original favorite remain visible.
+- App-process error log has no Makepad error, AndroidRuntime error or libc fatal entries. Device screenshots and validation report are in target/photos-stock-review/.
+- Final publication verification: all 21 Photos tests pass again, all 75 image files decode, all 56 new manifest hashes match, original 19 images and metadata are unchanged. Independent review found no actionable issues; user requested commit and PR against main.
+
+---
+
+# Photos device run — 2026-09-18
+
+- User requested running the latest Photos app on the device. OnePlus 6T 19f8cedf is connected and authorized. Existing installed package includes libmakepad.so only, with no bundled octos kernel.
+- Used feat/photos with the 24 new images and matching sibling Makepad build tool. Initial Java packaging failed because the ignored contracts JAR was absent. Generated it via the existing Gradle 8.11.1/JDK 17/API 35 toolchain and cached dependencies; sandbox cache access required approved escalation. Rebuilt successfully.
+- Verified all 24 exact PNG byte sequences are embedded in the APK. Backed up the previous APK and recorded both hashes. adb install -r succeeded, preserving app data; launched and opened Photos on OnePlus 6T 19f8cedf (PID 13012). Library visibly shows 43 photos, including the new scenes, with prior favorites still present.
+- Evidence: target/photos-scenes-review/device/{build.log,contracts-build.log,apk-verification.json,photos-latest.apk,before.apk,home.png,photos-library.png}. Initial screenshot preceded rendering; the subsequent home and Photos captures show the app correctly.
+
+# Photos everyday scenes progress — 2026-09-18
+
+- Recovered clean feat/photos worktree and original six portraits.
+- Read imagegen, planning-with-files and brainstorming guidance; user has specified the creative scope, so generation proceeds directly.
+- Saved all 24 exact prompts, identity reference mappings and planned catalog records in generated-scenes.json.
+- Generated and visually inspected the first 12 images: full bodies, consistent reference likenesses, believable office, school, garden, coast and stadium settings. Originals preserved.
+- All 18 individual scenes generated and visually reviewed. Six group scenes are generating. Catalog and provenance now list the planned 24 additions.
+- All 24 initial images generated. Visual review found two trio images too tight at the shoes and the beach group too tight at the top of the head; regenerate wider framing for these three only.
+- Wider refinements for both trios and the four-person beach scene passed visual review. Selected files are copied into resources/photos; rejected framing drafts live only in ignored target/photos-scenes-review/drafts. Final hashes, reference hashes and refinement prompts are recorded.
+- Final verification: 21 Photos tests pass; cargo fmt -p octosense-photos --check and git diff --check pass. All 43 assets decode, catalog IDs/files match exactly, original 19 assets and metadata are unchanged, the six reference portraits match scripts/individuals byte-for-byte, and all recorded SHA-256 hashes match.
+- Final deliverables: 18 new solo PNGs at 1024×1536, 6 group PNGs at 1536×1024 (64.92 MiB total), catalog metadata, source provenance and exact prompts. No new Android build or installation was performed. Changes remain uncommitted on feat/photos.
+- Previous Photos baseline: 21 tests pass. Main checkout contains unrelated ongoing Maps work and remains untouched.
+
+---
+
 # Photos continuation — 2026-09-17
 
 - Ran the required Superpowers bootstrap and recovered the existing plan and notes.
