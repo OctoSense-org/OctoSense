@@ -4,7 +4,8 @@ partition images. The images are served next to index.html (copy or symlink
 the directory there). Usage: make-manifest.py <images dir> <name> [device]"""
 import hashlib, json, os, sys, time
 from pathlib import Path
-src = Path(sys.argv[1]); name = sys.argv[2]; device = sys.argv[3] if len(sys.argv) > 3 else "OnePlus6"
+src = Path(sys.argv[1]); name = sys.argv[2]; # The bootloader's `product` variable: the OnePlus 6 reports its chip, sdm845.
+device = sys.argv[3] if len(sys.argv) > 3 else "sdm845"
 ORDER = ["boot", "dtbo", "vbmeta", "vendor", "system"]
 images = []
 for part in ORDER:

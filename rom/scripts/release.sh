@@ -17,7 +17,7 @@ echo "== downloading build $TAG"
 rsync -a --partial -e "ssh -i $KEY -o BatchMode=yes" \
   "$HOST:$OUT/boot.img $OUT/dtbo.img $OUT/vbmeta.img $OUT/vendor.img $OUT/system.img ~/octosense-adr0001/exports/rom-build/zip.sha256 ~/octosense-adr0001/exports/rom-build/lineage-*.zip" "$DIR/"
 echo "== manifest"
-python3 "$HERE/scripts/make-manifest.py" "$DIR" "OctoSense $TAG" OnePlus6
+python3 "$HERE/scripts/make-manifest.py" "$DIR" "OctoSense $TAG" sdm845
 echo "== serve"
 ln -sf "$HERE/web-installer/index.html" "$HERE/web-installer/fastboot.mjs" "$SERVE/"
 for f in boot dtbo vbmeta vendor system; do ln -sf "$DIR/$f.img" "$SERVE/$f.img"; done
