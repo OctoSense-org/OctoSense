@@ -17,6 +17,8 @@
 - The person said to fix the fork bugs and that the app opened smaller than the others. Four commits on a local fork branch, `fix/android-map-archive` (not pushed): the GL backend's no-draw-list panic (which was also the smaller size: a frozen frame of the opening animation), Android's silent HTTP cancel, compact vertex formats on the native GL backend (roads and fills were skipped), and the navigation layer clearing a host's puck (missing on desktop too, missed earlier).
 - On the OnePlus 6T with an APK built against that branch: opens full size, full map, Locate and puck, dropped pin and reverse lookup, search by soft keyboard, place sheet. Result distances now follow the result's country (a test, red first; 96 in the crate).
 - Directions cannot be verified on this phone: the public router is TLS 1.3 only, Android 9 stops at 1.2 (MAPS-17). Pinch, rotate and tilt need fingers.
+- Merged `origin/main`, pushed, and opened the pull requests: the fork's four fixes (`makepad#15`) and this branch as a draft (`#28`). Unshallowed the fork checkout and wrote up the fork, upstream and the shallow bootstrap in `docs/makepad-fork.md`.
+- 2026-09-19: `makepad#15` merged; `Octoscript-Makepad#28` named the new revision and merged; the pin moved here (lock and six manifests, `Cargo.lock` unchanged). MAPS-12 to MAPS-16 closed. The consumer check fails in this directory only because of the `feat/photos` worktree under `.worktrees/`; it passes on a clean copy. The pinned APK is built, not yet run on a phone.
 
 ---
 

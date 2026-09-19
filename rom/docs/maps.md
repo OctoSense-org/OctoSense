@@ -141,9 +141,11 @@ status bar and above its gesture bar; a tap delivered by the shell
 with the route app's icon.
 
 On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch
-built against the fork's `fix/android-map-archive` branch (four framework
-fixes this app needs on a phone, not yet pinned: `BACKLOG.md` MAPS-16,
-`docs/makepad-fork.md`):
+built against the fork's `fix/android-map-archive` branch: four framework
+fixes this app needs on a phone, pinned since 2026-09-19 (`BACKLOG.md`
+MAPS-16, `docs/makepad-fork.md`). The pinned revision's tree is identical
+to the branch that was tested; the APK of the pinned build has not been run
+on a phone yet.
 
 - the module is linked (`modules linked: [..., "maps"]`) and launches
   in-process; News and OctosMap sit in the dock's bottom row with Photos;
@@ -159,9 +161,9 @@ fixes this app needs on a phone, not yet pinned: `BACKLOG.md` MAPS-16,
   and a result opens its place with the keyboard put away;
 - the map pans under a finger.
 
-Against the pinned revision the same APK draws no tiles (MAPS-12), freezes
-the shell as the app opens (MAPS-13), draws no roads or fills (MAPS-14) and
-no puck (MAPS-15).
+Against the revision pinned before 2026-09-19 (`45d541339`) the same app
+draws no tiles (MAPS-12), freezes the shell as it opens (MAPS-13), draws no
+roads or fills (MAPS-14) and no puck (MAPS-15).
 
 Directions do not work on this phone: the public router accepts TLS 1.3
 only and Android 9 stops at 1.2 (MAPS-17). The Directions screen opens

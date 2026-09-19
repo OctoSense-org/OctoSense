@@ -450,20 +450,16 @@ found on the way. `docs/maps.md` describes what is there.
   released product needs hosted tiles, a geocoder and a router it may rely
   on. The URLs are constants in `apps/maps/src/{lib,places,routing}.rs`.
 
-- [ ] **MAPS-16 — P1: Adopt the fork's `fix/android-map-archive` branch.**
+- [x] **MAPS-16 — P1: Adopt the fork's `fix/android-map-archive` branch.**
 
-  Four framework fixes OctosMap needs on a phone (MAPS-12 to MAPS-15) are
-  four commits on the pinned revision `45d541339`, on the fork's branch
-  `fix/android-map-archive` (pull request `OctoSense-org/makepad#15`,
-  opened on 2026-09-18; the fork's `main` is still the pinned revision).
-  What the fixes mean for the other apps, which of them are candidates for
-  upstream Makepad, and the steps of a pin move are in
-  `docs/makepad-fork.md`. Until the pin
-  moves, a phone build of this tree against the pinned revision has all
-  four problems, and `tools/setup-native.py --check` rejects a `../makepad`
-  checkout that is on the branch. The revision is pinned as a chain, as in
-  MOBILE-06: the fork, then Octoscript and Octoscript-Makepad
-  (`runtime.json`), then `native-runtime.lock.json` and the manifests here.
+  Adopted on 2026-09-19. The four framework fixes OctosMap needs on a
+  phone (MAPS-12 to MAPS-15) merged into the fork's `main` as
+  `OctoSense-org/makepad#15` (`c31667a9d`); `Octoscript-Makepad#28` named
+  that revision in `runtime.json` (`709c97a2f`); and this repo's
+  `native-runtime.lock.json` and six manifests moved with it. `Cargo.lock`
+  did not change. What the fixes mean for the other apps, which of them are
+  candidates for upstream Makepad, and the steps of a pin move are in
+  `docs/makepad-fork.md`.
 
   | Commit | Fixes |
   |---|---|
@@ -473,9 +469,11 @@ found on the way. `docs/maps.md` describes what is there.
   | `e0bd59cf6` map: the navigation layer clears only its own puck | MAPS-15 |
 
   Verified on the OnePlus 6T on 2026-09-18 with a release APK built against
-  the branch: see `docs/maps.md`.
+  the branch, whose tree is identical to the pinned revision's: see
+  `docs/maps.md`. The APK of the pinned build was made on 2026-09-19 and not
+  yet run: no phone was attached.
 
-- [ ] **MAPS-12 — P1: The map draws no tiles on Android (framework; fixed on the fork branch, MAPS-16).**
+- [x] **MAPS-12 — P1: The map draws no tiles on Android (framework; fixed in the fork, pinned by MAPS-16).**
 
   `MapView`'s HTTP archive reader (`widgets/src/map/archive.rs`) cancels
   its undispatched range requests when tile priorities change and queues
@@ -488,7 +486,7 @@ found on the way. `docs/maps.md` describes what is there.
   progress event when a request is handed to Java, which cannot withdraw
   it.
 
-- [ ] **MAPS-13 — P1: Opening OctosMap froze the shell on Android (framework; fixed on the fork branch, MAPS-16).**
+- [x] **MAPS-13 — P1: Opening OctosMap froze the shell on Android (framework; fixed in the fork, pinned by MAPS-16).**
 
   About 0.3 s after the app opened, as its opening animation ended, the
   render thread panicked at `platform/src/os/linux/opengl.rs:1166`
@@ -502,7 +500,7 @@ found on the way. `docs/maps.md` describes what is there.
   never-drawn blur chain), as suspected. Recovery on a build without the
   fix: `adb shell am force-stop dev.makepad.octosense`.
 
-- [ ] **MAPS-14 — P1: Roads and area fills do not draw on the native GL backend (framework; fixed on the fork branch, MAPS-16).**
+- [x] **MAPS-14 — P1: Roads and area fills do not draw on the native GL backend (framework; fixed in the fork, pinned by MAPS-16).**
 
   Found once MAPS-12 let tiles load: the phone drew building outlines,
   labels and icons over a bare background, and logged `opengl: compact
@@ -514,7 +512,7 @@ found on the way. `docs/maps.md` describes what is there.
   draws. The fix builds the typed attribute table and pointer calls there
   too.
 
-- [ ] **MAPS-15 — P1: A puck set with `MapView::set_puck` never draws (framework; fixed on the fork branch, MAPS-16).**
+- [x] **MAPS-15 — P1: A puck set with `MapView::set_puck` never draws (framework; fixed in the fork, pinned by MAPS-16).**
 
   The fork's navigation layer (`widgets/src/map/nav.rs`, the L0 `nav`
   card's) runs at the top of every draw and, with `nav_mode` off, cleared

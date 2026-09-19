@@ -3,8 +3,10 @@
 OctoSense builds on a fork of Makepad, `OctoSense-org/makepad`, not on
 `makepad/makepad` itself. This note records how the two relate, how the
 fork reaches this repo, why the sibling checkouts are shallow, and the state
-of the four map fixes made for OctosMap. Everything here was measured on
-2026-09-18; the commands are given so the numbers can be taken again.
+of the four map fixes made for OctosMap. The comparison with upstream was
+measured on 2026-09-18, at the revision pinned then (`45d541339`); the
+commands are given so the numbers can be taken again. The pin moved on
+2026-09-19 to a revision that adds the four fixes and nothing else.
 
 `docs/upstream.md` describes the older arrangement, in which this repo
 pinned official Makepad directly. Its sync tooling for the imported WM
@@ -16,9 +18,9 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`6b162f5`).
+   `OctoSense-org/Octoscript-Makepad` (`709c97a2f` since 2026-09-19).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`45d541339`, the fork's `main`) and the Octoscript revision (`fda2903`).
+   (`c31667a9d`, the fork's `main`) and the Octoscript revision (`fda2903`).
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and the five `apps/*/Cargo.toml`, and in
    Octoscript-Makepad's crates. `[patch]` sections then redirect every one
@@ -32,9 +34,24 @@ locked revision and its tree is clean. It looks at nothing else: not the
 branch name, not the clone depth.
 
 Octoscript at the chain's revision names an older Makepad revision in its
-own manifests (`bb45d411`, two commits behind `45d541339`). The patch
-sections make that harmless, and it shows that Octoscript need not move
-every time the Makepad pin does.
+own manifests (`bb45d411`, two pin moves back). The patch sections make
+that harmless, and it shows that Octoscript need not move every time the
+Makepad pin does; it did not move on 2026-09-19.
+
+The check reads every `Cargo.toml` under this directory, skipping only
+`.git`, `target`, `vendor` and a few other names. A second worktree kept
+inside the repo (`.worktrees/<name>`) is read too, so after a pin move the
+check fails locally until that worktree's branch has the new revision,
+although nothing is wrong with this branch. CI has no such directory. To
+check one branch alone, give the script a clean copy beside this one:
+
+```sh
+git worktree add --detach ../OctoSense-mobile-pincheck HEAD
+python3 ../octoscript-makepad/tools/runtime.py verify --root .. \
+  --consumer ../OctoSense-mobile-pincheck \
+  --cargo-manifest ../OctoSense-mobile-pincheck/Cargo.toml
+git worktree remove ../OctoSense-mobile-pincheck
+```
 
 ## How the fork relates to upstream
 
@@ -126,9 +143,10 @@ again. `git fetch origin` beforehand avoids it.
 ## The four map fixes
 
 Found while bringing up OctosMap on the OnePlus 6T. Fork branch
-`fix/android-map-archive`, four commits on `45d541339`, pull request
-`OctoSense-org/makepad#15`. The problems are `BACKLOG.md` MAPS-12 to
-MAPS-15; adopting the revision is MAPS-16.
+`fix/android-map-archive`, four commits on `45d541339`, merged into the
+fork's `main` on 2026-09-19 as `OctoSense-org/makepad#15` (`c31667a9d`)
+and pinned here the same day. The problems are `BACKLOG.md` MAPS-12 to
+MAPS-15; adopting the revision was MAPS-16.
 
 | Commit | What it changes | Where it runs |
 |---|---|---|
@@ -191,7 +209,9 @@ patches will conflict on the fork's next sync from upstream.
 
 ## Adopting a fork revision
 
-The steps MAPS-16 needs, and any later pin move:
+The steps MAPS-16 took, for any later pin move. On 2026-09-19 they were
+`OctoSense-org/makepad#15`, then `Octoscript-Makepad#28` (two files), then
+one commit here (the lock and six manifests, 28 lines):
 
 1. The revision must be fetchable from the fork's URL. A pushed branch
    commit is enough (MOBILE-06 pinned one), but a revision on the fork's
@@ -211,7 +231,6 @@ The steps MAPS-16 needs, and any later pin move:
    `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml` and
    `cargo check --locked --workspace --features mobile-apps`.
 
-Until then a `../makepad` checkout on the fix branch builds a working
-phone app and fails the check; `git -C ../makepad switch --detach
-45d541339` passes the check and builds a phone app with MAPS-12 to
-MAPS-15.
+A worktree inside the repo makes step 4's `--update` and `--check` fail
+here for the reason given under "What is pinned"; the siblings are moved
+before that failure, and the clean-copy check above stands in for it.
