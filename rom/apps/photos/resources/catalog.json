@@ -276,5 +276,928 @@
       "desert"
     ],
     "moment": "Desert light"
+  },
+  {
+    "id": "alex-office",
+    "file": "alex-office.png",
+    "title": "Before the morning meeting",
+    "date": "2026-09-14",
+    "location": "The office",
+    "people": [
+      "Alex"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "office",
+      "work"
+    ],
+    "moment": "Everyday moments"
+  },
+  {
+    "id": "alex-forest",
+    "file": "alex-forest.png",
+    "title": "A pause on the trail",
+    "date": "2026-09-06",
+    "location": "Woodland trail",
+    "people": [
+      "Alex"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "outdoors",
+      "hiking"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "alex-stadium",
+    "file": "alex-stadium.png",
+    "title": "Ready for kickoff",
+    "date": "2026-09-12",
+    "location": "Local stadium",
+    "people": [
+      "Alex"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "stadium",
+      "football",
+      "weekend"
+    ],
+    "moment": "Saturday at the stadium"
+  },
+  {
+    "id": "sofia-office",
+    "file": "sofia-office.png",
+    "title": "A little fresh air at lunch",
+    "date": "2026-09-14",
+    "location": "The office",
+    "people": [
+      "Sofia"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "office",
+      "work"
+    ],
+    "moment": "Everyday moments"
+  },
+  {
+    "id": "sofia-beach",
+    "file": "sofia-beach.png",
+    "title": "Along the boardwalk",
+    "date": "2026-07-12",
+    "location": "By the coast",
+    "people": [
+      "Sofia"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "beach",
+      "seaside",
+      "walk"
+    ],
+    "moment": "Days by the water"
+  },
+  {
+    "id": "sofia-market",
+    "file": "sofia-market.png",
+    "title": "Flowers for the weekend",
+    "date": "2026-08-29",
+    "location": "Town market",
+    "people": [
+      "Sofia"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "market",
+      "weekend",
+      "flowers"
+    ],
+    "moment": "A morning at the market"
+  },
+  {
+    "id": "james-garden",
+    "file": "james-garden.png",
+    "title": "The long way through the garden",
+    "date": "2026-09-05",
+    "location": "Botanical garden",
+    "people": [
+      "James"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "garden",
+      "outdoors",
+      "walk"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "james-harbor",
+    "file": "james-harbor.png",
+    "title": "Watching the boats",
+    "date": "2026-07-13",
+    "location": "By the coast",
+    "people": [
+      "James"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "harbor",
+      "seaside",
+      "walk"
+    ],
+    "moment": "Days by the water"
+  },
+  {
+    "id": "james-library",
+    "file": "james-library.png",
+    "title": "A good book for the afternoon",
+    "date": "2026-09-10",
+    "location": "Neighborhood library",
+    "people": [
+      "James"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "library",
+      "books",
+      "town"
+    ],
+    "moment": "Everyday moments"
+  },
+  {
+    "id": "rose-garden",
+    "file": "rose-garden.png",
+    "title": "Among the late summer flowers",
+    "date": "2026-09-05",
+    "location": "Botanical garden",
+    "people": [
+      "Rose"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "garden",
+      "flowers",
+      "outdoors"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "rose-pier",
+    "file": "rose-pier.png",
+    "title": "A breeze by the sea",
+    "date": "2026-07-13",
+    "location": "By the coast",
+    "people": [
+      "Rose"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "pier",
+      "seaside",
+      "walk"
+    ],
+    "moment": "Days by the water"
+  },
+  {
+    "id": "rose-market",
+    "file": "rose-market.png",
+    "title": "Saturday shopping",
+    "date": "2026-08-29",
+    "location": "Town market",
+    "people": [
+      "Rose"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "market",
+      "weekend",
+      "shopping"
+    ],
+    "moment": "A morning at the market"
+  },
+  {
+    "id": "noah-school",
+    "file": "noah-school.png",
+    "title": "On the way to class",
+    "date": "2026-09-08",
+    "location": "School courtyard",
+    "people": [
+      "Noah"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "school",
+      "backpack",
+      "morning"
+    ],
+    "moment": "Back to school"
+  },
+  {
+    "id": "noah-football",
+    "file": "noah-football.png",
+    "title": "After football practice",
+    "date": "2026-09-12",
+    "location": "Local stadium",
+    "people": [
+      "Noah"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "stadium",
+      "football",
+      "sport"
+    ],
+    "moment": "Saturday at the stadium"
+  },
+  {
+    "id": "noah-trail",
+    "file": "noah-trail.png",
+    "title": "Found the next trail marker",
+    "date": "2026-09-06",
+    "location": "Woodland trail",
+    "people": [
+      "Noah"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "outdoors",
+      "hiking",
+      "weekend"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "lily-school",
+    "file": "lily-school.png",
+    "title": "A new school morning",
+    "date": "2026-09-08",
+    "location": "School courtyard",
+    "people": [
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "school",
+      "backpack",
+      "morning"
+    ],
+    "moment": "Back to school"
+  },
+  {
+    "id": "lily-beach",
+    "file": "lily-beach.png",
+    "title": "A kite by the dunes",
+    "date": "2026-07-12",
+    "location": "By the coast",
+    "people": [
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "beach",
+      "kite",
+      "summer"
+    ],
+    "moment": "Days by the water"
+  },
+  {
+    "id": "lily-meadow",
+    "file": "lily-meadow.png",
+    "title": "Daisies along the path",
+    "date": "2026-09-06",
+    "location": "Woodland trail",
+    "people": [
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "outdoors",
+      "meadow",
+      "flowers"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "alex-sofia-cafe",
+    "file": "alex-sofia-cafe.png",
+    "title": "Coffee on the corner",
+    "date": "2026-08-30",
+    "location": "Neighborhood cafe",
+    "people": [
+      "Alex",
+      "Sofia"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "cafe",
+      "couple",
+      "weekend"
+    ],
+    "moment": "Everyday moments"
+  },
+  {
+    "id": "james-rose-garden",
+    "file": "james-rose-garden.png",
+    "title": "An afternoon together",
+    "date": "2026-09-05",
+    "location": "Botanical garden",
+    "people": [
+      "James",
+      "Rose"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "garden",
+      "couple",
+      "outdoors"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "alex-noah-lily-stadium",
+    "file": "alex-noah-lily-stadium-wide.png",
+    "title": "Our Saturday team",
+    "date": "2026-09-12",
+    "location": "Local stadium",
+    "people": [
+      "Alex",
+      "Noah",
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "stadium",
+      "family",
+      "football"
+    ],
+    "moment": "Saturday at the stadium"
+  },
+  {
+    "id": "sofia-rose-lily-market",
+    "file": "sofia-rose-lily-market-wide.png",
+    "title": "Three generations at the market",
+    "date": "2026-08-29",
+    "location": "Town market",
+    "people": [
+      "Sofia",
+      "Rose",
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "market",
+      "family",
+      "flowers"
+    ],
+    "moment": "A morning at the market"
+  },
+  {
+    "id": "family-four-beach",
+    "file": "family-four-beach-wide.png",
+    "title": "One more walk before sunset",
+    "date": "2026-07-12",
+    "location": "By the coast",
+    "people": [
+      "Alex",
+      "Sofia",
+      "Noah",
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "beach",
+      "family",
+      "summer"
+    ],
+    "moment": "Days by the water"
+  },
+  {
+    "id": "grandparents-children-trail",
+    "file": "grandparents-children-trail.png",
+    "title": "A walk with the grandparents",
+    "date": "2026-09-06",
+    "location": "Woodland trail",
+    "people": [
+      "James",
+      "Rose",
+      "Noah",
+      "Lily"
+    ],
+    "tags": [
+      "family",
+      "generated",
+      "outdoors",
+      "family",
+      "hiking"
+    ],
+    "moment": "A breath of fresh air"
+  },
+  {
+    "id": "stock-pets-at-play",
+    "file": "stock-pets-at-play.jpg",
+    "title": "Playtime for two",
+    "date": "2026-06-03",
+    "location": "At home",
+    "people": [],
+    "tags": [
+      "animals",
+      "pets",
+      "cat",
+      "dog"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-street-companions",
+    "file": "stock-street-companions.jpg",
+    "title": "Street companions",
+    "date": "2026-07-02",
+    "location": "Neighborhood street",
+    "people": [],
+    "tags": [
+      "animals",
+      "pets",
+      "cat",
+      "dog",
+      "street"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-elephant-waterhole",
+    "file": "stock-elephant-waterhole.jpg",
+    "title": "At the waterhole",
+    "date": "2026-08-03",
+    "location": "Wildlife reserve",
+    "people": [],
+    "tags": [
+      "animals",
+      "wildlife",
+      "elephant",
+      "safari"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-elephant-egret",
+    "file": "stock-elephant-egret.jpg",
+    "title": "An unexpected passenger",
+    "date": "2026-09-01",
+    "location": "Wildlife reserve",
+    "people": [],
+    "tags": [
+      "animals",
+      "wildlife",
+      "elephant",
+      "bird",
+      "monochrome"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-glass-skybridge",
+    "file": "stock-glass-skybridge.jpg",
+    "title": "A bridge in the sky",
+    "date": "2026-06-07",
+    "location": "City center",
+    "people": [],
+    "tags": [
+      "architecture",
+      "city",
+      "buildings",
+      "glass"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-bridge-arches",
+    "file": "stock-bridge-arches.jpg",
+    "title": "Under the bridge arches",
+    "date": "2026-07-06",
+    "location": "By the river",
+    "people": [],
+    "tags": [
+      "architecture",
+      "bridge",
+      "city",
+      "travel"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-butterfly-wildflowers",
+    "file": "stock-butterfly-wildflowers.jpg",
+    "title": "A butterfly pauses",
+    "date": "2026-08-07",
+    "location": "Flower garden",
+    "people": [],
+    "tags": [
+      "nature",
+      "butterfly",
+      "flowers",
+      "macro"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-sunset-sailboat",
+    "file": "stock-sunset-sailboat.jpg",
+    "title": "Sailing into the evening",
+    "date": "2026-09-03",
+    "location": "By the coast",
+    "people": [],
+    "tags": [
+      "travel",
+      "sailboat",
+      "sea",
+      "sunset"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-downtown-avenue",
+    "file": "stock-downtown-avenue.jpg",
+    "title": "Downtown afternoon",
+    "date": "2026-06-10",
+    "location": "City center",
+    "people": [],
+    "tags": [
+      "city",
+      "street",
+      "architecture",
+      "travel"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-neighborhood-street",
+    "file": "stock-neighborhood-street.jpg",
+    "title": "Along the avenue",
+    "date": "2026-07-10",
+    "location": "Neighborhood street",
+    "people": [],
+    "tags": [
+      "city",
+      "street",
+      "everyday",
+      "travel"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-railway-yard",
+    "file": "stock-railway-yard.jpg",
+    "title": "Rails into the city",
+    "date": "2026-08-11",
+    "location": "Train station",
+    "people": [],
+    "tags": [
+      "transport",
+      "train",
+      "railway",
+      "city"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-train-journey",
+    "file": "stock-train-journey.jpg",
+    "title": "Watching the train pass",
+    "date": "2026-09-05",
+    "location": "Train station",
+    "people": [],
+    "tags": [
+      "transport",
+      "train",
+      "railway",
+      "travel"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-fruit-market",
+    "file": "stock-fruit-market.jpg",
+    "title": "Colors at the fruit stand",
+    "date": "2026-06-14",
+    "location": "Town market",
+    "people": [],
+    "tags": [
+      "food",
+      "fruit",
+      "market",
+      "colorful"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-summer-fruit",
+    "file": "stock-summer-fruit.jpg",
+    "title": "A slice of summer",
+    "date": "2026-07-14",
+    "location": "At home",
+    "people": [],
+    "tags": [
+      "food",
+      "fruit",
+      "summer",
+      "picnic"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-coffee-camera",
+    "file": "stock-coffee-camera.jpg",
+    "title": "Coffee and a camera",
+    "date": "2026-08-15",
+    "location": "Neighborhood cafe",
+    "people": [],
+    "tags": [
+      "food",
+      "coffee",
+      "camera",
+      "still-life"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-morning-coffee",
+    "file": "stock-morning-coffee.jpg",
+    "title": "A quiet coffee break",
+    "date": "2026-09-07",
+    "location": "Neighborhood cafe",
+    "people": [],
+    "tags": [
+      "food",
+      "coffee",
+      "morning",
+      "still-life"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-mossy-waterfall",
+    "file": "stock-mossy-waterfall.jpg",
+    "title": "Water over mossy rocks",
+    "date": "2026-06-18",
+    "location": "Forest waterfall",
+    "people": [],
+    "tags": [
+      "nature",
+      "waterfall",
+      "water",
+      "forest"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-forest-cascade",
+    "file": "stock-forest-cascade.jpg",
+    "title": "Following the stream",
+    "date": "2026-07-18",
+    "location": "Forest waterfall",
+    "people": [],
+    "tags": [
+      "nature",
+      "waterfall",
+      "stream",
+      "forest"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-mountain-walk",
+    "file": "stock-mountain-walk.jpg",
+    "title": "Out on the mountain trail",
+    "date": "2026-08-19",
+    "location": "Mountain trail",
+    "people": [],
+    "tags": [
+      "outdoors",
+      "hiking",
+      "mountains",
+      "adventure"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-hiking-together",
+    "file": "stock-hiking-together.jpg",
+    "title": "A trail for two",
+    "date": "2026-09-09",
+    "location": "Mountain trail",
+    "people": [],
+    "tags": [
+      "outdoors",
+      "hiking",
+      "mountains",
+      "adventure"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-court-lines",
+    "file": "stock-court-lines.jpg",
+    "title": "Lines of the game",
+    "date": "2026-06-21",
+    "location": "Sports park",
+    "people": [],
+    "tags": [
+      "sports",
+      "basketball",
+      "court",
+      "geometry"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-city-basketball",
+    "file": "stock-city-basketball.jpg",
+    "title": "A sunny day on court",
+    "date": "2026-07-22",
+    "location": "Sports park",
+    "people": [],
+    "tags": [
+      "sports",
+      "basketball",
+      "city",
+      "summer"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-bicycle-benches",
+    "file": "stock-bicycle-benches.jpg",
+    "title": "Parked for a moment",
+    "date": "2026-08-23",
+    "location": "Sports park",
+    "people": [],
+    "tags": [
+      "transport",
+      "bicycle",
+      "cycling",
+      "outdoors"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-city-bicycles",
+    "file": "stock-city-bicycles.jpg",
+    "title": "A break from the ride",
+    "date": "2026-09-11",
+    "location": "City center",
+    "people": [],
+    "tags": [
+      "transport",
+      "bicycle",
+      "cycling",
+      "city"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-library-shelves",
+    "file": "stock-library-shelves.jpg",
+    "title": "Between the bookshelves",
+    "date": "2026-06-25",
+    "location": "Neighborhood library",
+    "people": [],
+    "tags": [
+      "everyday",
+      "books",
+      "library",
+      "reading"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-breakfast-table",
+    "file": "stock-breakfast-table.jpg",
+    "title": "A slow morning breakfast",
+    "date": "2026-07-26",
+    "location": "At home",
+    "people": [],
+    "tags": [
+      "food",
+      "bread",
+      "fruit",
+      "breakfast"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-garden-zinnias",
+    "file": "stock-garden-zinnias.jpg",
+    "title": "The garden in bloom",
+    "date": "2026-08-27",
+    "location": "Flower garden",
+    "people": [],
+    "tags": [
+      "nature",
+      "flowers",
+      "garden",
+      "colorful"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-garden-petals",
+    "file": "stock-garden-petals.jpg",
+    "title": "Little bursts of color",
+    "date": "2026-09-14",
+    "location": "Flower garden",
+    "people": [],
+    "tags": [
+      "nature",
+      "flowers",
+      "garden",
+      "close-up"
+    ],
+    "moment": "September snapshots"
+  },
+  {
+    "id": "stock-home-guitar",
+    "file": "stock-home-guitar.jpg",
+    "title": "A song at home",
+    "date": "2026-06-28",
+    "location": "Music room",
+    "people": [],
+    "tags": [
+      "everyday",
+      "music",
+      "guitar",
+      "hobby"
+    ],
+    "moment": "June wanderings"
+  },
+  {
+    "id": "stock-music-practice",
+    "file": "stock-music-practice.jpg",
+    "title": "Time to practice",
+    "date": "2026-07-30",
+    "location": "Music room",
+    "people": [],
+    "tags": [
+      "everyday",
+      "music",
+      "guitar",
+      "piano"
+    ],
+    "moment": "Summer days in July"
+  },
+  {
+    "id": "stock-koi-pond",
+    "file": "stock-koi-pond.jpg",
+    "title": "Colors beneath the water",
+    "date": "2026-08-30",
+    "location": "Garden pond",
+    "people": [],
+    "tags": [
+      "animals",
+      "fish",
+      "koi",
+      "pond"
+    ],
+    "moment": "August discoveries"
+  },
+  {
+    "id": "stock-aquarium-fish",
+    "file": "stock-aquarium-fish.jpg",
+    "title": "An underwater world",
+    "date": "2026-09-17",
+    "location": "Aquarium",
+    "people": [],
+    "tags": [
+      "animals",
+      "fish",
+      "aquarium",
+      "underwater"
+    ],
+    "moment": "September snapshots"
   }
 ]
