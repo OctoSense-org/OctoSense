@@ -1,2 +1,13 @@
 vendor/octosense/prebuilt/*.apk
 vendor/octosense/adb_keys/*.pub
+
+# Signing keys never belong in this repository (the release, platform and APEX
+# private keys live off-repo, see docs/updates.md).
+*.pk8
+*.p12
+*.jks
+*.keystore
+*.key
+*private*.pem
+platform.pem
+releasekey.pem

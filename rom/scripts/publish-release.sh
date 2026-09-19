@@ -43,6 +43,28 @@ if os.path.isfile(apk):
 open(out, "w").write(json.dumps(update, indent=2) + "\n")
 print(json.dumps({"rom": update["rom"]["incremental"], "home": update.get("home", {}).get("version_code")}))
 PY
+# Refuse to publish anything that carries private key material: the ROM zip's
+# own entries, update.json and the APK are scanned (payload.bin is filesystem
+# images built from public certificates only, never the private keys).
+python3 - "$ZIP" "$DIR/update.json" "$HOME_APK" <<'PY'
+import sys, zipfile
+markers = (b"PRIVATE KEY", b"-----BEGIN OPENSSH")
+bad = []
+for path in sys.argv[1:]:
+    try:
+        if zipfile.is_zipfile(path):
+            z = zipfile.ZipFile(path)
+            for n in z.namelist():
+                if n.endswith((".pk8", ".p12", ".jks", ".keystore")): bad.append(f"{path}:{n}")
+                elif n != "payload.bin" and any(m in z.read(n) for m in markers): bad.append(f"{path}:{n}")
+        else:
+            if any(m in open(path, "rb").read() for m in markers): bad.append(path)
+    except FileNotFoundError:
+        pass
+if bad:
+    sys.exit("refusing to publish, private key material in: " + ", ".join(bad))
+print("key check: clean")
+PY
 ln -sf "$ZIP" "$DIR/$ASSET_ZIP"
 ASSETS=("$DIR/$ASSET_ZIP" "$DIR/update.json")
 [ -f "$HOME_APK" ] && ASSETS+=("$HOME_APK")
