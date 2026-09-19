@@ -442,10 +442,13 @@ public class AgentPlatformService extends Service {
             case "qs": return expandQuickSettings();
             case "collapse": return collapsePanels();
             case "audit": return auditLog(50);
-            case "update-check": return updater().check();
+            // dump() runs on the main thread, where network calls are refused: hop to the worker.
+            case "update-check": return AgentApplication.get().work()
+                    .submit(() -> updater().check()).get(60, java.util.concurrent.TimeUnit.SECONDS);
             // force-rom skips the newer-than check: reinstalls the offered build into the other slot.
             case "update-apply":
-                if (a.length > 1 && a[1].equals("force-rom")) return updater().applyRom();
+                if (a.length > 1 && a[1].equals("force-rom")) return AgentApplication.get().work()
+                        .submit(() -> updater().applyRom()).get(60, java.util.concurrent.TimeUnit.SECONDS);
                 return applyUpdateAsync(a.length > 1 ? a[1] : "all");
             case "update-status": return updater().status();
             case "update-cancel": return updater().cancel();
