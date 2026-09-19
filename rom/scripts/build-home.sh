@@ -31,10 +31,12 @@ ln -sfn octoscript-makepad-repin "$ROOT/octoscript-makepad"
 ln -sfn makepad-pinned "$ROOT/makepad"
 # Octoscript-AppCard's design kits carry a designer's local paths (source archive,
 # font files under /Users/<name>/...); strip the home prefix in the mirror's copy.
+scrub_dirs=("$ROOT/octoscript-makepad-repin" "$ROOT/Octosense-Service-AppCards")
+for d in "$ROOT"/cargo/git/checkouts/octoscript*/*; do scrub_dirs+=("$d"); done
 while IFS= read -r f; do
   # Any /Users/<name>/ prefix (source archive paths, font file URLs, escaped or not).
-  if grep -q 'Users' "$f"; then sed -i '' -E 's#(\\?/)Users\\?/[^/\\"]+\\?/#\1#g' "$f"; fi
-done < <(find "$ROOT/cargo/git/checkouts" -path '*octoscript-appcard*' -path '*/lab/core/kits/*' -name '*.json')
+  sed -i '' -E 's#(\\?/)Users\\?/[^/\\"]+\\?/#\1#g' "$f"
+done < <(grep -rlE --include='*.json' '/Users/' "${scrub_dirs[@]}" 2>/dev/null | grep -v '/target/' || true)
 export CARGO_HOME=$ROOT/cargo
 cd "$ROOT/$(basename "$MOBILE")"
 sed -i '' -e 's|path = "\.\./makepad/|path = "../makepad-pinned/|g' -e 's|path = "\.\./octoscript-makepad/|path = "../octoscript-makepad-repin/|g' -e 's|path = "\.\./octoscript/|path = "../octoscript-pinned/|g' Cargo.toml
