@@ -66,6 +66,7 @@ them OpenStreetMap data, and the map carries the licence's line
 | Need | Service |
 |---|---|
 | Base map | `https://makepad.nl/maps/world-20260903.mkmap`, the framework's hosted vector archive, read over HTTP range requests |
+| The sea | Two overlay archives beside it, `ocean-low` and `ocean-high`, drawn as the map's `ocean` layer: the base archive has no water of its own at the far zooms |
 | Search, reverse lookup | Photon, `https://photon.komoot.io` |
 | Routing | The FOSSGIS OSRM servers, `https://routing.openstreetmap.de/routed-{car,foot,bike}` |
 | Location | The platform: CoreLocation, Android's `LocationManager` |
@@ -124,6 +125,21 @@ cargo test --features mobile-apps --bin octosense \
 # Standalone desktop development window, phone-sized
 cargo run -p octosense-maps -- --phone
 ```
+
+In the phone shell on a desktop, hosted in-process as a phone hosts it (the
+desktop launches catalog apps as child processes unless told otherwise):
+
+```sh
+cargo run --features mobile-only,mobile-apps -- --module maps \
+  --test-action launch-maps
+```
+
+Verified on 2026-09-19 on macOS: the log reads `modules linked: [..., "maps"]`
+and `launched maps as client 1 (in-process)`; the app draws under the shell's
+status bar and above its gesture bar; a tap delivered by the shell
+(`--test-action taps:200,76@9`) opens Search; the home grid shows the app
+with the route app's icon. Not yet run on a phone: the GPS fix, the touch
+gestures on the map, the soft keyboard in the search field, and a real drive.
 
 The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
 the map there), `--fix lat,lon` (the device is there, for a desk with no
