@@ -47,8 +47,13 @@ PY
 # own entries, update.json and the APK are scanned (payload.bin is filesystem
 # images built from public certificates only, never the private keys).
 python3 - "$ZIP" "$DIR/update.json" "$HOME_APK" <<'PY'
-import sys, zipfile
-markers = (b"PRIVATE KEY", b"-----BEGIN OPENSSH")
+import re, sys, zipfile
+# An armored private key: the BEGIN line followed by a base64 body. Bare labels
+# such as "RSA PRIVATE KEY" appear in every PEM parser (rustls) and are not keys.
+ARMOR = re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----\s*[A-Za-z0-9+/=\s]{100,}")
+class _M:
+    def __contains__(self, data): return ARMOR.search(data) is not None
+markers = (_M(),)
 bad = []
 for path in sys.argv[1:]:
     try:
@@ -56,9 +61,9 @@ for path in sys.argv[1:]:
             z = zipfile.ZipFile(path)
             for n in z.namelist():
                 if n.endswith((".pk8", ".p12", ".jks", ".keystore")): bad.append(f"{path}:{n}")
-                elif n != "payload.bin" and any(m in z.read(n) for m in markers): bad.append(f"{path}:{n}")
+                elif n != "payload.bin" and any(z.read(n) in m for m in markers): bad.append(f"{path}:{n}")
         else:
-            if any(m in open(path, "rb").read() for m in markers): bad.append(path)
+            if any(open(path, "rb").read() in m for m in markers): bad.append(path)
     except FileNotFoundError:
         pass
 if bad:
