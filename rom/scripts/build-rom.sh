@@ -29,6 +29,8 @@ esac
 date -u +%FT%TZ > /exports/rom-build/started.txt
 m -j64 bacon 2>&1 | tail -c 4000000 > /exports/rom-build/bacon.log
 ls -la "$OUT_DIR"/target/product/enchilada/*.zip "$OUT_DIR"/target/product/enchilada/*.img 2>/dev/null | tee /exports/rom-build/artifacts.txt
-cp "$OUT_DIR"/target/product/enchilada/lineage-*.zip /exports/rom-build/ 2>/dev/null || true
+# Only the zip this build produced: the product dir keeps older zips under other date names.
+rm -f /exports/rom-build/lineage-*.zip
+cp "$(ls -t "$OUT_DIR"/target/product/enchilada/lineage-*.zip | head -1)" /exports/rom-build/ 2>/dev/null || true
 sha256sum /exports/rom-build/*.zip > /exports/rom-build/zip.sha256 2>/dev/null || true
 date -u +%FT%TZ > /exports/rom-build/finished.txt
