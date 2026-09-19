@@ -1,0 +1,22 @@
+OctoSense
+Copyright 2026 The OctoSense Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party code and assets
+---------------------------
+
+Portions of this project are derived from Makepad
+(https://github.com/makepad/makepad), originally the apps/wm window manager
+and related theme resources. Those portions are
+Copyright (c) 2023 Makepad B.V. and remain under the MIT License
+(see LICENSES/Makepad-MIT.txt). The imported files, their upstream paths,
+revisions and hashes are recorded in upstream/makepad.json.
+
+The following assets also remain under their own licenses:
+
+* resources/wallpapers/tokyo-night.webp: from Omarchy
+  (https://github.com/omacom/omarchy), Copyright (c) David Heinemeier Hansson,
+  licensed under the MIT License (see resources/wallpapers/LICENSE.omarchy).
+
+Dependencies retain their respective licenses.

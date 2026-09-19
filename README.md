@@ -237,4 +237,4 @@ The first smoke command checks hosted input, workspace movement, fullscreen resi
 
 See the [validation record](docs/validation.md). Source builds and process hosting are the initial target on macOS. Linux/Windows branches are retained but have not been validated here. A relocatable `.app`, installer, web/mobile delivery, and a Linux session compositor are separate work.
 
-The copied Makepad source is covered by its [original MIT notice](LICENSES/Makepad-MIT.txt). Dependencies retain their respective licenses.
+OctoSense is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The copied Makepad source is covered by its [original MIT notice](LICENSES/Makepad-MIT.txt). Dependencies retain their respective licenses.
