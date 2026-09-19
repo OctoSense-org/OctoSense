@@ -13,8 +13,9 @@ ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}
 OUT='~/octosense-adr0001/build/out/octosense-rom/target/product/enchilada'
 mkdir -p "$DIR" "$SERVE"
 echo "== downloading build $TAG"
+# One remote argument, paths separated by spaces: rsync fetches them all in one session.
 rsync -a --partial -e "ssh -i $KEY -o BatchMode=yes" \
-  "$HOST:$OUT/boot.img $HOST:$OUT/dtbo.img $HOST:$OUT/vbmeta.img $HOST:$OUT/vendor.img $HOST:$OUT/system.img $HOST:~/octosense-adr0001/exports/rom-build/zip.sha256 $HOST:~/octosense-adr0001/exports/rom-build/lineage-*.zip" "$DIR/"
+  "$HOST:$OUT/boot.img $OUT/dtbo.img $OUT/vbmeta.img $OUT/vendor.img $OUT/system.img ~/octosense-adr0001/exports/rom-build/zip.sha256 ~/octosense-adr0001/exports/rom-build/lineage-*.zip" "$DIR/"
 echo "== manifest"
 python3 "$HERE/scripts/make-manifest.py" "$DIR" "OctoSense $TAG" OnePlus6
 echo "== serve"
