@@ -140,17 +140,34 @@ status bar and above its gesture bar; a tap delivered by the shell
 (`--test-action taps:200,76@9`) opens Search; the home grid shows the app
 with the route app's icon.
 
-On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch:
-the module is linked (`modules linked: [..., "maps"]`) and launches
-in-process; News and OctosMap sit in the dock's bottom row with Photos; the
-app's interface draws inside the shell's safe area; a tap on Locate brings a
-GPS fix within seconds (location events do reach an in-process app). Two
-framework problems stop it there, both in the fork and both written up in
-`BACKLOG.md`: the map draws no tiles on Android (MAPS-12, the Android
-network backend's silent cancel) and opening the app can freeze the shell
-(MAPS-13, the GL backend unwrapping a pass with no draw list). Not yet run
-on a phone because of them: search with the soft keyboard, the place sheet
-and directions over a drawn map, a preview, and a real drive.
+On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch
+built against the fork's `fix/android-map-archive` branch (four framework
+fixes this app needs on a phone, not yet pinned: `BACKLOG.md` MAPS-16):
+
+- the module is linked (`modules linked: [..., "maps"]`) and launches
+  in-process; News and OctosMap sit in the dock's bottom row with Photos;
+- the app opens in the same frame as News and Photos, inside the shell's
+  safe area, with no panic in the log;
+- the map draws in full from the hosted archive: roads, fills, water,
+  buildings, labels, the one-way arrows;
+- Locate brings a GPS fix within seconds, flies to it and draws the puck
+  with its heading wedge;
+- a long press drops a pin, the reverse lookup names it, and the sheet
+  gives the kind, the distance and **Directions**;
+- search with the soft keyboard lists places with their distances in miles,
+  and a result opens its place with the keyboard put away;
+- the map pans under a finger.
+
+Against the pinned revision the same APK draws no tiles (MAPS-12), freezes
+the shell as the app opens (MAPS-13), draws no roads or fills (MAPS-14) and
+no puck (MAPS-15).
+
+Directions do not work on this phone: the public router accepts TLS 1.3
+only and Android 9 stops at 1.2 (MAPS-17). The Directions screen opens
+with both ends and says `Couldn't get directions · Secure connection
+failed` with **Retry**. So routes on a drawn map, the preview, a real drive
+with a reroute, and pinch, rotate and tilt (adb has no multi-touch) are
+still unverified on a phone.
 
 The window's dev flags: `--phone`, `--dark`, `--light`, `--at lat,lon` (open
 the map there), `--fix lat,lon` (the device is there, for a desk with no
