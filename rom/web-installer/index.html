@@ -106,7 +106,9 @@ async function sha256(blob) {
 
 async function fetchImage(image) {
   stage(`Downloading ${image.file}`);
-  const res = await fetch(image.file, { cache: "force-cache" });
+  // The hash in the query makes each release's file a new URL: same names across
+  // builds must never be served from an older build's cache.
+  const res = await fetch(`${image.file}?sha256=${image.sha256}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${image.file}: HTTP ${res.status}`);
   const blob = await res.blob();
   if (blob.size < 64 * 1024 * 1024) { // small images are verified whole; big ones by size
