@@ -4145,6 +4145,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-map-nav"
+version = "0.1.0"
+
+[[package]]
 name = "makepad-math"
 version = "1.0.0"
 dependencies = [
@@ -5547,6 +5551,17 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "webpki-roots",
+]
+
+[[package]]
+name = "octosense-maps"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-map-nav",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
 ]
 
 [[package]]

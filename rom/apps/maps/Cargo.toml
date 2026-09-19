@@ -1,0 +1,15 @@
+[package]
+name = "octosense-maps"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# `maps`: the MapView vector-tile renderer and its archive readers.
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a", features = ["maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a" }
+# The route, its maneuvers and the session that map-matches a position onto
+# it. No dependencies of its own; the routes come from OSRM (routing.rs).
+makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "45d541339749f3ef109c9b226cc21238d6b6071a" }
