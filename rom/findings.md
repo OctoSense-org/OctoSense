@@ -1,3 +1,18 @@
+# OctosMap findings — 2026-09-18
+
+- The fork's `apps/route` is the reference checkout's in all but three cosmetic files; the map libraries are identical. It builds at the pinned revision.
+- The route app's own search and routing API (`makepad.nl/api`) is Europe only: `Santa Clara` finds nothing, San Jose to San Francisco is `no route found`. Its hosted tile archive is planet-wide with street detail.
+- Photon (search, reverse) and the FOSSGIS OSRM servers (`routed-car|foot|bike`) answer from the US with real profiles; the OSRM demo server has driving only.
+- `makepad-map-nav` has no dependencies, `Route` and `Maneuver` have public fields and `NavSession::new` is public: an OSRM reply becomes a route the framework's session follows.
+- `NavSession` names the next maneuver more than 3 m ahead and matches positions within 300 m ahead of progress.
+- `MapViewAction::PinTapped` is an overlay layer's pin (EV chargers), not a base-map point of interest. `MapView` has no fit-to-bounds and no satellite imagery; its markers are pins in a colour. `set_center` emits `ViewportChanged`, a pass late.
+- The platform has location on every target (`cx.start_location_updates`, `Event::LocationUpdate`/`LocationError`); Android asks for the permission itself on the first start. The shell's module view forwards every event but unfocused keys and outside presses.
+- The AppCards repo already has a Google-Maps-like `nav` card (L2 and L0) on the same services; its own review recommends a persistent native map because a card's state change tears the map down.
+- A toggle's state must be set after its first draw; naming a DSL template's child again replaces it; a button's colours are uniforms, so two faces beat run-time tinting.
+- Apps without a home tile are icons on the phone's home grid (Mail, Sheets, Reference).
+
+---
+
 # Photos continuation findings — 2026-09-17
 
 - User selected Library zoom with mobile pinch and desktop scrollbar/scrolling.

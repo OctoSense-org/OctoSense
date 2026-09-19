@@ -1,3 +1,28 @@
+# OctosMap — 2026-09-18
+
+## Objective
+A maps app for the OctoSense phone shell with the interface of Google Maps,
+built on the framework's route app (`../makepad/apps/route`): a full-screen
+map under a search bar, a place sheet, directions by car, on foot and by
+bike, and turn-by-turn navigation. One of the shell's apps, as Photos and
+News are.
+
+## Phases
+1. Investigate the reference, the shell's app contract and the AppCards ecosystem; settle the open decisions with the person — complete.
+2. Design and plan — complete; `docs/plans/2026-09-18-octosmap-design.md`, `docs/plans/2026-09-18-octosmap.md`.
+3. The crate, test-first: geometry, the Photon and OSRM parsers, guidance, the sheet, the model — complete (Tasks 1–7).
+4. The view: Explore, Search and Place, Directions, Navigation; the module and its storage; the window — complete (Tasks 8–13); every screen checked on the desktop, screenshots in `target/octosmap-verify/`.
+5. Host wiring, documentation and backlog — complete (Tasks 14–15).
+6. Desktop verification in the phone shell — see `progress.md`.
+7. The OnePlus 6T: GPS, gestures, the soft keyboard, a real drive — waits for the phone on adb.
+
+## Current context
+- Branch `feat/octosmap`, one commit per task, nothing pushed.
+- Decisions: hybrid global data plane (hosted vector archive, Photon, FOSSGIS OSRM); native interface around one persistent `MapView`; v1 without saved places, category chips, a home tile or assistant tools; no framework changes.
+- `.gitignore` and `scripts/` hold the person's own uncommitted work and are never staged.
+
+---
+
 # Photos continuation — 2026-09-17
 
 ## Objective

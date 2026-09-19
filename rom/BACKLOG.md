@@ -390,3 +390,79 @@ list is hidden only by wrapping it in a view (News keeps its list in a
 
   The fork revision is pinned since MOBILE-06 (2026-09-17). Existing phones
   keep no state from before (it was never written).
+
+## OctosMap follow-ups
+
+Left out of v1 by decision (`docs/plans/2026-09-18-octosmap-design.md`), or
+found on the way. `docs/maps.md` describes what is there.
+
+- [ ] **MAPS-01 — P2: Saved places and recent searches.**
+
+  Home, Work and starred places, and the last searches, offered under the
+  search field before anything is typed. They belong in the app's storage
+  jail beside `state`.
+
+- [ ] **MAPS-02 — P2: Nearby category chips.**
+
+  Restaurants, Coffee, Gas, Groceries under the search bar, backed by an
+  Overpass query around the map's centre, with a pin per result. The
+  framework already has the query and its mirrors (`widgets/src/splash.rs`,
+  `sys.places`).
+
+- [ ] **MAPS-03 — P2: A wide home tile.**
+
+  News and Photos draw one; OctosMap opens from the home grid and the App
+  Library. A tile needs a `HostedView` with a `tile:` face in `MapsView`, a
+  `TILE_APPS` entry and an `idle_text` arm in `src/mobile_tiles.rs`, and the
+  home layout checked with a fourth wide tile. A commute line (`Home · 22
+  min`) needs MAPS-01 first; a small live map is heavier than the other
+  tiles.
+
+- [ ] **MAPS-04 — P2: The assistant's tools.**
+
+  `search_places`, `directions` and `start_navigation` on the module's
+  `ServiceExecutor`, which declines every call today, so the assistant and
+  the AppCard brain can drive the app instead of the L0 `nav` card.
+
+- [ ] **MAPS-05 — P2: Spoken guidance.**
+
+  The banner's text is the sentence to speak; the framework's route app
+  speaks its own through `makepad-converse`, which is desktop-only there.
+
+- [ ] **MAPS-06 — P3: Tap a point of interest on the base map.**
+
+  `MapViewAction::PinTapped` fires for an overlay layer's pins only (the
+  EV-charger layer); the base map's shops and stations have no tap target at
+  this revision. A long press and the reverse lookup pick a spot today. The
+  fix is in the framework's `MapView`.
+
+- [ ] **MAPS-07 — P3: What `MapView` lacks.**
+
+  No fit-to-bounds (the app computes the camera in `geo::fit_camera`),
+  markers with no icon, label or selected state, and no satellite imagery.
+  Each would be a framework change adopted through the normal sync workflow.
+
+- [ ] **MAPS-08 — P1 before any release: services of OctoSense's own.**
+
+  The tiles (`makepad.nl`), Photon and the FOSSGIS OSRM servers are public
+  fair-use servers with no contract. The app behaves (a `User-Agent`, a
+  debounce, one route at a time, cancelled requests, capped replies), but a
+  released product needs hosted tiles, a geocoder and a router it may rely
+  on. The URLs are constants in `apps/maps/src/{lib,places,routing}.rs`.
+
+- [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
+
+  OSRM answers `alternatives=true` and more than two coordinates; the model
+  holds one route per mode between two ends. Transit needs another service.
+
+- [ ] **MAPS-10 — P3: Offline regions.**
+
+  The framework bakes a region with `map_build` and routes and searches it
+  offline with `map_nav`; a bake needs a desktop (about 3 GiB free and
+  minutes of CPU for one city), so a region would be baked there and copied
+  to the phone.
+
+- [ ] **MAPS-11 — P3: Keep the screen awake while navigating.**
+
+  Nothing in the pinned platform holds a wake lock; the phone dims on its
+  usual timer mid-drive.

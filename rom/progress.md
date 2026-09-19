@@ -1,3 +1,18 @@
+# OctosMap — 2026-09-18
+
+- Investigated with read-only agents (two stalled and were rerun narrower): the route app and its data plane, the shell's module contract with News as the template, the AppCards `nav` card. Probed the services by hand.
+- Asked the person six decisions up front, then ran unattended as asked.
+- Task 1 spike: the hosted archive draws downtown San Jose with streets, buildings and labels; no second tile source needed.
+- Tasks 2–7, each red then green: `geo` 12 tests, `places` 8, `routing` 7, `guidance` 7, `sheet` 6, `model` 17.
+- Tasks 8–11, the view: 27 isolate tests with injected replies and fixes. Each screen looked at in the standalone window on live services. Synthetic clicks were unreliable on this desk, so the window opens on a state by flag (`--show`, `--fix`).
+- Found and fixed on the way: a turn within the session's 3 m look-ahead of the start was never announced (OSRM sets off a metre before a corner); the chase paused with no finger on the screen, because `MapView` reports guidance's own camera moves too.
+- Tasks 12–13: the settings and the last camera in the storage jail; 83 tests in the crate.
+- Task 14: linked into the shell behind `app-maps` (unconditional on Android and iOS), both catalogs, the App Library, the launcher icons, the iOS location sentence. `cargo check --locked --workspace --features mobile-apps` and `tools/setup-native.py --check` pass.
+- `mobile_island::tests::hidden_while_the_shade_is_pulled_or_open` fails on this branch and on `main` (`c5d8987`) alike: not this work's, left alone.
+- A temporary worktree used to check that on `main` shared the target directory and left Photos' build output pointing at it; `cargo clean -p octosense-photos` put it right. No source was touched.
+
+---
+
 # Photos continuation — 2026-09-17
 
 - Ran the required Superpowers bootstrap and recovered the existing plan and notes.
