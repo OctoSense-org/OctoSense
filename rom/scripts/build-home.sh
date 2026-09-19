@@ -25,6 +25,8 @@ for repo in "$(basename "$MOBILE")" makepad-pinned octoscript-makepad-repin octo
   if [ ! -d "$ROOT/$repo" ]; then cp -c -R "$SRC/$repo" "$ROOT/$repo" && rm -rf "$ROOT/$repo/target" "$ROOT/$repo/.git"
   else rsync -a --delete --exclude /target --exclude .git "$SRC/$repo/" "$ROOT/$repo/"; fi
 done
+# Octoscript-AppCard's cards include_str! files from a sibling "octoscript-makepad".
+ln -sfn octoscript-makepad-repin "$ROOT/octoscript-makepad"
 export CARGO_HOME=$ROOT/cargo
 cd "$ROOT/$(basename "$MOBILE")"
 sed -i '' -e 's|path = "\.\./makepad/|path = "../makepad-pinned/|g' -e 's|path = "\.\./octoscript-makepad/|path = "../octoscript-makepad-repin/|g' -e 's|path = "\.\./octoscript/|path = "../octoscript-pinned/|g' Cargo.toml
