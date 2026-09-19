@@ -12,8 +12,11 @@ for i in $(seq 1 200); do [ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2
 [ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] || { echo "phone not booted; nothing verified" >&2; exit 1; }
 VERSION=$("$ADB" -s "$D" shell getprop ro.lineage.version | tr -d '\r')
 echo "running $VERSION on slot $("$ADB" -s "$D" shell getprop ro.boot.slot_suffix | tr -d '\r')"
-# The tag carries the build date (20260919-f); refuse to record results for another build.
-case "$VERSION" in *"${TAG%%-*}"*) ;; *) echo "phone runs $VERSION, not build $TAG; nothing verified" >&2; exit 1;; esac
+# The manifest records the build's ro.build.version.incremental (unique per build);
+# refuse to record results for another build. FORCE=1 skips this for older builds.
+WANT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('incremental',''))" "$DIR/manifest.json" 2>/dev/null)
+GOT=$("$ADB" -s "$D" shell getprop ro.build.version.incremental | tr -d '\r')
+if [ "${FORCE:-0}" != 1 ] && [ "$GOT" != "$WANT" ]; then echo "phone runs build '$GOT', manifest is '$WANT'; nothing verified" >&2; exit 1; fi
 echo "== checklist"; bash "$HERE/scripts/checklist.sh" "$D" | tee "$OUT/checklist.txt"
 echo "== agent"; OUT=$OUT bash "$HERE/scripts/agent-test.sh" "$D" 2>&1 | grep -v "^$\|^SERVICE\|Client:" | tee "$OUT/agent.txt" | tail -12
 echo "== screenshots"

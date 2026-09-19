@@ -18,6 +18,13 @@ rsync -a --partial -e "ssh -i $KEY -o BatchMode=yes" \
   "$HOST:$OUT/boot.img $OUT/dtbo.img $OUT/vbmeta.img $OUT/vendor.img $OUT/system.img ~/octosense-adr0001/exports/rom-build/zip.sha256 ~/octosense-adr0001/exports/rom-build/lineage-*.zip" "$DIR/"
 echo "== manifest"
 python3 "$HERE/scripts/make-manifest.py" "$DIR" "OctoSense $TAG" sdm845
+INC=$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "grep -m1 '^ro.build.version.incremental=' $OUT/system/build.prop | cut -d= -f2")
+python3 - "$DIR/manifest.json" "$INC" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1])); m["incremental"] = sys.argv[2]
+open(sys.argv[1], "w").write(json.dumps(m, indent=2) + "\n")
+PY
+echo "incremental $INC"
 echo "== serve"
 ln -sf "$HERE/web-installer/index.html" "$HERE/web-installer/fastboot.mjs" "$SERVE/"
 for f in boot dtbo vbmeta vendor system; do ln -sf "$DIR/$f.img" "$SERVE/$f.img"; done

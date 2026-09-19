@@ -9,7 +9,10 @@ export OUT_DIR=out/octosense-rom
 export GOMAXPROCS=16
 export GOGC=100
 export GOMEMLIMIT=48GiB
-export BUILD_NUMBER=octosense-rom
+# Unique per build: incremental builds otherwise keep the first build's date and
+# version string, and two builds become indistinguishable on the phone.
+export BUILD_NUMBER=octosense-$(date -u +%Y%m%d%H%M)
+export BUILD_DATETIME=$(date +%s)
 export LINEAGE_BUILDTYPE=UNOFFICIAL
 source build/envsetup.sh
 lunch lineage_enchilada-bp1a-userdebug
