@@ -2,7 +2,7 @@
 
 > Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
 
-**Goal:** Adopt the WM features from guofoo/makepad at beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d and continue standalone WM development in MakeOS.
+**Goal:** Adopt the WM features from the Makepad WM fork, which now lives at OctoSense-org/makepad, where this revision is ff134865d5e4491d9f5a2d21278f317826fff888, and continue standalone WM development in MakeOS.
 
 **Architecture:** Merge completed work into main first, then three-way merge apps/wm against the existing ae20efc5 baseline. Use the published fork revision for all Makepad Git crates; copy only WM assets/source and the license. Record the fork as the new pristine baseline, preserving standalone adaptations and the existing daily review workflow.
 
@@ -15,8 +15,8 @@
 - Import StyleSpec, the eighth MakeOS style, Liquid Glass shell surfaces, rounded child surfaces, wallpaper, material parsing, and backdrop ordering fixes with their tests.
 - Keep Omarchy as the startup style, matching both source applications. MakeOS is selectable in the appearance menu.
 - Remove the temporary WM rendering workarounds now that pinned widgets provide cached redraw and safe snapshot detachment.
-- Pin framework crates to https://github.com/guofoo/makepad.git at beb3857a (publication checked). Do not vendor widgets or unrelated apps.
-- Record default_source as ../guofoo-makepad, relative to the project root, with --source still taking precedence and legacy manifests defaulting to ../makepad. The fork must incorporate official updates before daily sync; switching to an official-only commit would drop required framework APIs.
+- Pin framework crates to the published WM fork (today https://github.com/OctoSense-org/makepad.git, at ff134865; publication checked). Do not vendor widgets or unrelated apps.
+- Record default_source as the fork's sibling checkout, relative to the project root, with --source still taking precedence and legacy manifests defaulting to ../makepad. The fork must incorporate official updates before daily sync; switching to an official-only commit would drop required framework APIs.
 - No source checkout changes and no pushes. Validate and integrate the resulting work into local main for continued development.
 
 ## Execution
@@ -38,7 +38,7 @@ cargo build --release --locked --workspace
 cargo build --locked --workspace
 python3 scripts/smoke.py --artifacts-dir target/fork-validation/smoke-release
 python3 scripts/smoke.py --cargo-run --default-catalog --artifacts-dir target/fork-validation/smoke-default
-python3 scripts/upstream.py status --source /Users/guofoo/git/mp/guofoo-makepad
+python3 scripts/upstream.py status --source <the fork's checkout>
 git diff --check
 ```
 

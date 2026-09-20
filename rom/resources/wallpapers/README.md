@@ -29,8 +29,8 @@ Both images are bundled; the following record describes the dark original:
 - Android's animated background is unchanged. This wallpaper belongs to the
   OctoSense desktop style; Omarchy keeps its selected theme image.
 
-The removed `octosense.svg` came from the guofoo/makepad WM fork at
-`beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`. Its original source path and hash
+The removed `octosense.svg` came from the Makepad WM fork, `OctoSense-org/makepad`, at
+`ff134865d5e4491d9f5a2d21278f317826fff888`. Its original source path and hash
 remain recorded under `retained_fork_assets.replaced_files` in
 `upstream/makepad.json`; it is no longer bundled.
 

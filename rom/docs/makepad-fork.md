@@ -110,14 +110,20 @@ to the new hashes (#29). What that means for anything written before it:
 - Hashes quoted inside commit subjects were rewritten along with the
   commits; branch names and directory names that embed an old hash
   (`chore/runtime-makepad-c31667a9`, `bt-1b11c4a`) were not.
-- Official `makepad/makepad` and the earlier `guofoo/makepad` were not
-  rewritten. Their hashes in these docs (`74b63be83e`, `915ce7c4e`,
-  `beb3857a`, …) and all of `upstream/makepad.json` stand as they were,
-  although the fork holds rewritten copies of the same commits.
+- Official `makepad/makepad` was not rewritten. Its hashes in these docs
+  (`74b63be83e`, `915ce7c4e`, …) and the upstream revisions in
+  `upstream/makepad.json` stand as they were, although the fork holds
+  rewritten copies of the same commits.
 - The docs here were remapped on 2026-09-19: 72 references to 32 commits,
   each matched by author time and subject to one twin on the rewritten
   remote. Hashes in commit messages and pull request text were not, and
   could not be.
+- The WM work that predates this organisation's fork is recorded against
+  `OctoSense-org/makepad` too: the revision the early plans and
+  `upstream/makepad.json`'s `retained_fork_assets` name is `ff134865d`
+  there, the tip of `pin/octoscript-makepad-beb3857a` (the branch keeps its
+  old name), with the recorded files at their recorded digests. Nothing
+  here depends on, or points at, any other copy of the fork.
 
 A clone made before the rewrite has local branches on the old history. A
 push from one is rejected as non-fast-forward; do not force it. Fetch,

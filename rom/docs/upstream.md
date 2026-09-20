@@ -29,7 +29,7 @@ cached-view APIs. `src/octosense/retired_passes.rs`
 detaches passes with freed draw-list roots before the new retained GPU working-set scan;
 remove it when upstream guards retired pass slots. No framework fork is required.
 
-The previous `guofoo/makepad` additions are retained as local WM adaptations.
+The earlier WM fork's additions are retained as local WM adaptations.
 The one-time migration compared official changes from the common ancestor,
 rather than interpreting absent fork features as upstream deletions. Historical
 asset origins are recorded in `upstream/makepad.json` under

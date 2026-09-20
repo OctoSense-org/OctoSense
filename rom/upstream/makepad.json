@@ -461,8 +461,8 @@
   "omissions": [],
   "default_source": "../makepad",
   "retained_fork_assets": {
-    "repository": "https://github.com/guofoo/makepad.git",
-    "revision": "beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d",
+    "repository": "https://github.com/OctoSense-org/makepad.git",
+    "revision": "ff134865d5e4491d9f5a2d21278f317826fff888",
     "files": [
       {
         "source": "widgets/themes/makeos/theme.splash",
