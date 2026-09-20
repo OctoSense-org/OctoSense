@@ -50,7 +50,9 @@ impl DesktopStyle {
 
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     if style != DesktopStyle::OctoSense {
-        return StyleSheet::load_with_appearance(style.framework(), dark);
+        let mut sheet = StyleSheet::load_with_appearance(style.framework(), dark);
+        sheet.icons = icon_assets(style.framework());
+        return sheet;
     }
     let read = |name: &str, bundled: &str| {
         // Source checkouts reload on selection; installed/mobile builds use embedded data.
@@ -74,25 +76,75 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
         name: if dark { "macos-dark" } else { "macos" }.into(),
         theme: read(theme_name, theme),
         widgets: read(widgets_name, widgets),
-        icons: app_icon::load_assets(UpstreamStyle::Macos),
+        icons: icon_assets(UpstreamStyle::Macos),
     }
 }
 
-/// The framework's icon identity for one of this shell's apps. Its artwork
-/// is keyed by app id and ships with the framework, which knows its own
-/// apps only: OctosMap, built on the framework's route app, wears route's.
-fn icon_identity(app: &str) -> &str {
-    match app {
-        "maps" => "route",
-        other => other,
+/// The framework's artwork for a style with this shell's own laid over it:
+/// News as redrawn here, and OctosMap, which the framework has no art for.
+pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
+    fn wear(assets: &mut Vec<app_icon::IconAsset>, name: &str, svg: String) {
+        match assets.iter_mut().find(|asset| asset.name == name) {
+            Some(asset) => asset.svg = svg,
+            None => assets.push(app_icon::IconAsset { name: name.into(), svg }),
+        }
     }
+    let mut assets = app_icon::load_assets(style);
+    match own_artwork(style) {
+        Some([news, maps]) => {
+            wear(&mut assets, "news", news.into());
+            wear(&mut assets, "maps", maps.into());
+        }
+        // Windows 2000's sixteen-pixel art stays the framework's: its News,
+        // and for OctosMap the route app's, which OctosMap is built on.
+        None => {
+            let route = assets.iter().find(|asset| asset.name == "route").map(|asset| asset.svg.clone());
+            if let Some(route) = route {
+                wear(&mut assets, "maps", route);
+            }
+        }
+    }
+    assets.sort_by(|a, b| a.name.cmp(&b.name));
+    assets
+}
+
+/// News and OctosMap as `tools/build_app_icons.py` draws them, in that order.
+fn own_artwork(style: UpstreamStyle) -> Option<[&'static str; 2]> {
+    macro_rules! pair {
+        ($style:literal) => {
+            [
+                include_str!(concat!("../../resources/icons/apps/", $style, "/news.svg")),
+                include_str!(concat!("../../resources/icons/apps/", $style, "/maps.svg")),
+            ]
+        };
+    }
+    Some(match style {
+        UpstreamStyle::Omarchy => pair!("omarchy"),
+        UpstreamStyle::Macos => pair!("macos"),
+        UpstreamStyle::Windows => pair!("windows"),
+        UpstreamStyle::NextStep => pair!("nextstep"),
+        UpstreamStyle::Ios => pair!("ios"),
+        UpstreamStyle::Android => pair!("android"),
+        UpstreamStyle::Windows2000 => return None,
+    })
 }
 
 #[derive(Default)]
-pub struct AppIconDraw(app_icon::AppIconDraw);
+pub struct AppIconDraw {
+    draw: app_icon::AppIconDraw,
+    /// The styles whose catalog this drawer has seen to, by discriminant.
+    installed: [bool; UpstreamStyle::ALL.len()],
+}
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
-        self.0.draw(cx, icon_identity(name), style.framework(), rect, opacity, ink);
+        let style = style.framework();
+        // A style can be drawn before its sheet is applied (a crossfade's
+        // target, the first frame); the framework would then fall back to
+        // its own artwork, which has no OctosMap.
+        if !std::mem::replace(&mut self.installed[style as usize], true) {
+            app_icon::install(cx, style, &icon_assets(style));
+        }
+        self.draw.draw(cx, name, style, rect, opacity, ink);
     }
 }
 
@@ -100,15 +152,56 @@ impl AppIconDraw {
 mod tests {
     use super::*;
 
+    fn svg_of<'a>(assets: &'a [app_icon::IconAsset], name: &str) -> &'a str {
+        &assets.iter().find(|asset| asset.name == name).unwrap_or_else(|| panic!("no {name} icon")).svg
+    }
+
     #[test]
-    fn octosmap_wears_the_route_apps_icon_and_every_other_app_its_own() {
-        assert_eq!(icon_identity("maps"), "route");
-        for app in ["news", "photos", "route", "reference", "an-app-nobody-knows"] {
-            assert_eq!(icon_identity(app), app);
+    fn news_and_octosmap_wear_this_shells_artwork_in_every_style() {
+        for style in UpstreamStyle::ALL {
+            let framework = app_icon::load_assets(style);
+            let assets = icon_assets(style);
+            // Nothing the framework draws is lost, and the list stays sorted
+            // by name as the framework's is.
+            assert_eq!(assets.len(), framework.len() + 1, "{}", style.id());
+            assert!(assets.windows(2).all(|pair| pair[0].name < pair[1].name), "{}", style.id());
+            for asset in &framework {
+                if asset.name != "news" {
+                    assert_eq!(svg_of(&assets, &asset.name), asset.svg, "{} {}", style.id(), asset.name);
+                }
+            }
+            if style == UpstreamStyle::Windows2000 {
+                // Sixteen-pixel art: the framework's News, and its route for OctosMap.
+                assert_eq!(svg_of(&assets, "news"), svg_of(&framework, "news"));
+                assert_eq!(svg_of(&assets, "maps"), svg_of(&framework, "route"));
+            } else {
+                assert_ne!(svg_of(&assets, "news"), svg_of(&framework, "news"), "{}", style.id());
+                assert_ne!(svg_of(&assets, "maps"), svg_of(&framework, "route"), "{}", style.id());
+            }
         }
-        // The identity it borrows is one the framework has artwork for.
-        let assets = app_icon::load_assets(UpstreamStyle::Macos);
-        assert!(assets.iter().any(|asset| asset.name == icon_identity("maps")));
+    }
+
+    #[test]
+    fn this_shells_artwork_is_what_the_renderer_can_draw() {
+        for style in UpstreamStyle::ALL {
+            let assets = icon_assets(style);
+            for name in ["news", "maps"] {
+                let svg = svg_of(&assets, name);
+                assert!(svg.starts_with("<svg "), "{} {name}", style.id());
+                // No clip paths, masks, filters or text: the renderer has none.
+                for unsupported in ["<clipPath", "<mask", "<filter", "<text", "<image", "<use"] {
+                    assert!(!svg.contains(unsupported), "{} {name}: {unsupported}", style.id());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_sheet_carries_the_artwork() {
+        for style in DesktopStyle::ALL {
+            let sheet = load_sheet(style, false);
+            assert_eq!(sheet.icons, icon_assets(style.framework()), "{}", style.id());
+        }
     }
 
     #[test]
@@ -123,7 +216,7 @@ mod tests {
                 assert_eq!(sheet.name, if dark { "macos-dark" } else { "macos" });
                 assert_eq!(StyleSheet::parse(&sheet.to_json()), Some(sheet.clone()));
                 assert_eq!(UpstreamStyle::parse(&sheet.name), Some(UpstreamStyle::Macos));
-                assert_eq!(sheet.icons, app_icon::load_assets(UpstreamStyle::Macos));
+                assert_eq!(sheet.icons, icon_assets(UpstreamStyle::Macos));
                 desktop_style::install(vm, sheet);
                 vm.bx.captured_errors = Some(Vec::new());
                 vm.with_reload(makepad_widgets::script_mod);
