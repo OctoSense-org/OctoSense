@@ -1,9 +1,9 @@
 # Mobile shell perf — baseline, perf, the idle-repaint fix and the transition fixes (OnePlus 6T)
 
 Device: OnePlus 6T (ONEPLUS A6013), Snapdragon 845, 1080×2340 @ 60 Hz, over USB (`bf0a4730`).
-Both builds sit on `fix/hosted-appcard-mobile` @ fedd802 (PR #24):
-- **baseline**: `perf/mobile-shell-baseline` @ 7b253a8. The frame monitor, PerfGraph and `[perf]` census only, no fixes.
-- **perf**: `perf/mobile-shell` @ 57a3134. The same instrument plus four fix commits.
+Both builds sit on `fix/hosted-appcard-mobile` @ 4c7e419 (PR #24):
+- **baseline**: `perf/mobile-shell-baseline` @ 15377fb. The frame monitor, PerfGraph and `[perf]` census only, no fixes.
+- **perf**: `perf/mobile-shell` @ 3d27dad. The same instrument plus four fix commits.
 
 ## Method
 **Two instruments per scenario.**
@@ -18,7 +18,7 @@ Both builds sit on `fix/hosted-appcard-mobile` @ fedd802 (PR #24):
 
 **Procedure.** Driven by `perf_scenarios2.sh <baseline|perf>`, with gestures injected through `input tap/swipe/motionevent`. The raw logs are `perf-baseline.txt` and `perf-perf.txt`, and the tables come from `perf_tables.py`.
 
-**Before, for reference.** `perf-before.md` holds the first measurement on the installed feat/mobile-standalone @ 8197abf, SurfaceFlinger only. It reproduces within noise in the baseline column below.
+**Before, for reference.** `perf-before.md` holds the first measurement on the installed feat/mobile-standalone @ 5bd9d58, SurfaceFlinger only. It reproduces within noise in the baseline column below.
 
 ## Table 1 — SurfaceFlinger (display), baseline vs perf
 
@@ -128,7 +128,7 @@ The completed-serial counter on GL only moves when `poll_texture_lifetimes` poll
 **The effect, step by step.**
 1. Every released retained-upload allocation record (`submitted > completed`) stayed in the ledger forever.
 2. `has_pending_instance_retirements()` never went false.
-3. `render_view` set `demo_time_repaint` on every render (`platform/src/os/linux/opengl.rs:409` at ad8f372).
+3. `render_view` set `demo_time_repaint` on every render (`platform/src/os/linux/opengl.rs:409` at dd8562e).
 4. Every live pass repainted on the next vsync.
 
 **Why macOS settles.** Metal command-buffer completion handlers advance the counter on their own.
@@ -293,7 +293,7 @@ The shell's own draw channels account for only ~2 ms of \`event\` (home 1.0, ove
 ## Fourth column — main-thread and fill-rate fixes (`perf/transition-main-thread`)
 
 The fourth build is `perf/android-idle-repaint` plus:
-- the makepad fork at `perf/android-main-thread` @ e596207 (six commits on #6);
+- the makepad fork at `perf/android-main-thread` @ fce16f9 (six commits on #6);
 - five shell commits: the run view's tick, the Android drawer's wallpaper and fills, the shade as the compositor's final glass, and the shade as one glass layer with its glyphs warmed.
 
 Measured with `perf_scenarios3.sh`, monitor **off**, two fresh launches per build. Raw data is in `scratchpad/perf-t-{before,before2,final1,final2}` (SurfaceFlinger presents) and `perf-t-finalmon` (the attribution run with the monitor on). The tables come from `ttable.py`.

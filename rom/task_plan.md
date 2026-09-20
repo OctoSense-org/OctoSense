@@ -62,7 +62,7 @@ desktop, following `/Users/guofoo/git/mp/makepad/apps/photos` where useful.
 4. Validate on the connected phone and update documentation — the maintainer confirmed the zoom on a device build; `docs/photos.md` records the behavior, the checks, and the stale `PortalList` drag-state caveat. No new device evidence was captured by this session.
 
 ## Current context
-- Main includes Photos PR #12 at `325eaa2`; no tracked application code changes at session start.
+- Main includes Photos PR #12 at `e55ad6d`; no tracked application code changes at session start.
 - Library, Collections, albums, search, People, Memories, and home-card previews were completed previously.
 - User selected Library zoom: pinch on mobile and scrollbar on desktop, and supplied the Makepad Photos reference.
 - OnePlus 6T `19f8cedf` is connected.

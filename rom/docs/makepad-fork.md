@@ -4,9 +4,11 @@ OctoSense builds on a fork of Makepad, `OctoSense-org/makepad`, not on
 `makepad/makepad` itself. This note records how the two relate, how the
 fork reaches this repo, why the sibling checkouts are shallow, and the state
 of the four map fixes made for OctosMap. The comparison with upstream was
-measured on 2026-09-18, at the revision pinned then (`45d541339`); the
+measured on 2026-09-18, at the revision pinned then (`471d680a5`); the
 commands are given so the numbers can be taken again. The pin moved on
-2026-09-19 to a revision that adds the four fixes and nothing else.
+2026-09-19 to a revision that adds the four fixes and nothing else. Later
+that day the history of every OctoSense-org repository was rewritten; the
+hashes here are the ones after it (see "The history rewrite" below).
 
 `docs/upstream.md` describes the older arrangement, in which this repo
 pinned official Makepad directly. Its sync tooling for the imported WM
@@ -18,9 +20,10 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`709c97a2f` since 2026-09-19).
+   `OctoSense-org/Octoscript-Makepad` (`14fe992bf`, the repin that followed
+   the history rewrite of 2026-09-19).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`c31667a9d`, the fork's `main`) and the Octoscript revision (`fda2903`).
+   (`e7c1cdf6c`, the fork's `main`) and the Octoscript revision (`68f6a9d`).
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and the five `apps/*/Cargo.toml`, and in
    Octoscript-Makepad's crates. `[patch]` sections then redirect every one
@@ -34,9 +37,13 @@ locked revision and its tree is clean. It looks at nothing else: not the
 branch name, not the clone depth.
 
 Octoscript at the chain's revision names an older Makepad revision in its
-own manifests (`bb45d411`, two pin moves back). The patch sections make
-that harmless, and it shows that Octoscript need not move every time the
-Makepad pin does; it did not move on 2026-09-19.
+own manifests: `bb45d4115`, two pin moves back, and a hash from before the
+history rewrite, which the fork's remote no longer has (its twin is
+`6e5898fe`). The patch sections make that harmless here, since no build of
+this workspace ever fetches it, and it shows that Octoscript need not move
+every time the Makepad pin does; it did not move on 2026-09-19. A build of
+Octoscript on its own, without the sibling patches, would have to fetch
+that revision.
 
 The check reads every `Cargo.toml` under this directory, skipping only
 `.git`, `target`, `vendor` and a few other names. A second worktree kept
@@ -73,7 +80,7 @@ Content, by asking a full upstream clone whether each fork file's exact
 blob ever existed upstream (`git ls-tree -r <pin>` in the fork, then
 `git cat-file --batch-check` in the upstream clone):
 
-| Of the 8,695 files in the fork at `45d541339` | Files |
+| Of the 8,695 files in the fork at `471d680a5` | Files |
 |---|---|
 | Identical to upstream `work` at `6f1e44649` | 8,171 |
 | An older upstream version: the fork is only behind | 321 |
@@ -89,6 +96,37 @@ Android build tool; the fork-only ones are mostly the AppCard widget kit
 with its fonts and themes, the map's navigation layer
 (`widgets/src/map/nav.rs`, added on 2026-09-11 for the AppCard nav card),
 `platform/src/gps.rs` and `libs/makepad_ai`.
+
+## The history rewrite
+
+On 2026-09-19 the history of every OctoSense-org repository (this one, the
+Makepad fork, Octoscript, Octoscript-Makepad) was rewritten to take local
+home paths (`/Users/<name>/…`) out of old commits, and the pins were moved
+to the new hashes (#29). What that means for anything written before it:
+
+- Every commit after the first scrubbed one has a new hash. Author, time
+  and subject are unchanged, which is how a commit's twin is found. The
+  tree is identical too, except in the span where a scrubbed file differed.
+- Hashes quoted inside commit subjects were rewritten along with the
+  commits; branch names and directory names that embed an old hash
+  (`chore/runtime-makepad-c31667a9`, `bt-1b11c4a`) were not.
+- Official `makepad/makepad` and the earlier `guofoo/makepad` were not
+  rewritten. Their hashes in these docs (`74b63be83e`, `915ce7c4e`,
+  `beb3857a`, …) and all of `upstream/makepad.json` stand as they were,
+  although the fork holds rewritten copies of the same commits.
+- The docs here were remapped on 2026-09-19: 72 references to 32 commits,
+  each matched by author time and subject to one twin on the rewritten
+  remote. Hashes in commit messages and pull request text were not, and
+  could not be.
+
+A clone made before the rewrite has local branches on the old history. A
+push from one is rejected as non-fast-forward; do not force it. Fetch,
+check that the old tip and the remote tip have the same tree
+(`git diff --stat <old> origin/<branch>` prints nothing), move the branch
+with `git branch -f <branch> origin/<branch>` from another branch, and
+cherry-pick onto a fresh branch whatever was not pushed. The siblings
+follow with `git -C ../<sibling> fetch origin` and
+`python3 tools/setup-native.py --update`.
 
 ## The sibling checkouts are shallow
 
@@ -143,17 +181,17 @@ again. `git fetch origin` beforehand avoids it.
 ## The four map fixes
 
 Found while bringing up OctosMap on the OnePlus 6T. Fork branch
-`fix/android-map-archive`, four commits on `45d541339`, merged into the
-fork's `main` on 2026-09-19 as `OctoSense-org/makepad#15` (`c31667a9d`)
+`fix/android-map-archive`, four commits on `471d680a5`, merged into the
+fork's `main` on 2026-09-19 as `OctoSense-org/makepad#15` (`e7c1cdf6c`)
 and pinned here the same day. The problems are `BACKLOG.md` MAPS-12 to
 MAPS-15; adopting the revision was MAPS-16.
 
 | Commit | What it changes | Where it runs |
 |---|---|---|
-| `b163a29ea` | The GL backend draws nothing for a pass with no draw list, where it used to panic | Linux and Android GL |
-| `2733ad531` | Android's `http_cancel` ends the request with an `HttpError`; a request handed to Java reports one `HttpProgress` | Android |
-| `5d10a3fec` | The native GL backend binds compact vertex formats, where it used to skip those draws | Linux and Android GL |
-| `e0bd59cf6` | The map's navigation layer clears only the puck it placed | Every platform |
+| `5a9c20b0d` | The GL backend draws nothing for a pass with no draw list, where it used to panic | Linux and Android GL |
+| `343053f8a` | Android's `http_cancel` ends the request with an `HttpError`; a request handed to Java reports one `HttpProgress` | Android |
+| `136dea82a` | The native GL backend binds compact vertex formats, where it used to skip those draws | Linux and Android GL |
+| `d3d740808` | The map's navigation layer clears only the puck it placed | Every platform |
 
 macOS and iOS (Metal), Windows and the web build are untouched by the
 first three.

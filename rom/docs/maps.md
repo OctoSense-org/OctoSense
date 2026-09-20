@@ -164,7 +164,7 @@ on a phone yet.
   and a result opens its place with the keyboard put away;
 - the map pans under a finger.
 
-Against the revision pinned before 2026-09-19 (`45d541339`) the same app
+Against the revision pinned before 2026-09-19 (`471d680a5`) the same app
 draws no tiles (MAPS-12), freezes the shell as it opens (MAPS-13), draws no
 roads or fills (MAPS-14) and no puck (MAPS-15).
 

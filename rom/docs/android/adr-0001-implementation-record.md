@@ -191,8 +191,8 @@ and below identify the actual tested APK pairs.
 | `framework-source.patch` | `8e1d0dffb47962e121066aa35c2470355399863cd99911034d4cfbb39e5690e1` |
 | `mobile-new-source.tar.gz` | `48e620148964616257ea8ebd05ed29968bd9b2bd1306a665671a33ffe4bd3958` |
 
-Home source base is `45dbbfbf257c05a7c2d5149b21ebe77f5c71013c`;
-framework base is `d4502ef1e4d196d2829a07aa137740cb0581e9b4`.
+Home source base is `0795c055afa938cdf1c5c2eae1dfe29d7f2d4a7f`;
+framework base is `3a5ff1212209b17bbd79350c9869c7319719e1eb`.
 Both include uncommitted source changes; patches exclude Markdown, and the
 archive retains new mobile integration source. The mobile patch also preserves
 pre-existing work from another session; the records do not imply ownership of

@@ -8,7 +8,7 @@
 
 **Architecture:** The model gains a hosting-aware opener policy, source colours and the `wm_unavailable` envelope parser (pure, tested). The view is restyled with the framework's `glass.*` widgets and gains an `ArticleReader` widget that drives the platform's native web view overlay. The host gains a generic channel: a module root posts a `WmRequest` as a widget action and the module tile's host forwards it; an `Open`/`Launch` naming an unlaunchable app is answered with a `wm_unavailable` event to the requester; `Launch` forwards its arguments.
 
-**Tech Stack:** as phase 1 (Makepad fork `ad8f3729d2c24ba5a3bda5c8865a2b8366480147`). No new crates.
+**Tech Stack:** as phase 1 (Makepad fork `dd8562e2c87ee835bf7ff282db3e1052eb15bad3`). No new crates.
 
 **Design:** `docs/plans/2026-09-16-news-app-phase2-design.md`. Phase 1 context: `docs/plans/2026-09-16-news-app.md`.
 

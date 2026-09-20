@@ -35,7 +35,7 @@ The ADB shell's root grant does not establish that a future bridge APK has a Mag
 - [`src/main.rs:4497`](../../src/main.rs#L4497) already receives `Event::HomeIntent`. The local Makepad framework queues Java-to-Rust messages in `platform/src/os/linux/android/android_jni.rs:956`; its `MakepadActivity.java:2511` can post OctoSense's own notifications. This is a useful transport pattern, not a system-control backend.
 - `../makepad/tools/cargo_makepad/src/android/compile.rs:1128` compiles a fixed list of framework Java sources. The custom manifest hook exists at line 1030, but adding a manifest component alone does not compile its Java class. App-specific Java/AIDL source support is an explicit implementation task.
 
-`Cargo.toml` now names Makepad revision `d4502ef1e4d196d2829a07aa137740cb0581e9b4`, with local workspace patches. The paths above describe the inspected workspace; resolve the actual release dependency graph before shipping bridge changes.
+`Cargo.toml` now names Makepad revision `3a5ff1212209b17bbd79350c9869c7319719e1eb`, with local workspace patches. The paths above describe the inspected workspace; resolve the actual release dependency graph before shipping bridge changes.
 
 ## 3. System Bridge process boundary
 

@@ -60,7 +60,7 @@ Every cause was confirmed with measurements before it was fixed: SurfaceFlinger 
 
 ### makepad renderer, Android GL (fork PR #6)
 
-- **Unpolled completion fence.** The GL path never polled its GPU completion fence. Freed allocations stayed pending forever, so every render requested another full repaint (`platform/src/os/linux/opengl.rs:409` at ad8f372).
+- **Unpolled completion fence.** The GL path never polled its GPU completion fence. Freed allocations stayed pending forever, so every render requested another full repaint (`platform/src/os/linux/opengl.rs:409` at dd8562e).
 - **Upside-down glass.** The frosted backdrop was sampled upside down on Android. The V flip is now 0 on every backend.
 
 ### makepad platform and widgets (fork PR #7)
@@ -119,7 +119,7 @@ Recents shows the same pattern. Over Home it already runs at 52–56 fps. Over t
 
 The unchanged Vulkan backend was measured on the OnePlus 6 and was substantially slower for the shade: 21–22 fps opening and 37–38 fps closing in usable warm runs. The retained GLES build passes the shade gate. A later synchronization change would require a separate controlled test; see the [Vulkan probe record](../../target/perf-artifacts/ (frame-baseline worktree) vulkan-probe-validation.md).
 
-- **The retained build uses OpenGL ES.** The pinned Makepad revision `73dfc62` also contains non-XR Android Vulkan initialization through `CxVulkan::new` in `android.rs`; the earlier claim that it only supported XR was incorrect. The probe's `use_vulkan` build flag and Android GPU service confirmed a Vulkan device and swapchain. Its GLES context is kept for interop, not evidence that the window rendered through GL.
+- **The retained build uses OpenGL ES.** The pinned Makepad revision `2d9f828` also contains non-XR Android Vulkan initialization through `CxVulkan::new` in `android.rs`; the earlier claim that it only supported XR was incorrect. The probe's `use_vulkan` build flag and Android GPU service confirmed a Vulkan device and swapchain. Its GLES context is kept for interop, not evidence that the window rendered through GL.
 - **Vulkan can reduce driver overhead.** It does not automatically reduce pixel work or texture traffic. Older-device performance and reliability need testing. [Android Vulkan guidance](https://developer.android.com/games/develop/vulkan/native-engine-support)
 - **Inspect synchronization first.** This revision waits on CPU fences before and after off-screen submissions. Their cost on this phone is unmeasured; preserve resource lifetimes and ordering if changing them. See the [controlled Vulkan experiment](performance-plan.md#p3--evaluate-vulkan-after-establishing-the-optimized-gl-reference).
 
