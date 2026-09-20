@@ -20,10 +20,11 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`14fe992bf`, the repin that followed
-   the history rewrite of 2026-09-19).
+   `OctoSense-org/Octoscript-Makepad` (`8a7c6b50f` since the flashing fix
+   was pinned on 2026-09-19; `14fe992bf` was the repin that followed that
+   day's history rewrite).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`e7c1cdf6c`, the fork's `main`) and the Octoscript revision (`68f6a9d`).
+   (`3c82c18f4`, the fork's `main`) and the Octoscript revision (`68f6a9d`).
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and the five `apps/*/Cargo.toml`, and in
    Octoscript-Makepad's crates. `[patch]` sections then redirect every one
@@ -253,9 +254,10 @@ patches will conflict on the fork's next sync from upstream.
 
 ## The flashing fix
 
-A second fork change waits for a pin move (`BACKLOG.md` MOBILE-08):
-`OctoSense-org/makepad#16`, branch `fix/gl-skipped-draw-telemetry`, two
-commits on `e7c1cdf6c`. The GL backend left a draw item out of the frame
+A second fork change, pinned on 2026-09-19 (`BACKLOG.md` MOBILE-08):
+`OctoSense-org/makepad#16`, two commits on `e7c1cdf6c`, merged as
+`3c82c18f4`; `Octoscript-Makepad#31` named it (`8a7c6b50f`), and one commit
+here moved the lock and the six manifests. The GL backend left a draw item out of the frame
 when the GPU memory ledger refused its instance buffer, and asked for a
 repaint that was refused the same way, so the phone shell flashed between
 black, half-drawn and complete frames once a map's tiles were resident and

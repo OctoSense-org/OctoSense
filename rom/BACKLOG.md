@@ -226,7 +226,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
   passes with the siblings at the released commits.
 
-- [ ] **MOBILE-08 — P1: The phone shell flashes continuously (framework; fixed on a fork branch).**
+- [x] **MOBILE-08 — P1: The phone shell flashes continuously (framework; fixed in the fork and pinned).**
 
   Seen on a Pixel 7 Pro (Android 17) on 2026-09-19: the screen alternates
   between a fully black frame, a half-drawn one (the wallpaper and one
@@ -255,8 +255,11 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   line, at most once a second and only while it happens, that says why the
   GL loop skipped draw items. With it the same sequence three times over
   gives steady frames, no skipped items, and graphics memory flat at about
-  360 MB. Open until the pin moves (`docs/makepad-fork.md`, "Adopting a
-  fork revision"); a phone build against the pinned revision still has it.
+  360 MB. Pinned on 2026-09-19: `makepad#16` merged as `3c82c18f4`,
+  `Octoscript-Makepad#31` named it (`8a7c6b50f`), and this repo's lock and
+  six manifests moved with it; `Cargo.lock` did not change. The fix was
+  verified on the phone with a build against the fix branch, whose tree is
+  identical to the pinned revision's.
   Still worth a look afterwards: why the ledger goes over its limit after a
   surface is recreated at all.
 
