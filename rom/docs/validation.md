@@ -398,3 +398,37 @@ The diagnostic call stack is in `target/upstream-20260911/trace-tap/host.log`.
 The starting dirty working tree is preserved in
 `target/upstream-20260911/before/`; the integration diff and exact file list
 are saved beside it. Source checkouts were read only.
+
+## Desktop startup in OctoSense Light — 2026-09-19
+
+The universal desktop shell kept in this repository started in Omarchy, as
+the desktop repository's did until its #29. This follows it: desktop and web
+targets select OctoSense at startup and settle the style before the first
+frame; Android, iOS and the standalone mobile shell keep their touch shells.
+
+On macOS, against the pinned runtime:
+
+- `octosense::policy`: `desktop_and_web_start_with_octosense`, changed first
+  and seen failing (`left: Omarchy, right: OctoSense`), then passing with
+  `mobile_targets_start_with_their_touch_shell` and
+  `the_standalone_shell_is_android_everywhere`.
+- `pytest scripts/test_smoke.py scripts/test_upstream.py`: 49 passed.
+- `cargo check --locked --workspace --features mobile-apps` passes. The
+  shell's suite is 293 passing and the one failure `main` has too
+  (`mobile_island::tests::hidden_while_the_shade_is_pulled_or_open`).
+- A plain `cargo run` with a fresh `OCTOSENSE_HOME`: the first captured frame
+  is OctoSense Light, settled, with the Abyssal Currents wallpaper and the
+  dock; the log reads `wm: desktop style octosense applied`.
+- `cargo run --features mobile-only,mobile-apps` the same way: the phone
+  shell starts in its Android style as before, with no panic. The settle
+  call runs on that path too.
+- Native release smoke after `cargo build --release --workspace`:
+  `python3 scripts/smoke.py` passes its 7 checks, among them "OctoSense light
+  starts with its bundled wallpaper", and writes the two frames the changed
+  steps capture (`launcher-apps-bottom`, `workspace-empty`).
+  `python3 scripts/smoke.py --styles` passes its 19: every style is selected
+  in turn, starting from OctoSense, and the hosted app is kept without extra
+  launches.
+
+Not run: a phone, the web build.
+
