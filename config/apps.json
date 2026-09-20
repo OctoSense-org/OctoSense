@@ -10,7 +10,7 @@
   {
     "id": "browser",
     "label": "Browser",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-browser",
     "bin": "browser",
     "policy": "focus"
@@ -18,7 +18,7 @@
   {
     "id": "files",
     "label": "Files",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-files",
     "bin": "files",
     "policy": "focus",
@@ -29,7 +29,7 @@
   {
     "id": "terminal",
     "label": "Terminal",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-terminal",
     "bin": "terminal",
     "policy": "new"
@@ -37,7 +37,7 @@
   {
     "id": "mixer",
     "label": "Mixer",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-mixer",
     "bin": "makepad-mixer",
     "policy": "focus"
@@ -45,7 +45,7 @@
   {
     "id": "task",
     "label": "Task Manager",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-task",
     "bin": "task",
     "policy": "focus"
@@ -53,7 +53,7 @@
   {
     "id": "sheets",
     "label": "Sheets",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-sheets",
     "bin": "sheets",
     "policy": "focus"
@@ -61,7 +61,7 @@
   {
     "id": "photos",
     "label": "Photos",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-photos",
     "bin": "photos",
     "policy": "focus"
@@ -69,7 +69,7 @@
   {
     "id": "clock",
     "label": "Clock",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-clock",
     "bin": "clock",
     "policy": "focus"
@@ -77,15 +77,63 @@
   {
     "id": "weather",
     "label": "Weather",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-weather",
     "bin": "weather",
     "policy": "focus"
   },
   {
+    "id": "finance",
+    "label": "Finance",
+    "source": "makepad",
+    "package": "makepad-finance",
+    "bin": "finance",
+    "policy": "focus"
+  },
+  {
+    "id": "mail",
+    "label": "Mail",
+    "source": "makepad",
+    "package": "makepad-mail",
+    "bin": "mail",
+    "policy": "focus"
+  },
+  {
+    "id": "notes",
+    "label": "Notes",
+    "source": "makepad",
+    "package": "makepad-notes",
+    "bin": "notes",
+    "policy": "focus"
+  },
+  {
+    "id": "calendar",
+    "label": "Calendar",
+    "source": "makepad",
+    "package": "makepad-calendar",
+    "bin": "calendar",
+    "policy": "focus"
+  },
+  {
+    "id": "reminders",
+    "label": "Reminders",
+    "source": "makepad",
+    "package": "makepad-reminders",
+    "bin": "reminders",
+    "policy": "focus"
+  },
+  {
+    "id": "calculator",
+    "label": "Calculator",
+    "source": "makepad",
+    "package": "makepad-calculator",
+    "bin": "calculator",
+    "policy": "focus"
+  },
+  {
     "id": "fabric",
     "label": "Fabric",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-fabric",
     "bin": "makepad-fabric",
     "policy": "focus"
@@ -93,7 +141,7 @@
   {
     "id": "score",
     "label": "Score",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-app-score",
     "bin": "makepad-app-score",
     "policy": "focus"
@@ -101,7 +149,7 @@
   {
     "id": "video",
     "label": "Video Player",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-video",
     "bin": "video",
     "policy": "new"
@@ -109,15 +157,15 @@
   {
     "id": "route",
     "label": "Route",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-app-route",
-    "bin": "makepad-app-route",
+    "bin": "route",
     "policy": "focus"
   },
   {
     "id": "vj",
     "label": "VJ",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-vj",
     "bin": "makepad-vj",
     "policy": "focus"
@@ -125,7 +173,7 @@
   {
     "id": "fab",
     "label": "Fab",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-fab",
     "bin": "makepad-fab",
     "policy": "focus"
@@ -133,7 +181,7 @@
   {
     "id": "studio",
     "label": "Director",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-director",
     "bin": "director",
     "policy": "focus"
@@ -141,7 +189,7 @@
   {
     "id": "image",
     "label": "Image Viewer",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-image",
     "bin": "image",
     "policy": "new"
@@ -149,7 +197,7 @@
   {
     "id": "pdf",
     "label": "PDF Viewer",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-pdf",
     "bin": "pdf",
     "policy": "new"
@@ -157,7 +205,7 @@
   {
     "id": "aichat",
     "label": "AI",
-    "manifest": "../../makepad/Cargo.toml",
+    "source": "makepad",
     "package": "makepad-aichat",
     "bin": "aichat",
     "policy": "new"

@@ -66,6 +66,7 @@ pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
         args: Vec::new(),
         policy: if module.id() == "reference" { crate::clients::LaunchPolicy::AlwaysNew }
             else { crate::clients::LaunchPolicy::OrFocus },
+        target_dir: None,
     }).collect()
 }
 

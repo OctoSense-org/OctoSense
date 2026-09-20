@@ -40,6 +40,21 @@ git -C ../makepad pull --ff-only origin work
 python3 scripts/upstream.py sync
 ```
 
+The shipped app catalog is generated from upstream's curated registry at the
+pinned revision, read out of the Makepad checkout reported by Cargo. This can
+be the shared runtime's path override or Cargo's cached Git checkout. Report
+drift or regenerate with:
+
+```sh
+python3 scripts/upstream.py catalog
+python3 scripts/upstream.py catalog --apply
+```
+
+Named adaptations live in `config/apps.overlay.json`: rows this project adds,
+per-id overrides that keep a launch id while changing what it runs, and ids
+this project does not ship. A row whose package or binary the pinned revision
+does not build is reported and never written.
+
 Run this at least daily during active development, or more often after upstream
 changes. The first command is your source-repository Git step; `sync` performs
 the remaining comparison, preparation, and verification without prompts. No

@@ -580,3 +580,198 @@ class DailySyncTests(RepoFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+UPSTREAM_REGISTRY = """
+fn curated() -> Vec<AppDef> {
+    use LaunchPolicy::*;
+    vec![
+        AppDef::app("browser", "Browser", "makepad-browser", "apps/browser", "browser", OrFocus),
+        {
+            // The demo VFS, never the real disk.
+            let mut files =
+                AppDef::app("files", "Files", "makepad-files", "apps/files", "files", OrFocus);
+            if std::env::var("MAKEPAD_WM_FILES_REAL").is_err() {
+                files.args.push("--demo".to_string());
+            }
+            files
+        },
+        AppDef::app(
+            "score",
+            "Score",
+            "makepad-app-score",
+            "apps/score",
+            "makepad-app-score",
+            OrFocus,
+        ),
+        AppDef::app("terminal", "Terminal", "makepad-terminal", "apps/terminal", "terminal", AlwaysNew),
+    ]
+}
+
+pub fn find_app(id: &str) -> Option<AppDef> {
+    match id {
+        "image" => Some(AppDef::app("image", "Image Viewer", "makepad-image", "apps/image", "image", AlwaysNew)),
+        _ => None,
+    }
+}
+"""
+
+
+class CuratedApps(unittest.TestCase):
+    def test_rows_come_from_the_registry_and_not_the_hidden_entries(self):
+        """`find_app` registers viewers that are deliberately not menu rows;
+        reading them here would put them in the launcher by accident."""
+        self.assertEqual(
+            upstream.curated_apps(UPSTREAM_REGISTRY),
+            [
+                {"id": "browser", "label": "Browser", "source": "makepad",
+                 "package": "makepad-browser", "bin": "browser", "policy": "focus"},
+                {"id": "files", "label": "Files", "source": "makepad",
+                 "package": "makepad-files", "bin": "files", "policy": "focus",
+                 "args": ["--demo"]},
+                {"id": "score", "label": "Score", "source": "makepad",
+                 "package": "makepad-app-score", "bin": "makepad-app-score",
+                 "policy": "focus"},
+                {"id": "terminal", "label": "Terminal", "source": "makepad",
+                 "package": "makepad-terminal", "bin": "terminal", "policy": "new"},
+            ],
+        )
+
+    def test_arguments_computed_at_run_time_are_left_out_entirely(self):
+        """Fab opens a model whose path upstream computes at launch. Taking
+        the flag without its value would emit a switch with nothing after
+        it, so the row travels with no arguments at all."""
+        source = """
+fn curated() -> Vec<AppDef> {
+    vec![
+        {
+            let mut fab = AppDef::app("fab", "Fab", "makepad-fab", "apps/fab", "makepad-fab", OrFocus);
+            let house = "local/fab/models/woodside.glb";
+            if exists {
+                fab.args.push("--open".to_string());
+                fab.args.push(house.to_string());
+            }
+            fab
+        },
+    ]
+}
+"""
+        self.assertEqual(
+            upstream.curated_apps(source),
+            [{"id": "fab", "label": "Fab", "source": "makepad",
+              "package": "makepad-fab", "bin": "makepad-fab", "policy": "focus"}],
+        )
+
+OVERLAY = {
+    "overrides": {"studio": {"label": "Director", "package": "makepad-director", "bin": "director"}},
+    "drop": ["scope"],
+    "rows": [
+        {"id": "reference", "label": "Reference", "manifest": "../apps/reference/Cargo.toml",
+         "package": "octosense-reference", "bin": "octosense-reference", "policy": "new"}
+    ],
+}
+class MergeCatalog(unittest.TestCase):
+    def test_this_project_renames_drops_and_adds_without_losing_upstream_order(self):
+        upstream_rows = [
+            {"id": "browser", "label": "Browser", "source": "makepad",
+             "package": "makepad-browser", "bin": "browser", "policy": "focus"},
+            {"id": "studio", "label": "Studio", "source": "makepad",
+             "package": "makepad-studio", "bin": "studio", "policy": "focus"},
+            {"id": "scope", "label": "Scope", "source": "makepad",
+             "package": "makepad-scope", "bin": "scope", "policy": "focus"},
+        ]
+        merged = upstream.merge_catalog(upstream_rows, OVERLAY)
+        self.assertEqual([row["id"] for row in merged], ["reference", "browser", "studio"])
+        studio = next(row for row in merged if row["id"] == "studio")
+        # The id is a launch reference people already use; only what it runs
+        # changes when upstream replaces the app behind it.
+        self.assertEqual(studio["package"], "makepad-director")
+        self.assertEqual(studio["bin"], "director")
+        self.assertEqual(studio["label"], "Director")
+        self.assertEqual(studio["source"], "makepad")
+
+    def test_helper_rows_follow_the_curated_menu(self):
+        """Viewers and the assistant are reachable but belong after the
+        apps upstream curates, not ahead of them."""
+        overlay = dict(OVERLAY, append=[
+            {"id": "pdf", "label": "PDF Viewer", "source": "makepad",
+             "package": "makepad-pdf", "bin": "pdf", "policy": "new"}
+        ])
+        merged = upstream.merge_catalog(
+            [{"id": "browser", "label": "Browser", "source": "makepad",
+              "package": "makepad-browser", "bin": "browser", "policy": "focus"}],
+            overlay,
+        )
+        self.assertEqual([row["id"] for row in merged], ["reference", "browser", "pdf"])
+
+class CatalogProblems(unittest.TestCase):
+    def test_rows_naming_a_crate_the_revision_does_not_build_are_reported(self):
+        """Upstream's registry can name a binary its own revision no longer
+        produces; a row like that is a menu entry that cannot start."""
+        packages = {"makepad-browser": ["browser"], "makepad-app-route": ["route"]}
+        rows = [
+            {"id": "browser", "source": "makepad", "package": "makepad-browser", "bin": "browser"},
+            {"id": "route", "source": "makepad", "package": "makepad-app-route", "bin": "makepad-app-route"},
+            {"id": "studio", "source": "makepad", "package": "makepad-studio", "bin": "studio"},
+            {"id": "reference", "manifest": "../apps/reference/Cargo.toml",
+             "package": "octosense-reference", "bin": "octosense-reference"},
+        ]
+        problems = upstream.catalog_problems(rows, packages)
+        self.assertEqual([problem["id"] for problem in problems], ["route", "studio"])
+        self.assertIn("route", problems[0]["detail"])
+        self.assertIn("makepad-studio", problems[1]["detail"])
+
+
+class PinnedCheckout(unittest.TestCase):
+    def test_sibling_repositories_are_not_mistaken_for_makepad(self):
+        self.assertEqual(
+            upstream.git_repo_name(
+                "git+https://github.com/OctoSense-org/makepad.git"
+                "?rev=ad8f3729d#ad8f3729d"),
+            "makepad",
+        )
+        for other in (
+            "git+https://github.com/Project-Robius-China/makepad-diagram-kit.git?rev=0536492#0536492",
+            "git+https://github.com/OctoSense-org/Octoscript-Makepad.git?rev=abc123#abc123",
+        ):
+            self.assertNotEqual(upstream.git_repo_name(other), "makepad")
+        self.assertIsNone(upstream.git_repo_name("registry+https://github.com/rust-lang/crates.io-index"))
+
+
+class PathOverrideCheckout(unittest.TestCase):
+    def test_shared_runtime_path_override_is_found(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "app"
+            framework = Path(directory).resolve() / "shared-framework"
+            write(root, "Cargo.toml", '''[package]
+name = "catalog-fixture"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+makepad-widgets = { path = "../shared-framework/widgets" }
+''')
+            write(root, "src/lib.rs", "")
+            write(framework, "Cargo.toml", '[workspace]\nmembers = ["widgets"]\n')
+            write(framework, "widgets/Cargo.toml", '''[package]
+name = "makepad-widgets"
+version = "0.1.0"
+edition = "2021"
+''')
+            write(framework, "widgets/src/lib.rs", "")
+            write(framework, "apps/wm/Cargo.toml", "[package]\n")
+            upstream.run(["cargo", "generate-lockfile", "--offline"], root)
+            self.assertEqual(upstream.pinned_checkout(root), framework)
+
+
+class ShippedCatalog(unittest.TestCase):
+    def test_the_shipped_catalog_matches_the_pinned_revision(self):
+        """The generated rows are the ones in the tree. Drift here means the
+        catalog and the revision disagree about what the launcher can start,
+        which is the duplication this generation exists to remove."""
+        root = Path(upstream.__file__).resolve().parents[1]
+        try:
+            generated, problems = upstream.generated_catalog(root)
+        except upstream.SyncError as error:
+            self.skipTest(f"pinned checkout unavailable: {error}")
+        self.assertEqual(problems, [])
+        self.assertEqual(json.loads((root / "config/apps.json").read_text()), generated)

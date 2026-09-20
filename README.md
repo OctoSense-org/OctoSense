@@ -35,7 +35,7 @@ cargo build --release --workspace
 cargo run --release
 ```
 
-The first build downloads Makepad and other dependencies. Prepare the sibling framework sources with the setup command above. The host and Reference app need no Studio process, model download, or wallpaper download. The additional default apps use the sibling `../makepad` checkout and build on first launch; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+Prepare the sibling framework sources with the setup command above; the first build downloads any remaining dependencies. The host and Reference app need no Studio process, model download, or wallpaper download. The default apps resolve through Cargo's dependency graph and build on first launch from the same Makepad checkout as the host; unavailable apps are hidden. Fonts and other framework resources are read from that checkout during source development, so keep it available.
 
 On macOS, `.cargo/config.toml` sets the native menu-bar name to **OctoSense**.
 Makepad otherwise derives it from the checkout directory, which may still be
@@ -126,17 +126,17 @@ fails in the pinned Makepad Metal backend; see [validation](docs/validation.md).
 
 ## Add an app
 
-The default [config/apps.json](config/apps.json) includes Reference and the apps from the sibling `makepad` checkout. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
+The default [config/apps.json](config/apps.json) includes Reference and Makepad's own apps. Plain `cargo run` uses this catalog. An additional copy is available for explicit selection:
 
 ```sh
 cargo run -- --apps config/apps.makepad.json
 ```
 
-It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
+It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Finance, Mail, Notes, Calendar, Reminders, Calculator, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
 
-App source stays in `../makepad`; each app builds on demand using its package's normal default features and the source workspace's build cache. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
+Makepad's apps carry `"source": "makepad"` instead of a path: they resolve through Cargo's dependency graph to the shared runtime checkout prepared above, or to Cargo's cached checkout when Git dependencies are used without path overrides. Each app builds on demand using its package's normal default features. Those builds go to `~/.octosense/build/makepad` rather than into Cargo's cache, which Cargo alone manages. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
 
-Keep that checkout at the revision in `upstream/makepad.json` so hosted apps and the host use matching framework/protocol code. Reference remains available independently of that checkout. A personal `~/.octosense/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
+Hosted apps and the host therefore always share one revision's framework and protocol code. Reference builds from this repository and is available regardless. A personal `~/.octosense/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
 
 Applications must be compatible Makepad applications that support the `--stdin-loop` hosting protocol. Use the same Makepad revision as this project; the protocol is not a stable compatibility boundary across arbitrary revisions. Start from [apps/reference](apps/reference).
 
@@ -146,7 +146,7 @@ The default catalog is [config/apps.json](config/apps.json). To keep a personal 
 cargo run -- --apps /path/to/apps.json
 ```
 
-A catalog is a JSON array. Each entry chooses either a Cargo manifest or an executable:
+A catalog is a JSON array. Each entry chooses exactly one of a Cargo manifest, an installed executable, or a named upstream source:
 
 ```json
 [
@@ -164,11 +164,26 @@ A catalog is a JSON array. Each entry chooses either a Cargo manifest or an exec
     "label": "Installed Notes",
     "executable": "/opt/my-apps/notes",
     "policy": "focus"
+  },
+  {
+    "id": "browser",
+    "label": "Browser",
+    "source": "makepad",
+    "package": "makepad-browser",
+    "bin": "browser",
+    "policy": "focus"
   }
 ]
 ```
 
-Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell. `policy: "new"` opens a new instance; `"focus"` focuses an existing instance and is the default. Restart OctoSense after editing the catalog. Existing personal catalogs should rename `makeos-reference` package/bin entries to `octosense-reference`. Only apps with available launch targets appear in the launcher. Missing manifests, invalid catalogs, and failed starts are reported in the desktop/logs.
+`"source": "makepad"` names the host's Makepad dependency rather than a location: the row resolves through the checkout reported by Cargo, and is skipped on a host that has no such checkout. Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell. `policy: "new"` opens a new instance; `"focus"` focuses an existing instance and is the default. Restart OctoSense after editing the catalog. Existing personal catalogs should rename `makeos-reference` package/bin entries to `octosense-reference`. Only apps with available launch targets appear in the launcher. Missing manifests, invalid catalogs, and failed starts are reported in the desktop/logs.
+
+The Makepad rows in the shipped catalog are generated from upstream's own registry at the pinned revision, under the named adaptations in [config/apps.overlay.json](config/apps.overlay.json). Check for drift, or regenerate, with:
+
+```sh
+python3 scripts/upstream.py catalog
+python3 scripts/upstream.py catalog --apply
+```
 
 OctoSense adds the hosting arguments and connection settings itself. Do not add `--stdin-loop` or Studio connection variables to the catalog. For executable registrations, supply the app's resources as required by that app's packaging.
 
