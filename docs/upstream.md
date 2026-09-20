@@ -41,8 +41,9 @@ python3 scripts/upstream.py sync
 ```
 
 The shipped app catalog is generated from upstream's curated registry at the
-pinned revision, read out of the checkout Cargo already fetched. Report drift
-or regenerate with:
+pinned revision, read out of the Makepad checkout reported by Cargo. This can
+be the shared runtime's path override or Cargo's cached Git checkout. Report
+drift or regenerate with:
 
 ```sh
 python3 scripts/upstream.py catalog

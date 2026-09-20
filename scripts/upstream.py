@@ -184,10 +184,10 @@ def curated_apps(source):
 
 
 def pinned_checkout(root):
-    """The Makepad checkout Cargo fetched for this project's pinned revision.
+    """The Makepad checkout used by this project's Cargo dependency graph.
 
-    The apps the catalog launches live there, so nothing has to be cloned
-    beside this repository for them to resolve.
+    Shared runtime path overrides and Cargo's cached Git sources both carry
+    the apps that the catalog launches.
     """
     metadata = json.loads(run(
         ["cargo", "metadata", "--format-version", "1", "--locked", "--offline",
@@ -195,12 +195,13 @@ def pinned_checkout(root):
         root,
     ))
     for package in metadata.get("packages", ()):
-        if git_repo_name(package.get("source") or "") != "makepad":
+        source = package.get("source")
+        if source is not None and git_repo_name(source) != "makepad":
             continue
         for parent in Path(package["manifest_path"]).parents:
             if (parent / "apps/wm/Cargo.toml").is_file():
                 return parent
-    raise SyncError("cargo has not fetched the pinned makepad revision; build once first")
+    raise SyncError("cargo could not locate the makepad checkout; prepare the shared runtime and build once first")
 
 
 def package_binaries(checkout):

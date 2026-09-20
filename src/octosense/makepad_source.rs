@@ -1,10 +1,9 @@
-//! Locating the pinned Makepad checkout Cargo already fetched for us.
+//! Locating the Makepad checkout used by this build's Cargo dependencies.
 //!
 //! The catalog's process-hosted apps live in the Makepad repository, not in
-//! this one. Cargo clones that repository at the pinned revision to satisfy
-//! the git dependencies in `Cargo.toml`, so the app crates are already on
-//! disk; ask Cargo where, rather than requiring a second checkout beside
-//! this one.
+//! this one. Cargo reports either the shared runtime's path overrides or a
+//! cached Git checkout. Ask it which source this build uses so hosted apps
+//! use the same framework as the host.
 
 use makepad_strict_json::{self as json, Value};
 use std::path::{Path, PathBuf};
@@ -27,7 +26,8 @@ fn git_repo_name(source: &str) -> Option<String> {
 
 /// Manifests belonging to the pinned Makepad repository, as reported by
 /// `cargo metadata`. The repository vendors crates under their own names,
-/// so membership follows the git URL rather than the package name.
+/// so Git membership follows the URL rather than the package name. Path
+/// overrides have a null source and are identified by the WM tree instead.
 pub fn makepad_manifests(metadata: &[u8]) -> Result<Vec<PathBuf>, String> {
     // Cargo's graph nests one level past the strict default; bound it
     // generously rather than leaving the depth unchecked.
@@ -39,12 +39,17 @@ pub fn makepad_manifests(metadata: &[u8]) -> Result<Vec<PathBuf>, String> {
         .ok_or("cargo metadata has no packages array")?;
     Ok(packages
         .iter()
-        .filter(|package| {
-            package
-                .get("source")
+        .filter(|package| match package.get("source") {
+            Some(Value::Null) => package
+                .get("manifest_path")
                 .and_then(Value::as_str)
+                .and_then(|path| repo_root_for(Path::new(path)))
+                .is_some(),
+            Some(source) => source
+                .as_str()
                 .and_then(git_repo_name)
-                .is_some_and(|name| name == "makepad")
+                .is_some_and(|name| name == "makepad"),
+            None => false,
         })
         .filter_map(|package| package.get("manifest_path").and_then(Value::as_str))
         .map(PathBuf::from)
@@ -67,8 +72,8 @@ pub fn makepad_root() -> Option<&'static Path> {
     static ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
     ROOT.get_or_init(|| {
         let project = crate::octosense::paths::project_root()?;
-        // Offline on purpose: the revision is already on disk, because
-        // building this binary is what put it there. Resolving must never
+        // Offline on purpose: this binary's framework sources are already
+        // on disk, either prepared by setup or fetched by Cargo. Never
         // reach the network on the way to opening a menu.
         let output = std::process::Command::new("cargo")
             .args([
@@ -123,12 +128,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_shared_runtime_path_override_is_found() {
+        let tmp =
+            std::env::temp_dir().join(format!("octosense-makepad-path-{}", std::process::id()));
+        let root = tmp.join("shared-framework");
+        std::fs::create_dir_all(root.join("apps/wm")).unwrap();
+        std::fs::write(root.join("apps/wm/Cargo.toml"), b"[package]").unwrap();
+        let manifest = root.join("widgets/Cargo.toml");
+        let metadata = format!(
+            r#"{{"packages":[
+                {{"name":"makepad-widgets","source":null,"manifest_path":{}}},
+                {{"name":"octosense","source":null,"manifest_path":{}}},
+                {{"name":"makepad-diagram-kit","source":null,"manifest_path":{}}}
+            ]}}"#,
+            json::s(manifest.to_string_lossy()).to_json(),
+            json::s(tmp.join("app/Cargo.toml").to_string_lossy()).to_json(),
+            json::s(tmp.join("makepad-diagram-kit/Cargo.toml").to_string_lossy()).to_json(),
+        );
+        let manifests = makepad_manifests(metadata.as_bytes()).unwrap();
+        std::fs::remove_dir_all(&tmp).unwrap();
+        assert_eq!(manifests, [manifest]);
+    }
+
     /// A vendored crate sits several directories below the checkout root;
     /// the launcher needs the root itself to reach `apps/`.
     #[test]
     fn the_repository_root_is_the_tree_holding_the_wm_this_project_forked_from() {
-        let tmp = std::env::temp_dir()
-            .join(format!("octosense-makepad-root-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("octosense-makepad-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         let root = tmp.join("checkouts/makepad-d00a/ad8f372");
         std::fs::create_dir_all(root.join("apps/wm")).unwrap();
@@ -148,8 +176,8 @@ mod tests {
     /// launch every catalog row against the wrong tree.
     #[test]
     fn this_project_is_not_mistaken_for_the_makepad_checkout() {
-        let tmp = std::env::temp_dir()
-            .join(format!("octosense-not-makepad-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("octosense-not-makepad-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(tmp.join("apps/reference")).unwrap();
         std::fs::write(tmp.join("Cargo.toml"), b"[workspace]").unwrap();
@@ -162,12 +190,20 @@ mod tests {
     }
 
     /// The end-to-end path against this project's own dependency graph:
-    /// building these tests already fetched the revision, so the apps the
-    /// catalog launches must be reachable without a second checkout.
+    /// building these tests already required the framework sources, so the
+    /// catalog must resolve them whether they are Git or path dependencies.
     #[test]
-    fn the_checkout_cargo_fetched_for_this_build_is_found() {
-        let root = makepad_root().expect("cargo fetched the pinned makepad checkout");
-        assert!(root.join("apps/wm/Cargo.toml").is_file(), "{}", root.display());
-        assert!(root.join("apps/browser/Cargo.toml").is_file(), "{}", root.display());
+    fn the_checkout_cargo_uses_for_this_build_is_found() {
+        let root = makepad_root().expect("cargo resolved the build's makepad checkout");
+        assert!(
+            root.join("apps/wm/Cargo.toml").is_file(),
+            "{}",
+            root.display()
+        );
+        assert!(
+            root.join("apps/browser/Cargo.toml").is_file(),
+            "{}",
+            root.display()
+        );
     }
 }

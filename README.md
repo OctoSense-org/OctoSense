@@ -1,5 +1,21 @@
 # OctoSense
 
+## Shared Octoscript-Makepad runtime
+
+`native-runtime.lock.json` selects one
+[Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad)
+release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
+shared with AppCards, Mail and the other OctoSense applications.
+
+Before building, run `python3 tools/setup-native.py` (Python 3.9+). The framework
+repositories are siblings of this app: `../octoscript-makepad`, `../makepad`
+and `../octoscript`. Local changes are preserved; `--update` only updates clean
+checkouts. CI verifies the selected release and rejects duplicate Makepad sources.
+Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
+to check the local dependency graph. Existing platform rendering backends remain
+part of their applications; the framework controls the shared VM and UI sources.
+
+
 A Makepad desktop that hosts compatible applications inside one window. The shell comes from Makepad's WM app; framework libraries remain external Cargo dependencies pinned to the same upstream commit.
 
 ## Run
@@ -19,20 +35,20 @@ cargo build --release --workspace
 cargo run --release
 ```
 
-The first build downloads Makepad and other dependencies. Nothing needs a sibling Makepad checkout, Studio process, model download, or wallpaper download. The default apps build on first launch from the pinned revision Cargo already fetched, so a fresh clone has the whole catalog; unavailable apps are hidden. Fonts and other framework resources are read from Cargo's dependency checkout during source development, so keep that cache available.
+Prepare the sibling framework sources with the setup command above; the first build downloads any remaining dependencies. The host and Reference app need no Studio process, model download, or wallpaper download. The default apps resolve through Cargo's dependency graph and build on first launch from the same Makepad checkout as the host; unavailable apps are hidden. Fonts and other framework resources are read from that checkout during source development, so keep it available.
 
 On macOS, `.cargo/config.toml` sets the native menu-bar name to **OctoSense**.
 Makepad otherwise derives it from the checkout directory, which may still be
 named `makeos`. Rebuild and relaunch after updating; Cargo regenerates the
 development `Info.plist` automatically.
 
-The build target selects the startup shell automatically: Android uses the Android phone layout, iOS uses the iOS phone layout, and desktop/web builds keep Omarchy. You can still switch styles from the shell's style menu. Native phone toolbars are 48 points high and respect the window's safe-area insets.
+The build target selects the startup shell automatically: desktop/web builds start with **OctoSense Light** and its bundled wallpaper, Android uses the Android phone layout, and iOS uses the iOS phone layout. You can still switch styles from the shell's style menu. Native phone toolbars are 48 points high and respect the window's safe-area insets.
 
 The default desktop starts empty. AI assistant startup, background app prewarming, demo filesystem generation, and wallpaper downloads are off. **System → Quit OctoSense** closes the desktop and its hosted processes.
 
-Omarchy starts with a bundled Tokyo Night wallpaper, so the background works offline on a fresh install. Installed images in `~/.octosense/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
+Selecting Omarchy uses a bundled Tokyo Night wallpaper, so its background also works offline on a fresh install. Installed images in `~/.octosense/wm/themes/tokyo-night/backgrounds/` take precedence. Use `cargo run -- --download-wallpapers` to fetch the theme’s full wallpaper set; **⌘CtrlSpace** cycles installed backgrounds. Asset provenance is in [resources/wallpapers/README.md](resources/wallpapers/README.md).
 
-Eight desktop styles are available, including **OctoSense**, a floating desktop with Liquid Glass window frames, dock, bar and popups. Press **⌘Space**, type **OctoSense**, and press Enter to select its light appearance. Click **Light / Dark** beside the style name in the top bar to switch appearances, or search for **OctoSense Dark** directly. Light uses pearl and pale aqua surfaces with dark text; Dark keeps the ink-blue palette. Both include matching versions of **Abyssal Currents**, the original oceanic wallpaper, and rounded hosted surfaces. The wallpaper switches with the appearance, fills the window with a centered crop and works offline. Desktop startup remains Omarchy; Android retains its animated background.
+Eight desktop styles are available. The default **OctoSense** is a floating desktop with Liquid Glass window frames, dock, bar and popups. Click **Light / Dark** beside the style name in the top bar to switch appearances, or press **⌘Space** and search for **OctoSense Dark** directly. Light uses pearl and pale aqua surfaces with dark text; Dark keeps the ink-blue palette. Both include matching versions of **Abyssal Currents**, the original oceanic wallpaper, and rounded hosted surfaces. The wallpaper switches with the appearance, fills the window with a centered crop and works offline. Android retains its animated background.
 
 Use **⌘Space** for the menu, **⌘W** to close a tile, **⌘F** for tile fullscreen, **⌘1…0** to switch workspaces, and **⌘Shift1…0** to move the focused tile. The menu's **Learn → Keybindings** lists the inherited bindings; shortcuts for apps absent from your catalog report that the app is unavailable.
 
@@ -48,7 +64,7 @@ The Android launcher label is **OctoSense** and its application ID is `dev.makep
 
 `run` builds, installs, and launches the app; `build` only creates the APK.
 Native Android/iOS builds automatically link **Reference, Sheets, and Photos**
-as embedded apps. They need no sibling checkout or extra feature flags. On an
+as embedded apps. They need no extra feature flags after runtime setup. On an
 installed device, the launcher derives its default catalog from those linked
 modules. Missing Clock/Weather tiles give their space to the available app icons.
 
@@ -118,7 +134,7 @@ cargo run -- --apps config/apps.makepad.json
 
 It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Finance, Mail, Notes, Calendar, Reminders, Calculator, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
 
-Makepad's apps carry `"source": "makepad"` instead of a path: they resolve through the checkout Cargo fetched for the revision in `upstream/makepad.json`, so the catalog works on any clone without a second checkout beside it. Each app builds on demand using its package's normal default features. Those builds go to `~/.octosense/build/makepad` rather than into Cargo's cache, which Cargo alone manages. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
+Makepad's apps carry `"source": "makepad"` instead of a path: they resolve through Cargo's dependency graph to the shared runtime checkout prepared above, or to Cargo's cached checkout when Git dependencies are used without path overrides. Each app builds on demand using its package's normal default features. Those builds go to `~/.octosense/build/makepad` rather than into Cargo's cache, which Cargo alone manages. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
 
 Hosted apps and the host therefore always share one revision's framework and protocol code. Reference builds from this repository and is available regardless. A personal `~/.octosense/apps.json` takes precedence over the project default, while `--apps` always selects the named file. Relative manifest paths are based on the catalog's directory, so use absolute paths if moving this catalog into your home directory.
 
@@ -160,7 +176,7 @@ A catalog is a JSON array. Each entry chooses exactly one of a Cargo manifest, a
 ]
 ```
 
-`"source": "makepad"` names the pinned Makepad revision rather than a location: the row resolves through the checkout Cargo fetched for `upstream/makepad.json`, and is skipped on a host that has no such checkout. Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell. `policy: "new"` opens a new instance; `"focus"` focuses an existing instance and is the default. Restart OctoSense after editing the catalog. Existing personal catalogs should rename `makeos-reference` package/bin entries to `octosense-reference`. Only apps with available launch targets appear in the launcher. Missing manifests, invalid catalogs, and failed starts are reported in the desktop/logs.
+`"source": "makepad"` names the host's Makepad dependency rather than a location: the row resolves through the checkout reported by Cargo, and is skipped on a host that has no such checkout. Relative paths resolve from the catalog's directory. Arguments are passed literally, without a shell. `policy: "new"` opens a new instance; `"focus"` focuses an existing instance and is the default. Restart OctoSense after editing the catalog. Existing personal catalogs should rename `makeos-reference` package/bin entries to `octosense-reference`. Only apps with available launch targets appear in the launcher. Missing manifests, invalid catalogs, and failed starts are reported in the desktop/logs.
 
 The Makepad rows in the shipped catalog are generated from upstream's own registry at the pinned revision, under the named adaptations in [config/apps.overlay.json](config/apps.overlay.json). Check for drift, or regenerate, with:
 
@@ -236,4 +252,4 @@ The first smoke command checks hosted input, workspace movement, fullscreen resi
 
 See the [validation record](docs/validation.md). Source builds and process hosting are the initial target on macOS. Linux/Windows branches are retained but have not been validated here. A relocatable `.app`, installer, web/mobile delivery, and a Linux session compositor are separate work.
 
-The copied Makepad source is covered by its [original MIT notice](LICENSES/Makepad-MIT.txt). Dependencies retain their respective licenses.
+OctoSense is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). The copied Makepad source is covered by its [original MIT notice](LICENSES/Makepad-MIT.txt). Dependencies retain their respective licenses.

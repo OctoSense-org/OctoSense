@@ -1,3 +1,36 @@
+# OctoSense default-theme validation — 2026-09-12
+
+On `feat/octosense-default`, desktop/web startup selects OctoSense Light with
+its bundled Abyssal Currents wallpaper. Startup applies the complete style and
+settles its layout before the first frame. Native Android and iOS retain their
+platform shells, and all styles remain selectable from the menu.
+
+Verified on macOS:
+
+- The updated startup-policy test failed with Omarchy before the change.
+  All **219 Rust tests** and **49 Python tests** passed afterward; the nine
+  smoke-helper tests also passed after the final harness adjustments.
+- Locked debug and release workspace builds passed.
+- Native release smoke passed all eight styles, both OctoSense appearances,
+  Reference input, workspace/fullscreen operations, independent instances,
+  failed-launch handling and shutdown cleanup.
+- Plain `cargo run` with the shipped catalog passed the native smoke. Reviewed
+  frames show the light wallpaper, app launcher, hosted Reference and empty
+  workspace. No mobile device or web runtime validation was performed.
+
+The native harness now captures the final scrolled menu instead of waiting for
+a presented frame after each arrow key, which timed out in the pinned backend.
+It also captures the empty workspace as pixels: querying hidden captured widgets
+through Makepad's snapshot API panics in `Area::clipped_rect` while traversing an
+old draw area. Visible-app snapshots still verify input and retained state.
+The framework dependency was not changed.
+
+Evidence is in `target/octosense-default/`; successful runtime runs are
+`smoke-styles-final/` and `smoke-cargo-run-final/`. The inspection-API backtrace
+is retained in `smoke-default-trace/host.log`.
+
+---
+
 # macOS application-name validation — 2026-09-11
 
 On `fix/macos-app-name`, `.cargo/config.toml` explicitly sets

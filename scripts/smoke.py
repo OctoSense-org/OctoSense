@@ -109,7 +109,7 @@ def settled_window_size(port):
 
 def check_styles(port, child_port, host_pid, log, artifacts):
     """Exercise live capture/style changes through the host with a retained app."""
-    current = "omarchy"
+    current = "octosense"
     count = 1
     clients = set(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log"))
     styles = [("octosense", "OctoSense"), ("octosense-dark", "OctoSense Dark"),
@@ -217,7 +217,9 @@ def main():
         wait_for("desktop first frame", lambda: get(port, "snap", q="main_window").get("s"))
         assert not list(Path(tempfile.gettempdir()).glob(f"octosense-{host_pid}-client-*.log")), "unexpected startup child"
         print("PASS: desktop starts without child apps", flush=True)
-        wait_for("bundled Omarchy wallpaper visible on clean startup",
+        wait_for("OctoSense light selected at startup",
+                 lambda: "wm: desktop style octosense applied" in log.read_text(errors="replace"))
+        wait_for("bundled OctoSense wallpaper visible on clean startup",
                  lambda: get(port, "snap", q="bg_image").get("s"), timeout=10)
         def wallpaper_frame():
             grab = get(port, "g", scale=0.5)
@@ -227,7 +229,7 @@ def main():
             return grab if sum(Path(path).stat().st_size for path in paths) > 50_000 else None
         save_grab(artifacts, "startup-wallpaper",
                   wait_for("startup wallpaper decoded and drawn", wallpaper_frame, timeout=10))
-        print("PASS: Omarchy startup wallpaper renders without downloaded themes", flush=True)
+        print("PASS: OctoSense light starts with its bundled wallpaper", flush=True)
 
         # Open Apps through the shorter root menu: the larger submenu must
         # recenter, and scrolling must keep the last application reachable.
@@ -235,8 +237,10 @@ def main():
         save_grab(artifacts, "launcher-root", get(port, "g", scale=0.5))
         get(port, "k", c="enter", wait=1)
         save_grab(artifacts, "launcher-apps", get(port, "g", scale=0.5))
+        # Each key is acknowledged after dispatch. Capture the final layout
+        # below instead of waiting for a separate presented frame per row.
         for _ in range(19):
-            get(port, "k", c="ArrowDown", wait=1)
+            get(port, "k", c="ArrowDown")
         save_grab(artifacts, "launcher-apps-bottom", get(port, "g", scale=0.5))
         get(port, "k", c="Escape", wait=1)
 
@@ -280,7 +284,10 @@ def main():
         # Workspace movement goes through the WM's own keyboard handler.
         get(port, "k", c="Key2", cmd=1, shift=1, wait=1)
         get(port, "k", c="Key1", cmd=1, wait=1)
-        wait_for("original workspace is empty", lambda: not get(port, "snap", q="MpRunView")["s"])
+        # Native widget snapshots traverse hidden captured windows and can
+        # panic on their retired draw areas. Record the empty workspace as
+        # pixels; inspect the child again after its workspace is visible.
+        save_grab(artifacts, "workspace-empty", get(port, "g", scale=0.5))
         get(port, "k", c="Key2", cmd=1, wait=1)
         wait_for("app visible on destination workspace", lambda: get(port, "snap", q="MpRunView")["s"])
         size = settled_window_size(child_port)

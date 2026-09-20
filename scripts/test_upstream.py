@@ -738,6 +738,31 @@ class PinnedCheckout(unittest.TestCase):
         self.assertIsNone(upstream.git_repo_name("registry+https://github.com/rust-lang/crates.io-index"))
 
 
+class PathOverrideCheckout(unittest.TestCase):
+    def test_shared_runtime_path_override_is_found(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "app"
+            framework = Path(directory).resolve() / "shared-framework"
+            write(root, "Cargo.toml", '''[package]
+name = "catalog-fixture"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+makepad-widgets = { path = "../shared-framework/widgets" }
+''')
+            write(root, "src/lib.rs", "")
+            write(framework, "Cargo.toml", '[workspace]\nmembers = ["widgets"]\n')
+            write(framework, "widgets/Cargo.toml", '''[package]
+name = "makepad-widgets"
+version = "0.1.0"
+edition = "2021"
+''')
+            write(framework, "widgets/src/lib.rs", "")
+            write(framework, "apps/wm/Cargo.toml", "[package]\n")
+            upstream.run(["cargo", "generate-lockfile", "--offline"], root)
+            self.assertEqual(upstream.pinned_checkout(root), framework)
+
+
 class ShippedCatalog(unittest.TestCase):
     def test_the_shipped_catalog_matches_the_pinned_revision(self):
         """The generated rows are the ones in the tree. Drift here means the
@@ -750,4 +775,3 @@ class ShippedCatalog(unittest.TestCase):
             self.skipTest(f"pinned checkout unavailable: {error}")
         self.assertEqual(problems, [])
         self.assertEqual(json.loads((root / "config/apps.json").read_text()), generated)
-
