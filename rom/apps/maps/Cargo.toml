@@ -10,12 +10,12 @@ publish = false
 # shell's clock is.
 libc = "0.2"
 # `maps`: the MapView vector-tile renderer and its archive readers.
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8", features = ["maps"] }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
-makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8", features = ["maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8" }
 # The executor half of the module contract: its manifest and call types.
-makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8" }
 # The route, its maneuvers and the session that map-matches a position onto
 # it. No dependencies of its own; the routes come from OSRM (routing.rs).
-makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "783ad27a34c0b4d5854d0642ea2ae6181fdb11e8" }
