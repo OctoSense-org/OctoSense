@@ -251,6 +251,24 @@ an Android phone, which was not tried.
 Nothing has been offered upstream. Carried only in the fork, the two GL
 patches will conflict on the fork's next sync from upstream.
 
+## The flashing fix
+
+A second fork change waits for a pin move (`BACKLOG.md` MOBILE-08):
+`OctoSense-org/makepad#16`, branch `fix/gl-skipped-draw-telemetry`, two
+commits on `e7c1cdf6c`. The GL backend left a draw item out of the frame
+when the GPU memory ledger refused its instance buffer, and asked for a
+repaint that was refused the same way, so the phone shell flashed between
+black, half-drawn and complete frames once a map's tiles were resident and
+the activity's surface had been recreated. The backend now charges a draw
+item that is being drawn whatever the limit says, as Metal does and as
+upstream's GL backend does since `a67096d20`, and it logs, at most once a
+second and only while it happens, why it skipped draw items
+(`gl: draw items skipped since the last report: …`). That line is silent in
+normal use; on a phone that misdraws it is the first thing to read.
+
+Upstream already has the reservation change. The log line is a candidate
+for upstream; WebGL and D3D11 in the fork still use the refusable call.
+
 ## Adopting a fork revision
 
 The steps MAPS-16 took, for any later pin move. On 2026-09-19 they were
