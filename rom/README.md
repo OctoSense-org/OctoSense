@@ -133,7 +133,7 @@ cargo run --release --features mobile-only
 cargo run --release --features mobile-only -- --test-action island:demo --test-action capture:/tmp/shell.png
 ```
 
-`--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`, `ask-appcard:<text>`) and `capture:<path>` writes the presented frame every 5 s, so a scripted run can be looked at without a screen. A plain `cargo run` is the universal desktop shell of the desktop repository; it is kept building here but is not this repository's product.
+`--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`, `ask-appcard:<text>`) and `capture:<path>` writes the presented frame every 5 s, so a scripted run can be looked at without a screen. A plain `cargo run` is the universal desktop shell of the desktop repository; it is kept building here but is not this repository's product. Like that repository's, it starts in **OctoSense Light** with its bundled wallpaper, settled before the first frame; Omarchy and the other styles remain in the style menu.
 
 ## Photos
 
