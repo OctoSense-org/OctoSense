@@ -13,7 +13,7 @@ thing the pin cannot see.
 
 ## How the fork's tool differs from upstream
 
-Measured on 2026-09-18, fork `OctoSense-org/makepad` `main` at `bb45d411`
+Measured on 2026-09-18, fork `OctoSense-org/makepad` `main` at `6e5898fe`
 against upstream `makepad/makepad` at `16ccd92`:
 
 | `tools/cargo_makepad/src/…` | Upstream | Fork | Differing lines |

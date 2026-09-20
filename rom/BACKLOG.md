@@ -113,8 +113,8 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   at startup is MOBILE-07.
 
   The fork's `feat/ios-bringup` (packager fix, iOS storage root) is merged
-  (makepad#13) and pinned since 2026-09-18: framework `bb45d411`,
-  Octoscript `fda29037`, Octoscript-Makepad `1925c5f7`.
+  (makepad#13) and pinned since 2026-09-18: framework `6e5898fe`,
+  Octoscript `68f6a9df`, Octoscript-Makepad `2c9fe791`.
 
   Acceptance: rotation checked on the device.
 
@@ -188,7 +188,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   while the running instance had itself been started by a HOME intent.
 
   Fixed on 2026-09-17 in the fork (`feat/news-reader-platform`,
-  `5c5b6b443`): the newest `MakepadActivity` owns the native side and an
+  `9f0621b4b`): the newest `MakepadActivity` owns the native side and an
   instance it replaces is superseded — its surface and lifecycle callbacks
   no longer reach native, and it finishes — and `initChoreographer` no
   longer starts a second render loop. Checked on the device: force-stop,
@@ -203,12 +203,12 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 - [x] **MOBILE-06 — P1: Adopt the fork's `feat/news-reader-platform` revision.**
 
   The host's storage root (`src/octosense/paths.rs`, NEWS-09) and the News
-  reader call framework APIs the pinned revision `d4502ef` does not have:
+  reader call framework APIs the pinned revision `3a5ff12` does not have:
   `home::platform_data_dir`, `CxSystemBrowser::spawn_navigable` and the
   `NativeSystemBrowserPageError` action, with their Android activity and
   JNI side and the `news` app icon. They are published on the fork's
   `feat/news-reader-platform` branch
-  (`5c5b6b443`, four commits on `d4502ef`),
+  (`9f0621b4b`, four commits on `3a5ff12`),
   not on its `main`. Until the pin moves, this tree builds only against a
   `../makepad` checkout of that branch, and
   `tools/setup-native.py --check` rejects the checkout.
@@ -220,7 +220,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
 
   Done on 2026-09-17: the branch merged to the fork's `main` as
   `03091405` (OctoSense-org/makepad#12); Octoscript pinned to it at
-  `68f65cd3` (Octoscript#31); Octoscript-Makepad released at `77c1e50b`
+  `117232cd` (Octoscript#31); Octoscript-Makepad released at `36e6ea19`
   (Octoscript-Makepad#24) naming both; `native-runtime.lock.json` and the
   makepad `rev` in the five manifests here moved to those revisions, and
   `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
@@ -240,7 +240,7 @@ iOS target compiles (MOBILE-01).
 
 ## UPSTREAM-02: PortalList ignores set_visible
 
-At ad8f3729 `PortalList` keeps the `Widget` trait's no-op `set_visible`, so a
+At dd8562e2 `PortalList` keeps the `Widget` trait's no-op `set_visible`, so a
 list is hidden only by wrapping it in a view (News keeps its list in a
 `list_box`); drop the wrapper once the widget honours visibility.
 
@@ -454,19 +454,22 @@ found on the way. `docs/maps.md` describes what is there.
 
   Adopted on 2026-09-19. The four framework fixes OctosMap needs on a
   phone (MAPS-12 to MAPS-15) merged into the fork's `main` as
-  `OctoSense-org/makepad#15` (`c31667a9d`); `Octoscript-Makepad#28` named
-  that revision in `runtime.json` (`709c97a2f`); and this repo's
+  `OctoSense-org/makepad#15` (`e7c1cdf6c`); `Octoscript-Makepad#28` named
+  that revision in `runtime.json` (`e2d68f1d7`); and this repo's
   `native-runtime.lock.json` and six manifests moved with it. `Cargo.lock`
-  did not change. What the fixes mean for the other apps, which of them are
-  candidates for upstream Makepad, and the steps of a pin move are in
+  did not change. The history rewrite later that day gave all of these new
+  hashes, the ones written here, and #29 moved the pins to them: the lock
+  now names `14fe992bf`, whose `runtime.json` names `e7c1cdf6c`. What the
+  fixes mean for the other apps, which of them are candidates for upstream
+  Makepad, the rewrite, and the steps of a pin move are in
   `docs/makepad-fork.md`.
 
   | Commit | Fixes |
   |---|---|
-  | `b163a29ea` opengl: draw nothing for a pass that has no draw list | MAPS-13 |
-  | `2733ad531` android: report a cancelled HTTP request and mark requests dispatched | MAPS-12 |
-  | `5d10a3fec` opengl: bind compact vertex formats | MAPS-14 |
-  | `e0bd59cf6` map: the navigation layer clears only its own puck | MAPS-15 |
+  | `5a9c20b0d` opengl: draw nothing for a pass that has no draw list | MAPS-13 |
+  | `343053f8a` android: report a cancelled HTTP request and mark requests dispatched | MAPS-12 |
+  | `136dea82a` opengl: bind compact vertex formats | MAPS-14 |
+  | `d3d740808` map: the navigation layer clears only its own puck | MAPS-15 |
 
   Verified on the OnePlus 6T on 2026-09-18 with a release APK built against
   the branch, whose tree is identical to the pinned revision's: see

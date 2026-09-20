@@ -8,7 +8,7 @@
 - Found and fixed on the way: a turn within the session's 3 m look-ahead of the start was never announced (OSRM sets off a metre before a corner); the chase paused with no finger on the screen, because `MapView` reports guidance's own camera moves too.
 - Tasks 12–13: the settings and the last camera in the storage jail; 83 tests in the crate.
 - Task 14: linked into the shell behind `app-maps` (unconditional on Android and iOS), both catalogs, the App Library, the launcher icons, the iOS location sentence. `cargo check --locked --workspace --features mobile-apps` and `tools/setup-native.py --check` pass.
-- `mobile_island::tests::hidden_while_the_shade_is_pulled_or_open` fails on this branch and on `main` (`c5d8987`) alike: not this work's, left alone.
+- `mobile_island::tests::hidden_while_the_shade_is_pulled_or_open` fails on this branch and on `main` (`72d9614`) alike: not this work's, left alone.
 - Task 16: opened in the phone shell on macOS, in-process (`--module maps --test-action launch-maps`, the shell's frame capture and its `taps:` action, an isolated `OCTOSENSE_HOME`). Found there and fixed: the sea was the page's colour (two ocean overlays), and the home icon was the generic one (the shell's icon wrapper draws the route app's art for `maps`).
 - A whole-feature review and a pass of my own over the view: thirteen fixes, listed in the plan. The view's tests now fail on a run-time script error, which is how two broken padding updates would have been caught. 95 tests in the crate.
 - The FOSSGIS routing server was down for a while during the review (refused from outside this network too); the app's error path was seen working on screen.

@@ -6,13 +6,13 @@ on the makepad fork's AppCard framework line and needs three things the stock
 
 1. **The framework pin.** `Cargo.toml`, `apps/reference/Cargo.toml` and
    `apps/appcard/Cargo.toml` pin every makepad crate at the fork's
-   `port/appcard-on-octoscript` branch (`ad8f3729d2c24ba5a3bda5c8865a2b8366480147`):
+   `port/appcard-on-octoscript` branch (`dd8562e2c87ee835bf7ff282db3e1052eb15bad3`):
    the octoscript line plus the AppCard framework — the `sys.*` / `agent.*`
    engine installed into every Splash isolate, the fetch layer, `gps.rs`, the
    AppCard widget set, fonts and textures. Nothing to do at build time; it is
    the pinned rev.
 2. **The buildtool `cargo-makepad`.** The fork's `port/appcard-on-octoscript-buildtool`
-   branch (`1b11c4a395bc35af95162897293cc9ab1d3b791d`) is that framework plus
+   branch (`557effba373ef069ebe3df5ec071ebdfe4c99270`) is that framework plus
    AppCard's Java activity: GPS `LocationListener` → `makepad_platform::gps`,
    notifications, share and deep-link intents, WebView bridge, file picker,
    `downloadFile`, `MAKEPAD_ANDROID_EXTRA_LIBS` and `--min-api`. It also honours
