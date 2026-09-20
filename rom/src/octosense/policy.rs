@@ -15,7 +15,7 @@ fn startup_style_for_os(target_os: &str, mobile_only: bool) -> crate::desktop::D
     match target_os {
         "android" => DesktopStyle::Android,
         "ios" => DesktopStyle::Ios,
-        _ => DesktopStyle::Omarchy,
+        _ => DesktopStyle::OctoSense,
     }
 }
 
@@ -38,9 +38,9 @@ mod tests {
     }
 
     #[test]
-    fn desktop_and_web_keep_the_existing_default() {
+    fn desktop_and_web_start_with_octosense() {
         for target_os in ["macos", "windows", "linux", "freebsd", "unknown"] {
-            assert_eq!(startup_style_for_os(target_os, false), DesktopStyle::Omarchy);
+            assert_eq!(startup_style_for_os(target_os, false), DesktopStyle::OctoSense);
         }
     }
 }

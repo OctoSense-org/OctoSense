@@ -5239,7 +5239,7 @@ dependencies = [
 [[package]]
 name = "octos-core"
 version = "2.0.3-rc.11"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=fd321b36bb97078db0b2ee7919a4e530a53af91f#fd321b36bb97078db0b2ee7919a4e530a53af91f"
+source = "git+https://github.com/octos-org/octos.git?rev=deb433e9a452c03d8fe7f4f6a26b42785c47ced7#deb433e9a452c03d8fe7f4f6a26b42785c47ced7"
 dependencies = [
  "chrono",
  "eyre",
@@ -5253,7 +5253,7 @@ dependencies = [
 [[package]]
 name = "octos-core"
 version = "2.0.3-rc.11"
-source = "git+https://github.com/octos-org/octos.git?rev=deb433e9a452c03d8fe7f4f6a26b42785c47ced7#deb433e9a452c03d8fe7f4f6a26b42785c47ced7"
+source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=fd321b36bb97078db0b2ee7919a4e530a53af91f#fd321b36bb97078db0b2ee7919a4e530a53af91f"
 dependencies = [
  "chrono",
  "eyre",
