@@ -22,7 +22,7 @@ Three constraints shape the answer.
 
 ### 1. Two repositories, two jobs
 
-- **`octosense-apps`** holds code we compile: modules, their entry crates, the host and policy crates. Pull requests here are source, reviewed as code, shipped in a shell release.
+- **`octosense-apps`** holds code we compile: modules and their entry crates. Pull requests here are source, reviewed as code, shipped in a shell release. The hub's own code — the policy and hub crates, the store module and the hosts — lives with the catalog in `octosense-app-hub` under `crates/`, so an app repository never carries hub code and the catalog never depends on an app.
 - **`octosense-app-hub`** holds no app code. It holds the index, the checks, the artifact store and the signed catalog. Publishing is a pull request that adds one index entry.
 
 A developer of a card app keeps their app in their own repository. What they send the hub is an index entry: the manifest, the bundle hash, their key identity, the source repository and commit, and a status field.
