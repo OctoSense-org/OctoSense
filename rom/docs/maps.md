@@ -137,8 +137,11 @@ cargo run --features mobile-only,mobile-apps -- --module maps \
 Verified on 2026-09-18 on macOS: the log reads `modules linked: [..., "maps"]`
 and `launched maps as client 1 (in-process)`; the app draws under the shell's
 status bar and above its gesture bar; a tap delivered by the shell
-(`--test-action taps:200,76@9`) opens Search; the home grid shows the app
-with the route app's icon.
+(`--test-action taps:200,76@9`) opens Search; the home grid shows the app.
+
+Its icon, a folded map under a red pin on green, is this shell's own
+artwork, not the framework's (which has none for OctosMap and lent it the
+route app's until 2026-09-19): see "App icons" in the README.
 
 On the OnePlus 6T (Android 9) on 2026-09-18, a release APK of this branch
 built against the fork's `fix/android-map-archive` branch: four framework
