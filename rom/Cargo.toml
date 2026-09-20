@@ -47,18 +47,18 @@ path = "src/main.rs"
 libc = "0.2"
 # `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669", features = ["appcard", "maps"] }
-makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
-makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
-makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8", features = ["appcard", "maps"] }
+makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
 # The AI services wire only: the WM relays frames between the aichat child and the apps.
-makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
-makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
 # In-process hosting (aicontrol §3): the module contract, the palette applied
 # into each instance's isolate, and the modules this build links.
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669", default-features = false, optional = true }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8" }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8", default-features = false, optional = true }
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native", optional = true }
@@ -68,13 +68,16 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 # News: headlines from Hacker News, TechMeme, Google News and the person's
 # own feeds, in a tab per source; a wide home tile on the phone.
 octosense-news = { path = "apps/news", optional = true }
+# The Camera (Octoscript-AppCard apps/camera/native): the Mate 70 Air camera
+# replica, drawn over Makepad's video input (Android's NDK camera on the phone).
+octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native", optional = true }
 # OctosMap: a map under a search bar, places, directions by car, on foot and
 # by bike, and turn-by-turn navigation.
 octosense-maps = { path = "apps/maps", optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
-makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669", default-features = false, optional = true }
+makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8", default-features = false, optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
@@ -83,8 +86,9 @@ octosense-reference = { path = "apps/reference" }
 octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
 octosense-news = { path = "apps/news" }
+octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native" }
 octosense-maps = { path = "apps/maps" }
-makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3c82c18f42baa8e4a20d1efe4e42d07df1197669", default-features = false }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "23bba1652a7898753bae1e24113c246eb5edffd8", default-features = false }
 octosense-photos = { path = "apps/photos" }
 
 [features]
@@ -95,7 +99,7 @@ default = []
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps", "app-camera"]
 app-mail = ["dep:octosense-mail"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
@@ -106,6 +110,8 @@ app-photos = ["dep:octosense-photos"]
 app-appcard = ["dep:octosense-appcard"]
 # The News module (headlines in a tile) linked in.
 app-news = ["dep:octosense-news"]
+# The Camera module (the Mate 70 Air replica over Makepad video input) linked in.
+app-camera = ["dep:octosense-camera"]
 # The OctosMap module (maps, places, directions, navigation) linked in.
 app-maps = ["dep:octosense-maps"]
 # The aichat module linked in (the pane seats it in-process where there are

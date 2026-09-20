@@ -57,6 +57,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_news::NEWS_MODULE);
     #[cfg(any(feature = "app-maps", target_os = "android", target_os = "ios"))]
     out.push(&octosense_maps::MAPS_MODULE);
+    #[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_camera::CAMERA_MODULE);
     out
 }
 

@@ -137,8 +137,21 @@ macro_rules! octosense_main_with_robrix {
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
 }
+#[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
+macro_rules! octosense_main_with_camera {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!(
+        "octosense_camera/resources/service/NotoSansSC-Regular.ttf",
+        "octosense_camera/resources/service/NotoSansSC-Medium.ttf",
+        "octosense_camera/resources/service/NotoSansSC-Bold.ttf",
+        $($extra),*
+    ); };
+}
+#[cfg(not(any(feature = "app-camera", target_os = "android", target_os = "ios")))]
+macro_rules! octosense_main_with_camera {
+    ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!($($extra),*); };
+}
 #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
-octosense_main_with_robrix!(
+octosense_main_with_camera!(
     "octosense_mail/resources/ux/Inter-200.ttf",
     "octosense_mail/resources/ux/Inter-300.ttf",
     "octosense_mail/resources/ux/Inter-400.ttf",
@@ -147,7 +160,7 @@ octosense_main_with_robrix!(
     "octosense_mail/resources/ux/Inter-700.ttf",
 );
 #[cfg(not(any(feature = "app-mail", target_os = "android", target_os = "ios")))]
-octosense_main_with_robrix!();
+octosense_main_with_camera!();
 
 script_mod! {
     use mod.prelude.widgets.*

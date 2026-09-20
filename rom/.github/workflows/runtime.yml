@@ -23,6 +23,13 @@ jobs:
           git clone --quiet --no-checkout https://github.com/OctoSense-org/Octoscript-AppCard.git workspace/Octosense-Service-AppCards
           git -C workspace/Octosense-Service-AppCards fetch --quiet --depth=1 origin eaf3d1458bf212047895af60f90e04154c1a1d30
           git -C workspace/Octosense-Service-AppCards checkout --quiet --detach eaf3d1458bf212047895af60f90e04154c1a1d30
+      # The Camera module is the same repository on its camera branch (the pinned
+      # AppCards revision above predates it), cloned as its own sibling.
+      - name: Prepare the Camera sibling
+        run: |
+          git clone --quiet --no-checkout https://github.com/OctoSense-org/Octoscript-AppCard.git workspace/Octoscript-AppCard-camera
+          git -C workspace/Octoscript-AppCard-camera fetch --quiet --depth=1 origin 4750333dbefd7e5f9f9ed882b75aa1d4ebbd4243
+          git -C workspace/Octoscript-AppCard-camera checkout --quiet --detach 4750333dbefd7e5f9f9ed882b75aa1d4ebbd4243
       - name: Compile with the shared runtime
         working-directory: workspace/OctoSense-mobile
         run: |
