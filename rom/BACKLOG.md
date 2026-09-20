@@ -226,6 +226,40 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
   passes with the siblings at the released commits.
 
+- [ ] **MOBILE-08 — P1: The phone shell flashes continuously (framework; fixed on a fork branch).**
+
+  Seen on a Pixel 7 Pro (Android 17) on 2026-09-19: the screen alternates
+  between a fully black frame, a half-drawn one (the wallpaper and one
+  stray icon) and the complete home screen, for as long as the process
+  lives, with nothing in the log. It is not a crash loop and nothing is
+  drawn over the app.
+
+  Cause: the fork's GL backend reserves each draw item's instance buffer
+  against a GPU memory ledger (a quarter of the 1,536 MiB allowance) with
+  a call that can be refused, and on a refusal leaves the item out of the
+  frame and asks for a repaint. Over the limit every repaint is refused
+  the same way. The Metal backend, and upstream's GL backend since
+  2026-09-18, never refuse a draw item that is being drawn.
+
+  How it was reached: a map app's tiles loaded (OctosMap, panned), then
+  the activity's surface destroyed and recreated (leave to the system
+  launcher and return; a sleep and unlock does the same). About seventeen
+  seconds later, with no input, the re-upload pushed the ledger past its
+  limit. Telemetry added for this read `reservation_refused` about 2,600
+  times a second, and the process held about 1 GB of graphics memory. A
+  first attempt to provoke it with a forced 256 KiB limit produced no
+  refusals and proved nothing either way.
+
+  Fixed in `OctoSense-org/makepad#16` (branch
+  `fix/gl-skipped-draw-telemetry`): the one reservation call, plus a log
+  line, at most once a second and only while it happens, that says why the
+  GL loop skipped draw items. With it the same sequence three times over
+  gives steady frames, no skipped items, and graphics memory flat at about
+  360 MB. Open until the pin moves (`docs/makepad-fork.md`, "Adopting a
+  fork revision"); a phone build against the pinned revision still has it.
+  Still worth a look afterwards: why the ledger goes over its limit after a
+  surface is recreated at all.
+
 ## UPSTREAM-01: Remove retired-pass compatibility adapter
 
 Makepad 74b63be8 `platform/src/draw_list.rs:485` indexes a freed draw list from
