@@ -21,8 +21,8 @@ jobs:
       - name: Prepare the AppCards sibling
         run: |
           git clone --quiet --no-checkout https://github.com/OctoSense-org/Octoscript-AppCard.git workspace/Octosense-Service-AppCards
-          git -C workspace/Octosense-Service-AppCards fetch --quiet --depth=1 origin 2c070cbcc5d92bd0234f6eaa17564f2579e68c44
-          git -C workspace/Octosense-Service-AppCards checkout --quiet --detach 2c070cbcc5d92bd0234f6eaa17564f2579e68c44
+          git -C workspace/Octosense-Service-AppCards fetch --quiet --depth=1 origin eaf3d1458bf212047895af60f90e04154c1a1d30
+          git -C workspace/Octosense-Service-AppCards checkout --quiet --detach eaf3d1458bf212047895af60f90e04154c1a1d30
       - name: Compile with the shared runtime
         working-directory: workspace/OctoSense-mobile
         run: |
