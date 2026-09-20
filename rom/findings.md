@@ -152,8 +152,8 @@
 - The source checkout remains at the current baseline on 2026-09-06; use local Git fixtures to verify actual revision transitions.
 
 ## Fork feature takeover findings — 2026-09-08
-- The MakeOS desktop style depends on seven changed widgets paths outside apps/wm. Pinning all crates to published guofoo/makepad beb3857a provides these without vendoring framework code.
-- The provenance baseline now uses the fork, with default_source ../guofoo-makepad. This checkout tracks official upstream/work locally, so the documented fork pull names origin work explicitly. Incorporating official updates into the fork remains the user's source Git workflow.
+- The MakeOS desktop style depends on seven changed widgets paths outside apps/wm. Pinning all crates to the published WM fork (now OctoSense-org/makepad, ff134865) provides these without vendoring framework code.
+- The provenance baseline now uses the fork, with default_source the fork's sibling checkout. This checkout tracks official upstream/work locally, so the documented fork pull names origin work explicitly. Incorporating official updates into the fork remains the user's source Git workflow.
 - Safe cached-view snapshots and wallpaper redraw are now provided by widgets; the temporary standalone WM implementations can be removed.
 - Persistent widget-tree child enumeration is necessary for dynamically hosted apps: one-time insertion alone loses surviving entries when a sibling closes and the tree refreshes. A floating desk also needs its turtle area, not its tiling border's stale area.
 - Successful screenshots alone do not detect skipped shaders; native smoke now rejects runtime shader/error logs as well as checking app input and state.
@@ -172,7 +172,7 @@
 
 ## 2026-09-11 official work intake
 - Source is ../makepad work at 74b63be83; source checkout has unrelated untracked examples, which will be excluded.
-- Recorded baseline is fork beb3857a; official checkout does not contain that object and lacks DesktopStyle::MakeOs. New wm library changes will stay in external crates where possible.
+- Recorded baseline is fork ff134865 (OctoSense-org/makepad); official checkout does not contain that object and lacks DesktopStyle::MakeOs. New wm library changes will stay in external crates where possible.
 - Uncommitted Android/launcher changes are preserved under target/upstream-20260911/before with SHA-256 inventory; no commit or push requested.
 
 - wm_api/wm_theme are byte-identical between old fork pin and official tip. Safe view snapshot/cached drawing APIs are present upstream; only MakeOS enum/theme/icon alias and SVG cover require local adapters.

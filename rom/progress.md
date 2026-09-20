@@ -158,7 +158,7 @@
 
 ## 2026-09-08 — Adopt fork WM features
 - Fast-forwarded local main from f157660 to 8b2dc9c before feature work; only one completed sync branch needed integration.
-- Imported WM changes at published fork beb3857a through a conflict-free three-way merge, retaining standalone policies and moving all external Makepad pins together.
+- Imported WM changes at published fork ff134865 (OctoSense-org/makepad) through a conflict-free three-way merge, retaining standalone policies and moving all external Makepad pins together.
 - Added StyleSpec, MakeOS Liquid Glass, theme/material parsing, rounded process surfaces and bundled wallpaper. Replaced local rendering workarounds with the now-available widgets APIs.
 - Recorded the fork baseline/default checkout; daily sync retains the same review handoff and now exercises all styles. Added regressions for source selection, nested worktree exclusion and runtime error detection.
 - Native glass input validation exposed inherited desk geometry/dynamic-child discovery issues; fixed with explicit WidgetNode enumeration and a regression test.

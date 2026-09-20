@@ -227,7 +227,7 @@ compatibility with a newer upstream commit that has not yet been pulled.
 
 ## Fork WM feature import — 2026-09-08
 
-Imported `guofoo/makepad` at `beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`, after first fast-forwarding MakeOS main to the completed sync at `8b2dc9c`. The published fork revision supplies all Makepad Git crates, including the Reference app's widgets. No framework files or unrelated apps were copied. The lockfile changes only Makepad source URLs and revisions.
+Imported the WM fork, now `OctoSense-org/makepad`, where this revision is `ff134865d5e4491d9f5a2d21278f317826fff888`, after first fast-forwarding MakeOS main to the completed sync at `8b2dc9c`. The published fork revision supplies all Makepad Git crates, including the Reference app's widgets. No framework files or unrelated apps were copied. The lockfile changes only Makepad source URLs and revisions.
 
 Validation passed:
 

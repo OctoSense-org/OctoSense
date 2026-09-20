@@ -1,7 +1,7 @@
 # OctoSense widget theme
 
 `theme.splash` and `widgets.splash` preserve the dark palette and glass material from
-`guofoo/makepad` at `beb3857aea22a6a99fb4a7b6a3b60f92359f6a4d`, originally
+`OctoSense-org/makepad` at `ff134865d5e4491d9f5a2d21278f317826fff888`, originally
 `widgets/themes/makeos/`. Exact original hashes are in
 `upstream/makepad.json` under `retained_fork_assets`. They are maintained locally
 and embedded by `src/octosense/style.rs`; no runtime resource path is required.

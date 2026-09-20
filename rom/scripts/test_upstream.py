@@ -118,10 +118,10 @@ class SyncTests(RepoFixture):
         self.assertEqual((self.root / ".worktrees/old-feature/Cargo.toml").read_text(), stale)
 
     def test_recorded_default_source_used_by_sync_and_cli(self):
-        renamed = self.source.with_name("guofoo-makepad")
+        renamed = self.source.with_name("fork-makepad")
         self.source.rename(renamed)
         self.source = renamed
-        self.manifest["default_source"] = "../guofoo-makepad"
+        self.manifest["default_source"] = "../fork-makepad"
         self.save_manifest()
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertIsNone(upstream.sync(self.root))
