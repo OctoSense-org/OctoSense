@@ -445,6 +445,7 @@
     "Cargo manifest uses pinned external dependencies and lean default features.",
     "WM fonts use named dependency resources.",
     "OctoSense owns app registration, state paths, and opt-in startup behavior.",
+    "Catalog rows name the host's Makepad dependency rather than a filesystem location, resolving through Cargo's dependency graph to the shared runtime path override or a cached Git checkout; those apps build into OctoSense's own tree instead of Cargo's cache.",
     "Desktop and web builds start with OctoSense Light and its bundled wallpaper; native Android and iOS retain their touch shells.",
     "Omarchy's default Tokyo Night wallpaper is embedded for offline startup; installed wallpapers take precedence and explicit downloads remain available. Asset provenance is recorded in resources/wallpapers/README.md.",
     "User-facing branding is OctoSense; wire protocol identifiers remain compatible.",
@@ -456,7 +457,7 @@
     "The OctoSense style is owned locally, using official macOS icon/layout APIs and complete light/dark stylesheets over the existing protocol. Shell colors follow the selected local palette.",
     "The OctoSense desktop uses paired light/dark Abyssal Currents rasters through the standard crop-to-fill Image widget; Android retains its animated background. The replaced fork SVG is recorded under retained_fork_assets.replaced_files.",
     "The local retired-pass adapter detaches passes with freed draw-list roots before the upstream retained GPU working-set scan, preserving live pass roots.",
-    "The catalog follows official Makepad apps; the stable studio catalog ID now launches Director, which replaced Studio upstream.",
+    "The catalog follows official Makepad apps and is generated from upstream's own curated registry at the pinned revision, under the named adaptations in config/apps.overlay.json; the stable studio catalog ID now launches Director, which replaced Studio upstream.",
     "OctoSense owns the project identity, package names and local resource paths; pristine upstream names and hashes are retained for syncing."
   ],
   "omissions": [],
