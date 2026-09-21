@@ -1,0 +1,202 @@
+# Android build with AppCard's framework, buildtool and bundled kernel
+
+OctoSense on the phone now runs the Octoscript-AppCard module (`apps/appcard`)
+on the makepad fork's AppCard framework line and needs three things the stock
+`cargo makepad` build does not give it:
+
+1. **The framework pin.** `Cargo.toml`, `apps/reference/Cargo.toml` and
+   `apps/appcard/Cargo.toml` pin every makepad crate at the fork's
+   `port/appcard-on-octoscript` branch (`dd8562e2c87ee835bf7ff282db3e1052eb15bad3`):
+   the octoscript line plus the AppCard framework — the `sys.*` / `agent.*`
+   engine installed into every Splash isolate, the fetch layer, `gps.rs`, the
+   AppCard widget set, fonts and textures. Nothing to do at build time; it is
+   the pinned rev.
+2. **The buildtool `cargo-makepad`.** The fork's `port/appcard-on-octoscript-buildtool`
+   branch (`557effba373ef069ebe3df5ec071ebdfe4c99270`) is that framework plus
+   AppCard's Java activity: GPS `LocationListener` → `makepad_platform::gps`,
+   notifications, share and deep-link intents, WebView bridge, file picker,
+   `downloadFile`, `MAKEPAD_ANDROID_EXTRA_LIBS` and `--min-api`. It also honours
+   `resources/android/AndroidManifest.xml.template` (this repo ships one:
+   AppCard's permissions and intent filters, label OctoSense, package
+   `dev.makepad.octosense`, not persistent).
+3. **The octos kernel**, cross-built for `aarch64-linux-android` and bundled
+   into the APK as `liboctos.so`. Android lets an app exec only from its
+   nativeLibraryDir, so the kernel must ship as a "library"; the hosted app
+   (`octos-app`'s `stdio_spawn`) finds it there and runs `octos serve --stdio`
+   with `HOME=<files>/octos-home`.
+
+## The shell an Android build is
+
+Android builds are the standalone mobile shell: the Android phone shell fills
+the screen inside the safe-area insets, with no desk bar (no style dropdown,
+Desktop/Phone toggle, Light/Dark or rotate button) and no desktop style
+compiled in — Light/Dark is the **Dark mode** tile in the shade's controls.
+`build.rs` turns the `mobile_only` cfg on for `target_os = "android"`, so the
+plain `cargo makepad android run` below needs no feature flag. Desktop builds
+stay universal (every desktop style and the bar) unless built with
+`--features mobile-only`, which is the same standalone shell in a phone-sized
+window — the way to check a phone change without the phone.
+
+## Step by step
+
+```sh
+# 0. Paths (adjust): a checkout of the fork and of Octoscript-AppCard (with its
+#    `octos` submodule initialised), and the Android toolchain dir that
+#    `cargo makepad android install-toolchain` produced earlier.
+FORK=/path/to/makepad-fork          # https://github.com/OctoSense-org/makepad.git
+APPCARD=/path/to/Octoscript-AppCard # octos submodule at deb433e9 or later
+TOOLCHAIN=/path/to/android_33_macos_aarch64   # ndk/, platforms/, build-tools/, platform-tools/, openjdk/
+
+# 1. The buildtool cargo-makepad. It looks for the toolchain relative to its
+#    own source tree (tools/cargo_makepad/android_33_<host>), so link it in.
+git -C "$FORK" fetch origin 'refs/heads/*:refs/remotes/os/*'
+git -C "$FORK" worktree add "$FORK-bt" os/port/appcard-on-octoscript-buildtool
+ln -s "$TOOLCHAIN" "$FORK-bt/tools/cargo_makepad/android_33_macos_aarch64"
+( cd "$FORK-bt" && cargo build -p cargo-makepad )
+CARGO_MAKEPAD="$FORK-bt/target/debug/cargo-makepad"
+
+# 2. The kernel, exactly as AppCard's tools/build-android.sh builds it:
+#    NDK clang for API 33, target aarch64-linux-android, features api,git,ast.
+NDK=$(ls -d "$TOOLCHAIN"/ndk/* | sort -V | tail -1)
+LLVM="$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin"
+rustup target add aarch64-linux-android
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LLVM/aarch64-linux-android33-clang"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_AR="$LLVM/llvm-ar"
+export CC_aarch64_linux_android="$LLVM/aarch64-linux-android33-clang"
+export CXX_aarch64_linux_android="$LLVM/aarch64-linux-android33-clang++"
+export AR_aarch64_linux_android="$LLVM/llvm-ar"
+export RANLIB_aarch64_linux_android="$LLVM/llvm-ranlib"
+( cd "$APPCARD/octos" && cargo build --release --target aarch64-linux-android \
+    -p octos-cli --bin octos --features api,git,ast )
+KERNEL="$APPCARD/octos/target/aarch64-linux-android/release/octos"   # ~130 MB
+
+# 3. Build, install and launch OctoSense with the kernel bundled. From this
+#    repository's root, with the phone authorised over adb:
+MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=$KERNEL" \
+  "$CARGO_MAKEPAD" makepad android run -p octosense --release
+```
+
+The exact invocation used for the foundation PR, with the paths of that
+session, for the record:
+
+```sh
+MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<scratch>" \
+  <scratch> \
+  makepad android run -p octosense --release
+```
+
+## Checking the result
+
+```sh
+ADB="$TOOLCHAIN/platform-tools/adb"
+"$ADB" shell pidof dev.makepad.octosense                       # the app is up
+"$ADB" shell pm path dev.makepad.octosense                     # the installed APK...
+unzip -l target/makepad-android-apk/octosense/apk/octosense.apk | grep liboctos   # ...carries the kernel
+"$ADB" logcat -d -s Makepad | grep -E 'stdio:|kernel'          # the kernel's start
+```
+
+When the AppCard tile starts (the module delivers `Event::Startup` to the
+hosted app on first contact), the app's agent spawns the kernel over stdio
+and logs one of
+
+- `stdio: octos=…/lib/arm64/liboctos.so HOME=…/files/octos-home` — the bundled
+  kernel was found and started; the agent's `client_hello` follows;
+- `stdio: bundled octos not found under …; using WebSocket transport` — the
+  APK was built without `MAKEPAD_ANDROID_EXTRA_LIBS`; the app shows its
+  login screen.
+
+The kernel is a `kill_on_drop` child of the agent's runtime: the module's
+`shutdown` stops the agent when the tile's instance is torn down, and the
+child goes with it. The module spawns no kernel of its own.
+
+On a desktop the app spawns a local kernel only when BOTH `OCTOS_APP_CORE_BIN`
+(the `octos` binary) and `OCTOS_APP_CORE_DIR` (its data dir; the app runs
+`serve --stdio --data-dir <dir> --config <dir>/config.json` with
+`OCTOS_HOME=<dir>`) are set; otherwise it uses the WebSocket transport / login
+screen, so a developer's own `octos serve` is never touched.
+
+## Card approvals across builds
+
+octos-app pins every card it admits to the runtime bundle that admitted it
+(`l0_approval_store::require` with `SPLASH_RUNTIME_BUNDLE`) and fails closed
+on a stale receipt: after a new APK the card draws nothing until the store is
+archived for re-admission — the standalone app's own deployment action
+(`MAKEPAD_REAPPROVE_CARDS=<digits>` renames the store to
+`l0-approvals-before-studio-<digits>`). OctoSense does this itself on
+Android: `build.rs` stamps the build with `OCTOSENSE_BUILD_ID` (the epoch
+second it was configured, renewed by any source change), and the first
+launch of a new build archives
+`<files>/.config/octos-app/l0-approvals` under that name and remembers the id
+in `octosense-host-build` next to it
+(`octosense_appcard::reapprove_cards_for_host_build`). Nothing to do by hand
+after `cargo makepad android run`; the manual equivalent, for an APK built
+elsewhere, is
+
+```sh
+"$ADB" shell "su -c 'mv /data/data/dev.makepad.octosense/files/.config/octos-app/l0-approvals \
+  /data/data/dev.makepad.octosense/files/.config/octos-app/l0-approvals-before-studio-$(date +%s)'"
+```
+
+## The hosted module in the phone's captures
+
+The phone desk never draws a client directly: each tile is recorded into a
+`WindowFrame` (a pass of its own) and the texture is presented in the
+client's slot — the app viewport, a split pane, a Recents card, a home tile —
+under the shell's overlays (island, groups, keyboard, shade). A hosted module
+draws into that pass like a process's frames land in it, with one thing to
+know: a pass has an overlay of its own, and `WindowFrame` scopes it
+(`Overlay::begin_nested_for_pass`) for the whole recording. Everything the
+app draws through `begin_overlay_*` — the AppCard kit's glass surfaces, a
+popup, a modal — composites into the capture, last, and never into the WM
+window's overlay. Before that scope existed those lists painted over the
+shade and the home page and stayed on screen after the tile was gone. The
+module's tile forwards a press, a new touch or a wheel step to the app only
+when it begins inside the tile's rect; the shell's recognizer has already
+declined that finger by the time the tile sees it.
+
+## Provisioning the LLM key
+
+The quoting-safe way is `scripts/provision-appcard-llm.sh <family> <model> <key>`: it builds the JSON, ships it through both shells intact, restarts OctoSense with the extra, and waits for the app to log `provisioned LLM`. GLM keys come in two families: `zhipu` for a bigmodel.cn key (OpenAI-style endpoint) and `zai` for a z.ai key (Anthropic-style endpoint); using the wrong one yields HTTP 401 even with a valid key.
+
+
+The kernel needs an LLM profile before a request can run. The buildtool
+activity forwards launch-intent extras prefixed `makepad.` to the app's
+environment, and the app reads `MAKEPAD_PROVISION_CONFIG` on startup and
+writes the profile into the kernel's config:
+
+```sh
+"$ADB" shell "am start -S -n dev.makepad.octosense/.MakepadApp \
+  --es makepad.PROVISION_CONFIG '{\"llm_family\":\"zai\",\"llm_model\":\"glm-5.2\",\"llm_key\":\"<key>\"}'"
+"$ADB" logcat -d -s Makepad | grep -iE 'provision|turn/start|turn FAILED'
+```
+
+`provisioned LLM from intent: …` in logcat is the proof the profile landed;
+the next request goes to the provider (a wrong key fails the turn with the
+provider's auth error, not with `profile '_main' is not configured`).
+
+## What the tile shows
+
+The whole app: its sessions and composer over the bundled kernel (the login
+screen when there is none). A request typed into the composer — or submitted
+through the module's `ask` tool — is routed by the app's brain and its card
+rendered by the L0 pipeline in a Splash isolate. With location granted, the
+buildtool activity feeds the device's fix to `makepad_platform::gps`, and a
+card whose place is blank has the engine reverse-geocode the fix
+(photon.komoot.io), so it names the real place. Live values log
+`Script data fetch: issuing …` / `loaded …` in logcat.
+
+Two things learned verifying this on a OnePlus 6T:
+
+- A Splash isolate is minted without the framework's `sys`/`agent` engine
+  (`widgets::script_mod` installs it into the main VM only, and octos-app's
+  `register_script_mods` does not install it), so it is NOT in scope inside
+  a card's isolate. The module installs it with
+  `register_splash_isolate_mod(register_agent_module)`; without that the
+  body fails with "variable sys not found" and the live Splash keeps showing
+  its previous (empty) view with no log line. The host test
+  `appcard_isolates_carry_the_sys_engine_after_register` guards this.
+- The phone is one shared device: a `cargo makepad android run` from another
+  checkout reinstalls `dev.makepad.octosense` (PackageManager kills the
+  running instance: `stop … due to installPackageLI`) and the first launch
+  right after an install-over-a-running-app can come up with a black
+  surface. Force-stop, then launch, before judging a capture.

@@ -1,0 +1,39 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="dev.makepad.octosense.quickstep"
+    android:versionCode="1"
+    android:versionName="1.0.0-native-prototype">
+
+    <permission android:name="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION"
+        android:protectionLevel="signature" />
+    <queries>
+        <package android:name="dev.makepad.octosense" />
+        <package android:name="dev.makepad.octosense.bridge" />
+    </queries>
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" />
+    <uses-permission android:name="dev.makepad.octosense.permission.BIND_SYSTEM_BRIDGE" />
+
+    <application android:allowBackup="false"
+        android:label="@string/octosense_recents_name"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:replace="android:fullBackupContent,android:label"
+        tools:remove="android:backupAgent,android:fullBackupOnly,android:backupInForeground,android:restoreAnyVersion">
+        <meta-data android:name="octosense.native.controllers" android:value="true" />
+        <activity android:name="dev.makepad.octosense.quickstep.GlobalShadeSettingsActivity"
+            android:exported="true" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <service android:name="dev.makepad.octosense.quickstep.HomeIntegrationService"
+            android:exported="true"
+            android:permission="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION" />
+
+        <!-- Home, its placements and pin confirmation belong to the Makepad APK. -->
+        <activity android:name="com.android.launcher3.uioverrides.QuickstepLauncher" tools:node="remove" />
+        <activity android:name="com.android.launcher3.secondarydisplay.SecondaryDisplayLauncher" tools:node="remove" />
+        <activity android:name="com.android.launcher3.dragndrop.AddItemActivity" tools:node="remove" />
+        <receiver android:name="com.android.launcher3.SessionCommitReceiver" tools:node="remove" />
+        <receiver android:name="com.android.launcher3.AppWidgetsRestoredReceiver" tools:node="remove" />
+        <!-- Notification access belongs to System Bridge. -->
+        <service android:name="com.android.launcher3.notification.NotificationListener" tools:node="remove" />
+    </application>
+</manifest>

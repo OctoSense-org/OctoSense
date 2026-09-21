@@ -1,0 +1,1068 @@
+//! Phone navigation/input, sharing the WM's real clients and launch paths.
+use crate::{mobile::*, mobile_surface::PhoneSurface, mobile_tiles::{self, Face, TILE_APPS}, *};
+use crate::mobile_shade::{ShadeHit, ShadeState, Toggle};
+use crate::mobile_gestures::{Dir, FingerPhase, GestureContext, GestureKind, SafeInsets, ShellGesture};
+use makepad_widgets::makepad_platform::ime::{HostedKeyboard, InputMode};
+use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PhonePointerPhase { Down, Move, Up, Scroll }
+
+impl App {
+    /// A hosted AppCard's card approvals are pinned to the build that
+    /// admitted them; on the phone every new APK is a deployment, so the
+    /// host archives the store once per build id (its explicit action, see
+    /// `octosense_appcard::reapprove_cards_for_host_build`). Desktop builds
+    /// leave the developer's own store alone.
+    pub(super) fn reapprove_hosted_cards(&self, cx: &Cx) {
+        #[cfg(not(target_os = "android"))]
+        let _ = cx;
+        #[cfg(target_os = "android")]
+        {
+            let Some(config) = octosense_appcard::octos_app_config_dir(cx.get_data_dir()) else {
+                log!("wm: card approvals not archived: no data dir to find the store in");
+                return;
+            };
+            match octosense_appcard::reapprove_cards_for_host_build(&config, env!("OCTOSENSE_BUILD_ID")) {
+                Ok(Some(backup)) => log!("wm: host build {} is new: card approvals archived to {}", env!("OCTOSENSE_BUILD_ID"), backup.display()),
+                Ok(None) => {}
+                Err(e) => log!("wm: card approvals not archived: {e}"),
+            }
+        }
+    }
+    pub(super) fn animate_phone(&mut self,cx:&mut Cx) {
+        crate::mobile_perf::asked(crate::mobile_perf::Reason::Action);
+        self.phone_frame=cx.new_next_frame();
+        self.redraw_all(cx);
+    }
+    /// The shell's 1 s tick on a phone: the things that change on their
+    /// own without a frame loop running — the status-bar clock, an
+    /// island timer, the shade's relative times, a tile client that is
+    /// still starting — get one frame when they need one. The frame loop
+    /// itself (`phone_animation_event`) runs only while something moves
+    /// or a finger is down; an idle screen draws nothing.
+    pub(super) fn phone_tick(&mut self,cx:&mut Cx) {
+        crate::mobile_perf::tick(cx);
+        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
+        let clock=self.state_mut().phone.clock.clone();
+        let clock_changed=self.phone_clock_shown.as_ref()!=Some(&clock);
+        if clock_changed {self.phone_clock_shown=Some(clock);}
+        let phone=&self.state_mut().phone;
+        let wake=clock_changed
+            || phone.island.needs_step()
+            || phone.shade.open>0.001
+            || (phone.home_visible() && phone.tiles.clients().any(|t|!t.tile_ready()));
+        // A tile client that is still binding, launching or confirming its
+        // face is followed here instead of on every frame.
+        if phone.home_visible() {self.sync_home_tiles(cx);}
+        if wake {self.animate_phone(cx);}
+    }
+
+    // --------------------------------------------------------------
+    // Home tiles (mobile_tiles.rs)
+    //
+    // Clock, Weather and Photos live on the home page as compact faces of
+    // the SAME client that opens full screen: one process (or one module
+    // isolate), one model, one window. The home page launches a missing
+    // one through the ordinary cargo path, keeps it out of the layout until
+    // the person opens it, and tells every tile client which face to show.
+    // --------------------------------------------------------------
+
+    /// The compact viewport of `app`'s tile on the current phone screen.
+    fn tile_viewport(&mut self, app: &str) -> Option<Vec2d> {
+        let state = self.state_mut();
+        let screen = state.phone.viewport;
+        if screen.size.x < 1.0 || screen.size.y < 1.0 { return None; }
+        PhoneSurface::home_layout(state.style.target, screen).tiles.into_iter().find(|s| s.app == app).map(|s| s.rect.size)
+    }
+    /// The full viewport an open app gets on this phone screen.
+    fn full_viewport(&mut self) -> Vec2d {
+        let screen = self.state_mut().phone.viewport;
+        if screen.size.x < 1.0 { return dvec2(0.0, 0.0); }
+        app_rect(screen).size
+    }
+    /// Bind or launch a client per tile app, then send every tile client
+    /// the face it should be showing. Cheap when nothing changed; called
+    /// from the phone's animation frames and after every phone action.
+    pub(super) fn sync_home_tiles(&mut self, cx: &mut Cx) {
+        if !self.state.as_ref().is_some_and(|s| s.style.target.mobile()) { return; }
+        let alive: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
+        self.state_mut().phone.tiles.retain_clients(|c| alive.contains(&c));
+        let now = host::now();
+        let home_visible = self.state_mut().phone.home_visible();
+        for (app, _) in TILE_APPS {
+            if self.state_mut().phone.tiles.client_of(app).is_some() { continue; }
+            // A window of this app the person already has: its tile is one
+            // more face of that window, never a second instance.
+            let existing = self.state_mut().clients.iter()
+                .filter(|(_, s)| s.app == app && !s.warm && !s.pane && !s.is_preview && s.closing.is_none())
+                .map(|(c, _)| *c).min();
+            if let Some(client) = existing {
+                self.state_mut().phone.tiles.bind(app, client, false);
+            } else if self.warm_pool.enabled() && home_visible && self.state_mut().phone.tiles.may_launch(app, now) {
+                self.launch_tile_client(cx, app);
+            }
+        }
+        let (foreground, settled) = {
+            let phone = &self.state_mut().phone;
+            (phone.foreground(), phone.home_settled())
+        };
+        let full = self.full_viewport();
+        let plan: Vec<(ClientId, Face, Vec2d)> = self.state_mut().phone.tiles.clients()
+            .map(|t| (t.client, t.app.clone(), t.background))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|(client, app, background)| {
+                // A split member is in front too, at its pane's size.
+                let foreground = if self.state_mut().phone.groups.in_split(client) { Some(client) } else { foreground };
+                let face = mobile_tiles::wanted_face(client, foreground, settled, background)?;
+                let viewport = match face { Face::Full => self.state_mut().phone.groups.pane_size(client, full), Face::Tile => self.tile_viewport(&app)? };
+                if viewport.x < 1.0 || viewport.y < 1.0 { return None; }
+                self.state_mut().phone.tiles.pending(client, face, viewport).then_some((client, face, viewport))
+            })
+            .collect();
+        for (client, face, viewport) in plan {
+            self.send_face(cx, client, face, viewport);
+        }
+    }
+    /// Tell one client which face to show, with the viewport that face
+    /// gets, in ONE batch so the client never draws the new face at the
+    /// old size. A process that has not announced its window yet is left
+    /// for `replay_tile_face`; a module hears it in its own isolate.
+    fn send_face(&mut self, cx: &mut Cx, client: ClientId, face: Face, viewport: Vec2d) -> bool {
+        let json = face.mode().to_json();
+        if self.module_host.is_module(client) {
+            if let Some((root, vm_id)) = self.module_host.get(client).map(|i| (i.root.clone(), i.vm_id)) {
+                let entry = enter_isolate(cx, vm_id);
+                root.handle_event(cx, &Event::Custom(json), &mut Scope::empty());
+                leave_isolate(cx, entry);
+            }
+            // A module draws inside the desk's own capture at exactly the
+            // rect asked for: the face is confirmed the moment it is sent.
+            let tiles = &mut self.state_mut().phone.tiles;
+            tiles.note_sent(client, face, viewport);
+            tiles.note_frame(client, viewport);
+            if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
+                desk.note_client_frame(client, Some(face));
+            }
+            self.animate_phone(cx);
+            return true;
+        }
+        let dpi = if self.dpi_factor > 0.0 { self.dpi_factor } else { 1.0 };
+        let Some((sender, window_id)) = self.state_mut().clients.get(&client)
+            .filter(|s| s.ready)
+            .and_then(|s| s.sender.clone().map(|sender| (sender, s.window_id)))
+        else { return false };
+        let mut msgs = Vec::new();
+        if viewport.x >= 1.0 && viewport.y >= 1.0 {
+            msgs.push(StudioToApp::WindowGeomChange {
+                window_id, dpi_factor: dpi, left: 0.0, top: 0.0, width: viewport.x, height: viewport.y,
+            });
+        }
+        msgs.push(StudioToApp::Custom(json));
+        send_to_app(&sender, msgs);
+        self.state_mut().phone.tiles.note_sent(client, face, viewport);
+        self.animate_phone(cx);
+        true
+    }
+    /// CreateWindow arrived for a tile client: it gets its face before its
+    /// first frame, so a tile never opens on a full-screen layout.
+    pub(super) fn replay_tile_face(&mut self, cx: &mut Cx, client: ClientId) {
+        let Some((app, background)) = self.state_mut().phone.tiles.get(client).map(|t| (t.app.clone(), t.background)) else { return };
+        if !self.state_mut().style.target.mobile() {
+            // On the desktop every window is its full self; the desk's
+            // own tile hands it its geometry.
+            if self.state_mut().phone.tiles.face_of(client) != Some(Face::Full) {
+                self.send_face(cx, client, Face::Full, dvec2(0.0, 0.0));
+            }
+            return;
+        }
+        let (foreground, settled) = {
+            let phone = &self.state_mut().phone;
+            (phone.foreground(), phone.home_settled())
+        };
+        let face = mobile_tiles::wanted_face(client, foreground, settled, background).unwrap_or(Face::Full);
+        let viewport = match face {
+            Face::Full => self.full_viewport(),
+            Face::Tile => self.tile_viewport(&app).unwrap_or(dvec2(0.0, 0.0)),
+        };
+        self.send_face(cx, client, face, viewport);
+    }
+    /// A frame from `client` landed: which face does it belong to? Tile
+    /// clients answer by size (a stale frame from the previous viewport
+    /// belongs to neither capture); every other client is in its full face.
+    pub(super) fn note_client_frame_face(&mut self, client: ClientId, width: u32, height: u32) -> Option<Face> {
+        let tiles = &mut self.state_mut().phone.tiles;
+        if !tiles.is_tile_client(client) { return Some(Face::Full); }
+        let dpi = if self.dpi_factor > 0.0 { self.dpi_factor } else { 1.0 };
+        let size = dvec2(width as f64 / dpi, height as f64 / dpi);
+        let tiles = &mut self.state_mut().phone.tiles;
+        let face = tiles.note_frame(client, size);
+        if face.is_some() {
+            if let Some(app) = tiles.get(client).map(|t| t.app.clone()) { tiles.note_healthy(&app); }
+        }
+        face
+    }
+    /// The person opened a tile client that was only ever a tile: seat it
+    /// in the layout like any launch. Its face follows through
+    /// `sync_home_tiles` once the phone state says it is in front.
+    pub(super) fn promote_tile_client(&mut self, cx: &mut Cx, client: ClientId) {
+        if !self.state_mut().phone.tiles.promote(client) { return; }
+        let area = self.desk_area(cx);
+        let state = self.state_mut();
+        let gap = state.gap;
+        state.layout.insert(client, area, gap);
+        log!("wm: home tile client {} opened as a window", client);
+        self.update_bar(cx);
+    }
+    /// Leaving the phone: every tile client goes back to its full face;
+    /// the tile it drew for is gone with the home page.
+    pub(super) fn restore_tile_faces(&mut self, cx: &mut Cx) {
+        let clients: Vec<ClientId> = self.state_mut().phone.tiles.clients().filter(|t| t.in_tile_face()).map(|t| t.client).collect();
+        for client in clients {
+            self.send_face(cx, client, Face::Full, dvec2(0.0, 0.0));
+        }
+    }
+    /// Start `app_id` for its home tile: the same cargo launch (or module
+    /// isolate) an ordinary open uses, minus the layout seat and the focus.
+    fn launch_tile_client(&mut self, cx: &mut Cx, app_id: &str) {
+        self.state_mut().phone.tiles.note_launch(app_id, host::now());
+        let Some(app) = crate::clients::find_app(app_id) else { return };
+        if self.apps.hosting(app_id) == Hosting::Module {
+            if let Some(module) = self.apps.module(app_id) { self.launch_tile_module(cx, module); }
+            return;
+        }
+        if !host::processes_available() { return; }
+        let hub_port = self.state_mut().hub_port;
+        if hub_port == 0 { return; }
+        let id = self.next_id;
+        self.next_id += 1;
+        let lines = self.line_sender();
+        let pool = cx.task_pool();
+        match spawn_client(&pool, &cx.thread_spawner(), &app, id, hub_port, None, None, &[], false, lines) {
+            Ok(slot) => {
+                self.state_mut().clients.insert(id, slot);
+                // The tile widget exists from now on: its ticks drive the
+                // child and its captures show the build on the home page.
+                self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| d.with_run_view(cx, id, |cx, v| v.set_run_target(cx, id, 0, hub_port)));
+                self.state_mut().phone.tiles.bind(app_id, id, true);
+                log!("wm: launched {} as client {} for its home tile", app.id, id);
+                self.animate_phone(cx);
+            }
+            Err(err) => log!("wm: home tile launch of {} failed: {}", app.id, err),
+        }
+    }
+    fn launch_tile_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
+        let open = match module.open_schema().empty_open() {
+            Ok(open) => open,
+            Err(e) => { log!("wm: {} cannot open without arguments: {}", module.id(), e); return; }
+        };
+        let id = self.next_id;
+        self.next_id += 1;
+        let viewport = self.tile_viewport(module.id()).unwrap_or_else(|| { let a = self.desk_area(cx); dvec2(a.w, a.h) });
+        if let Err(e) = self.module_host.create(cx, id, module, open, viewport) {
+            log!("wm: module {} failed to start for its home tile: {}", module.id(), e);
+            return;
+        }
+        let Some((manifest, root, vm_id)) = self.module_host.get(id).map(|i| (i.manifest(), i.root.clone(), i.vm_id)) else { return };
+        self.state_mut().clients.insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+        self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+            d.mark_module(id);
+            d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
+        });
+        // On the bus like any instance: opening it later changes nothing
+        // the assistant can see except the window.
+        if self.apps.pane_in_process() {
+            self.pane_links.open_instance(cx, id, manifest);
+        } else {
+            let frame = self.ai_bus.register_local(id, manifest);
+            self.send_to_pane(frame);
+        }
+        self.state_mut().phone.tiles.bind(module.id(), id, true);
+        log!("wm: launched {} as client {} for its home tile (in-process)", module.id(), id);
+        self.animate_phone(cx);
+    }
+    pub(super) fn configure_phone_mode(&mut self,cx:&mut Cx,previous:desktop::DesktopStyle,style:desktop::DesktopStyle) {
+        let window=self.ui.window(cx,ids!(main_window));
+        if style.mobile() && !previous.mobile() {
+            let focused=self.state_mut().layout.focused_client();
+            #[cfg(not(mobile_only))]
+            {
+                let size=window.get_inner_size(cx);
+                let desktop_clients=self.state_mut().layout.all_clients();
+                let phone=&mut self.state_mut().phone;
+                phone.desktop_size=Some(size);phone.desktop_style=previous;
+                phone.desktop_clients=desktop_clients;
+            }
+            let phone=&mut self.state_mut().phone;
+            phone.client=focused;phone.navigate(PhoneScreen::Home);
+            phone.openness=0.0;phone.overview=0.0;
+            // A desktop window becomes phone-sized; a phone is its screen.
+            if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,phone_size(style));}
+        }else if !style.mobile() && previous.mobile() {
+            // The standalone shell never leaves the phone style: nothing
+            // offers a desktop one, and a stray request changes nothing.
+            #[cfg(mobile_only)]
+            { log!("wm: the standalone shell stays the phone shell (asked for {:?})", style); return; }
+            #[cfg(not(mobile_only))]
+            {
+            self.dismiss_phone_keyboard(cx);
+            self.restore_tile_faces(cx);
+            let size=self.state_mut().phone.desktop_size.take().unwrap_or(dvec2(1400.0,900.0));
+            if !cfg!(any(target_os="ios",target_os="android")) {window.resize(cx,size);}
+            // Apps first opened on a phone have no desktop restore geometry.
+            // Give them normal desktop windows; retain pre-phone user geometry.
+            let state=self.state_mut();
+            let retained=std::mem::take(&mut state.phone.desktop_clients);
+            state.layout.desktop.windows.retain(|w|retained.contains(&w.client));
+            let area=LRect::new(0.0,36.0,size.x,(size.y-90.0).max(1.0));
+            for client in state.layout.all_clients() {state.layout.desktop.ensure(client,area);}
+            }
+        }else if style.mobile() && previous!=style {
+            let current=window.get_inner_size(cx);
+            let size=phone_size(style);
+            if !cfg!(any(target_os="ios",target_os="android")) {
+                window.resize(cx,if current.x>current.y {dvec2(size.y,size.x)}else{size});
+            }
+        }
+        #[cfg(not(mobile_only))]
+        {
+            self.ui.widget(cx,ids!(desktop_controls)).set_visible(cx,!style.mobile());
+            self.ui.widget(cx,ids!(phone_controls)).set_visible(cx,style.mobile());
+        }
+        self.ui.widget(cx,ids!(shell_ai_pane)).set_visible(cx,!style.mobile());
+        // The desktop's own full-screen layers stay out of the phone's frame:
+        // the phone paints its wallpaper itself (desk/phone.rs), and the
+        // scene's texture cache only exists for the desktop styles'
+        // crossfade. Each is a full-screen pass the renderer repaints on
+        // every frame it repaints at all — on Android that is every vsync
+        // while makepad's retained-upload ledger reports retirement debt
+        // (see mobile_perf.rs, `retirement-debt`), idle or not.
+        self.ui.widget(cx,ids!(wallpaper)).set_visible(cx,!style.mobile());
+        if let Some(mut scene)=self.ui.widget(cx,ids!(scene)).borrow_mut::<scene::WmScene>() {scene.set_caching(cx,!style.mobile());}
+        self.phone_time=0.0;
+        self.animate_phone(cx);
+    }
+    /// A hit on the desk bar's phone strip (there is none in the standalone shell).
+    pub(super) fn phone_toolbar_hit(&self,cx:&Cx,p:Vec2d)->Option<PhoneHit> {
+        if MOBILE_ONLY || !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return None;}
+        self.ui.widget(cx,ids!(phone_controls)).borrow::<PhoneSurface>().and_then(|s|s.hit(p))
+    }
+    pub(super) fn phone_animation_event(&mut self,cx:&mut Cx,event:&Event) {
+        if let Some(frame)=self.phone_frame.is_event(event) {
+            if self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {
+                let dt=if self.phone_time==0.0 {1.0/60.0}else{(frame.time-self.phone_time).clamp(0.001,0.05)};
+                self.phone_time=frame.time;
+                let Some(state) = self.state.as_mut() else { return };
+                let phone = &mut state.phone;
+                phone.wallpaper_time = frame.time;
+                // A finger resting near the top of a home swipe becomes the
+                // switcher without moving; the frame keeps running while
+                // the recognizer owns a finger so the hold can land.
+                let mut tracking = false;
+                let mut gesture_reason = false;
+                if self.phone_gestures.active() {
+                    tracking = true;
+                    gesture_reason = true;
+                    if let Some(out) = self.phone_gestures.tick(frame.time) {
+                        log!("wm: gesture {:?}", out);
+                        let from = phone.gesture.as_ref().map(|g| g.screen).unwrap_or(phone.screen);
+                        phone.gesture_out = Some(out);
+                        Self::drive_gesture(phone, out, from);
+                    }
+                } else if matches!(phone.gesture_out, Some(ShellGesture::Commit(_) | ShellGesture::Cancel(_))) {
+                    // Commit/Cancel stay for exactly one stepped frame: aged
+                    // before `step` below, so the pager (and every other
+                    // surface that acts on a commit) sees it once.
+                    if self.gesture_out_age >= 1 { phone.gesture_out = None; } else { self.gesture_out_age += 1; tracking = true; }
+                }
+                let moving = phone.step(dt);
+                let active = moving || tracking || phone.gesture.is_some();
+                phone.draw_active = phone.animation_active || active;
+                phone.animation_active = active;
+                crate::mobile_groups::follow(phone);
+                // Navigation moves the shell over a fixed wallpaper. Drifting
+                // it during gestures invalidates its full-resolution GPU cache
+                // on every frame, just when navigation needs that frame budget.
+                if active {
+                    crate::mobile_perf::asked(if gesture_reason || phone.gesture.is_some() {crate::mobile_perf::Reason::Gesture} else {crate::mobile_perf::Reason::Anim});
+                    self.phone_frame=cx.new_next_frame();
+                }
+                // The tiles follow the phone state every frame: a window
+                // takes its compact face only once its dismissal settled.
+                self.sync_home_tiles(cx);
+                self.redraw_all(cx);
+            }
+        }
+    }
+    pub(super) fn sync_phone_keyboard(&mut self,cx:&mut Cx) {
+        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
+        let client=self.state_mut().phone.foreground();
+        if let Some(client)=client.filter(|c|self.module_host.is_module(*c)) {
+            self.state_mut().phone.ime.insert(client,cx.hosted_ime_state());
+        }
+        let phone=&mut self.state_mut().phone;
+        let visible=!cfg!(any(target_os="ios",target_os="android"))
+            && ((phone.screen==PhoneScreen::Drawer && phone.search_focused)
+                || client.and_then(|c|phone.ime.get(&c)).is_some_and(|ime|ime.visible));
+        let height=if visible {phone.keyboard_height()}else{0.0};
+        if height==phone.keyboard_sent_height && (height==0.0 || phone.keyboard_client==client) {return;}
+        let old=phone.keyboard_client;
+        phone.keyboard_target=height;phone.keyboard_sent_height=height;phone.keyboard_client=client;
+        if visible {
+            let ime=client.and_then(|c|phone.ime.get(&c)).copied().unwrap_or_default();
+            phone.symbols=matches!(ime.input_mode,InputMode::Numeric|InputMode::Decimal|InputMode::Tel);
+        }
+        if old!=client {if let Some(old)=old {self.send_phone_keyboard(cx,old,0.0,false);}}
+        if let Some(client)=client {self.send_phone_keyboard(cx,client,height,false);}
+        self.animate_phone(cx);
+    }
+    fn send_phone_keyboard(&mut self,cx:&mut Cx,client:ClientId,height:f64,dismiss:bool) {
+        let keyboard=HostedKeyboard {height,dismiss};
+        if self.module_host.is_module(client) {
+            if dismiss {cx.text_ime_was_dismissed();}
+            if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
+                let time=cx.seconds_since_app_start();
+                let event=if height>0.0 {VirtualKeyboardEvent::WillShow{time,height,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}}
+                    else{VirtualKeyboardEvent::WillHide{time,height:0.0,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}};
+                let entry=enter_isolate(cx,vm_id);
+                root.handle_event(cx,&Event::VirtualKeyboard(event),&mut Scope::empty());
+                leave_isolate(cx,entry);
+            }
+        }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
+            send_to_app(sender,vec![StudioToApp::Custom(keyboard.to_json())]);
+        }
+    }
+    fn dismiss_phone_keyboard(&mut self,cx:&mut Cx) {
+        if self.state_mut().phone.search_focused {
+            if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {
+                desk.dismiss_phone_search(cx,&mut self.state_mut().phone,false);
+            }
+        }
+        if let Some(client)=self.state_mut().phone.keyboard_client {
+            self.send_phone_keyboard(cx,client,0.0,true);
+            if let Some(ime)=self.state_mut().phone.ime.get_mut(&client) {ime.visible=false;}
+        }
+        self.state_mut().phone.keyboard_target=0.0;
+        self.animate_phone(cx);
+    }
+    /// Light <-> Dark for the phone shell and every hosted app, keeping the
+    /// App Library's search field focused if it was.
+    pub(crate) fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
+        let focused=self.state_mut().phone.search_focused;
+        self.toggle_desktop_appearance(cx);
+        if focused {
+            if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
+        }
+    }
+    pub(crate) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
+        match hit {
+            PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
+                if self.android_launch(cx, &app) { self.animate_phone(cx); return; }
+                // A running window of the app, a home tile's own client
+                // included: the same client opens, never a second one.
+                let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
+                if let Some(client)=existing {self.activate_client(cx,client);}
+                else {self.launch_app(cx,&app);}
+            },
+            PhoneHit::Card(client)=>{
+                match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
+                    Some(first)=>{self.state_mut().phone.groups.pick=None;self.enter_split(cx,first,client);}
+                    None=>self.activate_client(cx,client),
+                }
+            }
+            PhoneHit::Group(name)=>self.open_group(cx,&name),
+            PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
+            PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
+            PhoneHit::Split(client)=>{
+                if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
+            }
+            PhoneHit::Divider|PhoneHit::Scrub=>{}
+            PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
+            PhoneHit::Recents=>{
+                self.state_mut().phone.navigate(PhoneScreen::Recents);
+                // Recents also lists the Android apps used lately: ask for the latest.
+                if cfg!(target_os="android") {self.android_command(cx,"launcher","recent_apps",vec![]);}
+            }
+            PhoneHit::Shade(ShadeHit::Settings("usage_access"))=>{
+                self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s("usage_access"))]);
+            }
+            PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
+            PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
+            #[cfg(not(mobile_only))]
+            PhoneHit::Rotate=>{
+                let window=self.ui.window(cx,ids!(main_window));let size=window.get_inner_size(cx);
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.touch=None;
+                self.phone_gestures.cancel();
+                self.state_mut().phone.gesture_out=None;
+                window.resize(cx,dvec2(size.y,size.x));
+            }
+            #[cfg(not(mobile_only))]
+            PhoneHit::Style=>self.open_style_menu(cx),
+            #[cfg(not(mobile_only))]
+            PhoneHit::Appearance=>self.toggle_phone_appearance(cx),
+            #[cfg(not(mobile_only))]
+            PhoneHit::Desktop=>{let style=self.state_mut().phone.desktop_style;self.set_desktop_style(cx,style);}
+            PhoneHit::HideKeyboard=>self.dismiss_phone_keyboard(cx),
+            PhoneHit::ClearSearch=>{
+                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.clear_phone_search(cx,&mut self.state_mut().phone);}
+            }
+            PhoneHit::CancelSearch=>{
+                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
+            }
+            PhoneHit::Shift=>{let p=&mut self.state_mut().phone;p.shift=!p.shift;}
+            PhoneHit::Symbols=>{let p=&mut self.state_mut().phone;p.symbols=!p.symbols;}
+            PhoneHit::Key(key)=>self.type_phone_key(cx,&key),
+            PhoneHit::Back=>{
+                if self.state_mut().phone.keyboard_target>0.0 {self.dismiss_phone_keyboard(cx);}
+                else {self.phone_back(cx);}
+            }
+            // The shade's Dark mode tile is the appearance the desk bar's
+            // Light/Dark used to set; the shade keeps every other toggle.
+            PhoneHit::Shade(ShadeHit::Toggle(Toggle::DarkMode))=>{
+                self.android_haptic(cx,"tick");
+                self.toggle_phone_appearance(cx);
+                self.android_system_bars(cx);
+            }
+            PhoneHit::Shade(hit)=>{
+                if matches!(hit,ShadeHit::Toggle(_)) {self.android_haptic(cx,"tick");}
+                if !self.android_shade_action(cx, &hit) { self.state_mut().phone.shade.tap(hit); }
+            },
+            PhoneHit::Island(hit)=>{if let Some(app)=self.island_hit(hit) {self.phone_action(cx,PhoneHit::App(app));}}
+            PhoneHit::Perf=>{crate::mobile_perf::battery_tap(cx,host::now());}
+        }
+        self.sync_phone_keyboard(cx);
+        self.sync_home_tiles(cx);
+        self.animate_phone(cx);
+    }
+    fn phone_back(&mut self,cx:&mut Cx) {
+        if self.state_mut().phone.screen != PhoneScreen::App {
+            self.state_mut().phone.navigate(PhoneScreen::Home);
+            return;
+        }
+        let Some(client)=self.state_mut().phone.client else{return};
+        if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
+            let event=Event::BackPressed{handled:std::cell::Cell::new(false)};
+            let entry=enter_isolate(cx,vm_id);
+            root.handle_event(cx,&event,&mut Scope::empty());
+            leave_isolate(cx,entry);
+            if matches!(event,Event::BackPressed{handled} if !handled.get()) {self.state_mut().phone.navigate(PhoneScreen::Home);}
+        }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
+            send_to_app(sender,vec![StudioToApp::Custom(makepad_platform::ime::HostedBack::default().to_json())]);
+        }
+    }
+    /// Android delivered a HOME intent to the running activity (OctoSense is
+    /// the device's Home app): whatever is up — an app, Recents, a group
+    /// window, the sheet — the home page shows, as the Home tap does.
+    pub(crate) fn phone_home_intent(&mut self,cx:&mut Cx) {
+        if !self.state.as_ref().is_some_and(|s|s.style.target.mobile()) {return;}
+        log!("[phone] home intent");
+        let already_home={
+            let phone=&mut self.state_mut().phone;
+            let settled=phone.screen==PhoneScreen::Home && phone.shade.open<0.001 && phone.groups.open.is_none();
+            phone.shade.close();
+            phone.groups.close();
+            settled
+        };
+        self.phone_action(cx,PhoneHit::Home);
+        // A second Home on a settled home page goes to the primary page,
+        // as stock launchers do; the first one only brings the page back.
+        if already_home && self.state_mut().phone.pages.current()!=0 {self.state_mut().phone.pages.jump(0);}
+        self.redraw_all(cx);
+    }
+    fn type_phone_key(&mut self,cx:&mut Cx,key:&str) {
+        let event=match key {
+            "backspace"=>Event::KeyDown(KeyEvent{key_code:KeyCode::Backspace,..Default::default()}),
+            "return"=>Event::KeyDown(KeyEvent{key_code:KeyCode::ReturnKey,..Default::default()}),
+            _=>Event::TextInput(TextInputEvent{input:key.into(),..Default::default()}),
+        };
+        if self.state_mut().phone.search_focused {
+            self.phone_search_event(cx,&event);
+            if let Event::KeyDown(key)=event {self.phone_search_event(cx,&Event::KeyUp(key));}
+            if key.chars().count()==1 {self.state_mut().phone.shift=false;}
+            return;
+        }
+        let Some(client)=self.state_mut().phone.foreground() else{return};
+        if self.module_host.is_module(client) {
+            if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
+                let entry=enter_isolate(cx,vm_id);
+                root.handle_event(cx,&event,&mut Scope::empty());
+                if let Event::KeyDown(key)=event {root.handle_event(cx,&Event::KeyUp(key),&mut Scope::empty());}
+                leave_isolate(cx,entry);
+            }
+        }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
+            match event {
+                Event::KeyDown(key)=>send_to_app(sender,vec![StudioToApp::KeyDown(key.clone()),StudioToApp::KeyUp(key)]),
+                Event::TextInput(text)=>send_to_app(sender,vec![StudioToApp::TextInput(text)]),
+                _=>{}
+            }
+        }
+        if key.chars().count()==1 {self.state_mut().phone.shift=false;}
+    }
+    pub(super) fn phone_key(&mut self,cx:&mut Cx,e:&KeyEvent)->bool {
+        if !self.state_mut().style.target.mobile() {return false;}
+        if e.key_code==KeyCode::Escape {self.phone_action(cx,PhoneHit::Back);return true;}
+        if e.key_code==KeyCode::Tab && e.modifiers.alt {self.phone_action(cx,PhoneHit::Recents);return true;}
+        !self.state_mut().phone.accepts_app_input()
+    }
+    pub(super) fn phone_search_event(&mut self,cx:&mut Cx,event:&Event)->bool {
+        let Some(state)=self.state.as_ref() else{return false};
+        if matches!(event,Event::KeyDown(_)|Event::KeyUp(_)|Event::TextInput(_)|Event::TextCopy(_)|Event::TextCut(_))
+            && self.ui.widget(cx,ids!(shell_menu)).borrow::<ShellMenu>().is_some_and(|menu|menu.is_open()) {return false;}
+        let old=(state.phone.search_focused,state.phone.search_query.clone());
+        let handled=if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {
+            desk.phone_search_event(cx,event,self.state_mut())
+        }else{false};
+        let phone=&self.state_mut().phone;
+        if old!=(phone.search_focused,phone.search_query.clone()) {
+            self.sync_phone_keyboard(cx);
+            self.animate_phone(cx);
+        }
+        if let Some(app)=self.state_mut().phone.search_launch.take() {self.phone_action(cx,PhoneHit::App(app));}
+        handled
+    }
+    pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {
+        if !self.state_mut().style.target.mobile() {return false;}
+        if let Event::LongPress(press) = event {
+            let phone=&self.state_mut().phone;
+            let shade_settings=if cfg!(target_os="android") {phone.gesture.as_ref().filter(|gesture|
+                phone.touch==Some(press.uid) && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            ).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::Wifi)))=>Some("wifi"),
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::Bluetooth)))=>Some("bluetooth"),
+                Some(PhoneHit::Shade(ShadeHit::Toggle(Toggle::DoNotDisturb)))=>Some("dnd"),
+                Some(PhoneHit::Shade(ShadeHit::Brightness))=>Some("display"),
+                Some(PhoneHit::Shade(ShadeHit::Volume))=>Some("sound"),
+                _=>None,
+            })} else {None};
+            let app=phone.gesture.as_ref().filter(|gesture| {
+                phone.touch==Some(press.uid) && matches!(gesture.screen,PhoneScreen::Home|PhoneScreen::Drawer)
+                    && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            }).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::App(id)) if cfg!(target_os="android") => Some(id.clone()),
+                _=>None,
+            });
+            // A pair tile or an app tile on the home page: their own menus.
+            let tile=phone.gesture.as_ref().filter(|gesture| {
+                cfg!(target_os="android") && phone.touch==Some(press.uid) && gesture.screen==PhoneScreen::Home
+                    && (press.abs-gesture.start).length()<12.0 && (gesture.last-gesture.start).length()<12.0
+            }).and_then(|gesture| match &gesture.hit {
+                Some(PhoneHit::Group(name))=>Some((true,name.clone())),
+                Some(PhoneHit::TileApp(app))=>Some((false,app.clone())),
+                _=>None,
+            });
+            let empty_home=cfg!(target_os="android") && phone.gesture.as_ref().is_some_and(|gesture| {
+                phone.touch==Some(press.uid) && gesture.screen==PhoneScreen::Home && gesture.hit.is_none()
+                    && phone.shade.open<0.001 && (press.abs-gesture.start).length()<12.0
+                    && (gesture.last-gesture.start).length()<12.0
+            });
+            let dark=makepad_strict_json::Value::Bool(self.state_mut().style.dark);
+            if let Some(destination)=shade_settings {
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
+                self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s(destination))]);
+                return true;
+            }
+            if let Some(app)=app {
+                let (start,on_page)={
+                    let phone=&self.state_mut().phone;
+                    let k=phone.pages.current();
+                    (phone.gesture.as_ref().map(|g|g.start).unwrap_or(press.abs),
+                     phone.gesture.as_ref().is_some_and(|g|g.screen==PhoneScreen::Home) && k>=0 && phone.pages.page_ids(k).iter().any(|id|*id==app))
+                };
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
+                if on_page {
+                    // A favourite lifts off the page and follows the finger;
+                    // a lift without moving opens its menu instead.
+                    self.state_mut().phone.drag=Some(crate::mobile::HomeDrag{app,start,pos:press.abs,moved:false});
+                    self.animate_phone(cx);
+                    return true;
+                }
+                self.open_app_menu(cx,&app);
+                return true;
+            }
+            if let Some((is_pair,name))=tile {
+                use makepad_strict_json::{obj,s,Value};
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
+                let catalog: Vec<Value>=crate::shell::launcher::apps().iter()
+                    .map(|a|obj(vec![("id",s(a.id.trim_start_matches("apps."))),("label",s(&a.label))])).collect();
+                if is_pair {
+                    let pairs: Vec<Value>=crate::mobile_groups::seeds().iter()
+                        .map(|(n,apps)|obj(vec![("name",s(*n)),("apps",Value::Arr(apps.iter().map(|a|s(a)).collect()))])).collect();
+                    self.android_command(cx,"launcher","pair_menu",vec![("name",s(&name)),("dark",dark),("catalog",Value::Arr(catalog)),("pairs",Value::Arr(pairs))]);
+                } else {
+                    let label=crate::clients::find_app(&name).map(|a|a.label).unwrap_or_else(||name.clone());
+                    self.android_command(cx,"launcher","tile_menu",vec![("app",s(&name)),("label",s(&label)),("dark",dark)]);
+                }
+                return true;
+            }
+            if empty_home {
+                self.state_mut().phone.gesture=None;
+                self.state_mut().phone.gesture_out=None;
+                self.phone_gestures.cancel();
+                self.android_haptic(cx,"long_press");
+                let hidden=self.state_mut().phone.android.hidden_tiles.len() as i64;
+                let columns=crate::mobile_tiles::grid_columns(false) as i64;
+                let system_panel=makepad_strict_json::Value::Bool(self.state_mut().phone.android.system_panel);
+                self.android_command(cx,"launcher","home_menu",vec![("dark",dark),("hidden_tiles",makepad_strict_json::Value::Int(hidden)),("columns",makepad_strict_json::Value::Int(columns)),("system_panel",system_panel)]);
+                return true;
+            }
+        }
+        if let Event::TouchUpdate(update) = event {
+            use makepad_platform::event::TouchState;
+            let owned = self.state_mut().phone.touch;
+            let point = if let Some(uid) = owned {
+                update.touches.iter().find(|p| p.uid == uid)
+            } else {
+                update.touches.iter().find(|p| p.state == TouchState::Start)
+            };
+            let Some(point) = point else { return owned.is_some() || !self.state_mut().phone.accepts_app_input(); };
+            let phase = match point.state {
+                TouchState::Start => PhonePointerPhase::Down,
+                TouchState::Move => PhonePointerPhase::Move,
+                TouchState::Stop => PhonePointerPhase::Up,
+                TouchState::Stable => return owned.is_some() || !self.state_mut().phone.accepts_app_input(),
+            };
+            let handled = self.phone_pointer_at(cx, phase, point.abs, point.time, true, 0.0);
+            if point.state == TouchState::Start && handled && self.state_mut().phone.gesture.is_some() {
+                self.state_mut().phone.touch = Some(point.uid);
+            }
+            if point.state == TouchState::Stop { self.state_mut().phone.touch = None; }
+            return handled || owned.is_some();
+        }
+        let (phase, p, time, primary, scroll) = match event {
+            Event::MouseDown(e) => (PhonePointerPhase::Down, e.abs, e.time, e.button.contains(MouseButton::PRIMARY), 0.0),
+            Event::MouseMove(e) => (PhonePointerPhase::Move, e.abs, e.time, true, 0.0),
+            Event::MouseUp(e) => (PhonePointerPhase::Up, e.abs, e.time, e.button.contains(MouseButton::PRIMARY), 0.0),
+            Event::Scroll(e) => (PhonePointerPhase::Scroll, e.abs, e.time, true, e.scroll.y),
+            _ => return false,
+        };
+        self.phone_pointer_at(cx, phase, p, time, primary, scroll)
+    }
+    /// What the recognizer needs to know about the screen right now.
+    fn gesture_context(&mut self, cx: &Cx) -> GestureContext {
+        let phone = &self.state_mut().phone;
+        let i = cx.display_context.safe_area_insets;
+        GestureContext {
+            screen: phone.viewport,
+            insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
+            phone: phone.screen,
+            // The library's body scrolls its search results while there is a
+            // query; with the field merely focused (the way a pull opens it)
+            // a pull still closes it.
+            body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && phone.search_query.is_empty()),
+            shade: !phone.android.system_panel,
+        }
+    }
+    /// The recognizer's in-progress gesture moves what the shell draws
+    /// itself: the window pulling back on a home swipe, the predictive
+    /// back preview. Every other surface reads `gesture_out` on its own.
+    fn drive_gesture(phone: &mut PhoneState, out: ShellGesture, from: PhoneScreen) {
+        match out {
+            ShellGesture::HomeUp { progress, held } if from != PhoneScreen::Home => {
+                // The window pulling back is the open app's: with none open
+                // (empty Recents) nothing zooms, and the home page under the
+                // overview glass stays as drawn, so the desk keeps using its
+                // recorded scene for the whole return (desk/phone.rs).
+                phone.openness = if phone.client.is_some() { 1.0 } else { 0.0 };
+                phone.overview = if held { 1.0 } else { progress * 0.6 };
+            }
+            ShellGesture::Back { progress, .. } if from == PhoneScreen::App => {
+                phone.openness = (1.0 - progress * 0.18).clamp(0.4, 1.0);
+            }
+            _ => {}
+        }
+    }
+    /// A committed gesture becomes the navigation the shell already has.
+    /// ShadePull and PageSwipe commits only reach `gesture_out`: the shade
+    /// and the pages are their own surfaces' work. A pull on the home page
+    /// opens the App Library with its search field focused; the same pull on
+    /// the library closes it.
+    /// The native placement menu for an icon (Add/Remove from Home, the
+    /// dock, App info, Uninstall), in the shell's appearance.
+    fn open_app_menu(&mut self,cx:&mut Cx,app:&str) {
+        let dark=makepad_strict_json::Value::Bool(self.state_mut().style.dark);
+        let mut fields=vec![("app",makepad_strict_json::s(app)),("dark",dark)];
+        if let Some(hosted)=crate::shell::launcher::apps().iter().find(|item|item.id.trim_start_matches("apps.")==app) {
+            fields.push(("hosted_label",makepad_strict_json::s(&hosted.label)));
+        }
+        self.android_command(cx,"launcher","menu",fields);
+    }
+    /// The finger lifted from a dragged icon: on a dock slot it docks, on a
+    /// favourites cell the whole order moves around it, anywhere else it
+    /// springs back. Without any movement the icon's menu opens.
+    fn finish_home_drag(&mut self,cx:&mut Cx,drag:crate::mobile::HomeDrag,p:Vec2d) {
+        if !drag.moved {self.open_app_menu(cx,&drag.app);return;}
+        let (screen,style)={let s=self.state_mut();(s.phone.viewport,s.style.target)};
+        let dock=crate::mobile_surface::PhoneSurface::home_dock(screen);
+        if dock.contains(p) {
+            let slot=((p.x-dock.pos.x)/(dock.size.x/4.0)).floor().clamp(0.0,3.0) as usize;
+            self.android_dock(cx,&drag.app,slot);
+            self.android_haptic(cx,"confirm");
+            return;
+        }
+        let phone=&self.state_mut().phone;
+        let k=phone.pages.current();
+        if k<0 || k>=phone.pages.library_index() || phone.pages.widget_id(k).is_some() {return;}
+        let layout=if k==0 {crate::mobile_surface::PhoneSurface::home_layout(style,screen)} else {
+            crate::mobile_tiles::home_layout_for_apps(screen,crate::mobile_surface::PhoneSurface::home_top(style,screen),dock,&[])
+        };
+        // On a folder's tile: the app joins it.
+        if let Some(slot)=layout.tiles.iter().find(|slot|matches!(slot.kind,crate::mobile_tiles::TileKind::Group(_)) && slot.rect.contains(p)) {
+            let name=slot.app.to_string();
+            let mut groups=crate::mobile_groups::seeds();
+            if let Some((_,apps))=groups.iter_mut().find(|(n,_)|*n==name) {
+                if apps.len()<8 && !apps.contains(&drag.app) {apps.push(drag.app.clone());}
+            }
+            self.set_home_groups(cx,groups);
+            return;
+        }
+        let fav=layout.favorites;
+        if layout.columns==0 || layout.row_height<1.0 || p.x<fav.pos.x || p.x>fav.pos.x+fav.size.x || p.y<fav.pos.y-layout.row_height*0.5 {return;}
+        let cell=fav.size.x/layout.columns as f64;
+        let col=((p.x-fav.pos.x)/cell).floor().clamp(0.0,layout.columns as f64-1.0) as usize;
+        let row=((p.y-fav.pos.y)/layout.row_height).floor().max(0.0) as usize;
+        // Right on another icon (its inner two thirds): the two make a folder.
+        {
+            let icon=60.0;
+            let target=rect(fav.pos.x+col as f64*cell+(cell-icon)*0.5+icon*0.17,fav.pos.y+row as f64*layout.row_height+icon*0.17,icon*0.66,icon*0.66);
+            let index=row*layout.columns+col;
+            let other=phone.pages.page_ids(k).get(index).cloned().filter(|other|*other!=drag.app);
+            if let (Some(other),true)=(other,target.contains(p)) {
+                let label=|id:&str| crate::clients::find_app(id).map(|a|a.label).unwrap_or_else(||id.to_string());
+                let name=crate::mobile_groups::fresh_name(&label(&drag.app),&label(&other));
+                let mut groups=crate::mobile_groups::seeds();
+                groups.push((Box::leak(name.into_boxed_str()),vec![drag.app.clone(),other]));
+                self.set_home_groups(cx,groups);
+                return;
+            }
+        }
+        // The favourites run page by page; the drop is an index in that run.
+        let mut order: Vec<String>=Vec::new();
+        let mut offset=0usize;
+        for j in phone.pages.positions() {
+            if j<0 || j>=phone.pages.library_index() || phone.pages.widget_id(j).is_some() {continue;}
+            if j<k {offset+=phone.pages.page_ids(j).len();}
+            order.extend(phone.pages.page_ids(j).iter().cloned());
+        }
+        let on_page=phone.pages.page_ids(k).len();
+        let Some(from)=order.iter().position(|id|*id==drag.app) else {return};
+        order.remove(from);
+        let mut to=offset+(row*layout.columns+col).min(on_page);
+        if to>from {to-=1;}
+        let to=to.min(order.len());
+        order.insert(to,drag.app.clone());
+        self.android_reorder(cx,order);
+        self.android_haptic(cx,"confirm");
+    }
+    /// A drag made or grew a folder: the shell shows it at once and Android
+    /// stores the whole list of pairs and folders.
+    fn set_home_groups(&mut self,cx:&mut Cx,groups:Vec<(&'static str,Vec<String>)>) {
+        use makepad_strict_json::{obj,s,Value};
+        let owned: Vec<(String,Vec<String>)>=groups.iter().map(|(n,a)|(n.to_string(),a.clone())).collect();
+        crate::mobile_groups::set_seeds(Some(&owned));
+        self.state_mut().phone.groups.reseed();
+        let pairs: Vec<Value>=owned.iter().map(|(n,apps)|obj(vec![("name",s(n)),("apps",Value::Arr(apps.iter().map(|a|s(a)).collect()))])).collect();
+        if cfg!(target_os="android") {self.android_command(cx,"launcher","pairs_set",vec![("pairs",Value::Arr(pairs))]);}
+        self.android_haptic(cx,"confirm");
+        self.animate_phone(cx);
+    }
+    fn commit_gesture(&mut self, cx: &mut Cx, kind: GestureKind, from: PhoneScreen) {
+        // A committed navigation gets a light tick; a page swipe is too
+        // frequent for one and already shows where it went.
+        if !matches!(kind, GestureKind::Page(_)) { self.android_haptic(cx, "tick"); }
+        self.state_mut().phone.hints.saw(kind);
+        if let Some(key) = self.state_mut().phone.hints.just_seen.take() {
+            if cfg!(target_os = "android") { self.android_command(cx, "launcher", "hint_seen", vec![("hint", makepad_strict_json::s(key))]); }
+        }
+        match kind {
+            GestureKind::HomeUp => {
+                let android = self.state_mut().style.target == desktop::DesktopStyle::Android;
+                let target = if from == PhoneScreen::Home && android { PhoneHit::Drawer } else { PhoneHit::Home };
+                self.phone_action(cx, target);
+            }
+            GestureKind::Switcher => self.phone_action(cx, PhoneHit::Recents),
+            GestureKind::QuickSwitch(dir) => {
+                // `order` is most-recent first: right brings back the app
+                // used before this one, left cycles the other way round.
+                let order = &self.state_mut().phone.order;
+                let next = match dir {
+                    Dir::Right => order.get(1).copied(),
+                    Dir::Left => order.last().copied().filter(|_| order.len() > 1),
+                };
+                if let Some(client) = next { self.phone_action(cx, PhoneHit::Card(client)); }
+            }
+            // The app sees the back press first (BackPressed / HostedBack)
+            // and the shell goes home only when it declines.
+            GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
+            GestureKind::HomeSearch => match from {
+                // The same App Library page as the swipe up from the bottom:
+                // the grid with its search field at rest, a tap away.
+                PhoneScreen::Home => self.phone_action(cx, PhoneHit::Drawer),
+                _ => {}
+            },
+            GestureKind::Shade(_) | GestureKind::Page(_) => {}
+        }
+    }
+    fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {
+        if primary && matches!(phase, PhonePointerPhase::Down | PhonePointerPhase::Up) {
+            let name = match phase {
+                PhonePointerPhase::Down => "Down", PhonePointerPhase::Move => "Move",
+                PhonePointerPhase::Up => "Up", PhonePointerPhase::Scroll => "Scroll",
+            };
+            crate::mobile_perf::trace_phone_input(name, p);
+        }
+        if self.state_mut().phone.gesture.is_none() {
+            if let Some(hit) = self.phone_toolbar_hit(cx, p) {
+                if phase == PhonePointerPhase::Down && primary { self.phone_action(cx, hit); }
+                return true;
+            }
+        }
+        let (hit,search_scroll_max,scrub_at)=self.desk(cx).borrow::<WmDesk>().map(|d|(d.phone_hit(p),d.phone_search_scroll_max(),d.phone_scrub_scroll(p.y))).unwrap_or_default();
+        let ctx=self.gesture_context(cx);
+        let Some(state)=self.state.as_mut() else {return false};
+        let phone=&mut state.phone;
+        let screen=phone.viewport;
+        if phone.drag.is_some() {
+            match phase {
+                PhonePointerPhase::Move=>{
+                    let drag=phone.drag.as_mut().unwrap();
+                    drag.pos=p;
+                    if (p-drag.start).length()>12.0 {drag.moved=true;}
+                    self.animate_phone(cx);
+                    return true;
+                }
+                PhonePointerPhase::Up=>{
+                    let drag=phone.drag.take().unwrap();
+                    self.finish_home_drag(cx,drag,p);
+                    self.animate_phone(cx);
+                    return true;
+                }
+                _=>{}
+            }
+        }
+        match phase {
+            PhonePointerPhase::Down=>{
+                if !primary {return phone.screen!=PhoneScreen::App;}
+                let old=phone.screen;
+                // The recognizer claims a finger in a band (or on the home
+                // page body); an excluded edge is left to the app.
+                self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
+                // A finger on the open shade's sheet is the shade's own drag.
+                if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
+                let shell=self.phone_gestures.active();
+                if !shell && !screen.contains(p) {return false;}
+                phone.search_velocity=0.0;
+                phone.search_track=Some((p.y,time));
+                if hit==Some(PhoneHit::Scrub) {
+                    if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
+                }
+                if shell || hit.is_some() || old!=PhoneScreen::App {
+                    phone.gesture=Some(PhoneGesture{start:p,last:p,time,hit,shell,screen:old});
+                    phone.gesture_out=None;
+                    self.redraw_all(cx);
+                    return true;
+                }
+                false
+            }
+            PhonePointerPhase::Move=>{
+                let Some(g)=phone.gesture.as_mut() else{return phone.screen!=PhoneScreen::App;};
+                let delta=p-g.start;let last=p-g.last;g.last=p;
+                let (shell,from)=(g.shell,g.screen);
+                let divider=g.hit==Some(PhoneHit::Divider);
+                let shade_hit=match &g.hit {Some(PhoneHit::Shade(h)) if ShadeState::drags(h)=>Some(h.clone()),_=>None};
+                if let Some(h)=shade_hit {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
+                let out=if shell {self.phone_gestures.feed(FingerPhase::Move,p,time,&ctx,&phone.exclusions)} else {None};
+                phone.gesture_out=out;
+                if let Some(out)=out {
+                    Self::drive_gesture(phone,out,from);
+                }else if from==PhoneScreen::Drawer && g.hit==Some(PhoneHit::Scrub) {
+                    if let Some(scroll)=scrub_at {
+                        if (scroll-phone.search_scroll).abs()>0.5 {phone.search_scroll=scroll;self.android_haptic(cx,"tick");}
+                    }
+                }else if from==PhoneScreen::Drawer {
+                    // Past either end the list stretches a little instead of stopping.
+                    let next=phone.search_scroll.min(search_scroll_max)-last.y;
+                    if next<0.0 {phone.search_stretch=(phone.search_stretch-next*0.45).min(72.0);phone.search_scroll=0.0;}
+                    else if next>search_scroll_max {phone.search_stretch=(phone.search_stretch-(next-search_scroll_max)*0.45).max(-72.0);phone.search_scroll=search_scroll_max;}
+                    else {phone.search_scroll=next;}
+                    // The flick speed: a short average of the finger's recent samples.
+                    if let Some((y0,t0))=phone.search_track {
+                        let dt=time-t0;
+                        if dt>0.0005 {phone.search_velocity=phone.search_velocity*0.5+(p.y-y0)/dt*0.5;}
+                    }
+                    phone.search_track=Some((p.y,time));
+                }else if from==PhoneScreen::Recents && !shell {
+                    if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
+                    else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
+                }else if divider {phone.groups.drag_divider(p,app_rect(screen));}
+                self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Up=>{
+                let Some(g)=phone.gesture.take() else{return phone.screen!=PhoneScreen::App;};
+                let delta=p-g.start;
+                // A drawer scroll lifted at speed keeps going; a lift after a
+                // pause, or anything else, stops it.
+                let coasting=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0
+                    && phone.search_track.is_some_and(|(_,t0)|time-t0<0.08) && phone.search_velocity.abs()>250.0;
+                if !coasting {phone.search_velocity=0.0;}
+                phone.search_track=None;
+                if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
+                    let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
+                        && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));
+                    if native_dismiss {
+                        if let ShadeHit::Note(id)=h {
+                            if let Some(note)=phone.shade.notifications.iter_mut().find(|note|note.id==*id) {note.offset=0.0;note.revealed=false;}
+                        }
+                        phone.shade.release(h,dvec2(0.0,delta.y),(time-g.time).max(0.3));
+                    } else {phone.shade.release(h,delta,time-g.time);}
+                    self.android_shade_release(cx,h,delta,time-g.time);
+                    self.animate_phone(cx);return true;
+                }
+                let out=if g.shell {self.phone_gestures.feed(FingerPhase::Up,p,time,&ctx,&phone.exclusions)} else {None};
+                phone.gesture_out=out;
+                self.gesture_out_age=0;
+                match out {
+                    Some(ShellGesture::Commit(kind))=>{
+                        log!("wm: gesture commit {:?} from {:?}",kind,g.screen);
+                        self.commit_gesture(cx,kind,g.screen);
+                    }
+                    Some(ShellGesture::Cancel(kind))=>{
+                        log!("wm: gesture cancel {:?}",kind);
+                    }
+                    _=>{
+                        if g.screen==PhoneScreen::Recents && !g.shell && delta.y < -90.0 && delta.y.abs()>delta.x.abs()*1.2 {
+                            if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);self.state_mut().phone.navigate(PhoneScreen::Recents);}
+                        }else if delta.length()<12.0 {
+                            if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
+                        }else if g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
+                    }
+                }
+                self.state_mut().phone.dismiss_y=0.0;
+                self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Recents=>{
+                phone.page=(phone.page+scroll.signum()).clamp(0.0,phone.order.len().saturating_sub(1)as f64);
+                self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Home && phone.pages.on_glance()=>{
+                phone.pages.scroll_glance(scroll,phone.viewport.size.y);self.animate_phone(cx);true
+            }
+            PhonePointerPhase::Scroll if phone.screen==PhoneScreen::Drawer=>{
+                phone.search_scroll=(phone.search_scroll.min(search_scroll_max)+scroll).clamp(0.0,search_scroll_max);
+                self.animate_phone(cx);true
+            }
+            _=>phone.screen!=PhoneScreen::App,
+        }
+    }
+}

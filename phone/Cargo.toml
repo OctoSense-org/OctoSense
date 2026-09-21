@@ -1,0 +1,175 @@
+# wm — makepad window manager. An Omarchy-behaving tiling window manager
+# built as a Makepad app.
+#
+# Nested mode (this crate, all desktop OSes): wm owns one OS window,
+# fullscreen it and it is the desktop. Tiles host other Makepad apps as
+# child processes through the Studio runview mechanism: a tiny in-process
+# websocket hub accepts `--stdin-loop` clients, each tile shares a GPU
+# swapchain (IOSurface / DXGI handle / DMA-BUF) with its child and forwards
+# input over the studio protocol.
+#
+# Session mode (later, Linux only): the same layout/chrome/protocol with a
+# Wayland compositor display backend instead of a Makepad window. The
+# layout tree, keybindings, theming and client management are kept free of
+# nested-mode assumptions for that reason.
+
+[package]
+name = "octosense"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+default-run = "octosense"
+
+[package.metadata.packager]
+product_name = "OctoSense"
+identifier = "dev.makepad.octosense"
+
+# Merged over the Info.plist cargo-makepad generates for the iOS bundle:
+# the App Transport Security exception News needs (see the file).
+[package.metadata.makepad.ios]
+info_plist = "resources/apple/Info.plist"
+
+# Android builds this entry point as a shared library. Declaring it explicitly
+# avoids cargo-makepad's generated wrapper duplicating our workspace section.
+[lib]
+path = "src/main.rs"
+# The binary target runs the tests for this shared source.
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "octosense"
+path = "src/main.rs"
+
+[dependencies]
+# The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
+libc = "0.2"
+# `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
+# finance, matplot) and the map navigation layer the appcard module renders.
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", features = ["appcard", "maps"] }
+makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-network = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+# The AI services wire only: the WM relays frames between the aichat child and the apps.
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+# In-process hosting (aicontrol §3): the module contract, the palette applied
+# into each instance's isolate, and the modules this build links.
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false, optional = true }
+octosense-photos = { path = "apps/photos", optional = true }
+octosense-reference = { path = "apps/reference", optional = true }
+octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native", optional = true }
+# The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
+# the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
+octosense-appcard = { path = "apps/appcard", optional = true }
+# News: headlines from Hacker News, TechMeme, Google News and the person's
+# own feeds, in a tab per source; a wide home tile on the phone.
+octosense-news = { path = "apps/news", optional = true }
+# The Camera (Octoscript-AppCard apps/camera/native): the Mate 70 Air camera
+# replica, drawn over Makepad's video input (Android's NDK camera on the phone).
+octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native", optional = true }
+# OctosMap: a map under a search bar, places, directions by car, on foot and
+# by bike, and turn-by-turn navigation.
+octosense-maps = { path = "apps/maps", optional = true }
+# The assistant as a module, seated in the pane in-process: the web build's
+# only chat, a desktop option. Without the engine feature: no model runtime,
+# NoModel and the tool console (the child process keeps the real models).
+makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false, optional = true }
+
+# A phone cannot spawn the desktop catalog's Cargo binaries. Link the
+# available modules into native mobile builds without requiring CLI flags.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+octosense-reference = { path = "apps/reference" }
+octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
+octosense-appcard = { path = "apps/appcard" }
+octosense-news = { path = "apps/news" }
+octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native" }
+octosense-maps = { path = "apps/maps" }
+makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false }
+octosense-photos = { path = "apps/photos" }
+
+[features]
+default = []
+# The standalone mobile shell: the Android phone shell fills the window, no
+# desk bar, no style switcher, no desktop styles. Android builds get it
+# without the flag (build.rs turns the same `mobile_only` cfg on for
+# `target_os = "android"`); a desktop build is universal unless this is on.
+mobile-only = []
+# Also usable on desktop for testing the same embedded apps with --module.
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps", "app-camera"]
+app-mail = ["dep:octosense-mail"]
+app-reference = ["dep:octosense-reference"]
+# Sheets linked in as a module (hosting is still Process unless switched).
+app-sheets = ["dep:makepad-sheets"]
+# The native Photos library, albums, and Memories app.
+app-photos = ["dep:octosense-photos"]
+# The AppCard module (one L0 weather card in a tile) linked in.
+app-appcard = ["dep:octosense-appcard"]
+# The News module (headlines in a tile) linked in.
+app-news = ["dep:octosense-news"]
+# The Camera module (the Mate 70 Air replica over Makepad video input) linked in.
+app-camera = ["dep:octosense-camera"]
+# The OctosMap module (maps, places, directions, navigation) linked in.
+app-maps = ["dep:octosense-maps"]
+# The aichat module linked in (the pane seats it in-process where there are
+# no processes, or when `aichat` is switched to module hosting).
+app-aichat = ["dep:makepad-aichat"]
+
+[workspace]
+members = [".", "apps/reference", "apps/appcard", "apps/news", "apps/photos", "apps/maps"]
+default-members = ["."]
+resolver = "2"
+
+[profile.dev]
+opt-level = 1
+
+# `octos-app` (the AppCard module's engine) links two inline-renderer kits
+# that name makepad-widgets by the ZhangHanDong/makepad URL. Redirected to the
+# one makepad lineage this workspace pins, so the graph has a single
+# makepad-widgets (a second one would make every widget type mismatch).
+
+[profile.release]
+# cargo-makepad builds Android with `-C prefer-dynamic` (libstd as a bundled
+# .so): fat LTO refuses that ("cannot prefer dynamic linking when performing
+# LTO"), and `panic = "abort"` breaks the cdylib link against the prebuilt
+# aarch64-linux-android std, which ships the unwind runtime. Same profile as
+# Octoscript-AppCard's app/Cargo.toml documents.
+lto = false
+panic = "unwind"
+
+# One makepad lineage. `octos-app` (Octoscript-AppCard) pins makepad dd8562e in
+# its own manifest; a patch cannot point a source at another rev of itself, so
+# every crate of this URL (the workspace's and octos-app's) resolves through the
+# www host alias of the same repository, at the workspace pin.
+
+# Resolve the exact framework sources prepared by tools/setup-native.py.
+
+[patch."https://github.com/OctoSense-org/makepad.git"]
+makepad-script = { path = "../makepad/platform/script" }
+makepad-widgets = { path = "../makepad/widgets" }
+makepad-code-editor = { path = "../makepad/code_editor" }
+makepad-ai = { path = "../makepad/libs/makepad_ai" }
+makepad-studio-protocol = { path = "../makepad/platform/studio" }
+makepad-network = { path = "../makepad/platform/network" }
+makepad-wm-api = { path = "../makepad/libs/wm_api" }
+makepad-ai-services = { path = "../makepad/libs/ai/services" }
+makepad-strict-json = { path = "../makepad/libs/strict_json" }
+makepad-app-module = { path = "../makepad/libs/app_module" }
+makepad-wm-theme = { path = "../makepad/libs/wm_theme" }
+makepad-map-nav = { path = "../makepad/libs/map_nav" }
+makepad-sheets = { path = "../makepad/apps/sheets" }
+makepad-aichat = { path = "../makepad/apps/aichat" }
+
+[patch."https://github.com/OctoSense-org/Octoscript.git"]
+octoscript-ui-l0 = { path = "../octoscript/crates/octoscript-ui-l0" }
+
+[patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
+octoscript-makepad = { path = "../octoscript-makepad/crates/octoscript-makepad" }
+octoscript-widgets = { path = "../octoscript-makepad/crates/octoscript-widgets" }
+octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
+
+[patch."https://github.com/ZhangHanDong/makepad.git"]
+makepad-widgets = { path = "../makepad/widgets" }

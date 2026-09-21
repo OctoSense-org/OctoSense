@@ -1,0 +1,14 @@
+#!/bin/sh
+# Uses an explicitly installed distribution. Never downloads/bootstrap tools.
+set -eu
+if [ -n "${OCTOSENSE_GRADLE_HOME:-}" ]; then
+    gradle_bin="$OCTOSENSE_GRADLE_HOME/bin/gradle"
+else
+    gradle_bin=$(command -v gradle || true)
+fi
+if [ -z "$gradle_bin" ] || [ ! -x "$gradle_bin" ]; then
+    printf '%s\n' 'Gradle 8.11.1 is required. Set OCTOSENSE_GRADLE_HOME to an existing distribution.' >&2
+    exit 2
+fi
+cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec "$gradle_bin" "$@"

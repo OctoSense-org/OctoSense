@@ -1,0 +1,12 @@
+/target/
+/.worktrees/
+/.octosense/
+# Retain the legacy state exclusion during the project rename.
+/.makeos/
+__pycache__/
+*.pyc
+.DS_Store
+# Local model weights and partial downloads belong outside the repository.
+*.gguf
+*.gguf.part
+/.claude/

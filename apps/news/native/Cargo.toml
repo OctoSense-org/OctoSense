@@ -1,0 +1,13 @@
+[package]
+name = "octosense-news"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
