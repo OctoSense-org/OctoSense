@@ -699,7 +699,7 @@ impl PhoneSurface {
     /// What the home page shows while a finger pulls it down for the App
     /// Library: the page dims and a search field slides in from the top, so
     /// the pull has something to follow before it commits (40 % of the way).
-    /// Idle, the same spot carries the first-use hint for a gesture the
+    /// Idle, the footer carries the first-use hint for a gesture the
     /// person has not found yet (mobile_hints.rs).
     fn draw_home_pull(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, dark: bool, ink: Vec4f, opacity: f32) {
         let phone=&state.phone;
@@ -722,11 +722,10 @@ impl PhoneSurface {
         }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
         let Some((_,text))=phone.hints.pending(phone.android.system_panel) else {return};
-        // A single line above the dock, quiet enough to ignore; it leaves
-        // once the gesture it names has been used.
-        let dock=Self::home_dock(screen);
-        let pill=rect(x,dock.pos.y-64.0,pill_w,30.0);
-        self.rounded(cx,pill,15.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
+        // Keep the hint below the dock icons and above the gesture bar,
+        // clear of the favorites' labels and page indicator.
+        let pill=rect(x,screen.pos.y+screen.size.y-38.0,pill_w,24.0);
+        self.rounded(cx,pill,12.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
         self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
     }
     /// Android's app drawer: a sheet with every launchable app on one grid.
