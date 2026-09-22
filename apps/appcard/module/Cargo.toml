@@ -1,0 +1,17 @@
+[package]
+name = "octosense-appcard"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", features = ["appcard", "maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671" }
+# The whole Octoscript-AppCard app as a library: routing brain, card store and
+# transport, L0 lowering, sessions, composer, kernel agent — mounted here as
+# its `AppShell` widget. No default features: the app's own entry points
+# (`app_main!`, the dev monitor) stay out; this module is the entry point.
+octos-app = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "025105c378f1ca44be00937b252e2b169d15b577", default-features = false }
+# Tool arguments (`ask` takes `{"text": ...}`).
+serde_json = "1.0"

@@ -11,3 +11,10 @@ vendor/octosense/adb_keys/*.pub
 *private*.pem
 platform.pem
 releasekey.pem
+
+# Reproducible dependency checkouts and build artifacts.
+/.sources/
+/out/
+__pycache__/
+*.pyc
+.DS_Store

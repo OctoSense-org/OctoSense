@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "repositories": {
+    "appcards": {
+      "url": "https://github.com/OctoSense-org/Octoscript-AppCard.git",
+      "revision": "eaf3d1458bf212047895af60f90e04154c1a1d30"
+    },
+    "camera": {
+      "url": "https://github.com/OctoSense-org/Octoscript-AppCard.git",
+      "revision": "4750333dbefd7e5f9f9ed882b75aa1d4ebbd4243"
+    }
+  }
+}

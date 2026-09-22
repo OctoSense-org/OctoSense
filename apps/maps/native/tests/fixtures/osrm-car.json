@@ -1,0 +1,155 @@
+{
+ "code": "Ok",
+ "routes": [
+  {
+   "geometry": "wr{bFj||fV?BUNyCtBWP[RYR_@TKHIH]TeAr@_@Vu@f@MHi@^K?KFCBIDKHSLCLEBQLC@OJQLWPMHa@XC@{@l@i@\\IDJVpAnDHPFR^`Ar@hBFRFPv@vBXt@FLFPn@~ABJ^`ABFBFBF@DDJx@|Bb@jAPd@Rf@QDgBhBONSZORMPc@t@e@z@e@~@yBdEMVQd@M`@I\\G`@Cb@A^@ZB^B^F^Lt@HTJ^|@xCFVPt@Pr@`@hBH\\ZxARnABLBRDVHt@Fp@Dz@Dz@DjA@bBC~@ExAC\\CZIdA[hCGb@Kz@e@vDSt@Md@O`@GNKPU^KNEFGFKL{@`AMNQRKLk@l@IJo@x@g@r@KTuB`CkAnAUVOPMLsCbDoBtBW\\EBEDIHGFUTONYFm@^q@f@wA`BWXgA~AwClEe@n@aBzBc@j@gB|BcAtAsAfBGRGJEJMVGPi@rAq@dBKVGN]x@EH]x@Ob@MZc@hA[v@]bAKXg@xAUh@EHQb@Qb@g@nASf@cAjC]|@Q^eAhCw@nBYp@CHKTkBxEmAvCi@vAcAhCCDGPGNKVIRSh@AB?DBLKXCFGRELCPERCPCNEZATC`@Cd@Az@?Z?B?T?JATAbAAV?\\?BCn@AT?PAJARE^EXCRI`@ELIXUj@GJO\\OBi@nAw@fBYdAUp@q@jBIXE^CXAX?V@P@P@RBNDTFRDNDJFJHNHJJLJJJJNHVN`@Rj@V\\RVRb@`@l@p@f@d@rAtAd@`@Rv@@JBN@L?P?NCPEZCZAVA\\@\\@\\F`@D\\BFBLFZRh@T@Zz@N`@FNFLVp@Pj@L`@FVHVLf@FZHXZpALb@x@~CTjA`@xAt@nCf@pB`@zAHZJ`@Jd@DLn@hCXjABNHh@Hh@BTBZH|@Br@@h@@R@f@?x@Aj@WAwAp@{@\\[`@SHo@Xk@VC?",
+   "distance": 7685.3,
+   "duration": 629.1,
+   "legs": [
+    {
+     "steps": [
+      {
+       "name": "East Santa Clara Street",
+       "distance": 1.3,
+       "duration": 4.1,
+       "maneuver": {
+        "type": "depart",
+        "location": [
+         -121.886303,
+         37.338204
+        ],
+        "bearing_after": 240
+       }
+      },
+      {
+       "name": "North 5th Street",
+       "distance": 568.5,
+       "duration": 58.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.886316,
+         37.338198
+        ],
+        "bearing_after": 327
+       }
+      },
+      {
+       "name": "East Julian Street",
+       "distance": 593.2,
+       "duration": 51.8,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.889593,
+         37.342571
+        ],
+        "bearing_after": 237
+       }
+      },
+      {
+       "name": "Coleman Avenue",
+       "distance": 4572,
+       "duration": 333,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.895342,
+         37.339836
+        ],
+        "bearing_after": 316
+       }
+      },
+      {
+       "name": "",
+       "distance": 458,
+       "duration": 55,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight left",
+        "location": [
+         -121.937632,
+         37.357935
+        ],
+        "bearing_after": 295
+       }
+      },
+      {
+       "name": "De La Cruz Boulevard",
+       "distance": 114.2,
+       "duration": 6.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "straight",
+        "location": [
+         -121.941507,
+         37.356772
+        ],
+        "bearing_after": 216
+       }
+      },
+      {
+       "name": "",
+       "distance": 219.9,
+       "duration": 27.1,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight right",
+        "location": [
+         -121.942304,
+         37.355963
+        ],
+        "bearing_after": 244
+       }
+      },
+      {
+       "name": "El Camino Real",
+       "distance": 964.3,
+       "duration": 75.2,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.944675,
+         37.355638
+        ],
+        "bearing_after": 185
+       }
+      },
+      {
+       "name": "Lincoln Street",
+       "distance": 193.9,
+       "duration": 18.1,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.954611,
+         37.352457
+        ],
+        "bearing_after": 341
+       }
+      },
+      {
+       "name": "Lincoln Street",
+       "distance": 0,
+       "duration": 0,
+       "maneuver": {
+        "type": "arrive",
+        "modifier": "right",
+        "location": [
+         -121.955474,
+         37.354035
+        ],
+        "bearing_after": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

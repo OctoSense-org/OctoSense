@@ -6,9 +6,14 @@
 # The ROM zip must already be in rom-builds/<tag> (scripts/release.sh downloads it).
 set -euo pipefail
 TAG=${1:?build tag}
+HERE=$(cd "$(dirname "$0")/.." && pwd)
 REPO=OctoSense-org/octosense-rom
 BUILDS=$HOME/home/octosense-org/rom-builds; DIR=$BUILDS/$TAG
-HOME_APK=${2:-$BUILDS/home/latest.apk}
+HOME_APK=${2:-$HERE/out/home/rom/OctoSenseHome.apk}
+if [ -f "$HOME_APK" ]; then
+    [ "$(basename "$HOME_APK")" = OctoSenseHome.apk ] || { echo "use the ROM build's OctoSenseHome.apk and adjacent build.json" >&2; exit 2; }
+    python3 "$HERE/scripts/stage-home.py" --build "$(dirname "$HOME_APK")" --verify-only
+fi
 ZIP=$(ls "$DIR"/lineage-*.zip | head -1)
 ASSET_ZIP="octosense-$TAG-enchilada.zip"
 [ -f "$HOME_APK" ] && HOME_APK=$(cd "$(dirname "$HOME_APK")" && pwd)/$(readlink "$HOME_APK" 2>/dev/null || basename "$HOME_APK")
