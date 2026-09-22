@@ -1,4 +1,4 @@
-# Home APKs and ROM staging
+# Home builds and ROM staging
 
 Home is the Rust workspace in `home/`. Run commands below from the
 `octosense-rom` root. Builds do not install an APK, flash a phone, change a Home
@@ -113,3 +113,37 @@ new ROM's boot, radios, notifications, Recents, emergency access and OTA recover
 Run those acceptance checks before retiring the old release path or changing
 certificates. Compilation may embed source/resource paths; release artifact
 review and the existing private-key publication check remain necessary.
+
+## OpenHarmony Home
+
+The same `home/` workspace also builds a normal OpenHarmony application. It
+links the native modules and App Hub in process, because a phone cannot spawn
+the desktop catalog's Cargo binaries. This does not grant Android's Home role,
+replace the HarmonyOS system launcher, or make an Android ROM flashable on a
+Huawei device.
+
+Use an existing DevEco installation, compatible `cargo-makepad`, and an existing
+device-authorized signing profile. Export the existing DevEco `signingConfigs`
+array into a private JSON file outside the repository:
+
+```sh
+python3 scripts/build-home-ohos.py \
+  --deveco-home /Applications/DevEco-Studio.app/Contents \
+  --packager /path/to/cargo-makepad \
+  --signing-config /private/home-signing.json \
+  --bundle-id dev.makepad.octosense
+```
+
+The bundle ID must match the signing profile. The Mate 70 development profile
+currently authorizes the existing Home prototype identity
+`com.example.myapplication`; device validation explicitly uses that ID. A
+production Home identity requires its own profile. The builder never creates
+keys or silently substitutes an application's identity.
+
+The builder uses DevEco's existing CMake and Java, resets generated ArkTS files
+from the pinned framework template, supplies missing permission descriptions,
+and removes signing credentials from the generated project after packaging.
+Artifacts and source/hash receipts go to `out/home/ohos/`. The optional
+`--remote-port` enables app-owned loopback inspection for validation and writes
+to `out/home/ohos-validation/`; omit it for the normal package. Existing warnings
+remain. Android device acceptance still requires an ordinary Android phone.

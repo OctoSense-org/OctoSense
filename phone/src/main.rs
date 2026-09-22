@@ -137,7 +137,7 @@ macro_rules! octosense_main_with_robrix {
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
 }
-#[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
+#[cfg(any(feature = "app-camera", native_mobile))]
 macro_rules! octosense_main_with_camera {
     ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!(
         "octosense_camera/resources/service/NotoSansSC-Regular.ttf",
@@ -146,11 +146,11 @@ macro_rules! octosense_main_with_camera {
         $($extra),*
     ); };
 }
-#[cfg(not(any(feature = "app-camera", target_os = "android", target_os = "ios")))]
+#[cfg(not(any(feature = "app-camera", native_mobile)))]
 macro_rules! octosense_main_with_camera {
     ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!($($extra),*); };
 }
-#[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
+#[cfg(any(feature = "app-mail", native_mobile))]
 octosense_main_with_camera!(
     "octosense_mail/resources/ux/Inter-200.ttf",
     "octosense_mail/resources/ux/Inter-300.ttf",
@@ -159,7 +159,7 @@ octosense_main_with_camera!(
     "octosense_mail/resources/ux/Inter-600.ttf",
     "octosense_mail/resources/ux/Inter-700.ttf",
 );
-#[cfg(not(any(feature = "app-mail", target_os = "android", target_os = "ios")))]
+#[cfg(not(any(feature = "app-mail", native_mobile)))]
 octosense_main_with_camera!();
 
 script_mod! {
@@ -3059,7 +3059,7 @@ impl App {
 
     #[cfg(not(mobile_only))]
     fn update_desk_bar_chrome(&mut self, cx: &mut Cx, geom: &WindowGeom) {
-        let native_mobile = cfg!(any(target_os = "ios", target_os = "android"));
+        let native_mobile = cfg!(native_mobile);
         // Insets can change without changing the toolbar (rotation, system
         // navigation mode), so update them before the metrics cache check.
         if native_mobile {
@@ -4353,7 +4353,7 @@ impl MatchEvent for App {
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.
         let args: Vec<String> = std::env::args().collect();
         self.apps = AppRegistry::load(&theme::makepad_home().join("wm/apps.splash"), &args);
-        #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+        #[cfg(any(feature = "app-appstore", native_mobile))]
         octosense_appstore::set_data_root(
             cx.get_data_dir().map(|dir| std::path::PathBuf::from(dir).join("apps"))
                 .unwrap_or_else(|| octosense::paths::home().join("apps")),
@@ -4369,7 +4369,7 @@ impl MatchEvent for App {
         }
         mobile_island::install_producers();
         self.reapprove_hosted_cards(cx);
-        if cfg!(any(target_os = "ios", target_os = "android")) {
+        if cfg!(native_mobile) {
             self.update_bar_chrome(cx, &WindowGeom {
                 safe_area_insets: cx.display_context.safe_area_insets,
                 ..Default::default()
@@ -4479,7 +4479,7 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
-            #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+            #[cfg(any(feature = "app-appstore", native_mobile))]
             match wa.cast::<octosense_appstore::AppStoreAction>() {
                 octosense_appstore::AppStoreAction::Launch(app_id) => {
                     // The store installed it; the window manager opens it as
@@ -4739,7 +4739,7 @@ impl AppMain for App {
                 makepad_widgets::widget_async::leave_isolate(cx, entry);
             }
         }
-        #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
+        #[cfg(any(feature = "app-mail", native_mobile))]
         if let Some(client) = self.module_host.client_of_module("mail") {
             let foreground = self.state.as_ref().map(|state| {
                 !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
@@ -4805,7 +4805,7 @@ impl AppMain for App {
             // The shell bar's own modules are BUTTONS, not a drag handle:
             // where it claims a point, the press reaches the widget.
             let bar = self.ui.view(cx, ids!(bar)).area();
-            if cfg!(any(target_os = "ios", target_os = "android")) || MOBILE_ONLY
+            if cfg!(native_mobile) || MOBILE_ONLY
                 || self.phone_toolbar_hit(cx,dq.abs).is_some() || self.shell_bar_claims(cx, dq.abs) {
                 dq.response.set(WindowDragQueryResponse::Client);
             } else if bar.is_valid(cx) && bar.rect(cx).contains(dq.abs) {

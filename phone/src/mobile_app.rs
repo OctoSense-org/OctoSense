@@ -15,9 +15,9 @@ impl App {
     /// `octosense_appcard::reapprove_cards_for_host_build`). Desktop builds
     /// leave the developer's own store alone.
     pub(super) fn reapprove_hosted_cards(&self, cx: &Cx) {
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
         let _ = cx;
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_env = "ohos"))]
         {
             let Some(config) = octosense_appcard::octos_app_config_dir(cx.get_data_dir()) else {
                 log!("wm: card approvals not archived: no data dir to find the store in");

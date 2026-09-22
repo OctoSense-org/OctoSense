@@ -8,8 +8,15 @@
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(mobile_only)");
     let feature = std::env::var_os("CARGO_FEATURE_MOBILE_ONLY").is_some();
-    let android = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android");
-    if feature || android {
+    println!("cargo:rustc-check-cfg=cfg(native_mobile)");
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    // OpenHarmony is Linux with target_env=ohos; it cannot host desktop processes.
+    let native_mobile = target_os == "android" || target_os == "ios" || target_env == "ohos";
+    if native_mobile {
+        println!("cargo:rustc-cfg=native_mobile");
+    }
+    if feature || target_os == "android" || target_env == "ohos" {
         println!("cargo:rustc-cfg=mobile_only");
     }
     // The host's build id: the second this build was configured, as digits.

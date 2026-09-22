@@ -1,6 +1,6 @@
 diff --git a/platform/script/std/src/gate.rs b/platform/script/std/src/gate.rs
 new file mode 100644
-index 000000000..9625a12cc
+index 0000000..9625a12
 --- /dev/null
 +++ b/platform/script/std/src/gate.rs
 @@ -0,0 +1,105 @@
@@ -110,7 +110,7 @@ index 000000000..9625a12cc
 +    }
 +}
 diff --git a/platform/script/std/src/lib.rs b/platform/script/std/src/lib.rs
-index 96e1d496f..90997efb1 100644
+index 96e1d49..90997ef 100644
 --- a/platform/script/std/src/lib.rs
 +++ b/platform/script/std/src/lib.rs
 @@ -2,6 +2,7 @@
@@ -130,7 +130,7 @@ index 96e1d496f..90997efb1 100644
  pub use run::*;
  pub use task::*;
 diff --git a/platform/script/std/src/net.rs b/platform/script/std/src/net.rs
-index 502dd4934..ba16994ca 100644
+index 502dd49..ba16994 100644
 --- a/platform/script/std/src/net.rs
 +++ b/platform/script/std/src/net.rs
 @@ -840,6 +840,13 @@ pub fn script_mod(vm: &mut ScriptVm) {
@@ -148,7 +148,7 @@ index 502dd4934..ba16994ca 100644
              let std = vm.std_mut::<ScriptStd>();
              let Some(runtime) = std.net.as_ref() else {
 diff --git a/platform/src/lib.rs b/platform/src/lib.rs
-index a3bc2fd42..a310cd1f6 100644
+index a3bc2fd..a310cd1 100644
 --- a/platform/src/lib.rs
 +++ b/platform/src/lib.rs
 @@ -142,6 +142,7 @@
@@ -159,8 +159,46 @@ index a3bc2fd42..a310cd1f6 100644
  pub use makepad_script_std::makepad_network;
  pub use makepad_script_std::makepad_script;
  pub use makepad_studio_protocol as studio;
+diff --git a/platform/src/os/linux/open_harmony/open_harmony.rs b/platform/src/os/linux/open_harmony/open_harmony.rs
+index 7deab9b..a5168ff 100644
+--- a/platform/src/os/linux/open_harmony/open_harmony.rs
++++ b/platform/src/os/linux/open_harmony/open_harmony.rs
+@@ -581,6 +581,33 @@ pub fn draw_pass_to_fullscreen(&mut self, draw_pass_id: DrawPassId) {
+ 
+         self.render_view(draw_pass_id, draw_list_id, &mut zbias, zbias_step);
+ 
++        // Read only this app's framebuffer, before EGL hands it to the
++        // compositor. The remote bridge's /g requests otherwise time out.
++        let window_id = self.get_pass_window_id(draw_pass_id).map(|window| window.id());
++        let requests = self.take_studio_screenshot_request_ids_for_window(0, window_id);
++        if !requests.is_empty() {
++            let width = self.os.display_size.x as u32;
++            let height = self.os.display_size.y as u32;
++            let stride = width as usize * 4;
++            let mut pixels = vec![0u8; stride * height as usize];
++            unsafe {
++                let gl = self.os.gl();
++                (gl.glReadPixels)(0, 0, width as i32, height as i32,
++                    gl_sys::RGBA, gl_sys::UNSIGNED_BYTE, pixels.as_mut_ptr() as *mut _);
++            }
++            // OpenGL's origin is bottom-left; PNG rows start at the top.
++            for row in 0..height as usize / 2 {
++                let top = row * stride;
++                let bottom = (height as usize - 1 - row) * stride;
++                for column in 0..stride {
++                    pixels.swap(top + column, bottom + column);
++                }
++            }
++            if let Ok(png) = Self::encode_rgba_as_png(width, height, &pixels) {
++                Self::send_studio_screenshot_response(requests, width, height, png);
++            }
++        }
++
+         unsafe { self.os.display.as_mut().unwrap().swap_buffers() };
+ 
+         //unsafe {
 diff --git a/platform/src/script/res.rs b/platform/src/script/res.rs
-index de3dedce0..9748c2a93 100644
+index de3dedc..9748c2a 100644
 --- a/platform/src/script/res.rs
 +++ b/platform/src/script/res.rs
 @@ -532,6 +532,13 @@ impl Cx {
@@ -193,7 +231,7 @@ index de3dedce0..9748c2a93 100644
                  if let Some(existing) = cx
                      .script_data
 diff --git a/widgets/src/lib.rs b/widgets/src/lib.rs
-index 2d65b98a3..4c6418776 100644
+index 2d65b98..4c64187 100644
 --- a/widgets/src/lib.rs
 +++ b/widgets/src/lib.rs
 @@ -26,6 +26,7 @@
@@ -205,7 +243,7 @@ index 2d65b98a3..4c6418776 100644
  pub mod widget_match_event;
  pub mod widget_tree;
 diff --git a/widgets/src/splash.rs b/widgets/src/splash.rs
-index 1750c9960..f88e8d4f7 100644
+index 1750c99..2262d0f 100644
 --- a/widgets/src/splash.rs
 +++ b/widgets/src/splash.rs
 @@ -66,6 +66,19 @@ pub struct Splash {
@@ -253,7 +291,41 @@ index 1750c9960..f88e8d4f7 100644
          // Full code string: prefix + body (no closing - parser auto-closes)
          let prefix = if self.allow_net {
              SPLASH_NET_PREFIX
-@@ -273,6 +291,9 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+@@ -254,8 +272,16 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+             if let Some(sheet)=sheet {
+                 if crate::desktop_style::current(vm).as_ref()!=Some(&sheet) {
+                     crate::desktop_style::install(vm,sheet);
+-                    // Keep the isolate's existing prelude/resource handles and jail.
+-                    vm.with_reload(|vm| {crate::widgets_mod(vm);crate::desktop_style::apply_widgets(vm);});
++                    // Trusted framework themes need their packaged font resolver.
++                    // Preserve the jail and expose only the resolver during theme
++                    // registration, removing it before evaluating the app body.
++                    vm.with_reload(|vm| {
++                        crate::script_eval!(vm, {mod.res = {crate_resource: mod.prelude.widgets.crate_resource}});
++                        crate::widgets_mod(vm);
++                        crate::desktop_style::apply_widgets(vm);
++                        crate::script_eval!(vm, {mod.res = nil});
++                        crate::widget_async::apply_splash_isolate_mods(vm);
++                    });
+                 }
+             }
+             // Everything on `mod` that is not the body's own; whatever the run
+@@ -263,6 +289,9 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+             let mut known = module_keys(vm);
+             known.retain(|key| !body_modules.contains(key));
+             let saved = if preserve { snapshot_modules(vm, &body_modules) } else { Vec::new() };
++            // Streaming evaluation silences console errors. Retain them so a
++            // completed card cannot fail with an unexplained blank surface.
++            let previous_errors = vm.bx.captured_errors.replace(Vec::new());
+             let value = vm.with_instruction_limit(SPLASH_EVAL_INSTRUCTION_LIMIT, |vm| {
+                 if preserve {
+                     vm.with_reload(|vm| vm.eval_with_append_source(script_mod, &code, NIL.into()))
+@@ -270,9 +299,14 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+                     vm.eval_with_append_source(script_mod, &code, NIL.into())
+                 }
+             });
++            let evaluation_errors = vm.take_errors();
++            vm.bx.captured_errors = previous_errors;
              if preserve {
                  restore_modules(vm, saved);
              }
@@ -263,7 +335,16 @@ index 1750c9960..f88e8d4f7 100644
              let body_modules: Vec<LiveId> = module_keys(vm)
                  .into_iter()
                  .filter(|key| !known.contains(key))
-@@ -664,6 +685,10 @@ pub fn call_script_fn(&mut self, cx: &mut Cx, name: LiveId, args: &[ScriptValue]
+@@ -289,7 +323,7 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+                 // its previous view — or nothing at all. Say so: a silent
+                 // blank widget is the hardest bug in this file to find.
+                 if value.is_err() {
+-                    for e in vm.take_errors() {
++                    for e in evaluation_errors {
+                         log!("splash: {}", e);
+                     }
+                 } else {
+@@ -664,6 +698,10 @@ pub fn call_script_fn(&mut self, cx: &mut Cx, name: LiveId, args: &[ScriptValue]
          let mut called = false;
          crate::widget_async::contain_isolate_panic("script hook call", || {
          called = cx.with_script_vm_id(self.vm_id, |vm| {
@@ -274,7 +355,7 @@ index 1750c9960..f88e8d4f7 100644
              // NoTrap: this is an existence probe for an OPTIONAL hook. A
              // trapping lookup queues a NotFound into the error log even though
              // the miss is handled right here — every host broadcast (e.g.
-@@ -676,6 +701,7 @@ pub fn call_script_fn(&mut self, cx: &mut Cx, name: LiveId, args: &[ScriptValue]
+@@ -676,6 +714,7 @@ pub fn call_script_fn(&mut self, cx: &mut Cx, name: LiveId, args: &[ScriptValue]
              vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
                  vm.call(fnval, args);
              });
@@ -282,7 +363,7 @@ index 1750c9960..f88e8d4f7 100644
              true
          });
          });
-@@ -693,6 +719,10 @@ pub fn call_script_fn_with_strings(&mut self, cx: &mut Cx, name: LiveId, args: &
+@@ -693,6 +732,10 @@ pub fn call_script_fn_with_strings(&mut self, cx: &mut Cx, name: LiveId, args: &
          let mut called = false;
          crate::widget_async::contain_isolate_panic("script hook call", || {
          called = cx.with_script_vm_id(self.vm_id, |vm| {
@@ -293,7 +374,7 @@ index 1750c9960..f88e8d4f7 100644
              let fnval = vm.bx.heap.scope_value(scope, name, NoTrap);
              if fnval.is_nil() || fnval.is_err() {
                  return false;
-@@ -704,6 +734,7 @@ pub fn call_script_fn_with_strings(&mut self, cx: &mut Cx, name: LiveId, args: &
+@@ -704,6 +747,7 @@ pub fn call_script_fn_with_strings(&mut self, cx: &mut Cx, name: LiveId, args: &
              vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
                  vm.call(fnval, &vals);
              });
@@ -301,7 +382,7 @@ index 1750c9960..f88e8d4f7 100644
              true
          });
          });
-@@ -773,6 +804,50 @@ pub fn set_host_prompts(&mut self, cx: &mut Cx, may_prompt: bool) {
+@@ -773,6 +817,50 @@ pub fn set_host_prompts(&mut self, cx: &mut Cx, may_prompt: bool) {
          }
      }
  
@@ -352,7 +433,7 @@ index 1750c9960..f88e8d4f7 100644
      /// This Splash's live isolate heap identity (None while stopped) — the
      /// same key `SplashHostRequest::heap_key` carries, so hosts can relate a
      /// request to a specific widget (e.g. to skip an IPC sender's own isolate
-@@ -825,6 +900,25 @@ fn body_scope(&mut self, cx: &mut Cx) -> Option<ScriptObject> {
+@@ -825,6 +913,25 @@ fn body_scope(&mut self, cx: &mut Cx) -> Option<ScriptObject> {
  }
  
  impl SplashRef {
@@ -379,7 +460,7 @@ index 1750c9960..f88e8d4f7 100644
          if let Some(mut inner) = self.borrow_mut() {
              inner.set_text(cx, v);
 diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
-index 6b4d3861b..d1c7a0c25 100644
+index 6b4d386..d1c7a0c 100644
 --- a/widgets/src/splash_host.rs
 +++ b/widgets/src/splash_host.rs
 @@ -179,9 +179,16 @@ pub fn splash_host_respond(
@@ -428,7 +509,7 @@ index 6b4d3861b..d1c7a0c25 100644
                  b.next_req_id += 1;
 diff --git a/widgets/src/splash_policy.rs b/widgets/src/splash_policy.rs
 new file mode 100644
-index 000000000..9bb895860
+index 0000000..9bb8958
 --- /dev/null
 +++ b/widgets/src/splash_policy.rs
 @@ -0,0 +1,237 @@
@@ -670,10 +751,27 @@ index 000000000..9bb895860
 +    }
 +}
 diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
-index 86eb13594..ace448ad1 100644
+index 86eb135..63acffe 100644
 --- a/widgets/src/widget_async.rs
 +++ b/widgets/src/widget_async.rs
-@@ -145,6 +145,7 @@ pub fn gc_dead_splash_isolates(cx: &mut Cx) {
+@@ -95,6 +95,16 @@ pub fn register_splash_isolate_mod(f: fn(&mut ScriptVm)) {
+     HOST_ISOLATE_MODS.with(|g| g.borrow_mut().push(f));
+ }
+ 
++/// Reinstall trusted host vocabulary after a theme rebuild replaces mod.widgets.
++/// Clone first so an installer can register another module without borrowing the list.
++pub(crate) fn apply_splash_isolate_mods(vm: &mut ScriptVm) {
++    let host_mods = HOST_ISOLATE_MODS.with(|mods| mods.borrow().clone());
++    for install in host_mods {
++        install(vm);
++    }
++}
++
++
+ /// Queue a Splash isolate for reclamation on the next isolate alloc. Called from
+ /// `Splash::drop`, which has no `Cx`. Ignores the main VM (id 0), never an isolate.
+ pub(crate) fn mark_splash_isolate_dead(vm_id: SplashVmId) {
+@@ -145,6 +155,7 @@ pub fn gc_dead_splash_isolates(cx: &mut Cx) {
      // Sandbox roots and host-bridge state die with their isolates.
      crate::splash_storage::gc_roots(&dead_heaps);
      crate::splash_host::gc_bridge(&dead_heaps);
@@ -681,3 +779,16 @@ index 86eb13594..ace448ad1 100644
      crate::desktop_style::gc_heaps(cx,&dead_heaps);
      // And the resource cache, which is keyed by heap ADDRESS: dropping a heap
      // frees that address for the next isolate, and a leftover entry would hand
+@@ -506,11 +517,7 @@ fn alloc_splash_vm_with_network(&mut self, network_enabled: bool) -> SplashVmId
+             // namespace and are not removed by the strip above. Collected first
+             // so the thread-local is not borrowed while a mod runs — a mod is
+             // free to register another.
+-            let host_mods: Vec<fn(&mut ScriptVm)> =
+-                HOST_ISOLATE_MODS.with(|g| g.borrow().clone());
+-            for install in host_mods {
+-                install(&mut vm);
+-            }
++            apply_splash_isolate_mods(&mut vm);
+             vm.bx
+         };
+         let std = std::mem::replace(&mut self.script_data.std, outer_std);

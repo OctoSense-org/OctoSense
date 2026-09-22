@@ -57,9 +57,9 @@ android_app {
     target_sdk_version: "current",
     privileged: true,
     system_ext_specific: true,
-    // Build-only signer. The exported APK must be signed with the existing
-    // OctoSense key on the host before a separately approved deployment.
-    certificate: "testkey",
+    // Home, Bridge, Agent and Quickstep share the ROM's platform identity.
+    // CallerGuard rejects the private Home connection across signing keys.
+    certificate: "platform",
     optimize: {
         proguard_flags_files: [":launcher-proguard-rules"],
         enabled: true,

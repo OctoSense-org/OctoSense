@@ -84,7 +84,7 @@ octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
-[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub.git", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b" }
 octosense-reference = { path = "apps/reference" }
 octosense-mail = { path = "../.sources/appcards/apps/mail/native" }
@@ -178,3 +178,8 @@ octoscript-node = { path = "../.sources/octoscript-makepad/crates/octoscript-nod
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
 makepad-widgets = { path = "../.sources/makepad/widgets" }
+
+# OpenHarmony's ioctl ABI differs from Linux; this is the reviewed native-mobile
+# fix from mobile PR #10. Keep the patch pinned with the rest of the build graph.
+[patch.crates-io]
+nix = { git = "https://github.com/octos-org/octos.git", rev = "deb433e9a452c03d8fe7f4f6a26b42785c47ced7" }

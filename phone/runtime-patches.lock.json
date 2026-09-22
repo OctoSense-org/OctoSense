@@ -4,7 +4,13 @@
     "base_revision": "825dbb422c6d7926e111e2ee7831d697870d8671",
     "source_commit": "0f88d2286698dc8d2a9c2b994e4ac2c7873af582",
     "patch": "patches/runtime/makepad-isolate-policy.patch",
-    "sha256": "b678a79d1cdf212c023163e917b2219e8643e784527ef95e2d48e16101da09d6",
-    "tree": "d14818507029fee67c883aa71bf62df9d11e3750"
+    "sha256": "a4180ed53c52190ec2e816c5717578d7a23c3ba361e0ac2e22785bad952f70ba",
+    "tree": "7572ec88742a6926958588996a4dc693301f38ae",
+    "product_fixes": [
+      "Temporarily expose the existing packaged-font resolver during trusted Splash theme reload; remove it before evaluating the card.",
+      "Capture streaming evaluation errors so rejected card bodies are diagnosable.",
+      "Answer OpenHarmony app-owned remote capture requests from its framebuffer before swap.",
+      "Re-register trusted host widgets after a Splash theme reload replaces mod.widgets."
+    ]
   }
 }

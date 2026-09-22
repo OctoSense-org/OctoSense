@@ -20,7 +20,8 @@ cards refresh the launcher catalog and keep distinct client identities.
 The pinned runtime remains `b0628d05a89369b0c3bae2750db6da06996a05c2`, including
 Makepad's Android fixes at `825dbb422c6d7926e111e2ee7831d697870d8671`. The App Hub
 prototype depended on additional isolate-policy APIs from Makepad commit
-`0f88d2286698dc8d2a9c2b994e4ac2c7873af582`; its exact patch is carried in
+`0f88d2286698dc8d2a9c2b994e4ac2c7873af582`; its policy patch plus the
+device fixes listed in `home/runtime-patches.lock.json` are carried in
 `patches/runtime/` with a hash and resulting tree lock. Bootstrap validates both
 the upstream base and this patch. It does not depend on uncommitted framework
 worktrees or silently disable policy enforcement.
@@ -38,8 +39,8 @@ release is accepted:
 
 | Work | Snapshot inspected | Disposition |
 | --- | --- | --- |
-| Calendar / mobile PR #11 | `c6e816bea3ab57557d63dd01872ec94f72eeef8e` | App Hub wiring ported; remaining Calendar/OHOS changes still need review. |
-| OpenHarmony / mobile PR #10 | `78e192c5f8f529428e15025c363472cb5a825717` | Preserved in the source repository; not folded into this Android migration. |
+| Calendar / mobile PR #11 | `c6e816bea3ab57557d63dd01872ec94f72eeef8e` | App Hub wiring ported; remaining Calendar changes still need review. |
+| OpenHarmony / mobile PR #10 | `78e192c5f8f529428e15025c363472cb5a825717` | Native-mobile module selection and pinned nix ABI fix ported. AppCard advances to `025105c378f1ca44be00937b252e2b169d15b577` for the missing embedded transport. Mate 70 Home builds and runs from this repository. |
 | Main local mobile worktree | `45dbbfbf257c05a7c2d5149b21ebe77f5c71013c` plus local changes | Active work preserved in place; not treated as a clean release baseline. |
 
 The separate mobile repository is a transition/archive source, not a dependency
@@ -70,9 +71,10 @@ the explicit `--packager` option. Receipts record that override. Existing Rust
 configuration/dead-code warnings and Java deprecation warnings remain; the
 builds do not claim a warning-free baseline.
 
-No newly built APK was installed, no device was flashed, and no complete
-LineageOS image was built in this migration run. Before retiring the old release
-path, validate the new Home on a genuinely unrooted phone and a new OnePlus ROM,
-including the real HTTPS App Hub fixture flow and update/reboot recovery.
-App Hub's non-atomic bundle replacement and Android runtime containment remain
-production acceptance items described in [Home builds](home-build.md).
+Home/Bridge updates have now been installed on the existing OnePlus OctoSense
+ROM, and Home runs as a normal application on the Mate 70 Air. No full ROM was
+flashed or built. These devices do not provide unrooted Android acceptance:
+the OnePlus has privileged ROM integration, and the Mate runs OpenHarmony.
+See [device validation](home-device-validation.md) for measured results and
+remaining release gates. App Hub's non-atomic replacement and Android runtime
+containment remain production acceptance items.

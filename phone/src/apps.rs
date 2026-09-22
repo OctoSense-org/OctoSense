@@ -43,25 +43,25 @@ pub fn is_linked(id: &str) -> bool {
 fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
-    #[cfg(any(feature = "app-reference", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
-    #[cfg(any(feature = "app-sheets", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
-    #[cfg(any(feature = "app-photos", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-photos", native_mobile))]
     out.push(&octosense_photos::PHOTOS_MODULE);
-    #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-appcard", native_mobile))]
     out.push(&octosense_appcard::APPCARD_MODULE);
-    #[cfg(any(feature = "app-mail", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-mail", native_mobile))]
     out.push(&octosense_mail::MAIL_MODULE);
-    #[cfg(any(feature = "app-news", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-news", native_mobile))]
     out.push(&octosense_news::NEWS_MODULE);
-    #[cfg(any(feature = "app-maps", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-maps", native_mobile))]
     out.push(&octosense_maps::MAPS_MODULE);
-    #[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-camera", native_mobile))]
     out.push(&octosense_camera::CAMERA_MODULE);
-    #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-appstore", native_mobile))]
     out.push(&octosense_appstore::APPSTORE_MODULE);
-    #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+    #[cfg(any(feature = "app-appstore", native_mobile))]
     out.push(&octosense_appstore::cardapp::CARD_MODULE);
     out
 }
@@ -69,7 +69,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
 /// Card apps the store installed (ADR 0003): each is an app of its own in
 /// the launcher, hosted by the linked `card` module with its id as the open
 /// argument. Read fresh each time, so an install shows up without a restart.
-#[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+#[cfg(any(feature = "app-appstore", native_mobile))]
 pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
     let Some(root) = octosense_appstore::data_root_if_set() else { return Vec::new() };
     octosense_appstore::installed_apps(&root)
@@ -87,7 +87,7 @@ pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
         .collect()
 }
 
-#[cfg(not(any(feature = "app-appstore", target_os = "android", target_os = "ios")))]
+#[cfg(not(any(feature = "app-appstore", native_mobile)))]
 pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
     Vec::new()
 }

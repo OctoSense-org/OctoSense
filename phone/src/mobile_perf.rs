@@ -106,11 +106,11 @@ pub const IDLE_GAP_MS: f32 = 500.0;
 
 pub fn enabled() -> bool { ENABLED.load(Ordering::Relaxed) }
 
-/// Whether the `phone.frames` Android trace is on (always false elsewhere).
+/// Whether the `phone.frames` native mobile trace is on (false on desktop/web).
 pub fn trace_on() -> bool {
-    #[cfg(target_os = "android")]
+    #[cfg(native_mobile)]
     { makepad_platform::makepad_error_log::trace_enabled("phone.frames") }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(native_mobile))]
     { false }
 }
 
@@ -119,7 +119,7 @@ pub fn trace_on() -> bool {
 /// SurfaceFlinger's monotonic clock and label each recorded scene. Enable via
 /// `am start ... --es makepad.TRACE phone.frames`; the frame monitor stays off.
 pub fn trace_phone_frame(phone: &crate::mobile::PhoneState) {
-    #[cfg(target_os = "android")]
+    #[cfg(native_mobile)]
     if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
         let mut ts = libc::timespec {tv_sec: 0, tv_nsec: 0};
         if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
@@ -130,7 +130,7 @@ pub fn trace_phone_frame(phone: &crate::mobile::PhoneState) {
                 phone.openness, phone.page, phone.pages.position());
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(native_mobile))]
     let _ = phone;
 }
 
@@ -138,11 +138,11 @@ pub fn trace_phone_frame(phone: &crate::mobile::PhoneState) {
 /// `hit` (the kept scene and pyramid), `record` (drawn live into the kept
 /// frame) or `live`, with the state the decision came from.
 pub fn trace_phone_scene(status: &str, detail: &str) {
-    #[cfg(target_os = "android")]
+    #[cfg(native_mobile)]
     if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
         log!("[phone.scene] {} {}", status, detail);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(native_mobile))]
     let _ = (status, detail);
 }
 
@@ -150,7 +150,7 @@ pub fn trace_phone_scene(status: &str, detail: &str) {
 /// SurfaceFlinger. They mark a touch reaching the shell, not the hardware
 /// event time or a visible-pixel change.
 pub fn trace_phone_input(phase: &str, point: Vec2d) {
-    #[cfg(target_os = "android")]
+    #[cfg(native_mobile)]
     if makepad_platform::makepad_error_log::trace_enabled("phone.frames") {
         let mut ts = libc::timespec {tv_sec: 0, tv_nsec: 0};
         if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } == 0 {
@@ -158,7 +158,7 @@ pub fn trace_phone_input(phase: &str, point: Vec2d) {
             log!("[phone.input] ns={} phase={} x={:.1} y={:.1}", ns, phase, point.x, point.y);
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(native_mobile))]
     let _ = (phase, point);
 }
 
