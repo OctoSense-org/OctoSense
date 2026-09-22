@@ -52,11 +52,23 @@ capabilities; it does not take photographs.
   widgets after rebuilding `mod.widgets`. Script errors are now captured for
   diagnosis. The confined resource namespace is restored before card evaluation.
 
+After testing, the fixture was removed through App Hub, the temporary origin
+and mirror were removed, and the client accepted public catalog sequence 4 with
+zero entries. Normal Home/Bridge APKs (version 2026092201) and the normal Home HAP
+were built from clean commit `b51ac5b` and installed. Validation instrumentation,
+remote access and device forwards were removed; application data was retained.
+The standalone development pair was also rebuilt from that commit.
+
+The OnePlus reboot completed successfully. OctoSense remains the default Home;
+Home and Bridge are running. Notification-listener access, brightness and its
+mode, rotation, Wi-Fi, Bluetooth and the original stay-awake setting were
+preserved. This checks APK update/reboot persistence on the existing ROM, not a
+new system image's boot or OTA recovery.
+
 Visual acceptance remains incomplete: the historical card uses a fixed narrow
 layout and shows missing Chinese glyphs, and the store has dark-mode contrast
 issues. Interrupted installation recovery and atomic bundle replacement remain
-release gates. Fixture removal and restoration of the public catalog are part
-of the device cleanup.
+release gates.
 
 ## Mate 70 Air: normal OpenHarmony application
 
