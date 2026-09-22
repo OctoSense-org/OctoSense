@@ -120,6 +120,9 @@ impl SafeInsets {
 /// in — the home page, and the App Library while it is not scrolling search
 /// results; over an app it belongs to the app.
 pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool,
+    /// The host OS owns edge navigation. Only gestures in the content body
+    /// may be recognized; hosted apps retain their own edge touches.
+    pub system_edges: bool,
     /// The shell's own shade is in use. Off when the system-wide OctoSense
     /// panel owns every pull-down: the top band and the home page's side
     /// columns then stop opening the shell's shade (the columns pull the
@@ -260,6 +263,13 @@ impl GestureRecognizer {
         let i = ctx.insets;
         if p.x < left - i.left || p.x > right + i.right || p.y < top - i.top || p.y > bottom + i.bottom { return None; }
         let clear = |edge: Edge| !exclusions.excludes(p, edge);
+        if ctx.system_edges {
+            // Never turn an OS edge gesture into a Home/Back/Switcher action,
+            // or a body gesture after it crosses into the app.
+            if p.x <= left + m.edge_band || p.x >= right - m.edge_band
+                || p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
+            return ctx.body.then_some(Origin::Body);
+        }
         if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
         if p.y <= top + m.top_band {
             if !ctx.shade { return None; }
@@ -369,10 +379,38 @@ impl GestureRecognizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_edges_never_become_shell_navigation() {
+        let zones=ExclusionZones::default();
+        for phone in [PhoneScreen::Home, PhoneScreen::App, PhoneScreen::Drawer, PhoneScreen::Recents] {
+            let context=GestureContext { system_edges: true, shade: false, ..ctx(phone) };
+            let s=context.screen;
+            let middle=s.pos+s.size*0.5;
+            for start in [
+                dvec2(s.pos.x+12.0,middle.y), dvec2(s.pos.x+s.size.x-12.0,middle.y),
+                dvec2(middle.x,s.pos.y+12.0), dvec2(middle.x,s.pos.y+s.size.y-12.0),
+            ] {
+                let mut g=GestureRecognizer::default();
+                assert_eq!(g.feed(FingerPhase::Down,start,0.0,&context,&zones),None);
+                assert!(!g.active(),"the OS owns this edge on {phone:?}");
+                assert_eq!(g.feed(FingerPhase::Move,middle,0.2,&context,&zones),None);
+                assert_eq!(g.feed(FingerPhase::Up,middle,0.3,&context,&zones),None);
+            }
+        }
+        // Home paging remains available away from the OS edges.
+        let context=GestureContext { system_edges: true, shade: false, ..ctx(PhoneScreen::Home) };
+        let mut g=GestureRecognizer::default();
+        let start=context.screen.pos+context.screen.size*0.5;
+        g.feed(FingerPhase::Down,start,0.0,&context,&zones);
+        g.feed(FingerPhase::Move,start-dvec2(150.0,0.0),0.2,&context,&zones);
+        assert_eq!(g.feed(FingerPhase::Up,start-dvec2(150.0,0.0),0.3,&context,&zones),
+            Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))));
+    }
     use FingerPhase::*;
 
     fn screen() -> Rect { Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) } }
-    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), shade: true } }
+    fn ctx(phone: PhoneScreen) -> GestureContext { GestureContext { screen: screen(), insets: SafeInsets::default(), phone, body: matches!(phone, PhoneScreen::Home | PhoneScreen::Drawer), system_edges: false, shade: true } }
     #[test]
     fn without_the_shell_shade_every_home_pull_is_the_library_and_the_top_band_is_nobodys() {
         let ctx = GestureContext { shade: false, ..ctx(PhoneScreen::Home) };

@@ -77,6 +77,12 @@ def main():
     # The packager override can come from another checkout. Always take the
     # ArkTS shell and metadata from this product's pinned framework source.
     shutil.copytree(ROOT / '.sources/makepad/tools/open_harmony/deveco', project, dirs_exist_ok=True)
+    # Product-owned window policy: keep native system navigation visible and
+    # keep the floating controls inside its safe area.
+    shutil.copy2(home / 'ohos/EntryAbility.ets',
+                 project / 'entry/src/main/ets/entryability/EntryAbility.ets')
+    subprocess.run(['patch', '--batch', '--forward', '-p1', '-i',
+                    str(home / 'ohos/keyboard.patch')], cwd=project, check=True)
     app_path = project / 'AppScope/app.json5'
     app = read_json5(app_path)
     app['app']['bundleName'] = args.bundle_id

@@ -402,7 +402,7 @@ impl App {
             self.state_mut().phone.ime.insert(client,cx.hosted_ime_state());
         }
         let phone=&mut self.state_mut().phone;
-        let visible=!cfg!(any(target_os="ios",target_os="android"))
+        let visible=!cfg!(any(target_os="ios",target_os="android",target_env="ohos"))
             && ((phone.screen==PhoneScreen::Drawer && phone.search_focused)
                 || client.and_then(|c|phone.ime.get(&c)).is_some_and(|ime|ime.visible));
         let height=if visible {phone.keyboard_height()}else{0.0};
@@ -434,6 +434,14 @@ impl App {
         }
     }
     fn dismiss_phone_keyboard(&mut self,cx:&mut Cx) {
+        if crate::mobile_navigation::ENABLED {
+            // Hosted inputs redraw during the transition back to Home. Clear
+            // their focus so they cannot reopen the native IME on that frame.
+            cx.set_key_focus(Area::Empty);
+            cx.hide_text_ime();
+            cx.text_ime_was_dismissed();
+            self.state_mut().phone.native_keyboard=0.0;
+        }
         if self.state_mut().phone.search_focused {
             if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {
                 desk.dismiss_phone_search(cx,&mut self.state_mut().phone,false);
@@ -457,6 +465,15 @@ impl App {
     }
     pub(crate) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
+            PhoneHit::Floating(hit)=>{
+                use crate::mobile_navigation::NavigationHit;
+                match hit {
+                    NavigationHit::Bubble=>{let nav=&mut self.state_mut().phone.navigation;nav.open=!nav.open;}
+                    NavigationHit::Dismiss=>self.state_mut().phone.navigation.cancel(),
+                    NavigationHit::Home=>{self.phone_action(cx,PhoneHit::Home);return;}
+                    NavigationHit::Recents=>{self.phone_action(cx,PhoneHit::Recents);return;}
+                }
+            }
             PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
                 if self.android_launch(cx, &app) { self.animate_phone(cx); return; }
                 // A running window of the app, a home tile's own client
@@ -479,8 +496,19 @@ impl App {
                 if let Some((first,second))=self.state_mut().phone.groups.pick_card(client) {self.enter_split(cx,first,second);}
             }
             PhoneHit::Divider|PhoneHit::Scrub=>{}
-            PhoneHit::Home=>self.state_mut().phone.navigate(PhoneScreen::Home),
+            PhoneHit::Home=>{
+                if crate::mobile_navigation::ENABLED {
+                    self.dismiss_phone_keyboard(cx);
+                    self.state_mut().phone.shade.close();
+                    self.state_mut().phone.groups.close();
+                }
+                self.state_mut().phone.navigate(PhoneScreen::Home);
+            }
             PhoneHit::Recents=>{
+                if crate::mobile_navigation::ENABLED {
+                    self.dismiss_phone_keyboard(cx);
+                    self.state_mut().phone.groups.close();
+                }
                 self.state_mut().phone.navigate(PhoneScreen::Recents);
                 // Recents also lists the Android apps used lately: ask for the latest.
                 if cfg!(target_os="android") {self.android_command(cx,"launcher","recent_apps",vec![]);}
@@ -609,6 +637,18 @@ impl App {
     }
     pub(super) fn phone_search_event(&mut self,cx:&mut Cx,event:&Event)->bool {
         let Some(state)=self.state.as_ref() else{return false};
+        if crate::mobile_navigation::ENABLED {
+            let nav=&state.phone.navigation;
+            let screen=state.phone.navigation_rect();
+            let over=match event {
+                Event::TouchUpdate(e)=>e.touches.iter().any(|p|nav.hit(screen,p.abs).is_some()),
+                Event::MouseDown(e)=>nav.hit(screen,e.abs).is_some(),
+                Event::MouseMove(e)=>nav.hit(screen,e.abs).is_some(),
+                Event::MouseUp(e)=>nav.hit(screen,e.abs).is_some(),
+                _=>false,
+            };
+            if nav.tracking() || over {return false;}
+        }
         if matches!(event,Event::KeyDown(_)|Event::KeyUp(_)|Event::TextInput(_)|Event::TextCopy(_)|Event::TextCut(_))
             && self.ui.widget(cx,ids!(shell_menu)).borrow::<ShellMenu>().is_some_and(|menu|menu.is_open()) {return false;}
         let old=(state.phone.search_focused,state.phone.search_query.clone());
@@ -625,6 +665,18 @@ impl App {
     }
     pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {
         if !self.state_mut().style.target.mobile() {return false;}
+        if crate::mobile_navigation::ENABLED {
+            if let Event::VirtualKeyboard(event)=event {
+                self.state_mut().phone.native_keyboard_event(event);
+                self.animate_phone(cx);
+            }
+        }
+        if crate::mobile_navigation::ENABLED && matches!(event,Event::Pause|Event::WindowLostFocus(_)) {
+            let phone=&mut self.state_mut().phone;
+            if phone.navigation.tracking() {phone.touch=None;}
+            phone.navigation.cancel();
+            self.animate_phone(cx);
+        }
         if let Event::LongPress(press) = event {
             let phone=&self.state_mut().phone;
             let shade_settings=if cfg!(target_os="android") {phone.gesture.as_ref().filter(|gesture|
@@ -734,7 +786,8 @@ impl App {
                 TouchState::Stable => return owned.is_some() || !self.state_mut().phone.accepts_app_input(),
             };
             let handled = self.phone_pointer_at(cx, phase, point.abs, point.time, true, 0.0);
-            if point.state == TouchState::Start && handled && self.state_mut().phone.gesture.is_some() {
+            if point.state == TouchState::Start && handled
+                && (self.state_mut().phone.gesture.is_some() || self.state_mut().phone.navigation.tracking()) {
                 self.state_mut().phone.touch = Some(point.uid);
             }
             if point.state == TouchState::Stop { self.state_mut().phone.touch = None; }
@@ -757,11 +810,12 @@ impl App {
             screen: phone.viewport,
             insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
             phone: phone.screen,
+            system_edges: crate::mobile_navigation::ENABLED,
             // The library's body scrolls its search results while there is a
             // query; with the field merely focused (the way a pull opens it)
             // a pull still closes it.
             body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && phone.search_query.is_empty()),
-            shade: !phone.android.system_panel,
+            shade: !crate::mobile_navigation::ENABLED && !phone.android.system_panel,
         }
     }
     /// The recognizer's in-progress gesture moves what the shell draws
@@ -915,6 +969,28 @@ impl App {
         }
     }
     fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {
+        if crate::mobile_navigation::ENABLED && primary {
+            use crate::mobile_navigation::{Phase,NavigationHit};
+            let phase=match phase {
+                PhonePointerPhase::Down=>Phase::Down,PhonePointerPhase::Move=>Phase::Move,
+                PhonePointerPhase::Up=>Phase::Up,PhonePointerPhase::Scroll=>Phase::Scroll,
+            };
+            let phone=&mut self.state_mut().phone;
+            // A content drag that crosses the ball keeps its original owner.
+            if phone.gesture.is_none() {
+                let screen=phone.navigation_rect();
+                let (handled,action)=phone.navigation.pointer(phase,p,screen);
+                if handled {
+                    self.phone_gestures.cancel();
+                    match action {
+                        Some(NavigationHit::Home)=>self.phone_action(cx,PhoneHit::Home),
+                        Some(NavigationHit::Recents)=>self.phone_action(cx,PhoneHit::Recents),
+                        _=>self.animate_phone(cx),
+                    }
+                    return true;
+                }
+            }
+        }
         if primary && matches!(phase, PhonePointerPhase::Down | PhonePointerPhase::Up) {
             let name = match phase {
                 PhonePointerPhase::Down => "Down", PhonePointerPhase::Move => "Move",
@@ -961,7 +1037,7 @@ impl App {
                 // A finger on the open shade's sheet is the shade's own drag.
                 if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
-                if !shell && !screen.contains(p) {return false;}
+                if !shell && !screen.contains(p) && hit.is_none() {return false;}
                 phone.search_velocity=0.0;
                 phone.search_track=Some((p.y,time));
                 if hit==Some(PhoneHit::Scrub) {
@@ -1045,7 +1121,7 @@ impl App {
                             if let Some(PhoneHit::Card(client))=g.hit {self.request_close(cx,client);self.state_mut().phone.navigate(PhoneScreen::Recents);}
                         }else if delta.length()<12.0 {
                             if let Some(hit)=g.hit.filter(|h|Some(h)==hit.as_ref()) {self.phone_action(cx,hit);}
-                        }else if g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
+                        }else if !crate::mobile_navigation::ENABLED && g.screen==PhoneScreen::Home && delta.y < -55.0 && delta.y.abs()>delta.x.abs() {self.phone_action(cx,PhoneHit::Drawer);}
                     }
                 }
                 self.state_mut().phone.dismiss_y=0.0;

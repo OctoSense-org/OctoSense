@@ -35,6 +35,12 @@ cargo test --locked --bin octosense --features mobile-apps
 
 ## Android builds
 
+Android and OpenHarmony share app-local floating navigation: tap the ball for
+**返回首页** or **最近应用**, drag it to dock on either side, and tap outside to
+collapse the panel. It reserves no content height and stays clear of native
+gesture edges and the system keyboard. Native applications launched outside
+Home retain their own windows; the ball is not a system-wide overlay.
+
 Use an existing cargo-makepad SDK/NDK directory, Android SDK platform 35 with
 build-tools 35.0.0, full JDK 17+ and Gradle 8.11.1. The scripts do not install
 these tools. Makepad's trimmed JDK may lack Gradle's instrumentation support;
@@ -143,6 +149,18 @@ keys or silently substitutes an application's identity.
 The builder uses DevEco's existing CMake and Java, resets generated ArkTS files
 from the pinned framework template, supplies missing permission descriptions,
 and removes signing credentials from the generated project after packaging.
+It then applies the product's `home/ohos/EntryAbility.ets` window policy:
+HarmonyOS reserves the native status and navigation bars, and Home draws a
+draggable floating ball over hosted content. Tapping it opens a compact panel
+with **返回首页** and **最近应用**. Dragging docks it inside the nearest side;
+tapping outside dismisses the panel without activating the content underneath.
+The ball stays in the app window and reserves no content height.
+The generated ArkTS bridge also receives `home/ohos/keyboard.patch` to coalesce
+per-frame keyboard requests and serialize attach/show/hide while leaving the
+pinned framework checkout intact. OpenHarmony uses only its native keyboard.
+OpenHarmony does not recognize shell edge swipes or draw a second navigation
+pill; those gestures remain available to the host OS. Home paging and the
+central pull for the app library still work inside the content area.
 Artifacts and source/hash receipts go to `out/home/ohos/`. The optional
 `--remote-port` enables app-owned loopback inspection for validation and writes
 to `out/home/ohos-validation/`; omit it for the normal package. Existing warnings
