@@ -158,6 +158,7 @@ impl PhoneSurface {
         );
         self.search_rect = pill;
         if self.search_style != Some((ios, state.style.dark)) {
+            let timing = crate::mobile_perf::work_start();
             let mut input = self.search.text_input(cx, ids!(input));
             let muted = alpha(ink, 0.55);
             if ios {
@@ -173,6 +174,7 @@ impl PhoneSurface {
             });
             input.set_empty_text(cx, if ios { "App Library" } else { "Search apps" }.into());
             self.search_style = Some((ios, state.style.dark));
+            crate::mobile_perf::work_end("search.style", timing);
         }
         let accent = if ios {
             rgb(0, 122, 255)
@@ -206,8 +208,10 @@ impl PhoneSurface {
             15.0,
             alpha(ink, 0.55),
         );
+        let timing = crate::mobile_perf::work_start();
         self.search
             .draw_walk_all(cx, &mut Scope::empty(), Walk::abs_rect(pill));
+        crate::mobile_perf::work_end("search.editor", timing);
         if !state.phone.search_query.is_empty() {
             let clear = rect(pill.pos.x + pill.size.x - 32.0, pill.pos.y, 32.0, 40.0);
             self.label(cx, clear, "×", 20.0, false, alpha(ink, 0.6));
@@ -230,6 +234,7 @@ impl PhoneSurface {
         apps: &[(String, String)],
         ink: Vec4f,
     ) {
+        let timing = crate::mobile_perf::work_start();
         let found = matching_apps(apps, &state.phone.search_query);
         let top = pill.pos.y + pill.size.y + 14.0;
         let bottom = screen.pos.y + screen.size.y
@@ -288,6 +293,7 @@ impl PhoneSurface {
             ));
         }
         cx.end_turtle();
+        crate::mobile_perf::work_end("search.results", timing);
     }
 }
 

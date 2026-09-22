@@ -22,8 +22,8 @@ pub enum ShadeSide { Notifications, Controls }
 pub enum Dir { Left, Right }
 
 /// A shell gesture, delivered every frame while it is in progress and once
-/// more as `Commit` or `Cancel`. `progress` is 0..1 of the distance that
-/// commits the gesture; surfaces animate from it directly.
+/// more as `Commit` or `Cancel`. Except for PageSwipe, `progress` is 0..1
+/// of the commit distance; surfaces animate from it directly.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShellGesture {
     /// Bottom edge, upward: go home. Held still near the end: the switcher.
@@ -34,8 +34,9 @@ pub enum ShellGesture {
     Back { edge: Edge, progress: f64 },
     /// Downward from the top edge: the shade, notifications or controls.
     ShadePull { side: ShadeSide, progress: f64 },
-    /// Horizontal on the home page: previous or next page (the glance page
-    /// is the page left of the first).
+    /// Horizontal on Home: displacement in page widths, relative to `dir`.
+    /// It keeps following the finger beyond the commit threshold and can
+    /// become negative when the finger reverses past its starting point.
     PageSwipe { dir: Dir, progress: f64 },
     /// Downward in the middle of the home page: search.
     HomeSearch { progress: f64 },
@@ -213,7 +214,9 @@ impl GestureRecognizer {
                 let kind = t.kind?;
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
                 Self::check_hold(t, kind, progress, time, m.hold_time);
-                let live = Self::live(kind, t.origin, progress, t.held);
+                let live = if let GestureKind::Page(dir) = kind {
+                    ShellGesture::PageSwipe { dir, progress: Self::along(kind, t.origin, delta) / ctx.screen.size.x.max(1.0) }
+                } else { Self::live(kind, t.origin, progress, t.held) };
                 t.live = Some(live);
                 Some(live)
             }

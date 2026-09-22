@@ -170,7 +170,17 @@ script_mod! {
                 empty_text: "App Library"
                 return_key_type: Search
                 draw_bg +: {pixel: fn() {return vec4(0.0)}}
-                draw_text +: {text_style: theme.font_regular{font_size: 14.0}}
+                // An empty search field must not inflate 30 MB of CJK/emoji
+                // fonts on the swipe's render thread. Retain both fallbacks,
+                // loading them only when the editor actually needs a glyph.
+                draw_text +: {text_style: theme.font_regular{
+                    font_size: 14.0
+                    font_family: FontFamily{
+                        latin := FontMember{res: crate_resource("makepad_widgets:resources/IBMPlexSans-Text.ttf") asc: -0.1 desc: 0.0}
+                        chinese := FontMember{res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 lazy: 1.0}
+                        emoji := FontMember{res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf") asc: 0.0 desc: 0.0 lazy: 2.0}
+                    }
+                }}
                 draw_cursor +: {color: #007aff}
                 draw_selection +: {color: #007aff40}
             }

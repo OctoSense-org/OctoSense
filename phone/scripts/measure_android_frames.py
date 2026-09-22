@@ -233,6 +233,8 @@ def main():
         if not markers:
             raise RuntimeError("No phone.frames markers; relaunch with the trace extra")
         result["frame_markers"] = markers
+        result["input_markers"] = [(int(ns), phase) for ns, phase in
+                                   re.findall(r"input ns=(\d+) phase=(Down|Up)", trace)]
         input_ns = None
         if args.input_markers:
             downs = [int(ns) for ns in re.findall(r"input ns=(\d+) phase=Down", trace)]
@@ -246,13 +248,17 @@ def main():
                 result["summary"]["first_post_input_present_ms"] = (min(later) - input_ns) / 1e6
             detailed = adb("shell", f"logcat -d --pid={pid} -t 4000 -s Makepad:I | "
                            "sed -n 's/.*\\[phone.frames\\] //p' | "
-                           f"awk 'substr($1,4)+0 >= {trace_floor_ns} {{print; if (++n >= 80) exit}}'")
+                           f"awk 'substr($1,4)+0 >= {trace_floor_ns} {{print}}'")
             scenes = []
             for line in detailed.splitlines():
                 match = re.search(r"ns=(\d+) active=[01] screen=(\w+) shade=([\d.]+) "
                                   r"overview=([\d.]+) openness=([\d.]+) page=([-\d.]+) pages=([-\d.]+)", line)
                 if match:
                     scenes.append((int(match[1]), (match[2], *(float(match[i]) for i in range(3, 8)))))
+            # Keep motion as well as pacing: repeated, perfectly timed frames
+            # can conceal a pager that stops following the finger mid-drag.
+            result["scene_fields"] = ["screen", "shade", "overview", "openness", "page", "pages"]
+            result["scenes"] = scenes
             result["summary"]["first_state_response"] = first_state_response(rows, input_ns, scenes)
         result["summary"]["marked_activity"] = summarize_marked(rows, markers, refresh_ns / 1e6, input_ns)
     args.output.parent.mkdir(parents=True, exist_ok=True)
