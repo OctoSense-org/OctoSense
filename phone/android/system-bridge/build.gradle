@@ -18,7 +18,7 @@ android {
     }
     signingConfigs {
         octosense {
-            storeFile rootProject.file(managedKeystore ?: '../../../.sources/makepad/tools/cargo_makepad/debug.keystore')
+            storeFile rootProject.file(managedKeystore ?: '../../.sources/makepad/tools/cargo_makepad/debug.keystore')
             storePassword managedKeystore ? signingValue('OCTOSENSE_KEYSTORE_PASSWORD') : 'android'
             keyAlias managedKeystore ? signingValue('OCTOSENSE_KEY_ALIAS') : 'androiddebugkey'
             keyPassword managedKeystore ? (System.getenv('OCTOSENSE_KEY_PASSWORD') ?: storePassword) : 'android'
