@@ -551,6 +551,7 @@ script_mod! {
             chevron_left +: {svg: crate_resource("self:resources/icons/chevron-left.svg")}
             chevron_right +: {svg: crate_resource("self:resources/icons/chevron-right.svg")}
             chevron_down +: {svg: crate_resource("self:resources/icons/chevron-down.svg")}
+            chevron_up +: {svg: crate_resource("self:resources/icons/chevron-up.svg")}
             check +: {svg: crate_resource("self:resources/icons/check.svg")}
             close +: {svg: crate_resource("self:resources/icons/close.svg")}
             search +: {svg: crate_resource("self:resources/icons/search.svg")}
@@ -691,6 +692,8 @@ pub struct ShellIcons {
     #[live]
     pub chevron_down: DrawSvg,
     #[live]
+    pub chevron_up: DrawSvg,
+    #[live]
     pub check: DrawSvg,
     #[live]
     pub close: DrawSvg,
@@ -753,6 +756,7 @@ pub enum Ico {
     ChevronLeft,
     ChevronRight,
     ChevronDown,
+    ChevronUp,
     Check,
     Close,
     Search,
@@ -800,6 +804,7 @@ impl ShellIcons {
             Ico::ChevronLeft => &mut self.chevron_left,
             Ico::ChevronRight => &mut self.chevron_right,
             Ico::ChevronDown => &mut self.chevron_down,
+            Ico::ChevronUp => &mut self.chevron_up,
             Ico::Check => &mut self.check,
             Ico::Close => &mut self.close,
             Ico::Search => &mut self.search,
