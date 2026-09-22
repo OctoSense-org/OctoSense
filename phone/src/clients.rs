@@ -119,11 +119,18 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// The app registry: the applications this WM is built around, in menu
 /// order. Curated on purpose — every row is one we run and verify, not a
 /// scan of whatever the workspace happens to contain.
-pub fn registry() -> &'static [AppDef] {
-    match crate::octosense::catalog::loaded() {
-        Ok(apps) => apps,
-        Err(_) => &[],
-    }
+pub fn registry() -> Vec<AppDef> {
+    let base = crate::octosense::catalog::loaded().as_ref().cloned().unwrap_or_default();
+    merge_catalog(base, crate::apps::bundled_modules_catalog(), crate::apps::installed_card_apps())
+}
+
+/// Native definitions take precedence. Installed apps are read on each
+/// refresh so installation/removal never depends on restarting Home.
+fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, installed: Vec<AppDef>) -> Vec<AppDef> {
+    let mut ids = std::collections::HashSet::new();
+    base.into_iter().chain(bundled).chain(installed)
+        .filter(|app| app.id != "card" && ids.insert(app.id.clone()))
+        .collect()
 }
 
 /// Registered ids take precedence over binary aliases. A linked module
@@ -131,9 +138,9 @@ pub fn registry() -> &'static [AppDef] {
 /// process form) is still an app: its bundled definition answers, and the
 /// hosting rules decide whether it may open (`--module <id>` on a desktop).
 pub fn find_app(id: &str) -> Option<AppDef> {
-    registry().iter().find(|a| a.id == id)
-        .or_else(|| registry().iter().find(|a| a.bin == id)).cloned()
-        .or_else(|| crate::apps::bundled_catalog().into_iter().find(|a| a.id == id))
+    let apps = registry();
+    apps.iter().find(|a| a.id == id)
+        .or_else(|| apps.iter().find(|a| a.bin == id)).cloned()
 }
 
 /// `bin/omarchy-launch-or-focus`'s window test, verbatim:
@@ -988,6 +995,18 @@ pub fn spawn_client(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_catalog_refreshes_without_shadowing_native_apps() {
+        let app = |id: &str, label: &str| AppDef::app(id, label, "", "", "card", LaunchPolicy::OrFocus);
+        let native = vec![app("appstore", "App Hub")];
+        let installed = vec![app("demo", "Demo"), app("appstore", "Untrusted replacement")];
+        let first = merge_catalog(native.clone(), vec![], installed);
+        assert_eq!(first.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["appstore", "demo"]);
+        assert_eq!(first[0].label, "App Hub");
+        let after_remove = merge_catalog(native, vec![app("card", "Internal host")], vec![]);
+        assert_eq!(after_remove.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["appstore"]);
+    }
 
     #[test]
     fn catalog_launches_select_the_binary_and_preserve_literal_arguments() {

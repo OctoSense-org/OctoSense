@@ -705,7 +705,8 @@ impl App {
                     // its OpenSchema instead.
                     log!("wm: {} runs in-process; launch arguments {:?} are not forwarded", app_id, extra_args);
                 }
-                self.launch_module(cx, module);
+                let card_app = if app.bin == "card" { Self::card_app_open(app_id) } else { None };
+                self.launch_module_as(cx, module, card_app);
                 return;
             }
         }
@@ -2079,7 +2080,23 @@ impl App {
     /// a tile in the layout, a local endpoint on the bus. The ordinary
     /// launch path minus everything a process needs.
     fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
+        self.launch_module_as(cx, module, None);
+    }
+
+    /// The open arguments and the client label for `app_id` when the `card`
+    /// module hosts it: the installed app's id, and its own name rather
+    /// than the module's.
+    fn card_app_open(app_id: &str) -> Option<(String, String, String)> {
+        let app = crate::apps::installed_card_apps().into_iter().find(|a| a.id == app_id)?;
+        Some((format!("{{\"app\":{}}}", makepad_strict_json::Value::Str(app.id.clone()).to_json()), app.id, app.label))
+    }
+
+    fn launch_module_as(&mut self, cx: &mut Cx, module: &'static dyn AppModule, card_app: Option<(String, String, String)>) {
         let schema = module.open_schema();
+        let (card_open, client_label) = match card_app {
+            Some((open_json, app_id, label)) => (Some(schema.validate(&open_json, &[])), Some((app_id, label))),
+            None => (None, None),
+        };
         let configured_open = if module.id() == "mail" {
             std::env::var("MAKEPAD_APP_CONFIG").ok()
                 .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
@@ -2090,6 +2107,7 @@ impl App {
             .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
             .and_then(|config| config.get("module_open").and_then(|v| v.get(module.id())).map(|v| v.to_json()))
             .map(|json| schema.validate(&json, &[])).or(configured_open);
+        let configured_open = card_open.or(configured_open);
         let open = match configured_open.unwrap_or_else(|| schema.empty_open()) {
             Ok(open) => open,
             Err(e) => {
@@ -2108,9 +2126,13 @@ impl App {
             Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id),
             None => return,
         };
+        let (slot_app, slot_label): (&str, &str) = match &client_label {
+            Some((app_id, label)) => (app_id.as_str(), label.as_str()),
+            None => (module.id(), module.label()),
+        };
         self.state_mut()
             .clients
-            .insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+            .insert(id, clients::ClientSlot::module(id, slot_app, slot_label));
         let gap = self.state_mut().gap;
         self.state_mut().layout.insert(id, area, gap);
         // The tile is a module tile from its first draw; the root is seated
@@ -4331,6 +4353,11 @@ impl MatchEvent for App {
         // in ~/.makepad/wm/apps.splash, a dev run's `--module <id>` flags.
         let args: Vec<String> = std::env::args().collect();
         self.apps = AppRegistry::load(&theme::makepad_home().join("wm/apps.splash"), &args);
+        #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+        octosense_appstore::set_data_root(
+            cx.get_data_dir().map(|dir| std::path::PathBuf::from(dir).join("apps"))
+                .unwrap_or_else(|| octosense::paths::home().join("apps")),
+        );
         log!("wm: modules linked: {:?}", self.apps.linked_ids());
         // Use the normal style-switch path before the first frame, so phone
         // state, controls, icons and hosted-app styles all agree from startup.
@@ -4452,6 +4479,21 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
+            #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+            match wa.cast::<octosense_appstore::AppStoreAction>() {
+                octosense_appstore::AppStoreAction::Launch(app_id) => {
+                    // The store installed it; the window manager opens it as
+                    // an app of its own.
+                    self.launch_app(cx, &app_id);
+                    continue;
+                }
+                octosense_appstore::AppStoreAction::CatalogChanged => {
+                    crate::shell::launcher::invalidate_apps();
+                    self.redraw_all(cx);
+                    continue;
+                }
+                octosense_appstore::AppStoreAction::None => {}
+            }
             // The shell surfaces: the bar's presses and wheel, the menu's
             // activations, the flyouts' controls.
             match wa.cast::<ShellBarAction>() {

@@ -123,7 +123,7 @@ pub fn loaded() -> &'static Result<Vec<AppDef>, String> {
     static CATALOG: OnceLock<Result<Vec<AppDef>, String>> = OnceLock::new();
     CATALOG.get_or_init(|| {
         let Some(path) = catalog_path()? else {
-            return Ok(crate::apps::bundled_catalog());
+            return Ok(crate::apps::bundled_modules_catalog());
         };
         let path = if path.is_absolute() {
             path

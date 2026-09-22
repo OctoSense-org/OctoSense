@@ -820,7 +820,12 @@ mod tests {
     #[test]
     fn hidden_while_the_shade_is_pulled_or_open() {
         let mut island = IslandState::default();
-        island.push(elapsed("shade:a", 0.0));
+        let mut activity = elapsed("shade:a", 0.0);
+        // This fixture tests shade visibility, not the AppCard turn poller.
+        // With app-appcard linked, a fictional AppCard turn finishes and is
+        // removed after LINGER before the final shade-close assertion.
+        activity.source = "shade-fixture".into();
+        island.push(activity);
         island.expanded = true;
         settle(&mut island, 0.0);
         assert!(!island.hidden() && island.presence > 0.99);

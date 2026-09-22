@@ -61,7 +61,7 @@ makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev =
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false, optional = true }
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
-octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native", optional = true }
+octosense-mail = { path = "../.sources/appcards/apps/mail/native", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
@@ -70,7 +70,7 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 octosense-news = { path = "apps/news", optional = true }
 # The Camera (Octoscript-AppCard apps/camera/native): the Mate 70 Air camera
 # replica, drawn over Makepad's video input (Android's NDK camera on the phone).
-octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native", optional = true }
+octosense-camera = { path = "../.sources/camera/apps/camera/native", optional = true }
 # OctosMap: a map under a search bar, places, directions by car, on foot and
 # by bike, and turn-by-turn navigation.
 octosense-maps = { path = "apps/maps", optional = true }
@@ -79,14 +79,18 @@ octosense-maps = { path = "apps/maps", optional = true }
 # NoModel and the tool console (the child process keeps the real models).
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false, optional = true }
 
+# App Hub and its contained card host use the same pinned client on both deliveries.
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub.git", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b", optional = true }
+
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub.git", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b" }
 octosense-reference = { path = "apps/reference" }
-octosense-mail = { path = "../Octosense-Service-AppCards/apps/mail/native" }
+octosense-mail = { path = "../.sources/appcards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
 octosense-news = { path = "apps/news" }
-octosense-camera = { path = "../Octoscript-AppCard-camera/apps/camera/native" }
+octosense-camera = { path = "../.sources/camera/apps/camera/native" }
 octosense-maps = { path = "apps/maps" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "825dbb422c6d7926e111e2ee7831d697870d8671", default-features = false }
 octosense-photos = { path = "apps/photos" }
@@ -99,7 +103,7 @@ default = []
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps", "app-camera"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps", "app-camera", "app-appstore"]
 app-mail = ["dep:octosense-mail"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
@@ -112,6 +116,7 @@ app-appcard = ["dep:octosense-appcard"]
 app-news = ["dep:octosense-news"]
 # The Camera module (the Mate 70 Air replica over Makepad video input) linked in.
 app-camera = ["dep:octosense-camera"]
+app-appstore = ["dep:octosense-appstore"]
 # The OctosMap module (maps, places, directions, navigation) linked in.
 app-maps = ["dep:octosense-maps"]
 # The aichat module linked in (the pane seats it in-process where there are
@@ -148,28 +153,28 @@ panic = "unwind"
 # Resolve the exact framework sources prepared by tools/setup-native.py.
 
 [patch."https://github.com/OctoSense-org/makepad.git"]
-makepad-script = { path = "../makepad/platform/script" }
-makepad-widgets = { path = "../makepad/widgets" }
-makepad-code-editor = { path = "../makepad/code_editor" }
-makepad-ai = { path = "../makepad/libs/makepad_ai" }
-makepad-studio-protocol = { path = "../makepad/platform/studio" }
-makepad-network = { path = "../makepad/platform/network" }
-makepad-wm-api = { path = "../makepad/libs/wm_api" }
-makepad-ai-services = { path = "../makepad/libs/ai/services" }
-makepad-strict-json = { path = "../makepad/libs/strict_json" }
-makepad-app-module = { path = "../makepad/libs/app_module" }
-makepad-wm-theme = { path = "../makepad/libs/wm_theme" }
-makepad-map-nav = { path = "../makepad/libs/map_nav" }
-makepad-sheets = { path = "../makepad/apps/sheets" }
-makepad-aichat = { path = "../makepad/apps/aichat" }
+makepad-script = { path = "../.sources/makepad/platform/script" }
+makepad-widgets = { path = "../.sources/makepad/widgets" }
+makepad-code-editor = { path = "../.sources/makepad/code_editor" }
+makepad-ai = { path = "../.sources/makepad/libs/makepad_ai" }
+makepad-studio-protocol = { path = "../.sources/makepad/platform/studio" }
+makepad-network = { path = "../.sources/makepad/platform/network" }
+makepad-wm-api = { path = "../.sources/makepad/libs/wm_api" }
+makepad-ai-services = { path = "../.sources/makepad/libs/ai/services" }
+makepad-strict-json = { path = "../.sources/makepad/libs/strict_json" }
+makepad-app-module = { path = "../.sources/makepad/libs/app_module" }
+makepad-wm-theme = { path = "../.sources/makepad/libs/wm_theme" }
+makepad-map-nav = { path = "../.sources/makepad/libs/map_nav" }
+makepad-sheets = { path = "../.sources/makepad/apps/sheets" }
+makepad-aichat = { path = "../.sources/makepad/apps/aichat" }
 
 [patch."https://github.com/OctoSense-org/Octoscript.git"]
-octoscript-ui-l0 = { path = "../octoscript/crates/octoscript-ui-l0" }
+octoscript-ui-l0 = { path = "../.sources/octoscript/crates/octoscript-ui-l0" }
 
 [patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
-octoscript-makepad = { path = "../octoscript-makepad/crates/octoscript-makepad" }
-octoscript-widgets = { path = "../octoscript-makepad/crates/octoscript-widgets" }
-octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
+octoscript-makepad = { path = "../.sources/octoscript-makepad/crates/octoscript-makepad" }
+octoscript-widgets = { path = "../.sources/octoscript-makepad/crates/octoscript-widgets" }
+octoscript-node = { path = "../.sources/octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
-makepad-widgets = { path = "../makepad/widgets" }
+makepad-widgets = { path = "../.sources/makepad/widgets" }

@@ -1,4 +1,4 @@
-# OctoSense mobile
+# OctoSense Home
 
 ## Shared Octoscript-Makepad runtime
 
@@ -7,23 +7,27 @@
 release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
 shared with AppCards, Mail and the other OctoSense applications.
 
-Before building, run `python3 tools/setup-native.py` (Python 3.9+). The framework
-repositories are siblings of this app: `../octoscript-makepad`, `../makepad`
-and `../octoscript`. Local changes are preserved; `--update` only updates clean
-checkouts. CI verifies the selected release and rejects duplicate Makepad sources.
-Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
-to check the local dependency graph. Existing platform rendering backends remain
-part of their applications; the framework controls the shared VM and UI sources.
+This application is maintained inside `octosense-rom/home`. From the product
+root, run `python3 scripts/setup-home.py` (Python 3.9+) to prepare pinned
+framework and native-app sources in `.sources/`. This also applies the recorded
+isolate-policy patch required by App Hub. Local changes are preserved.
+Use `python3 scripts/setup-home.py --check --cargo` from the product root to
+verify the selected sources and reject duplicate Makepad crates.
+
+The supported APK entry point is `../scripts/build-home.sh`; see
+[Home builds](../docs/home-build.md) for standalone and ROM signing. Both modes
+include App Hub. Store installations appear as individual Home apps, each with
+its own identity, data and policy. They are hosted bundles, not Android APKs.
 
 
 The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News, OctosMap and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
-This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
+The Home source was originally split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). Home and the desktop still share much of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
 ## Build and run on a phone
 
 Requires Rust stable, an installed Android SDK/toolchain and a device on ADB.
-Keep AppCards at `../Octosense-Service-AppCards` for the Mail module. Build
+Prepare the native apps with `python3 ../scripts/setup-home.py`. Build
 `cargo-makepad` from the exact sibling revision selected by the shared runtime;
 it carries this app's Java activity (the system browser, HOME, GPS, share and
 deep-link intents), so upstream's tool builds an APK that panics on the first
@@ -32,8 +36,8 @@ difference and the failure:
 
 ```sh
 python3 tools/setup-native.py --check --cargo-manifest Cargo.toml
-cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
-../makepad/target/release/cargo-makepad makepad android \
+cargo build --release --manifest-path ../.sources/makepad/tools/cargo_makepad/Cargo.toml
+../.sources/makepad/target/release/cargo-makepad makepad android \
   --sdk-path=/path/to/existing/android_sdk build -p octosense --release
 ```
 
@@ -41,7 +45,7 @@ To have plain `cargo makepad` be that tool, install it over the stock one, and
 again whenever the fork's tool code or Java changes:
 
 ```sh
-cargo install --path ../makepad/tools/cargo_makepad --force
+cargo install --path ../.sources/makepad/tools/cargo_makepad --force
 ```
 
 For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
@@ -49,7 +53,7 @@ booted simulator receives the app) — iOS needs `mobile-only` passed by hand,
 Android gets it from `build.rs`:
 
 ```sh
-../makepad/target/release/cargo-makepad makepad apple ios \
+../.sources/makepad/target/release/cargo-makepad makepad apple ios \
   --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
 ```
 
@@ -97,7 +101,7 @@ The App Library ranks names that start with what you typed first and Return open
 ## Mail preview on Android
 
 Mail is an in-process AppModule from the sibling
-`../Octosense-Service-AppCards/apps/mail/native`. It uses the same locked
+`../.sources/appcards/apps/mail/native`. It uses the same locked
 Octoscript-Makepad release as this launcher. The default Rust backend connects
 directly from Android to Gmail using verified POP3/TLS, with private on-device
 accounts, cached mail and drafts. No Mac service or USB connection is needed at
@@ -107,15 +111,15 @@ WebView for full-length plain and HTML messages.
 With the already-installed Android SDK, build a separate preview package:
 
 ```sh
-cargo build --release --manifest-path ../makepad/tools/cargo_makepad/Cargo.toml
-../makepad/target/release/cargo-makepad makepad android \
+cargo build --release --manifest-path ../.sources/makepad/tools/cargo_makepad/Cargo.toml
+../.sources/makepad/target/release/cargo-makepad makepad android \
   --sdk-path=/path/to/existing/android_sdk \
   --package-name=dev.makepad.octosense.mailpreview --app-label='OctoSense Mail' \
   build -p octosense --release
 ```
 
 Use `apps/mail/scripts/open_android.py` in the AppCards repository to install
-and open the APK, as described in the [Mail app](../Octosense-Service-AppCards/apps/mail/README.md#standalone-android-mail).
+and open the APK, as described in the [Mail app](../.sources/appcards/apps/mail/README.md#standalone-android-mail).
 Use `--demo --probe` for isolated fictional mail and measured touch testing;
 `--record --demo` enables timestamped app-owned GPU frames. WebView needs its
 own page snapshot when making a video. Account provisioning uses the on-device
@@ -184,5 +188,5 @@ shell add `--features mobile-apps,mobile-only` before `--`.
 The AppCards checkout and its `octos` submodule are required. The accompanying
 AppCard/octos rusqlite 0.37 update unifies SQLite with the Matrix SDK. Both
 launchers patch the legacy AppCard Git dependencies to that canonical checkout.
-See the [Robrix app](../Octosense-Service-AppCards/apps/robrix/README.md) for
+See the [Robrix app](../.sources/appcards/apps/robrix/README.md) for
 Android build instructions, the message AppCard format and validation scope.

@@ -26,7 +26,7 @@
   {
     "id": "browser",
     "label": "Browser",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-browser",
     "bin": "browser",
     "policy": "focus"
@@ -34,7 +34,7 @@
   {
     "id": "files",
     "label": "Files",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-files",
     "bin": "files",
     "policy": "focus",
@@ -45,7 +45,7 @@
   {
     "id": "terminal",
     "label": "Terminal",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-terminal",
     "bin": "terminal",
     "policy": "new"
@@ -53,7 +53,7 @@
   {
     "id": "mixer",
     "label": "Mixer",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-mixer",
     "bin": "makepad-mixer",
     "policy": "focus"
@@ -61,7 +61,7 @@
   {
     "id": "task",
     "label": "Task Manager",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-task",
     "bin": "task",
     "policy": "focus"
@@ -69,7 +69,7 @@
   {
     "id": "sheets",
     "label": "Sheets",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-sheets",
     "bin": "sheets",
     "policy": "focus"
@@ -85,7 +85,7 @@
   {
     "id": "clock",
     "label": "Clock",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-clock",
     "bin": "clock",
     "policy": "focus"
@@ -93,7 +93,7 @@
   {
     "id": "weather",
     "label": "Weather",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-weather",
     "bin": "weather",
     "policy": "focus"
@@ -101,7 +101,7 @@
   {
     "id": "fabric",
     "label": "Fabric",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-fabric",
     "bin": "makepad-fabric",
     "policy": "focus"
@@ -109,7 +109,7 @@
   {
     "id": "score",
     "label": "Score",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-app-score",
     "bin": "makepad-app-score",
     "policy": "focus"
@@ -117,7 +117,7 @@
   {
     "id": "video",
     "label": "Video Player",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-video",
     "bin": "video",
     "policy": "new"
@@ -125,7 +125,7 @@
   {
     "id": "route",
     "label": "Route",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-app-route",
     "bin": "route",
     "policy": "focus"
@@ -133,7 +133,7 @@
   {
     "id": "vj",
     "label": "VJ",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-vj",
     "bin": "makepad-vj",
     "policy": "focus"
@@ -141,7 +141,7 @@
   {
     "id": "fab",
     "label": "Fab",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-fab",
     "bin": "makepad-fab",
     "policy": "focus"
@@ -149,7 +149,7 @@
   {
     "id": "studio",
     "label": "Director",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-director",
     "bin": "director",
     "policy": "focus"
@@ -157,7 +157,7 @@
   {
     "id": "image",
     "label": "Image Viewer",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-image",
     "bin": "image",
     "policy": "new"
@@ -165,7 +165,7 @@
   {
     "id": "pdf",
     "label": "PDF Viewer",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-pdf",
     "bin": "pdf",
     "policy": "new"
@@ -173,7 +173,7 @@
   {
     "id": "aichat",
     "label": "AI",
-    "manifest": "../../makepad/Cargo.toml",
+    "manifest": "../../.sources/makepad/Cargo.toml",
     "package": "makepad-aichat",
     "bin": "aichat",
     "policy": "new"

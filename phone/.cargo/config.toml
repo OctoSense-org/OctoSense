@@ -5,7 +5,7 @@ MAKEPAD_BUNDLE_NAME = { value = "OctoSense", force = true }
 MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 
 # AppCards embeds assets from the pinned sibling framework, including Git builds.
-OCTOSENSE_WORKSPACE = { value = "..", relative = true }
+OCTOSENSE_WORKSPACE = { value = "../.sources", relative = true }
 
 # The locked aws-lc-sys supports its CC builder on Android arm64. Use the
 # installed NDK Clang directly; no additional CMake installation is needed.

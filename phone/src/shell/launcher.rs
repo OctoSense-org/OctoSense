@@ -61,6 +61,7 @@ fn icon_for(id: &str) -> Option<Ico> {
         "vj" => Ico::Headphone,
         "photos" => Ico::Photo,
         "clock" => Ico::Calendar,
+        "appstore" => Ico::Globe,
         "weather" => Ico::Brightness,
         "fabric" => Ico::Shirt,
         "fab" => Ico::Refresh,
@@ -70,14 +71,19 @@ fn icon_for(id: &str) -> Option<Ico> {
     })
 }
 
+thread_local! {
+    static MEMO: std::cell::RefCell<Option<(std::time::Instant, Vec<MenuItem>)>> = const { std::cell::RefCell::new(None) };
+}
+
+pub fn invalidate_apps() {
+    MEMO.with(|m| *m.borrow_mut() = None);
+}
+
 /// The `apps` provider rows: every registry app whose binary exists, not
 /// hidden, in the CURATED registry order (the user's: browser/files/
 /// terminal first, then by rarity — a deliberate deviation from omarchy's
 /// alphabetical provider). The live filter never reorders.
 pub fn apps() -> Vec<MenuItem> {
-    thread_local! {
-        static MEMO: std::cell::RefCell<Option<(std::time::Instant, Vec<MenuItem>)>> = const { std::cell::RefCell::new(None) };
-    }
     if let Some(items) = MEMO.with(|m| m.borrow().as_ref().filter(|(at, _)| at.elapsed().as_secs_f64() < APPS_MEMO_S).map(|(_, items)| items.clone())) {
         return items;
     }

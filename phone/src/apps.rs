@@ -59,13 +59,51 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_maps::MAPS_MODULE);
     #[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
     out.push(&octosense_camera::CAMERA_MODULE);
+    #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_appstore::APPSTORE_MODULE);
+    #[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_appstore::cardapp::CARD_MODULE);
     out
+}
+
+/// Card apps the store installed (ADR 0003): each is an app of its own in
+/// the launcher, hosted by the linked `card` module with its id as the open
+/// argument. Read fresh each time, so an install shows up without a restart.
+#[cfg(any(feature = "app-appstore", target_os = "android", target_os = "ios"))]
+pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
+    let Some(root) = octosense_appstore::data_root_if_set() else { return Vec::new() };
+    octosense_appstore::installed_apps(&root)
+        .into_iter()
+        .map(|app| crate::clients::AppDef {
+            id: app.id,
+            label: app.name,
+            bin: "card".into(),
+            package: String::new(),
+            dir: String::new(),
+            manifest: None,
+            args: Vec::new(),
+            policy: crate::clients::LaunchPolicy::OrFocus,
+        })
+        .collect()
+}
+
+#[cfg(not(any(feature = "app-appstore", target_os = "android", target_os = "ios")))]
+pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
+    Vec::new()
 }
 
 /// An installed host has no checkout catalog. Its linked modules carry all
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().map(|module| crate::clients::AppDef {
+    let mut catalog = bundled_modules_catalog();
+    // The `card` host module is not an app a person opens; the apps it runs are.
+    catalog.retain(|app| app.id != "card");
+    catalog.extend(installed_card_apps());
+    catalog
+}
+
+pub fn bundled_modules_catalog() -> Vec<crate::clients::AppDef> {
+    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -112,9 +150,16 @@ impl AppRegistry {
         registry
     }
 
-    /// The linked module for an app, if this build has one.
+    /// The linked module for an app, if this build has one. An installed
+    /// card app has none of its own: the `card` module hosts it.
     pub fn module(&self, id: &str) -> Option<&'static dyn AppModule> {
-        self.modules.iter().copied().find(|m| m.id() == id)
+        if let Some(module) = self.modules.iter().copied().find(|m| m.id() == id) {
+            return Some(module);
+        }
+        if installed_card_apps().iter().any(|app| app.id == id) {
+            return self.modules.iter().copied().find(|m| m.id() == "card");
+        }
+        None
     }
 
     /// How a launch of `id` is hosted. On a desktop: Module only when a
@@ -125,7 +170,12 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
-        if matches!(id, "robrix" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+        if matches!(id, "robrix" | "finance" | "appstore") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+            return Hosting::Module;
+        }
+        // An installed card app has no process form anywhere: the `card`
+        // module hosts it on every platform, no switch needed.
+        if installed_card_apps().iter().any(|app| app.id == id) && self.module("card").is_some() {
             return Hosting::Module;
         }
         match self.overrides.get(id) {
@@ -182,7 +232,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps", "camera", "appstore"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

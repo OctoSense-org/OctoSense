@@ -1,30 +1,39 @@
 # OctoSense ROM
 
-A LineageOS 22.2 build for the OnePlus 6 (`enchilada`) signed with OctoSense's own
-keys, carrying the OctoSense launcher, System Bridge and Quickstep fork as
-platform-signed privileged system apps.
+One Android product repository with two delivery modes:
 
-- `vendor/octosense/` — the product layer: `octosense.mk` (packages), `Android.bp`
-  (prebuilt imports re-signed with the platform certificate), the framework
-  overlay (notification access for the bridge, Recents provider) and the
-  privileged-permission allowlist. `prebuilt/` holds the launcher and bridge APKs
-  taken from OctoSense-mobile's release build; any signature on them is replaced
-  at build time.
-- `scripts/make-keys.sh` — generates the platform, APK and APEX keys into
-  `~/octosense-adr0001/keys` and installs them as `vendor/lineage-priv/keys`.
-- `scripts/apply-to-tree.sh <tree>` — copies the layer into the tree and makes
-  `lineage_enchilada.mk` inherit it.
-- `scripts/build-rom.sh` and `scripts/run-rom-rootfs.sh` — the build inside the
-  host's chroot: `preflight` lunches and dumps the configuration, `bacon` makes
-  the flashable zip into `/exports/rom-build`.
+- **OctoSense Home** is the installable launcher for ordinary Android phones,
+  with bundled apps, App Hub, notifications and device controls through public
+  APIs and user-granted access.
+- **OctoSense ROM** preinstalls the same Home implementation with the privileged
+  agent, Quickstep and SystemUI integration. The current device target is the
+  OnePlus 6 (`enchilada`), based on LineageOS 22.2 / Android 15.
 
-The Quickstep fork and the SystemUI fork are staged into the tree from
-OctoSense-mobile's `android/platform-build` (`stage-quickstep.py`,
-`stage-systemui.py`) before a build.
+Home lives in `home/`. There is no separate launcher checkout in the build.
+Ordinary Home and ROM Home retain their existing signing arrangements and
+application ID `dev.makepad.octosense`; their signed APKs are separate artifacts.
+Installing Home alone does not replace an ordinary phone's global SystemUI.
 
-Keys are the ROM's identity: keep `~/octosense-adr0001/keys` backed up and out
-of any repository. The first flash from LineageOS wipes user data because the
-signers differ.
+```text
+home/                       Home Rust workspace, bundled apps and Android bridge
+home/android/platform-build/ Quickstep and SystemUI sources/stagers
+vendor/octosense/            ROM product, permissions, overlays and platform agent
+scripts/                    Home and ROM build, staging and update entry points
+patches/runtime/            Recorded runtime changes required by App Hub
+web-installer/              OnePlus ROM installer
+```
+
+Start with `python3 scripts/setup-home.py` to prepare exact dependency revisions
+under ignored `.sources/`. See [Home builds and ROM staging](docs/home-build.md)
+for standalone and ROM commands, signing, SDK requirements and validation.
+AOSP/LineageOS, kernel and vendor sources remain in the external OS build tree.
+App Hub's catalog and publishing pipeline remain in
+[OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub).
+
+The [migration record](docs/home-migration.md) identifies imported source history,
+outstanding branches and the checks required before retiring the old repository.
+[ROM updates](docs/updates.md) continue to use this repository's existing release
+feed. Keys stay outside the repository; source consolidation does not change them.
 
 ## Host chroot notes
 
