@@ -34,6 +34,7 @@ impl PhoneSurface {
             cx.hide_text_ime();
         }
         phone.search_focused = false;
+        self.search_focus_pending = false;
         self.search_pointer = false;
         if clear && !phone.search_query.is_empty() {
             input.set_text(cx, "");
@@ -45,13 +46,15 @@ impl PhoneSurface {
     pub fn clear_search(&mut self, cx: &mut Cx, phone: &mut PhoneState) {
         let input = self.search.text_input(cx, ids!(input));
         input.set_text(cx, "");
-        input.take_key_focus(cx);
         phone.search_query.clear();
         phone.search_scroll = 0.0;
-        phone.search_focused = true;
+        self.focus_search(cx, phone);
     }
 
     pub fn focus_search(&mut self, cx: &mut Cx, phone: &mut PhoneState) {
+        // A pull-down can be the editor's first appearance. Take focus again
+        // after its first draw, when it has a real area for the native IME.
+        self.search_focus_pending = true;
         self.search.text_input(cx, ids!(input)).take_key_focus(cx);
         phone.search_focused = true;
     }
@@ -67,7 +70,7 @@ impl PhoneSurface {
     ) -> bool {
         let input = self.search.text_input(cx, ids!(input));
         if !enabled {
-            self.dismiss_search(cx, phone, phone.screen != PhoneScreen::Drawer);
+            self.dismiss_search(cx, phone, !phone.searching());
             if matches!(
                 event,
                 Event::KeyFocus(_) | Event::KeyFocusLost(_) | Event::Timer(_) | Event::NextFrame(_)
@@ -212,6 +215,10 @@ impl PhoneSurface {
         self.search
             .draw_walk_all(cx, &mut Scope::empty(), Walk::abs_rect(pill));
         crate::mobile_perf::work_end("search.editor", timing);
+        if self.search_focus_pending {
+            self.search.text_input(cx, ids!(input)).take_key_focus(cx);
+            self.search_focus_pending = false;
+        }
         if !state.phone.search_query.is_empty() {
             let clear = rect(pill.pos.x + pill.size.x - 32.0, pill.pos.y, 32.0, 40.0);
             self.label(cx, clear, "×", 20.0, false, alpha(ink, 0.6));
@@ -238,7 +245,7 @@ impl PhoneSurface {
         let found = matching_apps(apps, &state.phone.search_query);
         let top = pill.pos.y + pill.size.y + 14.0;
         let bottom = screen.pos.y + screen.size.y
-            - state.phone.keyboard.max(state.phone.keyboard_target)
+            - state.phone.keyboard.max(state.phone.keyboard_target).max(state.phone.native_keyboard)
             - 28.0;
         let height = (bottom - top).max(0.0);
         if found.is_empty() {

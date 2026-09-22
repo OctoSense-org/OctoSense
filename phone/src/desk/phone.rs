@@ -122,7 +122,7 @@ impl WmDesk {
     pub fn phone_hit(&self,p:Vec2d)->Option<PhoneHit> {self.phone_ui.hit(p)}
     pub(crate) fn phone_hit_rect(&self,hit:&PhoneHit)->Option<Rect> {self.phone_ui.hit_rect(hit)}
     pub fn phone_search_event(&mut self,cx:&mut Cx,event:&Event,state:&mut WmState)->bool {
-        let enabled=state.style.target.mobile() && state.phone.screen==PhoneScreen::Drawer;
+        let enabled=state.style.target.mobile() && state.phone.searching();
         self.phone_ui.search_event(cx,event,&mut state.phone,enabled)
     }
     pub fn dismiss_phone_search(&mut self,cx:&mut Cx,phone:&mut crate::mobile::PhoneState,clear:bool) {

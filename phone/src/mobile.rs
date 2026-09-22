@@ -9,7 +9,7 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
-    App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Back,
+    App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Search, Back,
     Floating(crate::mobile_navigation::NavigationHit),
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
@@ -103,6 +103,8 @@ pub struct PhoneState {
     pub keyboard_sent_height: f64,
     pub keyboard_client: Option<ClientId>,
     pub search_query: String,
+    /// Search is opened by Home's pull-down, independently of the app catalog.
+    pub search_open: bool,
     /// Return in the search field: the app to open (mobile_app.rs takes it).
     pub search_launch: Option<String>,
     pub search_focused: bool,
@@ -154,7 +156,7 @@ impl Default for PhoneState {
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
-            search_query: String::new(), search_launch: None, search_focused: false, search_scroll: 0.0,
+            search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
             search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
@@ -205,6 +207,7 @@ impl PhoneState {
     }
     pub fn activate(&mut self, client: ClientId) {
         self.navigation.cancel();
+        self.search_open = false;
         self.search_focused = false;
         if self.client != Some(client) { self.keyboard_target = 0.0; }
         self.client = Some(client);
@@ -216,11 +219,20 @@ impl PhoneState {
     }
     pub fn navigate(&mut self, screen: PhoneScreen) {
         self.navigation.cancel();
+        self.search_open = false;
         self.search_focused = false;
         self.screen = screen;
         self.keyboard_target = 0.0;
         self.gesture = None;
         self.dismiss_y = 0.0;
+    }
+    pub fn open_search(&mut self) {
+        self.navigate(PhoneScreen::Drawer);
+        self.search_open = true;
+        self.search_query.clear();
+        self.search_scroll = 0.0;
+        self.search_velocity = 0.0;
+        self.search_stretch = 0.0;
     }
     pub fn step(&mut self, dt: f64) -> bool {
         let t = 1.0 - (-dt * 19.0).exp();
@@ -294,7 +306,7 @@ impl PhoneState {
         if self.viewport.size.x > self.viewport.size.y { 184.0 } else { 292.0 }
     }
     pub fn searching(&self) -> bool {
-        self.screen == PhoneScreen::Drawer && (self.search_focused || !self.search_query.is_empty())
+        self.screen == PhoneScreen::Drawer && self.search_open
     }
 }
 
@@ -357,6 +369,24 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_is_separate_from_the_catalog_even_after_a_previous_query() {
+        let mut phone = PhoneState::default();
+        phone.navigate(PhoneScreen::Drawer);
+        assert!(!phone.searching());
+        phone.open_search();
+        assert!(phone.searching(), "a pull-down opens search before the editor gets focus");
+        phone.search_query = "News".into();
+        phone.search_focused = false;
+        assert!(phone.searching(), "hiding the keyboard must not turn search into the catalog");
+        phone.navigate(PhoneScreen::Home);
+        phone.pages.sync(&["reference".into(), "news".into()], 1, 1);
+        phone.pages.jump(phone.pages.library_index());
+        phone.step(1.0 / 60.0);
+        assert_eq!(phone.screen, PhoneScreen::Drawer);
+        assert!(!phone.searching(), "paging into the catalog must not reopen the previous search");
+    }
 
     #[test]
     fn a_docked_activity_becomes_a_shade_card_and_the_island_hides_under_the_open_shade() {

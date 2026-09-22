@@ -403,7 +403,7 @@ impl App {
         }
         let phone=&mut self.state_mut().phone;
         let visible=!cfg!(any(target_os="ios",target_os="android",target_env="ohos"))
-            && ((phone.screen==PhoneScreen::Drawer && phone.search_focused)
+            && ((phone.searching() && phone.search_focused)
                 || client.and_then(|c|phone.ime.get(&c)).is_some_and(|ime|ime.visible));
         let height=if visible {phone.keyboard_height()}else{0.0};
         if height==phone.keyboard_sent_height && (height==0.0 || phone.keyboard_client==client) {return;}
@@ -517,6 +517,10 @@ impl App {
                 self.android_command(cx,"launcher","system_settings",vec![("destination",makepad_strict_json::s("usage_access"))]);
             }
             PhoneHit::Drawer=>self.state_mut().phone.navigate(PhoneScreen::Drawer),
+            PhoneHit::Search=>{
+                self.state_mut().phone.open_search();
+                if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.clear_phone_search(cx,&mut self.state_mut().phone);}
+            }
             PhoneHit::Page(n)=>self.state_mut().phone.pages.jump(n),
             #[cfg(not(mobile_only))]
             PhoneHit::Rotate=>{
@@ -539,6 +543,8 @@ impl App {
             }
             PhoneHit::CancelSearch=>{
                 if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.dismiss_phone_search(cx,&mut self.state_mut().phone,true);}
+                self.phone_action(cx,PhoneHit::Home);
+                return;
             }
             PhoneHit::Shift=>{let p=&mut self.state_mut().phone;p.shift=!p.shift;}
             PhoneHit::Symbols=>{let p=&mut self.state_mut().phone;p.symbols=!p.symbols;}
@@ -811,10 +817,9 @@ impl App {
             insets: SafeInsets { top: i.top, right: i.right, bottom: i.bottom, left: i.left },
             phone: phone.screen,
             system_edges: crate::mobile_navigation::ENABLED,
-            // The library's body scrolls its search results while there is a
-            // query; with the field merely focused (the way a pull opens it)
-            // a pull still closes it.
-            body: phone.screen == PhoneScreen::Home || (phone.screen == PhoneScreen::Drawer && phone.search_query.is_empty()),
+            // A rightward library swipe returns Home, including from search
+            // results. Its vertical drags stay with the scrolling grid.
+            body: matches!(phone.screen, PhoneScreen::Home | PhoneScreen::Drawer),
             shade: !crate::mobile_navigation::ENABLED && !phone.android.system_panel,
         }
     }
@@ -837,11 +842,6 @@ impl App {
             _ => {}
         }
     }
-    /// A committed gesture becomes the navigation the shell already has.
-    /// ShadePull and PageSwipe commits only reach `gesture_out`: the shade
-    /// and the pages are their own surfaces' work. A pull on the home page
-    /// opens the App Library with its search field focused; the same pull on
-    /// the library closes it.
     /// The native placement menu for an icon (Add/Remove from Home, the
     /// dock, App info, Uninstall), in the shell's appearance.
     fn open_app_menu(&mut self,cx:&mut Cx,app:&str) {
@@ -956,13 +956,16 @@ impl App {
                 };
                 if let Some(client) = next { self.phone_action(cx, PhoneHit::Card(client)); }
             }
-            // The app sees the back press first (BackPressed / HostedBack)
-            // and the shell goes home only when it declines.
+            // The library returns to the Home page it left, with no extra
+            // pager step and no keyboard remaining over Home.
+            GestureKind::Back if from == PhoneScreen::Drawer => {
+                self.dismiss_phone_keyboard(cx);
+                self.phone_action(cx, PhoneHit::Home);
+            }
+            // Hosted apps see Back first; Home follows only if they decline.
             GestureKind::Back => self.phone_action(cx, PhoneHit::Back),
             GestureKind::HomeSearch => match from {
-                // The same App Library page as the swipe up from the bottom:
-                // the grid with its search field at rest, a tap away.
-                PhoneScreen::Home => self.phone_action(cx, PhoneHit::Drawer),
+                PhoneScreen::Home => self.phone_action(cx, PhoneHit::Search),
                 _ => {}
             },
             GestureKind::Shade(_) | GestureKind::Page(_) => {}
@@ -1034,8 +1037,8 @@ impl App {
                 // The recognizer claims a finger in a band (or on the home
                 // page body); an excluded edge is left to the app.
                 self.phone_gestures.feed(FingerPhase::Down,p,time,&ctx,&phone.exclusions);
-                // A finger on the open shade's sheet is the shade's own drag.
-                if matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
+                // The letter index and shade own their complete drag streams.
+                if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
                 phone.search_velocity=0.0;
@@ -1059,6 +1062,7 @@ impl App {
                 let shade_hit=match &g.hit {Some(PhoneHit::Shade(h)) if ShadeState::drags(h)=>Some(h.clone()),_=>None};
                 if let Some(h)=shade_hit {phone.shade.drag(&h,p,delta,screen);self.animate_phone(cx);return true;}
                 let out=if shell {self.phone_gestures.feed(FingerPhase::Move,p,time,&ctx,&phone.exclusions)} else {None};
+                g.shell=self.phone_gestures.active();
                 phone.gesture_out=out;
                 if let Some(out)=out {
                     Self::drive_gesture(phone,out,from);
