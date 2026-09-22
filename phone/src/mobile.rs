@@ -10,6 +10,7 @@ pub enum PhoneScreen { #[default] Home, App, Recents, Drawer }
 #[derive(Clone, Debug, PartialEq)]
 pub enum PhoneHit {
     App(String), TileApp(String), Card(ClientId), Home, Recents, Drawer, Back,
+    Floating(crate::mobile_navigation::NavigationHit),
     /// The desk bar's phone strip (universal builds only): rotate the
     /// window, the style menu, Light/Dark, back to the desktop.
     #[cfg(not(mobile_only))] Rotate,
@@ -64,6 +65,7 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
+    pub navigation: crate::mobile_navigation::FloatingNavigation,
     pub android: crate::android_integration::AndroidState,
     /// Which hidden gestures the person has found (mobile_hints.rs): the
     /// home page shows one short hint at a time until they have.
@@ -96,6 +98,7 @@ pub struct PhoneState {
     /// Native touch owned by shell navigation; other fingers cannot replace it.
     pub touch: Option<u64>,
     pub keyboard: f64,
+    pub native_keyboard: f64,
     pub keyboard_target: f64,
     pub keyboard_sent_height: f64,
     pub keyboard_client: Option<ClientId>,
@@ -147,9 +150,10 @@ pub struct PhoneState {
 impl Default for PhoneState {
     fn default() -> Self {
         Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
+            navigation: Default::default(),
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
-            keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
+            keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_launch: None, search_focused: false, search_scroll: 0.0,
             search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: None,
             ime: HashMap::new(), shift: false, symbols: false,
@@ -171,6 +175,16 @@ impl Default for PhoneState {
     }
 }
 impl PhoneState {
+    pub fn navigation_rect(&self) -> Rect {
+        Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
+            (self.viewport.size.y - self.keyboard.max(self.native_keyboard)).max(1.0)) }
+    }
+    pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
+        self.native_keyboard=match event {
+            VirtualKeyboardEvent::WillShow{height,..}|VirtualKeyboardEvent::DidShow{height,..}=>height.max(0.0),
+            VirtualKeyboardEvent::WillHide{..}|VirtualKeyboardEvent::DidHide{..}=>0.0,
+        };
+    }
     /// The home page (or the app library) is fully shown and nothing is
     /// animating or being dragged: safe to reconfigure a window down to
     /// its tile face without disturbing a closing animation.
@@ -190,6 +204,7 @@ impl PhoneState {
         self.screen != PhoneScreen::App || self.openness < 0.999
     }
     pub fn activate(&mut self, client: ClientId) {
+        self.navigation.cancel();
         self.search_focused = false;
         if self.client != Some(client) { self.keyboard_target = 0.0; }
         self.client = Some(client);
@@ -200,6 +215,7 @@ impl PhoneState {
         self.dismiss_y = 0.0;
     }
     pub fn navigate(&mut self, screen: PhoneScreen) {
+        self.navigation.cancel();
         self.search_focused = false;
         self.screen = screen;
         self.keyboard_target = 0.0;
@@ -211,6 +227,7 @@ impl PhoneState {
         let open = if matches!(self.screen, PhoneScreen::App | PhoneScreen::Recents) && self.client.is_some() { 1.0 } else { 0.0 };
         let overview = if self.screen == PhoneScreen::Recents { 1.0 } else { 0.0 };
         let mut active = false;
+        active |= self.navigation.step(dt);
         // A finger driving the home swipe or the back preview holds the
         // window where it is; a lifted finger lets it settle.
         let dragging = self.gesture.is_some()
@@ -321,6 +338,9 @@ pub fn phone_size(style: DesktopStyle) -> Vec2d {
     if style == DesktopStyle::Ios { dvec2(402.0, 874.0) } else { dvec2(412.0, 892.0) }
 }
 pub fn app_rect(screen: Rect) -> Rect {
+    // The Android/OpenHarmony viewport already excludes native status/navigation
+    // bars. Floating navigation does not reserve any content space.
+    if crate::mobile_navigation::ENABLED { return screen; }
     let top = if screen.size.x > screen.size.y { 24.0 } else { 42.0 };
     Rect { pos: screen.pos + dvec2(0.0, top), size: dvec2(screen.size.x, (screen.size.y - top - 24.0).max(1.0)) }
 }

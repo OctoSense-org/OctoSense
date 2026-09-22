@@ -9,6 +9,19 @@ mod search;
 script_mod! {
     use mod.prelude.widgets_internal.*
     use mod.widgets.*
+    set_type_default() do #(DrawNavigationSurface::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        radius: 24.0 color: #fff opacity: 1.0
+        pixel: fn() {
+            let sdf=Sdf2d.viewport(self.pos*self.rect_size)
+            sdf.box(12.0,12.0,self.rect_size.x-24.0,self.rect_size.y-24.0,self.radius*0.5)
+            let shadow=exp(-max(sdf.shape,0.0)*0.32)*0.16*self.opacity
+            sdf.clear(vec4(0.10,0.08,0.16,shadow))
+            sdf.fill_keep(vec4(self.color.rgb,self.color.a*self.opacity))
+            sdf.stroke(vec4(1.0,1.0,1.0,0.32*self.opacity),0.7)
+            return sdf.result
+        }
+    }
     // Flat surfaces use one uniform blur level. The liquid-glass shader
     // varies the level at its lens edge and keeps six bicubic samplers plus
     // ripple/refraction math live. This material has no lens: specialize its
@@ -138,7 +151,14 @@ script_mod! {
         ios_bold: theme.font_bold{font_family: FontFamily{latin := FontMember{res: crate_resource("makepad_widgets:resources/Inter.ttf") weight: 600.0 asc: 0.0 desc: 0.0}}}
         android_font: theme.font_regular{font_family: FontFamily{latin := FontMember{res: crate_resource("makepad_widgets:resources/RobotoFlex.ttf") weight: 400.0 asc: 0.0 desc: 0.0}}}
         android_bold: theme.font_bold{font_family: FontFamily{latin := FontMember{res: crate_resource("makepad_widgets:resources/RobotoFlex.ttf") weight: 600.0 asc: 0.0 desc: 0.0}}}
+        navigation_font: theme.font_bold{font_family: FontFamily{
+            latin := FontMember{res: crate_resource("makepad_widgets:resources/RobotoFlex.ttf") weight: 600.0 asc: 0.0 desc: 0.0}
+            chinese := FontMember{res: crate_resource("makepad_widgets:resources/LXGWWenKaiBold.ttf") asc: 0.0 desc: 0.0}
+            emoji := FontMember{res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf") asc: 0.0 desc: 0.0}
+        }}
         chrome +: {}
+        navigation_surface +: {}
+        navigation_home +: {svg: crate_resource("self:resources/icons/navigation-home.svg")}
         key_shift +: {svg: crate_resource("self:resources/icons/key-shift.svg")}
         key_backspace +: {svg: crate_resource("self:resources/icons/key-backspace.svg")}
         search: View {
@@ -275,6 +295,15 @@ pub fn dock_ids<'a>(saved: &'a [String], has: impl Fn(&str) -> bool) -> [&'a str
     dock
 }
 
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+struct DrawNavigationSurface {
+    #[deref] draw_super: DrawQuad,
+    #[live] radius: f32,
+    #[live] color: Vec4f,
+    #[live] opacity: f32,
+}
+
 #[derive(Script, ScriptHook, Widget)]
 pub struct PhoneSurface {
     #[uid] uid: WidgetUid,
@@ -287,6 +316,9 @@ pub struct PhoneSurface {
     #[live] ios_bold: TextStyle,
     #[live] android_font: TextStyle,
     #[live] android_bold: TextStyle,
+    #[live] navigation_font: TextStyle,
+    #[live] navigation_surface: DrawNavigationSurface,
+    #[live] navigation_home: DrawSvg,
     #[live] chrome: DrawDesktopChrome,
     #[live] key_shift: DrawSvg,
     #[live] key_backspace: DrawSvg,
@@ -346,6 +378,12 @@ impl PhoneSurface {
             PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
             PhoneHit::Home=>"Home".into(),
             PhoneHit::Recents=>"Recents".into(),
+            PhoneHit::Floating(hit)=>match hit {
+                crate::mobile_navigation::NavigationHit::Bubble=>if phone.navigation.open {"收起快捷操作"}else{"悬浮球，点按打开快捷操作，拖动调整位置"}.into(),
+                crate::mobile_navigation::NavigationHit::Home=>"返回首页".into(),
+                crate::mobile_navigation::NavigationHit::Recents=>"最近应用".into(),
+                crate::mobile_navigation::NavigationHit::Dismiss=>return None,
+            },
             PhoneHit::Drawer=>"All apps".into(),
             PhoneHit::Back=>"Back".into(),
             PhoneHit::Key(key)=>match key.as_str() {"backspace"=>"Backspace".into(),"return"=>"Return".into()," "=>"Space".into(),k=>k.to_string()},
@@ -554,7 +592,7 @@ impl PhoneSurface {
         let r=slot.rect;
         self.rounded(cx, r, TILE_RADIUS as f32, alpha(face, 0.82*opacity));
         let wide=slot.kind==mobile_tiles::TileKind::Wide;
-        let icon=if wide {52.0} else {46.0};
+        let icon=if wide {(r.size.y-16.0).clamp(24.0,52.0)} else {46.0};
         let ink=alpha(ink, opacity);
         if wide {
             // Icon on the left, the text beside it.
@@ -562,9 +600,10 @@ impl PhoneSurface {
             self.icons.draw(cx,slot.app,style,rect(ix,r.pos.y+(r.size.y-icon)*0.5,icon,icon),opacity,ink);
             let text=rect(ix+icon+18.0,r.pos.y,r.size.x-(icon+58.0),r.size.y);
             let mid=text.pos.y+text.size.y*0.5;
-            self.d.label_elided(cx,rect(text.pos.x,mid-34.0,text.size.x,24.0),true,15.0,ink,HAlign::Left,&Self::app_label(slot.app));
-            self.d.label_elided(cx,rect(text.pos.x,mid-8.0,text.size.x,22.0),false,13.0,alpha(ink,0.8*opacity),HAlign::Left,headline);
-            self.d.label_elided(cx,rect(text.pos.x,mid+14.0,text.size.x,20.0),false,10.5,alpha(ink,0.55*opacity),HAlign::Left,detail);
+            let compact=r.size.y<82.0;
+            self.d.label_elided(cx,rect(text.pos.x,mid-if compact {23.0}else{34.0},text.size.x,24.0),true,15.0,ink,HAlign::Left,&Self::app_label(slot.app));
+            self.d.label_elided(cx,rect(text.pos.x,mid+if compact {1.0}else{-8.0},text.size.x,22.0),false,13.0,alpha(ink,0.8*opacity),HAlign::Left,headline);
+            if !compact {self.d.label_elided(cx,rect(text.pos.x,mid+14.0,text.size.x,20.0),false,10.5,alpha(ink,0.55*opacity),HAlign::Left,detail);}
         } else {
             let top=r.pos.y+r.size.y*0.5-icon*0.5-26.0;
             self.icons.draw(cx,slot.app,style,rect(r.pos.x+(r.size.x-icon)*0.5,top,icon,icon),opacity,ink);
@@ -887,6 +926,66 @@ impl PhoneSurface {
             self.label(cx,rect(card.pos.x,card.pos.y+ch+2.0,cw,20.0),name,12.0,false,alpha(ink,0.85));
         }
     }
+    fn navigation_card(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f, opacity: f32) {
+        self.navigation_surface.radius=radius;
+        self.navigation_surface.color=color;
+        self.navigation_surface.opacity=opacity;
+        self.navigation_surface.draw_abs(cx,rect(r.pos.x-12.0,r.pos.y-12.0,r.size.x+24.0,r.size.y+24.0));
+    }
+
+    /// A small app-local control, drawn over content without resizing it.
+    fn draw_app_navigation(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect) {
+        use crate::mobile_navigation::NavigationHit;
+        let nav=&state.phone.navigation;
+        let layout=nav.layout(state.phone.navigation_rect());
+        let dark=state.style.dark;
+        let face=if dark {rgb(39,37,47)} else {rgb(252,251,255)};
+        let ink=if dark {rgb(239,234,250)} else {rgb(46,38,62)};
+        let accent=if dark {rgb(211,191,251)} else {rgb(103,77,152)};
+        let amount=nav.reveal as f32;
+        if amount>0.001 {
+            let previous_font=self.d.text_bold.text_style.clone();
+            self.d.text_bold.text_style=self.navigation_font.clone();
+            let panel=layout.panel;
+            self.navigation_card(cx,panel,22.0,face,amount);
+            self.d.label_elided(cx,rect(panel.pos.x+16.0,panel.pos.y+6.0,panel.size.x-32.0,24.0),true,11.0,alpha(ink,0.55*amount),HAlign::Left,"快捷操作");
+            for (button,hit,label) in [
+                (layout.home,NavigationHit::Home,"返回首页"),
+                (layout.recents,NavigationHit::Recents,"最近应用"),
+            ] {
+                let pressed=nav.pressed()==Some(hit);
+                self.rounded(cx,button,15.0,alpha(accent,if pressed {0.17*amount}else{0.055*amount}));
+                let icon=rect(button.pos.x+(button.size.x-24.0)*0.5,button.pos.y+13.0,24.0,24.0);
+                if hit==NavigationHit::Home {
+                    self.navigation_home.color=alpha(accent,amount);
+                    self.navigation_home.draw_walk(cx,Walk::abs_rect(icon));
+                } else {self.d.icon_centered(cx,Ico::WindowRestore,icon,23.0,alpha(accent,amount));}
+                self.label(cx,rect(button.pos.x,button.pos.y+43.0,button.size.x,24.0),label,13.0,true,alpha(ink,amount));
+            }
+            self.d.text_bold.text_style=previous_font;
+        }
+        // The expanded panel is modal within this application. Its backdrop
+        // owns dismissal; hidden app targets are also removed from accessibility.
+        if nav.open {
+            self.hits.clear();
+            self.hits.push((screen,PhoneHit::Floating(NavigationHit::Dismiss)));
+            self.hits.push((layout.home,PhoneHit::Floating(NavigationHit::Home)));
+            self.hits.push((layout.recents,PhoneHit::Floating(NavigationHit::Recents)));
+        }
+        let bubble=layout.bubble;
+        let engaged=nav.open || nav.tracking();
+        self.navigation_card(cx,bubble,24.0,face,if engaged {1.0}else{0.82});
+        if nav.open {
+            self.d.icon_centered(cx,Ico::Close,bubble,19.0,accent);
+        } else {
+            // Four small dots remain legible on light and dark app surfaces.
+            for row in 0..2 {for col in 0..2 {
+                self.rounded(cx,rect(bubble.pos.x+15.0+col as f64*11.0,bubble.pos.y+15.0+row as f64*11.0,7.0,7.0),3.5,alpha(accent,0.86));
+            }}
+        }
+        self.hits.push((bubble,PhoneHit::Floating(NavigationHit::Bubble)));
+    }
+
     /// `present` draws a recorded texture over a rect in the window (the
     /// desk's quad): the sheet's content while the sheet moves.
     pub fn draw_overlay(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
@@ -904,8 +1003,8 @@ impl PhoneSurface {
         // under it, and an open app's status colour fills the inset too.
         let android=cfg!(target_os="android");
         let status_bg=if android {rect(screen.pos.x,screen.pos.y-phone.insets.top,screen.size.x,status_h+phone.insets.top)} else {rect(screen.pos.x,screen.pos.y,screen.size.x,status_h)};
-        if phone.screen==PhoneScreen::App {self.rounded(cx,status_bg,0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
-        if !android {
+        if phone.screen==PhoneScreen::App && !crate::mobile_navigation::ENABLED {self.rounded(cx,status_bg,0.0,if state.style.dark {rgb(24,24,28)}else{rgb(248,248,252)});}
+        if !android && !crate::mobile_navigation::ENABLED {
             self.label(cx,rect(screen.pos.x+16.0,screen.pos.y,62.0,status_h),&phone.clock,13.0,true,ink);
             if ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-45.0,screen.pos.y+7.0,90.0,23.0),12.0,rgb(0,0,0));}
             if !ios && screen.size.x<screen.size.y {self.rounded(cx,rect(screen.pos.x+screen.size.x*0.5-5.0,screen.pos.y+13.0,10.0,10.0),5.0,rgb(0,0,0));}
@@ -913,10 +1012,10 @@ impl PhoneSurface {
             self.rounded(cx,rect(screen.pos.x+screen.size.x-40.0,screen.pos.y+(status_h-11.0)*0.5,23.0,11.0),3.0,alpha(ink,0.45));
             self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
         }
-        if !phone.android.system_panel {crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);}
-        crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);
+        if !crate::mobile_navigation::ENABLED && !phone.android.system_panel {crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);}
+        if !crate::mobile_navigation::ENABLED {crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);}
         // The battery icon: three quick taps switch the frame-time reporter.
-        if phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
+        if !crate::mobile_navigation::ENABLED && phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
         if phone.overview>0.01 {
             for (index,client) in phone.order.iter().enumerate() {
                 if let Some(slot)=state.clients.get(client) {
@@ -934,23 +1033,27 @@ impl PhoneSurface {
         self.draw_groups_overlay(cx,state,screen);
         if perf {crate::mobile_perf::span(cx.cx,ch.groups,clock);clock=std::time::Instant::now();}
         if phone.keyboard>0.5 {self.draw_keyboard(cx,state,screen,backdrop.clone());}
-        let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
-        if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
-            let band=if android {rect(bottom.pos.x,bottom.pos.y,bottom.size.x,bottom.size.y+phone.insets.bottom)} else {bottom};
-            self.rounded(cx,band,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
-        }
-        let nav_ink=if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
-            if state.style.dark {rgb(238,238,242)}else{rgb(30,30,34)}
-        }else if phone.screen==PhoneScreen::Drawer && !state.style.dark {rgb(30,30,34)}else{rgb(255,255,255)};
-        // Android's own navigation (buttons or its pill) lives in the bottom
-        // inset; the shell's pill would be a second one right above it.
-        if !(android && phone.insets.bottom>0.0) {
-            self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
-        }
-        self.hits.push((bottom,PhoneHit::Home));
-        if !ios && phone.keyboard>0.5 {
-            let back=rect(bottom.pos.x+12.0,bottom.pos.y-10.0,40.0,34.0);
-            self.d.icon_centered(cx,Ico::ChevronLeft,back,16.0,nav_ink);self.hits.push((back,PhoneHit::Back));
+        if crate::mobile_navigation::ENABLED {
+            self.draw_app_navigation(cx,state,screen);
+        } else {
+            let bottom=rect(screen.pos.x,screen.pos.y+screen.size.y-24.0,screen.size.x,24.0);
+            if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
+                let band=if android {rect(bottom.pos.x,bottom.pos.y,bottom.size.x,bottom.size.y+phone.insets.bottom)} else {bottom};
+                self.rounded(cx,band,0.0,if state.style.dark {rgb(28,28,31)}else{rgb(244,244,248)});
+            }
+            let nav_ink=if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
+                if state.style.dark {rgb(238,238,242)}else{rgb(30,30,34)}
+            }else if phone.screen==PhoneScreen::Drawer && !state.style.dark {rgb(30,30,34)}else{rgb(255,255,255)};
+            // Android's own navigation (buttons or its pill) lives in the bottom
+            // inset; the shell's pill would be a second one right above it.
+            if !(android && phone.insets.bottom>0.0) {
+                self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
+            }
+            self.hits.push((bottom,PhoneHit::Home));
+            if !ios && phone.keyboard>0.5 {
+                let back=rect(bottom.pos.x+12.0,bottom.pos.y-10.0,40.0,34.0);
+                self.d.icon_centered(cx,Ico::ChevronLeft,back,16.0,nav_ink);self.hits.push((back,PhoneHit::Back));
+            }
         }
         if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {

@@ -22,6 +22,7 @@ mod desktop;
 mod desktop_app;
 mod snap;
 mod mobile;
+mod mobile_navigation;
 mod android_integration;
 mod mobile_surface;
 mod mobile_gestures;
