@@ -22,8 +22,8 @@ pub enum ShadeSide { Notifications, Controls }
 pub enum Dir { Left, Right }
 
 /// A shell gesture, delivered every frame while it is in progress and once
-/// more as `Commit` or `Cancel`. `progress` is 0..1 of the distance that
-/// commits the gesture; surfaces animate from it directly.
+/// more as `Commit` or `Cancel`. Except for PageSwipe, `progress` is 0..1
+/// of the commit distance; surfaces animate from it directly.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShellGesture {
     /// Bottom edge, upward: go home. Held still near the end: the switcher.
@@ -34,8 +34,9 @@ pub enum ShellGesture {
     Back { edge: Edge, progress: f64 },
     /// Downward from the top edge: the shade, notifications or controls.
     ShadePull { side: ShadeSide, progress: f64 },
-    /// Horizontal on the home page: previous or next page (the glance page
-    /// is the page left of the first).
+    /// Horizontal on Home: displacement in page widths, relative to `dir`.
+    /// It keeps following the finger beyond the commit threshold and can
+    /// become negative when the finger reverses past its starting point.
     PageSwipe { dir: Dir, progress: f64 },
     /// Downward in the middle of the home page: search.
     HomeSearch { progress: f64 },
@@ -117,8 +118,8 @@ impl SafeInsets {
 /// (the home page recognises page swipes and search; the others do not).
 #[derive(Clone, Copy, Debug)]
 /// `body`: the middle of the screen is the shell's to recognise gestures
-/// in — the home page, and the App Library while it is not scrolling search
-/// results; over an app it belongs to the app.
+/// in — Home paging/search or the App Library's swipe back. Vertical library
+/// drags, including filtered search results, belong to its scrolling grid.
 pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone: PhoneScreen, pub body: bool,
     /// The host OS owns edge navigation. Only gestures in the content body
     /// may be recognized; hosted apps retain their own edge touches.
@@ -134,9 +135,9 @@ pub struct GestureContext { pub screen: Rect, pub insets: SafeInsets, pub phone:
 /// search, a horizontal drag turns a page); `Column` its left or right
 /// quarter, where a pull is the shade's side — notifications on the left,
 /// controls on the right — without reaching for the top edge. The App
-/// Library's body is its own: drags there scroll the grid.
+/// Library accepts a rightward swipe back; vertical drags scroll its grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide) }
+enum Origin { Bottom, Top(ShadeSide), Side(Edge), Body, Column(ShadeSide), Library }
 
 #[derive(Clone, Debug)]
 struct Track {
@@ -189,7 +190,7 @@ impl GestureRecognizer {
     pub fn current(&self) -> Option<ShellGesture> { self.track.as_ref().and_then(|t| t.live) }
     /// The finger that is down started in a shell band (bottom, top or a
     /// side) rather than in the home page body.
-    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| t.origin != Origin::Body) }
+    pub fn from_band(&self) -> bool { self.track.as_ref().is_some_and(|t| !matches!(t.origin, Origin::Body | Origin::Library)) }
 
     /// Feed one finger event. `Down` decides whether the shell claims the
     /// finger (`active()` afterwards); an excluded edge, a body touch off
@@ -209,11 +210,21 @@ impl GestureRecognizer {
                 let t = self.track.as_mut()?;
                 Self::sample(t, p, time);
                 let delta = p - t.start;
+                // Once a library drag chooses scrolling (or moves left), it
+                // stays the grid's until Up, even if the finger later curves
+                // right. Relinquishing the track also preserves scroll inertia.
+                if t.origin == Origin::Library && t.kind.is_none() && delta.length() > SLOP
+                    && (delta.y.abs() > delta.x.abs() * 1.2 || -delta.x > delta.y.abs() * 1.2) {
+                    self.track = None;
+                    return None;
+                }
                 if t.kind.is_none() && delta.length() > SLOP { t.kind = Self::classify(t.origin, delta); }
                 let kind = t.kind?;
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
                 Self::check_hold(t, kind, progress, time, m.hold_time);
-                let live = Self::live(kind, t.origin, progress, t.held);
+                let live = if let GestureKind::Page(dir) = kind {
+                    ShellGesture::PageSwipe { dir, progress: Self::along(kind, t.origin, delta) / ctx.screen.size.x.max(1.0) }
+                } else { Self::live(kind, t.origin, progress, t.held) };
                 t.live = Some(live);
                 Some(live)
             }
@@ -268,16 +279,16 @@ impl GestureRecognizer {
             // or a body gesture after it crosses into the app.
             if p.x <= left + m.edge_band || p.x >= right - m.edge_band
                 || p.y <= top + m.top_band || p.y >= bottom - m.bottom_band { return None; }
-            return ctx.body.then_some(Origin::Body);
+        } else {
+            if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
+            if p.y <= top + m.top_band {
+                if !ctx.shade { return None; }
+                let side = if p.x < left + s.size.x * 0.5 { ShadeSide::Notifications } else { ShadeSide::Controls };
+                return clear(Edge::Top).then_some(Origin::Top(side));
+            }
+            if p.x <= left + m.edge_band { return clear(Edge::Left).then_some(Origin::Side(Edge::Left)); }
+            if p.x >= right - m.edge_band { return clear(Edge::Right).then_some(Origin::Side(Edge::Right)); }
         }
-        if p.y >= bottom - m.bottom_band { return clear(Edge::Bottom).then_some(Origin::Bottom); }
-        if p.y <= top + m.top_band {
-            if !ctx.shade { return None; }
-            let side = if p.x < left + s.size.x * 0.5 { ShadeSide::Notifications } else { ShadeSide::Controls };
-            return clear(Edge::Top).then_some(Origin::Top(side));
-        }
-        if p.x <= left + m.edge_band { return clear(Edge::Left).then_some(Origin::Side(Edge::Left)); }
-        if p.x >= right - m.edge_band { return clear(Edge::Right).then_some(Origin::Side(Edge::Right)); }
         if !ctx.body { return None; }
         match ctx.phone {
             PhoneScreen::Home => {
@@ -287,9 +298,7 @@ impl GestureRecognizer {
                 else if p.x > right - column { Some(Origin::Column(ShadeSide::Controls)) }
                 else { Some(Origin::Body) }
             }
-            // The App Library's body is its own: a drag scrolls the grid and
-            // stretches past its ends; nothing there closes it.
-            PhoneScreen::Drawer => None,
+            PhoneScreen::Drawer => Some(Origin::Library),
             _ => None,
         }
     }
@@ -318,6 +327,7 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
                 else { None }
             }
+            Origin::Library => (d.x > ay * 1.2).then_some(GestureKind::Back),
 
         }
     }
@@ -573,7 +583,7 @@ mod tests {
         assert_eq!(last(&out), ShellGesture::Cancel(GestureKind::HomeUp), "{out:?}");
     }
     #[test]
-    fn nothing_in_the_library_body_is_a_shell_gesture() {
+    fn library_vertical_and_leftward_drags_stay_with_the_grid() {
         // A downward drag stays the grid's (it scrolls, and stretches at the top).
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
@@ -581,11 +591,40 @@ mod tests {
         let mut rec = GestureRecognizer::default();
         let out = drive(&mut rec, &ctx(PhoneScreen::Drawer), &ExclusionZones::default(), &swipe((300.0, 400.0), (120.0, 410.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "no pages in the library: {out:?}");
-        // Scrolling search results is the library's: the body is not offered.
+        // A body explicitly reserved for another control is never claimed.
         let mut rec = GestureRecognizer::default();
         let ctx = GestureContext { body: false, ..ctx(PhoneScreen::Drawer) };
         let out = drive(&mut rec, &ctx, &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "{out:?}");
+    }
+    #[test]
+    fn library_swipe_right_returns_home_with_either_edge_owner() {
+        for system_edges in [false, true] {
+            let context = GestureContext { system_edges, shade: !system_edges, ..ctx(PhoneScreen::Drawer) };
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &ExclusionZones::default(), &swipe((90.0, 400.0), (290.0, 410.0), 0.5, 8));
+            assert_eq!(last(&out), ShellGesture::Commit(GestureKind::Back), "system_edges={system_edges}: {out:?}");
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &ExclusionZones::default(), &swipe((90.0, 400.0), (130.0, 402.0), 0.5, 8));
+            assert_eq!(last(&out), ShellGesture::Cancel(GestureKind::Back));
+        }
+    }
+    #[test]
+    fn library_scroll_releases_the_recognizer_and_cannot_turn_into_back() {
+        for system_edges in [false, true] {
+            for dy in [-40.0, 40.0] {
+                let context = GestureContext { system_edges, shade: !system_edges, ..ctx(PhoneScreen::Drawer) };
+                let zones = ExclusionZones::default();
+                let mut rec = GestureRecognizer::default();
+                rec.feed(Down, dvec2(100.0, 400.0), 0.0, &context, &zones);
+                assert!(rec.active());
+                assert!(!rec.from_band());
+                assert_eq!(rec.feed(Move, dvec2(102.0, 400.0 + dy), 0.1, &context, &zones), None);
+                assert!(!rec.active(), "vertical library scrolling must retain inertia");
+                assert_eq!(rec.feed(Move, dvec2(300.0, 400.0 + dy), 0.2, &context, &zones), None);
+                assert_eq!(rec.feed(Up, dvec2(300.0, 400.0 + dy), 0.3, &context, &zones), None);
+            }
+        }
     }
     #[test]
     fn a_tap_in_a_band_is_not_a_gesture_and_a_finger_in_the_nav_bar_is_the_bottom_band() {

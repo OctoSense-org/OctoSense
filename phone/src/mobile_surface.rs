@@ -170,7 +170,17 @@ script_mod! {
                 empty_text: "App Library"
                 return_key_type: Search
                 draw_bg +: {pixel: fn() {return vec4(0.0)}}
-                draw_text +: {text_style: theme.font_regular{font_size: 14.0}}
+                // An empty search field must not inflate 30 MB of CJK/emoji
+                // fonts on the swipe's render thread. Retain both fallbacks,
+                // loading them only when the editor actually needs a glyph.
+                draw_text +: {text_style: theme.font_regular{
+                    font_size: 14.0
+                    font_family: FontFamily{
+                        latin := FontMember{res: crate_resource("makepad_widgets:resources/IBMPlexSans-Text.ttf") asc: -0.1 desc: 0.0}
+                        chinese := FontMember{res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 lazy: 1.0}
+                        emoji := FontMember{res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf") asc: 0.0 desc: 0.0 lazy: 2.0}
+                    }
+                }}
                 draw_cursor +: {color: #007aff}
                 draw_selection +: {color: #007aff40}
             }
@@ -355,6 +365,7 @@ pub struct PhoneSurface {
     #[rust] home_layout_packet: String,
     #[find] #[live] search: WidgetRef,
     #[rust] search_style: Option<(bool, bool)>,
+    #[rust] search_focus_pending: bool,
     #[rust] search_rect: Rect,
     #[rust] search_pointer: bool,
     #[rust] pub search_scroll_max: f64,
@@ -385,6 +396,7 @@ impl PhoneSurface {
                 crate::mobile_navigation::NavigationHit::Dismiss=>return None,
             },
             PhoneHit::Drawer=>"All apps".into(),
+            PhoneHit::Search=>"Search apps".into(),
             PhoneHit::Back=>"Back".into(),
             PhoneHit::Key(key)=>match key.as_str() {"backspace"=>"Backspace".into(),"return"=>"Return".into()," "=>"Space".into(),k=>k.to_string()},
             PhoneHit::Shift=>"Shift".into(),
@@ -735,8 +747,8 @@ impl PhoneSurface {
             self.draw_launcher_icon(cx,state,&drag.app,r,ink,opacity);
         }
     }
-    /// What the home page shows while a finger pulls it down for the App
-    /// Library: the page dims and a search field slides in from the top, so
+    /// What the home page shows while a finger pulls it down for search:
+    /// the page dims and a search field slides in from the top, so
     /// the pull has something to follow before it commits (40 % of the way).
     /// Idle, the footer carries the first-use hint for a gesture the
     /// person has not found yet (mobile_hints.rs).
@@ -774,9 +786,14 @@ impl PhoneSurface {
         // opaque rect, and under Recents' glass every full-screen layer counts.
         self.d.solid(cx,screen,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
         let ink=if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)};
-        let pill=self.draw_search(cx,state,screen,ink);
-        if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
-        let mut top=pill.pos.y+pill.size.y+18.0;
+        if state.phone.searching() {
+            let pill=self.draw_search(cx,state,screen,ink);
+            self.draw_search_results(cx,state,screen,pill,ids,ink);
+            return;
+        }
+        self.search_rect=Rect::default();
+        self.label(cx,rect(screen.pos.x+20.0,screen.pos.y+16.0,screen.size.x-40.0,32.0),"All apps",22.0,true,ink);
+        let mut top=screen.pos.y+64.0;
         let columns=mobile_tiles::grid_columns(landscape);
         let size=if landscape {44.0}else if columns>4 {54.0}else{60.0};
         // Suggestions: the Android apps used lately (usage access), one row
@@ -866,7 +883,7 @@ impl PhoneSurface {
             self.rounded(cx,rect(r.pos.x+r.size.x-d*0.9+(d-inner)*0.5,r.pos.y-d*0.1+(d-inner)*0.5,inner,inner),(inner*0.5) as f32,alpha(rgb(235,86,80),opacity));
         }
     }
-    /// iOS's App Library: a search field over category cards, each card a
+    /// iOS's App Library: category cards, each card a
     /// folder with three large icons and a mini grid of the rest. Every
     /// icon launches; nothing is only decorative.
     fn draw_app_library(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, ids: &[(String,String)]) {
@@ -876,8 +893,13 @@ impl PhoneSurface {
         // The library sits on a dimmed wallpaper; the cards are frosted.
         self.rounded(cx,screen,0.0,alpha(if dark {rgb(8,9,16)}else{rgb(228,231,242)},0.86));
         let ink=if dark {rgb(255,255,255)}else{rgb(26,26,32)};
-        let pill=self.draw_search(cx,state,screen,ink);
-        if state.phone.searching() {self.draw_search_results(cx,state,screen,pill,ids,ink);return;}
+        if state.phone.searching() {
+            let pill=self.draw_search(cx,state,screen,ink);
+            self.draw_search_results(cx,state,screen,pill,ids,ink);
+            return;
+        }
+        self.search_rect=Rect::default();
+        self.label(cx,rect(screen.pos.x+20.0,screen.pos.y+16.0,screen.size.x-40.0,32.0),"App Library",22.0,true,ink);
         let names: Vec<&str>=ids.iter().map(|(id,_)|id.as_str()).collect();
         let groups=mobile_tiles::app_library_groups(&names);
         // A card holds three large icons and a 2x2 mini grid: seven apps.
@@ -891,7 +913,7 @@ impl PhoneSurface {
         let gap=16.0;
         let left=screen.pos.x+20.0;
         let cw=(screen.size.x-40.0-gap*(columns as f64-1.0))/columns as f64;
-        let top=pill.pos.y+pill.size.y+18.0;
+        let top=screen.pos.y+64.0;
         let bottom=screen.pos.y+screen.size.y-30.0;
         let rows=(cards.len()+columns-1)/columns;
         let ch=cw.min(((bottom-top)/rows.max(1) as f64-24.0).max(72.0));

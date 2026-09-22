@@ -114,6 +114,20 @@ pub fn trace_on() -> bool {
     { false }
 }
 
+/// Detail a slow CPU section without adding another frame-monitor channel.
+/// The opt-in phone.work topic is separate from pacing markers so timing
+/// validation can run without this extra logging or the graph overlay.
+pub fn work_start() -> Option<Instant> {
+    makepad_platform::makepad_error_log::trace_enabled("phone.work").then(Instant::now)
+}
+
+pub fn work_end(name: &str, start: Option<Instant>) {
+    if let Some(start) = start {
+        let us = start.elapsed().as_micros();
+        if us >= 1000 { log!("[phone.work] {} us={}", name, us); }
+    }
+}
+
 /// Presentation timestamps alone cannot distinguish a slow animation from
 /// a status-clock tick after it stopped. Optional Android trace markers use
 /// SurfaceFlinger's monotonic clock and label each recorded scene. Enable via

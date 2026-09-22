@@ -111,11 +111,6 @@ impl GlanceFeed {
     }
 }
 
-/// How much of a page one full-progress swipe drags before it commits: the
-/// recognizer's commit distance is a fraction of the screen, so the page
-/// follows the finger at about that rate rather than flying across.
-pub const SWIPE_FRACTION: f64 = 0.35;
-
 /// The pager: which pages exist, where the pager is, and the glance feed.
 #[derive(Clone, Debug)]
 pub struct PagesState {
@@ -263,7 +258,7 @@ impl PagesState {
             Some(ShellGesture::PageSwipe { dir, progress }) => {
                 // A finger moving left reveals the page on the right.
                 let sign = match dir { Dir::Left => 1.0, Dir::Right => -1.0 };
-                let raw = sign * progress.max(0.0) * SWIPE_FRACTION;
+                let raw = sign * progress;
                 let (lo, hi) = ((-1.0 - self.index).min(0.0), (lib - self.index).max(0.0));
                 // Past either end the page gives a little and stiffens, so
                 // the end is felt rather than hit (it springs back on lift).
@@ -273,10 +268,11 @@ impl PagesState {
             }
             Some(ShellGesture::Commit(GestureKind::Page(dir))) => {
                 let step = match dir { Dir::Left => 1, Dir::Right => -1 };
-                // Carry on from where the finger left the page.
+                // Choose the adjacent page before folding in the drag. A
+                // long swipe past half a page must not skip another page.
+                self.target = (self.target + step).clamp(-1, lib as i64);
                 self.index += self.drag;
                 self.drag = 0.0;
-                self.target = (self.index.round() as i64 + step).clamp(-1, lib as i64);
                 if self.known() && self.target == lib as i64 { self.open_library = true; }
             }
             Some(ShellGesture::Cancel(GestureKind::Page(_))) => {
@@ -582,7 +578,7 @@ mod tests {
         p.sync(&ids(12), 8, 12);
         // A swipe left drags the page after it in; committing lands on it.
         assert!(p.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Left, progress: 0.5 })));
-        assert!((p.drag - 0.5 * SWIPE_FRACTION).abs() < 1e-9);
+        assert!((p.drag - 0.5).abs() < 1e-9);
         assert!(p.page_offset(1, 400.0) < 400.0 && p.page_offset(0, 400.0) < 0.0);
         p.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::Page(Dir::Left))));
         assert_eq!(p.drag, 0.0, "the drag folds into the index on commit");
@@ -616,6 +612,48 @@ mod tests {
         p.step(1.0 / 60.0, Some(ShellGesture::Commit(GestureKind::HomeUp)));
         p.step(1.0 / 60.0, Some(ShellGesture::HomeUp { progress: 0.5, held: false }));
         assert_eq!((p.index, p.drag), (1.0, 0.0));
+    }
+
+    #[test]
+    fn long_swipes_follow_the_finger_and_land_on_only_the_adjacent_page() {
+        use crate::mobile_gestures::{FingerPhase, GestureContext, GestureRecognizer, ExclusionZones, SafeInsets};
+        for width in [360.0, 600.0] {
+            for (dir, sign) in [(Dir::Left, -1.0), (Dir::Right, 1.0)] {
+                let mut pages = PagesState::default();
+                pages.sync(&ids(40), 8, 12);
+                pages.jump(1);
+                settle(&mut pages);
+                let context = GestureContext { screen: rect(0.0, 0.0, width, 900.0), insets: SafeInsets::default(), phone: crate::mobile::PhoneScreen::Home, body: true, system_edges: true, shade: false };
+                let mut recognizer = GestureRecognizer::default();
+                let zones = ExclusionZones::default();
+                let start = dvec2(if sign < 0.0 {width * 0.9} else {width * 0.1}, 400.0);
+                recognizer.feed(FingerPhase::Down, start, 0.0, &context, &zones);
+                for step in 1..=8 {
+                    let distance = width * step as f64 / 10.0;
+                    let gesture = recognizer.feed(FingerPhase::Move, start + dvec2(sign * distance, 0.0), step as f64 * 0.1, &context, &zones);
+                    pages.step(1.0 / 60.0, gesture);
+                    assert!((pages.page_offset(1, width) - sign * distance).abs() < 1e-6, "{dir:?} at {distance}: the page must keep following after commit distance");
+                }
+                let gesture = recognizer.feed(FingerPhase::Up, start + dvec2(sign * width * 0.8, 0.0), 0.9, &context, &zones);
+                pages.step(1.0 / 60.0, gesture);
+                settle(&mut pages);
+                assert_eq!(pages.current(), if dir == Dir::Left {2} else {0});
+                assert!(!pages.take_library_request());
+            }
+        }
+    }
+
+    #[test]
+    fn reversing_a_drag_tracks_back_across_its_start_and_cancels() {
+        let mut pages = PagesState::default();
+        pages.sync(&ids(40), 8, 12);
+        for progress in [0.65, 0.4, 0.1, 0.0, -0.1] {
+            pages.step(1.0 / 60.0, Some(ShellGesture::PageSwipe { dir: Dir::Left, progress }));
+            assert!((pages.position() - progress).abs() < 1e-6);
+        }
+        pages.step(1.0 / 60.0, Some(ShellGesture::Cancel(GestureKind::Page(Dir::Left))));
+        settle(&mut pages);
+        assert_eq!(pages.position(), 0.0);
     }
 
     #[test]
