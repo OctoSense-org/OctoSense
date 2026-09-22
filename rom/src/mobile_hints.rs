@@ -1,8 +1,8 @@
 //! First-use hints for the home page's hidden gestures.
 //!
-//! Three of the shell's gestures have no on-screen affordance: the pull
-//! that opens the App Library, the corner pulls that open the shade, and
-//! the bottom-band swipe-and-hold for Recents. Until each has been used
+//! First-use instructions explain the pull that opens the App Library,
+//! the corner pulls that open the shade, and the swipe-and-hold from the
+//! bottom chevron for Recents. Until each has been used
 //! once, the home page shows a one-line hint for it (mobile_surface.rs).
 //! Android keeps what was seen across restarts (the extension's
 //! `launcher.hints` snapshot); elsewhere the hints reset with the process.
@@ -32,7 +32,7 @@ impl Hints {
         if !self.search { return Some(("search", "Pull down for your apps and search")); }
         if !self.shade && system_panel { return Some(("shade", "Pull from the very top edge for notifications and controls")); }
         if !self.shade { return Some(("shade", "Pull from a top corner for notifications and controls")); }
-        if !self.recents { return Some(("recents", "Swipe up from the bottom and hold for Recents")); }
+        if !self.recents { return Some(("recents", "Swipe up from the chevron and hold for Recents")); }
         None
     }
     /// A gesture committed: the matching hint is done with.
