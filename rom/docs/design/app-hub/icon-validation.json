@@ -1,0 +1,192 @@
+{
+  "recorded_at": "2026-09-23T02:47:28.999039+00:00",
+  "branch": "feat/app-hub",
+  "base_commit": "10c815c274b56227edd939f3160fd79993fd6427",
+  "working_tree": "uncommitted feature changes",
+  "scope": "Shared app icon convention and selected Octo Bloom with a central 2x2 app grid",
+  "sources": [
+    {
+      "path": "apps/app-hub/assets/icon.svg",
+      "sha256": "7fb8e4fca1d347a953a2e59fb3017e260151348e0dde919bcb63b86c70ad70e1",
+      "bytes": 1689
+    },
+    {
+      "path": "apps/app-hub/listing.json",
+      "sha256": "4bbafeae364c467ff2b4027651cb9019ab6944cd8f65ea51be01d6460d3a4493",
+      "bytes": 47
+    },
+    {
+      "path": "apps/app-hub/build.rs",
+      "sha256": "a2bb2fd60af31326b78d4c8d2b5f815cbf909f0e95cd0ca073ea782dafb0d262",
+      "bytes": 1328
+    },
+    {
+      "path": "apps/app-hub/src/icons.rs",
+      "sha256": "915544cfde16f0a2bb21dbb9f369a532ea2a28cb497f62aaa80c45936f949677",
+      "bytes": 6255
+    },
+    {
+      "path": "apps/app-hub/src/view.rs",
+      "sha256": "1d13ea3982b2ee9b4deb94f1138863c37fcd943efadda9b314ebca6ef334b649",
+      "bytes": 50053
+    },
+    {
+      "path": "apps/app-hub/src/catalog.rs",
+      "sha256": "503fae46685b15fbce0f1e9a54f111c3320aae06edfcdfb08859172dbc97a659",
+      "bytes": 49056
+    },
+    {
+      "path": "apps/app-hub/src/lib.rs",
+      "sha256": "8a21e7d446767b2519730d335ef0811b542774fecb08ed67a7d4d2cfd79669c2",
+      "bytes": 372
+    },
+    {
+      "path": "apps/app-hub/Cargo.toml",
+      "sha256": "3ebc40d881dfcc4102cba2833941c99c7c20901a0c16049ae8177243582bcefa",
+      "bytes": 988
+    },
+    {
+      "path": "src/octosense/style.rs",
+      "sha256": "823017061a1c379c79316449538fd345cf8b4d9dd5f455bcb0dcc487ed6a4b78",
+      "bytes": 14528
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "13ffc59c4837d744c4f5e8fc9abd44a0bc51047511a6f76a88697b25efecec9f",
+      "bytes": 218482
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "a0098227e28bae50af5557bec54faf8bacfce4328178eb567221c5653efc7966",
+      "bytes": 9783
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "626f7dc3ec9816091bb79b51a7e4348897282e63f98e3ea0efcf2aaa6a32115f",
+      "bytes": 240027
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+      "sha256": "1117125fae05b36c38a2986701837fa8112200b8f316942215f9ac8ed0a8d556",
+      "bytes": 269229309
+    },
+    {
+      "path": "target/release/octosense",
+      "sha256": "144252b7823ec1f9d1267fab5f7aeae215aba94779220440c56b807e2604a259",
+      "bytes": 147456704
+    }
+  ],
+  "checks": [
+    {
+      "command": "cargo test -p octosense-app-hub-app --lib --offline",
+      "passed": 35,
+      "failed": 0,
+      "log": "target/app-hub/validation/icon-tests.log"
+    },
+    {
+      "command": "cargo test --release --bin octosense --features mobile-only,mobile-apps --offline",
+      "passed": 293,
+      "failed": 0,
+      "log": "target/app-hub/validation/shared-icon-shell-tests.log"
+    },
+    {
+      "command": "cargo build --release --bin octosense --features mobile-only,mobile-apps --offline",
+      "result": "passed",
+      "log": "target/app-hub/validation/icon-desktop-build.log"
+    },
+    {
+      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "result": "passed",
+      "log": "target/app-hub/validation/icon-android-build.log"
+    }
+  ],
+  "device": {
+    "model": "Pixel 7 Pro",
+    "platform": "Android",
+    "screen_pixels": [
+      1080,
+      2340
+    ],
+    "package": "dev.makepad.octosense",
+    "installation": "adb install -r returned Success; app data retained",
+    "verified": [
+      "Selected bloom icon appears in the OctoSense launcher and App Hub header",
+      "Signed production catalog empty state",
+      "Preview News, Maps, Photos, Camera, Mail and Sheets use the shared launcher icons",
+      "Native Photos search and filtered result",
+      "Photos detail uses the shared icon",
+      "Photos detail Open launches the built-in Photos module"
+    ],
+    "final_state": "App Hub open on preview Apps tab",
+    "log_check": "No panic, script error, fatal exception or ANR matched the focused app-process log during the walkthrough"
+  },
+  "desktop": {
+    "verified": [
+      "Installed local signed Focus Timer and Trail Notes fixture icons render in the launcher and match App Hub"
+    ],
+    "captures": [
+      "evidence/installed-icons-launcher.png",
+      "evidence/installed-icons-hub.png"
+    ]
+  },
+  "captures": [
+    {
+      "path": "docs/design/app-hub/evidence/adb-hub-live.png",
+      "sha256": "6c3575e13837355490df86e22bf868d0c5fc5cd5f75cfdfb6bb6632a2432b444",
+      "bytes": 209023
+    },
+    {
+      "path": "docs/design/app-hub/evidence/adb-preview-apps.png",
+      "sha256": "506b8780e53809b6c87cfa65529a4865b69e3ef4c175291d110eeec647027fa7",
+      "bytes": 277965
+    },
+    {
+      "path": "docs/design/app-hub/evidence/adb-search-photos.png",
+      "sha256": "64f9b05215bdbce265b6fb1d1840893f59cd154ebf52671cea1c0fa39ffffb31",
+      "bytes": 183116
+    },
+    {
+      "path": "docs/design/app-hub/evidence/adb-photos-detail.png",
+      "sha256": "b61932bc8ba30b48362d0f49a13e459350938ce0fef8ed86cd17321b4eaea9f3",
+      "bytes": 900485
+    },
+    {
+      "path": "docs/design/app-hub/evidence/adb-photos-open.png",
+      "sha256": "3a963fb6777053b59c4a42064d07715a672665987c9cea0620db0495e9b11b65",
+      "bytes": 1489847
+    },
+    {
+      "path": "docs/design/app-hub/evidence/adb-final-apphub.png",
+      "sha256": "a6a0c2df59629485a2ce6a51456a980f6d1c5d29e1c43b1ead788ad2bf2ce161",
+      "bytes": 278043
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-icons-launcher.png",
+      "sha256": "f75faa7b179b1db9a587554bb8ee3c79b9dc42b806fa71c3f90f1db3b4c11e96",
+      "bytes": 65050
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-icons-launcher.json",
+      "sha256": "fcd740df1c2fb7ca1f6e51a976a7563f3e4fe98cd684b83b57ccbd878f6509a9",
+      "bytes": 340
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-icons-hub.png",
+      "sha256": "97c6dae282fd7143419051660c4fc094bfa5cc0a36be68efdc4846e06f9956e7",
+      "bytes": 50190
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-icons-hub.json",
+      "sha256": "96c6c619f4b9840bce4d98a74109b22a194363d48af4d9ad79e908e50360840c",
+      "bytes": 336
+    }
+  ],
+  "limitations": [
+    "The production catalog is empty, so no physical-phone store installation was exercised. Signed fixture installation was covered in the earlier desktop validation.",
+    "Camera has no dedicated built-in icon and uses the same existing generic fallback in both launcher and Hub.",
+    "Existing built-in theme icon ownership is retained during incremental migration. The native App Hub listing contains the icon declaration subset; it is not a complete publishable Hub Card listing.",
+    "No live icon-upgrade UI flow, iOS or Linux verification is claimed."
+  ]
+}

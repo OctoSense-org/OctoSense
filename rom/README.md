@@ -16,7 +16,7 @@ to check the local dependency graph. Existing platform rendering backends remain
 part of their applications; the framework controls the shared VM and UI sources.
 
 
-The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News, OctosMap and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
+The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News, OctosMap, App Hub and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
 This repository was split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). The two still share most of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
@@ -53,7 +53,7 @@ Android gets it from `build.rs`:
   --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
 ```
 
-`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News, OctosMap and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
+`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News, OctosMap, App Hub and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
 
 ### Make it the Home app
 
@@ -142,6 +142,24 @@ editable albums, favorites, People, search, and automatic Memory slideshows.
 It starts with 19 offline sample photos, including the generated family portraits.
 See [Photos usage, adding photos, and device validation](docs/photos.md).
 
+## App Hub
+
+App Hub provides browsing, search, app details, verified installation and an
+installed-app Library using the signed OctoSense App Hub catalog. Installed
+apps open in contained Card instances and appear separately in the launcher
+and Recents. Android and standard desktop builds include App Hub automatically,
+including `cargo run --release --features mobile-only`.
+
+The **Preview catalog** switch opens a separate collection of built-in
+OctoSense apps for browsing while the live catalog is empty. See
+[App Hub usage and local install fixtures](apps/app-hub/README.md) and
+[native design evidence](docs/design/app-hub/README.md).
+
+For app authors, start with
+[Build your first Hub app](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/FIRST-APP.md).
+The Hub owns the shared [icon guidelines](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/ICONS.md)
+and [development guide map](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/DEVELOPMENT.md).
+
 ## Performance
 
 Target on the OnePlus 6 (Android 15, Adreno 630, 60 Hz): **≥ 55 fps with p95 frame intervals ≤ 20 ms** on every shell transition, and an idle screen that presents about once a second. As of 16 September 2026 the shade (open/close), pages, Group open/close, Recents both ways (empty and populated) and AppCard opening pass warm and fresh-process blocks; native SystemUI still shows no early skipped refresh where a few of ours do. The measured reason for the remaining early skips is the GPU's DVFS floor (257 MHz for the first ~120 ms of a gesture), so the working rule is: a transition frame must cost ≤ ~4.5 ms of GPU at 710 MHz. The unchanged Vulkan backend is slower (it serialises CPU and GPU and the clock never ramps under it) and is not a route to the target.
@@ -160,7 +178,7 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 - `src/desk/phone.rs` — the desk's phone composition: hosted-app captures, the kept home scene and its blur pyramid, the compositor path.
 - `resources/android/AndroidManifest.xml.template` — the activity (Home role, share and deep-link intents).
 - `resources/icons/apps/<style>/` — App icons: this shell's own artwork for News (a front page with the paper's N, on red) and OctosMap (a folded map under a pin, on green), one 64×64 SVG per framework style, written by `python3 tools/build_app_icons.py` (`--sheet <path>` also renders a review sheet, with `rsvg-convert`). The framework ships the icons, keyed by app id and style; `octosense::style::icon_assets` lays these two over its list, every stylesheet carries the result to hosted apps, and the shell's icon drawer installs it for a style before its first draw. Windows 2000 keeps the framework's sixteen-pixel art. The renderer has no clip paths, masks, filters or text, so the art stays inside its tile by construction; a test holds the files to that.
-- `apps/appcard`, `apps/maps`, `apps/news`, `apps/photos`, `apps/reference` — the local hosted modules built into the APK. News is laid out after Apple News: a Today page with a section per source (Hacker News, TechMeme, Google News and up to four RSS or Atom feeds), a Following page that switches sources on and off and adds or removes feeds, a Saved page, Search, and a floating glass bottom bar; a light skin, and a dark one when the host is dark. A tap opens the story in the app's own reader on the platform's web view, and the story's `•••` sheet saves it, opens it in the Browser app when the host has one, or copies its link. It draws a wide home tile. Its design and hosting notes are in `docs/plans/2026-09-16-news-app-design.md`, `2026-09-16-news-app-phase2-design.md` and `2026-09-16-news-app-phase3-design.md`. OctosMap is laid out after Google Maps: a full-screen map under a search bar, a place sheet, directions by car, on foot and by bike, and turn-by-turn navigation with a simulated drive, on public OpenStreetMap services; it opens from the home grid and the App Library. Its behaviour, its services and their terms are in `docs/maps.md`, its design in `docs/plans/2026-09-18-octosmap-design.md`.
+- `apps/app-hub`, `apps/appcard`, `apps/maps`, `apps/news`, `apps/photos`, `apps/reference` — the local hosted modules built into the APK. News is laid out after Apple News: a Today page with a section per source (Hacker News, TechMeme, Google News and up to four RSS or Atom feeds), a Following page that switches sources on and off and adds or removes feeds, a Saved page, Search, and a floating glass bottom bar; a light skin, and a dark one when the host is dark. A tap opens the story in the app's own reader on the platform's web view, and the story's `•••` sheet saves it, opens it in the Browser app when the host has one, or copies its link. It draws a wide home tile. Its design and hosting notes are in `docs/plans/2026-09-16-news-app-design.md`, `2026-09-16-news-app-phase2-design.md` and `2026-09-16-news-app-phase3-design.md`. OctosMap is laid out after Google Maps: a full-screen map under a search bar, a place sheet, directions by car, on foot and by bike, and turn-by-turn navigation with a simulated drive, on public OpenStreetMap services; it opens from the home grid and the App Library. Its behaviour, its services and their terms are in `docs/maps.md`, its design in `docs/plans/2026-09-18-octosmap-design.md`.
 - `docs/` — records and recipes; `docs/android/` the performance and launcher records.
 
 ## Dependencies

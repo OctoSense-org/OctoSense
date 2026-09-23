@@ -20,14 +20,15 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`8a7c6b50f` since the flashing fix
-   was pinned on 2026-09-19; `14fe992bf` was the repin that followed that
-   day's history rewrite).
+   `OctoSense-org/Octoscript-Makepad` (`b0628d05a`, including the Android
+   capture and controls fixes).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`3c82c18f4`, the fork's `main`) and the Octoscript revision (`68f6a9d`).
+   (`825dbb422`) and the Octoscript revision (`68f6a9d`). This consumer's
+   explicit `makepad_override` selects `7786bb4a3`: the direct successor
+   adding App Hub's enforced isolate policy (Makepad PR #22).
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
-   `Cargo.toml` and the five `apps/*/Cargo.toml`, and in
-   Octoscript-Makepad's crates. `[patch]` sections then redirect every one
+   `Cargo.toml` and `apps/*/Cargo.toml`. Octoscript-Makepad's unmodified
+   manifests retain their release pin. `[patch]` sections redirect every one
    of them to the sibling checkout `../makepad`, so a build has a single
    Makepad.
 
@@ -36,6 +37,16 @@ The revision is pinned as a chain, not in one place:
 `tools/setup-native.py --check` fails unless each sibling's `HEAD` is the
 locked revision and its tree is clean. It looks at nothing else: not the
 branch name, not the clone depth.
+
+The override records the canonical repository URL, an exact commit and
+its reason. It is necessary because the latest published wrapper release
+predates the containment APIs. Setup validates the original wrapper's
+manifest, then prepares and verifies the explicit Makepad override without
+editing that wrapper. Consumer manifests must match the effective pins;
+`--cargo-manifest Cargo.toml` also rejects duplicate or foreign framework
+crates. Existing local changes are preserved. Octoscript stays at its
+release revision. Remove the override when a coordinated wrapper release
+includes these APIs, updating the consumer pins together.
 
 Octoscript at the chain's revision names an older Makepad revision in its
 own manifests: `bb45d4115`, two pin moves back, and a hash from before the
@@ -55,8 +66,7 @@ check one branch alone, give the script a clean copy beside this one:
 
 ```sh
 git worktree add --detach ../OctoSense-mobile-pincheck HEAD
-python3 ../octoscript-makepad/tools/runtime.py verify --root .. \
-  --consumer ../OctoSense-mobile-pincheck \
+python3 ../OctoSense-mobile-pincheck/tools/setup-native.py --check --root .. \
   --cargo-manifest ../OctoSense-mobile-pincheck/Cargo.toml
 git worktree remove ../OctoSense-mobile-pincheck
 ```
@@ -137,8 +147,8 @@ follow with `git -C ../<sibling> fetch origin` and
 
 ## The sibling checkouts are shallow
 
-The bootstrap (`tools/runtime.py` in Octoscript-Makepad, called by
-`tools/setup-native.py`) makes each sibling with `git init`,
+The bootstrap (`tools/setup-native.py`, following the shared runtime
+contract and any explicit consumer override) makes each sibling with `git init`,
 `git fetch --no-tags --depth=1 origin <locked revision>` and a detached
 checkout. `--depth=1` has been there since the script's first version
 (Octoscript-Makepad #22, 2026-09-16), and nothing written down says why:

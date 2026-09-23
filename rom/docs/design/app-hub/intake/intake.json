@@ -1,0 +1,1137 @@
+{
+  "schema_version": 1,
+  "id": "app-hub-v1",
+  "kind": "single-atlas-multi-scene-intake",
+  "created_at": "2026-09-22T21:50:13.179739+00:00",
+  "input_fingerprint": "43606d077ef09f40f7408622faf68129acf8a4e6e6877321c6bbe30923226576",
+  "inputs": {
+    "manifest_sha256": "be2412b788ab8eb0773649c1330d765b477670ddfec78b2e8623e0e3129e8587",
+    "atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+    "prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8"
+  },
+  "originals": {
+    "atlas": "original/atlas.png",
+    "prompt": "original/prompt.txt",
+    "manifest": "original/manifest.json"
+  },
+  "generation": {
+    "provider": "OpenAI imagegen tool",
+    "model": "not reported by tool",
+    "requested_size": [
+      1624,
+      1552
+    ],
+    "quality": "high",
+    "actual_size": [
+      1019,
+      1544
+    ],
+    "requested_size_matches_actual": false,
+    "atlas_count": 1,
+    "performed_by_intake": false,
+    "provenance": "Provider/model/requested settings are caller declarations; dimensions and hashes are measured from the supplied bytes"
+  },
+  "artboard": [
+    406,
+    776
+  ],
+  "pixel_ratio": 2,
+  "source_pixel_matrix": {
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      1019,
+      1544
+    ],
+    "exif_orientation": 1,
+    "orientation_applied": false
+  },
+  "intake_tool_sha256": "176cd64e554ed95536c0cc00f42ec5344addf116624b8dd253294c2477027b08",
+  "scenes": [
+    {
+      "id": "today-preview",
+      "design_id": "apphub-today-preview",
+      "surface": "app",
+      "declared_scene": {
+        "id": "today-preview",
+        "design_id": "apphub-today-preview",
+        "directory": "scenes/today-preview",
+        "crop": [
+          8,
+          12,
+          245,
+          756
+        ],
+        "surface": "app",
+        "title": "today-preview"
+      },
+      "crop": [
+        8,
+        12,
+        245,
+        756
+      ],
+      "crop_image": "scenes/apphub-today-preview/crop.png",
+      "reference_image": "scenes/apphub-today-preview/reference.png",
+      "provenance": "scenes/apphub-today-preview/provenance.json",
+      "crop_sha256": "ab2539e0d9b60e4931c2d8483491746526f8857c5d5f502ba5cf016ed33ebb11",
+      "reference_sha256": "c7b4e60988428392bbcff99ff15e73e0139934e098a47bac383d6539338fd3bf",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          8,
+          12,
+          245,
+          756
+        ],
+        "source_crop_size": [
+          245,
+          756
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.052910052910053,
+        "offset_pixels": [
+          154.5185185185185,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          154.5185185185185,
+          0.0,
+          502.962962962963,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          154.5185185185185,
+          0,
+          2.052910052910053,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.48711340206185566,
+          0,
+          -75.2680412371134,
+          0,
+          0.48711340206185566,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          138.09523809523807,
+          0,
+          2.052910052910053,
+          -24.634920634920636
+        ],
+        "reference_pixels_to_atlas": [
+          0.48711340206185566,
+          0,
+          -67.2680412371134,
+          0,
+          0.48711340206185566,
+          12.0
+        ],
+        "atlas_to_logical": [
+          1.0264550264550265,
+          0,
+          69.04761904761904,
+          0,
+          1.0264550264550265,
+          -12.317460317460318
+        ],
+        "logical_to_atlas": [
+          0.9742268041237113,
+          0,
+          -67.2680412371134,
+          0,
+          0.9742268041237113,
+          12.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "apps-preview",
+      "design_id": "apphub-apps-preview",
+      "surface": "app",
+      "declared_scene": {
+        "id": "apps-preview",
+        "design_id": "apphub-apps-preview",
+        "directory": "scenes/apps-preview",
+        "crop": [
+          261,
+          12,
+          245,
+          756
+        ],
+        "surface": "app",
+        "title": "apps-preview"
+      },
+      "crop": [
+        261,
+        12,
+        245,
+        756
+      ],
+      "crop_image": "scenes/apphub-apps-preview/crop.png",
+      "reference_image": "scenes/apphub-apps-preview/reference.png",
+      "provenance": "scenes/apphub-apps-preview/provenance.json",
+      "crop_sha256": "5df2fcc17826260bb8cc78dbb1685d07bf23eb23dfd0ca0b817d2e6f6b50d4cb",
+      "reference_sha256": "a045a40776a4f929c1e46d6edf9037d8fd95f574fd0a44e09359960f97697104",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          261,
+          12,
+          245,
+          756
+        ],
+        "source_crop_size": [
+          245,
+          756
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.052910052910053,
+        "offset_pixels": [
+          154.5185185185185,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          154.5185185185185,
+          0.0,
+          502.962962962963,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          154.5185185185185,
+          0,
+          2.052910052910053,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.48711340206185566,
+          0,
+          -75.2680412371134,
+          0,
+          0.48711340206185566,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          -381.2910052910054,
+          0,
+          2.052910052910053,
+          -24.634920634920636
+        ],
+        "reference_pixels_to_atlas": [
+          0.48711340206185566,
+          0,
+          185.73195876288662,
+          0,
+          0.48711340206185566,
+          12.0
+        ],
+        "atlas_to_logical": [
+          1.0264550264550265,
+          0,
+          -190.6455026455027,
+          0,
+          1.0264550264550265,
+          -12.317460317460318
+        ],
+        "logical_to_atlas": [
+          0.9742268041237113,
+          0,
+          185.73195876288662,
+          0,
+          0.9742268041237113,
+          12.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "search-preview",
+      "design_id": "apphub-search-preview",
+      "surface": "app",
+      "declared_scene": {
+        "id": "search-preview",
+        "design_id": "apphub-search-preview",
+        "directory": "scenes/search-preview",
+        "crop": [
+          514,
+          12,
+          245,
+          756
+        ],
+        "surface": "app",
+        "title": "search-preview"
+      },
+      "crop": [
+        514,
+        12,
+        245,
+        756
+      ],
+      "crop_image": "scenes/apphub-search-preview/crop.png",
+      "reference_image": "scenes/apphub-search-preview/reference.png",
+      "provenance": "scenes/apphub-search-preview/provenance.json",
+      "crop_sha256": "6475f000978636be88f7c549bddfbeeb322c57b777ad29b5942846902e71c149",
+      "reference_sha256": "83d169316e08a6d9270a86588733ac676331e7eb1829dc769caf4e5379e53c6e",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          514,
+          12,
+          245,
+          756
+        ],
+        "source_crop_size": [
+          245,
+          756
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.052910052910053,
+        "offset_pixels": [
+          154.5185185185185,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          154.5185185185185,
+          0.0,
+          502.962962962963,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          154.5185185185185,
+          0,
+          2.052910052910053,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.48711340206185566,
+          0,
+          -75.2680412371134,
+          0,
+          0.48711340206185566,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          -900.6772486772488,
+          0,
+          2.052910052910053,
+          -24.634920634920636
+        ],
+        "reference_pixels_to_atlas": [
+          0.48711340206185566,
+          0,
+          438.7319587628866,
+          0,
+          0.48711340206185566,
+          12.0
+        ],
+        "atlas_to_logical": [
+          1.0264550264550265,
+          0,
+          -450.3386243386244,
+          0,
+          1.0264550264550265,
+          -12.317460317460318
+        ],
+        "logical_to_atlas": [
+          0.9742268041237113,
+          0,
+          438.7319587628866,
+          0,
+          0.9742268041237113,
+          12.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "detail-preview",
+      "design_id": "apphub-detail-preview",
+      "surface": "app",
+      "declared_scene": {
+        "id": "detail-preview",
+        "design_id": "apphub-detail-preview",
+        "directory": "scenes/detail-preview",
+        "crop": [
+          767,
+          12,
+          245,
+          756
+        ],
+        "surface": "app",
+        "title": "detail-preview"
+      },
+      "crop": [
+        767,
+        12,
+        245,
+        756
+      ],
+      "crop_image": "scenes/apphub-detail-preview/crop.png",
+      "reference_image": "scenes/apphub-detail-preview/reference.png",
+      "provenance": "scenes/apphub-detail-preview/provenance.json",
+      "crop_sha256": "33535a64588fdff9c36d342da21f03fca547235a6f2118b6e9f32fc4ed77d1c1",
+      "reference_sha256": "ccc76589fb460b131668f60a2f12da0df3421bde1022bb4bd215ddba9596b31b",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          767,
+          12,
+          245,
+          756
+        ],
+        "source_crop_size": [
+          245,
+          756
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.052910052910053,
+        "offset_pixels": [
+          154.5185185185185,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          154.5185185185185,
+          0.0,
+          502.962962962963,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          154.5185185185185,
+          0,
+          2.052910052910053,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.48711340206185566,
+          0,
+          -75.2680412371134,
+          0,
+          0.48711340206185566,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.052910052910053,
+          0,
+          -1420.0634920634923,
+          0,
+          2.052910052910053,
+          -24.634920634920636
+        ],
+        "reference_pixels_to_atlas": [
+          0.48711340206185566,
+          0,
+          691.7319587628866,
+          0,
+          0.48711340206185566,
+          12.0
+        ],
+        "atlas_to_logical": [
+          1.0264550264550265,
+          0,
+          -710.0317460317461,
+          0,
+          1.0264550264550265,
+          -12.317460317460318
+        ],
+        "logical_to_atlas": [
+          0.9742268041237113,
+          0,
+          691.7319587628866,
+          0,
+          0.9742268041237113,
+          12.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "install-confirmation",
+      "design_id": "apphub-install-confirmation",
+      "surface": "app",
+      "declared_scene": {
+        "id": "install-confirmation",
+        "design_id": "apphub-install-confirmation",
+        "directory": "scenes/install-confirmation",
+        "crop": [
+          8,
+          783,
+          245,
+          739
+        ],
+        "surface": "app",
+        "title": "install-confirmation"
+      },
+      "crop": [
+        8,
+        783,
+        245,
+        739
+      ],
+      "crop_image": "scenes/apphub-install-confirmation/crop.png",
+      "reference_image": "scenes/apphub-install-confirmation/reference.png",
+      "provenance": "scenes/apphub-install-confirmation/provenance.json",
+      "crop_sha256": "aee88d0a1c7b11238dbb5a3a62e354790fc2748435602d0a9f9bcdbb1c33306e",
+      "reference_sha256": "9fb61437cdcf8deb7e8d4893abd9098dfbbbcb9bcc7a4122291fb9ae47150cc5",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          8,
+          783,
+          245,
+          739
+        ],
+        "source_crop_size": [
+          245,
+          739
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.1001353179972937,
+        "offset_pixels": [
+          148.7334235453315,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          148.7334235453315,
+          0.0,
+          514.533152909337,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          148.7334235453315,
+          0,
+          2.1001353179972937,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.47615979381443296,
+          0,
+          -70.82087628865978,
+          0,
+          0.47615979381443296,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          131.93234100135317,
+          0,
+          2.1001353179972937,
+          -1644.405953991881
+        ],
+        "reference_pixels_to_atlas": [
+          0.47615979381443296,
+          0,
+          -62.820876288659775,
+          0,
+          0.47615979381443296,
+          783.0
+        ],
+        "atlas_to_logical": [
+          1.0500676589986468,
+          0,
+          65.96617050067658,
+          0,
+          1.0500676589986468,
+          -822.2029769959405
+        ],
+        "logical_to_atlas": [
+          0.9523195876288659,
+          0,
+          -62.820876288659775,
+          0,
+          0.9523195876288659,
+          783.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "library",
+      "design_id": "apphub-library",
+      "surface": "app",
+      "declared_scene": {
+        "id": "library",
+        "design_id": "apphub-library",
+        "directory": "scenes/library",
+        "crop": [
+          261,
+          783,
+          245,
+          739
+        ],
+        "surface": "app",
+        "title": "library"
+      },
+      "crop": [
+        261,
+        783,
+        245,
+        739
+      ],
+      "crop_image": "scenes/apphub-library/crop.png",
+      "reference_image": "scenes/apphub-library/reference.png",
+      "provenance": "scenes/apphub-library/provenance.json",
+      "crop_sha256": "031ebe559cbfc5daf1d8a6603d169ef801f304e575bcafa4eb456b7911bfc669",
+      "reference_sha256": "9e7dc28f1490f3e1992aa453b5a032478142e3c5e68047f48dd8d7883259429d",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          261,
+          783,
+          245,
+          739
+        ],
+        "source_crop_size": [
+          245,
+          739
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.1001353179972937,
+        "offset_pixels": [
+          148.7334235453315,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          148.7334235453315,
+          0.0,
+          514.533152909337,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          148.7334235453315,
+          0,
+          2.1001353179972937,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.47615979381443296,
+          0,
+          -70.82087628865978,
+          0,
+          0.47615979381443296,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          -399.40189445196216,
+          0,
+          2.1001353179972937,
+          -1644.405953991881
+        ],
+        "reference_pixels_to_atlas": [
+          0.47615979381443296,
+          0,
+          190.17912371134022,
+          0,
+          0.47615979381443296,
+          783.0
+        ],
+        "atlas_to_logical": [
+          1.0500676589986468,
+          0,
+          -199.70094722598108,
+          0,
+          1.0500676589986468,
+          -822.2029769959405
+        ],
+        "logical_to_atlas": [
+          0.9523195876288659,
+          0,
+          190.17912371134022,
+          0,
+          0.9523195876288659,
+          783.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "live-empty",
+      "design_id": "apphub-live-empty",
+      "surface": "app",
+      "declared_scene": {
+        "id": "live-empty",
+        "design_id": "apphub-live-empty",
+        "directory": "scenes/live-empty",
+        "crop": [
+          514,
+          783,
+          245,
+          739
+        ],
+        "surface": "app",
+        "title": "live-empty"
+      },
+      "crop": [
+        514,
+        783,
+        245,
+        739
+      ],
+      "crop_image": "scenes/apphub-live-empty/crop.png",
+      "reference_image": "scenes/apphub-live-empty/reference.png",
+      "provenance": "scenes/apphub-live-empty/provenance.json",
+      "crop_sha256": "d6561849b5d9a2e9ecd8cd498287213a96995421398e8bcdae9d1ccd3bfbfff0",
+      "reference_sha256": "fd18b94fcea702ab2b8c914b50a713e2b51318e21c59ae1f306002fe876dac64",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          514,
+          783,
+          245,
+          739
+        ],
+        "source_crop_size": [
+          245,
+          739
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.1001353179972937,
+        "offset_pixels": [
+          148.7334235453315,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          148.7334235453315,
+          0.0,
+          514.533152909337,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          148.7334235453315,
+          0,
+          2.1001353179972937,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.47615979381443296,
+          0,
+          -70.82087628865978,
+          0,
+          0.47615979381443296,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          -930.7361299052775,
+          0,
+          2.1001353179972937,
+          -1644.405953991881
+        ],
+        "reference_pixels_to_atlas": [
+          0.47615979381443296,
+          0,
+          443.17912371134025,
+          0,
+          0.47615979381443296,
+          783.0
+        ],
+        "atlas_to_logical": [
+          1.0500676589986468,
+          0,
+          -465.36806495263875,
+          0,
+          1.0500676589986468,
+          -822.2029769959405
+        ],
+        "logical_to_atlas": [
+          0.9523195876288659,
+          0,
+          443.17912371134025,
+          0,
+          0.9523195876288659,
+          783.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "live-error",
+      "design_id": "apphub-live-error",
+      "surface": "app",
+      "declared_scene": {
+        "id": "live-error",
+        "design_id": "apphub-live-error",
+        "directory": "scenes/live-error",
+        "crop": [
+          767,
+          783,
+          245,
+          739
+        ],
+        "surface": "app",
+        "title": "live-error"
+      },
+      "crop": [
+        767,
+        783,
+        245,
+        739
+      ],
+      "crop_image": "scenes/apphub-live-error/crop.png",
+      "reference_image": "scenes/apphub-live-error/reference.png",
+      "provenance": "scenes/apphub-live-error/provenance.json",
+      "crop_sha256": "e71c8d7fee334d4141aafd171bf714ec9af3d2302dd600c81408a63ee1509fdd",
+      "reference_sha256": "493da3dc3c675d7f50633bb77215e3d50c59c25fd7012cb82a5919e98423a518",
+      "source_atlas_sha256": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+      "source_prompt_sha256": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          767,
+          783,
+          245,
+          739
+        ],
+        "source_crop_size": [
+          245,
+          739
+        ],
+        "artboard": [
+          406,
+          776
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          812,
+          1552
+        ],
+        "uniform_scale": 2.1001353179972937,
+        "offset_pixels": [
+          148.7334235453315,
+          0.0
+        ],
+        "content_bounds_pixels": [
+          148.7334235453315,
+          0.0,
+          514.533152909337,
+          1552.0
+        ],
+        "crop_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          148.7334235453315,
+          0,
+          2.1001353179972937,
+          0.0
+        ],
+        "reference_pixels_to_crop": [
+          0.47615979381443296,
+          0,
+          -70.82087628865978,
+          0,
+          0.47615979381443296,
+          -0.0
+        ],
+        "atlas_to_reference_pixels": [
+          2.1001353179972937,
+          0,
+          -1462.0703653585927,
+          0,
+          2.1001353179972937,
+          -1644.405953991881
+        ],
+        "reference_pixels_to_atlas": [
+          0.47615979381443296,
+          0,
+          696.1791237113403,
+          0,
+          0.47615979381443296,
+          783.0
+        ],
+        "atlas_to_logical": [
+          1.0500676589986468,
+          0,
+          -731.0351826792963,
+          0,
+          1.0500676589986468,
+          -822.2029769959405
+        ],
+        "logical_to_atlas": [
+          0.9523195876288659,
+          0,
+          696.1791237113403,
+          0,
+          0.9523195876288659,
+          783.0
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    }
+  ],
+  "review_status": "not_reviewed",
+  "native_mapping_status": "not_started",
+  "limitations": [
+    "No image generation executed",
+    "No manual or automatic visual review claimed",
+    "No semantic mapping or native Makepad components generated",
+    "Crop coordinates address the stored atlas pixel matrix without EXIF rotation"
+  ],
+  "files": {
+    "original/atlas.png": "c3615e8ac6867e9441991c81a0e8eb38a1cac3cb906d1de6b23f9dacab51a8f2",
+    "original/manifest.json": "be2412b788ab8eb0773649c1330d765b477670ddfec78b2e8623e0e3129e8587",
+    "original/prompt.txt": "2bdef6a8abd1d956eebeaad3750153ce5964bf64b8eb84d9e97b2fa6d59ef4d8",
+    "scenes/apphub-apps-preview/crop.png": "5df2fcc17826260bb8cc78dbb1685d07bf23eb23dfd0ca0b817d2e6f6b50d4cb",
+    "scenes/apphub-apps-preview/provenance.json": "5ff73f958010fb30db5771ea1a4ba7507cc133931db7f596445f1a98f8eaa9bb",
+    "scenes/apphub-apps-preview/reference.png": "a045a40776a4f929c1e46d6edf9037d8fd95f574fd0a44e09359960f97697104",
+    "scenes/apphub-detail-preview/crop.png": "33535a64588fdff9c36d342da21f03fca547235a6f2118b6e9f32fc4ed77d1c1",
+    "scenes/apphub-detail-preview/provenance.json": "2fae4529c86697f3a55c2a00f59caae370c25601204dd980449b90db335c02db",
+    "scenes/apphub-detail-preview/reference.png": "ccc76589fb460b131668f60a2f12da0df3421bde1022bb4bd215ddba9596b31b",
+    "scenes/apphub-install-confirmation/crop.png": "aee88d0a1c7b11238dbb5a3a62e354790fc2748435602d0a9f9bcdbb1c33306e",
+    "scenes/apphub-install-confirmation/provenance.json": "369433138ee67fc16ebf7dc9d50241065c5ed98f7bbd22cf1f858fa4b7b0941e",
+    "scenes/apphub-install-confirmation/reference.png": "9fb61437cdcf8deb7e8d4893abd9098dfbbbcb9bcc7a4122291fb9ae47150cc5",
+    "scenes/apphub-library/crop.png": "031ebe559cbfc5daf1d8a6603d169ef801f304e575bcafa4eb456b7911bfc669",
+    "scenes/apphub-library/provenance.json": "b3270e145b427036c88a5f9a29d803fb91133f32f5aac13fba1d1ed40684b238",
+    "scenes/apphub-library/reference.png": "9e7dc28f1490f3e1992aa453b5a032478142e3c5e68047f48dd8d7883259429d",
+    "scenes/apphub-live-empty/crop.png": "d6561849b5d9a2e9ecd8cd498287213a96995421398e8bcdae9d1ccd3bfbfff0",
+    "scenes/apphub-live-empty/provenance.json": "aca0fda6a170546068797f35417c1b027a43bfcab9f073ed7f92893c0c1075ff",
+    "scenes/apphub-live-empty/reference.png": "fd18b94fcea702ab2b8c914b50a713e2b51318e21c59ae1f306002fe876dac64",
+    "scenes/apphub-live-error/crop.png": "e71c8d7fee334d4141aafd171bf714ec9af3d2302dd600c81408a63ee1509fdd",
+    "scenes/apphub-live-error/provenance.json": "0b60ef13bef22b352eb1d1146887341a6fe64622696413a51788bc549a30116e",
+    "scenes/apphub-live-error/reference.png": "493da3dc3c675d7f50633bb77215e3d50c59c25fd7012cb82a5919e98423a518",
+    "scenes/apphub-search-preview/crop.png": "6475f000978636be88f7c549bddfbeeb322c57b777ad29b5942846902e71c149",
+    "scenes/apphub-search-preview/provenance.json": "16cb38291e51fccbfd20a831600c7324d10fc8edc0cc1ed6d0f5a4d7c2e0f7ec",
+    "scenes/apphub-search-preview/reference.png": "83d169316e08a6d9270a86588733ac676331e7eb1829dc769caf4e5379e53c6e",
+    "scenes/apphub-today-preview/crop.png": "ab2539e0d9b60e4931c2d8483491746526f8857c5d5f502ba5cf016ed33ebb11",
+    "scenes/apphub-today-preview/provenance.json": "c489db060c74a7691a30de186fe8f38d952a4bfbc951295fcfa0698482b43460",
+    "scenes/apphub-today-preview/reference.png": "c7b4e60988428392bbcff99ff15e73e0139934e098a47bac383d6539338fd3bf"
+  }
+}

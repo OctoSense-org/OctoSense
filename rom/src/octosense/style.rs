@@ -104,6 +104,10 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
             }
         }
     }
+    #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+    wear(&mut assets, "apphub", octosense_app_hub_app::APP_ICON_SVG.into());
+    #[cfg(not(any(feature = "app-hub", target_os = "android", target_os = "ios")))]
+    wear(&mut assets, "apphub", include_str!("../../apps/app-hub/assets/icon.svg").into());
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }
@@ -132,11 +136,15 @@ fn own_artwork(style: UpstreamStyle) -> Option<[&'static str; 2]> {
 #[derive(Default)]
 pub struct AppIconDraw {
     draw: app_icon::AppIconDraw,
+    #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+    library: InstalledIcons,
     /// The styles whose catalog this drawer has seen to, by discriminant.
     installed: [bool; UpstreamStyle::ALL.len()],
 }
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
+        #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+        if self.library.draw(cx, name, rect, opacity) { return; }
         let style = style.framework();
         // A style can be drawn before its sheet is applied (a crossfade's
         // target, the first frame); the framework would then fall back to
@@ -145,6 +153,63 @@ impl AppIconDraw {
             app_icon::install(cx, style, &icon_assets(style));
         }
         self.draw.draw(cx, name, style, rect, opacity, ink);
+    }
+}
+
+#[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+#[derive(Default)]
+struct InstalledIcons {
+    root: Option<std::path::PathBuf>,
+    generation: u64,
+    entries: std::collections::HashMap<String, Option<InstalledIcon>>,
+}
+#[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+enum InstalledIcon { Svg(DrawSvg), Png(DrawImage, Texture) }
+
+#[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+impl InstalledIcons {
+    fn draw(&mut self, cx: &mut Cx2d, name: &str, rect: Rect, opacity: f32) -> bool {
+        use octosense_app_hub_app::icons::{self, IconData};
+        let Some(id) = name.strip_prefix("hub:") else { return false; };
+        let Some(root) = octosense_app_hub_app::data_root_if_set() else { return false; };
+        let generation = icons::generation();
+        if self.root.as_ref() != Some(&root) || self.generation != generation {
+            self.entries.clear();
+            self.root = Some(root.clone());
+            self.generation = generation;
+        }
+        if self.entries.len() >= 256 && !self.entries.contains_key(id) { self.entries.clear(); }
+        let icon = self.entries.entry(id.into()).or_insert_with(|| {
+            match icons::read_installed_icon(&root, id)? {
+                IconData::Svg(source) => {
+                    let mut draw = cx.with_vm(|vm| DrawSvg::script_new_with_default(vm));
+                    draw.load_from_str(&source);
+                    let (width, height) = draw.svg_doc.as_ref()?.logical_size();
+                    draw.content_bounds = (0.0, 0.0, width, height);
+                    Some(InstalledIcon::Svg(draw))
+                }
+                IconData::Png(data) => {
+                    let buffer = image_cache::ImageBuffer::from_png(&data).ok()?;
+                    let texture = buffer.into_new_texture(cx);
+                    let draw = cx.with_vm(|vm| DrawImage::script_new_with_default(vm));
+                    Some(InstalledIcon::Png(draw, texture))
+                }
+            }
+        });
+        match icon {
+            Some(InstalledIcon::Svg(draw)) => {
+                draw.color = vec4(-1.0, -1.0, -1.0, -1.0);
+                draw.opacity = opacity;
+                draw.draw_abs(cx, rect);
+            }
+            Some(InstalledIcon::Png(draw, texture)) => {
+                draw.draw_vars.set_texture(0, texture);
+                draw.opacity = opacity;
+                draw.draw_abs(cx, rect);
+            }
+            None => return false,
+        }
+        true
     }
 }
 
@@ -163,7 +228,7 @@ mod tests {
             let assets = icon_assets(style);
             // Nothing the framework draws is lost, and the list stays sorted
             // by name as the framework's is.
-            assert_eq!(assets.len(), framework.len() + 1, "{}", style.id());
+            assert_eq!(assets.len(), framework.len() + 2, "{}", style.id());
             assert!(assets.windows(2).all(|pair| pair[0].name < pair[1].name), "{}", style.id());
             for asset in &framework {
                 if asset.name != "news" {
@@ -185,7 +250,7 @@ mod tests {
     fn this_shells_artwork_is_what_the_renderer_can_draw() {
         for style in UpstreamStyle::ALL {
             let assets = icon_assets(style);
-            for name in ["news", "maps"] {
+            for name in ["news", "maps", "apphub"] {
                 let svg = svg_of(&assets, name);
                 assert!(svg.starts_with("<svg "), "{} {name}", style.id());
                 // No clip paths, masks, filters or text: the renderer has none.
