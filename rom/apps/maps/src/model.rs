@@ -724,11 +724,16 @@ pub fn body_text(status_code: u16, body: Option<&[u8]>) -> Result<&str, String> 
     std::str::from_utf8(body).map_err(|_| "response is not UTF-8".to_string())
 }
 
-/// A transport error in plain words: the Android backend reports a failed
-/// request as a Java exception chain.
+/// A transport error in plain words, including nested Java/rustls causes.
 pub fn plain_error(message: &str) -> String {
     let lower = message.to_lowercase();
     let known = [
+        // A certificate hostname mismatch can mention a DNS name without
+        // being a DNS lookup failure.
+        (
+            &["sslhandshake", "certificate", "ssl", "tls"][..],
+            "secure connection failed",
+        ),
         (
             &[
                 "unknownhost",
@@ -737,10 +742,6 @@ pub fn plain_error(message: &str) -> String {
                 "dns",
             ][..],
             "no internet connection",
-        ),
-        (
-            &["sslhandshake", "certificate", "ssl", "tls"][..],
-            "secure connection failed",
         ),
         (&["timed out", "timeout"][..], "timed out"),
         (

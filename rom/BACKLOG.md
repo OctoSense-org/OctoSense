@@ -565,7 +565,7 @@ found on the way. `docs/maps.md` describes what is there.
   verification on 2026-09-18 missed it. The layer now clears only the
   vehicle it placed itself.
 
-- [ ] **MAPS-17 — P2: No directions on Android 9: the public router speaks TLS 1.3 only.**
+- [x] **MAPS-17 — P2: No directions on Android 9: the public router speaks TLS 1.3 only.**
 
   `routing.openstreetmap.de` (and `router.project-osrm.org`, the same
   machine) refuses a TLS 1.2 handshake; Android's platform TLS reaches 1.3
@@ -574,11 +574,16 @@ found on the way. `docs/maps.md` describes what is there.
   which is the right thing to say. Photon and the tile host accept TLS
   1.2, so search, places and the map work there. The server answers plain
   HTTP too, and the manifest would allow it, but a route request carries
-  both ends of a trip and stays on HTTPS. Goes away with services of our
-  own (MAPS-08) or a phone on Android 10 or later. Confirmed on 2026-09-19:
+  both ends of a trip and stays on HTTPS. Confirmed on 2026-09-19:
   on a Pixel 7 Pro (Android 17) the same build gets its routes, and
   directions and the preview drive work there. A real drive is still
   unverified on any phone.
+
+  Fixed 2026-09-23 with an Android service-only reqwest/rustls transport:
+  TLS 1.3, normal WebPKI certificate validation, HTTPS-only requests,
+  streaming body limits, timeouts and cancellation. The OnePlus 6T now
+  fetches and draws driving, walking and cycling routes between SJC and
+  SFO. All 106 Maps tests pass, including nine transport regressions.
 
 - [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
 

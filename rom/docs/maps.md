@@ -168,12 +168,24 @@ Against the revision pinned before 2026-09-19 (`471d680a5`) the same app
 draws no tiles (MAPS-12), freezes the shell as it opens (MAPS-13), draws no
 roads or fills (MAPS-14) and no puck (MAPS-15).
 
-Directions do not work on this phone: the public router accepts TLS 1.3
-only and Android 9 stops at 1.2 (MAPS-17). The Directions screen opens
-with both ends and says `Couldn't get directions · Secure connection
-failed` with **Retry**. So routes on a drawn map, the preview, a real drive
-with a reroute, and pinch, rotate and tilt (adb has no multi-touch) are
-still unverified on a phone.
+The original Android 9 build could not fetch directions: the public router
+requires TLS 1.3, while Android 9's Java HTTPS provider supports up to TLS
+1.2 (MAPS-17). On 2026-09-23, Android service requests moved to reqwest with
+rustls and WebPKI roots. HTTPS and certificate/hostname verification remain
+required; redirects are disabled. Responses are capped at 4 MiB while
+streaming, requests have 10-second connect and 30-second total timeouts,
+and superseded requests or a closing widget cancel their workers. Other
+platforms and the map's tile requests retain the framework transport.
+
+The updated release APK was installed on the OnePlus 6T (Android 9) on
+2026-09-23. Search and SJC Airport Terminal A to SFO International Terminal
+directions succeeded: Drive 43 min / 34 mi, Walk 14 hr 24 min / 40 mi, Bike
+3 hr 56 min / 34 mi, with each mode drawing its route. The driving preview
+advances along the route with changing maneuvers, remaining time and 3D
+map tiles. All 106 Maps tests
+pass, including nine TLS 1.3 transport regressions covering certificate
+rejection, limits, timeouts and cancellation. Evidence is in
+`target/maps-tls-review/`.
 
 On a Pixel 7 Pro (Android 17) on 2026-09-19, the release APK of the pinned
 build, in the shell's dark mode: the app opens in full with the dark map;

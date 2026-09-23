@@ -5704,6 +5704,9 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+ "reqwest 0.12.28",
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

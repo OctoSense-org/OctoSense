@@ -1,3 +1,12 @@
+# OctosMap Android 9 HTTPS fix — 2026-09-23
+
+- Android Java HttpURLConnection is limited by the system TLS implementation. The FOSSGIS routing server rejects TLS 1.2 today; Android 9 cannot negotiate its TLS 1.3. This reproduces MAPS-17.
+- Use the already locked reqwest/rustls stack for Android Maps service requests, with normal certificate validation and HTTPS-only URLs. Keep desktop/iOS and map-tile transport unchanged.
+- Responses must retain the 4 MiB cap, service User-Agent, cancellation and stale-reply filtering.
+- Confirmed fixed on OnePlus 6T Android 9: all three travel modes return and draw routes; simulated driving preview advances. A separate lost USB internet tunnel caused an initial search timeout and was restored without changing the transport implementation.
+
+---
+
 # OctosMap findings — 2026-09-18
 
 - The fork's `apps/route` is the reference checkout's in all but three cosmetic files; the map libraries are identical. It builds at the pinned revision.

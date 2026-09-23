@@ -1,3 +1,16 @@
+# OctosMap Android 9 HTTPS fix — 2026-09-23
+
+- Added Android service-only reqwest/rustls transport with normal WebPKI certificate validation, HTTPS-only requests, redirects disabled, a streaming 4 MiB body cap, connect/total timeouts and cancellation on supersede/shutdown/drop. Replies wake the UI and cancelled replies are discarded.
+- Added nine loopback TLS 1.3 regression tests. They caught certificate hostname errors being misclassified as DNS failures; certificate errors now take precedence. All 106 Maps tests pass; the local server tests required sandbox escalation for loopback sockets.
+- Android release APK built successfully; SHA-256 `42b5b2b36d482659b1eaa3efeeacf97981ad91c338747df141775eaa0d08b905`. Installed successfully on OnePlus 6T without clearing app data.
+- Device's earlier USB disconnect had removed the gnirehtet ADB reverse tunnel. Restored it with `gnirehtet tunnel 19f8cedf`; search then succeeded. SJC Airport Terminal A to SFO International Terminal routes draw in all modes: Drive 43 min / 34 mi, Walk 14 hr 24 min / 40 mi, Bike 3 hr 56 min / 34 mi. Driving preview advances with changing maneuvers, 3D tiles and remaining time. Ended preview and left driving directions open.
+- Independent review found no actionable issues. Focused Makepad/AndroidRuntime error log has no entries. Verification artifacts are in `target/maps-tls-review/`; MAPS-17 marked resolved in the backlog and Maps docs.
+
+- Created fix/maps-android9-tls from clean main 0d51947.
+- Captured the SJC-to-SFO error on the OnePlus before changes. Forced TLS 1.2 handshake fails against routing.openstreetmap.de; a modern TLS request succeeds.
+
+---
+
 # OctosMap — 2026-09-18
 
 - Investigated with read-only agents (two stalled and were rerun narrower): the route app and its data plane, the shell's module contract with News as the template, the AppCards `nav` card. Probed the services by hand.
