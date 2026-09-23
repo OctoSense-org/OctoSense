@@ -7,6 +7,7 @@ pub use makepad_widgets;
 
 pub mod geo;
 pub mod guidance;
+mod http;
 pub mod model;
 pub mod module;
 pub mod places;

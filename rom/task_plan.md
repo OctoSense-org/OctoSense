@@ -1,3 +1,11 @@
+# OctosMap Android 9 HTTPS fix — 2026-09-23
+
+1. Reproduce and identify the transport failure — complete; phone shows secure-connection failure, server rejects TLS 1.2 and accepts modern TLS.
+2. Add an Android HTTPS transport with TLS 1.3, certificate validation, body limits and cancellation; regression tests — complete; all 106 Maps tests pass.
+3. Build, install and verify real directions on OnePlus 6T — complete; search, Drive/Walk/Bike routes and advancing driving preview visually verified on Android 9.
+
+---
+
 # OctosMap — 2026-09-18
 
 ## Objective
