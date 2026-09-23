@@ -170,3 +170,36 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 24. Replace the desktop SVG with the original Abyssal Currents raster wallpaper — complete; all-style native smoke and hosted input verified on feat/desktop-wallpaper.
 25. Add a light OctoSense palette and matching wallpaper using the existing appearance controls — complete. Preserved the dark palette, Android animation, and upstream crate pins.
 26. Verify both appearances, hosted app reloads and style transitions; document assets and setup — complete. 219 Rust/49 Python tests, release build, all-style native smoke, top-bar toggle and fresh-app checks passed. Ready for the requested feature-branch commit and PR to main.
+
+## App Hub — 2026-09-22
+- [x] Clean merged swipe branch; create dedicated App Hub branch.
+- [x] Read image-to-appcard workflows, supplied screenshots and Hub source; resolve scope/style/preview questions.
+- [x] Implement catalog service and native App Hub screens.
+- [x] Integrate launcher and installed Card apps.
+- [x] Run focused tests, Android build and native phone-layout walkthrough; review and fix findings. Physical-device installation remains pending because ADB has no connected device.
+- Detailed plan: docs/plans/2026-09-22-app-hub.md.
+
+## App Hub store icon follow-up — 2026-09-22
+- [x] Inspect shared icon ownership and choose a clearer store symbol.
+- [x] Replace the bloom with a shopping bag and four app tiles in the existing palette.
+- [x] Inspect small-size SVG rendering, rebuild/install on the Pixel, and verify launcher/header.
+- [x] Record evidence and update current design notes; leave changes uncommitted.
+- Patch tooling rejected a delete/add pair for one path; changed to an in-place update.
+
+## OctoSense logo inside the store bag — 2026-09-23
+- [x] Replace the four app tiles with the existing OctoSense logo paths, preserving the bag.
+- [x] Check small-size rendering and verify the rebuilt APK on the Pixel.
+- [x] Update current design notes and retain separate validation evidence.
+
+## App Hub author guides — 2026-09-23
+- [x] Inspect current publishing, validation and rendering contracts in a fresh Hub checkout.
+- [x] Add shared icon guidance, first-app walkthrough, development guide index and agent instructions.
+- [x] Provide a starter bundle scaffold and validate its metadata and documented commands.
+- [x] Link mobile guidance to the shared source, review links/examples, and record results.
+- Keep existing mobile changes intact; no publication or catalog changes.
+
+## App Hub PR delivery — 2026-09-23
+- [x] Review all pending changes in mobile and shared Hub docs.
+- [x] Fix update lifecycle and closed-view completion delivery; reproduce both defects and verify regressions.
+- [x] Rerun relevant tests and build the Android release APK.
+- [x] Prepare all requested changes for commits and companion PRs.

@@ -126,6 +126,16 @@ pub fn registry() -> &'static [AppDef] {
     }
 }
 
+/// Catalog rows plus apps installed since startup. A static checkout catalog
+/// cannot hold the Hub's changing library.
+pub fn available_apps() -> Vec<AppDef> {
+    let mut apps = registry().to_vec();
+    for app in crate::apps::bundled_catalog() {
+        if !apps.iter().any(|existing| existing.id == app.id) { apps.push(app); }
+    }
+    apps
+}
+
 /// Registered ids take precedence over binary aliases. A linked module
 /// without a catalog row (a module-only app such as `appcard`, which has no
 /// process form) is still an app: its bundled definition answers, and the

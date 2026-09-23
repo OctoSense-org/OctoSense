@@ -660,14 +660,20 @@ impl App {
             return;
         };
         let app = &app;
+        #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+        if let Some(manifest_id) = apps::card_manifest_id(app) {
+            if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
+                octosense_app_hub_app::data_root(cx), manifest_id) {
+                self.notify(cx, "Could not open app", &error);
+                return;
+            }
+        }
         let hub_port = self.state_mut().hub_port;
 
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
         // matches `\b<pattern>\b` case-insensitively against the window's
         // CLASS OR TITLE and focuses the first hit.
         if app.policy == LaunchPolicy::OrFocus && extra_args.is_empty() {
-            let pattern = app.id.clone();
-            let pattern = pattern.as_str();
             let mut existing: Vec<ClientId> = self
                 .state_mut()
                 .clients
@@ -680,8 +686,7 @@ impl App {
                         && !slot.pane
                         && !slot.is_preview
                         && slot.closing.is_none()
-                        && (clients::word_match(&slot.app, pattern)
-                            || clients::word_match(&slot.title, pattern))
+                        && apps::matches_running_app(app, &slot.app, &slot.title)
                 })
                 .map(|(id, _)| *id)
                 .collect();
@@ -705,7 +710,7 @@ impl App {
                     // its OpenSchema instead.
                     log!("wm: {} runs in-process; launch arguments {:?} are not forwarded", app_id, extra_args);
                 }
-                self.launch_module(cx, module);
+                self.launch_module_as(cx, module, app);
                 return;
             }
         }
@@ -1525,6 +1530,22 @@ impl App {
         self.request_close(cx, focus);
     }
 
+    #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+    fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
+        // An update replaces assets on disk, but an existing Card keeps its
+        // old code and permissions. End all old instances so Open creates
+        // one from the new bundle.
+        let launch_id = apps::installed_launch_id(id);
+        let clients: Vec<_> = self.state_mut().clients.iter()
+            .filter_map(|(&client, slot)| (slot.app == launch_id).then_some(client))
+            .collect();
+        for client in clients {
+            self.request_close(cx, client);
+        }
+        octosense_app_hub_app::icons::invalidate();
+        self.redraw_all(cx);
+    }
+
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
@@ -1998,7 +2019,7 @@ impl App {
 
     /// The registry as the `os` brief names it: (id, label).
     fn registry_apps() -> Vec<(String, String)> {
-        clients::registry()
+        clients::available_apps()
             .iter()
             .map(|a| (a.id.clone(), a.label.clone()))
             .collect()
@@ -2078,7 +2099,7 @@ impl App {
     /// Open `module` as an instance of its own in this process: an isolate,
     /// a tile in the layout, a local endpoint on the bus. The ordinary
     /// launch path minus everything a process needs.
-    fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
+    fn launch_module_as(&mut self, cx: &mut Cx, module: &'static dyn AppModule, app: &clients::AppDef) {
         let schema = module.open_schema();
         let configured_open = if module.id() == "mail" {
             std::env::var("MAKEPAD_APP_CONFIG").ok()
@@ -2090,6 +2111,10 @@ impl App {
             .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
             .and_then(|config| config.get("module_open").and_then(|v| v.get(module.id())).map(|v| v.to_json()))
             .map(|json| schema.validate(&json, &[])).or(configured_open);
+        let configured_open = if module.id() == "card" {
+            let Some(manifest_id) = apps::card_manifest_id(app) else { return; };
+            Some(schema.validate(&format!("{{\"app\":{}}}", makepad_strict_json::Value::Str(manifest_id.into()).to_json()), &[]))
+        } else { configured_open };
         let open = match configured_open.unwrap_or_else(|| schema.empty_open()) {
             Ok(open) => open,
             Err(e) => {
@@ -2110,7 +2135,7 @@ impl App {
         };
         self.state_mut()
             .clients
-            .insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+            .insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
         let gap = self.state_mut().gap;
         self.state_mut().layout.insert(id, area, gap);
         // The tile is a module tile from its first draw; the root is seated
@@ -2240,7 +2265,7 @@ impl App {
     fn app_rows(&mut self) -> Vec<OsAppRow> {
         let state = self.state_mut();
         let focused = state.layout.focused_client();
-        let mut rows: Vec<OsAppRow> = clients::registry()
+        let mut rows: Vec<OsAppRow> = clients::available_apps()
             .iter()
             .map(|a| OsAppRow {
                 id: a.id.clone(),
@@ -4116,7 +4141,7 @@ fn os_launch_answer(call_id: &str, label: &str, already_running: bool) -> ToolRe
 
 /// The registry's ids, for a refusal that names what exists.
 fn known_app_ids() -> String {
-    clients::registry()
+    clients::available_apps()
         .iter()
         .map(|a| a.id.as_str())
         .collect::<Vec<_>>()
@@ -4208,6 +4233,60 @@ mod os_service_tests {
     }
 }
 
+#[cfg(all(test, feature = "app-hub", feature = "app-reference"))]
+mod app_hub_lifecycle_tests {
+    use super::*;
+    use makepad_app_module::AppModule;
+
+    #[test]
+    fn installing_an_update_closes_only_that_apps_old_instances() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.init_cx_os();
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut app = cx.with_vm(App::script_new);
+        app.state = Some(WmState {
+            snap: Default::default(),
+            phone: Default::default(),
+            style: Default::default(),
+            material: Default::default(),
+            roles: Default::default(),
+            dock_backdrop: None,
+            layout: crate::layout::WmLayout::new(),
+            clients: Default::default(),
+            hub_port: 0,
+            theme_name: String::new(),
+            term_env: String::new(),
+            accent: Default::default(),
+            bar_ground: Default::default(),
+            borders: Default::default(),
+            gap: desk::TILE_GAP,
+            gaps_out: desk::GAPS_OUT,
+            dragging: Vec::new(),
+            drop_hint: None,
+            pane_sliding: false,
+        });
+        // Real module isolates exercise shutdown and client removal without
+        // requiring a downloaded Card or changing the machine's catalog.
+        let module = &octosense_reference::REFERENCE_MODULE;
+        for (client, id) in [(1, "hub:org.example.timer"), (2, "hub:org.example.timer"),
+                             (3, "hub:org.example.notes"), (4, "reference")] {
+            let open = module.open_schema().validate("{}", &[]).unwrap();
+            app.module_host.create(&mut cx, client, module, open, dvec2(400.0, 800.0)).unwrap();
+            app.state_mut().clients.insert(client, clients::ClientSlot::module(client, id, id));
+        }
+        app.installed_app_changed(&mut cx, "org.example.timer");
+        for client in [1, 2] {
+            assert!(!app.module_host.is_module(client), "the updated app's old isolate must close");
+            assert!(!app.state_mut().clients.contains_key(&client), "Open must not focus the old instance");
+        }
+        for client in [3, 4] {
+            assert!(app.module_host.is_module(client), "other apps must remain running");
+            assert!(app.state_mut().clients.contains_key(&client));
+            app.module_host.teardown(&mut cx, client);
+        }
+    }
+}
+
 fn super_chord(m: &KeyModifiers) -> bool {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
@@ -4242,6 +4321,9 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+        octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
+            .unwrap_or_else(octosense::paths::home).join("apps"));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4452,6 +4534,12 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
+            #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+            match wa.cast::<octosense_app_hub_app::AppHubAction>() {
+                octosense_app_hub_app::AppHubAction::Launch(id) => self.launch_app(cx, &id),
+                octosense_app_hub_app::AppHubAction::OpenInstalled(id) => self.launch_app(cx, &apps::installed_launch_id(&id)),
+                octosense_app_hub_app::AppHubAction::None => {}
+            }
             // The shell surfaces: the bar's presses and wheel, the menu's
             // activations, the flyouts' controls.
             match wa.cast::<ShellBarAction>() {
@@ -4593,6 +4681,10 @@ impl MatchEvent for App {
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         if self.state.is_some() {
+            #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+            for id in octosense_app_hub_app::take_completed_installs() {
+                self.installed_app_changed(cx, &id);
+            }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();

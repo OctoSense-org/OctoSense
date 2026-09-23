@@ -35,7 +35,7 @@ impl Default for AppRegistry {
 
 /// A linked module by id, without a registry: what the launcher asks.
 pub fn is_linked(id: &str) -> bool {
-    linked_modules().iter().any(|m| m.id() == id)
+    linked_modules().iter().any(|m| m.id() == id) || installed_card_apps().iter().any(|a| a.id == id)
 }
 
 /// Mobile includes its bundled modules automatically; desktop opts in with
@@ -59,13 +59,45 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_maps::MAPS_MODULE);
     #[cfg(any(feature = "app-camera", target_os = "android", target_os = "ios"))]
     out.push(&octosense_camera::CAMERA_MODULE);
+    #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+    {
+        out.push(&octosense_app_hub_app::APP_HUB_MODULE);
+        out.push(&octosense_app_hub_app::CARD_MODULE);
+    }
     out
+}
+
+/// Manifest IDs live in a separate namespace from built-ins and user catalog
+/// entries (catalog IDs cannot contain a colon).
+pub fn installed_launch_id(manifest_id: &str) -> String { format!("hub:{manifest_id}") }
+pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
+    (app.bin == "card").then(|| app.id.strip_prefix("hub:")).flatten()
+}
+
+pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title: &str) -> bool {
+    if app.bin == "card" || running_id.starts_with("hub:") { running_id == app.id }
+    else { crate::clients::word_match(running_id, &app.id) || crate::clients::word_match(title, &app.id) }
+}
+
+/// The contained Card runner has no launcher entry of its own. Installed
+/// apps retain their manifest identity in the launcher and recents.
+pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
+    #[cfg(any(feature = "app-hub", target_os = "android", target_os = "ios"))]
+    if let Some(root) = octosense_app_hub_app::data_root_if_set() {
+        return octosense_app_hub_app::installed_apps(&root).into_iter()
+            .map(|app| crate::clients::AppDef {
+                id: installed_launch_id(&app.id), label: app.name, bin: "card".into(),
+                package: String::new(), dir: String::new(), manifest: None,
+                args: Vec::new(), policy: crate::clients::LaunchPolicy::OrFocus,
+            }).collect();
+    }
+    Vec::new()
 }
 
 /// An installed host has no checkout catalog. Its linked modules carry all
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().map(|module| crate::clients::AppDef {
+    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -75,7 +107,7 @@ pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
         args: Vec::new(),
         policy: if module.id() == "reference" { crate::clients::LaunchPolicy::AlwaysNew }
             else { crate::clients::LaunchPolicy::OrFocus },
-    }).collect()
+    }).chain(installed_card_apps()).collect()
 }
 
 /// The launcher checks the selected host, not merely whether a module is linked.
@@ -114,7 +146,10 @@ impl AppRegistry {
 
     /// The linked module for an app, if this build has one.
     pub fn module(&self, id: &str) -> Option<&'static dyn AppModule> {
-        self.modules.iter().copied().find(|m| m.id() == id)
+        self.modules.iter().copied().find(|m| m.id() == id).or_else(|| {
+            installed_card_apps().iter().any(|app| app.id == id)
+                .then(|| self.modules.iter().copied().find(|m| m.id() == "card")).flatten()
+        })
     }
 
     /// How a launch of `id` is hosted. On a desktop: Module only when a
@@ -125,7 +160,7 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
-        if matches!(id, "robrix" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+        if (matches!(id, "robrix" | "finance" | "apphub") || installed_card_apps().iter().any(|app| app.id == id)) && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
         match self.overrides.get(id) {
@@ -176,13 +211,27 @@ impl AppRegistry {
 mod tests {
     use super::*;
 
+    #[test]
+    fn installed_card_identity_never_focuses_a_builtin_with_the_same_name() {
+        let mut app=crate::clients::AppDef {id: "news".into(),label:"News".into(),bin:"news".into(),
+            package:String::new(),dir:String::new(),manifest:None,args:Vec::new(),policy:crate::clients::LaunchPolicy::OrFocus};
+        assert!(matches_running_app(&app,"news","News"));
+        assert!(!matches_running_app(&app,"hub:news","News"));
+        app.id=installed_launch_id("news");app.bin="card".into();
+        assert_eq!(card_manifest_id(&app),Some("news"));
+        assert!(matches_running_app(&app,"hub:news","News"));
+        assert!(!matches_running_app(&app,"news","News"));
+        assert!(!matches_running_app(&app,"hub:news-other","News"));
+    }
+
+
     #[cfg(feature = "mobile-apps")]
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps", "camera", "apphub"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

@@ -1,0 +1,68 @@
+{
+  "recorded_at": "2026-09-23T07:01:45.691882+00:00",
+  "branch": "feat/app-hub",
+  "scope": "Replace the Octo Bloom with a shopping bag and four app tiles; preserve the teal, ivory and mint palette and shared asset resolution.",
+  "source": {
+    "path": "apps/app-hub/assets/icon.svg",
+    "sha256": "10e07741ea84cefb9c886310dbb2d6482ce8de81c48fe7897c85800a3807d88a",
+    "bytes": 893
+  },
+  "artifacts": [
+    {
+      "path": "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+      "sha256": "80b62b05f34ed46b5b00c7aad11e70f1cc07d032f4b6d6c4babfcc6922f219c5",
+      "bytes": 269229309
+    }
+  ],
+  "checks": [
+    {
+      "command": "cargo test -p octosense-app-hub-app --lib --offline",
+      "passed": 35,
+      "failed": 0,
+      "log": "target/app-hub/validation/store-icon-tests.log"
+    },
+    {
+      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "result": "passed",
+      "log": "target/app-hub/validation/store-icon-android-build.log"
+    },
+    {
+      "result": "SVG parsed and rendered with rsvg-convert; 112, 64, 48, 32 and 24 px reviewed on light and dark backgrounds"
+    }
+  ],
+  "device": {
+    "model": "Pixel 7 Pro",
+    "installation": "adb install -r returned Success; existing data retained",
+    "verified": [
+      "Home dock uses the new store icon",
+      "Tapping the dock icon opens App Hub",
+      "App Hub header uses the same bag and app-grid icon"
+    ],
+    "final_state": "App Hub open on live Today tab"
+  },
+  "captures": [
+    {
+      "path": "docs/design/app-hub/evidence/store-icon-sizes.png",
+      "sha256": "de51c4a7b6b5e73949afae08db7339e553e89f3534b2f056761bd51cf59ded6c",
+      "bytes": 25290
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-icon.png",
+      "sha256": "3e622cc540e55bcfdc063b1422b9b37681fa813c99562de886b45e6df23bf77b",
+      "bytes": 9583
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-icon-home.png",
+      "sha256": "0abaf116df78fefbd4e27e80032cb1e130e6c3cb9486f35c2a17e2d3252334e5",
+      "bytes": 281674
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-icon-hub.png",
+      "sha256": "04bb28e13530ded24243df8c4b41c9a2a9b92be3fac07ebb095044a455fae32b",
+      "bytes": 209042
+    }
+  ],
+  "limitations": [
+    "This follow-up changes only the SVG and documentation. Previous desktop validation remains historical; the desktop executable was not rebuilt in this follow-up."
+  ]
+}

@@ -820,7 +820,11 @@ mod tests {
     #[test]
     fn hidden_while_the_shade_is_pulled_or_open() {
         let mut island = IslandState::default();
-        island.push(elapsed("shade:a", 0.0));
+        let mut activity = elapsed("shade:a", 0.0);
+        // This tests shade geometry, not an AppCard turn. With mobile-apps
+        // enabled, the real turn poll correctly finishes an idle AppCard.
+        activity.source = "shade-test".into();
+        island.push(activity);
         island.expanded = true;
         settle(&mut island, 0.0);
         assert!(!island.hidden() && island.presence > 0.99);

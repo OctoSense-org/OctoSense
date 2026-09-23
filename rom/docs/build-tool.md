@@ -71,6 +71,11 @@ move that touches `tools/cargo_makepad` is the usual trigger):
 cargo install --path ../makepad/tools/cargo_makepad --force
 ```
 
+App Hub's explicit Makepad pin `7786bb4a3` adds isolate containment to
+`825dbb422`; it changes no Android Java or `tools/cargo_makepad` code.
+`tools/setup-native.py` verifies this pin from `makepad_override` in the
+consumer lock while leaving the shared wrapper release unchanged.
+
 To see which checkout an installed tool reads its Java from:
 
 ```sh

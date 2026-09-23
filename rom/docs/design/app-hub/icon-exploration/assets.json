@@ -1,0 +1,67 @@
+{
+  "tool": "built-in image_gen",
+  "exact_model": "not reported",
+  "status": "concept alternatives for review; not runtime assets",
+  "variants": [
+    {
+      "id": "a-octo-bloom",
+      "name": "Octo Bloom",
+      "description": "A connection to the eight-part OctoSense identity.",
+      "file": "a-octo-bloom.png",
+      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a3ef0107-cdab-425a-a96a-da1a4ee0f0a4.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "35c05eab9db9f1c7c5b66f70466e6e4e7d3aaf5cd24cf2ed709c6fa4e4f58a5e"
+    },
+    {
+      "id": "b-app-deck",
+      "name": "App Deck",
+      "description": "A collection of apps, expressed as overlapping cards.",
+      "file": "b-app-deck.png",
+      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a137fdb5-4c14-4d8c-860f-fd56694d7095.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "cb167bada06d8aa735e9ebfbbc083ae5dd2663d13f21fc8ec51e27dad85cb02d"
+    },
+    {
+      "id": "c-discovery-bag",
+      "name": "Discovery Bag",
+      "description": "The clearest marketplace metaphor.",
+      "file": "c-discovery-bag.png",
+      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-6228d73f-6c7e-4833-84f7-bd1db89f592c.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "cda4b2042f40e250e17616eac6eb53408127decefa80b9a2f663b59f2248165c"
+    },
+    {
+      "id": "d-app-orbit",
+      "name": "App Orbit",
+      "description": "A connected hub for discovering apps.",
+      "file": "d-app-orbit.png",
+      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-1c1b3846-489e-4be7-af33-a555a0db8bc1.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "sha256": "0591f82a1b586e1267c7be893332a5c769528c9e8947a70207dbfcfdce7573ea"
+    }
+  ],
+  "selected": {
+    "id": "a-bloom-app-grid",
+    "file": "a-bloom-app-grid.png",
+    "dimensions": [
+      1254,
+      1254
+    ],
+    "sha256": "cca5047f559922cfb217af09ed93ef433e748381e633116b57e77912245697e9",
+    "prompt": "a-bloom-app-grid-prompt.txt",
+    "runtime_asset": "../../../../apps/app-hub/assets/icon.svg",
+    "note": "Selected A, refined with four app tiles at the center; reconstructed as native SVG."
+  }
+}
