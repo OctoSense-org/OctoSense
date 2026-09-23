@@ -1,7 +1,9 @@
 # App Hub design evidence
 
-References: the user's five App Store screenshots in `appstore/`; hashes are in
-`source/references.json`. The generated atlas uses the same large titles, editorial
+References: the user's five App Store screenshots are kept locally in the
+Git-ignored `appstore/` directory; they are not included in a fresh checkout.
+Their provenance hashes are retained in `source/references.json`.
+The generated atlas uses the same large titles, editorial
 artwork, grouped app rows, blue actions and bottom navigation. The native view
 adapts them to the OctoSense palette, width and shell chrome.
 
