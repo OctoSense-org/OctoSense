@@ -56,10 +56,7 @@ makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
-# MVP (Rinx module): AppCard is out of this graph. Its Octos (octos-core
-# deb433e9, rusqlite 0.32) links libsqlite3-sys 0.30, which conflicts with the
-# Matrix SDK's 0.38 in Rinx. Octos >= dc96b927 (rusqlite 0.40) resolves this.
-# octosense-appcard = { path = "apps/appcard", optional = true }
+octosense-appcard = { path = "apps/appcard", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
 rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "65aa09c2f6022e173b5a875a007806de22974f53", default-features = false, features = ["octosense-module"], optional = true }
@@ -72,21 +69,21 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-# octosense-appcard = { path = "apps/appcard" }  # see the MVP note above
+octosense-appcard = { path = "apps/appcard" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b", default-features = false }
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b", default-features = false }
 
 [features]
 default = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
 # The AppCard module (one L0 weather card in a tile) linked in.
-app-appcard = []
+app-appcard = ["dep:octosense-appcard"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]
@@ -94,8 +91,7 @@ app-aichat = ["dep:makepad-aichat"]
 app-rinx = ["dep:rinx"]
 
 [workspace]
-members = [".", "apps/reference"]
-exclude = ["apps/appcard"]
+members = [".", "apps/reference", "apps/appcard"]
 default-members = ["."]
 resolver = "2"
 
@@ -155,4 +151,3 @@ makepad-code-editor = { path = "../makepad/code_editor" }
 # Rinx's Matrix patches (see Rinx's Cargo.toml).
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
-
