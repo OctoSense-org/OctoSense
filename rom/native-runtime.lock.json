@@ -1,10 +1,5 @@
 {
   "schema_version": 1,
   "url": "https://github.com/OctoSense-org/Octoscript-Makepad.git",
-  "revision": "b0628d05a89369b0c3bae2750db6da06996a05c2",
-  "makepad_override": {
-    "url": "https://github.com/OctoSense-org/makepad.git",
-    "revision": "7786bb4a32d3282197699eefd2f2e9defbcf2d53",
-    "reason": "App Hub requires the enforced Splash isolate capability, network, instruction and heap limits merged in Makepad PR #22."
-  }
+  "revision": "36ad1f220ff74d0cbccd89d2b17769133b3fafd1"
 }
