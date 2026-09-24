@@ -6,8 +6,8 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b", features = ["appcard", "maps"] }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "2bfbb99c8e56ff0c15d7d31061aa49e239e220e2", features = ["appcard", "maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "2bfbb99c8e56ff0c15d7d31061aa49e239e220e2" }
 # The whole Octoscript-AppCard app as a library: routing brain, card store and
 # transport, L0 lowering, sessions, composer, kernel agent — mounted here as
 # its `AppShell` widget. No default features: the app's own entry points
