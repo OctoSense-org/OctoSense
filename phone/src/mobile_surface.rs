@@ -1080,11 +1080,13 @@ impl PhoneSurface {
         if perf {crate::mobile_perf::span(cx.cx,ch.overlay,clock);clock=std::time::Instant::now();}
         if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {
             self.shade_warm=true;
-            crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,state,screen);
-            // Offer both sheet variants to the renderer before the first pull.
+            if !crate::mobile_navigation::ENABLED && !phone.android.system_panel {
+                crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,state,screen);
+                self.shade_glass.draw_surface_with_backdrop(cx,
+                    rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
+            }
+            // Prepare the overview and group materials before their first use.
             // Verify first-use compilation separately from frame pacing.
-            self.shade_glass.draw_surface_with_backdrop(cx,
-                rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
             self.overview_glass.draw_surface_with_backdrop(cx,
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
             self.group_glass.draw_surface_with_backdrop(cx,

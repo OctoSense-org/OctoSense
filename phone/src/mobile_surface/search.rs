@@ -242,7 +242,9 @@ impl PhoneSurface {
         ink: Vec4f,
     ) {
         let timing = crate::mobile_perf::work_start();
+        let matching = crate::mobile_perf::work_start();
         let found = matching_apps(apps, &state.phone.search_query);
+        crate::mobile_perf::work_end("search.matching", matching);
         let top = pill.pos.y + pill.size.y + 14.0;
         let bottom = screen.pos.y + screen.size.y
             - state.phone.keyboard.max(state.phone.keyboard_target).max(state.phone.native_keyboard)
@@ -271,6 +273,7 @@ impl PhoneSurface {
                 continue;
             }
             let row = rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, 56.0);
+            let icon_timing = crate::mobile_perf::work_start();
             self.draw_launcher_icon(
                 cx,
                 state,
@@ -279,6 +282,10 @@ impl PhoneSurface {
                 ink,
                 1.0,
             );
+            if icon_timing.is_some() {
+                crate::mobile_perf::work_end(&format!("search.icon.{id}"), icon_timing);
+            }
+            let label_timing = crate::mobile_perf::work_start();
             self.d.label_elided(
                 cx,
                 rect(row.pos.x + 64.0, y, row.size.x - 64.0, 56.0),
@@ -288,6 +295,7 @@ impl PhoneSurface {
                 HAlign::Left,
                 label,
             );
+            crate::mobile_perf::work_end("search.label", label_timing);
             self.d.solid(
                 cx,
                 rect(row.pos.x + 64.0, y + 55.0, row.size.x - 64.0, 0.5),

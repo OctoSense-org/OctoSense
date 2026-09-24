@@ -972,6 +972,13 @@ impl App {
         }
     }
     fn phone_pointer_at(&mut self, cx: &mut Cx, phase: PhonePointerPhase, p: Vec2d, time: f64, primary: bool, scroll: f64) -> bool {
+        if primary && matches!(phase, PhonePointerPhase::Down | PhonePointerPhase::Up) {
+            let name = match phase {
+                PhonePointerPhase::Down => "Down", PhonePointerPhase::Move => "Move",
+                PhonePointerPhase::Up => "Up", PhonePointerPhase::Scroll => "Scroll",
+            };
+            crate::mobile_perf::trace_phone_input(name, p);
+        }
         if crate::mobile_navigation::ENABLED && primary {
             use crate::mobile_navigation::{Phase,NavigationHit};
             let phase=match phase {
@@ -993,13 +1000,6 @@ impl App {
                     return true;
                 }
             }
-        }
-        if primary && matches!(phase, PhonePointerPhase::Down | PhonePointerPhase::Up) {
-            let name = match phase {
-                PhonePointerPhase::Down => "Down", PhonePointerPhase::Move => "Move",
-                PhonePointerPhase::Up => "Up", PhonePointerPhase::Scroll => "Scroll",
-            };
-            crate::mobile_perf::trace_phone_input(name, p);
         }
         if self.state_mut().phone.gesture.is_none() {
             if let Some(hit) = self.phone_toolbar_hit(cx, p) {
