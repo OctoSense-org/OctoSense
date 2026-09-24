@@ -3,11 +3,11 @@
   "repositories": {
     "appcards": {
       "url": "https://github.com/OctoSense-org/Octoscript-AppCard.git",
-      "revision": "eaf3d1458bf212047895af60f90e04154c1a1d30"
+      "revision": "7f468bb9554cb520297103eb98a76aaa0d01bee8"
     },
     "camera": {
       "url": "https://github.com/OctoSense-org/Octoscript-AppCard.git",
-      "revision": "1cf78120033b1a1a3f597b627032e366e73a7e39"
+      "revision": "7f468bb9554cb520297103eb98a76aaa0d01bee8"
     }
   }
 }
