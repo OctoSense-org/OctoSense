@@ -12,6 +12,6 @@ makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev
 # transport, L0 lowering, sessions, composer, kernel agent — mounted here as
 # its `AppShell` widget. No default features: the app's own entry points
 # (`app_main!`, the dev monitor) stay out; this module is the entry point.
-octos-app = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "9a1a8a7088625061d2bcc09d4a3ea35561206133", default-features = false }
+octos-app = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "e3bc1721bc64488dcb424f577c2248768c77ad60", default-features = false }
 # Tool arguments (`ask` takes `{"text": ...}`).
 serde_json = "1.0"
