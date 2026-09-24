@@ -61,7 +61,7 @@ use shell::panels::ShellPanelAction;
 use ai_bus::{AiBus, Route};
 use apps::{AppRegistry, Hosting};
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
-use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream};
+use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream, WindowRequest};
 use module_host::ModuleHost;
 use pane_links::{PaneCall, PaneLinks};
 use makepad_widgets::ai_slot::AiSlotRequests;
@@ -386,6 +386,10 @@ pub struct App {
     /// isolate each, seated in a `ModuleTile`.
     #[rust]
     module_host: ModuleHost,
+    /// Extra windows module instances opened (`ModuleWindows`): window
+    /// client -> (owner instance's client, the instance's key for it).
+    #[rust]
+    module_windows: HashMap<ClientId, (ClientId, LiveId)>,
     /// The in-process transport to an assistant seated in the pane as a
     /// module: the WM's services as links its registry adopts (pane_links.rs).
     #[rust]
@@ -1370,7 +1374,8 @@ impl App {
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
-        if self.module_host.is_module(client) {
+        // So does one of its extra windows.
+        if self.module_host.is_module(client) || self.module_windows.contains_key(&client) {
             self.remove_client(cx, client);
             self.update_bar(cx);
             return;
@@ -1425,6 +1430,22 @@ impl App {
 
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
         log!("wm: removing client {}", client);
+        // An instance's extra window: the tile lets go of the root (the
+        // instance keeps the widget), and the instance hears it was closed.
+        if let Some((owner, key)) = self.module_windows.remove(&client) {
+            self.desk(cx)
+                .borrow_mut::<WmDesk>()
+                .map(|mut d| d.with_module_view(cx, client, |cx, v| v.clear_root(cx)));
+            self.module_host.notify_window_closed(owner, key);
+        }
+        // An instance going away takes its extra windows with it, first.
+        if self.module_host.is_module(client) {
+            let windows: Vec<ClientId> = self.module_windows.iter()
+                .filter(|(_, (owner, _))| *owner == client).map(|(w, _)| *w).collect();
+            for window in windows {
+                self.remove_client(cx, window);
+            }
+        }
         // A module instance: the tile lets go of the root FIRST, then the
         // instance and its isolate go (module_host.rs). The bus hears an
         // Unregister for it below, like for any client.
@@ -1931,6 +1952,8 @@ impl App {
         let id = self.next_id;
         self.next_id += 1;
         let area = self.desk_area(cx);
+        // Extra windows are a desktop thing; the phone shell's apps are full-screen.
+        self.module_host.extra_windows = !self.state_mut().style.target.mobile();
         if let Err(e) = self.module_host.create(cx, id, module, open, dvec2(area.w, area.h)) {
             log!("wm: module {} failed to start: {}", module.id(), e);
             return;
@@ -1986,6 +2009,50 @@ impl App {
             ServiceDown::Unsubscribe { sub_id } => self.module_host.unsubscribe(cx, client, &sub_id),
             // The pane state reaches instances through `broadcast_chat_open`.
             ServiceDown::ChatOpen { .. } | ServiceDown::Registered { .. } => {}
+        }
+    }
+
+    /// Instances' extra-window requests (`ModuleWindows`): each root becomes
+    /// a module tile of its own, drawn and fed events in the owner's isolate.
+    fn drain_module_windows(&mut self, cx: &mut Cx) {
+        for (owner, vm_id, app, request) in self.module_host.take_window_requests() {
+            let existing = |this: &Self, key: LiveId| this.module_windows.iter()
+                .find(|(_, (o, k))| *o == owner && *k == key).map(|(w, _)| *w);
+            match request {
+                WindowRequest::Open { key, title, root, size: _ } => {
+                    if let Some(window) = existing(self, key) {
+                        self.activate_client(cx, window);
+                        continue;
+                    }
+                    let id = self.next_id;
+                    self.next_id += 1;
+                    let area = self.desk_area(cx);
+                    self.state_mut().clients.insert(id, clients::ClientSlot::module(id, app, &title));
+                    let gap = self.state_mut().gap;
+                    self.state_mut().layout.insert(id, area, gap);
+                    self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+                        d.mark_module(id);
+                        d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
+                    });
+                    self.module_windows.insert(id, (owner, key));
+                    log!("wm: {} (client {}) opened window {:?} as client {}", app, owner, title, id);
+                    self.activate_client(cx, id);
+                    self.update_bar(cx);
+                    self.redraw_all(cx);
+                }
+                WindowRequest::Close { key } => {
+                    // The instance closed it itself: no report back, or a
+                    // stale "closed" could end a window it reopens later.
+                    if let Some(window) = existing(self, key) {
+                        self.module_windows.remove(&window);
+                        self.desk(cx)
+                            .borrow_mut::<WmDesk>()
+                            .map(|mut d| d.with_module_view(cx, window, |cx, v| v.clear_root(cx)));
+                        self.remove_client(cx, window);
+                        self.update_bar(cx);
+                    }
+                }
+            }
         }
     }
 
@@ -4190,6 +4257,7 @@ impl MatchEvent for App {
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();
+            self.drain_module_windows(cx);
         }
     }
 }
