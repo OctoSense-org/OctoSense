@@ -59,7 +59,7 @@ octosense-reference = { path = "apps/reference", optional = true }
 octosense-appcard = { path = "apps/appcard", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
-rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "127cd2ec997f3a3f7056d0bf818ef2bc57c06f57", default-features = false, features = ["octosense-module"], optional = true }
+rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "b65cb454cd5cd0c42ddbfaeaa1292b91a04e2663", default-features = false, features = ["octosense-module"], optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
