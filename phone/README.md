@@ -9,8 +9,8 @@ shared with AppCards, Mail and the other OctoSense applications.
 
 This application is maintained inside `octosense-rom/home`. From the product
 root, run `python3 scripts/setup-home.py` (Python 3.9+) to prepare pinned
-framework and native-app sources in `.sources/`. This also applies the recorded
-isolate-policy patch required by App Hub. Local changes are preserved.
+framework and native-app sources in `.sources/`. The runtime's Makepad already
+carries the isolate policy App Hub requires. Local changes are preserved.
 Use `python3 scripts/setup-home.py --check --cargo` from the product root to
 verify the selected sources and reject duplicate Makepad crates.
 

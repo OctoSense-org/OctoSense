@@ -17,11 +17,12 @@ revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-apps.lock.json` selects Mail/AppCards and Camera sources. App Hub
 client crates are pinned in `home/Cargo.toml` and `home/Cargo.lock`.
 
-The imported Home runtime lacks the isolate controls required by App Hub.
-`home/runtime-patches.lock.json` records the exact policy patch, its originating
-Makepad commit, SHA-256 and resulting Git tree. Setup applies that patch to the
-pinned Makepad checkout and leaves it staged; `--check` accepts only that exact
-tree and rejects additional staged, unstaged or untracked source changes.
+The runtime's Makepad (main `57b31c99`) already has the isolate controls App
+Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
+needed it records the exact patch, its originating Makepad commit, SHA-256 and
+resulting Git tree; setup applies it to the pinned checkout and leaves it
+staged, and `--check` accepts only that exact tree. `--check` always rejects
+staged, unstaged or untracked source changes.
 The separate Makepad/Octoscript repositories are dependencies, not vendored
 copies of the launcher. No mobile repository or sibling-worktree name is used.
 

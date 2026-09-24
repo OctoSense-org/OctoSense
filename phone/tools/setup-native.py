@@ -96,7 +96,7 @@ def main():
     if lock.get("schema_version") != 1 or lock.get("url") != URL:
         parser.error("Unsupported runtime lock")
     patches = json.loads((CONSUMER / "runtime-patches.lock.json").read_text())
-    if patches.get("schema_version") != 1 or set(patches) != {"schema_version", "makepad"}:
+    if patches.get("schema_version") != 1 or not set(patches) <= {"schema_version", "makepad"}:
         parser.error("Unsupported runtime patch lock")
     prepare_source(root, "octoscript-makepad", lock, args)
     manifest = json.loads((root / "octoscript-makepad/runtime.json").read_text())
