@@ -1,8 +1,10 @@
 # Updates
 
 The OctoSense ROM and the OctoSense Home app update over the air from GitHub
-Releases of this repository. The web installer (`web-installer/`) is only for a
-phone's first install, or to recover one that no longer boots.
+Releases of this repository. The [web installer](../web-installer/README.md#flash-from-your-browser)
+is currently a local developer preview for a fresh installation with data
+erasure. Automated browser recovery is not implemented yet; use this OTA flow
+for supported updates.
 
 ## What a release carries
 

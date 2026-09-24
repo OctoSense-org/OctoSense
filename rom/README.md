@@ -1,5 +1,7 @@
 # OctoSense ROM
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 One Android product repository with two delivery modes:
 
 - **OctoSense Home** is the installable launcher for ordinary Android phones,
@@ -35,9 +37,18 @@ outstanding branches and the checks required before retiring the old repository.
 [ROM updates](docs/updates.md) continue to use this repository's existing release
 feed. Keys stay outside the repository; source consolidation does not change them.
 
-The [browser installer](web-installer/README.md) is a local developer preview.
-[ADR 0001](docs/adr/0001-public-web-installer.md) defines the architecture and
-the release gates for making it available publicly.
+## Flash the ROM from a browser
+
+Follow the [web flashing guide](web-installer/README.md#flash-from-your-browser)
+to prepare the ROM images, start the installer on your computer, connect a
+OnePlus 6 over USB, verify the release, install it and check the first boot.
+The guide includes unlock instructions and troubleshooting.
+
+The installer is currently a **local developer preview** for OnePlus 6
+(`enchilada`). Fresh installation erases phone data. Public web flashing is
+disabled, and the exact phone-identification method still needs hardware
+qualification; an unverified phone remains read-only. See
+[ADR 0001](docs/adr/0001-public-web-installer.md) for the public-release plan.
 
 ## Host chroot notes
 
