@@ -1,5 +1,12 @@
 # Flashing the OctoSense ROM on the OnePlus 6
 
+For the browser workflow, use the [web flashing guide](../web-installer/README.md#flash-from-your-browser).
+It covers the local developer preview, which requires a verified device and
+erases data for a fresh install. Public web flashing and automatic recovery
+are not available yet.
+
+## Manual recovery and sideload workflow
+
 The first flash from LineageOS wipes user data: the two builds are signed with
 different keys and Android will not carry packages across them.
 
