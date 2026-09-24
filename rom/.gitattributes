@@ -1,2 +1,5 @@
 # Unified-diff context lines contain a required single space when empty.
 patches/runtime/*.patch whitespace=-blank-at-eol
+
+# Keep vendored upstream bytes intact; their SHA-256 receipts are tested.
+web-installer/vendor/noble-hashes/*.js whitespace=-blank-at-eol

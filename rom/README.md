@@ -35,6 +35,10 @@ outstanding branches and the checks required before retiring the old repository.
 [ROM updates](docs/updates.md) continue to use this repository's existing release
 feed. Keys stay outside the repository; source consolidation does not change them.
 
+The [browser installer](web-installer/README.md) is a local developer preview.
+[ADR 0001](docs/adr/0001-public-web-installer.md) defines the architecture and
+the release gates for making it available publicly.
+
 ## Host chroot notes
 
 The build runs in an Ubuntu 24.04 chroot (`~/octosense-adr0001/rootfs`) on a

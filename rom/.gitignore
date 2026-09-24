@@ -18,3 +18,8 @@ releasekey.pem
 __pycache__/
 *.pyc
 .DS_Store
+/web-installer/node_modules/
+/web-installer/test-results/
+/web-installer/playwright-report/
+/web-installer/*.img
+/web-installer/manifest.json
