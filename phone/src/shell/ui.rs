@@ -929,8 +929,13 @@ impl ShellDraw {
         }
         let face = self.face(bold);
         face.text_style.font_size = px_to_pt(px);
-        face.prepare_single_line_run(cx, s)
-            .map(|r| r.width_in_lpxs as f64)
+        // Measuring needs advances only. Preparing a rasterized run here
+        // generated an SDF for every glyph, even on Android's vector-text
+        // renderer, and repeated that work at each size tried by elision.
+        // Keep the first-row and font_scale semantics of the prepared run.
+        face.layout(cx, 0.0, 0.0, None, false, Align::default(), s)
+            .rows.first()
+            .map(|row| (row.width_in_lpxs * face.font_scale) as f64)
             .unwrap_or(0.0)
     }
 
@@ -1706,6 +1711,41 @@ mod tests {
         // The QML scale is px; makepad's font_size is pt.
         assert_eq!(px_to_pt(12.0), 9.0);
         assert_eq!(px_to_pt(28.0), 21.0);
+    }
+
+    #[test]
+    fn measuring_labels_preserves_advances_without_rasterizing_glyphs() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut kit = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            let theme = crate::theme::BUNDLED_TOKYO_NIGHT_SPLASH;
+            eval_theme(vm, "wm_theme", theme);
+            eval_theme(vm, "wm_theme_shell", &crate::theme::shell_splash_block(theme));
+            script_mod(vm);
+            ShellDraw::script_new_with_default(vm)
+        });
+        let pass = DrawPass::new(&mut cx);
+        pass.set_size(&mut cx, dvec2(640.0, 480.0));
+        let event = DrawEvent::default();
+        let mut draw = CxDraw::new(&mut cx, &event);
+        draw.begin_pass(&pass, Some(2.0));
+        let mut cx = Cx2d::new(&mut draw);
+        for scale in [1.0, 1.5] {
+            kit.text.font_scale = scale;
+            for text in ["Apps", "Mail…", "office café", "first\nsecond", ""] {
+                cx.fonts.borrow().rasterizer().borrow_mut().color_atlas_mut().take_dirty_image();
+                let width = kit.measure(&mut cx, false, 16.0, text);
+                let dirty = cx.fonts.borrow().rasterizer().borrow().color_atlas().dirty_rect();
+                assert_eq!(dirty.size.width * dirty.size.height, 0,
+                    "width-only measurement must not write glyph pixels");
+                let prepared = kit.text.prepare_single_line_run(&mut cx, text)
+                    .map(|run| run.width_in_lpxs as f64).unwrap_or(0.0);
+                assert!((width - prepared).abs() < 0.001, "{text}: {width} != {prepared}");
+                if !text.is_empty() { assert!(width > 0.0); }
+            }
+        }
+        drop(cx);
+        draw.end_pass(&pass);
     }
 
     #[test]
