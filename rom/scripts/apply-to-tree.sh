@@ -10,6 +10,7 @@ grep -q 'vendor/octosense/octosense.mk' "$PRODUCT" || printf '\n# OctoSense ROM 
 echo "applied to $TREE"
 
 python3 "$HERE/patches/lineage-kernel-out-prefix.py" "$TREE"
+python3 "$HERE/patches/oneplus6-atomic-rmfb.py" "$TREE"
 python3 "$HERE/patches/lineage-no-trebuchet.py" "$TREE"
 python3 "$HERE/patches/aosp-no-launcher3-phony.py" "$TREE"
 BOARD="$TREE/device/oneplus/enchilada/BoardConfig.mk"

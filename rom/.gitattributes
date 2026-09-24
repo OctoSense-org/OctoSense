@@ -1,5 +1,7 @@
 # Unified-diff context lines contain a required single space when empty.
 patches/runtime/*.patch whitespace=-blank-at-eol
+# Kernel patch context also has a required prefix space before tab indentation.
+patches/kernel/*.patch whitespace=-blank-at-eol,-space-before-tab
 
 # Keep vendored upstream bytes intact; their SHA-256 receipts are tested.
 web-installer/vendor/noble-hashes/*.js whitespace=-blank-at-eol

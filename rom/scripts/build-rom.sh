@@ -2,7 +2,7 @@
 # OctoSense ROM build for the OnePlus 6 (enchilada), run inside the build chroot.
 #   preflight : lunch and dump the product configuration (fast)
 #   bacon     : full signed build; the flashable zip lands in /exports/rom-build
-set -e
+set -eo pipefail
 cd /build
 export TARGET_RELEASE=bp1a
 export OUT_DIR=out/octosense-rom
@@ -27,10 +27,15 @@ case "$1" in
     *) echo 'Use preflight or bacon' >&2; exit 2 ;;
 esac
 date -u +%FT%TZ > /exports/rom-build/started.txt
+rm -f /exports/rom-build/finished.txt
+rom_version=$(get_build_var LINEAGE_VERSION)
+[[ "$rom_version" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'Invalid ROM version for export' >&2; exit 1; }
+rom_zip="$OUT_DIR/target/product/enchilada/lineage-$rom_version.zip"
 m -j64 bacon 2>&1 | tail -c 4000000 > /exports/rom-build/bacon.log
+[ -f "$rom_zip" ] && [ "$rom_zip" -nt /exports/rom-build/started.txt ] || { echo 'No current ROM zip was produced by this build; refusing stale artifacts' >&2; exit 1; }
 ls -la "$OUT_DIR"/target/product/enchilada/*.zip "$OUT_DIR"/target/product/enchilada/*.img 2>/dev/null | tee /exports/rom-build/artifacts.txt
 # Only the zip this build produced: the product dir keeps older zips under other date names.
 rm -f /exports/rom-build/lineage-*.zip
-cp "$(ls -t "$OUT_DIR"/target/product/enchilada/lineage-*.zip | head -1)" /exports/rom-build/ 2>/dev/null || true
-sha256sum /exports/rom-build/*.zip > /exports/rom-build/zip.sha256 2>/dev/null || true
+cp "$rom_zip" /exports/rom-build/
+sha256sum /exports/rom-build/*.zip > /exports/rom-build/zip.sha256
 date -u +%FT%TZ > /exports/rom-build/finished.txt
