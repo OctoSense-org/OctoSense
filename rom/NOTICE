@@ -28,3 +28,8 @@ Third-party components
     Mike Hamburg, Dan Boneh, Stanford University, BSD license.
   The copyright and license notices of these bundled libraries are retained
   in the file.
+* web-installer/vendor/noble-hashes/: the incremental SHA-256 dependency
+  closure from @noble/hashes 2.4.0 (https://github.com/paulmillr/noble-hashes),
+  Copyright (c) 2022 Paul Miller, licensed under the MIT License. The upstream
+  license is retained in that directory's LICENSE; provenance.json records
+  the source archive integrity and hashes of the unchanged source files.

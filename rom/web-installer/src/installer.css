@@ -1,0 +1,29 @@
+:root { color-scheme: light dark; --bg:#f6f6f3; --surface:#fff; --text:#202723; --muted:#58645d; --accent:#176144; --outline:#d5dfd7; --notice:#eef4ed; --danger:#a62c25; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141b17; --surface:#1c2620; --text:#edf4ec; --muted:#b0c1b3; --accent:#94d3ae; --outline:#405247; --notice:#26382b; --danger:#ffb4ab; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+main { max-width:800px; padding:48px 24px 64px; margin:auto; }
+h1 { font-size:clamp(30px,5vw,44px); line-height:1.2; margin:8px 0; letter-spacing:-.035em; }
+h2 { font-size:20px; margin:0 0 12px; }
+p { margin:12px 0; }
+.eyebrow { font-size:12px; letter-spacing:.13em; font-weight:700; color:var(--accent); }
+.intro { font-size:19px; color:var(--muted); }
+.notice { padding:16px; border:1px solid var(--outline); border-radius:10px; background:var(--notice); }
+.steps { padding:16px 0; margin:16px 0; list-style-position:inside; display:flex; flex-wrap:wrap; gap:12px 24px; color:var(--muted); font-size:14px; }
+section, .technical { background:var(--surface); border:1px solid var(--outline); border-radius:16px; padding:24px; margin:16px 0; }
+button { display:inline-block; border:1px solid var(--accent); border-radius:8px; padding:12px 18px; margin-top:16px; font:inherit; font-weight:600; cursor:pointer; color:var(--surface); background:var(--accent); }
+button.secondary { background:transparent; color:var(--accent); }
+button:disabled { opacity:.45; cursor:not-allowed; }
+:focus-visible { outline:3px solid var(--accent); outline-offset:4px; }
+a { color:var(--accent); text-underline-offset:3px; }
+label { display:flex; gap:12px; align-items:flex-start; }
+input[type=checkbox] { width:20px; height:20px; margin-top:4px; flex:none; accent-color:var(--accent); }
+dl { display:grid; grid-template-columns:minmax(100px,auto) 1fr; gap:6px 20px; margin:16px 0; }
+dt { color:var(--muted); } dd { margin:0; overflow-wrap:anywhere; }
+progress { width:100%; height:16px; accent-color:var(--accent); }
+#error { color:var(--danger); font-weight:600; }
+#compatibility { color:var(--muted); }
+summary { cursor:pointer; font-weight:600; }
+pre { max-height:260px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; background:var(--bg); padding:16px; border-radius:8px; }
+[hidden] { display:none !important; }
+@media(max-width:480px) { main { padding:28px 16px; } section,.technical { padding:18px; } button { width:100%; } }

@@ -1,0 +1,33 @@
+name: Web installer checks
+on:
+  push:
+    paths: ['web-installer/**', 'scripts/make-manifest.py', 'scripts/release.sh', 'tests/test_installer_manifest.py', '.github/workflows/web-installer.yml']
+  pull_request:
+    paths: ['web-installer/**', 'scripts/make-manifest.py', 'scripts/release.sh', 'tests/test_installer_manifest.py', '.github/workflows/web-installer.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web-installer/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: web-installer
+      - run: npm test
+        working-directory: web-installer
+      - run: npx playwright install --with-deps chromium
+        working-directory: web-installer
+      - run: npm run test:browser
+        working-directory: web-installer
+      - run: python3 -m unittest discover -s tests -p test_installer_manifest.py -v
+      - run: bash -n scripts/release.sh
