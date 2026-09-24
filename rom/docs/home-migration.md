@@ -17,8 +17,8 @@ not mobile main). The client dependency selects App Hub
 Photos, News, camera fixes, launcher gestures and native integration. Installed
 cards refresh the launcher catalog and keep distinct client identities.
 
-The pinned runtime is Octoscript-Makepad main `36ad1f220ff74d0cbccd89d2b17769133b3fafd1`,
-selecting Makepad main `57b31c9978635e51e633558131d1888d9ef4f45a`. That commit
+The pinned runtime is Octoscript-Makepad main `c4c9682219d5bb549856e35086adf1b354844dc3`,
+selecting Makepad main `1d3d383e84a66dbb18a4a860f505430c9d5b20f4`. It
 contains the isolate policy App Hub needs (Makepad #22) and the device fixes this
 product used to carry as `patches/runtime/makepad-isolate-policy.patch` (Makepad
 #26), so no runtime patch is applied. `home/runtime-patches.lock.json` stays as

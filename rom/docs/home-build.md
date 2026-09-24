@@ -17,7 +17,7 @@ revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-apps.lock.json` selects Mail/AppCards and Camera sources. App Hub
 client crates are pinned in `home/Cargo.toml` and `home/Cargo.lock`.
 
-The runtime's Makepad (main `57b31c99`) already has the isolate controls App
+The runtime's Makepad (main `1d3d383e`) already has the isolate controls App
 Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
 needed it records the exact patch, its originating Makepad commit, SHA-256 and
 resulting Git tree; setup applies it to the pinned checkout and leaves it
