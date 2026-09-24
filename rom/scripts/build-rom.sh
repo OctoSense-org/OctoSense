@@ -28,15 +28,11 @@ case "$1" in
 esac
 date -u +%FT%TZ > /exports/rom-build/started.txt
 rm -f /exports/rom-build/finished.txt
+rom_version=$(get_build_var LINEAGE_VERSION)
+[[ "$rom_version" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo 'Invalid ROM version for export' >&2; exit 1; }
+rom_zip="$OUT_DIR/target/product/enchilada/lineage-$rom_version.zip"
 m -j64 bacon 2>&1 | tail -c 4000000 > /exports/rom-build/bacon.log
-rom_zip=
-for candidate in "$OUT_DIR"/target/product/enchilada/lineage-*.zip; do
-    if [ -f "$candidate" ] && [ "$candidate" -nt /exports/rom-build/started.txt ]; then
-        [ -z "$rom_zip" ] || { echo 'More than one new ROM zip; refusing ambiguous export' >&2; exit 1; }
-        rom_zip=$candidate
-    fi
-done
-[ -n "$rom_zip" ] || { echo 'No ROM zip was produced by this build; refusing stale artifacts' >&2; exit 1; }
+[ -f "$rom_zip" ] && [ "$rom_zip" -nt /exports/rom-build/started.txt ] || { echo 'No current ROM zip was produced by this build; refusing stale artifacts' >&2; exit 1; }
 ls -la "$OUT_DIR"/target/product/enchilada/*.zip "$OUT_DIR"/target/product/enchilada/*.img 2>/dev/null | tee /exports/rom-build/artifacts.txt
 # Only the zip this build produced: the product dir keeps older zips under other date names.
 rm -f /exports/rom-build/lineage-*.zip

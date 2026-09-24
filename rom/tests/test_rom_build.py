@@ -28,10 +28,21 @@ class RomBuildTests(unittest.TestCase):
         (build / "build/soong/soong_ui.bash").chmod(0o755)
         (build / "build/envsetup.sh").write_text('''
 lunch() { :; }
+get_build_var() { echo '22.2-fixture-UNOFFICIAL-enchilada'; }
+sha256sum() { echo 'fixture checksum'; }
 m() {
     case "$FIXTURE_BUILD_MODE" in
         fail) echo 'simulated compiler failure'; return 37 ;;
         stale) return 0 ;;
+        aliases)
+            local product=out/octosense-rom/target/product/enchilada
+            # Model elapsed build time without depending on timestamp resolution.
+            touch -t 200001010000 "$FIXTURE_START_MARKER"
+            printf 'new ROM' > "$product/lineage_enchilada-ota.zip"
+            printf 'new boot' > "$product/boot.img"
+            ln "$product/lineage_enchilada-ota.zip" "$product/lineage-22.2-fixture-UNOFFICIAL-enchilada.zip"
+            ln -f "$product/lineage_enchilada-ota.zip" "$product/lineage-old-enchilada.zip"
+            ;;
     esac
 }
 ''')
@@ -39,7 +50,8 @@ m() {
         script = script.replace("cd /build\n", f"cd {shlex.quote(str(build))}\n")
         script = script.replace("/exports/rom-build", str(exports))
         result = subprocess.run(["bash", "-c", script, "build-rom.sh", target],
-                                env={**os.environ, "FIXTURE_BUILD_MODE": mode},
+                                env={**os.environ, "FIXTURE_BUILD_MODE": mode,
+                                     "FIXTURE_START_MARKER": str(exports / "started.txt")},
                                 capture_output=True, text=True)
         return result, exports, old_zip.name
 
@@ -61,6 +73,14 @@ m() {
         result, exports, _ = self.run_fixture("fail", "module")
         self.assertEqual(result.returncode, 37, result.stderr)
         self.assertIn("simulated compiler failure", (exports / "module.log").read_text())
+
+    def test_old_release_aliases_do_not_change_the_exported_build_name(self):
+        result, exports, old_name = self.run_fixture("aliases")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        new_zip = exports / "lineage-22.2-fixture-UNOFFICIAL-enchilada.zip"
+        self.assertEqual(new_zip.read_bytes(), b"new ROM")
+        self.assertFalse((exports / old_name).exists())
+        self.assertTrue((exports / "finished.txt").exists())
 
 
 if __name__ == "__main__":
