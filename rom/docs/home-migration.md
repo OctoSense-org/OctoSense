@@ -17,14 +17,13 @@ not mobile main). The client dependency selects App Hub
 Photos, News, camera fixes, launcher gestures and native integration. Installed
 cards refresh the launcher catalog and keep distinct client identities.
 
-The pinned runtime remains `b0628d05a89369b0c3bae2750db6da06996a05c2`, including
-Makepad's Android fixes at `825dbb422c6d7926e111e2ee7831d697870d8671`. The App Hub
-prototype depended on additional isolate-policy APIs from Makepad commit
-`0f88d2286698dc8d2a9c2b994e4ac2c7873af582`; its policy patch plus the
-device fixes listed in `home/runtime-patches.lock.json` are carried in
-`patches/runtime/` with a hash and resulting tree lock. Bootstrap validates both
-the upstream base and this patch. It does not depend on uncommitted framework
-worktrees or silently disable policy enforcement.
+The pinned runtime is Octoscript-Makepad main `36ad1f220ff74d0cbccd89d2b17769133b3fafd1`,
+selecting Makepad main `57b31c9978635e51e633558131d1888d9ef4f45a`. That commit
+contains the isolate policy App Hub needs (Makepad #22) and the device fixes this
+product used to carry as `patches/runtime/makepad-isolate-policy.patch` (Makepad
+#26), so no runtime patch is applied. `home/runtime-patches.lock.json` stays as
+the empty, reviewed place for a future patch. Bootstrap does not depend on
+uncommitted framework worktrees or silently disable policy enforcement.
 
 Signing, Android package IDs, data locations, signature permissions and existing
 ROM platform imports are preserved. The ordinary and ROM builds produce distinct
