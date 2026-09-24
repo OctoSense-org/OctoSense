@@ -20,12 +20,11 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`b0628d05a`, including the Android
-   capture and controls fixes).
+   `OctoSense-org/Octoscript-Makepad` (`36ad1f220`, its main).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`825dbb422`) and the Octoscript revision (`68f6a9d`). This consumer's
-   explicit `makepad_override` selects `7786bb4a3`: the direct successor
-   adding App Hub's enforced isolate policy (Makepad PR #22).
+   (`57b31c997`, Makepad main: the enforced isolate policy of PR #22, module
+   windows, and the ROM's Splash fixes) and the Octoscript revision
+   (`68f6a9d`). OctoSense, AppCard, Rinx and the ROM lock the same release.
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and `apps/*/Cargo.toml`. Octoscript-Makepad's unmodified
    manifests retain their release pin. `[patch]` sections redirect every one
