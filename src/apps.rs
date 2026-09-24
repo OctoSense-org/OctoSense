@@ -50,6 +50,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&makepad_photos::PHOTOS_MODULE);
     #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
     out.push(&octosense_appcard::APPCARD_MODULE);
+    #[cfg(feature = "app-rinx")]
+    out.push(&rinx::module::RINX_MODULE);
     out
 }
 
