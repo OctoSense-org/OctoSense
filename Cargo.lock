@@ -203,6 +203,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
+source = "git+https://github.com/upstreamlabs/Rinx?rev=65aa09c2f6022e173b5a875a007806de22974f53#65aa09c2f6022e173b5a875a007806de22974f53"
 dependencies = [
  "blake3",
  "image",
@@ -219,6 +220,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
+source = "git+https://github.com/upstreamlabs/Rinx?rev=65aa09c2f6022e173b5a875a007806de22974f53#65aa09c2f6022e173b5a875a007806de22974f53"
 dependencies = [
  "article-core",
  "libc",
@@ -4859,6 +4861,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
+source = "git+https://github.com/upstreamlabs/Rinx?rev=65aa09c2f6022e173b5a875a007806de22974f53#65aa09c2f6022e173b5a875a007806de22974f53"
 dependencies = [
  "anyhow",
  "arboard",
