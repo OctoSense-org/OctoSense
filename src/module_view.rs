@@ -165,15 +165,20 @@ impl Widget for MpModuleView {
         if matches!(event, Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_)) && !self.focused {
             return;
         }
+        // A press, with the cell that records who claimed it. Tiles see input
+        // topmost first (desk.rs), so a claimed press belongs to a tile in front.
         let press = match event {
-            Event::MouseDown(e) => Some(e.abs),
+            Event::MouseDown(e) => Some((e.abs, &e.handled)),
             Event::TouchUpdate(update) => update.touches.iter()
                 .find(|point| point.state == makepad_platform::event::TouchState::Start)
-                .map(|point| point.abs),
+                .map(|point| (point.abs, &point.handled)),
             _ => None,
         };
-        if let Some(abs) = press {
-            if self.area.is_valid(cx) && self.area.rect(cx).contains(abs) {
+        let inside = press.is_some_and(|(abs, _)| self.area.is_valid(cx) && self.area.rect(cx).contains(abs));
+        if let Some((_, handled)) = press {
+            // Only a press no window in front took: overlapping windows of one
+            // app (its extra windows) must not raise the one behind.
+            if inside && handled.get().is_empty() {
                 if let Some(client) = self.client {
                     // The WM moves focus here (and back to us through
                     // `focus_keyboard`), exactly as for a process tile.
@@ -184,6 +189,13 @@ impl Widget for MpModuleView {
         let entry = enter_isolate(cx, self.vm_id);
         root.handle_event(cx, event, scope);
         leave_isolate(cx, entry);
+        // A press inside this tile is this tile's, even where none of the
+        // app's widgets took it, so no window behind reacts to it.
+        if let Some((_, handled)) = press {
+            if inside && handled.get().is_empty() {
+                handled.set(self.area);
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -201,7 +213,10 @@ impl Widget for MpModuleView {
         self.draw_bg.draw_abs(cx, rect);
         if let Some(root) = self.root.clone() {
             let entry = enter_isolate(cx, self.vm_id);
+            // The instance's modals dim and centre within this tile.
+            let outer = std::mem::replace(&mut cx.global::<ModalBounds>().0, Some(rect));
             root.draw_walk_all(cx, scope, Walk::fill());
+            cx.global::<ModalBounds>().0 = outer;
             leave_isolate(cx, entry);
             self.drawn = true;
         }
