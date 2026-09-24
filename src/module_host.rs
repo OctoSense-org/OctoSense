@@ -38,6 +38,8 @@ pub struct AppInstance {
     shutdown: Option<Box<dyn FnOnce(&mut ScriptVm)>>,
     /// Results and publications the executor sent later.
     upstream: Receiver<ModuleUpstream>,
+    /// The instance's requests for extra windows, and our reports of closes.
+    pub windows: ModuleWindows,
 }
 
 impl AppInstance {
@@ -48,6 +50,9 @@ impl AppInstance {
 
 #[derive(Default)]
 pub struct ModuleHost {
+    /// Whether new instances may open extra windows: the desktop shell,
+    /// not the phone shell (whose apps are full-screen).
+    pub extra_windows: bool,
     instances: HashMap<ClientId, AppInstance>,
     next_scope: u64,
     per_app: HashMap<String, u64>,
@@ -92,7 +97,8 @@ impl ModuleHost {
         // instance (§3b's mount and the web's IndexedDB sit under it).
         let storage = cx.storage(&format!("{}.{}", module.id(), instance_no));
         let (replies, upstream) = ReplySink::pair();
-        let handles = InstanceHandles { scope, storage, viewport: Viewport { size: viewport }, replies };
+        let windows = ModuleWindows::new(self.extra_windows);
+        let handles = InstanceHandles { scope, storage, viewport: Viewport { size: viewport }, replies, windows: windows.clone() };
         let vm_id = cx.alloc_splash_vm_with_network(false);
         let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
             // The isolate came up with the stock theme; the WM's palette
@@ -124,6 +130,7 @@ impl ModuleHost {
                 executor: parts.executor,
                 shutdown: Some(parts.shutdown),
                 upstream,
+                windows,
             },
         );
         Ok(())
@@ -213,6 +220,32 @@ impl ModuleHost {
     }
 
     /// Every result or publication an executor sent later, with its client.
+    /// Instances' pending window requests: (owner, its isolate, its app id, request).
+    pub fn take_window_requests(&mut self) -> Vec<(ClientId, SplashVmId, &'static str, WindowRequest)> {
+        let mut out = Vec::new();
+        for (client, instance) in &self.instances {
+            for request in instance.windows.take_requests() {
+                out.push((*client, instance.vm_id, instance.module.id(), request));
+            }
+        }
+        out
+    }
+
+    /// The host starts or stops showing extra windows (desktop vs phone shell).
+    pub fn set_extra_windows(&mut self, on: bool) {
+        self.extra_windows = on;
+        for instance in self.instances.values() {
+            instance.windows.set_supported(on);
+        }
+    }
+
+    /// The person closed `owner`'s window `key`.
+    pub fn notify_window_closed(&self, owner: ClientId, key: LiveId) {
+        if let Some(instance) = self.instances.get(&owner) {
+            instance.windows.notify_closed(key);
+        }
+    }
+
     pub fn drain_upstream(&mut self) -> Vec<(ClientId, ModuleUpstream)> {
         let mut out = Vec::new();
         for (client, instance) in &self.instances {

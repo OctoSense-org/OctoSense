@@ -97,6 +97,16 @@ impl App {
         state.roles = roles;
         state.dragging.clear();
         state.style.select(style);
+        // Extra module windows are a desktop thing: the phone shell's apps are
+        // full-screen, so their windows close (the apps hear it, as from a person).
+        self.module_host.set_extra_windows(!style.mobile());
+        if style.mobile() {
+            let windows: Vec<_> = self.module_windows.keys().copied().collect();
+            for window in windows {
+                self.remove_client(cx, window);
+            }
+        }
+        let state = self.state_mut();
         if changes_size { state.style.step(1.0); }
         state.layout.desktop.enabled = style.floating();
         for c in state.layout.all_clients() {
