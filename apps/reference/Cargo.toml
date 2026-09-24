@@ -6,5 +6,5 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4" }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d9372c6142b359b98b94b57914686ee35321c32b" }
