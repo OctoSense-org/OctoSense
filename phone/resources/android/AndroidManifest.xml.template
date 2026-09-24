@@ -25,6 +25,7 @@
     <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
     <!-- Usage access (granted by the person in Settings) lets Recents list the Android apps used lately. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.MODIFY_DAY_NIGHT_MODE" tools:ignore="ProtectedPermissions" />
     <application
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
@@ -36,9 +37,14 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="{target_sdk_version}">
         <meta-data android:name="android.max_aspect" android:value="2.1" />
+        <!-- CONFIG_ASSETS_PATHS (0x80000000) prevents Monet overlay changes
+             from recreating the renderer and losing hosted app state. Numeric
+             resource masks support Makepad's API 33 resource compiler, which predates
+             the public assetsPaths flag name. Remaining bits are orientation,
+             screenSize, keyboardHidden and uiMode. -->
         <activity
             android:name=".{class_name}"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:configChanges="@integer/octosense_home_config_changes"
             android:exported="true"
             android:launchMode="singleInstance"
             android:windowSoftInputMode="adjustNothing|stateUnchanged"
@@ -83,6 +89,22 @@
             </intent-filter>
         </activity>
         <!-- Pin confirmation must not start a second Makepad renderer. -->
+        <activity android:name="dev.makepad.octosense.ThemeSettingsActivity"
+            android:label="@string/octosense_wallpaper_style"
+            android:exported="true" android:excludeFromRecents="true"
+            android:configChanges="@integer/octosense_theme_config_changes"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="com.android.settings.action.EXTRA_SETTINGS" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SET_WALLPAPER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data android:name="com.android.settings.category" android:value="com.android.settings.category.ia.display" />
+            <meta-data android:name="com.android.settings.title" android:resource="@string/octosense_wallpaper_style" />
+            <meta-data android:name="com.android.settings.summary" android:resource="@string/octosense_wallpaper_style_summary" />
+        </activity>
         <activity android:name="dev.makepad.octosense.ShortcutPinActivity"
             android:exported="true" android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Material.Dialog.Alert">

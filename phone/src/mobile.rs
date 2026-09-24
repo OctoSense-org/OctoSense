@@ -65,6 +65,7 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
+    pub theme: Option<crate::mobile_theme::Selection>,
     pub navigation: crate::mobile_navigation::FloatingNavigation,
     pub android: crate::android_integration::AndroidState,
     /// Which hidden gestures the person has found (mobile_hints.rs): the
@@ -152,7 +153,7 @@ pub struct PhoneState {
 impl Default for PhoneState {
     fn default() -> Self {
         Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
-            navigation: Default::default(),
+            navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,

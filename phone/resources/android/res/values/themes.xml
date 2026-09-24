@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CONFIG_ASSETS_PATHS | UI_MODE | SCREEN_SIZE | ORIENTATION, plus
+         KEYBOARD_HIDDEN for Home. API 33 aapt lacks the assetsPaths flag name. -->
+    <integer name="octosense_home_config_changes">0x800006a0</integer>
+    <integer name="octosense_theme_config_changes">0x80000680</integer>
+    <string name="octosense_wallpaper_style">Wallpaper &amp; style</string>
+    <string name="octosense_wallpaper_style_summary">OctoSense themes, colors and appearance</string>
+</resources>

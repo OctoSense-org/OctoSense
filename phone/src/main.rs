@@ -35,6 +35,7 @@ mod mobile_island;
 mod mobile_octopus;
 mod mobile_groups;
 mod mobile_perf;
+mod mobile_theme;
 mod scene;
 mod dock_warp;
 mod host;

@@ -1,0 +1,297 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-24",
+  "device": "OnePlus 6 / ONEPLUS A6003",
+  "measurement": "Makepad scene/input markers joined to SurfaceFlinger presentation times; no perf overlay",
+  "baseline_home_version_code": 2026092403,
+  "candidate_home_version_code": 2026092405,
+  "candidate_phone_apk_sha256": "9da7531c0bb4d7ef5ae3880543c78235adfecae3f5ecb29f2b90b84b46c024c5",
+  "groups": {
+    "baseline": {
+      "runs": 6,
+      "fps_min": 57.993457094303174,
+      "fps_max": 59.79805983183486,
+      "highest_p95_ms": 16.751042,
+      "max_interval_ms": 33.460208,
+      "missed_refreshes": 7,
+      "intervals": 391,
+      "samples": [
+        {
+          "name": "baseline-0-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 66,
+          "fps": 59.79805983183486,
+          "p50_ms": 16.723177,
+          "p95_ms": 16.732136,
+          "max_ms": 16.746719,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 66
+          },
+          "missed_refreshes": 0
+        },
+        {
+          "name": "baseline-1-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 66,
+          "fps": 58.897731209241485,
+          "p50_ms": 16.724271,
+          "p95_ms": 16.743855,
+          "max_ms": 33.452084,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 65,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "baseline-2-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 64,
+          "fps": 58.878621022658194,
+          "p50_ms": 16.72323,
+          "p95_ms": 16.7375,
+          "max_ms": 33.448437,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "baseline-3-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 58.880106053470115,
+          "p50_ms": 16.726406,
+          "p95_ms": 16.740782,
+          "max_ms": 33.447969,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 64,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "baseline-4-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 65,
+          "fps": 57.993457094303174,
+          "p50_ms": 16.729687,
+          "p95_ms": 16.751042,
+          "max_ms": 33.460208,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 2
+          },
+          "missed_refreshes": 2
+        },
+        {
+          "name": "baseline-5-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 58.01748943824186,
+          "p50_ms": 16.721563,
+          "p95_ms": 16.73026,
+          "max_ms": 33.449791,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 2
+          },
+          "missed_refreshes": 2
+        }
+      ]
+    },
+    "paper-dark": {
+      "runs": 4,
+      "fps_min": 57.94111021455591,
+      "fps_max": 59.738800769547176,
+      "highest_p95_ms": 16.753594,
+      "max_interval_ms": 33.472604,
+      "missed_refreshes": 4,
+      "intervals": 258,
+      "samples": [
+        {
+          "name": "paper-dark-0-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 64,
+          "fps": 57.94111021455591,
+          "p50_ms": 16.736354,
+          "p95_ms": 16.744532,
+          "max_ms": 33.472604,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 62,
+            "2": 2
+          },
+          "missed_refreshes": 2
+        },
+        {
+          "name": "paper-dark-1-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 59.738800769547176,
+          "p50_ms": 16.73974,
+          "p95_ms": 16.745833,
+          "max_ms": 16.778281,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 65
+          },
+          "missed_refreshes": 0
+        },
+        {
+          "name": "paper-dark-2-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 64,
+          "fps": 58.83675318835538,
+          "p50_ms": 16.734531,
+          "p95_ms": 16.753594,
+          "max_ms": 33.468333,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "paper-dark-3-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 58.838255588816445,
+          "p50_ms": 16.738437,
+          "p95_ms": 16.750312,
+          "max_ms": 33.466927,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 64,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        }
+      ]
+    },
+    "octosense-dark": {
+      "runs": 6,
+      "fps_min": 58.78924301731523,
+      "fps_max": 59.72364247230873,
+      "highest_p95_ms": 16.778958,
+      "max_interval_ms": 33.491459,
+      "missed_refreshes": 5,
+      "intervals": 390,
+      "samples": [
+        {
+          "name": "octosense-dark-0-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 64,
+          "fps": 58.80606746890688,
+          "p50_ms": 16.743542,
+          "p95_ms": 16.751562,
+          "max_ms": 33.485989,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "octosense-dark-1-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 64,
+          "fps": 58.78924301731523,
+          "p50_ms": 16.74901,
+          "p95_ms": 16.778958,
+          "max_ms": 33.491459,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 63,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "octosense-dark-2-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 66,
+          "fps": 59.72364247230873,
+          "p50_ms": 16.744791,
+          "p95_ms": 16.774427,
+          "max_ms": 16.778802,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 66
+          },
+          "missed_refreshes": 0
+        },
+        {
+          "name": "octosense-dark-3-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 58.82027731581689,
+          "p50_ms": 16.743333,
+          "p95_ms": 16.761042,
+          "max_ms": 33.485365,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 64,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "octosense-dark-4-left",
+          "command": "input swipe 800 1050 220 1050 800",
+          "intervals": 66,
+          "fps": 58.832648262503334,
+          "p50_ms": 16.743854,
+          "p95_ms": 16.756407,
+          "max_ms": 33.480416,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 65,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        },
+        {
+          "name": "octosense-dark-5-right",
+          "command": "input swipe 220 1050 800 1050 800",
+          "intervals": 65,
+          "fps": 58.80904338724665,
+          "p50_ms": 16.747136,
+          "p95_ms": 16.76948,
+          "max_ms": 33.488698,
+          "over_34_ms": 0,
+          "over_250_ms": 0,
+          "refresh_multiple_counts": {
+            "1": 64,
+            "2": 1
+          },
+          "missed_refreshes": 1
+        }
+      ]
+    }
+  }
+}

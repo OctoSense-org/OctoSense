@@ -14,6 +14,7 @@ import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import org.json.JSONObject;
 
 /**
  * The launcher's binding to the OctoSense ROM's agent platform. Present only
@@ -35,9 +36,9 @@ public final class AgentPlatformClient {
 
     private final Activity activity;
     private final Consumer<String> onState;
-    private IAgentPlatform platform;
+    private volatile IAgentPlatform platform;
     private boolean bound;
-    private List<String> capabilities = new ArrayList<>();
+    private volatile List<String> capabilities = new ArrayList<>();
 
     public AgentPlatformClient(Activity activity, Consumer<String> onState) {
         this.activity = activity; this.onState = onState;
@@ -126,5 +127,26 @@ public final class AgentPlatformClient {
         if (!has("statusbar")) return false;
         try { return platform.expandNotifications().getBoolean("ok"); }
         catch (RemoteException | SecurityException e) { return false; }
+    }
+
+    /** Set Monet's preset seed while retaining unrelated per-user overlay choices. */
+    public boolean applyThemePalette(String seed) {
+        IAgentPlatform service = platform;
+        if (service == null || !has("settings") || !seed.matches("[0-9a-fA-F]{6}")) return false;
+        try {
+            String key = "theme_customization_overlay_packages";
+            Bundle old = service.getSetting("secure", key);
+            if (!old.getBoolean("ok")) return false;
+            String value = old.getString("value");
+            JSONObject overlay = value == null || value.isEmpty() ? new JSONObject() : new JSONObject(value);
+            overlay.put("android.theme.customization.system_palette", seed);
+            overlay.put("android.theme.customization.accent_color", seed);
+            overlay.put("android.theme.customization.color_source", "preset");
+            overlay.put("android.theme.customization.theme_style", "TONAL_SPOT");
+            return service.putSetting("secure", key, overlay.toString()).getBoolean("ok");
+        } catch (Exception e) {
+            Log.w(TAG, "Theme palette update failed");
+            return false;
+        }
     }
 }

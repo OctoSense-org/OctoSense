@@ -357,8 +357,8 @@ impl PhoneSurface {
         let members = group.present(available);
         let r = slot.rect;
         let ios = style == DesktopStyle::Ios;
-        let face = if dark { rgb(30, 32, 46) } else if ios { rgb(246, 247, 252) } else { rgb(255, 251, 255) };
-        let ink = if dark { rgb(240, 240, 248) } else { rgb(28, 27, 36) };
+        let face = self.theme_face(if dark { rgb(30, 32, 46) } else if ios { rgb(246, 247, 252) } else { rgb(255, 251, 255) });
+        let ink = self.theme_ink(if dark { rgb(240, 240, 248) } else { rgb(28, 27, 36) });
         let pressed = self.pressed_hit() == Some(&PhoneHit::Group(name.to_string()));
         self.rounded(cx, r, TILE_RADIUS as f32, alpha(face, (if pressed { 0.95 } else { 0.82 }) * opacity));
         let mosaic = (r.size.y - 20.0).clamp(24.0, 64.0);
@@ -383,7 +383,7 @@ impl PhoneSurface {
     /// band) and the split buttons on the Recents cards.
     pub(crate) fn draw_groups_overlay(&mut self, cx: &mut Cx2d, state: &crate::desk::WmState, screen: Rect) {
         let phone = &state.phone;
-        let ink = if state.style.dark { rgb(238, 238, 242) } else { rgb(30, 30, 34) };
+        let ink = self.theme_ink(if state.style.dark { rgb(238, 238, 242) } else { rgb(30, 30, 34) });
         if let Some(split) = phone.groups.split.filter(|_| phone.screen == PhoneScreen::App && phone.openness > 0.5 && phone.overview < 0.01) {
             let app = mobile::app_rect(screen);
             let band = split.divider(app);
@@ -395,7 +395,7 @@ impl PhoneSurface {
             self.hits.push((band, PhoneHit::Divider));
         }
         if phone.screen == PhoneScreen::Recents && phone.overview > 0.5 {
-            let accent = if state.style.target == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
+            let accent = self.theme_accent(if state.style.target == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) });
             for (index, client) in phone.order.iter().enumerate() {
                 let card = mobile::card_rect(screen, index as f64, phone.page);
                 if card.pos.x + card.size.x < screen.pos.x || card.pos.x > screen.pos.x + screen.size.x { continue; }
@@ -437,8 +437,8 @@ impl WmDesk {
             .unwrap_or(Rect { pos: screen.pos + screen.size * 0.5, size: dvec2(1.0, 1.0) });
         let window = group_window(screen, tile, &members, group.pair, groups.openness);
         let t = window.t as f32;
-        let face = if dark { rgb(30, 32, 46) } else if ios { rgb(246, 247, 252) } else { rgb(255, 251, 255) };
-        let ink = if dark { rgb(240, 240, 248) } else { rgb(28, 27, 36) };
+        let face = self.phone_ui.theme_face(if dark { rgb(30, 32, 46) } else if ios { rgb(246, 247, 252) } else { rgb(255, 251, 255) });
+        let ink = self.phone_ui.theme_ink(if dark { rgb(240, 240, 248) } else { rgb(28, 27, 36) });
         // The scrim: dims the page and catches the tap that closes. One flat
         // fill, not a full-screen SDF quad.
         self.phone_ui.d.solid(cx, screen, alpha(rgb(0, 0, 0), 0.32 * t));
@@ -480,7 +480,7 @@ impl WmDesk {
             if groups.open.is_some() { self.phone_ui.hits.push((r, PhoneHit::GroupApp(group.name.clone(), cell.app.clone()))); }
         }
         if let Some(button) = window.open_both {
-            let accent = if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
+            let accent = self.phone_ui.theme_accent(if ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) });
             let pressed = self.phone_ui.pressed_hit() == Some(&PhoneHit::OpenBoth(group.name.clone()));
             self.phone_ui.rounded(cx, button, (button.size.y * 0.5) as f32, alpha(accent, (if pressed { 0.75 } else { 1.0 }) * t));
             self.phone_ui.d.label_elided(cx, button, true, 15.0, alpha(rgb(255, 255, 255), label_a), HAlign::Center, "Open both");

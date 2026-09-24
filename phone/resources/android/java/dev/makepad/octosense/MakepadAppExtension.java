@@ -222,7 +222,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         Configuration configuration=activity.getResources().getConfiguration();
         boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
         boolean reduceMotion=Settings.Global.getFloat(activity.getContentResolver(),Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f;
-        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion));
+        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion,
+                "theme",ThemeCatalog.get(activity).read(activity).json()));
     }
     /** Recently used Android apps for the shell's Recents, newest first, when usage access is granted. */
     @SuppressWarnings("deprecation")
@@ -441,6 +442,11 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             case "haptic": { String kind=command.optString("kind","tick"); main.post(() -> haptic(kind)); break; }
             case "recent_apps": publishRecentApps(); break;
             case "system_bars": shellDark=command.optBoolean("dark",false); main.post(this::applyWindowChrome); break;
+            case "theme_appearance": {
+                ThemeCatalog catalog=ThemeCatalog.get(activity);
+                if(catalog.save(activity,catalog.read(activity).appearance(command.optBoolean("dark",false)?"dark":"light"))) emitUiMode();
+                break;
+            }
             case "hint_seen": {
                 String hint=command.optString("hint","");
                 if(!hint.isEmpty()&&hint.length()<32) hints.edit().putBoolean(hint,true).apply();
@@ -477,10 +483,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             case "home_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
                 boolean hiddenTiles=command.optInt("hidden_tiles",0)>0;
-                // The shell draws its own wallpaper, so the item switches its
-                // appearance rather than Android's wallpaper it never shows.
                 boolean dark=command.optBoolean("dark",false);
-                String appearance=dark?"Light appearance":"Dark appearance";
+                String appearance=activity.getString(dev.makepad.android.R.string.octosense_wallpaper_style);
                 int columns=command.optInt("columns",4);
                 String grid=columns>=5?"Grid: 4 columns":"Grid: 5 columns";
                 int nextColumns=columns>=5?4:5;
@@ -489,7 +493,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 String[] items=hiddenTiles?new String[]{"Widgets",appearance,grid,pulls,"System setup","Show hidden tiles"}:new String[]{"Widgets",appearance,grid,pulls,"System setup"};
                 dialog(dark).setTitle("Home").setItems(items,(dialog,which) -> {
                     if(which==0) widgets.show();
-                    else if(which==1) emit("launcher.appearance_toggle",json());
+                    else if(which==1) activity.startActivity(new Intent(activity,ThemeSettingsActivity.class));
                     else if(which==2) placementEdit(() -> placements().setColumns(nextColumns));
                     else if(which==3) placementEdit(() -> placements().setLauncherShade(systemPanel));
                     else if(which==4) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");

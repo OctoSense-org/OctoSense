@@ -331,6 +331,32 @@ mod nested_style_tests {
 mod style_tests {
     use super::*;
     #[test]
+    fn phone_presets_restyle_existing_module_without_recreating_it() {
+        use crate::mobile_theme::{Preset,Selection};
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host=ModuleHost::default();
+        let module=&makepad_sheets::module::SHEETS_MODULE;
+        host.create(&mut cx,1,module,module.open_schema().validate("{}", &[]).unwrap(),dvec2(390.0,780.0)).unwrap();
+        let uid=host.get(1).unwrap().root.widget_uid();
+        let isolate=host.get(1).unwrap().vm_id;
+        for preset in Preset::ALL { for dark in [false,true] {
+            let choice=Selection {preset,..Default::default()};
+            host.apply_style(&mut cx,&choice.sheet(crate::desktop::DesktopStyle::Android,dark));
+            let instance=host.get(1).unwrap();
+            assert_eq!(instance.root.widget_uid(),uid);
+            assert_eq!(instance.vm_id,isolate);
+            cx.with_script_vm_id_trusted(isolate,|vm| {
+                let palette=makepad_wm_theme::current_for_vm(vm).unwrap();
+                let p=choice.palette(dark).background;
+                let expected=format!("#{:02x}{:02x}{:02x}",(p.x*255.0).round() as u8,(p.y*255.0).round() as u8,(p.z*255.0).round() as u8);
+                assert_eq!(palette.get("background"),Some(expected.as_str()),"{} dark={dark}",preset.id());
+                assert!(vm.take_errors().is_empty(),"{} dark={dark}",preset.id());
+            });
+        } }
+        host.teardown(&mut cx,1);
+    }
+    #[test]
     fn module_restyle_updates_custom_roles_and_keeps_instance() {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         cx.with_vm(makepad_widgets::script_mod);

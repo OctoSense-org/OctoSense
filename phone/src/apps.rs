@@ -274,6 +274,37 @@ mod tests {
     }
 
     #[test]
+    fn bundled_apps_receive_same_base_theme_without_recreation() {
+        use makepad_widgets::*;
+        use crate::mobile_theme::{Preset,Selection};
+        let registry=AppRegistry::default();
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host=crate::module_host::ModuleHost::default();
+        for (index,app) in bundled_catalog().iter().enumerate() {
+            let module=registry.module(&app.id).unwrap();
+            let client=index as u64+1;
+            host.create(&mut cx,client,module,module.open_schema().empty_open().unwrap(),dvec2(400.0,700.0)).unwrap();
+            let uid=host.get(client).unwrap().root.widget_uid();
+            for (preset,dark) in [(Preset::Paper,true),(Preset::Vivid,false)] {
+                let choice=Selection {preset,..Default::default()};
+                host.apply_style(&mut cx,&choice.sheet(crate::desktop::DesktopStyle::Android,dark));
+                let instance=host.get(client).unwrap();
+                assert_eq!(instance.root.widget_uid(),uid,"{} must retain its instance",app.id);
+                cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
+                    let theme=vm.module(id!(theme));let p=choice.palette(dark);
+                    for (role,color) in [("color_bg_app",p.background),("color_text",p.text),("color_focus",p.accent)] {
+                        let rgba=(((color.x*255.0).round() as u32)<<24)|(((color.y*255.0).round() as u32)<<16)|(((color.z*255.0).round() as u32)<<8)|255;
+                        assert_eq!(vm.bx.heap.value(theme,LiveId::from_str(role).into(),NoTrap).as_color(),Some(rgba),"{} {role}",app.id);
+                    }
+                    assert!(vm.take_errors().is_empty(),"{} must accept a shared theme",app.id);
+                });
+            }
+            assert!(host.teardown(&mut cx,client));
+        }
+    }
+
+    #[test]
     fn overrides_parse_the_settings_shape_and_ignore_noise() {
         let text = "// which apps run in-process\n{\n  sheets: Module,\n  Terminal: process\n  files: Sideways\n  nonsense\n}\n";
         assert_eq!(

@@ -708,7 +708,11 @@ impl App {
                 self.state_mut().phone.android.reduce_motion = boolean(&value, "reduce_motion");
                 let changed = self.state_mut().phone.android.system_dark != Some(dark);
                 self.state_mut().phone.android.system_dark = Some(dark);
-                if changed && self.state_mut().style.dark != dark && self.state_mut().style.target.supports_dark() {
+                let selection = value.get("theme").and_then(crate::mobile_theme::Selection::decode)
+                    .or(self.state_mut().phone.theme);
+                if let Some(choice) = selection {
+                    self.apply_phone_theme(cx, choice, dark);
+                } else if changed && self.state_mut().style.dark != dark && self.state_mut().style.target.supports_dark() {
                     self.toggle_phone_appearance(cx);
                 }
                 self.android_system_bars(cx);
