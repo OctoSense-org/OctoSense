@@ -56,7 +56,13 @@ makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
-octosense-appcard = { path = "apps/appcard", optional = true }
+# MVP (Rinx module): AppCard is out of this graph. Its Octos (octos-core
+# deb433e9, rusqlite 0.32) links libsqlite3-sys 0.30, which conflicts with the
+# Matrix SDK's 0.38 in Rinx. Octos >= dc96b927 (rusqlite 0.40) resolves this.
+# octosense-appcard = { path = "apps/appcard", optional = true }
+# Rinx (the Matrix client with Moments and articles) as an in-process module.
+# Built without its standalone window entry point.
+rinx = { path = "../rinx", default-features = false, features = ["octosense-module"], optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
@@ -66,27 +72,30 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-appcard = { path = "apps/appcard" }
+# octosense-appcard = { path = "apps/appcard" }  # see the MVP note above
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d4502ef1e4d196d2829a07aa137740cb0581e9b4", default-features = false }
 
 [features]
 default = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
 # The AppCard module (one L0 weather card in a tile) linked in.
-app-appcard = ["dep:octosense-appcard"]
+app-appcard = []
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]
+# Rinx linked in as a module (`--module rinx`).
+app-rinx = ["dep:rinx"]
 
 [workspace]
-members = [".", "apps/reference", "apps/appcard"]
+members = [".", "apps/reference"]
+exclude = ["apps/appcard"]
 default-members = ["."]
 resolver = "2"
 
@@ -123,6 +132,9 @@ makepad-wm-theme = { path = "../makepad/libs/wm_theme" }
 makepad-sheets = { path = "../makepad/apps/sheets" }
 makepad-photos = { path = "../makepad/apps/photos" }
 makepad-aichat = { path = "../makepad/apps/aichat" }
+# Rinx's article editor: the Markdown and math components.
+makepad-markdown = { path = "../makepad/libs/markdown" }
+makepad-markdown-widgets = { path = "../makepad/libs/markdown_widgets" }
 
 [patch."https://github.com/OctoSense-org/Octoscript.git"]
 octoscript-ui-l0 = { path = "../octoscript/crates/octoscript-ui-l0" }
@@ -132,3 +144,15 @@ octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
 makepad-widgets = { path = "../makepad/widgets" }
+
+# Rinx names makepad by the kevinaboos URL; it resolves to the one makepad here.
+# (Its OctoSense-org URL without `.git` is the same source as the table above.)
+[patch."https://github.com/kevinaboos/makepad"]
+makepad-widgets = { path = "../makepad/widgets" }
+makepad-code-editor = { path = "../makepad/code_editor" }
+
+
+# Rinx's Matrix patches (see Rinx's Cargo.toml).
+[patch."https://github.com/ruma/ruma"]
+ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
