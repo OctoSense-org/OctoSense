@@ -1861,7 +1861,13 @@ impl Widget for WmDesk {
         // when the workspace returns.
         self.anims
             .retain(|client, anim| live.contains(client) || anim.close_t.is_some());
-        self.desktop_frames.retain(|client, _| self.anims.contains_key(client));
+        let gone: Vec<ClientId> = self.desktop_frames.keys()
+            .filter(|client| !self.anims.contains_key(client)).copied().collect();
+        for client in gone {
+            if let Some(frame) = self.desktop_frames.remove(&client) {
+                frame.forget(cx);
+            }
+        }
 
         // Closing tiles paint under the live ones.
         let closing: Vec<ClientId> = self
