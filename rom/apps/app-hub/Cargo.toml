@@ -5,9 +5,9 @@ edition = "2021"
 license = "Apache-2.0"
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
 octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b" }
 octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b" }
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "97c2a1fd9aa49a6b87586f228e070e0c16b1067b" }

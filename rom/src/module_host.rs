@@ -110,7 +110,12 @@ impl ModuleHost {
         // instance (§3b's mount and the web's IndexedDB sit under it).
         let storage = cx.storage(&format!("{}.{}", module.id(), instance_no));
         let (replies, upstream) = ReplySink::pair();
-        let handles = InstanceHandles { scope, storage, viewport: Viewport { size: viewport }, replies };
+        // No extra host windows on a phone: `windows` stays unsupported, so a
+        // module presents its secondary surfaces as modals in its own pane.
+        let handles = InstanceHandles {
+            scope, storage, viewport: Viewport { size: viewport }, replies,
+            windows: Default::default(),
+        };
         let vm_id = cx.alloc_splash_vm_with_network(false);
         let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
             // The isolate came up with the stock theme; the WM's palette

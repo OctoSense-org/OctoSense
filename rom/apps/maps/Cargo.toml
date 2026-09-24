@@ -10,15 +10,15 @@ publish = false
 # shell's clock is.
 libc = "0.2"
 # `maps`: the MapView vector-tile renderer and its archive readers.
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53", features = ["maps"] }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
-makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
-makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a", features = ["maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
+makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
+makepad-wm-api = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
 # The executor half of the module contract: its manifest and call types.
-makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
+makepad-ai-services = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
 # The route, its maneuvers and the session that map-matches a position onto
 # it. No dependencies of its own; the routes come from OSRM (routing.rs).
-makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "7786bb4a32d3282197699eefd2f2e9defbcf2d53" }
+makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "57b31c9978635e51e633558131d1888d9ef4f45a" }
 
 # Android 9's Java TLS provider cannot reach TLS-1.3-only routing servers.
 [target.'cfg(target_os = "android")'.dependencies]
