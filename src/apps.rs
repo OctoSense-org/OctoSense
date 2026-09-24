@@ -48,7 +48,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(any(feature = "app-photos", target_os = "android", target_os = "ios"))]
     out.push(&makepad_photos::PHOTOS_MODULE);
-    // MVP (Rinx module): AppCard is out of the graph; see Cargo.toml.
+    #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
+    out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-rinx")]
     out.push(&rinx::module::RINX_MODULE);
     out
@@ -221,8 +222,7 @@ mod tests {
     }
 }
 
-// MVP (Rinx module): AppCard is out of the graph; see Cargo.toml.
-#[cfg(any())]
+#[cfg(all(test, feature = "mobile-apps"))]
 mod appcard_isolate_tests {
     /// The app's cards are Splash widgets, each in an ISOLATE that is minted
     /// without the framework's `sys`/`agent` engine; the AppCard module must
