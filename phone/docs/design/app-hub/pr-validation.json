@@ -1,0 +1,64 @@
+{
+  "recorded_at": "2026-09-23T08:49:04.238032+00:00",
+  "scope": "Final App Hub PR checks including running-app updates after the store view closes.",
+  "checks": [
+    {
+      "command": "cargo test --release --bin octosense --features mobile-only,mobile-apps --offline",
+      "passed": 294
+    },
+    {
+      "command": "cargo test -p octosense-app-hub-app --lib --example fixture --offline",
+      "library_passed": 36,
+      "fixture_passed": 2
+    },
+    {
+      "command": "python3 -m unittest discover -s tools -p test_setup_native.py",
+      "passed": 15
+    },
+    {
+      "repository": "OctoSense-App-Hub",
+      "command": "cargo test -p octosense-app-hub -p octosense-app-policy --offline",
+      "passed": 42
+    },
+    {
+      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "result": "APK Build completed"
+    }
+  ],
+  "regressions": [
+    "Observed native module lifecycle assertion fail before fix, then pass: updating one installed identity tears down all its old instances while other apps remain running.",
+    "Observed closed-view completion assertion fail before fix, then pass: successful installation is recorded even with a disconnected UI receiver; failures are not recorded and completion is consumed once."
+  ],
+  "review": "Mobile and guide reviews complete; focused lifecycle follow-up reported no findings.",
+  "files": [
+    {
+      "path": "apps/app-hub/src/view.rs",
+      "sha256": "c762cf126d07551bee1c731a4fd57b77d5e696556bdfd37424e2dec59d6f16fb",
+      "bytes": 51625
+    },
+    {
+      "path": "apps/app-hub/src/lib.rs",
+      "sha256": "c798724fcecca52d6858b502ce59fddd833c82f40805e74fed908685c327148c",
+      "bytes": 399
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "5017e2a2d9a1668b7bc41d984e79d3a57469c119ff70d6015eb5df34d3bfbe41",
+      "bytes": 221654
+    },
+    {
+      "path": "apps/app-hub/assets/icon.svg",
+      "sha256": "85b1821020486c8598811a2bee7e9a282bc4c9938756c434d608fdcdc58dbe4b",
+      "bytes": 2307
+    },
+    {
+      "path": "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+      "sha256": "494449a172d8343e0fd081948ebdd151c60cf2607c63434bb932aa8a5ed32e1e",
+      "bytes": 269233405
+    }
+  ],
+  "limitations": [
+    "Earlier Pixel 7 Pro evidence validates the shopping bag icon and store flows; the final lifecycle patch was tested with native module isolates and rebuilt for Android but was not reinstalled on the device.",
+    "Generated family portraits and source prompts were included as requested; the image-generation script was syntax-checked but not executed against the external API."
+  ]
+}

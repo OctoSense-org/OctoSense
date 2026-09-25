@@ -1,0 +1,382 @@
+{
+  "recorded_at_utc": "2026-09-23T00:17:30.077965+00:00",
+  "branch": "feat/app-hub",
+  "base_commit": "10c815c274b56227edd939f3160fd79993fd6427",
+  "uncommitted_changes": true,
+  "tests": [
+    {
+      "suite": "App Hub library",
+      "passed": 33,
+      "failed": 0
+    },
+    {
+      "suite": "signed fixture generator",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "suite": "native runtime setup",
+      "passed": 15,
+      "failed": 0
+    },
+    {
+      "suite": "shell with all mobile features",
+      "command": "cargo test --release --bin octosense --features mobile-only,mobile-apps --offline",
+      "passed": 293,
+      "failed": 0
+    }
+  ],
+  "builds": [
+    {
+      "target": "native desktop",
+      "command": "cargo build --release --bin octosense --features mobile-only,app-hub,app-news,app-maps,app-photos,app-sheets --offline",
+      "result": "passed",
+      "artifact": {
+        "path": "target/release/octosense",
+        "bytes": 130098192,
+        "sha256": "f0ab2f4eea9ab1464a80cac0eee7f4c8cc7f37009ffb08a958b11eacc0acee0f"
+      }
+    },
+    {
+      "target": "Android",
+      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "result": "passed",
+      "artifact": {
+        "path": "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+        "bytes": 269213787,
+        "sha256": "7c4e341b12b1e7c65680479e711cd29f330a018b6d4bd8f2493a8e61f04271cd"
+      }
+    }
+  ],
+  "other_checks": [
+    "locked workspace Cargo check passed",
+    "setup-native exact checkout and Cargo source graph check passed",
+    "specification and code review findings resolved"
+  ],
+  "native_walkthrough": {
+    "host": "macOS native OctoSense shell",
+    "layout": "phone",
+    "logical_size": [
+      412,
+      892
+    ],
+    "reviewed_flows": [
+      "production signed catalog empty state",
+      "explicit preview source and Today artwork",
+      "Apps categories and Search with native keyboard",
+      "details and built-in Photos Open from list and detail",
+      "local signed fixture consent, install and Library",
+      "installed Trail Notes Open from Hub",
+      "installed Focus Timer Open from launcher",
+      "distinct installed launcher and Recents identities",
+      "live Controls dark-mode change preserves running Card content and position",
+      "App Hub active tab and wrapped detail text after appearance change"
+    ],
+    "catalog_note": "Production catalog sequence 4 was empty. Trail Notes and Focus Timer are local signed development fixtures, not production listings."
+  },
+  "limits": [
+    "No ADB device connected; no physical-phone installation or visual acceptance.",
+    "Native scene contracts adapt the supplied references; no pixel-identity or L0 compilation claim.",
+    "Signed test fixtures deliberately use fixed 360x640 artboards.",
+    "iOS and Linux not validated for this feature."
+  ],
+  "sources": [
+    {
+      "path": "Cargo.lock",
+      "bytes": 240027,
+      "sha256": "626f7dc3ec9816091bb79b51a7e4348897282e63f98e3ea0efcf2aaa6a32115f"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 9700,
+      "sha256": "bd724299f05b62017b608e2fb7bcb5c3486d064aefd9fc641c1f0e946ec526f3"
+    },
+    {
+      "path": "apps/app-hub/Cargo.toml",
+      "bytes": 949,
+      "sha256": "d77b4b9c3a57b9bc871c6e0c9f2d7781af1d5cdb47e662c36a2683db73e6f983"
+    },
+    {
+      "path": "apps/app-hub/README.md",
+      "bytes": 3213,
+      "sha256": "d540c993f2e3e83b4e7a9de41f67fede2481d67696d40ca418c40fca539eae5c"
+    },
+    {
+      "path": "apps/app-hub/examples/fixture.rs",
+      "bytes": 13825,
+      "sha256": "0fc1181dcaaf6ed6c351abbf78ee14f9a56dc1cb5b75ddc4433a3e58da1a16d4"
+    },
+    {
+      "path": "apps/app-hub/examples/preview.rs",
+      "bytes": 1389,
+      "sha256": "e1898f97a152f1195a2c658ef7a6187411c319d3386da6cf6fb46ca32c339b27"
+    },
+    {
+      "path": "apps/app-hub/resources/SOURCES.md",
+      "bytes": 354,
+      "sha256": "69cefbcaf979772a7edc2705985ee80315d68baa87fe3ded6fe64718c70b074e"
+    },
+    {
+      "path": "apps/app-hub/resources/coast.jpg",
+      "bytes": 118342,
+      "sha256": "903c2be7d744f1e38f5bcd039c225227781225598fa81a3146f92a9b8c9de5db"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/apps.svg",
+      "bytes": 286,
+      "sha256": "33a99fdbe40c288b47bc3b5963681f3ca88f652d15297e153ac63e9565b017da"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/camera.svg",
+      "bytes": 241,
+      "sha256": "344415d57377522f833a9484fd167d17a447405baeb696a8cc4053bc6cdd120c"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/library.svg",
+      "bytes": 197,
+      "sha256": "0aff448cf36eb72288908359e4e3c0f3192614b556845ef8035538bfb730a76a"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/mail.svg",
+      "bytes": 247,
+      "sha256": "f50c76590326f5576d4a1342808d53cb90c2f961a13002ed6509e596f18dd086"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/maps.svg",
+      "bytes": 234,
+      "sha256": "ba12048bc83e5fd4d5216aa3bfa38c3dc569e163ff93a81eec7bbc89927dfcac"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/news.svg",
+      "bytes": 270,
+      "sha256": "262b18800f24b6255f6da65ea8971dcc77e809bfa825140c38286343ba8fde91"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/octosense.svg",
+      "bytes": 1645,
+      "sha256": "049c2a397b10ecdda47bb2ce26e7da51d40e3ac978d496515482aeb9335e603c"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/photos.svg",
+      "bytes": 269,
+      "sha256": "b086ce7a4aed37d28a05a878e610e74f3ad010f73caf26439d01415b0325933c"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/refresh.svg",
+      "bytes": 337,
+      "sha256": "d3c3108a81e5ae336cd45e157933eeae6ba4d3e7d05b20529832f3389d964f1f"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/search.svg",
+      "bytes": 333,
+      "sha256": "929845c3262f30ad612c604dbda9c6b5861cd4858078ba10d5d4f50810a72a4b"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/sheets.svg",
+      "bytes": 258,
+      "sha256": "fa178e9c5aee265f7436cc28e77d56af87223ecb9fc2bcab3a51bc78c4a932dd"
+    },
+    {
+      "path": "apps/app-hub/resources/icons/today.svg",
+      "bytes": 455,
+      "sha256": "eb40ba8cd8116c9789a9af470dd4ef40bca86796bf2a61f2ebfb3499cb3ad121"
+    },
+    {
+      "path": "apps/app-hub/resources/mountain.jpg",
+      "bytes": 173016,
+      "sha256": "e18af06d2902a82ab14d8b2718e4dcc831e2c60e56c877f5fa6cb81c7afd893d"
+    },
+    {
+      "path": "apps/app-hub/src/card_host.rs",
+      "bytes": 18773,
+      "sha256": "6b45a7769dd35ef848689db51470f43914335e3193ceb0d63e5f8fb46ab2524a"
+    },
+    {
+      "path": "apps/app-hub/src/catalog.rs",
+      "bytes": 48669,
+      "sha256": "19d9da92608c328e327e8b86801c5002fc6d6ff8712a10591553971946c19a9d"
+    },
+    {
+      "path": "apps/app-hub/src/lib.rs",
+      "bytes": 305,
+      "sha256": "ead5362f2d2f71d34f1b52254cc46a2fc23be6a65e6b8d0f718e258958240316"
+    },
+    {
+      "path": "apps/app-hub/src/module.rs",
+      "bytes": 1716,
+      "sha256": "7b8cfb1bee2d8303026fd6b77ede72df7c88ae7740d72a76006ba22ad03ca8b6"
+    },
+    {
+      "path": "apps/app-hub/src/view.rs",
+      "bytes": 50158,
+      "sha256": "7cf13e2a8180fc577f760c422b89becc8a4a5f2f61f0bcb26fa6e1feac483027"
+    },
+    {
+      "path": "apps/appcard/Cargo.toml",
+      "bytes": 941,
+      "sha256": "9f552e4b2fd8e5f1e3e5b7a26cf310ad232483d511e584716388c2d5d59814c2"
+    },
+    {
+      "path": "apps/maps/Cargo.toml",
+      "bytes": 1299,
+      "sha256": "130682936c316ea39b877e004f4659dcbb3e5e0a3ea0c5e684687effc07cf1c4"
+    },
+    {
+      "path": "apps/news/Cargo.toml",
+      "bytes": 756,
+      "sha256": "2d55cb166200ee05bd4280149e4ef4ade58cdcebbdbaeb009972cf5d6e9c1a49"
+    },
+    {
+      "path": "apps/photos/Cargo.toml",
+      "bytes": 469,
+      "sha256": "4460653629c4a8969af758779f0809575379d1a0f74b76daf4758eab8e0894ed"
+    },
+    {
+      "path": "apps/reference/Cargo.toml",
+      "bytes": 382,
+      "sha256": "57e62e58152c99b0994f8db45fc1e185f2d49417e7c312b9d167c0e4a68b4fba"
+    },
+    {
+      "path": "native-runtime.lock.json",
+      "bytes": 436,
+      "sha256": "dcdb1f3fa21a2939ee68ca7a85ffcaa46d15d2a7126db1e909a0a5d335557962"
+    },
+    {
+      "path": "resources/icons/apps/apphub.svg",
+      "bytes": 485,
+      "sha256": "28e921e4cc40c1a759752d15b0a7590c3f2d54e2d5047bd9d6b5587701f4bc35"
+    },
+    {
+      "path": "src/apps.rs",
+      "bytes": 14158,
+      "sha256": "26d78452a5f60bf31d4e68a81effd1ab88df61cd45b68ab977c2eae369fb5480"
+    },
+    {
+      "path": "src/clients.rs",
+      "bytes": 66625,
+      "sha256": "2d28288a8b931195c78646f229337bffc0232c123558d3e549094e0addf5aa46"
+    },
+    {
+      "path": "src/main.rs",
+      "bytes": 218377,
+      "sha256": "3c3879f4e0f2aecbf85980d7d4c779a925ca639bbf8a88627141cf3643e108e3"
+    },
+    {
+      "path": "src/mobile_island.rs",
+      "bytes": 44351,
+      "sha256": "7e0c1bdcf86e96aa30676ee9bac6eed6c42d599d6746f11354783bef60c487da"
+    },
+    {
+      "path": "src/module_host.rs",
+      "bytes": 16181,
+      "sha256": "189d21a8023223f2ac5760957aeb72a1f9a08f18dbd8c4ae7569bb5a575e20dc"
+    },
+    {
+      "path": "src/octosense/style.rs",
+      "bytes": 11483,
+      "sha256": "586f6f914cceab357ef03fb64a2fcc09b411cd4d64f3db6ddc0e0789fa9c7b76"
+    },
+    {
+      "path": "src/shell/launcher.rs",
+      "bytes": 6383,
+      "sha256": "fcdc5da6969a414bfb042bc94779fef4dee337ebe0df94e0d146f829415e699a"
+    },
+    {
+      "path": "tools/setup-native.py",
+      "bytes": 10237,
+      "sha256": "4708ff8ebc79984e86832904b930b3b6e52c2635501aa45c48bdf4e17ef3d51d"
+    },
+    {
+      "path": "tools/test_setup_native.py",
+      "bytes": 9112,
+      "sha256": "42c3a9406cb7665c3f4b9c98867618959f73b584b29a32dd647923651d95e839"
+    }
+  ],
+  "captures": [
+    {
+      "path": "docs/design/app-hub/evidence/apphub-dark.png",
+      "bytes": 49470,
+      "sha256": "8e3ae373583307338cb83521a560e8a5906b662d9317254a26432e0569b09ed3"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/apps-preview.png",
+      "bytes": 72460,
+      "sha256": "b55af3859a98e2bd9e2db78956269c8312486f0fbaef3bc18ff6902c2d45bcce"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/card-after-theme-change.png",
+      "bytes": 33120,
+      "sha256": "84dd53a933119c30231cc710b9246f32cfa719ce114e57009ec1ad3c9d341a82"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/detail-dark.png",
+      "bytes": 52939,
+      "sha256": "294e16fcef2031ccf1695ae808fb9472cb01b9ffec51ab2e2f6e1a73043dfd0c"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/detail-preview.png",
+      "bytes": 72455,
+      "sha256": "abec53d0c761783662e5ef0d5c0e83fafbb0420b4bea53716ae8d7ae957e1d20"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/focus-timer-open.png",
+      "bytes": 31658,
+      "sha256": "82ed1477a44e22bfe71698bd9f35e2270306e8c54a30d5d3bb30b67dd138f387"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/install-consent.png",
+      "bytes": 50918,
+      "sha256": "bad8da4cd54e67ef69f7e2de17adf20b75d31a2a90e1cac769bd7ee044023377"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-detail.png",
+      "bytes": 49602,
+      "sha256": "011ec6b1e6e0104458b0e86a84c8ec047dc099f12280b91deff4fb2d5f80810b"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/installed-recents.png",
+      "bytes": 132690,
+      "sha256": "a6ea9a2ea99f1dc19446247918b4c858d99f47db6c7445a89b0d3f75042c0d07"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/launcher-apps.png",
+      "bytes": 64577,
+      "sha256": "3c0ed9ddf8b25888c65f729b61ee7c7dbd55f2f59e1f3149f25242763ed0c6ee"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/library.png",
+      "bytes": 48269,
+      "sha256": "185784b979107b922f98d712de5df583a589e6ebd18febc72d86e1016fa9f600"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/live-empty.png",
+      "bytes": 53566,
+      "sha256": "3ffa81749a0efe2fa556c7161a29808735304a2d487f2483cd9a691c834789e5"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/live-fixture.png",
+      "bytes": 49625,
+      "sha256": "d288d6fac9dd394655326ceea10dd12a6c97d27a5762843fdaca673791d4ca0b"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/preview-photos-open.png",
+      "bytes": 313237,
+      "sha256": "71e75550862d445cc81dea67860042eebe3a36549fe0a769891ef796abda29b2"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/search-preview.png",
+      "bytes": 54554,
+      "sha256": "42f66666b0c9316c67c639b5fbee0027583fdd632aa78ee8ce8ba16ae33f1ea4"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/today-preview.png",
+      "bytes": 180397,
+      "sha256": "4de0eab7e2fdbacefcfa4380d9f9ef4820d2fdad61716f820e2e7b3c5563dba4"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/trail-notes-open.png",
+      "bytes": 33239,
+      "sha256": "5e014f59df226352dba112b3da9a4acd2a8fb76efe03850a4c731b46fd84bde1"
+    }
+  ]
+}

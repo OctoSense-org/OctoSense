@@ -1,0 +1,78 @@
+{
+  "recorded_at": "2026-09-23T07:10:43.245684+00:00",
+  "branch": "feat/app-hub",
+  "scope": "Replace the four app tiles inside the shopping bag with the existing OctoSense logo. Preserve the shared asset and bag silhouette.",
+  "sources": [
+    {
+      "path": "apps/app-hub/assets/icon.svg",
+      "sha256": "85b1821020486c8598811a2bee7e9a282bc4c9938756c434d608fdcdc58dbe4b",
+      "bytes": 2307
+    },
+    {
+      "path": "apps/news/resources/icons/octosense.svg",
+      "sha256": "049c2a397b10ecdda47bb2ce26e7da51d40e3ac978d496515482aeb9335e603c",
+      "bytes": 1645
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+      "sha256": "338339f7c19b187d7bf41421da15de8225c2427ffd956dac12d6e29bfdc7fdc1",
+      "bytes": 269229309
+    }
+  ],
+  "checks": [
+    {
+      "result": "All eight embedded logo path definitions exactly match apps/news/resources/icons/octosense.svg; uniform scale 0.35 and teal fill are applied in the Hub SVG."
+    },
+    {
+      "result": "SVG parsed and rendered with rsvg-convert; 112, 64, 48, 32 and 24 pixel views reviewed on light and dark backgrounds."
+    },
+    {
+      "command": "cargo test -p octosense-app-hub-app --lib --offline",
+      "passed": 35,
+      "failed": 0,
+      "log": "target/app-hub/validation/store-logo-tests.log"
+    },
+    {
+      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "result": "passed",
+      "log": "target/app-hub/validation/store-logo-android-build.log"
+    }
+  ],
+  "device": {
+    "model": "Pixel 7 Pro",
+    "installation": "adb install -r returned Success; existing data retained",
+    "verified": [
+      "Home dock shows the bag with the OctoSense logo",
+      "Tapping the dock icon opens App Hub",
+      "App Hub header shows the same icon"
+    ],
+    "final_state": "App Hub open on live Today tab"
+  },
+  "captures": [
+    {
+      "path": "docs/design/app-hub/evidence/store-logo.png",
+      "sha256": "9619d2c8d429b3339a7462d3e91c4082c489e1ea5bb3258ca861fbe9029dd8bf",
+      "bytes": 12779
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-logo-sizes.png",
+      "sha256": "7fd164d126c009c3761ffac6b69029f625b421742d5ca189e62fd4f0541f00a0",
+      "bytes": 28953
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-logo-home.png",
+      "sha256": "cfd0b6dba6115ea8ef367b3779eaec2b166e20f0731b94fafd8416b62740158d",
+      "bytes": 321555
+    },
+    {
+      "path": "docs/design/app-hub/evidence/store-logo-hub.png",
+      "sha256": "29a14c5d09c9499bcc8c8db83b7feda45412b00ae135e7246fff22303f8a5712",
+      "bytes": 236496
+    }
+  ],
+  "limitations": [
+    "Asset-only follow-up; desktop executable was not rebuilt. Earlier validation receipts and screenshots retain their historical icon designs."
+  ]
+}

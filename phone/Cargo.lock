@@ -5656,8 +5656,8 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+ "octosense-app-hub-app",
  "octosense-appcard",
- "octosense-appstore",
  "octosense-camera",
  "octosense-mail",
  "octosense-maps",
@@ -5669,7 +5669,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub.git?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5683,9 +5683,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-app-hub-app"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-theme",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub.git?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -5706,7 +5720,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub.git?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -5771,6 +5785,9 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+ "reqwest 0.12.28",
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

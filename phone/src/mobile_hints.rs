@@ -1,9 +1,10 @@
 //! First-use hints for the home page's hidden gestures.
 //!
-//! Three of the shell's gestures have no on-screen affordance: the pull
-//! that opens the App Library, the corner pulls that open the shade, and
-//! the bottom-band swipe-and-hold for Recents. Until each has been used
-//! once, the home page shows a one-line hint for it (mobile_surface.rs).
+//! First-use instructions explain the pull that opens the App Library,
+//! the corner pulls that open the shade, and the swipe-and-hold from the
+//! bottom for Recents (from its chevron where the shell draws one; floating
+//! navigation has none). Until each has been used once, the home page
+//! shows a one-line hint for it (mobile_surface.rs).
 //! Android keeps what was seen across restarts (the extension's
 //! `launcher.hints` snapshot); elsewhere the hints reset with the process.
 use crate::mobile_gestures::GestureKind;
@@ -32,8 +33,13 @@ impl Hints {
         if !self.search { return Some(("search", "Pull down for your apps and search")); }
         if !self.shade && system_panel { return Some(("shade", "Pull from the very top edge for notifications and controls")); }
         if !self.shade { return Some(("shade", "Pull from a top corner for notifications and controls")); }
-        if !self.recents { return Some(("recents", "Swipe up from the bottom and hold for Recents")); }
+        if !self.recents { return Some(("recents", Self::recents_hint(!crate::mobile_navigation::ENABLED))); }
         None
+    }
+    /// Only the shell without floating navigation (not Android or
+    /// OpenHarmony) draws the swipe-start chevron the hint can point at.
+    fn recents_hint(chevron: bool) -> &'static str {
+        if chevron { "Swipe up from the chevron and hold for Recents" } else { "Swipe up from the bottom and hold for Recents" }
     }
     /// A gesture committed: the matching hint is done with.
     pub fn saw(&mut self, kind: GestureKind) {
@@ -79,6 +85,14 @@ mod tests {
         h.saw(GestureKind::Switcher);
         assert!(h.all_seen());
         assert_eq!(h.pending(false), None);
+    }
+    #[test]
+    fn recents_hint_names_the_chevron_only_where_it_is_drawn() {
+        let mut h = Hints::default();
+        h.load(["search".to_string(), "shade".to_string()].into_iter());
+        assert_eq!(h.pending(false).map(|p| p.1.contains("chevron")), Some(!crate::mobile_navigation::ENABLED));
+        assert!(Hints::recents_hint(true).contains("chevron"));
+        assert!(!Hints::recents_hint(false).contains("chevron"));
     }
     #[test]
     fn loading_marks_only_known_keys() {

@@ -15,7 +15,8 @@ Requires Python 3.9+, Git and Rust stable. The setup script prepares exact
 revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-runtime.lock.json` selects the framework release and
 `home/native-apps.lock.json` selects Mail/AppCards and Camera sources. App Hub
-client crates are pinned in `home/Cargo.toml` and `home/Cargo.lock`.
+is the in-tree `home/apps/app-hub` crate; its OctoSense-App-Hub backend crates
+are pinned in `home/apps/app-hub/Cargo.toml` and `home/Cargo.lock`.
 
 The runtime's Makepad (main `1d3d383e`) already has the isolate controls App
 Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
@@ -102,8 +103,11 @@ verification. Signer inputs must still be the established ROM identity.
 
 ## App Hub behavior and remaining device validation
 
-Both delivery modes link the same App Hub/store and card-host modules. Bundle
-installation requires neither root nor Android package installation permission.
+Both delivery modes link the same App Hub and card-host modules from the
+in-tree `home/apps/app-hub` crate (`octosense-app-hub-app`, enabled by the
+default `app-hub` feature, which `mobile-apps` includes), built on the pinned
+OctoSense-App-Hub backend. Bundle installation requires neither root nor
+Android package installation permission.
 Installed apps get distinct launch/focus identities and appear after catalog
 changes; native app IDs take precedence. The card host applies declared storage,
 network, instruction and memory limits before evaluating downloaded content.
@@ -111,8 +115,10 @@ This does not give bundles access to the privileged Android agent or bridge.
 
 The current public catalog is empty. Device acceptance needs a signed fixture,
 real HTTPS delivery, install/launch/update/removal, reboot/offline tests and
-interrupted-update recovery. The external App Hub installer still replaces a
-bundle by deleting then copying; atomic replacement remains a production gate.
+interrupted-update recovery. The backend installer still replaces a bundle by
+deleting then copying, so App Hub runs it in a staging root and publishes the
+verified bundle by renaming, keeping the previous bundle until the new one is
+in place.
 No general Android APK store or universal rooted-device support is introduced.
 
 Source/build validation alone does not establish unrooted-device operation or a

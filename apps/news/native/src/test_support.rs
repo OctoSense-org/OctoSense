@@ -20,7 +20,6 @@ impl Isolate {
     /// `NewsModule::register` puts them there for the host.
     pub(crate) fn new() -> Self {
         let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.init_cx_os();
         cx.with_vm(makepad_widgets::script_mod);
         let vm_id = cx.alloc_splash_vm_with_network(false);
         cx.with_script_vm_id_trusted(vm_id, |vm| NEWS_MODULE.register(vm));

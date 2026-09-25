@@ -133,6 +133,12 @@ fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, installed: Vec<AppDef>
         .collect()
 }
 
+/// Catalog rows, bundled modules and apps installed through App Hub, read
+/// fresh on each call.
+pub fn available_apps() -> Vec<AppDef> {
+    registry()
+}
+
 /// Registered ids take precedence over binary aliases. A linked module
 /// without a catalog row (a module-only app such as `appcard`, which has no
 /// process form) is still an app: its bundled definition answers, and the
@@ -999,13 +1005,15 @@ mod tests {
     #[test]
     fn installed_catalog_refreshes_without_shadowing_native_apps() {
         let app = |id: &str, label: &str| AppDef::app(id, label, "", "", "card", LaunchPolicy::OrFocus);
-        let native = vec![app("appstore", "App Hub")];
-        let installed = vec![app("demo", "Demo"), app("appstore", "Untrusted replacement")];
-        let first = merge_catalog(native.clone(), vec![], installed);
-        assert_eq!(first.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["appstore", "demo"]);
+        let native = vec![app("apphub", "App Hub")];
+        // Installed ids live under `hub:`, so a manifest named after a
+        // built-in becomes its own row beside it, never a replacement.
+        let installed = vec![app("hub:demo", "Demo"), app("hub:apphub", "Untrusted replacement")];
+        let first = merge_catalog(native.clone(), vec![app("apphub", "Linked module")], installed);
+        assert_eq!(first.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub", "hub:demo", "hub:apphub"]);
         assert_eq!(first[0].label, "App Hub");
         let after_remove = merge_catalog(native, vec![app("card", "Internal host")], vec![]);
-        assert_eq!(after_remove.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["appstore"]);
+        assert_eq!(after_remove.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub"]);
     }
 
     #[test]

@@ -1,0 +1,27 @@
+[
+  {
+    "path": "appstore/Screenshot 2026-09-22 at 2.26.42\u202fPM.png",
+    "sha256": "61faabebb39b7e9afc38710fb7162f19a8402e39c68ca9e5902520495f968e3c",
+    "purpose": "User supplied visual reference; no runtime use"
+  },
+  {
+    "path": "appstore/Screenshot 2026-09-22 at 2.27.08\u202fPM.png",
+    "sha256": "e831f1a8781a2ec9860d3bae22fee622097368849a06f1c11d7bdd0abbfee55c",
+    "purpose": "User supplied visual reference; no runtime use"
+  },
+  {
+    "path": "appstore/Screenshot 2026-09-22 at 2.27.36\u202fPM.png",
+    "sha256": "ca040946a02b9bd3215bbc4f81ce3cf6387e3dd3ff0e01d992bb08e080256fad",
+    "purpose": "User supplied visual reference; no runtime use"
+  },
+  {
+    "path": "appstore/Screenshot 2026-09-22 at 2.29.32\u202fPM.png",
+    "sha256": "1db9acbe377291689435fedaa223e7ba05854d482c16ec9d28a854a24787ace1",
+    "purpose": "User supplied visual reference; no runtime use"
+  },
+  {
+    "path": "appstore/Screenshot 2026-09-22 at 2.29.55\u202fPM.png",
+    "sha256": "4f53cf58e666d3a7f13811f8c0a81f09bc103a58f32356374baf61203ebfa4ad",
+    "purpose": "User supplied visual reference; no runtime use"
+  }
+]

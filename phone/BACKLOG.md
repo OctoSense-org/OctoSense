@@ -565,7 +565,7 @@ found on the way. `docs/maps.md` describes what is there.
   verification on 2026-09-18 missed it. The layer now clears only the
   vehicle it placed itself.
 
-- [ ] **MAPS-17 — P2: No directions on Android 9: the public router speaks TLS 1.3 only.**
+- [x] **MAPS-17 — P2: No directions on Android 9: the public router speaks TLS 1.3 only.**
 
   `routing.openstreetmap.de` (and `router.project-osrm.org`, the same
   machine) refuses a TLS 1.2 handshake; Android's platform TLS reaches 1.3
@@ -574,11 +574,16 @@ found on the way. `docs/maps.md` describes what is there.
   which is the right thing to say. Photon and the tile host accept TLS
   1.2, so search, places and the map work there. The server answers plain
   HTTP too, and the manifest would allow it, but a route request carries
-  both ends of a trip and stays on HTTPS. Goes away with services of our
-  own (MAPS-08) or a phone on Android 10 or later. Confirmed on 2026-09-19:
+  both ends of a trip and stays on HTTPS. Confirmed on 2026-09-19:
   on a Pixel 7 Pro (Android 17) the same build gets its routes, and
   directions and the preview drive work there. A real drive is still
   unverified on any phone.
+
+  Fixed 2026-09-23 with an Android service-only reqwest/rustls transport:
+  TLS 1.3, normal WebPKI certificate validation, HTTPS-only requests,
+  streaming body limits, timeouts and cancellation. The OnePlus 6T now
+  fetches and draws driving, walking and cycling routes between SJC and
+  SFO. All 106 Maps tests pass, including nine transport regressions.
 
 - [ ] **MAPS-09 — P3: Route alternatives, more than one stop, transit.**
 
@@ -596,3 +601,90 @@ found on the way. `docs/maps.md` describes what is there.
 
   Nothing in the pinned platform holds a wake lock; the phone dims on its
   usual timer mid-drive.
+
+## Second mobile sync follow-ups
+
+Found in the review of the second sync from mobile on 2026-09-25
+(`docs/home-migration.md`).
+
+- [ ] **HUB-01 — P1: Android placements reject `hub:` ids.**
+
+  An installed App Hub app's launcher id is `hub:<manifest-id>`, but both
+  placement validators accept only `[a-z][a-z0-9_-]{0,127}` for a hosted
+  app: `LauncherPlacements.isHosted` (via `requireIdentity`) in
+  `home/resources/android/java/dev/makepad/octosense/LauncherPlacements.java`
+  and `hosted_identity` in `home/src/android_integration.rs`. Once a Hub app
+  is on the home page, persisting a reorder, a dock drop, a hide or a folder
+  (`pairs`) fails: `reorder` validates the whole list, so the extension answers
+  `INVALID_ARGUMENT` (`home_placement_limit_or_identity`,
+  `MakepadAppExtension.java`) and nothing is saved. Inherited from mobile's
+  App Hub.
+
+  Acceptance: both validators accept `hub:` followed by a valid manifest id
+  and still reject other colons; change them in step; add `placement_tests`
+  cases for a `hub:` id in `order`, `dock`, `hidden_hosted`, `pairs` and
+  `hidden_tiles`.
+
+- [ ] **HUB-02 — P2: Installed apps are read from disk on every lookup.**
+
+  `installed_card_apps()` (`home/src/apps.rs`) lists and parses the install
+  directory on every call. It is reached per frame through
+  `clients::registry()`/`find_app()` (app labels in
+  `home/src/mobile_surface.rs`, `home/src/desk/phone.rs`) and once per app
+  in `AppRegistry::hosting()`.
+
+  Acceptance: cache the list by data root and the
+  `octosense_app_hub_app::icons` generation, so an install, update or
+  removal (which bumps the generation) still shows at once.
+
+- [ ] **HUB-03 — P3: `find_app("card")` answers the first installed Hub app.**
+
+  `clients::find_app` falls back to matching the binary name, and every
+  installed Hub row has `bin == "card"`, so `"card"` resolves to whichever
+  Hub app is listed first.
+
+  Acceptance: skip `bin == "card"` rows in the binary-name fallback, with a
+  test.
+
+- [ ] **HUB-04 — P3: Migrate persisted `appstore` ids to `apphub`.**
+
+  Optional. The module id changed from `appstore` to `apphub` in the second
+  sync; an old id stays in Android placements and in `wm/launcher.hides`.
+  Unneeded while the public catalog is empty.
+
+- [ ] **HUB-05 — P3: Small cleanups after the App Hub merge.**
+
+  - `launch_module_as` (`home/src/main.rs`) returns silently for a `card`
+    app without a `hub:` id; log why.
+  - `apps::is_linked` (`home/src/apps.rs`) has no callers.
+  - `bundled_catalog()` (`home/src/apps.rs`) repeats
+    `retain(|a| a.id != "card")`, which `bundled_modules_catalog()` already
+    does.
+  - In the non-floating navigation branch of `home/src/mobile_surface.rs`,
+    `android` is always false (Android uses floating navigation), so its
+    band and pill conditions are dead.
+
+- [ ] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
+
+  Everything else in PR #11 (`feat/calendar-module`) is present; Calendar
+  module hosting is not. Its source is in the pinned AppCard at
+  `.sources/appcards/apps/calendar/native`. Planned separately (Task 14 of
+  `docs/plans/2026-09-25-sync-mobile-into-home.md`).
+
+- [ ] **RUNTIME-01 — P2: `init_cx_os()` traps off the main thread on macOS 14.**
+
+  Makepad's macOS `init_cx_os()` calls `AppleGameInput::init`, whose
+  `+[GCController setShouldMonitorBackgroundEvents:]` starts GameController's
+  legacy HID monitor; on macOS 14 that asserts the main queue
+  (`dispatch_assert_queue`) and the process stops with SIGTRAP. The app calls
+  it on the main thread, but libtest runs every test on a worker thread, so
+  on the `macos-14` CI runner any test that calls it kills the test binary.
+  Home, App Hub and News tests no longer call it. 29 of Maps' isolate tests
+  need the start time only `init_cx_os()` sets (`seconds_since_app_start`),
+  so CI skips Maps' `view::tests` and `module::tests` (33 tests,
+  `.github/workflows/home.yml`); they all pass locally on newer macOS.
+
+  Acceptance: `AppleGameInput::init` in OctoSense-org/makepad skips or
+  dispatches its GameController setup to the main queue when called off the
+  main thread; the runtime lock picks up that Makepad revision; CI runs all
+  of `octosense-maps` without `--skip`.

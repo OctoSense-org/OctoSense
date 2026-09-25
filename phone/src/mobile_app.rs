@@ -48,13 +48,17 @@ impl App {
         let clock_changed=self.phone_clock_shown.as_ref()!=Some(&clock);
         if clock_changed {self.phone_clock_shown=Some(clock);}
         let phone=&self.state_mut().phone;
-        let wake=clock_changed
-            || phone.island.needs_step()
-            || phone.shade.open>0.001
-            || (phone.home_visible() && phone.tiles.clients().any(|t|!t.tile_ready()));
+        let island=phone.island.needs_step();
+        let shade=phone.shade.open>0.001;
+        let home_visible=phone.home_visible();
+        let tile_starting=home_visible && phone.tiles.clients().any(|t|!t.tile_ready());
+        let wake=clock_changed || island || shade || tile_starting;
         // A tile client that is still binding, launching or confirming its
         // face is followed here instead of on every frame.
-        if phone.home_visible() {self.sync_home_tiles(cx);}
+        if home_visible {self.sync_home_tiles(cx);}
+        if wake && makepad_platform::makepad_error_log::trace_enabled("nextframe") {
+            log!("[tick] wake: clock_changed={clock_changed} island={island} shade={shade} tile_starting={tile_starting}");
+        }
         if wake {self.animate_phone(cx);}
     }
 
