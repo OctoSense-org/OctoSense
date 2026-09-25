@@ -118,6 +118,7 @@ mod tests {
             storage,
             viewport: Viewport { size: dvec2(400.0, 700.0) },
             replies,
+            windows: Default::default(),
         };
         let open = NEWS_MODULE.open_schema().empty_open().unwrap();
         let InstanceParts { root, mut executor, shutdown } = iso.with_vm(|vm| {
