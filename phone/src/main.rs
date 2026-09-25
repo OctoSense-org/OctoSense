@@ -4243,7 +4243,6 @@ mod app_hub_lifecycle_tests {
     #[test]
     fn installing_an_update_closes_only_that_apps_old_instances() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.init_cx_os();
         cx.with_vm(makepad_widgets::script_mod);
         let mut app = cx.with_vm(App::script_new);
         app.state = Some(WmState {

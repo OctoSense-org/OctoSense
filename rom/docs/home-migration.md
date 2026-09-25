@@ -123,10 +123,12 @@ Work outside mobile main:
 - Unreferenced mobile commit `45dbbfb` is superseded: its `allowBackup="false"`,
   `phone_client_texture` and Mail hosting are already here.
 
-Validation: the CI test line (Home, App Hub, App Hub policy, Maps, News, AppCard)
-passes 589 tests, and the product tests pass 27. A standalone development build
-was installed over the existing Home on a OnePlus 6T (Android 9), keeping its
-data. Checked on the phone:
+Validation: the Home, App Hub, App Hub policy, Maps, News and AppCard tests
+pass 589 locally, and the product tests pass 27. On the `macos-14` CI runner,
+Maps' view and module tests (33) are skipped: 29 of them need `init_cx_os()`,
+which traps off the main thread there (`RUNTIME-01` in `home/BACKLOG.md`).
+A standalone development build was installed over the existing Home on a
+OnePlus 6T (Android 9), keeping its data. Checked on the phone:
 
 - Home starts and links `apphub` and `card`, with no crash or panic.
 - App Hub opens. Offline, it shows the last verified cached catalog with the

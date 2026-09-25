@@ -670,3 +670,21 @@ Found in the review of the second sync from mobile on 2026-09-25
   module hosting is not. Its source is in the pinned AppCard at
   `.sources/appcards/apps/calendar/native`. Planned separately (Task 14 of
   `docs/plans/2026-09-25-sync-mobile-into-home.md`).
+
+- [ ] **RUNTIME-01 — P2: `init_cx_os()` traps off the main thread on macOS 14.**
+
+  Makepad's macOS `init_cx_os()` calls `AppleGameInput::init`, whose
+  `+[GCController setShouldMonitorBackgroundEvents:]` starts GameController's
+  legacy HID monitor; on macOS 14 that asserts the main queue
+  (`dispatch_assert_queue`) and the process stops with SIGTRAP. The app calls
+  it on the main thread, but libtest runs every test on a worker thread, so
+  on the `macos-14` CI runner any test that calls it kills the test binary.
+  Home, App Hub and News tests no longer call it. 29 of Maps' isolate tests
+  need the start time only `init_cx_os()` sets (`seconds_since_app_start`),
+  so CI skips Maps' `view::tests` and `module::tests` (33 tests,
+  `.github/workflows/home.yml`); they all pass locally on newer macOS.
+
+  Acceptance: `AppleGameInput::init` in OctoSense-org/makepad skips or
+  dispatches its GameController setup to the main queue when called off the
+  main thread; the runtime lock picks up that Makepad revision; CI runs all
+  of `octosense-maps` without `--skip`.

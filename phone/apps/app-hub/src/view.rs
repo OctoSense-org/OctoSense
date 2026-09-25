@@ -1081,7 +1081,6 @@ mod tests {
     #[test]
     fn native_module_and_all_presentation_states_evaluate() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
-        cx.init_cx_os();
         cx.with_vm(makepad_widgets::script_mod);
         let vm_id = cx.alloc_splash_vm_with_network(false);
         let root = cx.with_script_vm_id_trusted(vm_id, |vm| {
