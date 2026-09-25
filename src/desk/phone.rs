@@ -116,6 +116,22 @@ impl WmDesk {
         capture.frame.end(cx);
         self.compositor.as_mut().unwrap().content_pass(capture.frame.pass_id());
     }
+    /// A group member's live look (mobile_groups.rs): its compact capture,
+    /// else its full one, fitted into `cell` by aspect. False without one.
+    pub(crate) fn present_member_capture(&mut self,cx:&mut Cx2d,client:ClientId,cell:Rect,opacity:f32,radius:f32)->bool {
+        let Some(stored)=self.phone_frames.remove(&client) else {return false};
+        let shown=stored.tile.as_ref().or(stored.full.as_ref()).filter(|c|c.size.x>=1.0).map(|c|(c.size,c.frame.texture().clone()));
+        if let Some((size,texture))=&shown {
+            let rect=crate::mobile_groups::fit(cell,*size);
+            self.draw_phone.draw_vars.set_texture(0,texture);
+            self.draw_phone.opacity=opacity;
+            self.draw_phone.radius=radius*0.5;
+            self.draw_phone.y_flip=0.0;
+            self.draw_phone.draw_abs(cx,rect);
+        }
+        self.phone_frames.insert(client,stored);
+        shown.is_some()
+    }
     fn present_capture(&mut self,cx:&mut Cx2d,capture:&Capture,rect:Rect,opacity:f32,radius:f32) {
         self.draw_phone.draw_vars.set_texture(0,capture.frame.texture());
         self.draw_phone.opacity=opacity;
@@ -134,6 +150,9 @@ impl WmDesk {
         let dark=state.style.dark;
         let opacity=(1.0-phone.openness*0.85) as f32;
         if opacity<0.01 || phone.screen==PhoneScreen::Drawer {return;}
+        // The tiles ride page 0 of the home pager (mobile_pages.rs).
+        let dx=phone.pages.page_offset(0,screen.size.x);
+        if !phone.pages.page_visible(0,screen.size.x) {return;}
         let layout=PhoneSurface::home_layout(style,screen);
         // Everything the placeholders need, read before any tile draws.
         let slots:Vec<(crate::mobile_tiles::TileSlot,Option<ClientId>,String,bool)>=layout.tiles.iter().map(|slot| {
@@ -142,6 +161,8 @@ impl WmDesk {
             (*slot,client,status,connected)
         }).collect();
         for (slot,client,status,connected) in slots {
+            if matches!(slot.kind,crate::mobile_tiles::TileKind::Group(_)) {continue;}
+            let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));
             let mut shown=false;
@@ -159,7 +180,7 @@ impl WmDesk {
                         capture.frame.freeze(cx);
                     }
                     if ready {
-                        self.present_capture(cx,&capture,slot.rect,opacity,TILE_RADIUS as f32);
+                        self.present_capture(cx,&capture,shown_rect,opacity,TILE_RADIUS as f32);
                         shown=true;
                     }
                     stored.tile=Some(capture);
@@ -168,7 +189,7 @@ impl WmDesk {
                     // stands in until the client is back in it.
                     capture.frame.freeze(cx);
                     if capture.size==slot.rect.size {
-                        self.present_capture(cx,capture,slot.rect,opacity,TILE_RADIUS as f32);
+                        self.present_capture(cx,capture,shown_rect,opacity,TILE_RADIUS as f32);
                         shown=true;
                     }
                 }
@@ -178,14 +199,22 @@ impl WmDesk {
                 let (headline,detail)=if client.is_none() && !gave_up {
                     ("Tap to open", String::new())
                 } else { crate::mobile_tiles::placeholder_text(&status,connected,gave_up) };
-                self.phone_ui.draw_tile_placeholder(cx,slot,style,dark,opacity,headline,&detail);
-                self.compositor.as_mut().unwrap().content(slot.rect);
+                self.phone_ui.draw_tile_placeholder(cx,crate::mobile_tiles::TileSlot{rect:shown_rect,..slot},style,dark,opacity,headline,&detail);
+                self.compositor.as_mut().unwrap().content(shown_rect);
             }
         }
     }
     pub(super) fn draw_phone_scene(&mut self,cx:&mut Cx2d,scope:&mut Scope,screen:Rect) {
         let state=scope.data.get_mut::<WmState>().unwrap();
         state.phone.viewport=screen;
+        // The frame's exclusion zones are rebuilt from what is drawn: cleared
+        // once here, then every surface adds its own (the shade's sheet, the
+        // split divider, the apps that own their edges, the keyboard).
+        state.phone.exclusions.clear();
+        if let Some(z)=state.phone.shade.exclusion(screen) {state.phone.exclusions.add(z,[true;4]);}
+        state.phone.groups.add_exclusions(state.phone.screen,crate::mobile::app_rect(screen),&mut state.phone.exclusions);
+        let owns_edges:Vec<ClientId>=state.clients.iter().filter(|(_,s)|s.owns_edges).map(|(c,_)|*c).collect();
+        crate::mobile_pages::sync(&mut state.phone,state.style.target,screen);
         state.phone.order.retain(|c|state.clients.contains_key(c));
         if state.phone.client.is_some_and(|c|!state.clients.contains_key(&c)) {
             state.phone.client=state.phone.order.first().copied();
@@ -214,6 +243,7 @@ impl WmDesk {
         self.phone_ui.draw_home(cx,state,screen,home_backdrop);
         self.compositor.as_mut().unwrap().content(screen);
         if phone.home_visible() {self.draw_home_tiles(cx,scope,screen);}
+        if phone.groups.window_visible() {let state=scope.data.get_mut::<WmState>().unwrap();self.draw_group_window(cx,state,screen);}
         if phone.overview>0.001 {
             let blur = (phone.overview.clamp(0.0, 1.0) * 3.0) as f32;
             self.phone_ui.overview_glass.set_blurriness(cx, blur);
@@ -221,6 +251,7 @@ impl WmDesk {
             self.phone_ui.overview_glass.draw_surface_with_backdrop(cx,screen,Some(backdrop),phone.overview as f32);
             self.compositor.as_mut().unwrap().content(screen);
         }
+        let mut excluded:Vec<Rect>=Vec::new();
         let mut order=phone.order.clone();
         order.reverse();
         // Foreground paints last during launch/return transitions.
@@ -228,7 +259,9 @@ impl WmDesk {
             if let Some(c)=phone.client {order.retain(|i|*i!=c);order.push(c);}
         }
         for client in order {
-            let foreground=phone.client==Some(client);
+            let foreground=phone.client==Some(client) || (phone.screen==PhoneScreen::App && phone.groups.in_split(client));
+            // In a split each client gets its pane, so it lays out for it.
+            let app=phone.groups.pane(client,app);
             if !foreground && phone.overview<0.001 {continue;}
             if foreground && phone.openness<0.001 {continue;}
             let index=phone.order.iter().position(|c|*c==client).unwrap_or(0);
@@ -272,21 +305,37 @@ impl WmDesk {
                 }
             }
             self.phone_frames.insert(client,stored);
-            if foreground {self.zorder.push(client);}
+            if foreground {
+                self.zorder.push(client);
+                // An app that owns its edges keeps them while it is the one
+                // full-screen window the finger can reach.
+                if phone.screen==PhoneScreen::App && owns_edges.contains(&client) {excluded.push(display);}
+            }
         }
+        // The shade's frosted sheet samples the finished scene here (the
+        // final-glass snapshot is upside down on GL).
+        let shade_backdrop=if phone.shade.open>0.001 {Some(self.compositor.as_mut().unwrap().backdrop(cx,screen,3.0))}else{None};
         let glass=if phone.keyboard>0.5 {
             Some((Rect {pos:screen.pos+dvec2(0.0,screen.size.y-phone.keyboard-24.0),size:dvec2(screen.size.x,phone.keyboard)},4.0))
         }else{None};
         let (backdrop,_,_)=self.compositor.as_mut().unwrap().finish(cx,screen,glass);
         let state=scope.data.get_mut::<WmState>().unwrap();
-        self.phone_ui.draw_overlay(cx,state,screen,backdrop);
+        for r in excluded {state.phone.exclusions.add(r,[false,false,true,true]);}
+        if phone.keyboard>0.5 {
+            // The keyboard and the navigation bar under it: a key at the
+            // bottom row is a key, never the start of a home swipe.
+            let mut kb=PhoneSurface::keyboard_rect(&phone,screen);
+            kb.size.y=screen.pos.y+screen.size.y-kb.pos.y;
+            state.phone.exclusions.add(kb,[false,true,false,false]);
+        }
+        self.phone_ui.draw_overlay(cx,state,screen,shade_backdrop.or(backdrop));
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
         let state=scope.data.get_mut::<WmState>().unwrap();
         let input=matches!(event,Event::TouchUpdate(_)|Event::MouseDown(_)|Event::MouseUp(_)|Event::MouseMove(_)|Event::Scroll(_)|Event::KeyDown(_)|Event::KeyUp(_)|Event::TextInput(_));
         let client=state.phone.client;
         if input && !state.phone.accepts_app_input() {return;}
-        let items:Vec<_>=self.items.iter().filter(|(c,_)|!input || Some(**c)==client).map(|(_,w)|w.clone()).collect();
+        let items:Vec<_>=self.items.iter().filter(|(c,_)|!input || Some(**c)==client || state.phone.groups.in_split(**c)).map(|(_,w)|w.clone()).collect();
         for item in items {item.handle_event(cx,event,scope);}
     }
 }

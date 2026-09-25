@@ -12,6 +12,14 @@ pub enum PhoneHit {
     App(String), Card(ClientId), Home, Recents, Drawer, Back,
     Rotate, Style, Appearance, Desktop, Key(String), Shift, Symbols, HideKeyboard,
     ClearSearch, CancelSearch,
+    Shade(crate::mobile_shade::ShadeHit),
+    /// A page indicator dot: jump the home pager there (mobile_pages.rs).
+    Page(i64),
+    Island(crate::mobile_island::IslandHit),
+    /// Tile groups (mobile_groups.rs): the tile, a member in its window,
+    /// the window's scrim, a pair's "Open both", a Recents card's split
+    /// button and the split divider.
+    Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
 }
 
 #[derive(Clone)]
@@ -20,8 +28,9 @@ pub struct PhoneGesture {
     pub last: Vec2d,
     pub time: f64,
     pub hit: Option<PhoneHit>,
-    pub bottom: bool,
-    pub edge: bool,
+    /// The gesture recognizer (mobile_gestures.rs) claimed this finger: it
+    /// started in a shell band, or in the home page body.
+    pub shell: bool,
     pub screen: PhoneScreen,
 }
 
@@ -56,6 +65,20 @@ pub struct PhoneState {
     /// The home page's live app tiles (mobile_tiles.rs): which client shows
     /// which tile and in which face.
     pub tiles: HomeTiles,
+    /// The shell gesture recognised this frame, for every mobile surface to
+    /// read (mobile_gestures.rs owns it; surfaces never touch raw fingers).
+    pub gesture_out: Option<crate::mobile_gestures::ShellGesture>,
+    /// Rects apps own on screen; shell gestures starting inside them are not
+    /// recognised.
+    pub exclusions: crate::mobile_gestures::ExclusionZones,
+    /// The notification/controls shade (mobile_shade.rs).
+    pub shade: crate::mobile_shade::ShadeState,
+    /// The home pager: glance page, apps pages, library (mobile_pages.rs).
+    pub pages: crate::mobile_pages::PagesState,
+    /// The live island's activities and state (mobile_island.rs).
+    pub island: crate::mobile_island::IslandState,
+    /// Tile groups, the open group window and the split screen (mobile_groups.rs).
+    pub groups: crate::mobile_groups::GroupsState,
 }
 impl Default for PhoneState {
     fn default() -> Self {
@@ -65,7 +88,13 @@ impl Default for PhoneState {
             search_query: String::new(), search_focused: false, search_scroll: 0.0,
             ime: HashMap::new(), shift: false, symbols: false,
             desktop_size: None, desktop_clients: Vec::new(), desktop_style: DesktopStyle::Omarchy, viewport: Rect::default(),
-            tiles: HomeTiles::default() }
+            tiles: HomeTiles::default(),
+            gesture_out: None,
+            exclusions: Default::default(),
+            shade: Default::default(),
+            pages: Default::default(),
+            island: Default::default(),
+            groups: Default::default() }
     }
 }
 impl PhoneState {
@@ -109,7 +138,10 @@ impl PhoneState {
         let open = if matches!(self.screen, PhoneScreen::App | PhoneScreen::Recents) && self.client.is_some() { 1.0 } else { 0.0 };
         let overview = if self.screen == PhoneScreen::Recents { 1.0 } else { 0.0 };
         let mut active = false;
-        let dragging = self.gesture.as_ref().is_some_and(|g| g.bottom);
+        // A finger driving the home swipe or the back preview holds the
+        // window where it is; a lifted finger lets it settle.
+        let dragging = self.gesture.is_some()
+            && matches!(self.gesture_out, Some(crate::mobile_gestures::ShellGesture::HomeUp { .. } | crate::mobile_gestures::ShellGesture::Back { .. }));
         for (value, target) in [(&mut self.openness, open), (&mut self.overview, overview)] {
             if !dragging {
                 *value += (target - *value) * t;
@@ -120,13 +152,29 @@ impl PhoneState {
         self.keyboard += (self.keyboard_target - self.keyboard) * t;
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
+        active |= self.island.step(dt, crate::host::now(), self.gesture_out);
+        active |= self.groups.step(dt);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;
             if (target - self.page).abs() < 0.001 { self.page = target; }
             active |= self.page != target;
         }
+        active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
+        self.absorb_docked(crate::mobile_island::take_docked());
+        // The island stays hidden while the sheet is (or is about to be)
+        // open and comes back as it closes.
+        self.island.set_shade_open(self.shade.wants_open());
+        active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
+        if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
+    }
+    /// An activity the island dropped becomes a card in the shade, stamped
+    /// on the shade's clock (the frame time, not the island's).
+    pub fn absorb_docked(&mut self, notes: Vec<crate::mobile_island::DockedNote>) {
+        for note in notes {
+            self.shade.post(&note.app, &note.title, &note.body, self.wallpaper_time, Vec::new());
+        }
     }
     pub fn accepts_app_input(&self) -> bool {
         self.screen == PhoneScreen::App && self.gesture.is_none()
@@ -160,6 +208,25 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_docked_activity_becomes_a_shade_card_and_the_island_hides_under_the_open_shade() {
+        use crate::mobile_gestures::{GestureKind, ShadeSide, ShellGesture};
+        let mut phone = PhoneState::default();
+        phone.viewport = Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) };
+        phone.wallpaper_time = 42.0;
+        phone.absorb_docked(vec![crate::mobile_island::DockedNote { id: "x".into(), app: "AppCard".into(), title: "Fetching forecast".into(), body: "done".into(), time: 7.0 }]);
+        let note = &phone.shade.notifications[0];
+        assert_eq!((note.app.as_str(), note.title.as_str(), note.time), ("AppCard", "Fetching forecast", 42.0), "stamped on the shade's clock");
+        // The shade commits open: the island learns it on the same step.
+        phone.gesture_out = Some(ShellGesture::Commit(GestureKind::Shade(ShadeSide::Notifications)));
+        phone.step(1.0 / 60.0);
+        assert!(phone.shade.wants_open() && phone.island.shade_open);
+        phone.gesture_out = None;
+        phone.shade.close();
+        phone.step(1.0 / 60.0);
+        assert!(!phone.island.shade_open, "the island returns as the sheet closes");
+    }
     #[test]
     fn both_orientations_reserve_system_bars_and_keep_selected_card_inside() {
         for size in [phone_size(DesktopStyle::Ios), phone_size(DesktopStyle::Android)] {

@@ -510,6 +510,10 @@ pub struct ClientSlot {
     pub closing: Option<f64>,
     /// The aichat child seated in the AI pane: not in the layout, no tile.
     pub pane: bool,
+    /// On the phone, this client owns the left and right edges of its
+    /// viewport (a map that pans from the edge): the shell's back gesture
+    /// is not recognised over it. Off by default; an app opts in.
+    pub owns_edges: bool,
 }
 
 impl ClientSlot {
@@ -533,6 +537,7 @@ impl ClientSlot {
             open_at: Some(host::now()),
             opened_warm: false,
             takes_focus: true,
+            owns_edges: false,
             via_cargo: false,
             status: String::new(),
             diagnostic: String::new(),
@@ -977,6 +982,7 @@ pub fn spawn_client(
         // A warm instance is not a window yet: nothing may focus it until
         // adoption hands it a tile.
         takes_focus: !warm,
+        owns_edges: false,
         via_cargo,
         status: String::new(),
         diagnostic: String::new(),
