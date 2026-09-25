@@ -1,0 +1,81 @@
+{
+  "implementation": "apps/app-hub/src/view.rs",
+  "renderer": "Native Makepad module; scene contracts rendered responsively, not L0 screen images",
+  "native_components": {
+    "headings": "Label with variable Inter weight800",
+    "body": "Label",
+    "actions": "ButtonFlat",
+    "search": "TextInputFlat",
+    "navigation": "four native Buttons",
+    "lists": "PortalList",
+    "surfaces": "RoundedAllView",
+    "icons": "bundled SVG Icon or catalog artwork in Image",
+    "artwork": "Image"
+  },
+  "scene_rows": {
+    "today-preview": [
+      "Title",
+      "Hero",
+      "Section",
+      "Row"
+    ],
+    "apps-preview": [
+      "Title",
+      "Categories",
+      "Row"
+    ],
+    "search-preview": [
+      "native Search heading",
+      "TextInputFlat",
+      "Categories",
+      "Row"
+    ],
+    "detail-preview": [
+      "Detail",
+      "PreviewArt",
+      "Copy"
+    ],
+    "install-confirmation": [
+      "Detail",
+      "Consent"
+    ],
+    "library": [
+      "Title",
+      "Row"
+    ],
+    "live-empty": [
+      "Title",
+      "Empty"
+    ],
+    "live-error": [
+      "Title",
+      "Notice",
+      "Empty"
+    ]
+  },
+  "actions": {
+    "source": "Switch live / preview explicitly",
+    "today": "Today",
+    "apps": "Apps",
+    "search_tab": "Search",
+    "library": "Library",
+    "search": "Filter the active catalog",
+    "row": "Show app details",
+    "action": "Open built-in or verified installed app; otherwise review permissions",
+    "confirm": "Install exact consent-bound catalog entry",
+    "cancel": "Cancel before installation",
+    "back": "Return to prior view",
+    "retry": "Clear current filters or refresh verified catalog",
+    "preview": "Select preview catalog",
+    "refresh": "Refresh verified catalog and retry artwork"
+  },
+  "raster_policy": "Only declared artwork; atlas and reference screenshots never enter the runtime resources.",
+  "deviations": [
+    "No iOS status bar or home indicator; host supplies system chrome.",
+    "Preview apps are included built-ins, never fake store installs.",
+    "Trail Notes exists only in the optional signed local validation fixture; it is never a bundled live listing.",
+    "Use actual OctoSense Photos sample photography as editorial art; do not present generated mock maps as real app screenshots.",
+    "Native responsive widths and scrolling replace atlas fixed geometry.",
+    "V1 is English; full flow runner hardcodes English/Chinese, so its atlas.py intake is used directly without claiming bilingual/compiled-L0 acceptance."
+  ]
+}

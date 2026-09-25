@@ -58,7 +58,25 @@ pub struct ModuleHost {
 /// still need its crate resource resolver for their bundled fonts. Expose
 /// only that existing resolver during theme registration, then remove it.
 fn apply_module_style(vm: &mut ScriptVm, sheet: &desktop_style::StyleSheet) {
-    desktop_style::install(vm, sheet.clone());
+    let mut inherited = sheet.clone();
+    // A nested Splash replays this trusted theme after its ambient `mod.res`
+    // has been stripped. Bind only the existing bundled-resource resolver in
+    // the theme's lexical scope, so that replay can still load mobile fonts.
+    // This does not publish a resource module to the card's source.
+    inherited.theme = format!(
+        "mod._octosense_widgets_before_style = mod.widgets\n\
+         mod._octosense_prelude_before_style = mod.prelude.widgets\n\
+         let crate_resource = mod.prelude.widgets.crate_resource\n{}", inherited.theme);
+    // widgets_mod rebuilds these namespaces, including the prelude Splash's
+    // lowered card uses. Retain host additions (DesignSurface and the kit)
+    // while letting the freshly themed framework names replace their old ones.
+    inherited.widgets = format!(
+        "{}\n\
+         mod.widgets = {{..mod._octosense_widgets_before_style, ..mod.widgets}}\n\
+         mod.prelude.widgets = {{..mod._octosense_prelude_before_style, ..mod.prelude.widgets}}\n\
+         mod._octosense_widgets_before_style = nil\n\
+         mod._octosense_prelude_before_style = nil\n", inherited.widgets);
+    desktop_style::install(vm, inherited);
     vm.with_reload(|vm| {
         script_eval!(vm, { mod.res = {crate_resource: mod.prelude.widgets.crate_resource} });
         makepad_widgets::widgets_mod(vm);
@@ -263,6 +281,49 @@ impl ModuleHost {
         cx.free_splash_vm(vm_id);
         log!("wm: module instance {label} torn down; isolate {vm_id:?} freed");
         true
+    }
+}
+
+#[cfg(test)]
+mod nested_style_tests {
+    use super::*;
+
+    #[test]
+    fn nested_card_isolate_reloads_mobile_fonts_without_resource_authority() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let outer = cx.alloc_splash_vm_with_network(false);
+        let inherited = cx.with_script_vm_id_trusted(outer, |vm| {
+            apply_module_style(vm, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
+            #[cfg(feature = "app-hub")]
+            octosense_app_hub_app::CARD_MODULE.register(vm);
+            desktop_style::current(vm).unwrap()
+        });
+        let nested = cx.alloc_splash_vm_with_network(false);
+        cx.with_script_vm_id_trusted(nested, |vm| {
+            vm.bx.captured_errors = Some(Vec::new());
+            // Splash replays the inherited stylesheet inside a fresh isolate.
+            // Its resource module has already been stripped at allocation.
+            desktop_style::install(vm, inherited);
+            vm.with_reload(|vm| {
+                makepad_widgets::widgets_mod(vm);
+                desktop_style::apply_widgets(vm);
+            });
+            let root = script_eval!(vm, {use mod.widgets.* Label{text: "Trail Notes"}});
+            assert!(root.as_object().is_some());
+            #[cfg(feature = "app-hub")]
+            {
+                let card = script_eval!(vm, {use mod.prelude.widgets.* DesignSurface{title := Label{text: "Trail Notes"}}});
+                let root = WidgetRef::script_from_value(vm, card);
+                assert_eq!(root.label(vm.cx_mut(), ids!(title)).text(), "Trail Notes", "card errors: {:?}", vm.take_errors());
+            }
+            assert!(script_eval!(vm, {mod.res}).is_nil(), "the card must not gain a resource module");
+            assert!(script_eval!(vm, {mod.run}).is_nil(), "the card must not gain process access");
+            let errors = vm.take_errors();
+            assert!(errors.is_empty(), "nested card theme errors: {errors:?}");
+        });
+        cx.free_splash_vm(nested);
+        cx.free_splash_vm(outer);
     }
 }
 

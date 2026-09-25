@@ -3,9 +3,10 @@
 //!
 //! `register` puts this crate's widget family and root type into the
 //! isolate the host prepared; `create` mints one `MapsView{}` root there.
-//! The module never opens a socket or spawns a thread itself: the map's
-//! tiles, the searches and the routes ride the platform's own HTTP request
-//! API, and the fixes its location updates, so it works identically hosted.
+//! The widget owns its requests and cancels them at shutdown. On Android,
+//! service requests use a rustls worker for TLS 1.3 support on older phones;
+//! other platforms and map tiles use the framework's HTTP request API.
+//! Location fixes come from the platform on every host.
 
 use crate::view::MapsView;
 use makepad_ai_services::wire::{ServiceCall, ServiceManifest, ToolResult};

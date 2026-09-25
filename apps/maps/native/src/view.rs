@@ -14,11 +14,14 @@ use crate::geo::{
     Units,
 };
 use crate::guidance::{ActiveNav, NavTick};
+use crate::http::MapHttp;
 use crate::model::{
     body_text, plain_error, LocationAsk, LocationFix, LocationState, MapsModel, Request,
     RouteState, Screen, SearchState, SearchTarget, Skin, LOCATION_FIX_TIMEOUT_SECONDS,
-    MAX_BODY_BYTES, STATE_KEY, USER_AGENT,
+    STATE_KEY,
 };
+#[cfg(not(target_os = "android"))]
+use crate::model::{MAX_BODY_BYTES, USER_AGENT};
 use crate::places::{self, coordinates_text, Place, PlaceKind};
 use crate::routing::{Arrow, Mode};
 use crate::sheet::{Detent, Sheet};
@@ -560,6 +563,9 @@ pub struct MapsView {
     #[rust]
     model: MapsModel,
     #[rust]
+    #[allow(dead_code)] // The framework owns service requests on other platforms.
+    http: MapHttp,
+    #[rust]
     location: LocationState,
     /// Runs while the locate button waits for its first fix.
     #[rust]
@@ -700,7 +706,7 @@ impl MapsView {
             cx.stop_timer(timer);
         }
         for id in self.model.cancel_all() {
-            cx.cancel_http_request(id);
+            self.cancel_request(cx, id);
         }
         // Its frames stop with it.
         self.nav = None;
@@ -857,20 +863,35 @@ impl MapsView {
 
     /// One GET to a service, named as its terms ask, its body capped.
     fn send(&mut self, cx: &mut Cx, id: LiveId, url: String) {
-        let mut request = HttpRequest::new(url, HttpMethod::GET);
-        request.set_header("Accept".into(), "application/json".into());
-        request.set_header("User-Agent".into(), USER_AGENT.into());
-        // The backend stops allocating at the cap while bytes arrive. The
-        // Android Java backend has no transport cap, so the check on the
-        // landed body (`body_text`) is the line that holds there.
-        request.max_response_body_bytes = MAX_BODY_BYTES as u64;
-        cx.http_request(id, request);
+        #[cfg(target_os = "android")]
+        {
+            let _ = cx;
+            self.http.send(id, url);
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let mut request = HttpRequest::new(url, HttpMethod::GET);
+            request.set_header("Accept".into(), "application/json".into());
+            request.set_header("User-Agent".into(), USER_AGENT.into());
+            request.max_response_body_bytes = MAX_BODY_BYTES as u64;
+            cx.http_request(id, request);
+        }
+    }
+
+    fn cancel_request(&mut self, cx: &mut Cx, id: LiveId) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = cx;
+            self.http.cancel(id);
+        }
+        #[cfg(not(target_os = "android"))]
+        cx.cancel_http_request(id);
     }
 
     /// Whatever the model no longer wants an answer to.
     fn cancel_superseded(&mut self, cx: &mut Cx) {
         for id in self.model.superseded() {
-            cx.cancel_http_request(id);
+            self.cancel_request(cx, id);
         }
     }
 
@@ -2274,6 +2295,12 @@ impl Widget for MapsView {
                 }
             }
             Event::Storage(responses) => self.on_storage(cx, responses),
+            #[cfg(target_os = "android")]
+            Event::Signal => {
+                for reply in self.http.drain() {
+                    self.handle_reply(cx, reply.id, reply.body);
+                }
+            }
             Event::LocationUpdate(fix) => self.on_location_update(cx, fix),
             Event::LocationError(error) => {
                 let why = match error {

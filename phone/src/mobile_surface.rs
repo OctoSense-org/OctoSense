@@ -563,7 +563,8 @@ impl PhoneSurface {
     pub fn home_dock(screen: Rect) -> Rect {
         let landscape=screen.size.x>screen.size.y;
         let w=screen.size.x.min(if landscape {380.0}else{1000.0})-24.0;
-        rect(screen.pos.x+(screen.size.x-w)*0.5,screen.pos.y+screen.size.y-112.0,w,82.0)
+        // Leave room for the first-use hint and the swipe-start chevron.
+        rect(screen.pos.x+(screen.size.x-w)*0.5,screen.pos.y+screen.size.y-124.0,w,82.0)
     }
     /// Where the home page's content starts: under the status bar, and on
     /// Android's portrait home under the big clock.
@@ -773,9 +774,9 @@ impl PhoneSurface {
         }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
         let Some((_,text))=phone.hints.pending(phone.android.system_panel) else {return};
-        // Keep the hint below the dock icons and above the gesture bar,
+        // Keep the hint below the dock icons and above the swipe chevron,
         // clear of the favorites' labels and page indicator.
-        let pill=rect(x,screen.pos.y+screen.size.y-38.0,pill_w,24.0);
+        let pill=rect(x,screen.pos.y+screen.size.y-50.0,pill_w,24.0);
         self.rounded(cx,pill,12.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
         self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
     }
@@ -1066,9 +1067,15 @@ impl PhoneSurface {
             let nav_ink=if phone.screen==PhoneScreen::App || phone.keyboard>0.5 {
                 if state.style.dark {rgb(238,238,242)}else{rgb(30,30,34)}
             }else if phone.screen==PhoneScreen::Drawer && !state.style.dark {rgb(30,30,34)}else{rgb(255,255,255)};
-            // Android's own navigation (buttons or its pill) lives in the bottom
-            // inset; the shell's pill would be a second one right above it.
-            if !(android && phone.insets.bottom>0.0) {
+            // Floating navigation replaces this band on Android and OpenHarmony.
+            // Elsewhere, mark the shell's swipe-start band and keep it after the
+            // hints are learned. The keyboard excludes shell swipes, so it hides the cue.
+            if phone.keyboard<=0.5 {
+                let cue=rect(bottom.pos.x+bottom.size.x*0.5-14.0,bottom.pos.y,28.0,20.0);
+                let cue_ink=if phone.screen==PhoneScreen::Home {ink}else{nav_ink};
+                self.rounded(cx,cue,10.0,alpha(cue_ink,0.12));
+                self.d.icon_centered(cx,Ico::ChevronUp,cue,12.0,alpha(cue_ink,0.90));
+            } else if !(android && phone.insets.bottom>0.0) {
                 self.rounded(cx,rect(bottom.pos.x+bottom.size.x*0.5-60.0,bottom.pos.y+12.0,120.0,4.0),2.0,nav_ink);
             }
             self.hits.push((bottom,PhoneHit::Home));
@@ -1131,29 +1138,34 @@ impl PhoneSurface {
         let phone=&state.phone;
         let a=phone.overview as f32;
         let white=rgb(255,255,255);
-        // Under the cards' rounded bottom, above the navigation band.
-        let row_h=76.0;
-        let y=screen.pos.y+screen.size.y-24.0-row_h+30.0;
+        // A compact row leaves both the swipe cue below and split-selection
+        // instructions above unobstructed. Short screens use smaller icons.
+        let icon=if screen.size.y<600.0 {24.0}else{32.0};
+        let row_h=icon+22.0;
+        let y=screen.pos.y+screen.size.y-28.0-row_h;
         let width=(screen.size.x-48.0).min(520.0);
         let x0=screen.pos.x+(screen.size.x-width)*0.5;
         let live=phone.screen==PhoneScreen::Recents;
         if !phone.android.usage_access {
-            let r=rect(x0,y,width,row_h-10.0);
-            self.rounded(cx,r,18.0,alpha(white,0.12*a));
-            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+8.0,r.size.x-36.0,26.0),true,14.0,alpha(white,a),HAlign::Left,"Android apps can show here too");
-            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+36.0,r.size.x-36.0,24.0),false,12.0,alpha(white,0.8*a),HAlign::Left,"Allow usage access in Settings to see them");
+            let r=rect(x0,y,width,row_h);
+            self.rounded(cx,r,14.0,alpha(white,0.12*a));
+            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+2.0,r.size.x-36.0,20.0),true,13.0,alpha(white,a),HAlign::Left,"Android apps can show here too");
+            self.d.label(cx,rect(r.pos.x+18.0,r.pos.y+24.0,r.size.x-36.0,20.0),false,11.0,alpha(white,0.8*a),HAlign::Left,"Allow usage access in Settings to see them");
             if live {self.hits.push((r,PhoneHit::Shade(crate::mobile_shade::ShadeHit::Settings("usage_access"))));}
             return;
         }
         if phone.android.recent_apps.is_empty() {return;}
-        self.d.label(cx,rect(x0,y-24.0,width,20.0),false,12.0,alpha(white,0.75*a),HAlign::Left,"Recent Android apps");
+        let card=card_rect(screen,0.0,phone.page);
+        if phone.groups.pick.is_none() && (phone.order.is_empty() || card.pos.y+card.size.y<=y-24.0) {
+            self.d.label(cx,rect(x0,y-24.0,width,20.0),false,12.0,alpha(white,0.75*a),HAlign::Left,"Recent Android apps");
+        }
         let n=phone.android.recent_apps.len().min(6);
         let cell=width/6.0;
         for (i,id) in phone.android.recent_apps.iter().take(n).enumerate() {
             let r=rect(x0+i as f64*cell,y,cell,row_h);
             let label=phone.android.rows.iter().find(|(app,_)|app==id).map(|(_,l)|l.as_str()).unwrap_or("");
-            self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-48.0)*0.5,r.pos.y,48.0,48.0),white,a);
-            self.label(cx,rect(r.pos.x,r.pos.y+52.0,cell,18.0),label,10.5,false,alpha(white,a));
+            self.draw_launcher_icon(cx,state,id,rect(r.pos.x+(cell-icon)*0.5,r.pos.y,icon,icon),white,a);
+            self.label(cx,rect(r.pos.x,r.pos.y+icon+4.0,cell,18.0),label,10.5,false,alpha(white,a));
             if live {self.hits.push((r,PhoneHit::App(id.clone())));}
         }
     }

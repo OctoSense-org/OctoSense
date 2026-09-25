@@ -47,6 +47,7 @@ pub fn is_hidden(id: &str, hides: &[String]) -> bool {
 /// small, so a few are stand-ins rather than literal pictograms.
 fn icon_for(id: &str) -> Option<Ico> {
     Some(match id {
+        "apphub" => Ico::Menu,
         "terminal" => Ico::Keyboard,
         "browser" => Ico::Search,
         "files" => Ico::Menu,
@@ -61,7 +62,6 @@ fn icon_for(id: &str) -> Option<Ico> {
         "vj" => Ico::Headphone,
         "photos" => Ico::Photo,
         "clock" => Ico::Calendar,
-        "appstore" => Ico::Globe,
         "weather" => Ico::Brightness,
         "fabric" => Ico::Shirt,
         "fab" => Ico::Refresh,
@@ -102,7 +102,7 @@ pub const APPS_MEMO_S: f64 = 1.0;
 /// The list, read from the settings and the file system right now.
 pub fn apps_uncached() -> Vec<MenuItem> {
     let hides = hides();
-    let items: Vec<MenuItem> = clients::registry()
+    let items: Vec<MenuItem> = clients::available_apps()
         .iter()
         // Launchable: a package this checkout can run, or a module this
         // build links (the only kind the web build has).
@@ -152,7 +152,7 @@ mod tests {
         let items = apps();
         // Rows appear in registry order (available subset preserves it).
         let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
-        let registry_order: Vec<String> = clients::registry()
+        let registry_order: Vec<String> = clients::available_apps()
             .iter()
             .filter(|a| labels.contains(&a.label))
             .map(|a| a.label.clone())
