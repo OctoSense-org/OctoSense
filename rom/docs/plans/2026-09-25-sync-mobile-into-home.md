@@ -172,7 +172,7 @@ git rm -q home/.github/workflows/runtime.yml
 git rm -q -f home/tools/test_setup_native.py
 git checkout --ours home/tools/setup-native.py home/src/mobile_island.rs home/Cargo.lock
 git checkout --theirs home/apps/maps/Cargo.toml
-git add home/tools/setup-native.py home/src/mobile_island.rs home/apps/maps/Cargo.toml
+git add home/tools/setup-native.py home/src/mobile_island.rs home/Cargo.lock home/apps/maps/Cargo.toml
 ```
 
 `apps/maps/Cargo.toml` differs between the sides only by mobile's added Android rustls/tokio dependencies and dev-dependencies. Both sides already carry the same makepad pins.
@@ -208,6 +208,12 @@ grep -n 'appstore\|app-hub\|^default\|^members\|\.\./Octo\|\.\./makepad\|\[patch
 ```
 
 Expected: no `appstore` lines. `octosense-app-hub-app` appears twice (optional, and under the native-mobile target). The file also has `default = ["app-hub"]`, `app-hub = [...]`, a `members` list ending in `"apps/app-hub"`, no `../Octo…` or `../makepad` paths, and `[patch.crates-io]` with the `nix` pin still present.
+
+**Step 4: Mark resolved**
+
+```bash
+git add home/Cargo.toml
+```
 
 ### Task 5: `home/src/apps.rs` (installed-app identities)
 
@@ -286,6 +292,12 @@ grep -n 'chain(installed_card_apps\|octosense_appstore\|app-appstore\|"appstore"
 
 Expected: no output. Mobile's test `installed_card_identity_never_focuses_a_builtin_with_the_same_name` is present.
 
+**Step 4: Mark resolved**
+
+```bash
+git add home/src/apps.rs
+```
+
 ### Task 6: `home/src/main.rs`, `style.rs`, `launcher.rs` (App Hub wiring)
 
 **Step 1: Resolve the five `main.rs` hunks**
@@ -353,6 +365,12 @@ grep -rn 'feature = "app-hub", target_os' home/src
 
 Expected: no output from either command.
 
+**Step 7: Mark resolved**
+
+```bash
+git add home/src/main.rs home/src/octosense/style.rs home/src/shell/launcher.rs
+```
+
 ### Task 7: `home/src/mobile_surface.rs` (navigation + swipe cue)
 
 **Step 1: Resolve the single hunk** → exactly:
@@ -387,7 +405,11 @@ Expected: no output from either command.
             }
 ```
 
-The `        }` that follows the hunk closes the `else`. Mobile's `mobile_hints.rs`, `shell/ui.rs` (`Ico::ChevronUp`) and `resources/icons/chevron-up.svg` changes auto-merge.
+The `        }` that follows the hunk closes the `else`. Mobile's `mobile_hints.rs`, `shell/ui.rs` (`Ico::ChevronUp`) and `resources/icons/chevron-up.svg` changes auto-merge. Then mark it resolved:
+
+```bash
+git add home/src/mobile_surface.rs
+```
 
 **Step 2: Verify no markers remain anywhere**
 
@@ -457,7 +479,7 @@ EOF
           cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-app-hub-app -p octosense-maps -p octosense-news -p octosense-appcard
 ```
 
-This also stops the Task 1 Step 4 breakage from coming back unnoticed.
+This also stops the Task 1 Step 4 breakage from coming back unnoticed. Besides the App Hub app and Maps, CI now also tests `octosense-news` and `octosense-appcard`.
 
 **Step 2:** In `home/src/clients.rs`, rename the catalog-merge test's `"appstore"` fixture ids to `"apphub"`. They describe the same shadowing rule; only the name changes.
 

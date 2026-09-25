@@ -38,9 +38,9 @@ release is accepted:
 
 | Work | Snapshot inspected | Disposition |
 | --- | --- | --- |
-| Calendar / mobile PR #11 | `c6e816bea3ab57557d63dd01872ec94f72eeef8e` | App Hub wiring ported; remaining Calendar changes still need review. |
-| OpenHarmony / mobile PR #10 | `78e192c5f8f529428e15025c363472cb5a825717` | Native-mobile module selection and pinned nix ABI fix ported. AppCard advances to `025105c378f1ca44be00937b252e2b169d15b577` for the missing embedded transport. Mate 70 Home builds and runs from this repository. |
-| Main local mobile worktree | `45dbbfbf257c05a7c2d5149b21ebe77f5c71013c` plus local changes | Active work preserved in place; not treated as a clean release baseline. |
+| Calendar / mobile PR #11 | `c6e816bea3ab57557d63dd01872ec94f72eeef8e` | Calendar module hosting outstanding (`home/BACKLOG.md`); everything else is present. |
+| OpenHarmony / mobile PR #10 | `78e192c5f8f529428e15025c363472cb5a825717` | Fully ported. Native-mobile module selection and pinned nix ABI fix ported. AppCard advances to `025105c378f1ca44be00937b252e2b169d15b577` for the missing embedded transport. Mate 70 Home builds and runs from this repository. The last commit, `78e192c` itself, was cherry-picked in the second sync. |
+| Main local mobile worktree | `45dbbfbf257c05a7c2d5149b21ebe77f5c71013c` plus local changes | Superseded: its `allowBackup="false"`, `phone_client_texture` and Mail hosting are already here. |
 
 The separate mobile repository is a transition/archive source, not a dependency
 or second product in the combined build. After the migration lands and outstanding
@@ -77,3 +77,35 @@ the OnePlus has privileged ROM integration, and the Mate runs OpenHarmony.
 See [device validation](home-device-validation.md) for measured results and
 remaining release gates. App Hub's non-atomic replacement and Android runtime
 containment remain production acceptance items.
+
+## Second sync from mobile (2026-09-25)
+
+Mobile main `65488bb9e84e17749d62ef12009e43fd8a6ae115` (PRs #44–#50) is merged
+into `home/` by a second unsquashed subtree merge, "Merge OctoSense-mobile main
+(65488bb) into home". It brings the swipe-start cue, the native App Hub,
+generated portraits and Maps directions on Android 9 over rustls. The runtime
+and AppCard pins from PRs #48–#50 were already mirrored here.
+
+Decisions:
+
+- Mobile's native App Hub (`home/apps/app-hub`, crate `octosense-app-hub-app`,
+  module `apphub`) replaces the direct `octosense-appstore` wiring and its
+  `app-appstore` feature. Installed card apps get `hub:<manifest-id>` launcher
+  IDs. The data root is the same `<data_dir>/apps`, so installed bundles need
+  no migration. App Hub's cfgs use `native_mobile`, so OpenHarmony still links it.
+- Floating navigation stays on Android and OpenHarmony. Mobile's swipe cue is
+  drawn only in the non-floating shell (the desktop phone shell and iOS); the
+  Recents hint and the home dock follow whether the cue is drawn.
+- The `.sources` dependency paths, `home/tools/setup-native.py` and the root CI
+  workflow are kept. Mobile's `home/.github/workflows/runtime.yml` and
+  `home/tools/test_setup_native.py` are not imported.
+
+Work outside mobile main:
+
+- PR #10's remaining commit `78e192c` ("mobile_app: the tick says why it asked
+  for a frame") is cherry-picked. Its other commits were already here or are
+  superseded by the AppCard `9e8e4898` pin.
+- PR #11's Calendar module hosting is left as a follow-up (`home/BACKLOG.md`);
+  its source is in the pinned AppCard at `.sources/appcards/apps/calendar/native`.
+- Unreferenced mobile commit `45dbbfb` is superseded: its `allowBackup="false"`,
+  `phone_client_texture` and Mail hosting are already here.

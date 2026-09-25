@@ -30,6 +30,6 @@ jobs:
       - name: Test Home, App Hub admission and runtime policy
         working-directory: home
         run: |
-          cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub
+          cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-app-hub-app -p octosense-maps -p octosense-news -p octosense-appcard
           cargo test --locked -p makepad-widgets splash_policy
           cargo test --locked -p makepad-script-std gate::tests
