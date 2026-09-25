@@ -10,7 +10,7 @@
 
 ## Objective
 A maps app for the OctoSense phone shell with the interface of Google Maps,
-built on the framework's route app (`../makepad/apps/route`): a full-screen
+built on the framework's route app ([`apps/route`](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/route)): a full-screen
 map under a search bar, a place sheet, directions by car, on foot and by
 bike, and turn-by-turn navigation. One of the shell's apps, as Photos and
 News are.
@@ -61,7 +61,7 @@ Constraints: preserve original portraits and user albums; keep ages/likeness; re
 
 ## Objective
 Make the Photos Library grid zoomable with pinch on mobile and scrolling on
-desktop, following `/Users/guofoo/git/mp/makepad/apps/photos` where useful.
+desktop, following [Makepad's `apps/photos`](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/photos) where useful.
 
 ## Phases
 1. Recover prior scope, inspect the current implementation, and establish the test/device baseline — complete; 12 Photos tests pass.
@@ -81,7 +81,7 @@ desktop, following `/Users/guofoo/git/mp/makepad/apps/photos` where useful.
 # Previous task — OctoSense Photos (2026-09-16)
 
 ## Objective
-Build a working Photos app within OctoSense-mobile, guided by Apple's Photos App Store screenshots. Separate the camera Library from Collections (user albums and automatically generated Memories). Prefer OctoSense AppCards, widgets, and Octoscripts; consult `/Users/guofoo/git/mp/makepad/apps/photos` as a reference.
+Build a working Photos app within OctoSense-mobile, guided by Apple's Photos App Store screenshots. Separate the camera Library from Collections (user albums and automatically generated Memories). Prefer OctoSense AppCards, widgets, and Octoscripts; consult [Makepad's `apps/photos`](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/photos) as a reference.
 
 ## Phases
 1. Clarify data source, interactions, and validation platform; inspect reference screenshots and local architecture — complete.
@@ -143,7 +143,7 @@ Implement the agreed minimal standalone MakeOS project derived from Makepad's `a
 - Track exact upstream provenance and deliberate local changes.
 - Do not modify the Makepad checkout.
 - Implementation and GUI verification are authorized by the user's approval.
-- Destination is `/Users/guofoo/git/mp/makeos`; interpret this as the project root unless clarified.
+- Destination is the MakeOS directory (later OctoSense; now `home/` in this repository); interpret this as the project root unless clarified.
 
 ## Agreed defaults
 - macOS first; retain platform branches without promising untested targets.

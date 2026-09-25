@@ -1,5 +1,5 @@
 {
-  "png": "/var/folders/bk/hykc2qyj22jdn1hnvsm395_m0000gn/T/makepad-remote/octosense-5367/grab-w0-00001.png",
+  "png": "grab-w0-00001.png",
   "w": 0,
   "sz": [
     412,
@@ -8,5 +8,5 @@
   "capture_ms": 1.295,
   "encode_ms": 3.452,
   "capture_kind": "pixels",
-  "saved": "/Users/guofoo/git/octosense/OctoSense-mobile/target/app-hub/validation/trail-notes-open.png"
+  "saved": "home/docs/design/app-hub/evidence/trail-notes-open.png"
 }

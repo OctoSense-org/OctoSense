@@ -1,5 +1,5 @@
 {
-  "png": "/var/folders/bk/hykc2qyj22jdn1hnvsm395_m0000gn/T/makepad-remote/octosense-5367/grab-w0-00006.png",
+  "png": "grab-w0-00006.png",
   "w": 0,
   "sz": [
     412,
@@ -8,5 +8,5 @@
   "capture_ms": 4.711,
   "encode_ms": 3.258,
   "capture_kind": "pixels",
-  "saved": "/Users/guofoo/git/octosense/OctoSense-mobile/target/app-hub/validation/focus-timer-open.png"
+  "saved": "home/docs/design/app-hub/evidence/focus-timer-open.png"
 }

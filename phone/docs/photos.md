@@ -128,7 +128,7 @@ adb shell am start -n dev.makepad.octosense/.MakepadApp
 
 Validated on September 16, 2026, on the connected OnePlus 6T (`ONEPLUS_A6010`,
 ADB serial `19f8cedf`). Used the installed `cargo-makepad` and SDK at
-`/Users/guofoo/git/octos/octos-one/makepad/tools/cargo_makepad/android_33_macos_aarch64`.
+`<makepad-android-sdk>`.
 The APK was installed with `-r`; application data was not cleared. The prior APK
 was saved locally and inspected: it did not contain a bundled `liboctos.so`.
 

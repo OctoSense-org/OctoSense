@@ -8,7 +8,7 @@ window, a process-hosted tile in the desktop catalog, and an in-process
 `AppModule` that phones link automatically.
 
 The reference implementation is the framework's `apps/route`
-(`../makepad/apps/route`, the same app as `~/git/mp/makepad/apps/route`: three
+([`apps/route` in the fork](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/route), the same app as in a separate Makepad checkout: three
 files differ, none in behaviour). OctosMap takes its map, its navigation
 session and its location handling from there, and replaces its interface,
 which is a desktop assistant panel with no search bar, no sheet and no

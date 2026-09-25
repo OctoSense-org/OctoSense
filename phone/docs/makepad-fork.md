@@ -28,12 +28,13 @@ The revision is pinned as a chain, not in one place:
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and `apps/*/Cargo.toml`. Octoscript-Makepad's unmodified
    manifests retain their release pin. `[patch]` sections redirect every one
-   of them to the sibling checkout `../makepad`, so a build has a single
-   Makepad.
+   of them to the pinned checkout `../.sources/makepad`, so a build has a
+   single Makepad.
 
-`tools/setup-native.py` prepares the siblings (`../makepad`,
-`../octoscript`, `../octoscript-makepad`) at those revisions, and
-`tools/setup-native.py --check` fails unless each sibling's `HEAD` is the
+`tools/setup-native.py`, which `python3 scripts/setup-home.py` runs from the
+repository root, prepares the pinned checkouts (`.sources/makepad`,
+`.sources/octoscript`, `.sources/octoscript-makepad`) at those revisions, and
+`tools/setup-native.py --check` fails unless each checkout's `HEAD` is the
 locked revision and its tree is clean. It looks at nothing else: not the
 branch name, not the clone depth.
 
@@ -56,18 +57,16 @@ every time the Makepad pin does; it did not move on 2026-09-19. A build of
 Octoscript on its own, without the sibling patches, would have to fetch
 that revision.
 
-The check reads every `Cargo.toml` under this directory, skipping only
+The check reads every `Cargo.toml` under `home/`, skipping only
 `.git`, `target`, `vendor` and a few other names. A second worktree kept
-inside the repo (`.worktrees/<name>`) is read too, so after a pin move the
+inside it (`home/.worktrees/<name>`) is read too, so after a pin move the
 check fails locally until that worktree's branch has the new revision,
 although nothing is wrong with this branch. CI has no such directory. To
-check one branch alone, give the script a clean copy beside this one:
+check one branch alone, keep other worktrees out of `home/` and run, from
+the repository root:
 
 ```sh
-git worktree add --detach ../OctoSense-mobile-pincheck HEAD
-python3 ../OctoSense-mobile-pincheck/tools/setup-native.py --check --root .. \
-  --cargo-manifest ../OctoSense-mobile-pincheck/Cargo.toml
-git worktree remove ../OctoSense-mobile-pincheck
+python3 scripts/setup-home.py --check --cargo
 ```
 
 ## How the fork relates to upstream
@@ -166,7 +165,7 @@ What a shallow checkout costs on a development machine:
 To get full history, which the check accepts unchanged:
 
 ```sh
-git -C ../makepad fetch --unshallow origin
+git -C ../.sources/makepad fetch --unshallow origin
 ```
 
 On the bench Mac this was done on 2026-09-18. History went from 5 commits
@@ -180,13 +179,14 @@ To go back, either in place (tried on a scratch clone of Octoscript: 464
 commits to 1, working tree untouched, space reclaimed only by the `gc`):
 
 ```sh
-git -C ../makepad fetch --depth=1 origin
-git -C ../makepad reflog expire --expire=now --all
-git -C ../makepad gc --prune=now
+git -C ../.sources/makepad fetch --depth=1 origin
+git -C ../.sources/makepad reflog expire --expire=now --all
+git -C ../.sources/makepad gc --prune=now
 ```
 
-or exactly as the bootstrap leaves it: rename `../makepad` out of the way
-and run `python3 tools/setup-native.py`, which recreates a missing sibling.
+or exactly as the bootstrap leaves it: rename `../.sources/makepad` out of
+the way and run `python3 tools/setup-native.py`, which recreates a missing
+checkout.
 A local branch keeps its files but loses its local history in the first
 way, so push it first.
 

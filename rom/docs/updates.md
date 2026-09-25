@@ -56,8 +56,8 @@ for a test channel for instance.
 ## Security notes
 
 - The release key and the platform key are the trust boundary: whoever holds
-  them can ship code the phone installs. They live off-repo
-  (`~/home/ssh-key/octosense-rom-keys/`).
+  them can ship code the phone installs. They live in a private key directory
+  outside the repository.
 - update.json is not signed; it cannot make the phone install anything the keys
   did not sign, but it can offer an older signed build (refused by update_engine
   for the ROM, by version code for the app) or withhold updates.

@@ -6,7 +6,8 @@ MakepadActivity.java`), and that activity *is* the Android side of the
 framework: every JNI call the Rust backend makes lands in a method the
 activity declares. The tool compiles that Java from the checkout it was
 **built** in — its own `CARGO_MANIFEST_DIR` is baked into the binary — while
-the Rust comes from `../makepad` through the `[patch]` section of
+the Rust comes from the pinned checkout `.sources/makepad` (prepared by
+`python3 scripts/setup-home.py`) through the `[patch]` section of
 `Cargo.toml`, whatever tool runs the build. So the tool and the framework
 must come from the same fork revision, and the installed binary is the one
 thing the pin cannot see.
@@ -46,7 +47,7 @@ expected, not a bug. If these features are to reach upstream one day,
 ## What goes wrong with the wrong tool
 
 A stock tool with the fork's Rust builds and installs without complaint —
-the Rust compiles against `../makepad` either way — and fails at the first
+the Rust compiles against `.sources/makepad` either way — and fails at the first
 JNI call the stock activity lacks. With News that is the first tap on a
 headline:
 
@@ -68,7 +69,8 @@ there once, and again whenever the fork's tool code or Java changes (a pin
 move that touches `tools/cargo_makepad` is the usual trigger):
 
 ```sh
-cargo install --path ../makepad/tools/cargo_makepad --force
+# from the repository root
+cargo install --path .sources/makepad/tools/cargo_makepad --force
 ```
 
 The shared release selects Makepad main `1d3d383e8`, which includes App Hub's
@@ -77,7 +79,7 @@ isolate containment (#22); the consumer lock needs no `makepad_override`.
 To see which checkout an installed tool reads its Java from:
 
 ```sh
-strings ~/.cargo/bin/cargo-makepad | grep -o '/Users/[^ "]*tools/cargo_makepad' | sort -u
+strings ~/.cargo/bin/cargo-makepad | grep -o '/[^ "]*tools/cargo_makepad' | sort -u
 ```
 
 The Android toolchain lives under the tool's own directory

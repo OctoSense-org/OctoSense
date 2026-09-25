@@ -77,7 +77,7 @@ With exactly the resolutions below:
 **Step 1: Start from a clean, current main**
 
 ```bash
-cd ~/git/octosense/OctoSense-rom
+cd octosense-rom
 git status --porcelain            # expect no output
 git switch main && git pull --ff-only
 git switch -c feature/sync-mobile-main
@@ -513,13 +513,13 @@ Expected: applies cleanly (one file, `home/src/mobile_app.rs`).
 
 ```bash
 scripts/build-home.sh --variant standalone --development \
-  --sdk ~/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 \
-  --android-sdk ~/Library/Android/sdk \
-  --gradle-home ~/.local/share/octosense/android-tools/gradle-8.11.1 \
-  --java-home /opt/local/Library/Java/JavaVirtualMachines/openjdk17/Contents/Home \
-  --packager ~/.cargo/bin/cargo-makepad
-adb -s 19f8cedf install -r out/home/standalone/OctoSenseHome.apk
-adb -s 19f8cedf install -r out/home/standalone/OctoSenseBridge.apk
+  --sdk /path/to/makepad-android \
+  --android-sdk /path/to/android-sdk \
+  --gradle-home /path/to/gradle-8.11.1 \
+  --java-home /path/to/full-jdk \
+  --packager /path/to/cargo-makepad
+adb -s <serial> install -r out/home/standalone/OctoSenseHome.apk
+adb -s <serial> install -r out/home/standalone/OctoSenseBridge.apk
 ```
 
 (`--packager` is required: without it the script builds the pinned `cargo-makepad` with `--locked`, and makepad's `.gitignore` excludes `Cargo.lock`.)

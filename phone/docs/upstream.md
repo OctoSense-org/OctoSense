@@ -14,7 +14,10 @@ dependencies use that same commit. Do not independently change their revisions.
 
 The active source is `https://github.com/makepad/makepad.git`, at
 `74b63be83e101ab3a28d3604df77e9662d50a833` on the `work` branch. The local
-source checkout is `../makepad`. `makepad-wm-api` (`libs/wm_api`) and
+source checkout is a separate full Makepad clone, passed as `--source`; the
+recorded default is `../makepad`, relative to `home/`. The shallow pinned
+`.sources/makepad` is not a full clone and cannot be used here.
+`makepad-wm-api` (`libs/wm_api`) and
 `makepad-wm-theme` (`libs/wm_theme`) are pinned Git dependencies alongside
 widgets, platform, app-module and the linked app crates. They are not copied
 into OctoSense. Advancing the shared pin includes their changes and their required
@@ -39,7 +42,8 @@ merge. See `docs/plans/2026-09-11-official-work-sync.md` for the migration scope
 
 ## Daily command
 
-After updating the Makepad checkout, run from OctoSense:
+After updating the full Makepad clone (here the default `../makepad`), run from
+`home/`:
 
 ```sh
 git -C ../makepad pull --ff-only origin work
@@ -51,10 +55,11 @@ changes. The first command is your source-repository Git step; `sync` performs
 the remaining comparison, preparation, and verification without prompts. No
 scheduled job is installed.
 
-Defaults are the provenance file's `default_source` (`../makepad`) and its
-current local `HEAD`. Relative recorded paths resolve from the OctoSense project
-root, independent of the invoking shell's working directory. Older provenance
-without this field retains `../makepad`. An explicit `--source` overrides it;
+Defaults are the provenance file's `default_source` (`../makepad`, a separate
+full Makepad clone) and its current local `HEAD`. Relative recorded paths
+resolve from the OctoSense project root (`home/`), independent of the invoking
+shell's working directory. Older provenance without this field retains
+`../makepad`. An explicit `--source` overrides it;
 use that option from a nested worktree whose sibling location differs.
 The command resolves the target once, so another pull during verification does
 not change the candidate. `--source /path/to/makepad` and `--to <commit-or-ref>`
