@@ -5,6 +5,7 @@
 set -uo pipefail
 TAG=${1:?build tag}; D=${2:-cfb7c9e3}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
+# OCTOSENSE_ROM_BUILDS overrides the local builds folder (see release.sh).
 DIR=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}/$TAG; OUT=$DIR/verify; mkdir -p "$OUT"
 export ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}
 echo "== waiting for boot"

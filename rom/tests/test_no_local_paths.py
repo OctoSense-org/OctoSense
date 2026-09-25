@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Paths that only exist on one developer's machine. Each alternative is written
 # so that it doesn't match its own line here.
 LOCAL_PATH = re.compile(
-    r"/Users/[A-Za-z0-9._-]+/"  # a macOS home; placeholders such as /Users/<name>/ don't match
+    r"/Users/[A-Za-z0-9._-]+"  # a macOS home; placeholders such as /Users/<name>/ don't match
     r"|/var/[f]olders/"  # macOS per-user temporary directories
     r"|[A-Za-z]:\\Users\\"  # a Windows home
     r"|~/(?:home|git)/"  # a personal checkout layout

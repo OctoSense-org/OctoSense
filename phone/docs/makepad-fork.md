@@ -140,7 +140,7 @@ check that the old tip and the remote tip have the same tree
 (`git diff --stat <old> origin/<branch>` prints nothing), move the branch
 with `git branch -f <branch> origin/<branch>` from another branch, and
 cherry-pick onto a fresh branch whatever was not pushed. The siblings
-follow with `git -C ../<sibling> fetch origin` and
+follow with `git -C ../.sources/<sibling> fetch origin` and
 `python3 tools/setup-native.py --update`.
 
 ## The sibling checkouts are shallow

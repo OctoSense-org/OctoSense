@@ -8,6 +8,7 @@ set -euo pipefail
 TAG=${1:?build tag}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 REPO=OctoSense-org/octosense-rom
+# OCTOSENSE_ROM_BUILDS overrides the local builds folder (see release.sh).
 BUILDS=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}; DIR=$BUILDS/$TAG
 HOME_APK=${2:-$HERE/out/home/rom/OctoSenseHome.apk}
 if [ -f "$HOME_APK" ]; then

@@ -20,7 +20,8 @@ HOST=${OCTOSENSE_BUILD_HOST:?set OCTOSENSE_BUILD_HOST in ~/.config/octosense/bui
 KEY=${OCTOSENSE_BUILD_KEY:?set OCTOSENSE_BUILD_KEY in ~/.config/octosense/build.env}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 BUILDS=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}; DIR=$BUILDS/$TAG; SERVE=$BUILDS/serve
-# The host's shell expands the ~, so it stays literal here.
+# The host's shell expands the ~, so it stays literal here. Quote a ~ in an
+# override as well: OCTOSENSE_HOST_BUILD_ROOT='~/path'.
 HOST_ROOT=${OCTOSENSE_HOST_BUILD_ROOT:-'~/octosense-adr0001'}
 OUT="$HOST_ROOT/build/out/octosense-rom/target/product/enchilada"
 mkdir -p "$DIR" "$SERVE"
