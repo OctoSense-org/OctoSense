@@ -76,7 +76,8 @@ flashed or built. These devices do not provide unrooted Android acceptance:
 the OnePlus has privileged ROM integration, and the Mate runs OpenHarmony.
 See [device validation](home-device-validation.md) for measured results and
 remaining release gates. App Hub's non-atomic replacement and Android runtime
-containment remain production acceptance items.
+containment remain production acceptance items. The second sync below settles
+the replacement gate.
 
 ## Second sync from mobile (2026-09-25)
 
@@ -100,6 +101,18 @@ Decisions:
   workflow are kept. Mobile's `home/.github/workflows/runtime.yml` and
   `home/tools/test_setup_native.py` are not imported.
 
+Review of the merge found three follow-up fixes, made on the same branch.
+Installing or updating a Hub app refreshes the launcher's app list at once.
+`clients::available_apps()` no longer reads the install directory twice. On
+Android and OpenHarmony, where no cue is drawn, the Recents hint and home dock
+keep their earlier wording and offsets.
+
+Release gates: App Hub installs into a staging root and publishes the verified
+bundle by renaming, keeping the previous bundle until the new one is in place
+(`home/apps/app-hub/src/catalog.rs`). This settles the non-atomic replacement
+gate. Android runtime containment remains open. Installed Hub apps cannot yet be
+placed on the Android home page (`HUB-01` in `home/BACKLOG.md`).
+
 Work outside mobile main:
 
 - PR #10's remaining commit `78e192c` ("mobile_app: the tick says why it asked
@@ -109,3 +122,20 @@ Work outside mobile main:
   its source is in the pinned AppCard at `.sources/appcards/apps/calendar/native`.
 - Unreferenced mobile commit `45dbbfb` is superseded: its `allowBackup="false"`,
   `phone_client_texture` and Mail hosting are already here.
+
+Validation: the CI test line (Home, App Hub, App Hub policy, Maps, News, AppCard)
+passes 589 tests, and the product tests pass 27. A standalone development build
+was installed over the existing Home on a OnePlus 6T (Android 9), keeping its
+data. Checked on the phone:
+
+- Home starts and links `apphub` and `card`, with no crash or panic.
+- App Hub opens. Offline, it shows the last verified cached catalog with the
+  timeout reason. The preview catalog opens News.
+- Floating navigation works, and no cue is drawn on Android.
+- The Photos library and its albums are intact.
+- Maps launches.
+
+The phone had no network, so the live catalog and Maps directions over TLS 1.3
+were not exercised on the device; the rustls path is covered by Maps' local TLS
+tests. The ROM variant was not built because the platform key is kept on the
+build host.
