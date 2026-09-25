@@ -1,0 +1,34 @@
+{
+  "_comment": "Hosted launcher identities, shared by hosted_identity (home/src/android_integration.rs) and LauncherPlacements.isHosted (Java) so the two validators stay in step.",
+  "valid": [
+    "sheets",
+    "reference",
+    "a",
+    "app_hub-2",
+    "hub:org.example.timer",
+    "hub:timer",
+    "hub:0app",
+    "hub:-x",
+    "hub:a.",
+    "hub:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "invalid": [
+    "",
+    "Sheets",
+    "1app",
+    "apps.finance",
+    "hub:",
+    "hub:.hidden",
+    "hub:a..b",
+    "hub:Org.example",
+    "hub:a/b",
+    "hub:a_b",
+    "hub:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hub:org.example:x",
+    "hubx:app",
+    "other:app",
+    "android:0:a/b",
+    " hub:a",
+    "hub:a "
+  ]
+}
