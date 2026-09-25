@@ -5,7 +5,7 @@
 set -uo pipefail
 TAG=${1:?build tag}; D=${2:-cfb7c9e3}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-DIR=$HOME/home/octosense-org/rom-builds/$TAG; OUT=$DIR/verify; mkdir -p "$OUT"
+DIR=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}/$TAG; OUT=$DIR/verify; mkdir -p "$OUT"
 export ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}
 echo "== waiting for boot"
 for i in $(seq 1 200); do [ "$("$ADB" -s "$D" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 3; done

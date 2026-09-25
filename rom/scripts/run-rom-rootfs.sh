@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 # systemd starts this inside its own mount namespace; all mounts die with it.
-base=/home/ubuntu/octosense-adr0001
+base=${OCTOSENSE_BUILD_ROOT:-/home/ubuntu/octosense-adr0001}
 rootfs="$base/rootfs"
 mount --make-rprivate /
 mount --bind "$base/build" "$rootfs/build"

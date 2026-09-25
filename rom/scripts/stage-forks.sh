@@ -12,7 +12,7 @@ if [ "$#" -gt 2 ]; then echo "usage: stage-forks.sh <tree> [octosense-rom checko
 test -f "$HOME_SOURCE/android/platform-build/stage-quickstep.py" || { echo "Home sources missing from $ROM/home" >&2; exit 1; }
 # The Quickstep stager insists on the record of the upstream Quickstep build it
 # was reviewed against (quickstep-result.json beside upstream-TrebuchetQuickStep.apk).
-BASELINE=${QUICKSTEP_BASELINE:-$HOME/octosense-adr0001/exports/upstream-build/quickstep-result.json}
+BASELINE=${QUICKSTEP_BASELINE:-${OCTOSENSE_BUILD_ROOT:-$HOME/octosense-adr0001}/exports/upstream-build/quickstep-result.json}
 systemctl is-active --quiet octosense-rom-bacon && { echo "a ROM build is running" >&2; exit 1; }
 reset_fork() { # <repo> <paths...>: drop earlier staged edits under the given paths only
     local repo=$1 path; shift

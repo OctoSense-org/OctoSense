@@ -12,18 +12,22 @@ elif [ "$#" -ne 0 ]; then
   echo "usage: release.sh <build-tag> [--serve]" >&2; exit 2
 fi
 # The build host lives in a local, uncommitted file: ~/.config/octosense/build.env
-# with OCTOSENSE_BUILD_HOST=user@host and OCTOSENSE_BUILD_KEY=<ssh key path>.
+# with OCTOSENSE_BUILD_HOST=user@host and OCTOSENSE_BUILD_KEY=<ssh key path>, and
+# optionally OCTOSENSE_ROM_BUILDS (the local builds folder) and
+# OCTOSENSE_HOST_BUILD_ROOT (the host's build root, default ~/octosense-adr0001).
 [ -f "$HOME/.config/octosense/build.env" ] && . "$HOME/.config/octosense/build.env"
 HOST=${OCTOSENSE_BUILD_HOST:?set OCTOSENSE_BUILD_HOST in ~/.config/octosense/build.env}
 KEY=${OCTOSENSE_BUILD_KEY:?set OCTOSENSE_BUILD_KEY in ~/.config/octosense/build.env}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-BUILDS=$HOME/home/octosense-org/rom-builds; DIR=$BUILDS/$TAG; SERVE=$BUILDS/serve
-OUT='~/octosense-adr0001/build/out/octosense-rom/target/product/enchilada'
+BUILDS=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}; DIR=$BUILDS/$TAG; SERVE=$BUILDS/serve
+# The host's shell expands the ~, so it stays literal here.
+HOST_ROOT=${OCTOSENSE_HOST_BUILD_ROOT:-'~/octosense-adr0001'}
+OUT="$HOST_ROOT/build/out/octosense-rom/target/product/enchilada"
 mkdir -p "$DIR" "$SERVE"
 echo "== downloading build $TAG"
 # One remote argument, paths separated by spaces: rsync fetches them all in one session.
 rsync -a --partial -e "ssh -i $KEY -o BatchMode=yes" \
-  "$HOST:$OUT/boot.img $OUT/dtbo.img $OUT/vbmeta.img $OUT/vendor.img $OUT/system.img ~/octosense-adr0001/exports/rom-build/zip.sha256 ~/octosense-adr0001/exports/rom-build/lineage-*.zip" "$DIR/"
+  "$HOST:$OUT/boot.img $OUT/dtbo.img $OUT/vbmeta.img $OUT/vendor.img $OUT/system.img $HOST_ROOT/exports/rom-build/zip.sha256 $HOST_ROOT/exports/rom-build/lineage-*.zip" "$DIR/"
 echo "== manifest"
 python3 "$HERE/scripts/make-manifest.py" "$DIR" "OctoSense $TAG" enchilada
 INC=$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "grep -m1 '^ro.build.version.incremental=' $OUT/system/build.prop | cut -d= -f2")

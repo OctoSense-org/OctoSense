@@ -53,8 +53,10 @@ qualification; an unverified phone remains read-only. See
 ## Host chroot notes
 
 The build runs in an Ubuntu 24.04 chroot (`~/octosense-adr0001/rootfs`) on a
-26.04 host. The chroot has no `gpgv`, so apt cannot verify the archive; packages
-are added by downloading the 24.04 `.deb` files and `dpkg -i` inside the chroot.
+26.04 host. The scripts that run on the host use `~/octosense-adr0001` as their
+build root by default; set `OCTOSENSE_BUILD_ROOT` to use another. The chroot
+has no `gpgv`, so apt cannot verify the archive; packages are added by
+downloading the 24.04 `.deb` files and `dpkg -i` inside the chroot.
 Added so far: `libssl3t64` and `libssl-dev` 3.0.13-0ubuntu3.15 (the msm-4.9
 kernel's `sign-file` and `extract-cert` host tools need the OpenSSL headers).
 

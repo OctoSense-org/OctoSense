@@ -8,7 +8,7 @@ set -euo pipefail
 TAG=${1:?build tag}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 REPO=OctoSense-org/octosense-rom
-BUILDS=$HOME/home/octosense-org/rom-builds; DIR=$BUILDS/$TAG
+BUILDS=${OCTOSENSE_ROM_BUILDS:-$HOME/home/octosense-org/rom-builds}; DIR=$BUILDS/$TAG
 HOME_APK=${2:-$HERE/out/home/rom/OctoSenseHome.apk}
 if [ -f "$HOME_APK" ]; then
     [ "$(basename "$HOME_APK")" = OctoSenseHome.apk ] || { echo "use the ROM build's OctoSenseHome.apk and adjacent build.json" >&2; exit 2; }

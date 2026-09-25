@@ -30,7 +30,7 @@ App Hub 的应用目录和发布流程位于 [OctoSense-App-Hub](https://github.
 
 ## 构建主机的 chroot 记录
 
-当前构建在 Ubuntu 26.04 主机上的 Ubuntu 24.04 chroot（`~/octosense-adr0001/rootfs`）中运行。该 chroot 缺少 `gpgv`，apt 无法验证软件包归档；现有环境通过下载 24.04 的 `.deb` 文件并在 chroot 中运行 `dpkg -i` 添加软件包。
+当前构建在 Ubuntu 26.04 主机上的 Ubuntu 24.04 chroot（`~/octosense-adr0001/rootfs`）中运行。在构建主机上运行的脚本默认以 `~/octosense-adr0001` 为构建根目录，可通过 `OCTOSENSE_BUILD_ROOT` 改用其他目录。该 chroot 缺少 `gpgv`，apt 无法验证软件包归档；现有环境通过下载 24.04 的 `.deb` 文件并在 chroot 中运行 `dpkg -i` 添加软件包。
 
 已添加 `libssl3t64` 和 `libssl-dev` 3.0.13-0ubuntu3.15，供 msm-4.9 内核的主机工具 `sign-file` 与 `extract-cert` 使用 OpenSSL 头文件。这是构建服务器的环境记录，使用网页安装器的手机不需要配置 chroot。
 
