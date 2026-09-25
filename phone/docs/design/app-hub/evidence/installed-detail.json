@@ -1,5 +1,5 @@
 {
-  "png": "/var/folders/bk/hykc2qyj22jdn1hnvsm395_m0000gn/T/makepad-remote/octosense-76054/grab-w0-00003.png",
+  "png": "grab-w0-00003.png",
   "w": 0,
   "sz": [
     412,
@@ -8,5 +8,5 @@
   "capture_ms": 4.772,
   "encode_ms": 4.559,
   "capture_kind": "pixels",
-  "saved": "/Users/guofoo/git/octosense/OctoSense-mobile/target/app-hub/validation/installed-detail.png"
+  "saved": "home/docs/design/app-hub/evidence/installed-detail.png"
 }

@@ -4,8 +4,8 @@ Status: phone benchmarks in progress. Native parity across the shell is NOT demo
 
 ## Source and builds
 
-- Worktree: `~/home/OctoSense-native-perf`
-- Branch: `perf/native-frame-budget`, based on PR #28 commit `344655f0281ce390f67181bacbfa6b1721cb696a`.
+- Worktree: a separate OctoSense-mobile worktree (`OctoSense-native-perf`)
+- Branch: `perf/native-frame-budget`, based on PR #28 commit [`344655f0281ce390f67181bacbfa6b1721cb696a`](https://github.com/OctoSense-org/octosense-rom/commit/344655f0281ce390f67181bacbfa6b1721cb696a).
 - Framework remains pinned to makepad `2d9f8286d9ff2cfb348cb3c1ebd72bc9cedf6c22`.
 - `baseline-efc153c.apk`: release APK built from the unchanged base. SHA-256 `968d7c945ee8b94d7ad276a134682b272b453c31ec662aae6ea469609235d8bd`.
 - `wallpaper-cache.apk`: candidate release APK. SHA-256 `3c5789440f100babad0c44bc838af8e03353986085a083d3647fdbe7f6c7384c`.
@@ -25,7 +25,7 @@ The procedural wallpaper renders into a reusable full-resolution texture. Naviga
 - Measurement parser checks passed: sentinel/duplicate frames, Android 15 wrappers, an interior 500 ms stall retained, idle-only samples rejected as insufficient activity.
 - Native Metal runtime: Home, shade pull, shade close, controls, and dark-mode change inspected. The cache re-recorded when appearance changed, and its pixels remained correct.
 - With `gpu.pass` tracing enabled, one shade pull had 36 main-window paints and zero wallpaper paints between input start and settle, before any screenshot request. `/g` explicitly repaints child passes and its capture timings are NOT animation frame timings.
-- Full unit suite has an unrelated catalog failure: `clock points at the wrong package` when default catalog paths resolve to the existing `~/home/makepad` tree. An isolated catalog pointing at the pinned fork then exposes the existing Route binary-name mismatch (`makepad-app-route` vs `route`). No catalog source or tests were changed to hide these failures.
+- Full unit suite has an unrelated catalog failure: `clock points at the wrong package` when default catalog paths resolve to an existing, separate Makepad checkout. An isolated catalog pointing at the pinned fork then exposes the existing Route binary-name mismatch (`makepad-app-route` vs `route`). No catalog source or tests were changed to hide these failures.
 - All owned desktop test instances were closed.
 
 ## Phone status and remaining work
@@ -100,9 +100,9 @@ The old PR #28 baseline on this phone opened the shade at ~29–33 fps and close
 
 `target/perf-artifacts/drop_analysis.py RUN_DIRECTORY` accepts a run directory relative to `target/perf-artifacts` or an absolute path, errors on a missing directory, and skips `.invalid.json` samples. `atrace_timeline.py --trace TRACE.txt.gz --run RUN.json` accepts a paired plain or gzip trace and raw run with a clock-sync marker. Both copied tools are beside the run directories, compile with `py_compile`, and replay the original Recents trace (including a gzip copy) or current AppCard runs; the gzip replay log is `recents-atrace-gzip-replay.txt`. The `run_cases.py` driver now rejects samples with fewer than ten active frame intervals as `.invalid.json`; the five old `op6-pointer-loop-final-island-warm` JSONs were relabeled this way and excluded. A manual marker log proved the triple tap animates, and the fresh-process block produced five valid short spans. Two passed; three skipped one early refresh, so Island remains a gate failure.
 
-The [gap analysis](../../../octosense-org/docs/octosense-android-perf-gap-analysis.md) ranks the remaining source clues and verification steps. The current Vulkan off-screen path waits on CPU fences before and after each pass (`platform/src/os/linux/vulkan.rs:3557,3946`); this is a source concern, and the per-pass wait cost remains unmeasured. Next decisions need paired pass/drop traces and visually correct Recents/Group captures, AppCard capture freshness tests that pass both directions, first-use and live-tile checks, and memory/lifecycle evidence. Full native parity remains a release gate failure until the failing scenarios pass repeated same-device runs.
+The [gap analysis](perf-gap-analysis.md) ranks the remaining source clues and verification steps. The current Vulkan off-screen path waits on CPU fences before and after each pass (`platform/src/os/linux/vulkan.rs:3557,3946`); this is a source concern, and the per-pass wait cost remains unmeasured. Next decisions need paired pass/drop traces and visually correct Recents/Group captures, AppCard capture freshness tests that pass both directions, first-use and live-tile checks, and memory/lifecycle evidence. Full native parity remains a release gate failure until the failing scenarios pass repeated same-device runs.
 
-**Later Vulkan probe, 21:37 UTC:** an isolated release `MAKEPAD=vulkan` build of the same optimized UI created a Vulkan device/swapchain on the OnePlus 6. Its usable warm shade runs were 21.27–22.02 fps opening (0/4 passing) and 36.78–38.28 fps closing (0/5 passing), so the unchanged backend was rejected as a full-app replacement. The pinned per-pass CPU wait cost remains unmeasured. The [separate probe record](../../../OctoSense-frame-baseline/target/perf-artifacts/vulkan-probe-validation.md) has raw runs, driver data, APK hash, invalid first-use samples and visual caveats. The final GLES APK was reinstalled and the light Home screenshot was confirmed.
+**Later Vulkan probe, 21:37 UTC:** an isolated release `MAKEPAD=vulkan` build of the same optimized UI created a Vulkan device/swapchain on the OnePlus 6. Its usable warm shade runs were 21.27–22.02 fps opening (0/4 passing) and 36.78–38.28 fps closing (0/5 passing), so the unchanged backend was rejected as a full-app replacement. The pinned per-pass CPU wait cost remains unmeasured. The separate [probe record](vulkan-probe-record.md) has raw runs, driver data, APK hash, invalid first-use samples and visual caveats. The final GLES APK was reinstalled and the light Home screenshot was confirmed.
 
 ## Scene-cache candidate — 15 Sep 2026, 22:00–23:00 UTC
 
@@ -113,7 +113,7 @@ The [gap analysis](../../../octosense-org/docs/octosense-android-perf-gap-analys
 - **kgsl GPU traces** (`kgsl-*.txt` + `.markers`, `kgsl_gpu_timeline.py`, `kgsl_frames_summary.py`): per-submission GPU execution time, clock level and CPU waits, joined to `phone.frames`/`phone.input`. `kgsl-gl-recents-home` is a home swipe, not a return (its markers show `screen=Home overview=0`; the preceding hold was lost to a USB drop). `kgsl-gl-shade-open/close` were captured on the Vulkan probe (failed GL reinstall) and duplicate `kgsl-vk-shade-*`. `kgsl-gl2-shade-*` are the verified GLES final APK; `kgsl-gl2-shade-close` has no markers. `kgsl-scene-cache-*` are v1, `kgsl-scene-cache-v2-*` v2 (the group-close and shade traces there were cut by USB drops), `kgsl-scene-cache-v3-*` v3.
 - **GPU clock A/B** (`op6-gpu-pin710-{recents,group}-warm`, `op6-gpu-ctrl257-*`): Adreno devfreq `min_freq` written to 710000000 via `su` for the pinned block, read back at 710 MHz, restored to 257000000 afterwards and confirmed; no other phone setting changed. One control Recents run rejected over USB.
 - **Screenshots** via `adb_capture.py` (chunked, CRC-checked): `op6-scene-cache-v2-{home,group,recents,shade}.png`, `op6-scene-cache-v3-*.png`. The earlier `op6-scene-cache-*.png` and `op6-gl-restored-after-kgsl.png` are 62-byte failed `exec-out` captures, not images.
-- Vulkan probe traces and their reading: `../../OctoSense-frame-baseline/target/perf-artifacts/vulkan-probe-validation.md`.
+- Vulkan probe traces and their reading: [Vulkan probe record](vulkan-probe-record.md).
 
 ### Warm blocks, v3 (`op6-scene-cache-v3-*-warm`, unpinned clocks, valid runs)
 

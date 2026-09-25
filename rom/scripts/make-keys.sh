@@ -2,8 +2,9 @@
 # Generates the OctoSense ROM signing keys (platform, APK and APEX) into $KEYS and installs
 # them as vendor/lineage-priv/keys in the tree, the layout LineageOS's build reads.
 set -euo pipefail
-TREE=$HOME/octosense-adr0001/build
-KEYS=$HOME/octosense-adr0001/keys
+ROOT=${OCTOSENSE_BUILD_ROOT:-$HOME/octosense-adr0001}
+TREE=$ROOT/build
+KEYS=$ROOT/keys
 SUBJECT='/C=US/ST=California/L=Santa Clara/O=OctoSense/OU=OctoSense/CN=OctoSense'
 mkdir -p "$KEYS"; cd "$KEYS"
 gen() { # name bits -> name.pem (PKCS#1 private), name.pk8 (PKCS#8 DER), name.x509.pem (cert)

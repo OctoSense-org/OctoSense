@@ -12,7 +12,7 @@
 
 **Design:** `docs/plans/2026-09-16-news-app-phase2-design.md`. Phase 1 context: `docs/plans/2026-09-16-news-app.md`.
 
-**Verified API facts (ground truth at this revision; paths under `~/.cargo/git/checkouts/makepad-d00a25647c09e43e/ad8f372/`):**
+**Verified API facts (ground truth at this revision; paths under [`OctoSense-org/makepad` at `ad8f372`](https://github.com/OctoSense-org/makepad/tree/ad8f3729d2c24ba5a3bda5c8865a2b8366480147)):**
 - `WmRequest` (`libs/wm_api/src/lib.rs`) is `Clone + Debug + PartialEq + SerJson + DeJson`; every type that is `'static + Clone + Debug + Send + Sync` implements `WidgetActionTrait` (`widgets/src/widget.rs:1471`), so a view can `cx.widget_action(self.widget_uid(), WmRequest::Open{..})`. A `WidgetAction` has public `action: Box<dyn WidgetActionTrait>` and `widget_uid`; `wa.action.downcast_ref::<WmRequest>()` recovers it (`widget.rs:1496`).
 - `makepad_wm_api::send(cx, &req)` sends from a hosted PROCESS only (`in_makepad_studio`); it returns false standalone.
 - The host handles requests in `src/main.rs` `on_wm_request(cx, client, req)`; `WmRequest::Launch { app, .. }` currently drops `args`; `open_request` spawns via `preview::spawn_for_request` which appends the path as the app's last argument; `clients::find_app(id)` returns a catalog entry even when its manifest is missing; `crate::apps::is_launchable(&app)` is the real check.

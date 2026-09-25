@@ -97,7 +97,7 @@
       "log": "target/app-hub/validation/icon-desktop-build.log"
     },
     {
-      "command": "../makepad/target/release/cargo-makepad makepad android --sdk-path=/Users/guofoo/git/octosense/makepad/tools/cargo_makepad/android_33_macos_aarch64 build -p octosense --release",
+      "command": "cargo-makepad makepad android --sdk-path=<makepad-android-sdk> build -p octosense --release",
       "result": "passed",
       "log": "target/app-hub/validation/icon-android-build.log"
     }

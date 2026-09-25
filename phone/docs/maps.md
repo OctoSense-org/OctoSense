@@ -8,7 +8,7 @@ Its launcher id is `maps`, its label **OctosMap**, and it opens from the home
 grid and the App Library's Productivity card. It has no home tile yet
 (MAPS-03).
 
-It is built on the framework's route app (`../makepad/apps/route`): the same
+It is built on the framework's route app ([`apps/route`](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/route)): the same
 `MapView`, the same hosted vector archive, the same navigation session and
 location handling, under a phone interface of its own. The design and the
 plan are `docs/plans/2026-09-18-octosmap-design.md` and

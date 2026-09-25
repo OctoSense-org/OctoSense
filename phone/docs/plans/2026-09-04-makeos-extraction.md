@@ -14,7 +14,7 @@
 
 ## 1. Proposed scope and defaults
 
-- Project root is `/Users/guofoo/git/mp/makeos`, without a second nested `makeos` directory.
+- Project root is the MakeOS directory (later OctoSense; now `home/` in this repository), without a second nested `makeos` directory.
 - Package and default executable are `makeos`; one root Cargo package can also own a small workspace for reference apps.
 - First validation target is this Mac. Preserve upstream desktop platform branches, but promise Linux/Windows support only after testing those platforms. Mobile, web delivery, and a Linux login-session compositor are later milestones.
 - Start with an empty, usable desktop: tiling, focus, workspaces, launcher, themes, resizing, and lifecycle handling.

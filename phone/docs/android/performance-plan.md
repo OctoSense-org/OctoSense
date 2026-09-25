@@ -151,4 +151,4 @@ Completion requires:
 3. A Vulkan decision record covering the unchanged backend and any synchronization improvements, if that experiment is pursued.
 4. A dated update to the findings reports once the final source is validated, keeping the OnePlus 6 and OnePlus 6T evidence distinct.
 
-Implementation locations: [phone composition and caches](../../OctoSense-native-perf/src/desk/phone.rs), [phone materials and warmup](../../OctoSense-native-perf/src/mobile_surface.rs), [shade drawing](../../OctoSense-native-perf/src/mobile_shade.rs), and [frame measurement](../../OctoSense-native-perf/scripts/measure_android_frames.py).
+Implementation locations: [phone composition and caches](../../src/desk/phone.rs), [phone materials and warmup](../../src/mobile_surface.rs), [shade drawing](../../src/mobile_shade.rs), and [frame measurement](../../scripts/measure_android_frames.py).

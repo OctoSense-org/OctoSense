@@ -50,7 +50,7 @@ OctoSense's hosted cards and internal app switcher are distinct from Android app
 
 ## 3. Current starting point
 
-The inspected [Android manifest template](../../OctoSense-native-perf/resources/android/AndroidManifest.xml.template) declares an ordinary app-drawer entry and explicitly leaves Home handling to the device launcher. It also handles AppCard share and deep-link intents. The phone interface already supplies home layouts, cards, and internal navigation, but these do not establish Android Home or system-task integration.
+The inspected [Android manifest template](../../resources/android/AndroidManifest.xml.template) declares an ordinary app-drawer entry and explicitly leaves Home handling to the device launcher. It also handles AppCard share and deep-link intents. The phone interface already supplies home layouts, cards, and internal navigation, but these do not establish Android Home or system-task integration.
 
 Treat those existing interfaces as reusable UI. Add an Android integration layer that supplies installed-app data, launch actions, package changes, and lifecycle events to the Rust/Makepad interface. Keep system-specific calls behind that boundary so existing hosted cards remain usable.
 
@@ -64,13 +64,13 @@ This is a **source inspection dated 15 September 2026**, using the local `OctoSe
 
 | Source evidence | What it establishes |
 |---|---|
-| [App registry](../../OctoSense-native-perf/src/apps.rs) defines `Hosting::Module` and `Hosting::Process` | Existing hosting supports linked Makepad modules and the cooperating desktop process protocol |
-| [Platform hosting gate](../../OctoSense-native-perf/src/host.rs) disables `processes_available()` on Android and iOS | The desktop child-app hosting path is not available on the phone |
-| [Module frame capture](../../OctoSense-native-perf/src/dock_warp.rs) records drawing into a `WindowFrame` texture | Current app previews and effects operate on content rendered through Makepad |
+| [App registry](../../src/apps.rs) defines `Hosting::Module` and `Hosting::Process` | Existing hosting supports linked Makepad modules and the cooperating desktop process protocol |
+| [Platform hosting gate](../../src/host.rs) disables `processes_available()` on Android and iOS | The desktop child-app hosting path is not available on the phone |
+| [Module frame capture](../../src/dock_warp.rs) records drawing into a `WindowFrame` texture | Current app previews and effects operate on content rendered through Makepad |
 | Makepad's `VideoPlayer.java` uses `SurfaceTexture`; its Android camera code supports hardware-buffer textures | Android media texture interoperation exists, but it does not establish access to other apps' windows |
 | Searches of OctoSense and the inspected Makepad platform, widgets, and Android Java sources found no task-hosting implementation using `TaskView`, `TaskOrganizer`, `ActivityView`, `VirtualDisplay`, or `SurfaceControlViewHost` | A native Android app-hosting layer would be new integration work |
 
-The phone's existing Reference, Sheets, Photos, and AppCard modules are linked into the OctoSense APK. Their successful embedding does not demonstrate embedding their separately installed APKs or unrelated Android apps. [Current Android packaging](../../OctoSense-native-perf/README.md).
+The phone's existing Reference, Sheets, Photos, and AppCard modules are linked into the OctoSense APK. Their successful embedding does not demonstrate embedding their separately installed APKs or unrelated Android apps. [Current Android packaging](../../README.md).
 
 ### Feasible integration paths
 

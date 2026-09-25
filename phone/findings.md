@@ -57,8 +57,9 @@
 - Connected device is still the OnePlus 6T (`19f8cedf`).
 - Initial inspection output was too broad and truncated; subsequent reads are bounded.
 - Baseline `cargo test -p octosense-photos --locked`: 12 tests pass.
-- Cargo patches use the prepared sibling `../makepad`; framework changes are not
-  part of this task. Its native `FileDialog` supports filtered multiple selection.
+- Cargo patches use the pinned checkout `../.sources/makepad`, prepared by
+  `python3 scripts/setup-home.py`; framework changes are not part of this task.
+  Its native `FileDialog` supports filtered multiple selection.
 - Android picker results are `content://` URIs; `want_bytes` currently tries
   `std::fs`, so it cannot load Android selections. Use the existing native picker
   and a Photos-local ContentResolver reader on a worker thread.
@@ -82,7 +83,7 @@
 - User confirmed Library and Collections, photo viewer, editable albums, and generated Memories.
 - User selected connected Android device validation: OnePlus 6T (`19f8cedf`).
 - Root Cargo already registers a `photos` module from the upstream picture-wall app, on Android/iOS and via `app-photos` on desktop. A new local `apps/photos` module can replace that provider without changing the launch identity.
-- Existing AppCard integration delegates to `octos-app::AppShell`, which is an AI card/composer application with a kernel/transport lifecycle. Reusing its full shell would add unrelated behavior. Primary reusable UI lives in `../makepad/widgets/src/kit.rs`, Splash/Octoscript, and shared image widgets.
+- Existing AppCard integration delegates to `octos-app::AppShell`, which is an AI card/composer application with a kernel/transport lifecycle. Reusing its full shell would add unrelated behavior. Primary reusable UI lives in [Makepad's `widgets/src/kit.rs`](https://github.com/OctoSense-org/makepad/blob/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/widgets/src/kit.rs), Splash/Octoscript, and shared image widgets.
 - `apps/reference` provides a minimal local AppModule and standalone entry-point pattern. Keep the Photos module in this workspace and leave the Makepad reference checkout unchanged.
 - Five iPhone screenshot asset URLs were extracted from the actual App Store HTML; queued for direct visual inspection.
 - The Octoscript-Makepad desktop photo search example explicitly uses placeholder tiles and lacks real image/keyboard behavior; it is not a complete Photos implementation.
@@ -106,8 +107,8 @@
 # MakeOS findings (historical)
 
 ## Initial observations
-- `/Users/guofoo/git/mp/makeos` is empty; no Cargo package, Git metadata, or local instructions were present.
-- Source app: `/Users/guofoo/git/mp/makepad/apps/wm`.
+- The MakeOS project root (later OctoSense; now `home/` in this repository) is empty; no Cargo package, Git metadata, or local instructions were present.
+- Source app: [Makepad's `apps/wm`](https://github.com/OctoSense-org/makepad/tree/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/wm).
 - User requests discussion and planning before implementation.
 - Makepad's source runbook documents built-in `--remote` controls for later runtime verification and asks that agent-created test instances be closed afterward.
 

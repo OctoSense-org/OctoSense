@@ -210,7 +210,7 @@ The existing [sync workflow](docs/upstream.md) remains the starting point.
   `feat/news-reader-platform` branch
   (`9f0621b4b`, four commits on `3a5ff12`),
   not on its `main`. Until the pin moves, this tree builds only against a
-  `../makepad` checkout of that branch, and
+  `.sources/makepad` checkout of that branch, and
   `tools/setup-native.py --check` rejects the checkout.
 
   The revision is pinned as a chain, so the manifests here cannot move

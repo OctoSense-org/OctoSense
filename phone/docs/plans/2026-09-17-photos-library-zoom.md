@@ -16,7 +16,7 @@ existing Octoscript UI, native desktop remote control and Android/ADB.
 
 ## Reference and design
 
-Read `/Users/guofoo/git/mp/makepad/apps/photos/src/view.rs` and its implementation
+Read [Makepad's `apps/photos/src/view.rs`](https://github.com/OctoSense-org/makepad/blob/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/apps/photos/src/view.rs) and its implementation
 in `libs/image_tiles/src/grid.rs`. It uses exponential wheel zoom
 `exp(-delta_y * 0.0025)` anchored at the pointer. Its picture-wall data source and
 camera renderer differ from this app's dated Library; reuse the interaction rule

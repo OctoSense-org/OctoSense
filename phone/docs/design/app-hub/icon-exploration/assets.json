@@ -8,7 +8,7 @@
       "name": "Octo Bloom",
       "description": "A connection to the eight-part OctoSense identity.",
       "file": "a-octo-bloom.png",
-      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a3ef0107-cdab-425a-a96a-da1a4ee0f0a4.png",
+      "source": "$CODEX_HOME/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a3ef0107-cdab-425a-a96a-da1a4ee0f0a4.png",
       "dimensions": [
         1254,
         1254
@@ -20,7 +20,7 @@
       "name": "App Deck",
       "description": "A collection of apps, expressed as overlapping cards.",
       "file": "b-app-deck.png",
-      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a137fdb5-4c14-4d8c-860f-fd56694d7095.png",
+      "source": "$CODEX_HOME/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-a137fdb5-4c14-4d8c-860f-fd56694d7095.png",
       "dimensions": [
         1254,
         1254
@@ -32,7 +32,7 @@
       "name": "Discovery Bag",
       "description": "The clearest marketplace metaphor.",
       "file": "c-discovery-bag.png",
-      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-6228d73f-6c7e-4833-84f7-bd1db89f592c.png",
+      "source": "$CODEX_HOME/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-6228d73f-6c7e-4833-84f7-bd1db89f592c.png",
       "dimensions": [
         1254,
         1254
@@ -44,7 +44,7 @@
       "name": "App Orbit",
       "description": "A connected hub for discovering apps.",
       "file": "d-app-orbit.png",
-      "source": "/Users/guofoo/.codex/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-1c1b3846-489e-4be7-af33-a555a0db8bc1.png",
+      "source": "$CODEX_HOME/generated_images/01a0c545-6403-7f91-8b34-1460e2c37da8/exec-1c1b3846-489e-4be7-af33-a555a0db8bc1.png",
       "dimensions": [
         1254,
         1254

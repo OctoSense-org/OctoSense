@@ -31,7 +31,8 @@ retaining its installed package versions. The root-filesystem archive SHA-256 is
 the server verified it before extraction. No Docker installation or new build
 package versions were needed on the server.
 
-Build files live under `/home/ubuntu/octosense-adr0001/`. A dedicated systemd
+Build files live under `/home/ubuntu/octosense-adr0001/` (set with
+`OCTOSENSE_BUILD_ROOT`). A dedicated systemd
 unit, `octosense-adr0001.service`, runs the Ubuntu userspace in private mount/PID
 namespaces, with compilation as UID 1000. It has a 120 GiB memory ceiling,
 112 GiB memory pressure threshold, 64-CPU quota and 12-hour deadline. Source
