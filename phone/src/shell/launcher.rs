@@ -79,6 +79,11 @@ pub fn invalidate_apps() {
     MEMO.with(|m| *m.borrow_mut() = None);
 }
 
+#[cfg(test)]
+pub fn apps_memoized() -> bool {
+    MEMO.with(|m| m.borrow().is_some())
+}
+
 /// The `apps` provider rows: every registry app whose binary exists, not
 /// hidden, in the CURATED registry order (the user's: browser/files/
 /// terminal first, then by rarity — a deliberate deviation from omarchy's

@@ -133,14 +133,10 @@ fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, installed: Vec<AppDef>
         .collect()
 }
 
-/// Catalog rows plus apps installed since startup. A static checkout catalog
-/// cannot hold the Hub's changing library.
+/// Catalog rows, bundled modules and apps installed through App Hub, read
+/// fresh on each call.
 pub fn available_apps() -> Vec<AppDef> {
-    let mut apps = registry().to_vec();
-    for app in crate::apps::bundled_catalog() {
-        if !apps.iter().any(|existing| existing.id == app.id) { apps.push(app); }
-    }
-    apps
+    registry()
 }
 
 /// Registered ids take precedence over binary aliases. A linked module

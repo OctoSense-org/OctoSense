@@ -563,8 +563,10 @@ impl PhoneSurface {
     pub fn home_dock(screen: Rect) -> Rect {
         let landscape=screen.size.x>screen.size.y;
         let w=screen.size.x.min(if landscape {380.0}else{1000.0})-24.0;
-        // Leave room for the first-use hint and the swipe-start chevron.
-        rect(screen.pos.x+(screen.size.x-w)*0.5,screen.pos.y+screen.size.y-124.0,w,82.0)
+        // Leave room for the first-use hint, and for the swipe-start chevron
+        // where the shell draws one (floating navigation has none).
+        let lift=if crate::mobile_navigation::ENABLED {112.0}else{124.0};
+        rect(screen.pos.x+(screen.size.x-w)*0.5,screen.pos.y+screen.size.y-lift,w,82.0)
     }
     /// Where the home page's content starts: under the status bar, and on
     /// Android's portrait home under the big clock.
@@ -774,9 +776,11 @@ impl PhoneSurface {
         }
         if phone.gesture_out.is_some() || phone.pages.current()!=0 || phone.shade.open>0.001 || phone.overview>0.001 {return;}
         let Some((_,text))=phone.hints.pending(phone.android.system_panel) else {return};
-        // Keep the hint below the dock icons and above the swipe chevron,
-        // clear of the favorites' labels and page indicator.
-        let pill=rect(x,screen.pos.y+screen.size.y-50.0,pill_w,24.0);
+        // Keep the hint below the dock icons and above the swipe chevron (the
+        // bottom edge with floating navigation, which draws none), clear of
+        // the favorites' labels and page indicator.
+        let lift=if crate::mobile_navigation::ENABLED {38.0}else{50.0};
+        let pill=rect(x,screen.pos.y+screen.size.y-lift,pill_w,24.0);
         self.rounded(cx,pill,12.0,alpha(if dark {rgb(255,255,255)} else {rgb(20,18,30)},0.12*opacity));
         self.d.label(cx,pill,false,12.0,alpha(ink,0.85*opacity),HAlign::Center,text);
     }

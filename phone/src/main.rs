@@ -1544,6 +1544,7 @@ impl App {
             self.request_close(cx, client);
         }
         octosense_app_hub_app::icons::invalidate();
+        crate::shell::launcher::invalidate_apps();
         self.redraw_all(cx);
     }
 
@@ -4275,7 +4276,10 @@ mod app_hub_lifecycle_tests {
             app.module_host.create(&mut cx, client, module, open, dvec2(400.0, 800.0)).unwrap();
             app.state_mut().clients.insert(client, clients::ClientSlot::module(client, id, id));
         }
+        crate::shell::launcher::apps();
+        assert!(crate::shell::launcher::apps_memoized());
         app.installed_app_changed(&mut cx, "org.example.timer");
+        assert!(!crate::shell::launcher::apps_memoized(), "the launcher must list the changed library now, not in a second");
         for client in [1, 2] {
             assert!(!app.module_host.is_module(client), "the updated app's old isolate must close");
             assert!(!app.state_mut().clients.contains_key(&client), "Open must not focus the old instance");
