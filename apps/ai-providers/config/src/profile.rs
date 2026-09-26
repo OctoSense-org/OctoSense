@@ -243,6 +243,16 @@ fn selection_json(p: &Provider, old: Option<&Value>) -> Value {
         route.remove("route_id");
         route.remove("label");
     }
+    // A catalog route other than the official one is named (octos
+    // `LlmRouteConfig.route_id` / `label`); the official one is left as it
+    // was (octos reads a missing id as "official").
+    if let Some(id) = &p.route_id {
+        route.insert("route_id".into(), Value::from(id.clone()));
+        match &p.route_label {
+            Some(l) => route.insert("label".into(), Value::from(l.clone())),
+            None => route.remove("label"),
+        };
+    }
     match &p.base_url {
         Some(u) => route.insert("base_url".into(), Value::from(u.trim())),
         None => route.remove("base_url"),
@@ -280,11 +290,16 @@ pub(crate) fn provider_from_selection(v: &Value) -> Option<Provider> {
             .filter(|s| !s.is_empty())
             .map(str::to_string)
     };
+    // The official route (by name, or by the family's own id, as the TUI
+    // spells it) is no route: octos reads a missing id as "official".
+    let route_id = rs("route_id").filter(|id| id != crate::catalog::OFFICIAL && !same_family(id, &family));
     Some(Provider {
         model: v.get("model_id").and_then(Value::as_str).map(str::to_string),
         base_url: rs("base_url"),
         api_type: rs("api_type").as_deref().and_then(ApiType::parse),
         key_env: rs("api_key_env").unwrap_or_else(|| registry::key_env_for(&family)),
+        route_label: route_id.as_ref().and_then(|_| rs("label")),
+        route_id,
         family,
     })
 }
@@ -424,6 +439,32 @@ mod tests {
         let v = read(&path);
         assert!(v["config"]["llm"]["primary"].get("route").is_none());
         assert_eq!(v["config"]["llm"]["fallbacks"], serde_json::json!([]));
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    #[test]
+    fn a_catalog_route_is_saved_as_octos_names_it() {
+        let d = tmpdir("route");
+        let path = d.join("_main.json");
+        let mut autodl = Provider::new("deepseek", Some("deepseek-v4-flash".into()));
+        autodl.route_id = Some("autodl".into());
+        autodl.route_label = Some("AutoDL".into());
+        autodl.base_url = Some("https://www.autodl.art/api/v1".into());
+        autodl.key_env = "AUTODL_API_KEY".into();
+        let set = ProviderSet { primary: Some(Provider::new("deepseek", Some("deepseek-v4-flash".into()))), fallbacks: vec![autodl.clone()] };
+        save_merge(&path, &set, &BTreeMap::new()).unwrap();
+        let v = read(&path);
+        assert!(v["config"]["llm"]["primary"].get("route").is_none(), "the official route is no route");
+        assert_eq!(
+            v["config"]["llm"]["fallbacks"][0]["route"],
+            serde_json::json!({"route_id": "autodl", "label": "AutoDL", "base_url": "https://www.autodl.art/api/v1", "api_key_env": "AUTODL_API_KEY"})
+        );
+        assert_eq!(load(&path).unwrap().set, set);
+
+        // The TUI's spelling of the official route reads as no route.
+        std::fs::write(&path, br#"{"config":{"llm":{"primary":{"family_id":"zai","model_id":"glm-5.2","route":{"route_id":"zai","label":"Z.ai"}}}}}"#).unwrap();
+        let p = load(&path).unwrap().set.primary.unwrap();
+        assert_eq!((p.route_id, p.route_label), (None, None));
         std::fs::remove_dir_all(d).unwrap();
     }
 

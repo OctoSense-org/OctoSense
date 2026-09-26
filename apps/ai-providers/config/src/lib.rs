@@ -5,6 +5,8 @@
 //!
 //! - [`registry`] — the octos provider families (key env var, aliases,
 //!   default endpoint/model), mirrored from `octos-llm/src/registry/*`.
+//! - [`catalog`] — octos's model catalog (`model_catalog.json`, vendored):
+//!   each family's models, context windows, prices and routes.
 //! - [`profile`] — the embedded kernel's `profiles/_main.json`: read the
 //!   `config.llm` contract, merge a new one in without disturbing anything
 //!   else, write it atomically.
@@ -18,6 +20,7 @@
 //! The flow on a phone is `qr::decode` → [`apply_to_profile`]. Decoding an
 //! `OCTOS1E:` code runs Argon2id over 64 MiB — call it off the UI thread.
 
+pub mod catalog;
 pub mod profile;
 pub mod qr;
 pub mod registry;
@@ -67,6 +70,9 @@ impl std::fmt::Display for ApiType {
 /// person provisions. `key_env` is the env var octos reads this provider's
 /// key from — normally [`registry::key_env_for`]`(family)`; it is written to
 /// the profile as `route.api_key_env` only when it differs from that default.
+/// `route_id` and `route_label` name a catalog endpoint other than the
+/// family's official API (`autodl`, "AutoDL"); the official route has none
+/// (octos reads a missing `route_id` as `"official"`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Provider {
     pub family: String,
@@ -74,6 +80,10 @@ pub struct Provider {
     pub base_url: Option<String>,
     pub api_type: Option<ApiType>,
     pub key_env: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_label: Option<String>,
 }
 
 impl Provider {
@@ -81,7 +91,7 @@ impl Provider {
     pub fn new(family: impl Into<String>, model: Option<String>) -> Provider {
         let family = family.into();
         let key_env = registry::key_env_for(&family);
-        Provider { family, model, base_url: None, api_type: None, key_env }
+        Provider { family, model, base_url: None, api_type: None, key_env, route_id: None, route_label: None }
     }
 
     /// `family/model`, or just `family` when the model is the family default.
