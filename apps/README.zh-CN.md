@@ -48,9 +48,9 @@
 - **News、Maps**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。宿主服务固定引用 App Hub
-  `7180acfc`，比 Shell 链接的 `4605128d` 旧，因此每个 Shell 都带一个
-  `[patch]`，保证只有一份 `octosense-appstore`。把服务升级到 Shell 使用的
-  App Hub 版本是已知的后续工作。
+  `0d36f50b`（OctoSense-App-Hub#4 合并后的 main），与 Shell 链接的版本相同，
+  因此无需 `[patch]`，Shell 的依赖图中就只有一份 `octosense-appstore` 和一个
+  宿主服务注册表。
 - **脚本 bundle 在本仓库没有 CI。** `.github/workflows/appcard.yml` 只覆盖
   `apps/appcard/**`。
 - **AppCard 的 `personal-data` 技能**读取旧原生 Mail 模块的 `mailbox-*.json`
