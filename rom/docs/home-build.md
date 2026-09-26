@@ -23,11 +23,13 @@ sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
 from the same pinned OctoSense-System-Apps checkout
 (`.sources/system-apps/apps/appcard/app/app`).
 
-The runtime's Makepad (main `1d3d383e`) already has the isolate controls App
-Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
-needed it records the exact patch, its originating Makepad commit, SHA-256 and
-resulting Git tree; setup applies it to the pinned checkout and leaves it
-staged, and `--check` accepts only that exact tree. `--check` always rejects
+The runtime's Makepad (main `1d3d383e`) has the isolate controls App Hub
+requires, but not yet the contained script apps of makepad#30, so
+`home/runtime-patches.lock.json` names one patch,
+`patches/runtime/makepad-contained-apps.patch`. The lock records the exact
+patch, its originating Makepad commit, SHA-256 and resulting Git tree; setup
+applies it to the pinned checkout and leaves it staged, and `--check` accepts
+only that exact tree. `--check` always rejects
 staged, unstaged or untracked source changes.
 The separate Makepad/Octoscript repositories are dependencies, not vendored
 copies of the launcher. No mobile repository or sibling-worktree name is used.
@@ -99,6 +101,10 @@ Options: `--dry-run` prints the plan; `--offline` uses cached dependencies;
 `--version-code` overrides the automatic code; `--output` selects an artifact
 directory; `--packager` uses an already built compatible `cargo-makepad` instead
 of compiling the pinned packager. Such an override is recorded in the receipt.
+Compiling the pinned packager currently fails: it runs `cargo build --locked`
+in `.sources/makepad`, which has no `Cargo.lock`. Build it with
+`cargo build --release --manifest-path .sources/makepad/tools/cargo_makepad/Cargo.toml`
+and pass `--packager .sources/makepad/target/release/cargo-makepad`.
 
 `publish-release.sh` defaults to the ROM output directory and verifies its
 adjacent receipt before including Home in the existing ROM update feed. The

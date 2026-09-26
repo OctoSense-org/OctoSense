@@ -1,5 +1,7 @@
 # Android contracts, System Bridge and Home layout service
 
+English | [简体中文](README.zh-CN.md)
+
 These modules implement the first ADR 0001 prototype. `contracts` exports AIDL
 interfaces for the ordinary Makepad Home client. `system-bridge` builds the
 companion APK. The Gradle `quickstep` target builds the authenticated Home layout
