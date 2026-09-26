@@ -892,7 +892,7 @@ impl DesktopShelf {
 pub fn app_icon(id: &str) -> Ico {
     match id {
         "browser" => Ico::Globe,
-        "photos" | "image" => Ico::Photo,
+        "photos" | "image" | "camera" => Ico::Photo,
         "terminal" => Ico::Keyboard,
         "files" => Ico::Menu,
         "sheets" => Ico::Calendar,
@@ -902,7 +902,7 @@ pub fn app_icon(id: &str) -> Ico {
         "mixer" => Ico::Speaker,
         "vj" => Ico::Headphone,
         "score" => Ico::Bell,
-        "route" => Ico::Globe,
+        "route" | "maps" => Ico::Globe,
         "fabric" => Ico::Shirt,
         "fab" => Ico::Refresh,
         "studio" => Ico::Moon,
