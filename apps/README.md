@@ -68,8 +68,8 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
 - **News, Maps**: run in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
-  Mail's and the `llm` host services pin App Hub `59004274` (main after
-  OctoSense-App-Hub#11, which adds the `llm` capability), the rev the shells
+  Mail's and the `llm` host services pin App Hub `3e993d4c` (main after
+  OctoSense-App-Hub#12; #11 added the `llm` capability), the rev the shells
   link, so a shell's graph has one
   `octosense-appstore` and one host-service registry without a `[patch]`.
 - **Script bundles have no CI here.** `.github/workflows/appcard.yml` covers
