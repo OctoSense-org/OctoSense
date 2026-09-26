@@ -595,7 +595,7 @@ impl App {
         // isolate of its own — never a process, never the pool.
         if self.apps.hosting(app_id) == Hosting::Module {
             if let Some(module) = self.apps.module(app_id) {
-                self.launch_module(cx, module);
+                self.launch_module(cx, module, app);
                 return;
             }
         }
@@ -1941,8 +1941,31 @@ impl App {
     /// Open `module` as an instance of its own in this process: an isolate,
     /// a tile in the layout, a local endpoint on the bus. The ordinary
     /// launch path minus everything a process needs.
-    fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
-        let open = match module.open_schema().empty_open() {
+    fn launch_module(
+        &mut self,
+        cx: &mut Cx,
+        module: &'static dyn AppModule,
+        app: &clients::AppDef,
+    ) {
+        let schema = module.open_schema();
+        // The Card runner opens the one app the launcher row names
+        // (`os.news`); every other module opens without arguments.
+        let open = if module.id() == "card" {
+            let Some(manifest_id) = apps::card_manifest_id(app) else {
+                log!("wm: {} names no app for the card runner", app.id);
+                return;
+            };
+            schema.validate(
+                &format!(
+                    "{{\"app\":{}}}",
+                    makepad_strict_json::Value::Str(manifest_id.into()).to_json()
+                ),
+                &[],
+            )
+        } else {
+            schema.empty_open()
+        };
+        let open = match open {
             Ok(open) => open,
             Err(e) => {
                 log!("wm: {} cannot open without arguments: {}", module.id(), e);
@@ -1964,7 +1987,7 @@ impl App {
         };
         self.state_mut()
             .clients
-            .insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+            .insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
         let gap = self.state_mut().gap;
         self.state_mut().layout.insert(id, area, gap);
         // The tile is a module tile from its first draw; the root is seated
@@ -1983,7 +2006,7 @@ impl App {
             let frame = self.ai_bus.register_local(id, manifest);
             self.send_to_pane(frame);
         }
-        log!("wm: launched {} as client {} (in-process)", module.id(), id);
+        log!("wm: launched {} ({}) as client {} (in-process)", app.id, module.id(), id);
         self.activate_client(cx, id);
         self.update_bar(cx);
         self.redraw_all(cx);
@@ -3925,6 +3948,11 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // App data for the Card runner: each system app's storage jail, the
+        // host services' own directory and the unpacked system bundles
+        // (`<apps>/.system/<id>/<pack hash>/`), under OCTOSENSE_HOME.
+        #[cfg(feature = "system-apps")]
+        octosense_app_hub_app::set_data_root(octosense::paths::home().join("apps"));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();

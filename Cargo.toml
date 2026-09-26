@@ -64,6 +64,20 @@ rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "5ad2c1739e5b477658
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", default-features = false, optional = true }
+# System apps (OctoSense ROM ADR 0004): News, Photos, Maps and Mail as
+# contained script apps. App Hub's shell crate brings the Card runner (the
+# `card` module) and packs the bundles named by OCTOSENSE_SYSTEM_APPS
+# (.cargo/config.toml -> system-apps.json) from the OctoSense-System-Apps
+# checkout native-apps.lock.json pins beside this one. The App Hub store is
+# not linked here; only the runner and the system apps are.
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066", optional = true }
+# Host services the system apps call through `host.request` (services.rs in
+# App Hub's appstore crate): `mail` keeps Mail's accounts and passwords.
+octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
+# `llm` keeps the assistant's LLM providers for the AI providers app; the
+# config crate names the AppCard kernel's octos home it writes.
+octosense-llm-service = { path = "../OctoSense-System-Apps/apps/ai-providers/host-service", optional = true }
+octosense-llm-config = { path = "../OctoSense-System-Apps/apps/ai-providers/config", optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
@@ -74,9 +88,13 @@ makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", default-features = false }
 
 [features]
-default = []
+default = ["system-apps"]
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "system-apps"]
+# The system apps (system-apps.json) and the Card runner that hosts them,
+# each in its own isolate under its manifest's policy, plus their host
+# services. Always module-hosted: a script app has no process form.
+system-apps = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
@@ -115,6 +133,7 @@ panic = "unwind"
 # Resolve the exact framework sources prepared by tools/setup-native.py.
 
 [patch."https://github.com/OctoSense-org/makepad.git"]
+makepad-script = { path = "../makepad/platform/script" }
 makepad-widgets = { path = "../makepad/widgets" }
 makepad-code-editor = { path = "../makepad/code_editor" }
 makepad-ai = { path = "../makepad/libs/makepad_ai" }
@@ -136,6 +155,8 @@ makepad-markdown-widgets = { path = "../makepad/libs/markdown_widgets" }
 octoscript-ui-l0 = { path = "../octoscript/crates/octoscript-ui-l0" }
 
 [patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
+octoscript-makepad = { path = "../octoscript-makepad/crates/octoscript-makepad" }
+octoscript-widgets = { path = "../octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
@@ -151,3 +172,17 @@ makepad-code-editor = { path = "../makepad/code_editor" }
 # Rinx's Matrix patches (see Rinx's Cargo.toml).
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
+# One App Hub source. This shell links App Hub's shell crate at the pin above,
+# but the Mail host service (OctoSense-System-Apps) names octosense-appstore at
+# an older App Hub rev; two appstore copies would keep two host-service
+# registries, and the Card runner would never see Mail's service. A patch
+# cannot point a source at another rev of itself, so every App Hub crate
+# resolves through the www host alias of the same repository, at this pin
+# (as OctoSense ROM Home does). Drop this once OctoSense-System-Apps pins the
+# same App Hub rev.
+[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
+octosense-app-hub-app = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }

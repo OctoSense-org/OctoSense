@@ -893,6 +893,11 @@ pub fn app_icon(id: &str) -> Ico {
     match id {
         "browser" => Ico::Globe,
         "photos" | "image" => Ico::Photo,
+        "news" => Ico::Bell,
+        "maps" => Ico::Globe,
+        "mail" => Ico::Menu,
+        "camera" => Ico::Record,
+        "ai-providers" => Ico::Cpu,
         "terminal" => Ico::Keyboard,
         "files" => Ico::Menu,
         "sheets" => Ico::Calendar,

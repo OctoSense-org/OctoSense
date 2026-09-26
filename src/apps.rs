@@ -34,7 +34,7 @@ impl Default for AppRegistry {
 
 /// A linked module by id, without a registry: what the launcher asks.
 pub fn is_linked(id: &str) -> bool {
-    linked_modules().iter().any(|m| m.id() == id)
+    linked_modules().iter().any(|m| m.id() == id) || is_system_app(id)
 }
 
 /// Mobile includes its bundled modules automatically; desktop opts in with
@@ -52,13 +52,109 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-rinx")]
     out.push(&rinx::module::RINX_MODULE);
+    // The Card runner: not an app a person opens, but the host every system
+    // app (and, later, every installed card app) runs in.
+    #[cfg(feature = "system-apps")]
+    out.push(&octosense_app_hub_app::CARD_MODULE);
     out
+}
+
+/// A system app's launcher row carries its manifest id as this argument.
+const SYSTEM_ARG: &str = "--system=";
+
+/// The manifest id a `card` launcher row opens (`os.news`).
+pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
+    if app.bin != "card" {
+        return None;
+    }
+    app.args.iter().find_map(|a| a.strip_prefix(SYSTEM_ARG))
+}
+
+/// System apps (OctoSense ROM ADR 0004): first-party apps shipped as
+/// contained script bundles (`system-apps.json`), each run by the Card
+/// runner in its own isolate under its manifest's policy. Each keeps its
+/// short launcher id (`news` for `os.news`), so its icon, dock place and
+/// window matching are the ones a native app of that name would have. On
+/// the desktop a system app takes its id over a catalog row of the same
+/// name (Makepad's example Mail and Photos), since it has no process form.
+pub fn system_card_apps() -> &'static [crate::clients::AppDef] {
+    static APPS: std::sync::OnceLock<Vec<crate::clients::AppDef>> = std::sync::OnceLock::new();
+    APPS.get_or_init(|| {
+        #[cfg(feature = "system-apps")]
+        {
+            register_host_services();
+            return octosense_app_hub_app::system_apps()
+                .into_iter()
+                .filter_map(|app| {
+                    let short = app.id.strip_prefix("os.")?;
+                    Some(crate::clients::AppDef {
+                        id: short.into(),
+                        label: app.name.into(),
+                        bin: "card".into(),
+                        package: String::new(),
+                        dir: String::new(),
+                        manifest: None,
+                        args: vec![format!("{SYSTEM_ARG}{}", app.id)],
+                        policy: crate::clients::LaunchPolicy::OrFocus,
+                        target_dir: None,
+                    })
+                })
+                .collect();
+        }
+        #[allow(unreachable_code)]
+        Vec::new()
+    })
+}
+
+/// Whether `id` (a short launcher id) is a system app this build ships.
+pub fn is_system_app(id: &str) -> bool {
+    system_card_apps().iter().any(|app| app.id == id)
+}
+
+/// The services contained apps call through `host.request` (ADR 0004),
+/// registered once, before the first system app can open. A new service is
+/// one line here plus its app in `system-apps.json`.
+///
+/// - `mail`: Mail's accounts, sign-in sheet and passwords (the macOS
+///   keychain; `OCTOSENSE_MAIL_VAULT=file` keeps them in an owner-only file
+///   under the host directory instead). `mail_demo` in MAKEPAD_APP_CONFIG
+///   serves a demo mailbox, as in OctoSense ROM Home.
+/// - `llm`: the assistant's LLM providers for AI providers (`os.ai-providers`),
+///   written to the AppCard kernel's octos profile (`OCTOS_APP_CORE_DIR`, else
+///   `~/octos-home/.octos`); keys in the keychain entry octos reads
+///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No QR
+///   scanner: the desktop has no camera scanner, so a profile QR is imported by
+///   pasting it.
+#[cfg(feature = "system-apps")]
+fn register_host_services() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let demo = std::env::var("MAKEPAD_APP_CONFIG")
+            .ok()
+            .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
+            .and_then(|config| config.get("mail_demo").and_then(|v| v.as_bool()))
+            .unwrap_or(false);
+        if demo {
+            octosense_mail_service::register_demo()
+        } else {
+            octosense_mail_service::register()
+        }
+        let mut llm = octosense_llm_service::Options::default();
+        if let Some(dir) = octosense_llm_config::profile::default_core_dir() {
+            llm = llm.core_dir(dir);
+        }
+        // TODO(ai-providers): pass `on_changed` to restart the AppCard
+        // kernel when the provider set changes; until then a running AppCard
+        // reads the new profile when it next starts.
+        octosense_llm_service::register_with(llm);
+    });
 }
 
 /// An installed host has no checkout catalog. Its linked modules carry all
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().map(|module| crate::clients::AppDef {
+    // The `card` host module is not an app a person opens; the apps it runs are.
+    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -106,8 +202,10 @@ impl AppRegistry {
         registry
     }
 
-    /// The linked module for an app, if this build has one.
+    /// The linked module for an app, if this build has one. A system app's
+    /// module is the Card runner that hosts it.
     pub fn module(&self, id: &str) -> Option<&'static dyn AppModule> {
+        let id = if is_system_app(id) { "card" } else { id };
         self.modules.iter().copied().find(|m| m.id() == id)
     }
 
@@ -116,6 +214,11 @@ impl AppRegistry {
     /// build without processes (mobile/web): every linked module is a module,
     /// and everything else is simply not there.
     pub fn hosting(&self, id: &str) -> Hosting {
+        // A system app is a script bundle: it has no process form anywhere,
+        // so the Card runner hosts it in-process with no switch needed.
+        if is_system_app(id) && self.module(id).is_some() {
+            return Hosting::Module;
+        }
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
@@ -176,13 +279,17 @@ mod tests {
                    ["reference", "sheets", "photos", "appcard"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
-        let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
         host.apply_style(&mut cx, &desktop_style::StyleSheet::load(desktop_style::DesktopStyle::Android));
         for (index, app) in catalog.iter().enumerate() {
-            let module = registry.module(&app.id).unwrap();
+            // The linked module itself: a system app of the same id (Photos)
+            // would route the launcher to the Card runner instead.
+            let module = linked_modules()
+                .into_iter()
+                .find(|m| m.id() == app.id)
+                .unwrap();
             let client = index as u64 + 1;
             host.create(&mut cx, client, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
             let instance = host.get(client).unwrap();
@@ -195,6 +302,29 @@ mod tests {
             });
             assert!(host.teardown(&mut cx, client));
         }
+    }
+
+    /// The system apps system-apps.json selects are launcher rows under
+    /// their short ids, hosted by the Card runner with their `os.` id and no
+    /// process form (OctoSense ROM ADR 0004).
+    #[cfg(feature = "system-apps")]
+    #[test]
+    fn system_apps_are_card_rows_under_short_ids() {
+        let system = system_card_apps();
+        assert!(system.iter().any(|app| app.id == "news"), "{system:?}");
+        let registry = AppRegistry::default();
+        for app in system {
+            let manifest_id = card_manifest_id(app).unwrap();
+            assert_eq!(manifest_id.strip_prefix("os."), Some(app.id.as_str()));
+            assert!(is_linked(&app.id));
+            assert_eq!(registry.hosting(&app.id), Hosting::Module);
+            assert_eq!(registry.module(&app.id).map(|m| m.id()), Some("card"));
+        }
+        // The runner itself is no app a person opens.
+        assert!(bundled_catalog().iter().all(|app| app.id != "card"));
+        assert!(crate::clients::registry()
+            .iter()
+            .any(|app| app.id == "news" && app.bin == "card"));
     }
 
     #[test]

@@ -125,10 +125,35 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// order. Curated on purpose — every row is one we run and verify, not a
 /// scan of whatever the workspace happens to contain.
 pub fn registry() -> &'static [AppDef] {
-    match crate::octosense::catalog::loaded() {
-        Ok(apps) => apps,
-        Err(_) => &[],
-    }
+    static REGISTRY: std::sync::OnceLock<Vec<AppDef>> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let base = crate::octosense::catalog::loaded()
+            .as_deref()
+            .unwrap_or(&[]);
+        with_system_apps(base, crate::apps::system_card_apps())
+    })
+}
+
+/// The system apps (`apps::system_card_apps`) join the catalog: one takes
+/// the place of a catalog row with its id, the rest follow in their own order.
+fn with_system_apps(base: &[AppDef], system: &[AppDef]) -> Vec<AppDef> {
+    let mut apps: Vec<AppDef> = base
+        .iter()
+        .map(|app| {
+            system
+                .iter()
+                .find(|s| s.id == app.id)
+                .unwrap_or(app)
+                .clone()
+        })
+        .collect();
+    apps.extend(
+        system
+            .iter()
+            .filter(|s| !base.iter().any(|app| app.id == s.id))
+            .cloned(),
+    );
+    apps
 }
 
 /// Registered ids take precedence over binary aliases. A linked module
@@ -990,6 +1015,23 @@ pub fn spawn_client(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_system_app_takes_its_catalog_row_and_the_rest_follow() {
+        let row = |id: &str, bin: &str| AppDef::app(id, id, "", "", bin, LaunchPolicy::OrFocus);
+        let merged = with_system_apps(
+            &[row("files", "files"), row("mail", "mail")],
+            &[row("news", "card"), row("mail", "card")],
+        );
+        let ids: Vec<(&str, &str)> = merged
+            .iter()
+            .map(|a| (a.id.as_str(), a.bin.as_str()))
+            .collect();
+        assert_eq!(
+            ids,
+            [("files", "files"), ("mail", "card"), ("news", "card")]
+        );
+    }
+
     use super::*;
 
     /// Cargo's checkout is Cargo's to manage: a build there is invisible to

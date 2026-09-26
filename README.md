@@ -15,6 +15,36 @@ Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
 to check the local dependency graph. Existing platform rendering backends remain
 part of their applications; the framework controls the shared VM and UI sources.
 
+Until OctoSense-org/makepad#30 lands, the runtime's Makepad carries one
+reviewed patch, `patches/runtime/makepad-contained-apps.patch`, which
+`runtime-patches.lock.json` pins by hash and resulting tree (the same patch and
+mechanism as OctoSense ROM Home). Setup applies it staged in `../makepad`;
+`--check` accepts exactly that tree.
+
+## System apps
+
+News, Photos, Maps and Mail are contained script apps (OctoSense ROM ADR 0004)
+from [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps),
+checked out beside this repository at the revision `native-apps.lock.json`
+pins. `system-apps.json` names the bundles this shell ships; App Hub's shell
+crate (`octosense-app-hub-app`) packs them at build time and its Card runner
+opens each in an isolate of its own, under its manifest's policy, from the
+launcher, the dock and the Start menu like any other app. A system app has no
+process form, so it is always module-hosted, and it takes the launcher id of a
+catalog row with the same name (Makepad's example Mail and Photos). App data
+(each app's jail, the host services' directory, the unpacked bundles under
+`.system/`) lives in `$OCTOSENSE_HOME/apps`. Camera is not selected: its capture
+path exists only on Android and HarmonyOS.
+
+Contained apps reach devices and credentials only through host services
+(`register_host_services` in `src/apps.rs`): `mail` keeps Mail's accounts and
+passwords in the keychain (`OCTOSENSE_MAIL_VAULT=file` keeps them in an
+owner-only file instead). Adding a system app is its name in
+`system-apps.json`, plus one registration there if it needs a service.
+
+`scripts/system_apps_remote.sh` drives a hidden release build through
+Makepad's remote mode with a temporary home and checks the whole path.
+
 
 A Makepad desktop that hosts compatible applications inside one window. The shell comes from Makepad's WM app; framework libraries remain external Cargo dependencies pinned to the same upstream commit.
 
