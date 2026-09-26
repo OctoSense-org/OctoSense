@@ -634,7 +634,7 @@ Found in the review of the second sync from mobile on 2026-09-25
   check. Not yet exercised on a device with an installed Hub app, since the
   public catalog is empty.
 
-- [ ] **HUB-02 — P2: Installed apps are read from disk on every lookup.**
+- [x] **HUB-02 — P2: Installed apps are read from disk on every lookup.**
 
   `installed_card_apps()` (`home/src/apps.rs`) lists and parses the install
   directory on every call. It is reached per frame through
@@ -645,6 +645,12 @@ Found in the review of the second sync from mobile on 2026-09-25
   Acceptance: cache the list by data root and the
   `octosense_app_hub_app::icons` generation, so an install, update or
   removal (which bumps the generation) still shows at once.
+
+  Fixed on 2026-09-26: `installed_card_apps()` lists the install directory
+  once per data root and App Hub generation (`cached_installed_apps` in
+  `home/src/apps.rs`). Every install or update reaches
+  `App::installed_app_changed`, which bumps the generation. App Hub has no
+  removal path yet; when one lands, it must bump the generation too.
 
 - [ ] **HUB-03 — P3: `find_app("card")` answers the first installed Hub app.**
 

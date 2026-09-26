@@ -130,18 +130,37 @@ pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title
 
 /// Card apps App Hub installed: each is an app of its own in the launcher,
 /// hosted by the linked `card` module under its `hub:<manifest-id>` identity.
-/// Read fresh each time, so an install shows up without a restart.
+/// Listed once per data root and App Hub generation: an install or update
+/// bumps the generation (`App::installed_app_changed`), so it shows at once
+/// without the install directory being read on every frame.
 pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if let Some(root) = octosense_app_hub_app::data_root_if_set() {
-        return octosense_app_hub_app::installed_apps(&root).into_iter()
+        let key = (root.clone(), octosense_app_hub_app::icons::generation());
+        return cached_installed_apps(key, || octosense_app_hub_app::installed_apps(&root).into_iter()
             .map(|app| crate::clients::AppDef {
                 id: installed_launch_id(&app.id), label: app.name, bin: "card".into(),
                 package: String::new(), dir: String::new(), manifest: None,
                 args: Vec::new(), policy: crate::clients::LaunchPolicy::OrFocus,
-            }).collect();
+            }).collect());
     }
     Vec::new()
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+thread_local! {
+    static INSTALLED: std::cell::RefCell<Option<((std::path::PathBuf, u64), Vec<crate::clients::AppDef>)>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> Vec<crate::clients::AppDef>) -> Vec<crate::clients::AppDef> {
+    INSTALLED.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match slot.as_ref() {
+            Some((cached, apps)) if *cached == key => apps.clone(),
+            _ => { let apps = load(); *slot = Some((key, apps.clone())); apps }
+        }
+    })
 }
 
 /// An installed host has no checkout catalog. Its linked modules carry all
@@ -351,6 +370,23 @@ mod tests {
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
         }
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn installed_apps_are_read_once_per_data_root_and_hub_generation() {
+        let reads = std::cell::Cell::new(0);
+        let timer = crate::clients::AppDef {id: installed_launch_id("org.example.timer"),label:"Timer".into(),bin:"card".into(),
+            package:String::new(),dir:String::new(),manifest:None,args:Vec::new(),policy:crate::clients::LaunchPolicy::OrFocus};
+        let load = || { reads.set(reads.get() + 1); vec![timer.clone()] };
+        let root = std::path::PathBuf::from("hub-root-a");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(reads.get(), 1, "the same data root and generation reuse the list");
+        cached_installed_apps((root, 8), &load);
+        assert_eq!(reads.get(), 2, "an install or update bumps the generation and is read at once");
+        cached_installed_apps(("hub-root-b".into(), 8), &load);
+        assert_eq!(reads.get(), 3, "another data root is read");
     }
 }
 
