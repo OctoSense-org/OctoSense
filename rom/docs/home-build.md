@@ -14,7 +14,7 @@ python3 scripts/setup-home.py --check --cargo
 Requires Python 3.9+, Git and Rust stable. The setup script prepares exact
 revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-runtime.lock.json` selects the framework release and
-`home/native-apps.lock.json` selects Mail/AppCards and Camera sources. App Hub
+`home/native-apps.lock.json` selects the Octoscript-AppCard source that holds the system script apps (`apps/<name>/script/`, chosen by `home/system-apps.json`) and the Mail host service. App Hub
 is the in-tree `home/apps/app-hub` crate; its OctoSense-App-Hub backend crates
 are pinned in `home/apps/app-hub/Cargo.toml` and `home/Cargo.lock`.
 

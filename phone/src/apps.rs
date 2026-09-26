@@ -51,14 +51,10 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_photos::PHOTOS_MODULE);
     #[cfg(any(feature = "app-appcard", native_mobile))]
     out.push(&octosense_appcard::APPCARD_MODULE);
-    #[cfg(feature = "app-mail")]
-    out.push(&octosense_mail::MAIL_MODULE);
     #[cfg(feature = "app-news")]
     out.push(&octosense_news::NEWS_MODULE);
     #[cfg(feature = "app-maps")]
     out.push(&octosense_maps::MAPS_MODULE);
-    #[cfg(feature = "app-camera")]
-    out.push(&octosense_camera::CAMERA_MODULE);
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
@@ -302,8 +298,15 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps", "camera", "apphub"]);
+                   ["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "camera", "mail"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
+        // Camera and Mail have no native module: they are system script apps
+        // (ADR 0004) the Card runner hosts, launched by their manifest id.
+        for id in ["camera", "mail"] {
+            let app = catalog.iter().find(|app| app.id == id).unwrap();
+            assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
+        }
+        let catalog: Vec<_> = catalog.into_iter().filter(|app| app.bin != "card").collect();
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));

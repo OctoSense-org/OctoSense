@@ -99,35 +99,26 @@ A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation
 
 Search opens only by pulling down on Home; the App Library has no search bar. Search ranks names that start with what you typed first and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
 
-## Mail preview on Android
+## System apps: News, Photos, Maps, Camera, Mail
 
-Mail is an in-process AppModule from the sibling
-`../.sources/appcards/apps/mail/native`. It uses the same locked
-Octoscript-Makepad release as this launcher. The default Rust backend connects
-directly from Android to Gmail using verified POP3/TLS, with private on-device
-accounts, cached mail and drafts. No Mac service or USB connection is needed at
-runtime. Android renders native inbox/search/compose/settings and a platform
-WebView for full-length plain and HTML messages.
+These five are contained script apps (ADR 0004). Their bundles live with their
+apps in Octoscript-AppCard (`apps/<name>/script/`, pinned by
+`native-apps.lock.json`); `system-apps.json` names which this Home includes and
+mounts the artwork it owns. App Hub's Card runner runs each in its own isolate
+under its manifest's policy, in the standalone Home and in the ROM alike.
 
-With the already-installed Android SDK, build a separate preview package:
+Mail reads and sends through the `mail` host service (`apps/mail/host-service`
+in the same repository): the person signs in on the host's own sheet, the
+password stays in the keychain or behind an Android Keystore key, and the app
+never holds a socket or a password. For a demo mailbox (password `demo`):
 
 ```sh
-cargo build --release --manifest-path ../.sources/makepad/tools/cargo_makepad/Cargo.toml
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/existing/android_sdk \
-  --package-name=dev.makepad.octosense.mailpreview --app-label='OctoSense Mail' \
-  build -p octosense --release
+adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-Use `apps/mail/scripts/open_android.py` in the AppCards repository to install
-and open the APK, as described in the [Mail app](../.sources/appcards/apps/mail/README.md#standalone-android-mail).
-Use `--demo --probe` for isolated fictional mail and measured touch testing;
-`--record --demo` enables timestamped app-owned GPU frames. WebView needs its
-own page snapshot when making a video. Account provisioning uses the on-device
-settings or a private one-time `--bootstrap` file. `--companion` explicitly opts
-into the older USB Mac service. The preview package preserves the installed
-launcher and Home role. Android SMTP has not been live-send verified; IMAP sync
-and external attachment previews remain desktop-only.
+`app-news`, `app-photos` and `app-maps` link the earlier native modules in
+place of their script apps, for comparison; Mail and Camera have no native
+module any more.
 
 ## Run on a desktop
 

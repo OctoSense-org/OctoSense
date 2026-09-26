@@ -17,7 +17,7 @@ def git(path, *args, check=True):
 
 
 def prepare_app(name, spec, *, check=False, update=False, cache=None):
-    if name not in {"appcards", "camera"} or spec.get("url") != "https://github.com/OctoSense-org/Octoscript-AppCard.git" or not re.fullmatch(r"[0-9a-f]{40}", spec.get("revision", "")):
+    if name != "appcards" or spec.get("url") != "https://github.com/OctoSense-org/Octoscript-AppCard.git" or not re.fullmatch(r"[0-9a-f]{40}", spec.get("revision", "")):
         raise RuntimeError(f"Invalid pinned application source: {name}")
     path = SOURCES / name
     if not (path / ".git").exists():
@@ -48,7 +48,7 @@ def main():
     parser.add_argument("--cargo", action="store_true", help="Also verify the locked Cargo dependency graph")
     args = parser.parse_args()
     lock = json.loads((ROOT / "home/native-apps.lock.json").read_text())
-    if lock.get("schema_version") != 1 or set(lock.get("repositories", {})) != {"appcards", "camera"}:
+    if lock.get("schema_version") != 1 or set(lock.get("repositories", {})) != {"appcards"}:
         parser.error("Unsupported application source lock")
     for name, spec in lock["repositories"].items():
         prepare_app(name, spec, check=args.check, update=args.update,

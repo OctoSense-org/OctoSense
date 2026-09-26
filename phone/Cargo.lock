@@ -5658,8 +5658,6 @@ dependencies = [
  "makepad-wm-theme",
  "octosense-app-hub-app",
  "octosense-appcard",
- "octosense-camera",
- "octosense-mail",
  "octosense-mail-service",
  "octosense-maps",
  "octosense-news",
@@ -5730,49 +5728,6 @@ dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
  "serde_json",
-]
-
-[[package]]
-name = "octosense-camera"
-version = "0.1.0"
-dependencies = [
- "makepad-app-module",
- "makepad-widgets",
- "octoscript-makepad",
- "octoscript-node",
- "octoscript-ui-l0",
- "octoscript-widgets",
- "octosense-camera-logic",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "octosense-camera-logic"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "octosense-mail"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "mailparse",
- "makepad-app-module",
- "makepad-widgets",
- "octoscript-makepad",
- "octoscript-node",
- "octoscript-ui-l0",
- "octoscript-widgets",
- "rustls",
- "scraper",
- "serde_json",
- "sha2 0.10.9",
- "webpki-roots",
 ]
 
 [[package]]
