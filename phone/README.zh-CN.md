@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、AppCard、Reference 和 Sheets。
+OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、Reference 和 Sheets。（AppCard 目前不随产品发布，只有使用 `--features app-appcard` 时才会链接。）
 
 环境准备、各目标平台的构建、版本固定和 CI 见 [根目录 README](../README.zh-CN.md)。本页深入介绍 Home 专属的内容。
 
@@ -101,7 +101,7 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 - `src/desk/phone.rs`：desk 的手机端合成：托管应用的截取、保留的桌面场景及其模糊金字塔，以及合成器路径。
 - `resources/android/AndroidManifest.xml.template`：activity 定义（Home 角色、分享和深度链接 intent）。
 - `resources/icons/apps/<style>/`：本 Shell 为 News 和 OctosMap 自带的图标，每种框架风格一个 64x64 的 SVG，由 `python3 tools/build_app_icons.py` 生成（`--sheet <path>` 还会用 `rsvg-convert` 渲染一张审阅图）。渲染器不支持裁剪路径、蒙版、滤镜或文字，因此图形在设计上就不会超出磁贴；有一项测试负责确保文件满足这一点。
-- `apps/appcard`：托管 AppCard 助手（`octos-app`，一个指向 `../.sources/system-apps/apps/appcard/app/app` 的路径依赖）。
+- `apps/appcard`：托管 AppCard 助手（`octos-app`，一个指向 `../.sources/system-apps/apps/appcard/app/app` 的路径依赖）。在所有目标平台上都需显式启用：`--features app-appcard`。默认构建、`mobile-apps` 和原生移动端构建都不包含它（也不包含 octos）。
 - `apps/reference`：参考模块。
 - `apps/news`、`apps/photos`、`apps/maps`：用于对比的原生模块（feature 分别为 `app-news`、`app-photos`、`app-maps`）。它们的设计说明位于 `docs/plans/`。
 - `android/`：System Bridge、契约、Quickstep 和 SystemUI 项目（[android/README.md](android/README.zh-CN.md)）。
@@ -111,8 +111,8 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 
 - 框架：由 `native-runtime.lock.json` 选定的 Octoscript-Makepad 发布版本；其 `runtime.json` 固定了 Makepad 和 OctoScript 的版本。Cargo 的 `[patch]` 段把所有 Makepad crate 都解析到 `../.sources/makepad`，因此依赖图中只有一套 widgets/platform/script。不要换成会变动的分支。该分支与上游 Makepad 的关系以及如何更新固定版本，见 [docs/makepad-fork.md（英文）](docs/makepad-fork.md)。
 - App Hub：`octosense-app-hub-app` 及其后端 crate，固定在同一个修订版本，与 Mail 宿主服务引用的版本相同，因此无需 `[patch]` 即只有一个 App Hub 来源。
-- OctoSense-System-Apps（`native-apps.lock.json`）：系统应用包、Mail 宿主服务以及 `octos-app`，后者从 `octos-org/octos` 的某个固定修订版本引入 octos。
-- AppCard 内核不是 Cargo 依赖：`liboctos.so` 在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（[docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)；其中的固定版本早于当前版本）。没有它时，AppCard 磁贴会回退到 WebSocket 传输和登录界面。
+- OctoSense-System-Apps（`native-apps.lock.json`）：系统应用包、Mail 宿主服务以及 `octos-app`，后者从 `octos-org/octos` 的某个固定修订版本引入 octos（仅用于 `app-appcard` 构建）。
+- AppCard 内核（仅 `app-appcard` 构建需要）不是 Cargo 依赖：`liboctos.so` 在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（[docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)；其中的固定版本早于当前版本）。没有它时，AppCard 磁贴会回退到 WebSocket 传输和登录界面。
 
 ## 测试与状态
 

@@ -6,7 +6,8 @@ The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade
 (notifications left, controls right), Recents, a live island for ongoing
 activities, and hosted apps drawn in-process inside its tiles: App Hub and
-the apps it runs, the system apps, AppCard, Reference and Sheets.
+the apps it runs, the system apps, Reference and Sheets. (AppCard is not
+shipped for now; it links only with `--features app-appcard`.)
 
 Setup, builds for every target, pins and CI are in the
 [root README](../README.md). This page is the Home-specific deep dive.
@@ -160,7 +161,9 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   or text, so the art stays inside its tile by construction; a test holds the
   files to that.
 - `apps/appcard`: hosts the AppCard assistant (`octos-app`, a path dependency
-  into `../.sources/system-apps/apps/appcard/app/app`).
+  into `../.sources/system-apps/apps/appcard/app/app`). Opt-in only, on every
+  target: `--features app-appcard`. Default, `mobile-apps` and native mobile
+  builds leave it (and octos) out.
 - `apps/reference`: the reference module.
 - `apps/news`, `apps/photos`, `apps/maps`: the native comparison modules
   (features `app-news`, `app-photos`, `app-maps`). Their design notes are in
@@ -183,8 +186,8 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   needed for one App Hub source.
 - OctoSense-System-Apps (`native-apps.lock.json`): the system-app bundles,
   the Mail host service and `octos-app`, which brings octos from
-  `octos-org/octos` at one revision.
-- The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at
+  `octos-org/octos` at one revision — only into `app-appcard` builds.
+- The AppCard kernel (needed only with `app-appcard`) is not a Cargo dependency: `liboctos.so` is bundled at
   APK build time with `MAKEPAD_ANDROID_EXTRA_LIBS`
   ([docs/android-appcard-build.md](docs/android-appcard-build.md); its pins
   predate the current ones). Without it, the AppCard tile falls back to its

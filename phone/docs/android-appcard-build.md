@@ -1,5 +1,9 @@
 # Android build with AppCard's framework, buildtool and bundled kernel
 
+> AppCard is not shipped for now: Android (and every other) build links it
+> only with `--features app-appcard`. This recipe applies to such opt-in
+> builds; a default APK needs no octos kernel.
+
 OctoSense on the phone now runs the Octoscript-AppCard module (`apps/appcard`)
 on the makepad fork's AppCard framework line and needs three things the stock
 `cargo makepad` build does not give it:

@@ -21,7 +21,9 @@ is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
 the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `home/.cargo/config.toml`
 sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
 from the same pinned OctoSense-System-Apps checkout
-(`.sources/system-apps/apps/appcard/app/app`).
+(`.sources/system-apps/apps/appcard/app/app`), but only with
+`--features app-appcard`: it is not shipped for now, so default,
+`mobile-apps` and native mobile builds leave it and octos out.
 
 The runtime's Makepad (main `cd812acd`) has the isolate controls App Hub
 requires and the contained script apps of makepad#30, so

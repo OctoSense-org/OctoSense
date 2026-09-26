@@ -15,7 +15,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何开发并发布 OctoSense 应用 | 不参与构建。要为 Home 开发应用，从这里开始。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 运行时发布版本：指定 Makepad 与 OctoScript 的版本 | 版本固定在 `home/native-runtime.lock.json`。 |
 | [makepad](https://github.com/OctoSense-org/makepad)（OctoSense 分支） | UI 框架及打包工具 `cargo-makepad` | 按运行时指定的版本检出到 `.sources/makepad`。 |
-| [octos](https://github.com/octos-org/octos) | AppCard 背后的 Agent 内核 | 只用一个版本，即 OctoSense-System-Apps 中 `octos-app` 所固定的版本。 |
+| [octos](https://github.com/octos-org/octos) | AppCard 背后的 Agent 内核（仅 `app-appcard` 构建使用） | 只用一个版本，即 OctoSense-System-Apps 中 `octos-app` 所固定的版本。 |
 
 组织概览见 [OctoSense 组织主页](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)。
 
@@ -25,7 +25,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | --- | --- |
 | `home/` | Home 的 Rust 工作区（crate `octosense`），以及 Android、iOS、OpenHarmony 资源 |
 | `home/src/` | Shell 源码：`mobile*.rs` 是手机 Shell，`apps.rs` 负责接入已链接的模块和系统应用 |
-| `home/apps/` | 原生模块：`appcard`（AppCard 宿主）、`reference`，以及仅用于对比的 `news`、`photos`、`maps` |
+| `home/apps/` | 原生模块：`appcard`（AppCard 宿主，需显式启用）、`reference`，以及仅用于对比的 `news`、`photos`、`maps` |
 | `home/android/` | Gradle 项目：AIDL 接口、System Bridge APK、Quickstep、SystemUI 预览和平台构建准备工具 |
 | `home/tools/` | `setup-native.py`（运行时源码）、`build_app_icons.py`、`a11y-probe/` |
 | `home/scripts/` | 桌面冒烟测试、Makepad 导入同步（`upstream.py`）、Android 帧率测量 |
@@ -73,7 +73,8 @@ cargo run --release --features mobile-only
 
 | 开关 | 作用 |
 | --- | --- |
-| `--features mobile-apps` | 同时链接原生模块（Reference、Sheets、AppCard，以及原生的新闻、相册、地图，它们会替换对应的脚本应用） |
+| `--features mobile-apps` | 同时链接原生模块（Reference、Sheets，以及原生的新闻、相册、地图，它们会替换对应的脚本应用）；不含 AppCard |
+| `--features app-appcard` | 同时链接 AppCard 助手；目前默认不随产品发布 |
 | `-- --module <id>` | 在进程内以模块方式运行已链接的模块，而不是作为子进程 |
 | `-- --test-action <name>` | 启动时触发一个 Shell 动作：`launch-<app id>`、`page:<n>`、`island:demo`、`capture:<path>`、`ask-appcard:<text>`、`taps:<x>,<y>@<s>` |
 | `MAKEPAD_WM_TEST_APP=<app>[:<count>]` | Shell 启动后打开某个应用（可指定次数） |
@@ -157,7 +158,7 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 | --- | --- | --- |
 | 系统应用：新闻、相册、地图、相机、邮件 | OctoSense-System-Apps 的 `apps/<name>/bundle/`，由 `home/system-apps.json` 选择 | 隔离运行的脚本应用，打包进构建产物 |
 | 商店应用 | App Hub 目录，运行时安装 | 隔离运行的脚本应用或卡片应用 |
-| AppCard 助手 | OctoSense-System-Apps 的 `apps/appcard/app/app`（`octos-app`） | 原生模块，链接进 Home |
+| AppCard 助手 | OctoSense-System-Apps 的 `apps/appcard/app/app`（`octos-app`） | 原生模块，需显式启用（`app-appcard`）；默认不发布 |
 | 原生模块 | `home/apps/*`，以及来自 Makepad 的 Sheets | 链接的模块，由 feature 控制 |
 
 **系统应用**（[ADR 0004（英文）](home/docs/adr/0004-system-apps-are-contained-script-apps.md)）。App Hub 共用 crate 的构建过程会打包 `home/system-apps.json` 中列出的每个应用；它通过 `OCTOSENSE_SYSTEM_APPS` 找到这个文件，该变量由 `home/.cargo/config.toml` 设置。未设置时不包含任何系统应用。每个应用在自己的 isolate 中按其清单的策略运行，在启动器中保留短 ID（`os.news` 显示为 `news`），且无法被商店替换，因为 `os.` 下的 ID 是保留的。相册的示例图库从 `home/apps/photos/resources/photos` 挂载，而不是打包进去。
@@ -166,18 +167,19 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 
 **宿主服务与密钥**。应用不能自己持有的东西，通过宿主服务获取：`host.request("family.method", ...)`，需要清单授权。邮件是第一个宿主服务：`mail` 服务（OctoSense-System-Apps 的 `apps/mail/host-service`）保管账户和密码，密码存放在钥匙串中或由 Android Keystore 密钥保护，应用只能拿到文件夹、邮件和发送功能，永远拿不到 socket 或密码。密钥归宿主所有：任何脚本应用都不收集密码、PIN 或一次性验证码。用户只在宿主自有面板上输入这类信息；在隔离运行的应用中，运行时会让密码输入框失效；App Hub 的准入检查会拒绝声明了此类输入框的应用包。
 
-**原生模块**。移动端构建总是链接 Reference、Sheets、AppCard 和 App Hub。桌面构建通过 feature 选择：
+**原生模块**。移动端构建总是链接 Reference、Sheets 和 App Hub。桌面构建通过 feature 选择：
 
 | Feature | 链接内容 |
 | --- | --- |
 | `app-hub`（默认） | App Hub、Card 运行器、系统应用和邮件服务 |
-| `app-reference`、`app-sheets`、`app-appcard` | Reference、Makepad Sheets、AppCard |
+| `app-reference`、`app-sheets` | Reference、Makepad Sheets |
+| `app-appcard` | AppCard 及 octos 内核（在所有目标平台上都需显式启用，见下文） |
 | `app-news`、`app-photos`、`app-maps` | 原生的新闻、相册、地图，用于对比；各自会替换对应的脚本应用 |
 | `app-aichat` | 以模块形式链接 Makepad 的 aichat 助手 |
-| `mobile-apps` | 除 `app-aichat` 外的以上全部 |
+| `mobile-apps` | 除 `app-aichat` 和 `app-appcard` 外的以上全部 |
 | `mobile-only` | 独立的手机 Shell（Android 会自动开启） |
 
-**AppCard**（“Ask anything”）是 `octos-app` 的 `AppShell`，由 `home/apps/appcard` 托管，它以路径依赖指向 `.sources/system-apps/apps/appcard/app/app`。其内核 `octos` 不是 Home 的 Cargo 依赖；要把它打进 APK，请为打包工具设置 `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path>"`（[home/docs/android-appcard-build.md（英文）](home/docs/android-appcard-build.md)，其中记录的版本早于当前版本）。未打包内核时，AppCard 会退回到 WebSocket 传输和登录界面。
+**AppCard**（“Ask anything”）是 `octos-app` 的 `AppShell`，由 `home/apps/appcard` 托管，它以路径依赖指向 `.sources/system-apps/apps/appcard/app/app`。**目前不随产品发布**：它会干扰其他应用，因此任何构建默认都不链接它，`mobile-apps` 以及 Android、iOS、OpenHarmony 构建也不例外。未启用时没有 AppCard 磁贴、分组或启动器条目，依赖图中也没有 `octos`。如需恢复，请使用 `--features app-appcard` 构建（例如 `cargo run --features mobile-apps,app-appcard`，或把该 feature 传给 `cargo makepad`）；它需要 `scripts/setup-home.py` 准备的 `.sources/system-apps` 检出，并从 `octos-app` 固定的 octos 版本拉取 `octos-core`/`octos-cli`。其内核库 `octos` 不是 Home 的 Cargo 依赖；要把它打进 APK，请为打包工具设置 `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path>"`（[home/docs/android-appcard-build.md（英文）](home/docs/android-appcard-build.md)，其中记录的版本早于当前版本）。未打包内核时，AppCard 会退回到 WebSocket 传输和登录界面。
 
 ## 版本固定与更新
 
@@ -206,8 +208,11 @@ python3 -m unittest discover -s tests -v
 python3 scripts/setup-home.py
 python3 scripts/setup-home.py --check --cargo
 cd home
-cargo check --locked --workspace --features mobile-apps
+cargo check --locked --features mobile-apps
+cargo tree --locked --features mobile-apps -i octos-core   # 必须匹配不到：未启用 app-appcard 时没有 octos
+cargo check --locked --workspace --features mobile-apps,app-appcard
 cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard
+cargo test --locked --features mobile-apps,app-appcard -p octosense appcard
 cargo test --locked -p octosense-maps -- --skip view::tests --skip module::tests
 cargo test --locked -p makepad-widgets splash_policy
 cargo test --locked -p makepad-script-std gate::tests

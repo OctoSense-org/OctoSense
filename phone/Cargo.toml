@@ -64,6 +64,9 @@ octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service", optional = true }
 # The whole AppCard assistant (OctoSense-System-Apps apps/appcard) hosted in
 # a tile, in-process (Phase B of the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
+# Not shipped for now: strictly opt-in with `--features app-appcard`, on
+# every target (it is in neither `default`, `mobile-apps`, nor the native
+# mobile dependencies below).
 octosense-appcard = { path = "apps/appcard", optional = true }
 # News: headlines from Hacker News, TechMeme, Google News and the person's
 # own feeds, in a tab per source; a wide home tile on the phone.
@@ -86,7 +89,6 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-appcard = { path = "apps/appcard" }
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "0d36f50b9f0fdfbd8247b5deb8da8baa53c83066" }
 # Mail, News, Photos, Maps and Camera ship as contained script apps
 # (OctoSense-System-Apps apps/<name>/bundle/, chosen by system-apps.json,
@@ -105,7 +107,8 @@ default = ["app-hub"]
 # `target_os = "android"`); a desktop build is universal unless this is on.
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-news", "app-maps", "app-hub"]
+# AppCard is not among them: it ships only with `--features app-appcard`.
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-news", "app-maps", "app-hub"]
 app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
@@ -113,7 +116,9 @@ app-sheets = ["dep:makepad-sheets"]
 # The native Photos library, albums, and Memories app. Without it, Photos is
 # the system script app (`os.photos`, ADR 0004).
 app-photos = ["dep:octosense-photos"]
-# The AppCard module (one L0 weather card in a tile) linked in.
+# The AppCard module (the assistant in a tile, with the octos kernel) linked
+# in. Opt-in only, on desktop and native mobile alike: AppCard is not shipped
+# by default for now (it interfered with the other apps).
 app-appcard = ["dep:octosense-appcard"]
 # The native News module (headlines in a tile) linked in. Without it, News
 # is the system script app App Hub ships (`os.news`, ADR 0004).

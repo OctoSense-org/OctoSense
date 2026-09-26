@@ -13,11 +13,12 @@ impl App {
     /// admitted them; on the phone every new APK is a deployment, so the
     /// host archives the store once per build id (its explicit action, see
     /// `octosense_appcard::reapprove_cards_for_host_build`). Desktop builds
-    /// leave the developer's own store alone.
+    /// leave the developer's own store alone, and builds without
+    /// `app-appcard` have no AppCard store to archive.
     pub(super) fn reapprove_hosted_cards(&self, cx: &Cx) {
-        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+        #[cfg(not(all(feature = "app-appcard", any(target_os = "android", target_env = "ohos"))))]
         let _ = cx;
-        #[cfg(any(target_os = "android", target_env = "ohos"))]
+        #[cfg(all(feature = "app-appcard", any(target_os = "android", target_env = "ohos")))]
         {
             let Some(config) = octosense_appcard::octos_app_config_dir(cx.get_data_dir()) else {
                 log!("wm: card approvals not archived: no data dir to find the store in");
