@@ -1277,6 +1277,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
 dependencies = [
  "clap",
+ "clap_lex",
+ "is_executable",
+ "shlex 2.0.1",
 ]
 
 [[package]]
@@ -2815,8 +2818,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -4113,7 +4116,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -4405,6 +4408,15 @@ checksum = "173609498df190136aa7dea1a91db051746d339e18476eed5ca40521f02d7aa5"
 dependencies = [
  "is-docker",
  "once_cell 1.21.4",
+]
+
+[[package]]
+name = "is_executable"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82cb6a9f675da968c63b6208c641b9dca58fc0133ae53375736b1767b0cab8bd"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6633,8 +6645,8 @@ dependencies = [
 
 [[package]]
 name = "octos-agent"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6760,8 +6772,8 @@ dependencies = [
 
 [[package]]
 name = "octos-bus"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -6789,8 +6801,8 @@ dependencies = [
 
 [[package]]
 name = "octos-cli"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "agent-client-protocol",
  "argon2",
@@ -6869,8 +6881,8 @@ dependencies = [
 
 [[package]]
 name = "octos-core"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "chrono",
  "eyre",
@@ -6883,8 +6895,8 @@ dependencies = [
 
 [[package]]
 name = "octos-diagnostics"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6895,8 +6907,8 @@ dependencies = [
 
 [[package]]
 name = "octos-fleet"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6911,8 +6923,8 @@ dependencies = [
 
 [[package]]
 name = "octos-fleet-worker"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "async-trait",
  "eyre",
@@ -6928,8 +6940,8 @@ dependencies = [
 
 [[package]]
 name = "octos-llm"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6952,8 +6964,8 @@ dependencies = [
 
 [[package]]
 name = "octos-memory"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "bincode",
  "chrono",
@@ -6971,8 +6983,8 @@ dependencies = [
 
 [[package]]
 name = "octos-pipeline"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6993,8 +7005,8 @@ dependencies = [
 
 [[package]]
 name = "octos-plugin"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "eyre",
  "metrics",
@@ -7008,7 +7020,7 @@ dependencies = [
 [[package]]
 name = "octos-sandbox"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "clap",
  "eyre",
@@ -7022,8 +7034,8 @@ dependencies = [
 
 [[package]]
 name = "octos-services"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "chrono",
  "dirs",
@@ -7043,8 +7055,8 @@ dependencies = [
 
 [[package]]
 name = "octos-store"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7063,8 +7075,8 @@ dependencies = [
 
 [[package]]
 name = "octos-swarm"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7082,8 +7094,8 @@ dependencies = [
 
 [[package]]
 name = "octos-workflows"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=6ad76e5c1e659bdf10ec05ae869428b48edccf7f#6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
 dependencies = [
  "chrono",
  "eyre",
