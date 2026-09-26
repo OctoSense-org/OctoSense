@@ -11,6 +11,15 @@ members = ["config", "host-service"]
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+# Likewise the image search's decoders and rqrr (tests read 12 MP photos).
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.rqrr]
+opt-level = 3
 
 # Resolve Makepad and Octoscript-Makepad from checkouts beside this
 # repository, as every OctoSense workspace does (App Hub's appstore crate, the

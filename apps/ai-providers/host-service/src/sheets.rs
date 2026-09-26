@@ -274,11 +274,14 @@ let QrRow = View{{width: Fit flow: Right}}
     script
 }
 
-/// Import a code: scan it (where the host has a scanner) or paste it, then
-/// type its PIN.
-pub fn import(can_scan: bool) -> String {
+/// Import a code: scan it (where the host has a scanner), read it out of an
+/// image (chosen with the host's picker, or dropped on the app where the host
+/// passes drops on), or paste it, then type its PIN.
+pub fn import(can_scan: bool, can_pick: bool, can_drop: bool) -> String {
     let mut script = format!(
         r##"let can_scan = {can_scan}
+let can_pick = {can_pick}
+let can_drop = {can_drop}
 fn scan(){{
     ui.status.set_text("")
     ui.note.set_text("Point the camera at the code on your computer…")
@@ -286,6 +289,26 @@ fn scan(){{
         if r.is_ok {{
             if r.data.needs_pin == true {{ ui.note.set_text("Code scanned. Type the PIN shown beside it.") }} else {{ ui.note.set_text("Code scanned. Tap Import.") }}
         }} else {{ ui.note.set_text("") ui.status.set_text(r.error) }}
+    }})
+}}
+fn read_image(r){{
+    if !r.is_ok {{ ui.note.set_text("") ui.status.set_text(r.error) return }}
+    if r.data.cancelled == true {{ ui.note.set_text("") return }}
+    if r.data.error != nil {{ ui.note.set_text("") ui.status.set_text(r.data.error) return }}
+    ui.status.set_text("")
+    if r.data.needs_pin == true {{ ui.note.set_text("Code read from the image. Type the PIN shown beside it.") }} else {{ ui.note.set_text("Code read from the image. Tap Import.") }}
+}}
+fn pick(){{
+    ui.status.set_text("")
+    ui.note.set_text("Choose a screenshot or photo of the code…")
+    host.request("llm.sheet.pick", {{}}, fn(r){{ read_image(r) }})
+}}
+fn await_drop(){{
+    host.request("llm.sheet.image", {{}}, fn(r){{
+        if r.is_ok {{
+            read_image(r)
+            await_drop()
+        }}
     }})
 }}
 fn submit(){{
@@ -297,18 +320,32 @@ fn submit(){{
 }}
 fn cancel(){{ host.request("llm.sheet.cancel", {{}}, fn(r){{}}) }}
 if can_scan {{ start_timeout(0.1, || scan()) }}
+if can_drop {{ await_drop() }}
 {STYLES}"##
     );
-    let (scan_button, paste) = if can_scan {
-        ("\n        Choice{text: \"Scan again\" on_click: || scan()}", "Or paste the code")
+    let mut buttons = String::new();
+    if can_scan {
+        buttons.push_str("\n            Choice{text: \"Scan again\" on_click: || scan()}");
+    }
+    if can_pick {
+        buttons.push_str("\n            pick_image := Choice{text: \"Choose image\" on_click: || pick()}");
+    }
+    let buttons = if buttons.is_empty() {
+        String::new()
     } else {
-        ("", "Paste the code")
+        format!("\n        View{{width: Fill height: Fit flow: Right spacing: 6{buttons}\n        }}")
     };
+    let image_note = match (can_pick, can_drop) {
+        (_, true) => "\n        Caption{text: \"Or drop a screenshot of the code on this sheet.\"}",
+        (true, false) => "\n        Caption{text: \"Choose image reads the code from a screenshot or photo.\"}",
+        _ => "",
+    };
+    let paste = if can_scan || can_pick { "Or paste the code" } else { "Paste the code" };
     let content = format!(
         r#"        Title{{text: "OctoSense · Import providers"}}
         Note{{text: "Show the code on your computer: AI providers, Show QR for phone. The keys it carries go to OctoSense, not to the app that asked."}}
         status := Status{{}}
-        note := Note{{}}{scan_button}
+        note := Note{{}}{buttons}{image_note}
         Caption{{text: "{paste} (OCTOS1E:…)"}}
         code := Field{{empty_text: "OCTOS1E:…"}}
         Caption{{text: "PIN"}}

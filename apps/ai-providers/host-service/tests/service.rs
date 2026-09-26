@@ -4,7 +4,7 @@
 use octosense_appstore::services::{dispatch, take_replies_for, ServiceCall, ServiceHost};
 use octosense_llm_config::{profile, qr, Provider};
 use octosense_llm_service::vault::{MemoryVault, Vault};
-use octosense_llm_service::{register_with, sheets, Options, QrScanner, ScanDone};
+use octosense_llm_service::{offer_image, register_with, sheets, wants_image, ImageDone, Options, PickError, QrImagePicker, QrScanner, ScanDone};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -49,19 +49,23 @@ struct Rig {
 
 impl Rig {
     fn new(tag: &str, scanner: Option<Arc<dyn QrScanner>>) -> Rig {
+        Rig::with(tag, |options| match scanner {
+            Some(scanner) => options.scanner(scanner),
+            None => options,
+        })
+    }
+
+    fn with(tag: &str, extra: impl FnOnce(Options) -> Options) -> Rig {
         let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("llm-service-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let vault = Arc::new(MemoryVault::default());
         let changed = Arc::new(AtomicUsize::new(0));
         let counter = changed.clone();
-        let mut options = Options::default().core_dir(&dir).vault(vault.clone()).on_changed(move || {
+        let options = Options::default().core_dir(&dir).vault(vault.clone()).on_changed(move || {
             counter.fetch_add(1, Ordering::SeqCst);
         });
-        if let Some(scanner) = scanner {
-            options = options.scanner(scanner);
-        }
-        register_with(options);
+        register_with(extra(options));
         Rig { dir, vault, changed, host: Host::default(), _serial: serial }
     }
 
@@ -457,4 +461,126 @@ fn the_sheets_draw_what_the_tests_read() {
     assert_eq!(read_size, size);
     assert_eq!(rows.concat(), modules);
     assert_eq!(pin_of(&body), "ABCD-EFGH");
+}
+
+/// QR-A (config/tests/fixtures): OCTOS1E, PIN 7K3M-9QX2, deepseek then zai.
+fn qr_a_png() -> Vec<u8> {
+    std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config/tests/fixtures/qr-a.png")).unwrap()
+}
+const QR_A_PIN: &str = "7K3M-9QX2";
+
+fn qr_a_set() -> octosense_llm_config::ProviderSet {
+    octosense_llm_config::ProviderSet {
+        primary: Some(Provider::new("deepseek", Some("deepseek-chat".into()))),
+        fallbacks: vec![Provider::new("zai", Some("glm-4.6".into()))],
+    }
+}
+
+/// A file dialog that "chooses" whatever it was given, answering on another
+/// thread as a real one does.
+struct FakePicker(Mutex<Vec<Result<Vec<u8>, PickError>>>);
+
+impl QrImagePicker for FakePicker {
+    fn pick(&self, done: ImageDone) {
+        let next = self.0.lock().unwrap().remove(0);
+        std::thread::spawn(move || done(next));
+    }
+}
+
+fn assert_qr_a_imported(rig: &mut Rig, answer: &Value) {
+    assert_eq!(answer["applied"], json!(["DeepSeek · deepseek-chat", "Z.ai · glm-4.6"]));
+    let saved = profile::load(&profile::profile_path(&rig.dir)).unwrap().set;
+    assert_eq!(saved, qr_a_set());
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some("sk-test-0000000000000000"));
+    assert_eq!(rig.vault.get("ZAI_API_KEY").unwrap().as_deref(), Some("zai-test-0000"));
+    let providers = rig.ask("llm.providers", Value::Null).unwrap();
+    assert!(!providers.to_string().contains("sk-test"));
+    assert!(!rig.profile_text().contains("sk-test"));
+}
+
+#[test]
+fn a_picked_image_imports_after_the_pin() {
+    let big = {
+        let img = image::GrayImage::from_pixel(8000, 6000, image::Luma([200]));
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    };
+    let blank = {
+        let img = image::GrayImage::from_pixel(640, 480, image::Luma([180]));
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    };
+    let picker = Arc::new(FakePicker(Mutex::new(vec![
+        Err(PickError::Cancelled),
+        Err(PickError::Failed("permission denied".into())),
+        Ok(blank),
+        Ok(big),
+        Ok(qr_a_png()),
+    ])));
+    let mut rig = Rig::with("pick", |o| o.image_picker(picker));
+    let providers = rig.ask("llm.providers", Value::Null).unwrap();
+    assert_eq!((providers["image_picker"].clone(), providers["scanner"].clone()), (json!(true), json!(false)));
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(rig.host.body().contains("let can_pick = true"));
+    assert!(rig.host.body().contains("Choose image"));
+    // The app cannot pick for the sheet.
+    assert!(rig.ask("llm.sheet.pick", json!({})).unwrap_err().contains("for the host's sheet"));
+
+    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"cancelled": true}));
+    assert!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"].as_str().unwrap().contains("permission denied"));
+    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"], "No QR code found in that image.");
+    assert!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"].as_str().unwrap().contains("too large"));
+    assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap_err().contains("Scan or paste"));
+    assert!(still_waiting(waiting), "failed picks leave the sheet up");
+
+    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"needs_pin": true}));
+    let wrong = rig.sheet("llm.sheet.import", json!({"text": "", "pin": "0000-0000"})).unwrap_err();
+    assert!(wrong.contains("wrong PIN"), "{wrong}");
+    assert!(still_waiting(waiting));
+    let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap();
+    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_qr_a_imported(&mut rig, &answer);
+}
+
+#[test]
+fn without_a_picker_the_sheet_offers_none() {
+    let mut rig = Rig::new("nopick", None);
+    assert_eq!(rig.ask("llm.providers", Value::Null).unwrap()["image_picker"], false);
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(!rig.host.body().contains("Choose image"));
+    assert!(rig.sheet("llm.sheet.pick", json!({})).unwrap_err().contains("cannot choose an image"));
+    assert!(rig.sheet("llm.sheet.image", json!({})).unwrap_err().contains("No image can be dropped"));
+    assert!(!offer_image(qr_a_png()), "no sheet waits for a drop");
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    wait(waiting).unwrap_err();
+}
+
+#[test]
+fn a_dropped_image_imports_after_the_pin() {
+    let mut rig = Rig::with("drop", |o| o.image_drops(true));
+    assert!(!wants_image() && !offer_image(qr_a_png()), "nothing waits before the sheet");
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(rig.host.body().contains("let can_drop = true"));
+    assert!(rig.host.body().contains("drop a screenshot"));
+    // The sheet waits for a drop; the answer comes with the dropped image.
+    let armed = rig.send(APP, "llm.sheet.image", json!({}), true);
+    assert!(still_waiting(armed));
+    assert!(wants_image());
+    assert!(offer_image(b"not an image".to_vec()));
+    assert_eq!(wait(armed).unwrap()["error"], "That file is not a PNG or JPEG image.");
+    assert!(!wants_image(), "the sheet has to ask again");
+    let armed = rig.send(APP, "llm.sheet.image", json!({}), true);
+    assert!(still_waiting(armed));
+    assert!(offer_image(qr_a_png()));
+    assert_eq!(wait(armed).unwrap(), json!({"needs_pin": true}));
+    let rearmed = rig.send(APP, "llm.sheet.image", json!({}), true);
+    assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": "0000-0000"})).unwrap_err().contains("wrong PIN"));
+    let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap();
+    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_qr_a_imported(&mut rig, &answer);
+    // The import ended the wait: a later drop is not the service's.
+    assert!(!wants_image() && !offer_image(qr_a_png()));
+    let _ = rearmed;
 }

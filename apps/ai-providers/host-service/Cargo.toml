@@ -21,9 +21,13 @@ octosense-llm-config = { path = "../config" }
 serde_json = "1"
 # The provider test: one small HTTPS request on a worker thread.
 ureq = { version = "2", default-features = false, features = ["tls"] }
+# A provider QR read out of a picked or dropped image (src/image_qr.rs): PNG
+# and JPEG only, decoded to grey and searched with rqrr, the decoder the
+# phone's scanner is tested against.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rqrr = { version = "0.10", default-features = false }
 
 [dev-dependencies]
-# The phone's scanner decodes with rqrr: the QR the export sheet draws must
-# read back through it.
-rqrr = { version = "0.10", default-features = false }
 png = "0.17"
+# A non-OctoSense QR for the image tests.
+qrcode = { version = "0.14", default-features = false }

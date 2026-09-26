@@ -22,6 +22,7 @@ octosense_llm_service::register_with(
         .core_dir(core_dir)                       // where profiles/_main.json lives
         .scanner(Arc::new(MyScanner::default()))  // phone only
         .image_picker(Arc::new(MyPicker::default())) // a QR from a picture
+        .image_drops(true)                        // desktop: drops go to offer_image
         .on_changed(|| restart_appcard_core()),   // any thread
 );
 ```
@@ -34,6 +35,9 @@ octosense_llm_service::register_with(
   the photo picker on a phone. The import sheet then offers "Choose image" and
   reads the provider QR out of the picture (a screenshot, a photo of the
   screen). `llm.providers` reports `image_picker: true`.
+- `image_drops`: the shell passes image files dropped on the AI providers app
+  to `octosense_llm_service::offer_image(bytes)`; the import sheet then says
+  a screenshot can be dropped on it.
 - `on_changed`: called after the saved provider set changed (save, reorder,
   removal, import). Restart the AppCard kernel from it (it may run on a worker
   thread: post to the UI thread).
@@ -96,7 +100,37 @@ leaves the sheet as it was; `Err(PickError::Failed(why))` shows `why`.
 
 A shell whose picker is modal and synchronous can call `done` inside `pick`;
 one driven by Makepad events keeps `done` until its result action arrives, as
-the scanner above does.
+the scanner above does. On the desktop that is Makepad's native open panel:
+
+```rust
+// pick(): keep `done`, then on the UI thread:
+cx.open_select_file_dialog(FileDialog::new().set_id(id).add_filter("Images".into(), vec!["png".into(), "jpg".into(), "jpeg".into()]));
+// FileDialogAction::FileSelected { id, paths } -> done(Ok(std::fs::read(&paths[0])?))  (on a worker)
+// FileDialogAction::FileCancelled { id }        -> done(Err(PickError::Cancelled))
+```
+
+### Dropped images
+
+Sheets (Splash isolates) receive no file drops, so a shell that can take one
+answers it itself: while `octosense_llm_service::wants_image()` is true (an
+import sheet is up and waiting), a drag of an image file over the AI
+providers app gets `DragResponse::Copy`, and the drop's bytes go to
+`octosense_llm_service::offer_image(bytes)`, which reads the code on a worker
+and hands it to the sheet (it then asks for the PIN). Register with
+`.image_drops(true)` so the sheet waits for one.
+
+### Reading the image
+
+`image_qr::find_code(bytes)` (PNG or JPEG) tries the picture as it is and
+Otsu-thresholded, scaled down (long side 1600, 1000, 700) and scaled up
+smoothly (1.5 to 3 times when small), and takes the first code rqrr reads
+that is an OctoSense provider code. Measured: QR-A (69 modules with its quiet
+zone) reads from about 2 pixels a module in a 1080×2280 screenshot (about
+140 px wide) and from 90 px as a crop; JPEG at quality 40 reads; a 12 MP
+photo reads through a scaled copy. Errors are "No QR code found in that
+image.", "…not an OctoSense provider code.", "That image is too large (at
+most 20 MB and 40 megapixels)." (checked from the header, before decoding)
+and "That file is not a PNG or JPEG image.".
 
 ## Where keys go
 

@@ -16,18 +16,21 @@
 //! | `llm.remove` | `{id}` | `{}`; its key leaves the profile when no provider reads it |
 //! | `llm.test` | `{id}` | `{ok, ms, error?}` after one tiny request to the provider (`ok` is a Splash keyword: a script tests `error == nil`) |
 //! | `llm.export_qr` | `{ids?}` | `{}` when the person closes the sheet that shows the phone QR (all providers, or `ids`) |
-//! | `llm.import_qr` | – | `{applied: [label]}` once a scanned or pasted code is imported on the sheet |
+//! | `llm.import_qr` | – | `{applied: [label]}` once a scanned, picked, dropped or pasted code is imported on the sheet |
 //!
 //! The app never sees a key, a PIN or a QR. `add_provider`, `edit_provider`,
 //! `export_qr` and `import_qr` raise the host's sheet, a separate isolate
 //! over the app; only calls from that sheet (`llm.sheet.submit`,
-//! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.scan`, `llm.sheet.import`)
+//! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.scan`, `llm.sheet.pick`,
+//! `llm.sheet.image`, `llm.sheet.import`)
 //! can carry a key, a PIN or a code, and `dispatch` refuses them from
 //! anyone else. The export sheet draws an `OCTOS1E:` code (octos's PIN-sealed
 //! profile QR) and its PIN, and closes itself after five minutes. The import
 //! sheet asks the shell's [`QrScanner`] for the camera where there is one,
-//! and takes a pasted code everywhere; the code is opened (Argon2id, 64 MiB)
-//! on a worker.
+//! reads the code out of an image from the shell's [`QrImagePicker`] or
+//! dropped on the app ([`offer_image`]) where the shell offers those, and
+//! takes a pasted code everywhere; the image is searched ([`image_qr`]) and
+//! the code opened (Argon2id, 64 MiB) on a worker.
 //!
 //! Only `os.` apps are served: the provider set is the device's.
 //!
@@ -42,6 +45,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub mod image_qr;
 pub mod model;
 pub mod probe;
 pub mod sheets;
@@ -107,6 +111,10 @@ pub struct Options {
     /// The image picker, where the shell has one: the import sheet then
     /// offers "Choose image" and reads the QR out of the chosen picture.
     pub image_picker: Option<Arc<dyn QrImagePicker>>,
+    /// The shell passes image files dropped on the app to [`offer_image`]
+    /// (a desktop): the import sheet then says a screenshot can be dropped
+    /// on it.
+    pub image_drops: bool,
     pub on_changed: Option<OnChanged>,
 }
 
@@ -125,6 +133,11 @@ impl Options {
     }
     pub fn image_picker(mut self, picker: Arc<dyn QrImagePicker>) -> Self {
         self.image_picker = Some(picker);
+        self
+    }
+    /// The shell delivers dropped images through [`offer_image`].
+    pub fn image_drops(mut self, yes: bool) -> Self {
+        self.image_drops = yes;
         self
     }
     pub fn on_changed(mut self, f: impl Fn() + Send + Sync + 'static) -> Self {
@@ -147,10 +160,12 @@ pub fn register_with(options: Options) {
         .or_else(profile::default_core_dir)
         .unwrap_or_else(|| std::env::temp_dir().join("octos-home/.octos"));
     let vault = options.vault.clone().unwrap_or_else(|| vault::platform(&core_dir));
+    *IMAGE_WAITER.lock().unwrap() = None;
     octosense_appstore::services::register_host_service(Box::new(LlmService {
         shared: Arc::new(Shared { path: profile::profile_path(&core_dir), vault, on_changed: options.on_changed, lock: Mutex::new(()) }),
         scanner: options.scanner,
         image_picker: options.image_picker,
+        image_drops: options.image_drops,
         pending: Arc::default(),
         export: Arc::default(),
         generation: 0,
@@ -204,6 +219,54 @@ enum Kind {
     Import { scanned: Option<String> },
 }
 
+/// The import sheet waiting for a dropped image (`llm.sheet.image`): its
+/// answer, and the service's pending sheet to put the code on. Global so a
+/// shell's drop handler reaches it through [`offer_image`] without a handle
+/// on the registered service.
+type ImageWaiter = (Replier, Arc<Mutex<Option<Pending>>>);
+static IMAGE_WAITER: Mutex<Option<ImageWaiter>> = Mutex::new(None);
+
+/// Whether an import sheet is up and would take a dropped image now: a
+/// shell answers a drag over the app with "copy" only then.
+pub fn wants_image() -> bool {
+    IMAGE_WAITER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|(_, pending)| matches!(pending.lock().unwrap().as_ref(), Some(Pending { kind: Kind::Import { .. }, .. })))
+}
+
+/// A dropped image's encoded bytes (PNG or JPEG) for the import sheet that is
+/// up, from any thread: the code is read out of it on a worker and the sheet
+/// asks for the PIN, as after a pick. `false` when no import sheet waits for
+/// one (the drop is not the service's).
+pub fn offer_image(bytes: Vec<u8>) -> bool {
+    if !wants_image() {
+        return false;
+    }
+    let Some((reply, pending)) = IMAGE_WAITER.lock().unwrap().take() else {
+        return false;
+    };
+    work(move || reply.send(Ok(read_image(&bytes, &pending))));
+    true
+}
+
+/// Find the code in `bytes` and keep it on the import sheet: the answer the
+/// sheet reads (`{needs_pin}` or `{error}`).
+fn read_image(bytes: &[u8], pending: &Mutex<Option<Pending>>) -> Value {
+    match image_qr::find_code(bytes) {
+        Err(e) => json!({"error": e}),
+        Ok(code) => {
+            let needs_pin = qr::format_of(&code) == Some(qr::Format::Encrypted);
+            match pending.lock().unwrap().as_mut() {
+                Some(Pending { kind: Kind::Import { scanned }, .. }) => *scanned = Some(code),
+                _ => return json!({"error": "No app is waiting for this sheet."}),
+            }
+            json!({"needs_pin": needs_pin})
+        }
+    }
+}
+
 /// The phone QR being sealed, by the export it belongs to: `None` while the
 /// worker runs, then the finished sheet (or why not).
 type ExportJob = (u64, Option<Result<String, String>>);
@@ -212,6 +275,7 @@ pub struct LlmService {
     shared: Arc<Shared>,
     scanner: Option<Arc<dyn QrScanner>>,
     image_picker: Option<Arc<dyn QrImagePicker>>,
+    image_drops: bool,
     /// Shared with the workers: they answer the app on success.
     pending: Arc<Mutex<Option<Pending>>>,
     export: Arc<Mutex<Option<ExportJob>>>,
@@ -276,6 +340,7 @@ impl LlmService {
             earlier.reply.send(Err("Another sheet replaced this one.".into()));
         }
         *self.export.lock().unwrap() = None;
+        IMAGE_WAITER.lock().unwrap().take();
         *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind });
         host.open_sheet(sheet);
     }
@@ -434,6 +499,34 @@ impl LlmService {
         }));
     }
 
+    /// "Choose image": the shell's picker, then the code read out of the
+    /// picture on a worker. Answers `{needs_pin}`, `{cancelled: true}` or
+    /// `{error}` (the sheet stays up for another try).
+    fn pick(&mut self, reply: Replier) {
+        if !matches!(self.pending_kind(), Some(Kind::Import { .. })) {
+            return reply.send(Err("No app is waiting for this sheet.".into()));
+        }
+        let Some(picker) = self.image_picker.clone() else {
+            return reply.send(Err("This device cannot choose an image. Paste the code instead.".into()));
+        };
+        let pending = self.pending.clone();
+        picker.pick(Box::new(move |result| match result {
+            Err(PickError::Cancelled) => reply.send(Ok(json!({"cancelled": true}))),
+            Err(PickError::Failed(why)) => reply.send(Ok(json!({"error": format!("Could not open the image ({why}).")}))),
+            Ok(bytes) => work(move || reply.send(Ok(read_image(&bytes, &pending)))),
+        }));
+    }
+
+    /// The sheet waits for a dropped image; one waiter at a time.
+    fn await_image(&mut self, reply: Replier) {
+        if !self.image_drops || !matches!(self.pending_kind(), Some(Kind::Import { .. })) {
+            return reply.send(Err("No image can be dropped here.".into()));
+        }
+        if let Some((earlier, _)) = IMAGE_WAITER.lock().unwrap().replace((reply, self.pending.clone())) {
+            earlier.send(Err("replaced".into()));
+        }
+    }
+
     fn import(&mut self, args: &Value, reply: Replier) {
         let Some(Kind::Import { scanned }) = self.pending_kind() else {
             return reply.send(Err("No app is waiting for this sheet.".into()));
@@ -470,6 +563,7 @@ impl LlmService {
                         close_sheet_later(&waiting.app_id);
                         waiting.reply.send(Ok(answer.clone()));
                     }
+                    IMAGE_WAITER.lock().unwrap().take();
                     reply.send(Ok(answer));
                 }
             }
@@ -550,10 +644,14 @@ impl HostService for LlmService {
                 });
             }
             "export_qr" => self.export(&call.app_id, &call.args, reply, host),
-            "import_qr" => self.raise(&call.app_id, reply, Kind::Import { scanned: None }, sheets::import(self.scanner.is_some()), host),
+            "import_qr" => {
+                let sheet = sheets::import(self.scanner.is_some(), self.image_picker.is_some(), self.image_drops);
+                self.raise(&call.app_id, reply, Kind::Import { scanned: None }, sheet, host)
+            }
             "sheet.cancel" => {
                 host.close_sheet();
                 *self.export.lock().unwrap() = None;
+                IMAGE_WAITER.lock().unwrap().take();
                 if let Some(waiting) = self.pending.lock().unwrap().take() {
                     // Closing the QR is how an export ends.
                     let answer = if matches!(waiting.kind, Kind::Export(_)) { Ok(json!({})) } else { Err("Cancelled.".into()) };
@@ -565,6 +663,8 @@ impl HostService for LlmService {
             "sheet.qr" => self.export_ready(reply, host),
             "sheet.scan" => self.scan(reply),
             "sheet.import" => self.import(&call.args, reply),
+            "sheet.pick" => self.pick(reply),
+            "sheet.image" => self.await_image(reply),
             other => reply.send(Err(format!("llm has no method {other:?}"))),
         }
     }
