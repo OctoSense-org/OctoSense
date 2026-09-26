@@ -43,7 +43,7 @@ name = "octosense"
 path = "src/main.rs"
 
 [dependencies]
-rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "ba5cd50e320742339806712d48dea2901dff3318", default-features = false, features = ["octosense-module"], optional = true }
+rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "d2469eabd7b2a582fab68192202af540f40f1168", default-features = false, features = ["octosense-module"], optional = true }
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,

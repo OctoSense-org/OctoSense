@@ -300,7 +300,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "camera", "mail"]);
+                   ["rinx", "reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "camera", "mail"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         // Camera and Mail have no native module: they are system script apps
         // (ADR 0004) the Card runner hosts, launched by their manifest id.
@@ -309,7 +309,10 @@ mod tests {
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
         }
         let catalog: Vec<_> = catalog.into_iter().filter(|app| app.bin != "card").collect();
-        assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
+        assert_eq!(catalog.iter().find(|app| app.id == "reference").unwrap().policy,
+                   crate::clients::LaunchPolicy::AlwaysNew);
+        assert_eq!(catalog.iter().find(|app| app.id == "rinx").unwrap().policy,
+                   crate::clients::LaunchPolicy::OrFocus);
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
