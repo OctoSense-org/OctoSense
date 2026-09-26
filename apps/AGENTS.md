@@ -1,5 +1,9 @@
 # Working in OctoSense System Apps
 
+> **Any coding agent, or none.** These instructions work the same for Codex, Claude Code, Cursor, Gemini CLI, GitHub Copilot or a person at a terminal: every step is a shell command or a file edit, and nothing here needs a particular agent, model or vendor. `AGENTS.md` is the one source of truth; `CLAUDE.md` and `GEMINI.md` only import it for agents that look for those names.
+
+> octos appears below only as the runtime of the AppCard assistant, a product dependency. Changing or building the script apps and the Mail service does not need octos, and no step asks you to use octos as your coding agent.
+
 These are shipping apps. Keep changes small, test them in a shell, and keep the
 rules in README.md.
 

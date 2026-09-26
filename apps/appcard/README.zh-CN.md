@@ -122,7 +122,7 @@ octos rev patch `nix`。
 
 ## 来源
 
-从 [OctoSense-org/OctoSense-AppCard](https://github.com/OctoSense-org/OctoSense-AppCard)
+从 OctoSense-org/OctoSense-AppCard
 的 `d0a836b8` 迁移而来，该仓库又是从
 [OctoSense-org/OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
 （`app/`，提交 `cbbda4da`）拆分出来的。这些文件的完整历史保留在那里。
