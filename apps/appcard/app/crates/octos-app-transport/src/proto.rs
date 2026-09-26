@@ -139,7 +139,7 @@ pub(crate) fn build_outbound(cmd: OutboundCommand, shared: &mut SharedState) -> 
             // `cwd: None` = legacy per-profile listing; the field is
             // skip_serializing_if so the wire shape stays the historical
             // empty object.
-            to_value(&octos_core::ui_protocol::SessionListParams { cwd: None }),
+            to_value(&octos_core::ui_protocol::SessionListParams { cwd: None, ..Default::default() }),
             Some(PendingReply::SessionList),
         ),
         OutboundCommand::HydrateSession { session_id } => (

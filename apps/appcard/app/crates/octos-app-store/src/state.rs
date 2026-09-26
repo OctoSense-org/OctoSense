@@ -645,7 +645,7 @@ mod tests {
             cursor: None,
             notification: UiNotification::TurnCompleted(TurnCompletedEvent {
                 session_id: key("t:1"), topic: None, turn_id: turn(1), cursor: Some(cursor.clone()),
-                tokens_in: None, tokens_out: None, session_result: None,
+                tokens_in: None, tokens_out: None, session_result: None, token_usage: None,
             }),
         });
         assert!(!s.ephemeral.streaming_text.contains_key(&turn(1)));
