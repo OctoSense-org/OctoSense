@@ -106,7 +106,7 @@ by the default `app-hub` feature and on every mobile build. The **Preview
 catalog** switch shows the built-in apps while the live catalog is empty.
 
 See the crate's
-[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app/README.md)
+[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d36f50b9f0fdfbd8247b5deb8da8baa53c83066/crates/app-hub-app/README.md)
 at the pinned revision and the [native design evidence](docs/design/app-hub/README.md).
 App authors start with
 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
@@ -179,7 +179,8 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   substitute a moving branch. How the fork relates to upstream Makepad and how
   a pin moves: [docs/makepad-fork.md](docs/makepad-fork.md).
 - App Hub: `octosense-app-hub-app` and its backend crates, one pinned
-  revision (the `[patch]` in `Cargo.toml` explains the `www.github.com` alias).
+  revision, the same one the Mail host service names, so no `[patch]` is
+  needed for one App Hub source.
 - OctoSense-System-Apps (`native-apps.lock.json`): the system-app bundles,
   the Mail host service and `octos-app`, which brings octos from
   `octos-org/octos` at one revision.

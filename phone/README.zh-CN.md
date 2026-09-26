@@ -69,7 +69,7 @@ adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo
 
 App Hub（`apphub`）用于浏览已签名的 OctoSense 应用目录、搜索、查看应用详情、安装经过验证的应用包，并维护已安装应用的应用库。已安装的应用在隔离的 Card 实例（`card`）中打开，并在启动器和最近任务中单独显示。两者都来自 App Hub 的共享 Shell crate `octosense-app-hub-app`（OctoSense-App-Hub 中的 `crates/app-hub-app`），由默认的 `app-hub` feature 链接，且包含在所有移动端构建中。**预览目录**开关会在线上目录为空时显示内置应用。
 
-参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
+参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/0d36f50b9f0fdfbd8247b5deb8da8baa53c83066/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
 
 ## 在桌面电脑上运行
 
@@ -110,7 +110,7 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 ## 依赖
 
 - 框架：由 `native-runtime.lock.json` 选定的 Octoscript-Makepad 发布版本；其 `runtime.json` 固定了 Makepad 和 OctoScript 的版本。Cargo 的 `[patch]` 段把所有 Makepad crate 都解析到 `../.sources/makepad`，因此依赖图中只有一套 widgets/platform/script。不要换成会变动的分支。该分支与上游 Makepad 的关系以及如何更新固定版本，见 [docs/makepad-fork.md（英文）](docs/makepad-fork.md)。
-- App Hub：`octosense-app-hub-app` 及其后端 crate，固定在同一个修订版本（`Cargo.toml` 中的 `[patch]` 说明了 `www.github.com` 别名的用途）。
+- App Hub：`octosense-app-hub-app` 及其后端 crate，固定在同一个修订版本，与 Mail 宿主服务引用的版本相同，因此无需 `[patch]` 即只有一个 App Hub 来源。
 - OctoSense-System-Apps（`native-apps.lock.json`）：系统应用包、Mail 宿主服务以及 `octos-app`，后者从 `octos-org/octos` 的某个固定修订版本引入 octos。
 - AppCard 内核不是 Cargo 依赖：`liboctos.so` 在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（[docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)；其中的固定版本早于当前版本）。没有它时，AppCard 磁贴会回退到 WebSocket 传输和登录界面。
 
