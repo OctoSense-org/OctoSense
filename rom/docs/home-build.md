@@ -28,7 +28,9 @@ from the same pinned OctoSense-System-Apps checkout
 The runtime's Makepad (main `cd812acd`) includes the contained-app and isolate
 controls from makepad#30. `home/runtime-patches.lock.json` now records only the
 Settings overlay, `patches/runtime/makepad-settings.patch`, for Android input,
-accessibility and renderer integration. The old contained-app patch is removed.
+accessibility and renderer integration, with the platform and packager part of
+makepad#31 (the camera QR scanner AI providers uses) stacked on it until the
+runtime includes it. The old contained-app patch is removed.
 The lock records the pinned base, patch SHA-256 and resulting Git tree; setup
 applies it to the pinned checkout and leaves it staged. `--check` accepts only
 that exact tree and rejects additional staged, unstaged or untracked source changes.
