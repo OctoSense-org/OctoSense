@@ -138,15 +138,14 @@ OnePlus 6T (Android 9), keeping its data. Checked on the phone:
 - Maps launches.
 
 The phone had no network during that run. On 2026-09-26 it was online through
-gnirehtet reverse tethering over USB, running the build from the `HUB-01` fix
-(the same Home code as `main`):
+gnirehtet reverse tethering over USB, running the second sync's build with the
+`HUB-01` fix:
 
 - App Hub fetched and verified the live catalog (published 2026-09-20; it lists
   no apps yet).
-- Maps loads tiles and finds places. Directions from the phone's location to
-  Santana Row, San Jose, returned all three modes (drive 13 min / 5.7 mi, walk
-  2 hr 3 min, bike 40 min), so the Android 9 TLS 1.3 path works in the merged
-  Home.
+- The native Maps module loaded tiles and found places. Directions from the
+  phone's location to Santana Row, San Jose, returned all three modes (drive
+  13 min / 5.7 mi, walk 2 hr 3 min, bike 40 min) over TLS 1.3 on Android 9.
 
 The ROM variant was not built because the platform key is kept on the build
 host.
