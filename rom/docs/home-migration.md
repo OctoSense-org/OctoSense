@@ -137,7 +137,16 @@ OnePlus 6T (Android 9), keeping its data. Checked on the phone:
 - The Photos library and its albums are intact.
 - Maps launches.
 
-The phone had no network, so the live catalog and Maps directions over TLS 1.3
-were not exercised on the device; the rustls path is covered by Maps' local TLS
-tests. The ROM variant was not built because the platform key is kept on the
-build host.
+The phone had no network during that run. On 2026-09-26 it was online through
+gnirehtet reverse tethering over USB, running the build from the `HUB-01` fix
+(the same Home code as `main`):
+
+- App Hub fetched and verified the live catalog (published 2026-09-20; it lists
+  no apps yet).
+- Maps loads tiles and finds places. Directions from the phone's location to
+  Santana Row, San Jose, returned all three modes (drive 13 min / 5.7 mi, walk
+  2 hr 3 min, bike 40 min), so the Android 9 TLS 1.3 path works in the merged
+  Home.
+
+The ROM variant was not built because the platform key is kept on the build
+host.
