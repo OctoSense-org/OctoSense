@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 OctoSense-Desktop is the desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent shell on top of your operating system. It is one Makepad window that is the desktop: a launcher, a dock and tiles, hosting system apps and App Hub store apps as contained script programs, trusted native modules in-process, and Makepad developer programs as child processes. It gets its apps the same way the phone shell, OctoSense-ROM's `home/`, does.
 
+**Building an OctoSense app?** You do not need this repository to build, check or publish one: start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then `docs/QUICKSTART.md`). Build this shell only if you want to see your app in the desktop shell before it is published ([Try your own app](#try-your-own-app-before-it-is-published)).
+
 ## Where it sits
 
 | Repository | Role for this repo |
@@ -171,6 +173,18 @@ New app features that need a password, PIN or token belong in a host service and
 ### Store apps (App Hub)
 
 App Hub is on by default. Open **App Hub** from the launcher to browse the signed catalog and install apps; installed apps appear in the launcher without a restart. The catalog origin defaults to the App Hub repository and can be pointed elsewhere with `OCTOSENSE_HUB`. To build and publish an app, start from [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
+
+#### Try your own app before it is published
+
+Publish the bundle into a local catalog with a throwaway anchor (OctoScript-App-Design-Flow's [PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally) gives the `hub keygen`/`certify`/`publish` commands), then point this shell at it:
+
+```sh
+OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
+  OCTOSENSE_HOME=/tmp/octosense-test OCTOSENSE_APP_DATA=/tmp/octosense-test-apps \
+  cargo run --release
+```
+
+Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**: it runs in the Card runner under its manifest, as a store app would. Verified on macOS on 2026-09-26 with a new script app. The two `OCTOSENSE_*` state variables keep the test out of `~/.octosense`.
 
 ### Choosing and overriding system apps
 
