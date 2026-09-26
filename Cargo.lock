@@ -7260,8 +7260,10 @@ dependencies = [
 name = "octosense-llm-service"
 version = "0.1.0"
 dependencies = [
+ "image",
  "octosense-appstore",
  "octosense-llm-config",
+ "rqrr",
  "serde_json",
  "ureq 2.12.1",
 ]

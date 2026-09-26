@@ -122,9 +122,10 @@ pub fn is_system_app(id: &str) -> bool {
 /// - `llm`: the assistant's LLM providers for AI providers (`os.ai-providers`),
 ///   written to the AppCard kernel's octos profile (`OCTOS_APP_CORE_DIR`, else
 ///   `~/octos-home/.octos`); keys in the keychain entry octos reads
-///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No QR
-///   scanner: the desktop has no camera scanner, so a profile QR is imported by
-///   pasting it.
+///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No
+///   camera scanner: a phone's profile QR is imported from a picture of it
+///   (the open panel, or an image dropped on the import sheet: `llm_image`),
+///   or by pasting its text.
 #[cfg(feature = "system-apps")]
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -142,6 +143,10 @@ fn register_host_services() {
         let mut llm = octosense_llm_service::Options::default();
         if let Some(dir) = octosense_llm_config::profile::default_core_dir() {
             llm = llm.core_dir(dir);
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            llm = llm.image_picker(crate::llm_image::picker()).image_drops(true);
         }
         // TODO(ai-providers): pass `on_changed` to restart the AppCard
         // kernel when the provider set changes; until then a running AppCard

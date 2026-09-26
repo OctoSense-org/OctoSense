@@ -30,6 +30,8 @@ mod dock_warp;
 mod host;
 mod hub;
 mod layout;
+#[cfg(all(feature = "system-apps", not(any(target_os = "android", target_os = "ios"))))]
+mod llm_image;
 mod octosense;
 mod module_host;
 mod module_view;
@@ -4145,6 +4147,8 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        #[cfg(all(feature = "system-apps", not(any(target_os = "android", target_os = "ios"))))]
+        llm_image::handle_actions(actions);
         if self.gallery {
             let gallery = self.ui.widget(cx, ids!(shell_gallery));
             {
@@ -4446,6 +4450,24 @@ impl AppMain for App {
             && (self.shell_menu_pointer(cx, event) || self.shell_panel_pointer(cx, event))
         {
             return;
+        }
+        // AI providers' QR import: the open panel a pick asked for, and an
+        // image dropped on its window while the import sheet waits.
+        #[cfg(all(feature = "system-apps", not(any(target_os = "android", target_os = "ios"))))]
+        if self.state.is_some() {
+            llm_image::open_requested(cx);
+            if matches!(event, Event::Drag(_) | Event::Drop(_)) {
+                let desk = self.desk(cx);
+                let desk = desk.borrow::<WmDesk>();
+                let state = self.state.as_ref();
+                let app_at = |p: Vec2d| {
+                    let client = desk.as_ref()?.window_at(p)?;
+                    state?.clients.get(&client).map(|slot| slot.app.clone())
+                };
+                if llm_image::handle_drop(event, app_at) {
+                    return;
+                }
+            }
         }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
