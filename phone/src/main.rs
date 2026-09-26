@@ -138,30 +138,7 @@ macro_rules! octosense_main_with_robrix {
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
 }
-#[cfg(any(feature = "app-camera", native_mobile))]
-macro_rules! octosense_main_with_camera {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!(
-        "octosense_camera/resources/service/NotoSansSC-Regular.ttf",
-        "octosense_camera/resources/service/NotoSansSC-Medium.ttf",
-        "octosense_camera/resources/service/NotoSansSC-Bold.ttf",
-        $($extra),*
-    ); };
-}
-#[cfg(not(any(feature = "app-camera", native_mobile)))]
-macro_rules! octosense_main_with_camera {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!($($extra),*); };
-}
-#[cfg(any(feature = "app-mail", native_mobile))]
-octosense_main_with_camera!(
-    "octosense_mail/resources/ux/Inter-200.ttf",
-    "octosense_mail/resources/ux/Inter-300.ttf",
-    "octosense_mail/resources/ux/Inter-400.ttf",
-    "octosense_mail/resources/ux/Inter-500.ttf",
-    "octosense_mail/resources/ux/Inter-600.ttf",
-    "octosense_mail/resources/ux/Inter-700.ttf",
-);
-#[cfg(not(any(feature = "app-mail", native_mobile)))]
-octosense_main_with_camera!();
+octosense_main_with_robrix!();
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -662,7 +639,8 @@ impl App {
         };
         let app = &app;
         #[cfg(any(feature = "app-hub", native_mobile))]
-        if let Some(manifest_id) = apps::card_manifest_id(app) {
+        // A system app ships with the build and answers to no catalog.
+        if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
                 octosense_app_hub_app::data_root(cx), manifest_id) {
                 self.notify(cx, "Could not open app", &error);
@@ -4791,17 +4769,6 @@ impl AppMain for App {
                     robrix.set_foreground(cx, foreground);
                 }
                 makepad_widgets::widget_async::leave_isolate(cx, entry);
-            }
-        }
-        #[cfg(any(feature = "app-mail", native_mobile))]
-        if let Some(client) = self.module_host.client_of_module("mail") {
-            let foreground = self.state.as_ref().map(|state| {
-                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
-            }).unwrap_or(false);
-            if let Some(instance) = self.module_host.get(client) {
-                if let Some(mut mail) = instance.root.borrow_mut::<octosense_mail::MailView>() {
-                    mail.set_foreground(cx, foreground);
-                }
             }
         }
         #[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
