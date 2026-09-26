@@ -362,8 +362,11 @@ fn a_pasted_code_imports_after_the_right_pin() {
     assert!(missing.contains("PIN"), "{missing}");
     assert!(still_waiting(waiting), "a wrong PIN leaves the app waiting");
     let answer = rig.sheet("llm.sheet.import", json!({"text": format!("  {code}\n"), "pin": pin.to_lowercase()})).unwrap();
-    assert_eq!(answer["confirm"], false, "nothing saved: nothing to confirm");
-    assert_eq!(wait(waiting).unwrap()["applied"], answer["applied"]);
+    assert_eq!(answer["message"], "Saved DeepSeek · deepseek-chat as primary. Added Z.ai · glm-4.6 as a fallback.");
+    let told = wait(waiting).unwrap();
+    assert_eq!(told["applied"], answer["applied"]);
+    assert_eq!(told["message"], answer["message"]);
+    assert_eq!(told["added"], answer["applied"], "into an empty list everything is added");
     assert_imported(&mut rig, &answer);
 }
 
@@ -490,44 +493,166 @@ fn the_export_sheet_expires_and_forgets_the_code() {
     assert_eq!(wait(waiting).unwrap(), json!({}));
 }
 
-#[test]
-fn a_code_that_replaces_saved_providers_waits_for_replace() {
-    let mut rig = Rig::new("confirm", None);
-    two_providers(&mut rig);
-    let code = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config/tests/fixtures/qr-a.txt")).unwrap();
-    let before = rig.profile_text();
-    let changes = rig.changed.load(Ordering::SeqCst);
+fn qr_a_code() -> String {
+    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config/tests/fixtures/qr-a.txt")).unwrap()
+}
+const QR_A_DEEPSEEK: &str = "sk-test-0000000000000000";
+const QR_A_ZAI: &str = "zai-test-0000";
 
-    // Cancel at the confirm step changes nothing.
+/// Import `code` on the sheet: what the app hears.
+fn import(rig: &mut Rig, code: &str, pin: &str) -> Value {
     let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
-    assert!(rig.host.body().contains("llm.sheet.replace"));
-    assert!(rig.sheet("llm.sheet.replace", json!({})).unwrap_err().contains("Import the code first"));
-    assert!(rig.sheet("llm.sheet.import", json!({"text": code, "pin": "0000-0000"})).unwrap_err().contains("wrong PIN"));
-    let asked = rig.sheet("llm.sheet.import", json!({"text": code, "pin": QR_A_PIN})).unwrap();
-    assert_eq!(asked["confirm"], true);
+    assert!(!rig.host.body().contains("Replace"), "no confirm step");
+    let sheet = rig.sheet("llm.sheet.import", json!({"text": code, "pin": pin})).unwrap();
+    let told = wait(waiting).unwrap();
+    assert_eq!(sheet["message"], told["message"]);
+    assert!(!told.to_string().contains("test-0000") && !told.to_string().contains("sk-test"), "no key in the answer");
+    told
+}
+
+fn saved(rig: &Rig) -> Vec<Provider> {
+    profile::load(&profile::profile_path(&rig.dir)).unwrap().set.iter().cloned().collect()
+}
+
+fn route(family: &str, model: &str, key_env: &str) -> Provider {
+    let mut p = Provider::new(family, Some(model.into()));
+    p.key_env = key_env.into();
+    p
+}
+
+/// The phone's case: a real primary, then QR-A (DeepSeek deepseek-chat and
+/// Z.ai glm-4.6 with other keys) added as fallbacks.
+const REAL_KEY: &str = "sk-test-real-primary-fcb0";
+
+fn real_primary(rig: &mut Rig) {
+    rig.add(json!({"family": "deepseek", "model": "deepseek-v4-flash", "base_url": "", "api_type": "default", "key": REAL_KEY}));
+}
+
+#[test]
+fn an_import_appends_fallbacks_and_never_overwrites_a_saved_key() {
+    let mut rig = Rig::new("append", None);
+    real_primary(&mut rig);
+    let changes = rig.changed.load(Ordering::SeqCst);
+    let told = import(&mut rig, &qr_a_code(), QR_A_PIN);
+    assert_eq!(told["message"], "Added DeepSeek · deepseek-chat, Z.ai · glm-4.6 as fallbacks.");
+    assert_eq!(told["added"], json!(["DeepSeek · deepseek-chat", "Z.ai · glm-4.6"]));
+    assert_eq!(told["updated"], json!([]));
+    assert_eq!(rig.changed.load(Ordering::SeqCst), changes + 1);
+
+    // The primary is unchanged; the code's DeepSeek has a slot of its own.
     assert_eq!(
-        asked["message"],
-        "This replaces your 2 providers (DeepSeek · deepseek-chat, Z.ai · glm-5-turbo) with 2 from the code (DeepSeek · deepseek-chat, Z.ai · glm-4.6)."
+        saved(&rig),
+        [
+            route("deepseek", "deepseek-v4-flash", "DEEPSEEK_API_KEY"),
+            route("deepseek", "deepseek-chat", "DEEPSEEK_2_API_KEY"),
+            route("zai", "glm-4.6", "ZAI_API_KEY"),
+        ]
     );
-    assert!(!asked.to_string().contains("sk-test"), "no key in the question");
-    assert!(still_waiting(waiting), "the app waits for Replace");
-    assert_eq!(rig.profile_text(), before, "nothing saved before Replace");
-    // The app cannot press Replace.
-    assert!(rig.ask("llm.sheet.replace", json!({})).unwrap_err().contains("for the host's sheet"));
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(REAL_KEY), "the saved key is untouched");
+    assert_eq!(rig.vault.get("DEEPSEEK_2_API_KEY").unwrap().as_deref(), Some(QR_A_DEEPSEEK));
+    assert_eq!(rig.vault.get("ZAI_API_KEY").unwrap().as_deref(), Some(QR_A_ZAI));
+    let json: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    let llm = &json["config"]["llm"];
+    assert_eq!(llm["fallbacks"][0]["route"]["api_key_env"], "DEEPSEEK_2_API_KEY", "octos reads the slot from the route");
+    assert!(llm["primary"]["route"].get("api_key_env").is_none());
+    assert_eq!(json["config"]["env_vars"]["DEEPSEEK_2_API_KEY"], "keychain:");
+    assert!(!rig.profile_text().contains("test-0000") && !rig.profile_text().contains(REAL_KEY));
+    let providers = rig.ask("llm.providers", Value::Null).unwrap();
+    let keys: Vec<Value> = all(&providers).iter().map(|p| p["key"].clone()).collect();
+    assert_eq!(keys, [json!("set ••••fcb0"), json!("set ••••0000"), json!("set ••••0000")]);
+
+    // The same code again changes nothing.
+    let (before, changes) = (rig.profile_text(), rig.changed.load(Ordering::SeqCst));
+    let again = import(&mut rig, &qr_a_code(), QR_A_PIN);
+    assert_eq!(rig.changed.load(Ordering::SeqCst), changes, "no kernel restart for nothing");
+    assert_eq!(again["message"], "Already saved: DeepSeek · deepseek-chat, Z.ai · glm-4.6.");
+    assert_eq!((again["added"].clone(), again["updated"].clone()), (json!([]), json!([])));
+    assert_eq!(rig.profile_text(), before);
+    assert_eq!(saved(&rig).len(), 3);
+
+    // The phone QR of the merged set carries both DeepSeek keys.
+    let (waiting, code, pin) = export(&mut rig, Value::Null);
+    let decoded = qr::decode(&code, Some(&pin)).unwrap();
+    assert_eq!(decoded.set.iter().cloned().collect::<Vec<_>>(), saved(&rig));
+    assert_eq!(decoded.secrets["DEEPSEEK_API_KEY"], REAL_KEY);
+    assert_eq!(decoded.secrets["DEEPSEEK_2_API_KEY"], QR_A_DEEPSEEK);
+    assert_eq!(decoded.secrets["ZAI_API_KEY"], QR_A_ZAI);
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    wait(waiting).unwrap();
+    // Removing the added ones takes their slot out of the profile.
+    let providers = rig.ask("llm.providers", Value::Null).unwrap();
+    for p in &all(&providers)[1..] {
+        rig.ask("llm.remove", json!({"id": p["id"]})).unwrap();
+    }
+    assert_eq!(saved(&rig), [route("deepseek", "deepseek-v4-flash", "DEEPSEEK_API_KEY")]);
+    let json: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    assert!(json["config"]["env_vars"].get("DEEPSEEK_2_API_KEY").is_none());
+    assert!(json["config"]["env_vars"].get("ZAI_API_KEY").is_none());
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(REAL_KEY));
+    drop(rig);
+
+    // The merged set's QR imports into an empty list as the same set, with
+    // the same slots.
+    let mut other = Rig::new("append-other", None);
+    let told = import(&mut other, &code, &pin);
+    assert_eq!(told["message"], "Saved DeepSeek · deepseek-v4-flash as primary. Added DeepSeek · deepseek-chat, Z.ai · glm-4.6 as fallbacks.");
+    assert_eq!(saved(&other), decoded.set.iter().cloned().collect::<Vec<_>>());
+    assert_eq!(other.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(REAL_KEY));
+    assert_eq!(other.vault.get("DEEPSEEK_2_API_KEY").unwrap().as_deref(), Some(QR_A_DEEPSEEK));
+}
+
+#[test]
+fn a_provider_the_code_names_again_keeps_its_place_and_takes_the_code_key() {
+    let mut rig = Rig::new("update", None);
+    two_providers(&mut rig);
+    let told = import(&mut rig, &qr_a_code(), QR_A_PIN);
+    assert_eq!(told["message"], "Added Z.ai · glm-4.6 as a fallback. Updated the key for DeepSeek · deepseek-chat.");
+    assert_eq!(told["updated"], json!(["DeepSeek · deepseek-chat"]));
+    assert_eq!(
+        saved(&rig),
+        [
+            route("deepseek", "deepseek-chat", "DEEPSEEK_API_KEY"),
+            Provider::new("zai", None),
+            route("zai", "glm-4.6", "ZAI_2_API_KEY"),
+        ]
+    );
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(QR_A_DEEPSEEK), "updated in place");
+    assert_eq!(rig.vault.get("ZAI_API_KEY").unwrap().as_deref(), Some(ZAI_KEY), "the saved Z.ai key is untouched");
+    assert_eq!(rig.vault.get("ZAI_2_API_KEY").unwrap().as_deref(), Some(QR_A_ZAI));
+}
+
+#[test]
+fn the_same_key_shares_its_slot() {
+    let mut rig = Rig::new("share", None);
+    real_primary(&mut rig);
+    let set = octosense_llm_config::ProviderSet { primary: Some(Provider::new("deepseek", Some("deepseek-chat".into()))), fallbacks: vec![] };
+    let secrets = [("DEEPSEEK_API_KEY".to_string(), REAL_KEY.to_string())].into();
+    let code = qr::encode_encrypted(&qr::Provisioning { set, secrets }, QR_A_PIN).unwrap();
+    let told = import(&mut rig, &code, QR_A_PIN);
+    assert_eq!(told["message"], "Added DeepSeek · deepseek-chat as a fallback.");
+    assert_eq!(saved(&rig), [route("deepseek", "deepseek-v4-flash", "DEEPSEEK_API_KEY"), route("deepseek", "deepseek-chat", "DEEPSEEK_API_KEY")]);
+    assert_eq!(rig.vault.get("DEEPSEEK_2_API_KEY").unwrap(), None);
+}
+
+#[test]
+fn a_legacy_code_is_appended_too() {
+    let mut rig = Rig::new("legacy", None);
+    real_primary(&mut rig);
+    let legacy = r#"{"llm_family":"deepseek","llm_model":"deepseek-reasoner","llm_key":"sk-test-legacy-00001111"}"#;
+    let told = import(&mut rig, legacy, "");
+    assert_eq!(told["message"], "Added DeepSeek · deepseek-reasoner as a fallback.");
+    assert_eq!(
+        saved(&rig),
+        [route("deepseek", "deepseek-v4-flash", "DEEPSEEK_API_KEY"), route("deepseek", "deepseek-reasoner", "DEEPSEEK_2_API_KEY")]
+    );
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(REAL_KEY));
+    assert_eq!(rig.vault.get("DEEPSEEK_2_API_KEY").unwrap().as_deref(), Some("sk-test-legacy-00001111"));
+    // The app cannot import for the sheet, and there is no Replace any more.
+    assert!(rig.ask("llm.sheet.import", json!({"text": legacy})).unwrap_err().contains("for the host's sheet"));
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(rig.sheet("llm.sheet.replace", json!({})).unwrap_err().contains("no method"));
     rig.sheet("llm.sheet.cancel", json!({})).unwrap();
     assert_eq!(wait(waiting).unwrap_err(), "Cancelled.");
-    assert_eq!(rig.profile_text(), before, "Cancel changes nothing");
-    assert_eq!(rig.changed.load(Ordering::SeqCst), changes);
-    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(DEEPSEEK_KEY));
-
-    // Replace applies it.
-    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
-    assert!(rig.sheet("llm.sheet.replace", json!({})).unwrap_err().contains("Import the code first"), "a cancelled code is not kept");
-    assert_eq!(rig.sheet("llm.sheet.import", json!({"text": code, "pin": QR_A_PIN})).unwrap()["confirm"], true);
-    let answer = rig.sheet("llm.sheet.replace", json!({})).unwrap();
-    assert_eq!(answer["confirm"], false);
-    assert_eq!(wait(waiting).unwrap(), json!({"applied": answer["applied"]}));
-    assert_qr_a_imported(&mut rig, &answer);
 }
 
 #[test]

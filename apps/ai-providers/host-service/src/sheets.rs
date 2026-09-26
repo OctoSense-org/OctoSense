@@ -287,23 +287,16 @@ let QrRow = View{{width: Fit flow: Right}}
 
 /// Import a code: scan it (where the host has a scanner), read it out of an
 /// image (chosen with the host's picker, or dropped on the app where the host
-/// passes drops on), or paste it, then type its PIN. A code that would
-/// replace providers already saved is confirmed first: the service answers
-/// the import with `confirm: true` and what would be replaced, and the sheet
-/// asks Replace (`llm.sheet.replace`) or Cancel (nothing changes).
+/// passes drops on), or paste it, then type its PIN. An import only adds
+/// (the service keeps what is saved and appends the code's providers as
+/// fallbacks), so there is nothing to confirm: the sheet shows what the
+/// service did and closes.
 pub fn import(can_scan: bool, can_pick: bool, can_drop: bool) -> String {
     let mut script = format!(
         r##"let can_scan = {can_scan}
 let can_pick = {can_pick}
 let can_drop = {can_drop}
-let confirming = false
-fn unconfirm(){{
-    confirming = false
-    ui.confirm.set_visible(false)
-    ui.import_btn.set_text("Import")
-}}
 fn scan(){{
-    unconfirm()
     ui.status.set_text("")
     ui.note.set_text("Point the camera at the code on your computer…")
     host.request("llm.sheet.scan", {{}}, fn(r){{
@@ -316,7 +309,6 @@ fn read_image(r){{
     if !r.is_ok {{ ui.note.set_text("") ui.status.set_text(r.error) return }}
     if r.data.cancelled == true {{ ui.note.set_text("") return }}
     if r.data.error != nil {{ ui.note.set_text("") ui.status.set_text(r.data.error) return }}
-    unconfirm()
     ui.status.set_text("")
     if r.data.needs_pin == true {{ ui.note.set_text("Code read from the image. Type the PIN shown beside it.") }} else {{ ui.note.set_text("Code read from the image. Tap Import.") }}
 }}
@@ -333,25 +325,11 @@ fn await_drop(){{
         }}
     }})
 }}
-fn replace(){{
-    ui.status.set_text("")
-    host.request("llm.sheet.replace", {{}}, fn(r){{
-        if r.is_ok {{ ui.note.set_text("Imported") }} else {{ unconfirm() ui.status.set_text(r.error) }}
-    }})
-}}
 fn submit(){{
-    if confirming {{ replace() return }}
     ui.status.set_text("")
     ui.note.set_text("Checking the code…")
     host.request("llm.sheet.import", {{text: ui.code.text() pin: ui.pin.text()}}, fn(r){{
-        if !r.is_ok {{ ui.note.set_text("") ui.status.set_text(r.error) return }}
-        if r.data.confirm == true {{
-            confirming = true
-            ui.note.set_text("")
-            ui.confirm_note.set_text(r.data.message)
-            ui.confirm.set_visible(true)
-            ui.import_btn.set_text("Replace")
-        }} else {{ ui.note.set_text("Imported") }}
+        if r.is_ok {{ ui.note.set_text(r.data.message) }} else {{ ui.note.set_text("") ui.status.set_text(r.error) }}
     }})
 }}
 fn cancel(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
@@ -379,15 +357,8 @@ if can_drop {{ await_drop() }}
     let paste = if can_scan || can_pick { "Or paste the code" } else { "Paste the code" };
     let content = format!(
         r#"        Title{{text: "OctoSense · Import providers"}}
-        Note{{text: "Show the code on your computer: AI providers, Show QR for phone. The keys it carries go to OctoSense, not to the app that asked."}}
+        Note{{text: "Show the code on your computer: AI providers, Show QR for phone. Its providers are added after yours, as fallbacks; the keys it carries go to OctoSense, not to the app that asked."}}
         status := Status{{}}
-        confirm := RoundedView{{visible: false width: Fill height: Fit flow: Down spacing: 8 padding: 12 show_bg: true draw_bg.color: #xfff4e5 draw_bg.border_radius: 12.0
-            confirm_note := Label{{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{{font_size: 14}}}}
-            View{{width: Fill height: Fit flow: Right spacing: 6
-                Choice{{text: "Cancel" on_click: || cancel()}}
-                Choice{{text: "Replace" draw_text +: {{color: #xff3b30 color_hover: #xff3b30 color_down: #xff3b30}} on_click: || replace()}}
-            }}
-        }}
         note := Note{{}}{buttons}{image_note}
         Caption{{text: "{paste} (OCTOS1E:…)"}}
         code := Field{{empty_text: "OCTOS1E:…"}}

@@ -277,6 +277,166 @@ impl ProfileStore {
     }
 }
 
+/// What importing a code into the saved list does (names only, never keys).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Merge {
+    /// The list to save: the saved providers in their order, then the code's
+    /// new ones as fallbacks (the code's list as is when nothing was saved).
+    pub list: Vec<Provider>,
+    /// Keys to store with it (env var → key).
+    pub keys: BTreeMap<String, String>,
+    /// Nothing was saved: the code's first provider became the primary.
+    pub primary: Option<Provider>,
+    /// Providers appended as fallbacks.
+    pub added: Vec<Provider>,
+    /// Saved providers whose key the code changed.
+    pub updated: Vec<Provider>,
+    /// Saved providers the code named again, unchanged.
+    pub unchanged: Vec<Provider>,
+}
+
+/// `DEEPSEEK` for DeepSeek: the family's key env var without `_API_KEY`.
+fn key_stem(family: &str) -> String {
+    let env = registry::key_env_for(family);
+    env.strip_suffix("_API_KEY").unwrap_or(&env).to_string()
+}
+
+/// Whether `env` is one of `family`'s key slots: its own key env var, or a
+/// numbered one an import made (`DEEPSEEK_2_API_KEY`).
+fn is_family_slot(env: &str, family: &str) -> bool {
+    if env == registry::key_env_for(family) {
+        return true;
+    }
+    let stem = key_stem(family);
+    env.strip_prefix(stem.as_str())
+        .and_then(|rest| rest.strip_prefix('_'))
+        .and_then(|rest| rest.strip_suffix("_API_KEY"))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The same route: family, model, endpoint and protocol, whatever slot its
+/// key is in (as long as it is one of the family's).
+fn same_route(a: &Provider, b: &Provider) -> bool {
+    (a.family.as_str(), a.model.as_deref(), a.base_url.as_deref(), a.api_type)
+        == (b.family.as_str(), b.model.as_deref(), b.base_url.as_deref(), b.api_type)
+        && (a.key_env == b.key_env || (is_family_slot(&a.key_env, &a.family) && is_family_slot(&b.key_env, &b.family)))
+}
+
+/// Merge an opened code into `store`'s saved list. Nothing saved: the code's
+/// list as is. Otherwise nothing saved moves or goes: a provider the code
+/// names again keeps its place and takes the code's key; every other one is
+/// appended as a fallback. A new provider whose key env var a saved provider
+/// already reads, with a different key in the code (or a saved key that
+/// cannot be read), gets a fresh slot `<FAMILY>_<n>_API_KEY`, so an import
+/// never overwrites a saved provider's key; the same key shares the slot.
+pub fn merge_import(store: &ProfileStore, code: &qr::Provisioning) -> Result<Merge, String> {
+    let incoming = list_of(&code.set);
+    if incoming.is_empty() {
+        return Err("The code names no provider.".into());
+    }
+    if store.list.is_empty() {
+        let mut it = incoming.clone().into_iter();
+        return Ok(Merge {
+            list: incoming,
+            keys: code.secrets.clone(),
+            primary: it.next(),
+            added: it.collect(),
+            ..Merge::default()
+        });
+    }
+    let mut m = Merge { list: store.list.clone(), ..Merge::default() };
+    let current = |m: &Merge, env: &str| current_key(store, m, env);
+    let find = |list: &[Provider], p: &Provider| {
+        list.iter().position(|s| id_of(s) == id_of(p)).or_else(|| list.iter().position(|s| same_route(s, p)))
+    };
+    // The saved providers the code names again.
+    let named: BTreeSet<usize> = incoming.iter().filter_map(|p| find(&store.list, p)).collect();
+    // Where each of the code's key env vars went, for its later providers.
+    let mut slots: BTreeMap<String, String> = BTreeMap::new();
+    for p in incoming {
+        let secret = code.secrets.get(&p.key_env).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        if let Some(at) = find(&m.list, &p) {
+            let saved = m.list[at].clone();
+            let changes = secret.as_ref().filter(|key| current(&m, &saved.key_env).ok().flatten().as_deref() != Some(key.as_str()));
+            match changes {
+                Some(key) => {
+                    // A slot another saved provider reads (one the code does
+                    // not name) is not overwritten: this one moves to its own.
+                    let shared = m.list.iter().enumerate().any(|(i, s)| i != at && !named.contains(&i) && s.key_env == saved.key_env);
+                    let slot = if shared { fresh_slot(store, &m, &saved.family)? } else { saved.key_env.clone() };
+                    m.keys.insert(slot.clone(), key.clone());
+                    m.list[at].key_env = slot;
+                    if at < store.list.len() && !m.updated.contains(&saved) {
+                        m.updated.push(saved);
+                    }
+                }
+                None => {
+                    if at < store.list.len() && !m.unchanged.contains(&saved) && !m.updated.contains(&saved) {
+                        m.unchanged.push(saved);
+                    }
+                }
+            }
+            continue;
+        }
+        let slot = match (slots.get(&p.key_env), &secret) {
+            (Some(slot), _) => slot.clone(),
+            // No key in the code: nothing to write, the slot is shared.
+            (None, None) => p.key_env.clone(),
+            (None, Some(key)) => {
+                let slot = slot_for(store, &m, &p, key)?;
+                if current(&m, &slot).ok().flatten().as_deref() != Some(key.as_str()) {
+                    m.keys.insert(slot.clone(), key.clone());
+                }
+                slot
+            }
+        };
+        slots.insert(p.key_env.clone(), slot.clone());
+        let mut added = p;
+        added.key_env = slot;
+        m.list.push(added.clone());
+        m.added.push(added);
+    }
+    Ok(m)
+}
+
+/// What a slot holds now: a key this import writes, else the saved one.
+fn current_key(store: &ProfileStore, m: &Merge, env: &str) -> Result<Option<String>, String> {
+    match m.keys.get(env) {
+        Some(k) => Ok(Some(k.clone())),
+        None => resolve_key(&store.env_vars, env, store.vault.as_ref()),
+    }
+}
+
+/// The slot a new provider's `key` goes in: its own env var when no provider
+/// reads it or it already holds `key`, else a slot of its family that holds
+/// `key`, else the first free `<FAMILY>_<n>_API_KEY`.
+fn slot_for(store: &ProfileStore, m: &Merge, p: &Provider, key: &str) -> Result<String, String> {
+    let in_use = |env: &str| m.list.iter().any(|s| s.key_env == env) || m.keys.contains_key(env);
+    let holds_key = |env: &str| current_key(store, m, env).ok().flatten().as_deref() == Some(key);
+    if !in_use(&p.key_env) || holds_key(&p.key_env) {
+        return Ok(p.key_env.clone());
+    }
+    if let Some(s) = m.list.iter().find(|s| is_family_slot(&s.key_env, &p.family) && holds_key(&s.key_env)) {
+        return Ok(s.key_env.clone());
+    }
+    fresh_slot(store, m, &p.family)
+}
+
+/// The first free `<FAMILY>_<n>_API_KEY` (n = 2, 3, …): no provider reads
+/// it, this import writes nothing to it, the profile has no value for it and
+/// the vault keeps nothing under it (another octos profile may use it).
+fn fresh_slot(store: &ProfileStore, m: &Merge, family: &str) -> Result<String, String> {
+    let stem = key_stem(family);
+    for n in 2..100 {
+        let name = format!("{stem}_{n}_API_KEY");
+        let taken = m.list.iter().any(|s| s.key_env == name) || m.keys.contains_key(&name) || store.env_vars.contains_key(&name);
+        if !taken && matches!(store.vault.get(&name), Ok(None)) {
+            return Ok(name);
+        }
+    }
+    Err(format!("{} has no free key slot.", family_label(family)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +524,50 @@ mod tests {
             use std::os::unix::fs::PermissionsExt as _;
             assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o077, 0);
         }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn with_key(family: &str, model: &str, key_env: &str) -> Provider {
+        let mut p = Provider::new(family, Some(model.into()));
+        p.key_env = key_env.into();
+        p
+    }
+
+    #[test]
+    fn an_import_never_overwrites_a_key_another_saved_provider_reads() {
+        let dir = temp_dir("merge");
+        let vault = Arc::new(MemoryVault::default());
+        let mut store = ProfileStore::open(profile::profile_path(&dir), vault.clone()).unwrap();
+        // Two saved DeepSeek routes on one key; DEEPSEEK_2 is taken in the
+        // vault by something else (another octos profile).
+        let saved = vec![with_key("deepseek", "a", "DEEPSEEK_API_KEY"), with_key("deepseek", "b", "DEEPSEEK_API_KEY")];
+        store.save(saved.clone(), &[("DEEPSEEK_API_KEY".to_string(), "sk-test-saved-11112222".to_string())].into()).unwrap();
+        vault.put("DEEPSEEK_2_API_KEY", "sk-test-elsewhere").unwrap();
+
+        // The code names `b` again with another key: `b` keeps its place but
+        // moves to a slot of its own, since `a` reads the saved key.
+        let code = qr::Provisioning {
+            set: set_of(&[with_key("deepseek", "b", "DEEPSEEK_API_KEY"), with_key("deepseek", "c", "DEEPSEEK_API_KEY")]),
+            secrets: [("DEEPSEEK_API_KEY".to_string(), "sk-test-code-33334444".to_string())].into(),
+        };
+        let m = merge_import(&store, &code).unwrap();
+        assert_eq!(
+            m.list,
+            [
+                with_key("deepseek", "a", "DEEPSEEK_API_KEY"),
+                with_key("deepseek", "b", "DEEPSEEK_3_API_KEY"),
+                with_key("deepseek", "c", "DEEPSEEK_3_API_KEY"),
+            ],
+            "the new one shares the slot that now holds the same key"
+        );
+        assert_eq!(m.keys, [("DEEPSEEK_3_API_KEY".to_string(), "sk-test-code-33334444".to_string())].into());
+        assert_eq!((m.updated.len(), m.added.len()), (1, 1));
+
+        // Slots are recognised as the family's: the same route in any of
+        // them is the same provider.
+        assert!(is_family_slot("DEEPSEEK_12_API_KEY", "deepseek"));
+        assert!(!is_family_slot("DEEPSEEK_X_API_KEY", "deepseek"));
+        assert!(!is_family_slot("ZAI_2_API_KEY", "deepseek"));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

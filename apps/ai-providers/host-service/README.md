@@ -147,11 +147,29 @@ sheet polls with one-shot timers, then asks for the swap with
 `llm.sheet.show` and no callback), and none defines `fn tick()`, which
 Splash itself calls once a second.
 
-An import into an empty list applies the code at once. When providers are
-saved, the right PIN only opens the code: the sheet says what it replaces
-("This replaces your 2 providers (…) with 1 from the code (…).") and waits
-for Replace (`llm.sheet.replace`); Cancel closes the sheet and changes
-nothing.
+An import only adds; nothing is ever removed or reordered by it, and there
+is no confirm step:
+
+- Nothing saved: the code's providers are saved as they are (its first is
+  the primary).
+- Providers saved: they keep their order (the primary stays the primary).
+  For each provider in the code, in its order:
+  - the same route as a saved one (family, model, base URL, protocol; its key
+    in one of the family's slots) keeps its place and takes the code's key
+    ("updated");
+  - any other is appended as a fallback ("added"). When its key env var is
+    one a saved provider reads and the code's key differs from the saved one
+    (or the saved one cannot be read), it gets a key slot of its own,
+    `<FAMILY>_<n>_API_KEY` (n = 2, 3, …, the first no provider, profile
+    value or vault entry uses), written to the profile as its route's
+    `api_key_env`; octos reads each route's key from its own `api_key_env`.
+    With the same key it shares the slot.
+- The old single-provider JSON follows the same rules.
+
+Importing the same code again changes nothing. The sheet and the app say what
+happened: "Saved X as primary.", "Added X, Y as fallbacks.", "Updated the key
+for Z.", or "Already saved: …". Removing a provider drops its slot from the
+profile when no other provider reads it.
 
 ## Where keys go
 

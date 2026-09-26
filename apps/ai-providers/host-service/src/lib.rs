@@ -16,21 +16,22 @@
 //! | `llm.remove` | `{id}` | `{}`; its key leaves the profile when no provider reads it |
 //! | `llm.test` | `{id}` | `{ok, ms, error?}` after one tiny request to the provider (`ok` is a Splash keyword: a script tests `error == nil`) |
 //! | `llm.export_qr` | `{ids?}` | `{}` when the person closes the sheet that shows the phone QR (all providers, or `ids`) |
-//! | `llm.import_qr` | – | `{applied: [label]}` once a scanned, picked, dropped or pasted code is imported on the sheet (after a Replace when it replaces saved providers) |
+//! | `llm.import_qr` | – | `{applied, added, updated, message}` once a scanned, picked, dropped or pasted code is imported on the sheet: `applied` labels every provider the code names, `added` those appended (or saved, into an empty list), `updated` the saved ones whose key it changed; `message` says so in a sentence |
 //!
 //! The app never sees a key, a PIN or a QR. `add_provider`, `edit_provider`,
 //! `export_qr` and `import_qr` raise the host's sheet, a separate isolate
 //! over the app; only calls from that sheet (`llm.sheet.submit`,
 //! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.show`, `llm.sheet.scan`,
-//! `llm.sheet.pick`, `llm.sheet.image`, `llm.sheet.import`,
-//! `llm.sheet.replace`)
-//! can carry a key, a PIN or a code, and `dispatch` refuses them from
+//! `llm.sheet.pick`, `llm.sheet.image`, `llm.sheet.import`) can carry a key, a PIN or a code, and `dispatch` refuses them from
 //! anyone else. The export sheet draws an `OCTOS1E:` code (octos's PIN-sealed
 //! profile QR) and its PIN, and closes itself after five minutes (the
 //! service closes it too, should the sheet stop counting); nothing keeps the
-//! code or the PIN once it is closed. A code that would replace saved
-//! providers is imported only after the person confirms it. The import
-//! sheet asks the shell's [`QrScanner`] for the camera where there is one,
+//! code or the PIN once it is closed. An import only adds: into an empty
+//! list the code's providers are saved as they are (the first is the
+//! primary); otherwise the saved providers keep their order and primary, one
+//! the code names again takes the code's key, and the others are appended as
+//! fallbacks, each in a key slot of its own when its key would overwrite a
+//! saved provider's ([`model::merge_import`]). The import sheet asks the shell's [`QrScanner`] for the camera where there is one,
 //! reads the code out of an image from the shell's [`QrImagePicker`] or
 //! dropped on the app ([`offer_image`]) where the shell offers those, and
 //! takes a pasted code everywhere; the image is searched ([`image_qr`]) and
@@ -225,6 +226,11 @@ impl Shared {
         let mut store = self.open()?;
         let mut list = store.list.clone();
         let (keys, answer) = f(&store, &mut list)?;
+        // Nothing changed (the same code imported again): no write, and no
+        // kernel restart.
+        if list == store.list && keys.is_empty() {
+            return Ok(answer);
+        }
         store.save(list, &keys)?;
         if let Some(changed) = &self.on_changed {
             changed();
@@ -238,16 +244,6 @@ struct Pending {
     app_id: String,
     reply: Replier,
     kind: Kind,
-    /// An opened code waiting for the person to confirm that it replaces the
-    /// saved providers (the import sheet's Replace). Dropped with the sheet.
-    held: Option<Held>,
-}
-
-/// A decoded code held for Replace: its set and keys, and whether it is the
-/// old single-provider format (which replaces the primary only).
-struct Held {
-    provisioning: qr::Provisioning,
-    legacy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -304,10 +300,7 @@ fn read_image(bytes: &[u8], pending: &Mutex<Option<Pending>>) -> Value {
         Ok(code) => {
             let needs_pin = qr::format_of(&code) == Some(qr::Format::Encrypted);
             match pending.lock().unwrap().as_mut() {
-                Some(Pending { kind: Kind::Import { scanned }, held, .. }) => {
-                    *scanned = Some(code);
-                    *held = None;
-                }
+                Some(Pending { kind: Kind::Import { scanned }, .. }) => *scanned = Some(code),
                 _ => return image_answer(false, false, Some("No app is waiting for this sheet.".into())),
             }
             image_answer(needs_pin, false, None)
@@ -390,7 +383,7 @@ impl LlmService {
         }
         *self.export.lock().unwrap() = None;
         IMAGE_WAITER.lock().unwrap().take();
-        *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind, held: None });
+        *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind });
         host.open_sheet(sheet);
     }
 
@@ -553,9 +546,8 @@ impl LlmService {
                 let Some(format) = qr::format_of(&code) else {
                     return reply.send(Err("That is not an OctoSense provider code.".into()));
                 };
-                if let Some(Pending { kind: Kind::Import { scanned }, held, .. }) = pending.lock().unwrap().as_mut() {
+                if let Some(Pending { kind: Kind::Import { scanned }, .. }) = pending.lock().unwrap().as_mut() {
                     *scanned = Some(code.trim().to_string());
-                    *held = None;
                 }
                 reply.send(Ok(json!({"needs_pin": format == qr::Format::Encrypted})));
             }
@@ -594,9 +586,6 @@ impl LlmService {
         let Some(Kind::Import { scanned }) = self.pending_kind() else {
             return reply.send(Err("No app is waiting for this sheet.".into()));
         };
-        if let Some(p) = self.pending.lock().unwrap().as_mut() {
-            p.held = None;
-        }
         let pasted = text(args, "text").trim().to_string();
         let Some(code) = Some(pasted).filter(|c| !c.is_empty()).or(scanned) else {
             return reply.send(Err("Scan or paste a code first.".into()));
@@ -604,74 +593,50 @@ impl LlmService {
         let pin = text(args, "pin").trim().to_string();
         let (shared, pending) = (self.shared.clone(), self.pending.clone());
         work(move || {
-            let legacy = qr::format_of(&code) == Some(qr::Format::LegacyJson);
             let provisioning = match qr::decode(&code, Some(pin.as_str()).filter(|p| !p.is_empty())) {
                 Ok(p) => p,
                 Err(e) => return reply.send(Err(e.to_string())),
             };
-            let saved = match shared.open() {
-                Ok(store) => store.list,
-                Err(e) => return reply.send(Err(e)),
-            };
-            if saved.is_empty() {
-                return apply_import(&shared, &pending, &provisioning, legacy, reply);
-            }
-            // Providers are saved: say what goes, and wait for Replace.
-            let message = replace_message(&saved, &model::list_of(&provisioning.set), legacy);
-            match pending.lock().unwrap().as_mut() {
-                Some(p) if matches!(p.kind, Kind::Import { .. }) => p.held = Some(Held { provisioning, legacy }),
-                _ => return reply.send(Err("No app is waiting for this sheet.".into())),
-            }
-            reply.send(Ok(json!({"confirm": true, "message": message, "applied": []})));
+            apply_import(&shared, &pending, &provisioning, reply);
         });
     }
-
-    /// Replace on the import sheet: apply the code held for it.
-    fn replace(&mut self, reply: Replier) {
-        let held = match self.pending.lock().unwrap().as_mut() {
-            Some(p) if matches!(p.kind, Kind::Import { .. }) => p.held.take(),
-            _ => return reply.send(Err("No app is waiting for this sheet.".into())),
-        };
-        let Some(Held { provisioning, legacy }) = held else {
-            return reply.send(Err("Import the code first.".into()));
-        };
-        let (shared, pending) = (self.shared.clone(), self.pending.clone());
-        work(move || apply_import(&shared, &pending, &provisioning, legacy, reply));
-    }
 }
 
-/// "This replaces your 2 providers (A, B) with 1 from the code (C)."
-fn replace_message(saved: &[Provider], incoming: &[Provider], legacy: bool) -> String {
+/// "Added A, B as fallbacks. Updated the key for C." — what an import did.
+fn import_message(m: &model::Merge) -> String {
     let names = |list: &[Provider]| list.iter().map(label_of).collect::<Vec<_>>().join(", ");
-    let count = |n: usize| if n == 1 { "1 provider".to_string() } else { format!("{n} providers") };
-    if legacy {
-        let from = incoming.first().map(label_of).unwrap_or_default();
-        return format!("This replaces your primary provider ({}) with {from} from the code.", label_of(&saved[0]));
+    let mut parts = Vec::new();
+    if let Some(primary) = &m.primary {
+        parts.push(format!("Saved {} as primary", label_of(primary)));
     }
-    format!(
-        "This replaces your {} ({}) with {} from the code ({}).",
-        count(saved.len()),
-        names(saved),
-        if incoming.len() == 1 { "1".to_string() } else { incoming.len().to_string() },
-        names(incoming)
-    )
+    match m.added.len() {
+        0 => {}
+        1 => parts.push(format!("Added {} as a fallback", names(&m.added))),
+        _ => parts.push(format!("Added {} as fallbacks", names(&m.added))),
+    }
+    if !m.updated.is_empty() {
+        parts.push(format!("Updated the key for {}", names(&m.updated)));
+    }
+    if parts.is_empty() {
+        parts.push(format!("Already saved: {}", names(&m.unchanged)));
+    }
+    parts.join(". ") + "."
 }
 
-/// Save an opened code's providers and keys, close the sheet and answer the
-/// app and the sheet.
-fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning: &qr::Provisioning, legacy: bool, reply: Replier) {
-    let applied = shared.change(|_, list| {
-        let incoming = model::list_of(&provisioning.set);
-        if legacy {
-            // The old single-provider code replaces the primary only.
-            let primary = incoming.into_iter().next().ok_or("The code names no provider.")?;
-            let rest: Vec<Provider> = list.iter().skip(1).filter(|p| model::id_of(p) != model::id_of(&primary)).cloned().collect();
-            *list = std::iter::once(primary).chain(rest).collect();
-        } else {
-            *list = incoming;
-        }
-        let labels: Vec<String> = model::list_of(&provisioning.set).iter().map(label_of).collect();
-        Ok((provisioning.secrets.clone(), json!({"applied": labels})))
+/// Merge an opened code into the saved providers ([`model::merge_import`]),
+/// close the sheet and answer the app and the sheet.
+fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning: &qr::Provisioning, reply: Replier) {
+    let applied = shared.change(|store, list| {
+        let merged = model::merge_import(store, provisioning)?;
+        let labels = |l: &[Provider]| l.iter().map(label_of).collect::<Vec<_>>();
+        let answer = json!({
+            "applied": labels(&model::list_of(&provisioning.set)),
+            "added": labels(&merged.primary.iter().chain(&merged.added).cloned().collect::<Vec<_>>()),
+            "updated": labels(&merged.updated),
+            "message": import_message(&merged),
+        });
+        *list = merged.list;
+        Ok((merged.keys, answer))
     });
     match applied {
         Err(e) => reply.send(Err(e)),
@@ -681,7 +646,7 @@ fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning:
                 waiting.reply.send(Ok(answer.clone()));
             }
             IMAGE_WAITER.lock().unwrap().take();
-            reply.send(Ok(json!({"confirm": false, "message": "", "applied": answer["applied"]})));
+            reply.send(Ok(json!({"message": answer["message"], "applied": answer["applied"]})));
         }
     }
 }
@@ -777,7 +742,6 @@ impl HostService for LlmService {
             "sheet.submit" => self.submit(&call.args, reply),
             "sheet.qr" => self.export_ready(reply),
             "sheet.show" => self.export_show(reply, host),
-            "sheet.replace" => self.replace(reply),
             "sheet.scan" => self.scan(reply),
             "sheet.import" => self.import(&call.args, reply),
             "sheet.pick" => self.pick(reply),

@@ -103,14 +103,7 @@ fn show_qr(){
 fn import_code(){
     status("")
     host.request("llm.import_qr", {}, fn(r){
-        if r.is_ok {
-            let names = ""
-            for n in r.data.applied {
-                if names != "" { names = names + ", " }
-                names = names + n
-            }
-            status("Imported " + names)
-        } else { status(r.error) }
+        if r.is_ok { status(r.data.message) } else { status(r.error) }
         load()
     })
 }
