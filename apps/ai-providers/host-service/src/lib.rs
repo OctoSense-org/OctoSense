@@ -6,8 +6,9 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `llm.providers` | – | `{primary, fallbacks, scanner, image_picker, store}`: each provider `{id, family, label, model, custom_model, base_url, api_type, key}`, `key` being `"set ••••1234"`, `"missing"`, `"not needed"` or `"keychain locked"`; `scanner` says the host can scan a QR; `image_picker` that it can read one from a chosen image; `store` where keys go (`keychain`, `secrets folder`, `profile`) |
-//! | `llm.families` | – | `[{id, label, default_model, key_required, default_base_url}]`, octos's registry |
+//! | `llm.providers` | – | `{primary, fallbacks, scanner, image_picker, store}`: each provider `{id, family, label, model, model_label, custom_model, route, route_label, context, price, tier, base_url, api_type, key}` (`label` is the family's name; `route` the catalog route id, `official` or `custom`; `context` e.g. `"1M context"` and `price` e.g. `"$0.14 / $0.28 per 1M"`, empty for a model the catalog does not list), `key` being `"set ••••1234"`, `"missing"`, `"not needed"` or `"keychain locked"`; `scanner` says the host can scan a QR; `image_picker` that it can read one from a chosen image; `store` where keys go (`keychain`, `secrets folder`, `profile`) |
+//! | `llm.families` | `{query?}` | `[{id, label, models, models_text, default_model, default_label, key_required, key_env, default_base_url, configured, key_text}]`: octos's families with their catalog models, sorted by name; with `query`, those it names (name or id first, then alias, then one of its models); `configured` says the profile has a key for the family (the vault is not read) |
+//! | `llm.models` | `{family, query?}` | `{family, label, key_required, default_model, models, routes}`: the family's catalog models for a pull-down, each `{id, label, context, price, detail, tier, default}` with `routes` `[{id, label, detail}]` (the official route first), and the family's routes |
 //! | `llm.add_provider` | – | `{id, label}` once the person saves it on the host's sheet |
 //! | `llm.edit_provider` | `{id}` | `{id, label}` (the id changes with the route) once saved on the sheet |
 //! | `llm.set_model` | `{id, model}` | `{id}`; an empty model means the family default |
@@ -21,8 +22,10 @@
 //! The app never sees a key, a PIN or a QR. `add_provider`, `edit_provider`,
 //! `export_qr` and `import_qr` raise the host's sheet, a separate isolate
 //! over the app; only calls from that sheet (`llm.sheet.submit`,
-//! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.show`, `llm.sheet.scan`,
-//! `llm.sheet.pick`, `llm.sheet.image`, `llm.sheet.import`) can carry a key, a PIN or a code, and `dispatch` refuses them from
+//! `llm.sheet.test`, `llm.sheet.fetch_models`, `llm.sheet.cancel`,
+//! `llm.sheet.qr`, `llm.sheet.show`, `llm.sheet.scan`, `llm.sheet.pick`,
+//! `llm.sheet.image`, `llm.sheet.import`) can carry a key, a PIN or a code,
+//! and `dispatch` refuses them from
 //! anyone else. The export sheet draws an `OCTOS1E:` code (octos's PIN-sealed
 //! profile QR) and its PIN, and closes itself after five minutes (the
 //! service closes it too, should the sheet stop counting); nothing keeps the
@@ -37,6 +40,23 @@
 //! takes a pasted code everywhere; the image is searched ([`image_qr`]) and
 //! the code opened (Argon2id, 64 MiB) on a worker.
 //!
+//! The add and edit sheet is a five-step wizard in Octoscode's order: a
+//! family, then one of its catalog models (or a custom id, or one the
+//! endpoint lists: `llm.sheet.fetch_models`), then a route (the catalog's
+//! endpoints, or a custom base URL and protocol), the key, and a test that
+//! must pass before the save ([`sheets::edit`]). `llm.sheet.submit` takes `{family, model, route, base_url,
+//! api_type, key, check}`: `route` is a catalog route id (`official`, `autodl`,
+//! …) or `custom`; a catalog route other than the official one is saved with
+//! its `route_id`, `label`, `base_url` and `api_key_env` (octos
+//! `LlmRouteConfig`). With `check`, the route is tested first (the typed key,
+//! else the saved one) and a failed test answers `{saved: false, error}`
+//! without saving (`{saved: false, error, network}`). `llm.sheet.test` runs
+//! the same test alone (`{ok, ms, error, network, reason}`; `network`: the
+//! provider was not reached, and the wizard then offers "Save without
+//! testing"; `reason`: `HTTP 401 · invalid key`, `unreachable`, …);
+//! `llm.sheet.fetch_models` answers `{models: [{id, label}]}` from the
+//! endpoint's model list (`GET {base}/models`, Anthropic `GET /v1/models`).
+//!
 //! Only `os.` apps are served: the provider set is the device's.
 //!
 //! State is the kernel's profile, `<core_dir>/profiles/_main.json`: its
@@ -44,7 +64,7 @@
 //! `config.env_vars`. Keys go to the [`vault`]; every change calls the
 //! shell's `on_changed` hook so it can restart the AppCard kernel.
 use octosense_appstore::services::{close_sheet_later, HostService, Replier, ServiceCall, ServiceHost};
-use octosense_llm_config::{profile, qr, registry, Provider};
+use octosense_llm_config::{catalog, profile, qr, registry, Provider};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -337,26 +357,113 @@ fn label_of(p: &Provider) -> String {
 
 /// What an app is shown of a provider: never its key.
 fn entry(store: &ProfileStore, p: &Provider) -> Value {
+    let model = model::effective_model(p).unwrap_or_default();
+    let known = catalog::model(&p.family, &model);
     json!({
         "id": model::id_of(p),
         "family": registry::lookup(&p.family).map(|f| f.id).unwrap_or(p.family.as_str()),
         "label": model::family_label(&p.family),
-        "model": model::effective_model(p).unwrap_or_default(),
+        "model": model,
+        "model_label": model::model_label(p),
         "custom_model": p.model.is_some(),
+        "route": model::route_choice(p),
+        "route_label": model::route_label(p),
+        "context": known.map(catalog::Model::context_text).unwrap_or_default(),
+        "price": known.map(catalog::Model::price_text).unwrap_or_default(),
+        "tier": known.map(|m| m.tier.as_str()).unwrap_or(""),
         "base_url": p.base_url,
         "api_type": p.api_type.map(|t| t.as_str()),
         "key": store.status(p).text(),
     })
 }
 
-fn families() -> Value {
-    json!(registry::all()
+/// How well `query` (lowercased, trimmed) names `family`: 0 its name or id
+/// starts with it, 1 they contain it, 2 an alias does, 3 one of its models
+/// does; `None`: no match.
+fn family_rank(f: &catalog::CatalogFamily, query: &str) -> Option<u8> {
+    if query.is_empty() {
+        return Some(0);
+    }
+    let (id, label) = (f.id().to_lowercase(), f.label().to_lowercase());
+    if id.starts_with(query) || label.starts_with(query) {
+        Some(0)
+    } else if id.contains(query) || label.contains(query) {
+        Some(1)
+    } else if f.family.aliases.iter().any(|a| a.to_lowercase().contains(query)) {
+        Some(2)
+    } else if f.models.iter().any(|m| m.id.to_lowercase().contains(query) || m.label.to_lowercase().contains(query)) {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+/// The families for the add sheet's first step, sorted by name. `env_vars`
+/// is the profile's (a family with a value for its key env var is
+/// `configured`; the vault is not read).
+fn families(query: &str, env_vars: &BTreeMap<String, String>) -> Value {
+    let query = query.trim().to_lowercase();
+    let mut list: Vec<(u8, &catalog::CatalogFamily)> =
+        catalog::families().iter().filter_map(|f| Some((family_rank(f, &query)?, f))).collect();
+    list.sort_by_key(|(rank, f)| (*rank, f.label().to_lowercase()));
+    let list: Vec<&catalog::CatalogFamily> = list.into_iter().map(|(_, f)| f).collect();
+    json!(list
         .iter()
-        .map(|f| json!({
-            "id": f.id, "label": f.label, "default_model": f.default_model,
-            "key_required": f.key_required, "default_base_url": f.default_base_url,
-        }))
+        .map(|f| {
+            let fam = f.family;
+            let key_env = registry::key_env_for(fam.id);
+            let configured = env_vars.get(&key_env).is_some_and(|v| !v.trim().is_empty());
+            let n = f.models.len();
+            let default = f.default_model();
+            json!({
+                "id": fam.id, "label": fam.label, "models": n,
+                "models_text": if n == 1 { "1 model".to_string() } else { format!("{n} models") },
+                "default_model": default,
+                "default_label": default.map(catalog::model_label),
+                "key_required": fam.key_required, "key_env": key_env, "has_key": fam.key_env.is_some(),
+                "default_base_url": fam.default_base_url,
+                "configured": configured,
+                "key_text": if !fam.key_required { "No key needed" } else if configured { "Key saved" } else { "Needs a key" },
+            })
+        })
         .collect::<Vec<_>>())
+}
+
+/// A route's second line: where it goes.
+fn route_detail(family: &registry::Family, r: &catalog::Route) -> String {
+    let url = r.base_url.as_deref().or(family.default_base_url).unwrap_or("your endpoint");
+    url.trim_start_matches("https://").trim_start_matches("http://").split('/').next().unwrap_or(url).to_string()
+}
+
+fn route_json(family: &registry::Family, r: &catalog::Route) -> Value {
+    json!({"id": r.id, "label": r.label, "detail": route_detail(family, r)})
+}
+
+/// A family's catalog models for a pull-down (the default first marked),
+/// those matching `query`, with each model's routes.
+fn models(family: &str, query: &str) -> Result<Value, String> {
+    let f = catalog::family(family).ok_or("There is no such provider.")?;
+    let query = query.trim().to_lowercase();
+    let rows: Vec<Value> = f
+        .models
+        .iter()
+        .filter(|m| query.is_empty() || m.id.to_lowercase().contains(&query) || m.label.to_lowercase().contains(&query))
+        .map(|m| {
+            let (context, price) = (m.context_text(), m.price_text());
+            let detail = [context.as_str(), price.as_str()].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
+            json!({
+                "id": m.id, "label": m.label, "context": context, "price": price, "detail": detail,
+                "tier": m.tier.as_str(), "default": m.default,
+                "routes": m.routes().iter().map(|r| route_json(f.family, r)).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Ok(json!({
+        "family": f.id(), "label": f.label(), "key_required": f.family.key_required,
+        "default_model": f.default_model(),
+        "models": rows,
+        "routes": f.routes().iter().map(|r| route_json(f.family, r)).collect::<Vec<_>>(),
+    }))
 }
 
 /// A worker thread for slow work (the keychain, the network, Argon2id), so
@@ -397,31 +504,76 @@ impl LlmService {
         Ok(store.list[model::index_of(&store.list, id)?].clone())
     }
 
+    /// The route a sheet form describes: `route` names a catalog route (or
+    /// `custom`); a form without one gives the base URL and protocol itself.
+    fn form_route(args: &Value) -> Result<Provider, String> {
+        match args["route"].as_str() {
+            Some(route) => model::provider_from_route(text(args, "family"), text(args, "model"), route, text(args, "base_url"), text(args, "api_type")),
+            None => model::provider_from(text(args, "family"), text(args, "model"), text(args, "base_url"), text(args, "api_type")),
+        }
+    }
+
+    /// The key a sheet typed: taken as typed but for surrounding space.
+    fn form_key(args: &Value) -> Result<String, String> {
+        let key = text(args, "key").trim().to_string();
+        if key.chars().any(char::is_control) || key.len() > 16 * 1024 {
+            return Err("That key is not acceptable text.".into());
+        }
+        Ok(key)
+    }
+
+    /// Edit keeps the key slot the provider reads while it stays on the same
+    /// family and route (a numbered slot an import made, say).
+    fn keep_slot(list: &[Provider], edit: Option<&str>, route: &mut Provider) {
+        let Some(at) = edit.and_then(|id| model::index_of(list, id).ok()) else { return };
+        let old = &list[at];
+        if registry::lookup(&old.family).map(|f| f.id) == Some(route.family.as_str()) && old.route_id == route.route_id {
+            route.key_env = old.key_env.clone();
+        }
+    }
+
     fn submit(&mut self, args: &Value, reply: Replier) {
         let edit = match self.pending_kind() {
             Some(Kind::Add) => None,
             Some(Kind::Edit(id)) => Some(id),
             _ => return reply.send(Err("No app is waiting for this sheet.".into())),
         };
-        let mut route = match model::provider_from(text(args, "family"), text(args, "model"), text(args, "base_url"), text(args, "api_type")) {
+        let mut route = match Self::form_route(args) {
             Ok(p) => p,
             Err(e) => return reply.send(Err(e)),
         };
-        // A key is taken as typed but for surrounding space.
-        let key = text(args, "key").trim().to_string();
-        if key.chars().any(char::is_control) || key.len() > 16 * 1024 {
-            return reply.send(Err("That key is not acceptable text.".into()));
-        }
+        let key = match Self::form_key(args) {
+            Ok(k) => k,
+            Err(e) => return reply.send(Err(e)),
+        };
+        let check = args["check"].as_bool() == Some(true);
         let (shared, pending) = (self.shared.clone(), self.pending.clone());
         work(move || {
+            if check {
+                // Test before saving; a failure keeps the sheet up and says why.
+                let tested = shared.open().map(|store| {
+                    Self::keep_slot(&store.list, edit.as_deref(), &mut route);
+                    let saved = store.key(&route);
+                    let key = Some(key.as_str()).filter(|k| !k.is_empty()).or(saved.as_deref());
+                    if key.is_none() && model::key_required(&route.family) {
+                        return Err("Type the provider's API key.".to_string());
+                    }
+                    Ok(probe::run_within(&route, key, std::time::Duration::from_secs(10)))
+                });
+                match tested.and_then(|t| t) {
+                    Err(e) => return reply.send(Err(e)),
+                    Ok(t) if t["ok"] != true => {
+                        let error = t["error"].as_str().unwrap_or("The test failed.");
+                        return reply.send(Ok(json!({"saved": false, "error": error, "network": t["network"] == true})));
+                    }
+                    Ok(_) => {}
+                }
+            }
             let saved = shared.change(|store, list| {
+                Self::keep_slot(list, edit.as_deref(), &mut route);
                 match &edit {
                     Some(id) => {
                         let at = model::index_of(list, id)?;
-                        // The same family keeps the env var its route reads.
-                        if registry::lookup(&list[at].family).map(|f| f.id) == Some(route.family.as_str()) {
-                            route.key_env = list[at].key_env.clone();
-                        }
                         if list.iter().enumerate().any(|(i, p)| i != at && model::id_of(p) == model::id_of(&route)) {
                             return Err("That provider is already in the list.".into());
                         }
@@ -447,9 +599,70 @@ impl LlmService {
                         close_sheet_later(&waiting.app_id);
                         waiting.reply.send(Ok(answer));
                     }
-                    reply.send(Ok(json!({})));
+                    reply.send(Ok(json!({"saved": true})));
                 }
             }
+        });
+    }
+
+    /// "Test connection" on the sheet: the form's route with the typed key,
+    /// else the saved one.
+    fn sheet_test(&mut self, args: &Value, reply: Replier) {
+        let edit = match self.pending_kind() {
+            Some(Kind::Add) => None,
+            Some(Kind::Edit(id)) => Some(id),
+            _ => return reply.send(Err("No app is waiting for this sheet.".into())),
+        };
+        let (route, key) = match Self::form_route(args).and_then(|r| Ok((r, Self::form_key(args)?))) {
+            Ok(v) => v,
+            Err(e) => return reply.send(Err(e)),
+        };
+        let shared = self.shared.clone();
+        work(move || {
+            reply.send(shared.open().map(|store| {
+                let mut route = route;
+                Self::keep_slot(&store.list, edit.as_deref(), &mut route);
+                let saved = store.key(&route);
+                let key = Some(key.as_str()).filter(|k| !k.is_empty()).or(saved.as_deref());
+                if key.is_none() && model::key_required(&route.family) {
+                    return json!({"ok": false, "ms": 0, "error": "Type the provider's API key first.", "network": false, "reason": "no key"});
+                }
+                probe::run(&route, key)
+            }))
+        });
+    }
+
+    /// "Fetch models from provider": the endpoint's own model list, with the
+    /// typed key, else the saved one.
+    fn sheet_fetch_models(&mut self, args: &Value, reply: Replier) {
+        if !matches!(self.pending_kind(), Some(Kind::Add | Kind::Edit(_))) {
+            return reply.send(Err("No app is waiting for this sheet.".into()));
+        }
+        // The list does not depend on the model: any id makes the route.
+        let mut form = args.clone();
+        if text(args, "model").trim().is_empty() {
+            form["model"] = json!("-");
+        }
+        let (route, key) = match Self::form_route(&form).and_then(|r| Ok((r, Self::form_key(args)?))) {
+            Ok(v) => v,
+            Err(e) => return reply.send(Err(e)),
+        };
+        let shared = self.shared.clone();
+        work(move || {
+            let answer = shared.open().and_then(|store| {
+                let saved = store.key(&route);
+                let key = Some(key.as_str()).filter(|k| !k.is_empty()).or(saved.as_deref());
+                if key.is_none() && model::key_required(&route.family) {
+                    return Err("Type the provider's API key first.".to_string());
+                }
+                let ids = probe::fetch_models(&route, key)?;
+                let n = ids.len();
+                Ok(json!({
+                    "models": ids.iter().map(|id| json!({"id": id, "label": catalog::model_label(id)})).collect::<Vec<_>>(),
+                    "message": if n == 1 { "The provider lists 1 model.".to_string() } else { format!("The provider lists {n} models.") },
+                }))
+            });
+            reply.send(answer);
         });
     }
 
@@ -675,10 +888,23 @@ impl HostService for LlmService {
                     reply.send(answer);
                 });
             }
-            "families" => reply.send(Ok(families())),
-            "add_provider" => self.raise(&call.app_id, reply, Kind::Add, sheets::edit(None), host),
+            "families" => {
+                let (shared, query) = (self.shared.clone(), text(&call.args, "query").to_string());
+                work(move || {
+                    let env = shared.open().map(|s| s.env_vars).unwrap_or_default();
+                    reply.send(Ok(families(&query, &env)));
+                });
+            }
+            "models" => reply.send(models(text(&call.args, "family"), text(&call.args, "query"))),
+            "add_provider" => match self.shared.open() {
+                Ok(store) => {
+                    let sheet = sheets::edit(None, !store.list.is_empty());
+                    self.raise(&call.app_id, reply, Kind::Add, sheet, host)
+                }
+                Err(e) => reply.send(Err(e)),
+            },
             "edit_provider" => match self.provider(&id) {
-                Ok(p) => self.raise(&call.app_id, reply, Kind::Edit(id), sheets::edit(Some(&p)), host),
+                Ok(p) => self.raise(&call.app_id, reply, Kind::Edit(id), sheets::edit(Some(&p), true), host),
                 Err(e) => reply.send(Err(e)),
             },
             "set_model" | "move" | "set_primary" | "remove" => {
@@ -740,6 +966,8 @@ impl HostService for LlmService {
                 reply.send(Ok(json!({})));
             }
             "sheet.submit" => self.submit(&call.args, reply),
+            "sheet.test" => self.sheet_test(&call.args, reply),
+            "sheet.fetch_models" => self.sheet_fetch_models(&call.args, reply),
             "sheet.qr" => self.export_ready(reply),
             "sheet.show" => self.export_show(reply, host),
             "sheet.scan" => self.scan(reply),

@@ -186,7 +186,7 @@ fn keys_are_typed_only_on_the_sheet_and_never_come_back() {
     // Edit on the sheet: an empty key keeps the saved one.
     let deepseek = all(&rig.ask("llm.providers", Value::Null).unwrap())[2]["id"].as_str().unwrap().to_string();
     let waiting = rig.send(APP, "llm.edit_provider", json!({"id": deepseek}), false);
-    assert!(rig.host.body().contains("let family = \"deepseek\""));
+    assert!(rig.host.body().contains("let want_family = \"deepseek\""));
     rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-reasoner", "base_url": "", "api_type": "openai", "key": ""}))
         .unwrap();
     let edited = wait(waiting).unwrap();
@@ -662,7 +662,7 @@ fn no_sheet_arms_a_timer_that_outlives_it() {
     let size = 21;
     let modules = vec![false; size * size];
     for body in [
-        sheets::edit(None),
+        sheets::edit(None, false),
         sheets::export_waiting(),
         sheets::export(size, &modules, "ABCD-EFGH", &["x".into()], 300),
         sheets::import(true, true, true),
@@ -805,4 +805,220 @@ fn a_dropped_image_imports_after_the_pin() {
     // The import ended the wait: a later drop is not the service's.
     assert!(!wants_image() && !offer_image(qr_a_png()));
     let _ = rearmed;
+}
+
+/// A local endpoint answering `n` requests with `answer(request)`; returns
+/// its port and, once done, the requests it saw.
+fn fake_http(n: usize, answer: fn(&str) -> (&'static str, String)) -> (u16, std::thread::JoinHandle<Vec<String>>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for _ in 0..n {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let got = stream.read(&mut buf).unwrap();
+                request.extend_from_slice(&buf[..got]);
+                let text = String::from_utf8_lossy(&request).to_string();
+                if let Some(head_end) = text.find("\r\n\r\n") {
+                    let length = text[..head_end]
+                        .lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap()))
+                        .unwrap_or(0);
+                    if request.len() >= head_end + 4 + length || got == 0 {
+                        break;
+                    }
+                }
+            }
+            let text = String::from_utf8_lossy(&request).to_string();
+            let (status, body) = answer(&text);
+            let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            seen.push(text);
+        }
+        seen
+    });
+    (port, server)
+}
+
+#[test]
+fn the_catalog_feeds_the_family_and_model_pickers() {
+    let mut rig = Rig::new("catalog", None);
+    let families = rig.ask("llm.families", Value::Null).unwrap();
+    let list = families.as_array().unwrap();
+    assert_eq!(list.len(), 20, "every registry family");
+    let labels: Vec<&str> = list.iter().map(|f| f["label"].as_str().unwrap()).collect();
+    let mut sorted = labels.clone();
+    sorted.sort_by_key(|l| l.to_lowercase());
+    assert_eq!(labels, sorted, "sorted by name");
+    let ds = list.iter().find(|f| f["id"] == "deepseek").unwrap();
+    assert_eq!((ds["models"].as_u64(), ds["models_text"].as_str()), (Some(2), Some("2 models")));
+    assert_eq!((ds["default_model"].as_str(), ds["default_label"].as_str()), (Some("deepseek-v4-flash"), Some("DeepSeek V4 Flash")));
+    assert_eq!((ds["configured"].as_bool(), ds["key_text"].as_str(), ds["has_key"].as_bool()), (Some(false), Some("Needs a key"), Some(true)));
+    let ollama = list.iter().find(|f| f["id"] == "ollama").unwrap();
+    assert_eq!((ollama["key_text"].as_str(), ollama["has_key"].as_bool()), (Some("No key needed"), Some(false)));
+
+    // A query matches a family's name or one of its models.
+    let glm: Vec<Value> = rig.ask("llm.families", json!({"query": "GLM"})).unwrap().as_array().unwrap().iter().map(|f| f["id"].clone()).collect();
+    for id in ["zai", "zai-coding", "zhipu"] {
+        assert!(glm.contains(&json!(id)), "{id} in {glm:?}");
+    }
+    assert!(!glm.contains(&json!("openai")));
+    // A family's own name ranks before an alias or a model that matches.
+    let openai = rig.ask("llm.families", json!({"query": "openai"})).unwrap();
+    assert_eq!(openai[0]["id"], "openai");
+    assert!(openai.as_array().unwrap().iter().any(|f| f["id"] == "local"), "local's alias openai-compatible");
+
+    let models = rig.ask("llm.models", json!({"family": "deepseek"})).unwrap();
+    assert_eq!(models["default_model"], "deepseek-v4-flash");
+    let flash = &models["models"][0];
+    assert_eq!(flash["id"], "deepseek-v4-flash");
+    assert_eq!(flash["label"], "DeepSeek V4 Flash");
+    assert_eq!(flash["detail"], "1M context · $0.14 / $0.28 per 1M");
+    assert_eq!(flash["default"], true);
+    assert_eq!(flash["routes"], json!([
+        {"id": "official", "label": "Official API", "detail": "api.deepseek.com"},
+        {"id": "autodl", "label": "AutoDL", "detail": "www.autodl.art"},
+    ]));
+    assert_eq!(models["models"][1]["label"], "DeepSeek V4 Pro");
+    let zai = rig.ask("llm.models", json!({"family": "z.ai", "query": "flash"})).unwrap();
+    assert_eq!(zai["models"].as_array().unwrap().len(), 1);
+    assert!(rig.ask("llm.models", json!({"family": "nope"})).is_err());
+
+    // A saved key marks its family configured (the profile is read, not the vault).
+    rig.add(json!({"family": "deepseek", "model": "deepseek-v4-flash", "route": "official", "base_url": "", "api_type": "openai", "key": DEEPSEEK_KEY}));
+    let families = rig.ask("llm.families", json!({"query": "deepseek"})).unwrap();
+    assert_eq!(families[0]["id"], "deepseek");
+    assert_eq!(families.as_array().unwrap().len(), 4, "DeepSeek, then NVIDIA, OpenRouter and vLLM for their DeepSeek models");
+    assert_eq!((families[0]["configured"].as_bool(), families[0]["key_text"].as_str()), (Some(true), Some("Key saved")));
+}
+
+#[test]
+fn a_catalog_route_is_saved_with_the_route_octos_reads() {
+    let mut rig = Rig::new("route", None);
+    // Into the empty list the sheet says "Save as primary"; after, "Add as fallback".
+    let waiting = rig.send(APP, "llm.add_provider", Value::Null, false);
+    assert!(rig.host.body().contains("return \"Save as primary\""));
+    rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-v4-flash", "route": "official", "base_url": "", "api_type": "openai", "key": DEEPSEEK_KEY})).unwrap();
+    let primary = wait(waiting).unwrap();
+    assert_eq!(primary["label"], "DeepSeek · deepseek-v4-flash");
+    let waiting = rig.send(APP, "llm.add_provider", Value::Null, false);
+    assert!(rig.host.body().contains("return \"Add as fallback\""));
+    let autodl_key = "sk-test-autodl-0000eeee4321";
+    rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-v4-pro", "route": "autodl", "base_url": "", "api_type": "openai", "key": autodl_key})).unwrap();
+    wait(waiting).unwrap();
+
+    let saved: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    let llm = &saved["config"]["llm"];
+    assert_eq!(llm["primary"]["family_id"], "deepseek");
+    assert_eq!(llm["primary"]["model_id"], "deepseek-v4-flash");
+    assert!(llm["primary"].get("route").is_none(), "the official route is no route (octos: \"official\")");
+    assert_eq!(llm["fallbacks"][0]["model_id"], "deepseek-v4-pro");
+    assert_eq!(
+        llm["fallbacks"][0]["route"],
+        json!({"route_id": "autodl", "label": "AutoDL", "base_url": "https://www.autodl.art/api/v1", "api_key_env": "AUTODL_API_KEY"})
+    );
+    assert_eq!(rig.vault.get("AUTODL_API_KEY").unwrap().as_deref(), Some(autodl_key));
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(DEEPSEEK_KEY), "the official key is untouched");
+
+    let providers = rig.ask("llm.providers", Value::Null).unwrap();
+    let p = &providers["primary"];
+    assert_eq!((p["model_label"].as_str(), p["route"].as_str(), p["route_label"].as_str()), (Some("DeepSeek V4 Flash"), Some("official"), Some("Official API")));
+    assert_eq!((p["context"].as_str(), p["price"].as_str(), p["tier"].as_str()), (Some("1M context"), Some("$0.14 / $0.28 per 1M"), Some("fast")));
+    let f = &providers["fallbacks"][0];
+    assert_eq!((f["route"].as_str(), f["route_label"].as_str(), f["key"].as_str()), (Some("autodl"), Some("AutoDL"), Some("set ••••4321")));
+    assert!(!providers.to_string().contains("sk-test"));
+
+    // The same model on another route is another provider; the same route
+    // twice is refused.
+    let waiting = rig.send(APP, "llm.add_provider", Value::Null, false);
+    let dup = rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-v4-pro", "route": "autodl", "base_url": "", "api_type": "openai", "key": ""})).unwrap_err();
+    assert!(dup.contains("already in the list"), "{dup}");
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    assert!(wait(waiting).is_err());
+
+    // Change the fallback's model: the pull-down's set_model keeps the route.
+    let id = f["id"].as_str().unwrap();
+    rig.ask("llm.set_model", json!({"id": id, "model": "deepseek-v4-flash"})).unwrap();
+    let saved: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    assert_eq!(saved["config"]["llm"]["fallbacks"][0]["model_id"], "deepseek-v4-flash");
+    assert_eq!(saved["config"]["llm"]["fallbacks"][0]["route"]["route_id"], "autodl");
+
+    // Editing it back to the official route moves it to the family's key.
+    let id = all(&rig.ask("llm.providers", Value::Null).unwrap())[1]["id"].as_str().unwrap().to_string();
+    let waiting = rig.send(APP, "llm.edit_provider", json!({"id": id}), false);
+    assert!(rig.host.body().contains("let want_route = \"autodl\""));
+    let err = rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-v4-flash", "route": "official", "base_url": "", "api_type": "openai", "key": ""})).unwrap_err();
+    assert!(err.contains("already in the list"), "the primary is that route: {err}");
+    rig.sheet("llm.sheet.submit", json!({"family": "deepseek", "model": "deepseek-v4-pro", "route": "official", "base_url": "", "api_type": "openai", "key": ""})).unwrap();
+    wait(waiting).unwrap();
+    let saved: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    assert!(saved["config"]["llm"]["fallbacks"][0].get("route").is_none());
+    assert!(!rig.profile_text().contains("AUTODL_API_KEY"), "the unused slot leaves the profile");
+}
+
+#[test]
+fn the_sheet_tests_and_lists_models_with_the_typed_or_saved_key() {
+    let mut rig = Rig::new("fetch", None);
+    let key: &'static str = "sk-test-local-0000ffff7777";
+    // Four requests: a model list with the typed key, a failing check before
+    // a save, a model list with the saved key, and the sheet's test.
+    let (port, server) = fake_http(4, |req| {
+        let authorized = req.contains("Bearer sk-test-local-0000ffff7777");
+        if req.starts_with("GET /v1/models") && authorized {
+            ("200 OK", r#"{"data":[{"id":"qwen3.8-27b"},{"id":"deepseek-v4-pro"}]}"#.to_string())
+        } else if req.starts_with("POST /v1/chat/completions") && authorized && req.contains("qwen3.8-27b") {
+            ("200 OK", r#"{"choices":[]}"#.to_string())
+        } else {
+            ("401 Unauthorized", r#"{"error":{"message":"Incorrect API key provided: sk-****7777"}}"#.to_string())
+        }
+    });
+    let base = format!("http://127.0.0.1:{port}/v1");
+    let form = |model: &str, key: &str, check: bool| {
+        json!({"family": "openai", "model": model, "route": "custom", "base_url": base, "api_type": "openai", "key": key, "check": check})
+    };
+
+    // The app cannot list or test with a key itself.
+    assert!(rig.ask("llm.sheet.fetch_models", form("", key, false)).unwrap_err().contains("for the host's sheet"));
+
+    let waiting = rig.send(APP, "llm.add_provider", Value::Null, false);
+    let listed = rig.sheet("llm.sheet.fetch_models", form("", key, false)).unwrap();
+    assert_eq!(listed["models"], json!([{"id": "deepseek-v4-pro", "label": "DeepSeek V4 Pro"}, {"id": "qwen3.8-27b", "label": "Qwen3.8 27B"}]));
+    assert_eq!(listed["message"], "The provider lists 2 models.");
+    // No key typed and none saved: nothing is sent.
+    assert!(rig.sheet("llm.sheet.fetch_models", form("", "", false)).unwrap_err().contains("API key"));
+
+    // Save with a check: a refused test keeps the sheet up and saves nothing.
+    let refused = rig.sheet("llm.sheet.submit", form("gpt-other", key, true)).unwrap();
+    assert_eq!((refused["saved"].as_bool(), refused["network"].as_bool()), (Some(false), Some(false)));
+    let error = refused["error"].as_str().unwrap();
+    assert!(error.starts_with("HTTP 401") && !error.contains("7777"), "{error}");
+    assert!(still_waiting(waiting));
+    assert_eq!(rig.profile_text(), "");
+    // "Save anyway": the same form without the check.
+    assert_eq!(rig.sheet("llm.sheet.submit", form("gpt-other", key, false)).unwrap()["saved"], true);
+    let added = wait(waiting).unwrap();
+
+    // Editing it: the list and the test use the saved key.
+    let waiting = rig.send(APP, "llm.edit_provider", json!({"id": added["id"]}), false);
+    assert!(rig.host.body().contains("let want_route = \"custom\""));
+    let listed = rig.sheet("llm.sheet.fetch_models", form("", "", false)).unwrap();
+    assert_eq!(listed["models"].as_array().unwrap().len(), 2);
+    let tested = rig.sheet("llm.sheet.test", form("qwen3.8-27b", "", false)).unwrap();
+    assert_eq!((tested["ok"].as_bool(), tested["network"].as_bool()), (Some(true), Some(false)), "{tested}");
+    // Nothing listening: a network failure, which the wizard may save past.
+    let mut unreachable = form("qwen3.8-27b", key, false);
+    unreachable["base_url"] = json!("http://127.0.0.1:9/v1");
+    let tested = rig.sheet("llm.sheet.test", unreachable).unwrap();
+    assert_eq!((tested["ok"].as_bool(), tested["network"].as_bool(), tested["reason"].as_str()), (Some(false), Some(true), Some("unreachable")), "{tested}");
+    assert!(!tested["error"].as_str().unwrap().contains("7777"));
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    assert!(wait(waiting).is_err());
+
+    let seen = server.join().unwrap();
+    let lines: Vec<&str> = seen.iter().map(|r| r.lines().next().unwrap()).collect();
+    assert_eq!(lines, ["GET /v1/models HTTP/1.1", "POST /v1/chat/completions HTTP/1.1", "GET /v1/models HTTP/1.1", "POST /v1/chat/completions HTTP/1.1"]);
+    let saved: Value = serde_json::from_str(&rig.profile_text()).unwrap();
+    assert_eq!(saved["config"]["llm"]["primary"]["route"]["base_url"], base.as_str());
 }

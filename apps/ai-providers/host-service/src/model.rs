@@ -2,7 +2,7 @@
 //! status, the effective route, saving into the octos profile, and the
 //! provisioning payload for the phone QR.
 use crate::vault::{marker_account, Vault, KEYCHAIN_MARKER};
-use octosense_llm_config::{profile, qr, registry, ApiType, Provider, ProviderSet};
+use octosense_llm_config::{catalog, profile, qr, registry, ApiType, Provider, ProviderSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,7 +21,7 @@ pub fn set_of(list: &[Provider]) -> ProviderSet {
 /// A provider's id: a digest of its route, so it survives reordering and
 /// changes only when the route does. Two identical routes are one provider.
 pub fn id_of(p: &Provider) -> String {
-    let text = format!(
+    let mut text = format!(
         "{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
         p.family,
         p.model.as_deref().unwrap_or(""),
@@ -29,6 +29,12 @@ pub fn id_of(p: &Provider) -> String {
         p.api_type.map(|t| t.as_str()).unwrap_or(""),
         p.key_env
     );
+    // A named catalog route is part of the address (octos: family, model,
+    // route id); routes without one keep the ids they always had.
+    if let Some(route) = &p.route_id {
+        text.push('\u{0}');
+        text.push_str(route);
+    }
     // FNV-1a, 64 bits: stable across builds and platforms.
     let mut hash: u64 = 0xcbf29ce484222325;
     for b in text.bytes() {
@@ -131,6 +137,56 @@ pub fn effective_model(provider: &Provider) -> Option<String> {
         .clone()
         .filter(|m| !m.trim().is_empty())
         .or_else(|| registry::lookup(&provider.family).and_then(|f| f.default_model).map(str::to_string))
+}
+
+/// A model's display name: the catalog's (or one made like it).
+pub fn model_label(p: &Provider) -> String {
+    effective_model(p).map(|m| catalog::model_label(&m)).unwrap_or_default()
+}
+
+/// The route's display name ("Official API", "AutoDL", "Custom endpoint").
+pub fn route_label(p: &Provider) -> String {
+    catalog::route_label(&p.family, p.route_id.as_deref(), p.route_label.as_deref(), p.base_url.as_deref())
+}
+
+/// A route chosen on the add sheet: the family, the model, and the catalog
+/// route by id (`""` or `official`: the family's own API; `custom`: the
+/// typed base URL and protocol; any other: that catalog endpoint, with its
+/// base URL and key env var).
+pub fn provider_from_route(family: &str, model: &str, route: &str, base_url: &str, api_type: &str) -> Result<Provider, String> {
+    let route = route.trim();
+    match route {
+        "" | catalog::OFFICIAL => provider_from(family, model, "", ""),
+        "custom" => {
+            if base_url.trim().is_empty() {
+                return Err("Type the endpoint's base URL.".into());
+            }
+            provider_from(family, model, base_url, api_type)
+        }
+        id => {
+            let mut p = provider_from(family, model, "", "")?;
+            let fam = catalog::family(&p.family).ok_or("Choose a provider.")?;
+            let r = fam.routes().into_iter().find(|r| r.id == id).ok_or("That route is not in the catalog.")?;
+            if !r.is_official() {
+                p.base_url = r.base_url.clone();
+                if let Some(env) = &r.api_key_env {
+                    p.key_env = env.clone();
+                }
+                p.route_id = Some(r.id);
+                p.route_label = Some(r.label);
+            }
+            Ok(p)
+        }
+    }
+}
+
+/// The catalog route id a saved provider is on, for the edit sheet:
+/// its own, `custom` for a typed endpoint, else `official`.
+pub fn route_choice(p: &Provider) -> String {
+    if let Some(id) = &p.route_id {
+        return id.clone();
+    }
+    if route_label(p) == "Custom endpoint" { "custom".into() } else { catalog::OFFICIAL.into() }
 }
 
 /// A route as a person described it on the sheet, checked: a registry
@@ -317,8 +373,8 @@ fn is_family_slot(env: &str, family: &str) -> bool {
 /// The same route: family, model, endpoint and protocol, whatever slot its
 /// key is in (as long as it is one of the family's).
 fn same_route(a: &Provider, b: &Provider) -> bool {
-    (a.family.as_str(), a.model.as_deref(), a.base_url.as_deref(), a.api_type)
-        == (b.family.as_str(), b.model.as_deref(), b.base_url.as_deref(), b.api_type)
+    (a.family.as_str(), a.model.as_deref(), a.base_url.as_deref(), a.api_type, a.route_id.as_deref())
+        == (b.family.as_str(), b.model.as_deref(), b.base_url.as_deref(), b.api_type, b.route_id.as_deref())
         && (a.key_env == b.key_env || (is_family_slot(&a.key_env, &a.family) && is_family_slot(&b.key_env, &b.family)))
 }
 

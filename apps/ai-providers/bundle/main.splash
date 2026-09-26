@@ -1,15 +1,30 @@
-// AI providers: the LLMs the assistant answers with, first to last. Every
-// change goes through the `llm` host service; keys, PINs and QR codes are
-// typed and shown only on OctoSense's own sheets, never here.
-let providers = []      // primary first: {id, family, label, model, custom_model, base_url, api_type, key, index}
+// AI providers: the models the assistant answers with, primary first, then
+// its fallbacks. Every change goes through the `llm` host service; keys, PINs
+// and QR codes are typed and shown only on OctoSense's own sheets, never here.
+// Modelled on Octoscode's /model menu: saved models, a model pull-down per
+// provider (octos's model catalog), add on the host's sheet.
+let providers = []      // primary first: {id, family, label, model, model_label, route_label, context, price, key, index, …}
+let shown = []          // providers after the filter
+let query = ""
 let scanner = false     // the host can scan a QR
 let image_picker = false // the host can read a QR from a chosen image
 let store = ""          // where keys go: keychain, secrets folder, profile
-let results = []        // [{id, text, ok}] from Test
+let results = []        // [{id, text, detail, state}] from Test connection: state testing, ok or fail
 let confirm_remove = ""
-let editing = nil       // the provider whose model is being changed
+let menu_for = ""       // the provider whose model pull-down is open
+let menu_models = []    // its family's catalog models
 
-fn status(text){ ui.status.set_text(text) }
+// What just happened, in a banner pinned under the list (the person may be
+// anywhere in it).
+let banner_n = 0
+fn status(text){
+    banner_n = banner_n + 1
+    ui.status.set_text(text)
+    ui.banner.set_visible(text != "")
+    let n = banner_n
+    if text != "" { start_timeout(8, || hide_banner(n)) }
+}
+fn hide_banner(n){ if n == banner_n { ui.banner.set_visible(false) } }
 fn load(){
     host.request("llm.providers", {}, fn(r){
         if !r.is_ok { status(r.error) return }
@@ -19,30 +34,55 @@ fn load(){
         let i = 0
         for p in list { p.index = i; i = i + 1 }
         providers = list
-        ui.empty.set_visible(list.len() == 0)
         scanner = r.data.scanner
         store = r.data.store
         ui.scan.set_visible(scanner)
         ui.paste.set_visible(!scanner)
         image_picker = r.data.image_picker == true
         if image_picker { ui.paste.set_text("Import code from image") } else { ui.paste.set_text("Paste code") }
-        if store == "profile" { ui.where.set_text("Keys are kept in the assistant's private settings on this device.") } else { ui.where.set_text("Keys are kept in the " + store + ".") }
-        ui.rows.render()
+        if store == "profile" { ui.where.set_text("Keys stay in the assistant's private settings on this device.") } else { ui.where.set_text("Keys stay in the " + store + ".") }
+        ui.filter_box.set_visible(list.len() > 5)
+        if list.len() == 0 { ui.count.set_text("") } else { if list.len() == 1 { ui.count.set_text("1 model") } else { ui.count.set_text(list.len() + " models") } }
+        apply_filter()
     })
+}
+fn matches(p){
+    if query == "" { return true }
+    let q = query
+    return p.model_label.search(q) >= 0 || p.model.search(q) >= 0 || p.label.search(q) >= 0 || p.route_label.search(q) >= 0
+}
+fn apply_filter(){
+    let kept = []
+    for p in providers { if matches(p) { kept.push(p) } }
+    shown = kept
+    ui.rows.render()
+}
+fn set_query(text){
+    query = text.trim()
+    apply_filter()
 }
 fn result_of(id){
     for t in results { if t.id == id { return t.text } }
     return ""
 }
-fn set_result(id, text){
+fn state_of(id){
+    for t in results { if t.id == id { return t.state } }
+    return ""
+}
+fn detail_of(id){
+    for t in results { if t.id == id { return t.detail } }
+    return ""
+}
+fn set_result(id, text, state){ set_result_detail(id, text, "", state) }
+fn set_result_detail(id, text, detail, state){
     let kept = []
     for t in results { if t.id != id { kept.push(t) } }
-    kept.push({id: id text: text})
+    kept.push({id: id text: text detail: detail state: state})
     results = kept
     ui.rows.render()
 }
-fn add_provider(){
-    status("Add the provider on the sheet OctoSense shows.")
+fn add_model(){
+    status("Choose the model on the sheet OctoSense shows.")
     host.request("llm.add_provider", {}, fn(r){
         if r.is_ok { status("Added " + r.data.label) } else { status(r.error) }
         load()
@@ -50,51 +90,58 @@ fn add_provider(){
 }
 fn edit(p){
     status("")
+    menu_for = ""
     host.request("llm.edit_provider", {id: p.id}, fn(r){
         if r.is_ok { status("Saved " + r.data.label) } else { status(r.error) }
         load()
     })
 }
 fn run_test(p){
-    set_result(p.id, "Testing…")
+    if state_of(p.id) == "testing" { return }
+    set_result(p.id, "Testing the connection…", "testing")
     host.request("llm.test", {id: p.id}, fn(r){
         if r.is_ok {
-            if r.data.error == nil { set_result(p.id, "OK · " + r.data.ms + " ms") } else { set_result(p.id, r.data.error) }
-        } else { set_result(p.id, r.error) }
+            if r.data.error == nil { set_result(p.id, "Connected · " + r.data.ms + " ms", "ok") } else { set_result_detail(p.id, "Couldn't connect: " + r.data.reason, r.data.error, "fail") }
+        } else { set_result_detail(p.id, "Couldn't connect", r.error, "fail") }
     })
 }
 fn change(method, args, done){
     confirm_remove = ""
+    menu_for = ""
     host.request(method, args, fn(r){
         if r.is_ok { done() } else { status(r.error) }
         load()
     })
 }
 fn move_to(p, to){ change("llm.move", {id: p.id to: to}, || status("")) }
-fn make_primary(p){ change("llm.set_primary", {id: p.id}, || status(p.label + " answers first now.")) }
+fn make_primary(p){ change("llm.set_primary", {id: p.id}, || status(p.model_label + " answers first now.")) }
 fn remove_provider(p){
     if confirm_remove != p.id {
         confirm_remove = p.id
         ui.rows.render()
         return
     }
-    change("llm.remove", {id: p.id}, || status("Removed " + p.label))
+    change("llm.remove", {id: p.id}, || status("Removed " + p.model_label))
 }
-fn change_model(p){
-    editing = p
-    ui.m_title.set_text(p.label)
-    ui.m_field.set_text(p.model)
-    ui.m_note.set_text("")
-    pane("model")
-}
-fn save_model(){
-    if editing == nil { return }
-    host.request("llm.set_model", {id: editing.id model: ui.m_field.text()}, fn(r){
-        if r.is_ok { status("Model saved"); pane("list"); load() } else { ui.m_note.set_text(r.error) }
+// The model pull-down: the family's catalog models, the saved one ticked.
+fn toggle_menu(p){
+    if menu_for == p.id { menu_for = "" ui.rows.render() return }
+    menu_for = p.id
+    menu_models = []
+    ui.rows.render()
+    host.request("llm.models", {family: p.family}, fn(r){
+        if !r.is_ok { status(r.error) return }
+        menu_models = r.data.models
+        ui.rows.render()
     })
 }
+fn pick_model(p, m){
+    menu_for = ""
+    if m.id == p.model { ui.rows.render() return }
+    change("llm.set_model", {id: p.id model: m.id}, || status(p.label + " now uses " + m.label + "."))
+}
 fn show_qr(){
-    if providers.len() == 0 { status("Add a provider first.") return }
+    if providers.len() == 0 { status("Add a model first.") return }
     status("The code is on the sheet OctoSense shows.")
     host.request("llm.export_qr", {}, fn(r){
         if r.is_ok { status("") } else { status(r.error) }
@@ -107,106 +154,191 @@ fn import_code(){
         load()
     })
 }
-fn pane(name){
-    ui.list.set_visible(name == "list")
-    ui.model.set_visible(name == "model")
-}
-fn detail(p){
+fn subtitle(p){ return p.label + " · " + p.route_label }
+fn meta(p){
     let text = p.model
-    if p.base_url != nil { text = text + " · " + p.base_url }
+    if p.context != "" { text = text + " · " + p.context }
+    if p.price != "" { text = text + " · " + p.price }
     return text
+}
+fn key_text(p){
+    if p.key == "not needed" { return "No key needed" }
+    if p.key == "missing" { return "Key missing" }
+    if p.key == "keychain locked" { return "Keychain locked" }
+    return "Key " + p.key.strip_prefix("set ")
 }
 
 start_timeout(0.05, || load())
 
 let ink = #x1c1c1e
-let secondary = #x8e8e93
+let secondary = #x6e6e73
+let faint = #x8e8e93
 let accent = #x007aff
 let danger = #xff3b30
-let Bar = ButtonFlat{height: 36 padding: Inset{left: 10 right: 10}
-    draw_bg +: {color: #x00000000 color_hover: #x0000000a color_down: #x00000014 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 15}}
+let page = #xf2f2f7
+let Act = ButtonFlat{height: 30 padding: Inset{left: 10 right: 10}
+    draw_bg +: {border_radius: 8.0 color: #xf2f2f7 color_focus: #xf2f2f7 color_hover: #xe5e5ea color_down: #xd1d1d6 border_size: 0.0}
+    draw_text +: {color: accent color_focus: accent color_hover: accent color_down: accent text_style +: {font_size: 13}}
 }
-let Small = ButtonFlat{height: 30 padding: Inset{left: 10 right: 10}
-    draw_bg +: {border_radius: 8.0 color: #xf2f2f7 color_hover: #xe5e5ea color_down: #xd1d1d6 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 13}}
-}
-let SmallDanger = Small{draw_text +: {color: danger color_hover: danger color_down: danger}}
+let ActDanger = Act{draw_text +: {color: danger color_focus: danger color_hover: danger color_down: danger}}
+let TestAct = Act{draw_bg +: {color: #xe3edff color_focus: #xe3edff color_hover: #xd6e5ff color_down: #xc7dbff} draw_text +: {text_style: theme.font_bold{font_size: 13}}}
+let Mark = Label{text: "" draw_text.text_style: theme.font_icons{font_size: 11}}
 let Big = ButtonFlat{width: Fill height: 44
-    draw_bg +: {border_radius: 22.0 color: #x007aff color_hover: #x0a84ff color_down: #x0062cc border_size: 0.0}
-    draw_text +: {color: #xffffff color_hover: #xffffff color_down: #xffffff text_style +: {font_size: 15}}
+    draw_bg +: {border_radius: 12.0 color: #x007aff color_focus: #x007aff color_hover: #x0a84ff color_down: #x0062cc border_size: 0.0}
+    draw_text +: {color: #xffffff color_focus: #xffffff color_hover: #xffffff color_down: #xffffff text_style: theme.font_bold{font_size: 15}}
 }
-let BigPlain = ButtonFlat{width: Fill height: 44
-    draw_bg +: {border_radius: 22.0 color: #xf2f2f7 color_hover: #xe5e5ea color_down: #xd1d1d6 border_size: 0.0}
-    draw_text +: {color: accent color_hover: accent color_down: accent text_style +: {font_size: 15}}
+let Quiet = ButtonFlat{width: Fill height: 40
+    draw_bg +: {border_radius: 10.0 color: #xffffff color_focus: #xffffff color_hover: #xf7f7fa color_down: #xe5e5ea border_size: 0.0}
+    draw_text +: {color: accent color_focus: accent color_hover: accent color_down: accent text_style +: {font_size: 14}}
 }
-let Field = TextInput{width: Fill height: 40
-    draw_bg +: {color: #xf2f2f7 color_hover: #xf2f2f7 color_focus: #xf2f2f7 color_empty: #xf2f2f7
-        border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000 border_radius: 10.0}
-    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: secondary color_empty_hover: secondary}
+let Field = TextInput{width: Fill height: 38
+    draw_bg +: {color: #xffffff color_hover: #xffffff color_focus: #xffffff color_empty: #xffffff
+        border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x007aff border_color_empty: #x00000000 border_radius: 10.0}
+    draw_text +: {color: ink color_hover: ink color_focus: ink color_empty: faint color_empty_hover: faint}
 }
-let Caption = Label{text: "" draw_text.color: secondary draw_text.text_style.font_size: 12}
+let Section = Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 11}}
+let Card = RoundedView{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 12 right: 12 top: 12 bottom: 12}
+    show_bg: true draw_bg.color: #xffffff draw_bg.border_radius: 14.0}
+let Badge = RoundedView{width: Fit height: Fit padding: Inset{left: 8 right: 8 top: 3 bottom: 3} show_bg: true draw_bg.color: #xe8f0fe draw_bg.border_radius: 7.0}
+let BadgeGrey = Badge{draw_bg.color: #xf2f2f7}
+let BadgeText = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 11}}
+let BadgeGreyText = Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 11}}
+let KeyOk = Label{text: "" draw_text.color: #x248a3d draw_text.text_style.font_size: 12}
+let KeyBad = Label{text: "" draw_text.color: danger draw_text.text_style.font_size: 12}
+let KeyNone = Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
+// The pull-down: the same look as the host's add sheet (and the colours the
+// end-to-end test finds it by).
+let Drop = RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
+    padding: Inset{left: 12 right: 14 top: 8 bottom: 8} show_bg: true draw_bg.color: #xedf2fc draw_bg.border_radius: 10.0}
+let Opt = RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 10
+    padding: Inset{left: 12 right: 14 top: 6 bottom: 6} show_bg: true draw_bg.color: #xf6f8fc draw_bg.border_radius: 8.0}
+let Glyph = Label{text: "" draw_text.color: faint draw_text.text_style: theme.font_icons{font_size: 10}}
+let Tick = Label{text: "" draw_text.color: accent draw_text.text_style: theme.font_icons{font_size: 11}}
+let Tag = RoundedView{width: Fit height: Fit padding: Inset{left: 6 right: 6 top: 2 bottom: 2} show_bg: true draw_bg.color: #xe2f4e6 draw_bg.border_radius: 6.0}
+let TagText = Label{padding: 0 text: "" draw_text.color: #x1f7a3a draw_text.text_style: theme.font_bold{font_size: 10}}
+let OptTitle = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_text.text_style.font_size: 14}
+let OptTitleOn = Label{padding: 0 width: Fit text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 14}}
+let OptNote = Label{padding: 0 width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 11}
 
-SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
-    list := View{width: Fill height: Fill flow: Down
-        View{width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 top: 16 bottom: 6} spacing: 4
-            Label{text: "AI providers" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 30}}
-            Label{width: Fill text: "The assistant asks the first provider, and the next ones if it fails."
+SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
+    ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 16 right: 16 top: 16 bottom: 20}
+        View{width: Fill height: Fit flow: Down spacing: 4
+            Label{text: "AI providers" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 26}}
+            Label{width: Fill text: "The assistant answers with the primary model, and tries the fallbacks in order when it fails."
                 draw_text.color: secondary draw_text.text_style.font_size: 13}
-            where := Caption{width: Fill}
-            status := Label{width: Fill text: "" draw_text.color: accent draw_text.text_style.font_size: 12}
-            empty := Label{visible: false width: Fill padding: Inset{top: 24} text: "No providers yet. Add one so the assistant can answer."
-                draw_text.color: ink draw_text.text_style.font_size: 15}
         }
-        rows := ScrollYView{width: Fill height: Fill flow: Down spacing: 10 padding: Inset{left: 12 right: 12 top: 4 bottom: 12} on_render: || {
+        Big{text: "Add model" on_click: || add_model()}
+        View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
+            Section{text: "SAVED MODELS"}
+            View{width: Fill height: 1}
+            count := Label{text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
+        }
+        filter_box := View{visible: false width: Fill height: Fit
+            Field{empty_text: "Filter saved models" on_change: |text| set_query(text)}
+        }
+        rows := View{width: Fill height: Fit flow: Down spacing: 10 on_render: || {
             // Always one child: a render that yields none keeps the last rows.
             View{width: Fill height: 1}
-            for p in providers {
-                RoundedView{width: Fill height: Fit flow: Down spacing: 6 padding: 12 show_bg: true draw_bg.color: #xf7f7fa draw_bg.border_radius: 12.0
+            if providers.len() == 0 {
+                Card{align: Align{x: 0.5} padding: Inset{left: 20 right: 20 top: 28 bottom: 28} spacing: 6
+                    Label{width: Fill align: Align{x: 0.5} text: "No models yet" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
+                    Label{width: Fill align: Align{x: 0.5} text: "Add a model so the assistant can answer, or import the ones saved on another device."
+                        draw_text.color: secondary draw_text.text_style.font_size: 13}
+                }
+            }
+            if providers.len() > 0 && shown.len() == 0 {
+                Label{width: Fill text: "No saved model matches the filter." draw_text.color: secondary draw_text.text_style.font_size: 13}
+            }
+            for p in shown {
+                Card{
                     View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
-                        Label{width: Fill text: p.label max_lines: 1 draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
-                        if p.index == 0 { Label{text: "Primary" draw_text.color: accent draw_text.text_style: theme.font_bold{font_size: 12}} }
-                        else { Label{text: "Fallback " + p.index draw_text.color: secondary draw_text.text_style.font_size: 12} }
+                        if p.index == 0 { Badge{BadgeText{text: "Primary"}} }
+                        else { BadgeGrey{BadgeGreyText{text: "Fallback " + p.index}} }
+                        Label{width: Fill text: subtitle(p) draw_text.color: secondary draw_text.text_style.font_size: 13}
+                        if p.key == "missing" || p.key == "keychain locked" { KeyBad{text: key_text(p)} }
+                        else { if p.key == "not needed" { KeyNone{text: key_text(p)} } else { KeyOk{text: key_text(p)} } }
                     }
-                    Label{width: Fill text: detail(p) max_lines: 2 draw_text.color: #x3a3a3c draw_text.text_style.font_size: 13}
-                    Label{width: Fill text: "Key: " + p.key draw_text.color: secondary draw_text.text_style.font_size: 12}
-                    if result_of(p.id) != "" {
-                        Label{width: Fill text: result_of(p.id) draw_text.color: #x3a3a3c draw_text.text_style.font_size: 12}
+                    GestureView{width: Fill height: Fit on_tap: |x, y| toggle_menu(p)
+                        Drop{
+                            // Closed it shows the model; open, the list below
+                            // shows each model once and this asks.
+                            if menu_for == p.id {
+                                View{width: Fill height: Fit flow: Down spacing: 2
+                                    Label{width: Fill text: "Choose a model" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
+                                    Label{width: Fill text: p.label + "'s catalog · the route and key stay" draw_text.color: faint draw_text.text_style.font_size: 12}
+                                }
+                            } else {
+                                View{width: Fill height: Fit flow: Down spacing: 2
+                                    Label{width: Fill text: p.model_label draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
+                                    Label{width: Fill text: meta(p) draw_text.color: faint draw_text.text_style.font_size: 12}
+                                }
+                            }
+                            if menu_for == p.id { Glyph{text: ""} } else { Glyph{text: ""} }
+                        }
                     }
-                    View{width: Fill height: Fit flow: Right spacing: 6
-                        Small{text: "Test" on_click: || run_test(p)}
-                        Small{text: "Edit" on_click: || edit(p)}
-                        Small{text: "Model" on_click: || change_model(p)}
-                        if p.index > 0 { Small{text: "Up" on_click: || move_to(p, p.index - 1)} }
-                        if p.index < providers.len() - 1 { Small{text: "Down" on_click: || move_to(p, p.index + 1)} }
+                    if menu_for == p.id {
+                        View{width: Fill height: Fit flow: Down spacing: 4
+                            if menu_models.len() == 0 { Label{text: "Loading models…" draw_text.color: faint draw_text.text_style.font_size: 12} }
+                            for m in menu_models {
+                                GestureView{width: Fill height: Fit on_tap: |x, y| pick_model(p, m)
+                                    Opt{
+                                        View{width: Fill height: Fit flow: Down spacing: 2
+                                            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                                                if m.id == p.model { OptTitleOn{text: m.label} } else { OptTitle{text: m.label} }
+                                                if m.default == true { Tag{TagText{text: "Recommended"}} }
+                                            }
+                                            OptNote{text: m.detail}
+                                        }
+                                        if m.id == p.model { Tick{text: ""} }
+                                    }
+                                }
+                            }
+                            Label{width: Fill text: "Another route, a custom model or a new key: Edit." draw_text.color: faint draw_text.text_style.font_size: 11}
+                        }
                     }
-                    View{width: Fill height: Fit flow: Right spacing: 6
-                        if p.index > 0 { Small{text: "Make primary" on_click: || make_primary(p)} }
-                        if (confirm_remove == p.id) { SmallDanger{text: "Tap again to remove" on_click: || remove_provider(p)} }
-                        else { SmallDanger{text: "Remove" on_click: || remove_provider(p)} }
+                    if state_of(p.id) == "testing" { Label{width: Fill text: result_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 12} }
+                    if state_of(p.id) == "ok" {
+                        View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                            Mark{text: "" draw_text.color: #x248a3d}
+                            Label{width: Fill text: result_of(p.id) draw_text.color: #x248a3d draw_text.text_style: theme.font_bold{font_size: 12}}
+                        }
+                    }
+                    if state_of(p.id) == "fail" {
+                        View{width: Fill height: Fit flow: Down spacing: 2
+                            View{width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
+                                Mark{text: "" draw_text.color: danger}
+                                Label{width: Fill text: result_of(p.id) draw_text.color: #xc4281c draw_text.text_style: theme.font_bold{font_size: 12}}
+                            }
+                            Label{width: Fill text: detail_of(p.id) draw_text.color: faint draw_text.text_style.font_size: 11}
+                        }
+                    }
+                    View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6 padding: Inset{top: 2}
+                        TestAct{text: "Test connection" on_click: || run_test(p)}
+                        Act{text: "Edit" on_click: || edit(p)}
+                        if p.index > 0 { Act{text: "Make primary" on_click: || make_primary(p)} }
+                        if p.index > 0 { Act{text: "Up" on_click: || move_to(p, p.index - 1)} }
+                        if p.index < providers.len() - 1 { Act{text: "Down" on_click: || move_to(p, p.index + 1)} }
+                        if (confirm_remove == p.id) { ActDanger{text: "Tap again to remove" on_click: || remove_provider(p)} }
+                        else { ActDanger{text: "Remove" on_click: || remove_provider(p)} }
                     }
                 }
             }
         }}
-        View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 16 right: 16 top: 4 bottom: 16}
-            Big{text: "Add provider" on_click: || add_provider()}
+        View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{top: 8}
+            Section{text: "ANOTHER DEVICE"}
             // Stacked: side by side, a phone's width clips both labels.
-            View{width: Fill height: Fit flow: Down spacing: 8
-                BigPlain{text: "Show QR for phone" on_click: || show_qr()}
-                scan := BigPlain{visible: false text: "Scan QR from desktop" on_click: || import_code()}
-                paste := BigPlain{text: "Paste code" on_click: || import_code()}
-            }
+            Quiet{text: "Show QR for phone" on_click: || show_qr()}
+            scan := Quiet{visible: false text: "Scan QR from desktop" on_click: || import_code()}
+            paste := Quiet{text: "Paste code" on_click: || import_code()}
+            where := Label{width: Fill text: "" draw_text.color: faint draw_text.text_style.font_size: 12}
         }
     }
-    model := SolidView{visible: false width: Fill height: Fill flow: Down new_batch: true draw_bg.color: #xffffff padding: Inset{left: 16 right: 16 top: 8} spacing: 8
-        View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
-            Bar{text: "Cancel" on_click: || pane("list")}
-            View{width: Fill height: 1}
-            Bar{text: "Save" on_click: || save_model()}
+    banner := View{visible: false width: Fill height: Fit padding: Inset{left: 12 right: 12 top: 6 bottom: 10}
+        RoundedView{width: Fill height: Fit flow: Right align: Align{y: 0.5} padding: Inset{left: 14 right: 6 top: 4 bottom: 4} show_bg: true draw_bg.color: #x1c1c1e draw_bg.border_radius: 12.0
+            status := Label{width: Fill text: "" draw_text.color: #xffffff draw_text.text_style.font_size: 13}
+            ButtonFlat{height: 34 padding: Inset{left: 10 right: 10} text: "OK" on_click: || status("")
+                draw_bg +: {color: #x00000000 color_focus: #x00000000 color_hover: #xffffff22 color_down: #xffffff33 border_size: 0.0}
+                draw_text +: {color: #x64d2ff color_focus: #x64d2ff color_hover: #x64d2ff color_down: #x64d2ff text_style: theme.font_bold{font_size: 13}}}
         }
-        m_title := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 22}}
-        Caption{text: "Model (empty: the provider's default)"}
-        m_field := Field{empty_text: "model id"}
-        m_note := Label{width: Fill text: "" draw_text.color: danger draw_text.text_style.font_size: 12}
     }
 }

@@ -6,6 +6,21 @@ never sees a key, a PIN or a QR: keys are typed on a host-owned sheet, the
 phone QR is drawn on a sheet, and a scanned code is decoded here. The method
 table is in [src/lib.rs](src/lib.rs).
 
+Models come from octos's model catalog (`model_catalog.json`, vendored in
+[../config/data](../config/data) and read by `octosense_llm_config::catalog`):
+`llm.families` and `llm.models` feed the pickers, each model with a display
+name, context window and price. Adding or editing a model is a five-step
+wizard on the host's sheet, in Octoscode's `/model` order: model family,
+model (a pull-down of the family's catalog models, a custom id, or the
+endpoint's own list), provider route (the catalog's endpoints or a custom
+base URL and protocol), API key, then Test connection and save. The save is
+enabled once the test passes; after a network failure the sheet offers
+"Save without testing". A catalog route other than the official one is saved
+as octos names it (`route_id`, `label`, `base_url`, `api_key_env`); the
+official route is saved as no route (octos reads a missing `route_id` as
+`official`). The app's own list changes a saved model with a pull-down of the
+same catalog and tests each row.
+
 ## Registering it (shells)
 
 Register it once, before the first system app opens, next to Mail:
