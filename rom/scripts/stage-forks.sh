@@ -27,6 +27,8 @@ reset_fork "$TREE/packages/apps/Trebuchet" Android.bp octosense
 bash "$ROM/scripts/apply-to-tree.sh" "$TREE"
 python3 "$HOME_SOURCE/android/platform-build/stage-quickstep.py" --tree "$TREE" --baseline-result "$BASELINE"
 python3 "$HOME_SOURCE/android/platform-build/stage-systemui.py" --tree "$TREE" --report "$TREE/out/octosense-rom/systemui-stage.json"
+python3 "$HOME_SOURCE/android/platform-build/stage-permissioncontroller.py" --tree "$TREE" --report "$TREE/out/octosense-rom/permissioncontroller-stage.json"
 python3 "$HOME_SOURCE/android/platform-build/stage-quickstep.py" --tree "$TREE" --baseline-result "$BASELINE" --verify
 python3 "$HOME_SOURCE/android/platform-build/stage-systemui.py" --tree "$TREE" --report "$TREE/out/octosense-rom/systemui-stage.json" --verify
+python3 "$HOME_SOURCE/android/platform-build/stage-permissioncontroller.py" --tree "$TREE" --report "$TREE/out/octosense-rom/permissioncontroller-stage.json" --verify
 echo "staged"

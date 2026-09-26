@@ -129,7 +129,7 @@ pub fn registry() -> Vec<AppDef> {
 fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, installed: Vec<AppDef>) -> Vec<AppDef> {
     let mut ids = std::collections::HashSet::new();
     base.into_iter().chain(bundled).chain(installed)
-        .filter(|app| app.id != "card" && ids.insert(app.id.clone()))
+        .filter(|app| crate::apps::catalog_visible(&app.id) && ids.insert(app.id.clone()))
         .collect()
 }
 
@@ -1005,15 +1005,17 @@ mod tests {
     #[test]
     fn installed_catalog_refreshes_without_shadowing_native_apps() {
         let app = |id: &str, label: &str| AppDef::app(id, label, "", "", "card", LaunchPolicy::OrFocus);
-        let native = vec![app("apphub", "App Hub")];
-        // Installed ids live under `hub:`, so a manifest named after a
-        // built-in becomes its own row beside it, never a replacement.
-        let installed = vec![app("hub:demo", "Demo"), app("hub:apphub", "Untrusted replacement")];
-        let first = merge_catalog(native.clone(), vec![app("apphub", "Linked module")], installed);
-        assert_eq!(first.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub", "hub:demo", "hub:apphub"]);
+        let native = vec![app("apphub", "App Hub"), app("settings", "OctoSense Settings"), app("appstore", "Apps")];
+        // Installed ids stay namespaced; legacy claimed built-in ids cannot shadow a native app.
+        let installed = vec![app("hub:demo", "Demo"), app("hub:apphub", "Installed App Hub"),
+            app("hub:settings", "Installed Settings"), app("settings", "Untrusted replacement")];
+        let bundled = vec![app("apphub", "Linked module"), app("card", "Internal host"), app("appstore", "Apps")];
+        let first = merge_catalog(native.clone(), bundled.clone(), installed);
+        assert_eq!(first.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub", "settings", "hub:demo", "hub:apphub", "hub:settings"]);
         assert_eq!(first[0].label, "App Hub");
-        let after_remove = merge_catalog(native, vec![app("card", "Internal host")], vec![]);
-        assert_eq!(after_remove.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub"]);
+        assert_eq!(first[1].label, "OctoSense Settings");
+        let after_remove = merge_catalog(native, bundled, vec![]);
+        assert_eq!(after_remove.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["apphub", "settings"]);
     }
 
     #[test]

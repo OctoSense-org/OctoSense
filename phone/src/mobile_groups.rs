@@ -260,8 +260,11 @@ impl GroupsState {
     }
     /// Animate the sub-window. True while it is still moving.
     pub fn step(&mut self, dt: f64) -> bool {
+        self.step_with_motion(dt, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, reduced: bool) -> bool {
         let target = if self.open.is_some() { 1.0 } else { 0.0 };
-        let t = 1.0 - (-dt * 16.0).exp();
+        let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         self.openness += (target - self.openness) * t;
         if (self.openness - target).abs() < 0.002 { self.openness = target; }
         if self.openness == 0.0 { self.closing = None; self.origin = None; }

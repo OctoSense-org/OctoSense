@@ -99,6 +99,9 @@ impl ModuleHost {
         if self.instances.contains_key(&client) {
             return Err(format!("client {client} already hosts an instance"));
         }
+        if crate::settings_app::trusted(module) && self.settings_instance().is_some() {
+            return Err("Settings already has a live instance".into());
+        }
         self.next_scope += 1;
         let scope = InstanceScope::new(client, self.next_scope);
         let instance_no = {
@@ -189,6 +192,15 @@ impl ModuleHost {
     /// widget action posted by a module root is attributed to its client.
     pub fn client_of_root_uid(&self, uid: WidgetUid) -> Option<ClientId> {
         self.instances.values().find(|i| i.root.widget_uid() == uid).map(|i| i.client)
+    }
+
+    /// Privilege derives from the compiled singleton and live root, never a
+    /// script-supplied module ID or self-declared capability string.
+    pub fn settings_instance(&self) -> Option<&AppInstance> {
+        self.instances.values().find(|i| crate::settings_app::trusted(i.module))
+    }
+    pub fn settings_client(&self, uid: WidgetUid) -> Option<ClientId> {
+        self.instances.values().find(|i| !i.root.is_empty() && i.root.widget_uid() == uid && crate::settings_app::trusted(i.module)).map(|i| i.client)
     }
 
     /// Deliver a JSON message to an instance as `Event::Custom`, inside its

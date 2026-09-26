@@ -1,0 +1,59 @@
+filegroup {
+    name: "octosense-wifi-settings-sources",
+    srcs: ["src/**/*.java"],
+    visibility: ["//vendor/octosense/agent"],
+}
+
+filegroup {
+    name: "octosense-accounts-settings-sources",
+    srcs: ["src/dev/makepad/octosense/accounts/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-dnd-settings-contract",
+    srcs: ["src/dev/makepad/octosense/controls/DndMode.java", "src/dev/makepad/octosense/dnd/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-app-notifications-contract",
+    srcs: ["src/dev/makepad/octosense/notifications/AppNotifications*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-app-battery-contract",
+    srcs: ["src/dev/makepad/octosense/battery/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-app-network-contract",
+    srcs: ["src/dev/makepad/octosense/appnetwork/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-app-storage-contract",
+    srcs: ["src/dev/makepad/octosense/appstorage/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-app-language-contract",
+    srcs: ["src/dev/makepad/octosense/applanguage/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-system-language-contract",
+    srcs: ["src/dev/makepad/octosense/systemlanguage/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}
+
+filegroup {
+    name: "octosense-keyboard-contract",
+    srcs: ["src/dev/makepad/octosense/keyboards/*.java"],
+    visibility: ["//vendor/octosense/settings-broker"],
+}

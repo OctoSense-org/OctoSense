@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.nightlightvalidation" android:versionCode="2" android:versionName="validation-only">
+<uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35" />
+<application android:hasCode="false" android:label="Night Light validation overlay" />
+<overlay android:targetPackage="android" android:isStatic="true" android:priority="1" />
+</manifest>

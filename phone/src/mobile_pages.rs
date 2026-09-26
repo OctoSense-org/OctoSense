@@ -252,6 +252,9 @@ impl PagesState {
     /// Drive the pager one frame from the shell gesture (None when there is
     /// none, or the home page is not the screen). True while animating.
     pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>) -> bool {
+        self.step_with_motion(dt, gesture, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, gesture: Option<ShellGesture>, reduced: bool) -> bool {
         let lib = self.library_index() as f64;
         let mut dragging = false;
         match gesture {
@@ -281,10 +284,11 @@ impl PagesState {
             _ => {}
         }
         if dragging { self.velocity = 0.0; return true; }
-        let t = 1.0 - (-dt * 16.0).exp();
+        let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         self.drag += (0.0 - self.drag) * t;
         if self.drag.abs() < 0.001 { self.drag = 0.0; }
         let target = self.target as f64;
+        if reduced { self.index = target; self.velocity = 0.0; self.drag = 0.0; return false; }
         // Damping ratio 0.8: about a third of a page per second of overshoot
         // at most, gone within a quarter second.
         let k: f64 = 420.0;

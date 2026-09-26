@@ -99,6 +99,20 @@ A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation
 
 Search opens only by pulling down on Home; the App Library has no search bar. Search ranks names that start with what you typed first and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
 
+## Built-in Settings
+
+Open **OctoSense Settings** in the app catalog for shared themes, supported
+display and sound controls, and device information. Its Octoscript–Makepad UI
+follows live theme and text-size changes while preserving the current page.
+Navigation, search, drafts, reviews and application event handlers execute in
+[Octoscript controllers](resources/settings/controller); native code retains
+rendering, text input and typed Android bindings. See the
+[port design and validation status](docs/adr/0005-settings-octoscript-controller.md).
+Complete system Settings replacement is in progress; some areas still open
+Android Settings. See the [current controls and validation](docs/android/settings.md),
+[feature parity checklist](docs/android/settings-parity.md), and
+[architecture decision](docs/adr/0004-builtin-settings.md).
+
 ## Mail preview on Android
 
 Mail is an in-process AppModule from the sibling

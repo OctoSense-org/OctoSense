@@ -51,13 +51,14 @@ preferences; consumers should receive an initial snapshot and later revisions.
 
 ## Audit of the current bundled apps, 24 September 2026
 
-The shared base theme reaches all nine hosted app modules. This does not by
+The shared base theme reaches all nine visible hosted app modules. This does not by
 itself recolor application code that draws literal colors or supplies its own
 HTML/design pack.
 
 | App | Current state and remaining migration |
 | --- | --- |
 | Reference | Uses the shared background and stock widgets. |
+| Settings | Uses Octoscript layout and semantic stock widgets; live theme changes retain the page, draft and control identities. |
 | Sheets | Uses the WM theme bridge; live restyling is covered by tests. |
 | Photos | Custom UI in `apps/photos/src/ui.rs` contains fixed light backgrounds, text and blue actions; map them to shared roles, retaining media overlays. |
 | News | Follows the host's light/dark mode, then uses its own `Skin::for_mode` colors. Replace interface colors with resolved shared roles. |
@@ -65,7 +66,7 @@ HTML/design pack.
 | Mail | Its generated design pack explicitly selects `theme light`, and its HTML wrapper has fixed colors. Both need a shared-theme adapter. |
 | Camera | Receives the base theme, but uses custom design/kit scenes. Audit scene controls separately from the viewfinder. |
 | AppCard | Receives the base theme; generated cards need semantic bindings in the shared renderer rather than per-card palette copies. |
-| App Store | Receives the base theme; custom app surfaces need a separate visual compliance check. |
+| App Store (hidden) | Retained in code but removed from the launcher while the catalog is empty; custom app surfaces need a visual compliance check before returning. |
 
 The regression test `bundled_apps_receive_same_base_theme_without_recreation`
 checks all modules against contrasting presets and verifies background, text,

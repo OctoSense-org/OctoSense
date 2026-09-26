@@ -76,10 +76,13 @@ pub struct AndroidState {
     /// it, while a resume that reports the same value leaves the person's
     /// own Dark mode choice alone.
     pub system_dark: Option<bool>,
+    pub brightness_automatic: bool,
     /// Android's text size preference (1 is the default size).
     pub font_scale: f64,
     /// Android's "remove animations" (animator scale 0): no launch effect.
     pub reduce_motion: bool,
+    pub interactive_timeout_ms: u32,
+    pub noninteractive_timeout_ms: u32,
     /// Every pull-down belongs to the system-wide OctoSense panel: the
     /// shell's own shade stays closed on Android (placements `launcher_shade`
     /// false).
@@ -127,6 +130,20 @@ pub(crate) fn result_copy(reason: &str) -> (&'static str, String) {
         "profile_locked" => "Unlock the work profile first.",
         "permission_denied" => "OctoSense does not have permission for this yet. Open System setup to grant it.",
         "setting_unavailable" => "This device has no screen for that setting.",
+        "dnd_target_changed" => "Do Not Disturb settings changed. Your schedule draft is kept; review the current values before saving.",
+        "dnd_restricted" | "dnd_unavailable" => "This Do Not Disturb control is unavailable or restricted.",
+        "control_partial"=>"Some linked sound preferences could not be confirmed. Refresh to review their current values.",
+        "notifications_target_changed"=>"The app or notification settings changed. Refresh and review the current values.",
+        "notifications_partial"=>"Only part of the linked app and channel change completed. Refresh to check both values.",
+        "notifications_unconfirmed"=>"Android could not confirm the change. Refresh notification settings to check.",
+        "notifications_restricted"|"notifications_unavailable"=>"This notification control is unavailable or restricted.",
+        "display_target_changed"=>"Display settings changed. Review the current values before saving.",
+        "display_location_required"=>"Enable Location before choosing sunset to sunrise.",
+        "display_restricted"|"display_unavailable"=>"This display control is unavailable or restricted.",
+        "time_invalid_local" => "This time is skipped when clocks move forward. Choose another time.",
+        "time_target_changed" => "Time settings changed. Review the current values before saving.",
+        "time_unavailable" => "Time controls are unavailable or restricted.",
+        "policy_restricted" => "This setting is restricted by device policy or screen lock.",
         "home_placement_limit_or_identity" => "The home page is full, or this item can no longer be placed.",
         "home_placement_storage_unavailable" => "Home layout could not be saved. Your change will be lost when the shell restarts.",
         "operation_failed" | "invalid_command" | "unknown_channel" => "The action did not complete. Try again in a moment.",
@@ -137,6 +154,18 @@ pub(crate) fn result_copy(reason: &str) -> (&'static str, String) {
         "app_disabled_or_profile_locked" | "profile_locked" => "App can't open",
         "permission_denied" => "Permission needed",
         "setting_unavailable" => "Setting unavailable",
+        "dnd_target_changed" => "Do Not Disturb settings changed",
+        "dnd_restricted" | "dnd_unavailable" => "Do Not Disturb unavailable",
+        "time_invalid_local" => "Choose another time",
+        "time_target_changed" => "Time settings changed",
+        "control_partial"=>"Review sound settings",
+        "notifications_target_changed"=>"Notification settings changed",
+        "notifications_partial"|"notifications_unconfirmed"=>"Check notification settings",
+        "notifications_restricted"|"notifications_unavailable"=>"Notification control unavailable",
+        "display_target_changed"=>"Display settings changed",
+        "display_location_required"=>"Location needed",
+        "display_restricted"|"display_unavailable"=>"Setting unavailable",
+        "time_unavailable" | "policy_restricted" => "Setting restricted",
         "home_placement_limit_or_identity" | "home_placement_storage_unavailable" => "Home layout",
         _ => "Couldn't do that",
     };
@@ -301,12 +330,16 @@ impl App {
         cx: &mut Cx,
         channel: &str,
         operation: &str,
-        mut fields: Vec<(&str, Value)>,
+        fields: Vec<(&str, Value)>,
     ) {
+        self.android_command_id(cx, channel, operation, fields);
+    }
+    pub(crate) fn android_command_id(&mut self, cx: &mut Cx, channel: &str, operation: &str, mut fields: Vec<(&str, Value)>) -> i64 {
         self.android_runtime.next_command += 1;
         fields.push(("id", Value::Int(self.android_runtime.next_command)));
         fields.push(("operation", s(operation)));
         cx.android_integration(channel, &obj(fields).to_json());
+        self.android_runtime.next_command
     }
     /// A short haptic on Android for a committed shell action (`kind` is
     /// `tick`, `confirm` or `long_press`); nothing elsewhere.
@@ -410,6 +443,12 @@ impl App {
         let Event::AndroidIntegration { channel, payload } = event else {
             return false;
         };
+        // Android may deliver the Activity entry before the shell is ready.
+        // Preserve only the finite latest navigation request, never raw extras.
+        if channel=="settings.entry" {
+            if let Ok(value)=makepad_strict_json::parse_depth(payload.as_bytes(),4) {self.settings_entry_received(cx,&value);}
+            return true;
+        }
         if self.state.is_none() {
             return true;
         }
@@ -651,6 +690,30 @@ impl App {
                 }
             }
             "bridge.snapshot" => self.android_snapshot(cx, &value),
+            "launcher.device_settings" => self.settings_device_snapshot(cx, &value),
+            "launcher.apps_catalog"|"launcher.app_details" => self.settings_apps_observe(cx,&channel,&value),
+            "launcher.updates_state" => self.settings_updates_observe(cx,&value),
+            "launcher.app_notifications_state"=>self.settings_app_notifications_observe(cx,&value),
+            "launcher.app_language"=>self.settings_app_language_observe(cx,&value),
+            "launcher.app_storage_state"=>self.settings_app_storage_observe(cx,&value),
+            "launcher.app_battery_state"=>self.settings_app_battery_observe(cx,&value),
+            "launcher.app_network_state"=>self.settings_app_network_observe(cx,&value),
+            "launcher.dnd_state"=>self.settings_dnd_observe(cx,&value),
+            "launcher.permissions_state"=>self.settings_permissions_observe(cx,&value),
+            "launcher.roles_state"=>self.settings_roles_observe(cx,&value),
+            "launcher.display_state"=>self.settings_display_observe(cx,&value),
+            "launcher.network_state" => self.settings_network_observe(cx,&value),
+            "launcher.accounts_state" => self.settings_accounts_observe(cx,&value,false),
+            "launcher.account_details" => self.settings_accounts_observe(cx,&value,true),
+            "launcher.bluetooth_state" => self.settings_bluetooth_observe(cx,&value),
+            "launcher.keyboards_state"=>self.settings_keyboards_observe(cx,&value),
+            "launcher.system_languages_state"=>self.settings_system_language_observe(cx,&value),
+            "launcher.caption_language"=>self.settings_caption_language_observe(cx,&value),
+            "launcher.caption_custom_state"=>self.settings_caption_custom_observe(cx,&value),
+            "launcher.controls_state" => self.settings_controls_observe(cx,&value),
+            "launcher.notification_history" => self.settings_history_observe(cx,&value),
+            "launcher.sounds_state" => self.settings_sounds_observe(cx,&value),
+            "launcher.wifi_state" => self.settings_wifi_observe(cx,&value),
             "notification.reply.submit" => {
                 self.android_command(
                     cx,
@@ -664,6 +727,7 @@ impl App {
                 );
             }
             "integration.resync" => {
+                self.settings_uncertain(cx);
                 self.android_command(cx, "launcher", "catalog", vec![]);
                 self.android_command(cx, "launcher", "widgets_snapshot", vec![]);
                 self.android_command(cx, "bridge", "snapshot", vec![]);
@@ -672,6 +736,27 @@ impl App {
                 }
             }
             "bridge.result" | "launcher.result" => {
+                // Read failures stay on the Apps page; background retries must
+                // not create a notification every five seconds.
+                if self.settings_apps_result(cx, &value) { return true; }
+                if self.settings_wifi_result(cx, &value) { return true; }
+                if self.settings_keyboards_result(cx,&value) || self.settings_system_language_result(cx,&value) || self.settings_caption_language_result(cx,&value) || self.settings_caption_custom_result(cx,&value) || self.settings_controls_result(cx, &value) { return true; }
+                if self.settings_bluetooth_result(cx, &value) { return true; }
+                if self.settings_accounts_result(cx, &value) { return true; }
+                if self.settings_updates_result(cx, &value) { return true; }
+                if self.settings_app_notifications_result(cx,&value){return true;}
+                if self.settings_roles_result(cx,&value){return true;}
+                if self.settings_permissions_result(cx,&value){return true;}
+                if self.settings_app_language_result(cx,&value){return true;}
+                if self.settings_app_storage_result(cx,&value){return true;}
+                if self.settings_app_battery_result(cx,&value){return true;}
+                if self.settings_app_network_result(cx,&value){return true;}
+                if self.settings_dnd_result(cx,&value){return true;}
+                if self.settings_display_result(cx,&value){return true;}
+                if self.settings_network_result(cx, &value) { return true; }
+                if self.settings_history_result(cx, &value) { return true; }
+                if self.settings_sounds_result(cx,&value){return true;}
+                self.settings_result(cx, &value);
                 let status = value.get("status").and_then(Value::as_i64).unwrap_or(9);
                 if status > 1 {
                     let (title, body) = result_copy(&string(&value, "reason"));
@@ -684,6 +769,8 @@ impl App {
                 android.usage_access = boolean(&value, "granted");
                 android.recent_apps = Arc::new(apps);
             }
+            "settings.a11y.action" => {self.settings_accessibility_action(cx,&value);}
+            "settings.a11y.enabled" => {self.settings_accessibility_enabled(cx,value.get("enabled").and_then(Value::as_bool));}
             "a11y.activate" => {
                 // A screen reader activated a node: the same action as a tap.
                 let index = value.get("index").and_then(Value::as_i64).unwrap_or(-1);
@@ -699,13 +786,36 @@ impl App {
                 self.state_mut().phone.hints.load(seen.into_iter());
             }
             "launcher.ui_mode" => {
+                self.settings_activity_resumed(value.get("activity_resumed").and_then(Value::as_bool));
+                self.settings_permissions_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_app_language_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_keyboards_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_system_language_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_caption_language_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_caption_custom_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_app_storage_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_app_battery_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_app_network_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                self.settings_dnd_focus(cx,value.get("activity_focused").and_then(Value::as_bool));
+                if value.get("activity_resumed").and_then(Value::as_bool)==Some(true) {self.settings_entry_ready(cx);}
+                self.settings_accessibility_enabled(cx,value.get("accessibility_enabled").and_then(Value::as_bool));
                 // Android's night mode changed (or was read on resume): the
                 // shell follows it, as every stock launcher does.
                 let dark = boolean(&value, "dark");
                 if let Some(percent) = value.get("font_scale_percent").and_then(Value::as_i64) {
                     self.state_mut().phone.android.font_scale = percent as f64 / 100.0;
                 }
-                self.state_mut().phone.android.reduce_motion = boolean(&value, "reduce_motion");
+                // Unknown fields retain the last native observation. Never turn an
+                // unavailable read into a fabricated Off/default preference.
+                if let Some(snapshot) = value.get("accessibility_preferences") {
+                    let previous = cx.accessibility_preferences();
+                    let next = crate::android_accessibility::observe(snapshot, previous);
+                    if cx.set_accessibility_preferences(next) { self.animate_phone(cx); }
+                    let android = &mut self.state_mut().phone.android;
+                    android.reduce_motion = next.reduce_motion();
+                    if let Some(ms) = crate::android_accessibility::timeout(snapshot, "interactive_timeout_ms") { android.interactive_timeout_ms = ms; }
+                    if let Some(ms) = crate::android_accessibility::timeout(snapshot, "noninteractive_timeout_ms") { android.noninteractive_timeout_ms = ms; }
+                }
                 let changed = self.state_mut().phone.android.system_dark != Some(dark);
                 self.state_mut().phone.android.system_dark = Some(dark);
                 let selection = value.get("theme").and_then(crate::mobile_theme::Selection::decode)
@@ -718,6 +828,9 @@ impl App {
                 self.android_system_bars(cx);
             }
             _ => {}
+        }
+        if matches!(channel.as_str(), "bridge.connection" | "bridge.snapshot" | "launcher.ui_mode") {
+            self.refresh_settings_app(cx);
         }
         self.redraw_all(cx);
         true
@@ -1020,6 +1133,7 @@ impl App {
         phone.shade.bluetooth = boolean(state, "bluetooth");
         phone.shade.torch = boolean(state, "torch");
         phone.shade.rotation_lock = boolean(state, "rotation_locked");
+        phone.android.brightness_automatic = boolean(state, "brightness_automatic");
         phone.shade.do_not_disturb = state
             .get("interruption_filter")
             .and_then(Value::as_i64)

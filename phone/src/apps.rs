@@ -64,6 +64,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
         out.push(&octosense_app_hub_app::CARD_MODULE);
     }
+    out.push(&crate::settings_app::SETTINGS_MODULE);
     out
 }
 
@@ -99,14 +100,19 @@ pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
     let mut catalog = bundled_modules_catalog();
-    // The `card` host module is not an app a person opens; the apps it runs are.
-    catalog.retain(|app| app.id != "card");
     catalog.extend(installed_card_apps());
+    catalog.retain(|app| catalog_visible(&app.id));
     catalog
 }
 
+pub(crate) fn catalog_visible(id: &str) -> bool {
+    // Keep the card host internal and the retired empty store out of the
+    // launcher. The current apphub module and installed cards remain visible.
+    !matches!(id, "card" | "appstore")
+}
+
 pub fn bundled_modules_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
+    linked_modules().iter().filter(|module| catalog_visible(module.id())).map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -173,6 +179,7 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
+        if id == "settings" && self.module(id).is_some() { return Hosting::Module; }
         if matches!(id, "robrix" | "finance" | "apphub") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
@@ -249,7 +256,7 @@ mod tests {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps", "camera", "apphub"]);
+                   ["reference", "sheets", "photos", "appcard", "mail", "news", "maps", "camera", "apphub", "settings"]);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();

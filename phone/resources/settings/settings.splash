@@ -1,0 +1,2169 @@
+// Octoscript layout -> UiNode -> Octoscript-Makepad. Stable IDs are the binding
+// contract. Native SettingsView owns typed actions; no script can name an
+// Android intent, settings key, Binder transaction or shell command here.
+{t: "column", id: "body", fillw: 1, fillh: 1, spacing: 12, c: [
+    {t: "row", spacing: 12, c: [
+        {t: "button", id: "back", text: "Back"},
+        {t: "text", id: "title", text: "Settings", fillw: 1}
+    ]},
+    {t: "text", id: "status", text: "", fillw: 1},
+    {t: "scroll", id: "scroll", fillw: 1, fillh: 1, c: [
+        {t: "column", id: "overview", fillw: 1, spacing: 10, c: [
+            {t: "text", text: "Device settings", fillw: 1},
+            {t: "button", id: "search_settings", text: "Search settings", fillw: 1},
+            {t: "button", id: "appearance_page", text: "Appearance", fillw: 1},
+            {t: "button", id: "display_page", text: "Display", fillw: 1},
+            {t: "button", id: "sound_page", text: "Sound", fillw: 1},
+            {t: "button", id: "network_page", text: "Connections", fillw: 1},
+            {t: "button", id: "apps", text: "Apps", fillw: 1},
+            {t: "button", id: "notifications_overview", text: "Notifications", fillw: 1},
+            {t: "button", id: "privacy", text: "Privacy", fillw: 1},
+            {t: "button", id: "location", text: "Location", fillw: 1},
+            {t: "button", id: "battery", text: "Battery", fillw: 1},
+            {t: "button", id: "storage", text: "Storage", fillw: 1},
+            {t: "button", id: "system_page", text: "System", fillw: 1},
+            {t: "button", id: "about", text: "About phone", fillw: 1},
+            {t: "text", text: "More settings are being brought into OctoSense. Android Settings remains available during this transition.", fillw: 1},
+            {t: "button", id: "android_settings", text: "Android Settings", fillw: 1}
+        ]},
+        {t: "column", id: "appearance", fillw: 1, spacing: 10, c: [
+            {t: "text", id: "theme_summary", text: "Current theme", fillw: 1},
+            {t: "text", text: "Theme", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "octosense", text: "OctoSense", fillw: 1},
+                {t: "button", id: "minimal", text: "Minimal", fillw: 1}
+            ]},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "paper", text: "Paper", fillw: 1},
+                {t: "button", id: "vivid", text: "Vivid", fillw: 1}
+            ]},
+            {t: "text", text: "Appearance", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "mode_system", text: "System", fillw: 1},
+                {t: "button", id: "mode_light", text: "Light", fillw: 1},
+                {t: "button", id: "mode_dark", text: "Dark", fillw: 1}
+            ]},
+            {t: "text", text: "Wallpaper", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "gradient", text: "Gradient", fillw: 1},
+                {t: "button", id: "solid", text: "Solid", fillw: 1}
+            ]},
+            {t: "button", id: "default_theme", text: "Restore default", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "cancel_theme", text: "Cancel", fillw: 1},
+                {t: "button", id: "apply_theme", text: "Apply", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "display", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "brightness_value", text: "Brightness unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "brightness_less", text: "− 10%", fillw: 1},
+                {t: "button", id: "brightness_more", text: "+ 10%", fillw: 1}
+            ]},
+            {t: "button", id: "automatic", text: "Automatic brightness", fillw: 1},
+            {t: "button", id: "rotation", text: "Rotation lock", fillw: 1},
+            {t: "button", id: "display_access", text: "Allow display controls", fillw: 1},
+            {t: "text", id: "timeout_value", text: "Screen timeout unavailable", fillw: 1},
+            {t: "text", id: "timeout_policy", text: "", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "timeout_less", text: "Shorter", fillw: 1},
+                {t: "button", id: "timeout_more", text: "Longer", fillw: 1}
+            ]},
+            {t: "text", id: "font_value", text: "Font size unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "font_less", text: "Smaller", fillw: 1},
+                {t: "button", id: "font_more", text: "Larger", fillw: 1}
+            ]},
+            {t: "button", id: "display_options_open", text: "Display size and Night Light", fillw: 1},
+            {t: "button", id: "haptic_feedback", text: "Touch vibration", fillw: 1},
+            {t: "button", id: "display_device_access", text: "Allow OctoSense controls", fillw: 1},
+            {t: "button", id: "display_advanced", text: "More display settings", fillw: 1}
+        ]},
+        {t: "column", id: "sound", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "volume_value", text: "Media volume unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "volume_less", text: "− 10%", fillw: 1},
+                {t: "button", id: "volume_more", text: "+ 10%", fillw: 1}
+            ]},
+            {t: "text", id: "alarm_value", text: "Alarm volume unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "alarm_less", text: "− 10%", fillw: 1},
+                {t: "button", id: "alarm_more", text: "+ 10%", fillw: 1}
+            ]},
+            {t: "text", id: "ring_value", text: "Ring volume unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "ring_less", text: "− 10%", fillw: 1},
+                {t: "button", id: "ring_more", text: "+ 10%", fillw: 1}
+            ]},
+            {t: "text", id: "notification_value", text: "Notification volume unavailable", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "notification_less", text: "− 10%", fillw: 1},
+                {t: "button", id: "notification_more", text: "+ 10%", fillw: 1}
+            ]},
+            {t: "button", id: "touch_sounds", text: "Touch sounds", fillw: 1},
+            {t: "button", id: "sound_device_access", text: "Allow OctoSense controls", fillw: 1},
+            {t: "button", id: "dnd", text: "Do Not Disturb", fillw: 1},
+            {t: "button", id: "sounds_open", text: "Ringtones and notification sounds", fillw: 1},
+            {t: "button", id: "sound_feedback", text: "Sound feedback and haptics", fillw: 1},
+            {t: "button", id: "sound_advanced", text: "More sound settings in Android", fillw: 1},
+            {t: "button", id: "notifications", text: "Notification settings", fillw: 1}
+        ]},
+        {t: "column", id: "network", fillw: 1, spacing: 10, c: [
+            {t: "text", id: "network_summary", text: "Connections", fillw: 1},
+            {t: "button", id: "wifi", text: "Wi-Fi", fillw: 1},
+            {t: "button", id: "bluetooth", text: "Bluetooth", fillw: 1},
+            {t: "button", id: "advanced_connections", text: "Advanced connections", fillw: 1},
+            {t: "button", id: "mobile", text: "Mobile network", fillw: 1},
+            {t: "button", id: "hotspot", text: "Hotspot", fillw: 1},
+            {t: "button", id: "vpn", text: "VPN", fillw: 1}
+        ]},
+        {t: "column", id: "system", fillw: 1, spacing: 10, c: [
+            {t: "button", id: "system_languages_open", text: "System languages", fillw: 1},
+            {t: "button", id: "keyboards_open", text: "Keyboards", fillw: 1},
+            {t: "button", id: "date_time", text: "Date and time", fillw: 1},
+            {t: "button", id: "system_updates", text: "System updates", fillw: 1},
+            {t: "button", id: "system_advanced", text: "More system settings in Android", fillw: 1},
+            {t: "button", id: "security", text: "Security", fillw: 1},
+            {t: "button", id: "accounts", text: "Accounts", fillw: 1},
+            {t: "button", id: "accessibility_hearing", text: "Accessibility: hearing", fillw: 1},
+            {t:"button",id:"accessibility_text_interaction",text:"Accessibility: text and interaction",fillw:1},
+            {t: "button", id: "accessibility_vision", text: "Accessibility: colors", fillw: 1},
+            {t: "button", id: "accessibility", text: "More accessibility settings", fillw: 1}
+        ]},
+        {t: "column", id: "about_page", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "about_summary", text: "Device information unavailable", fillw: 1},
+            {t: "button", id: "about_advanced", text: "Status and legal", fillw: 1}
+        ]},
+        {t: "column", id: "storage_page", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "storage_summary", text: "Storage information unavailable", fillw: 1},
+            {t: "text", text: "Capacity of the phone's data volume, shared by apps and their files. System partitions are separate.", fillw: 1},
+            {t: "button", id: "storage_advanced", text: "Manage storage", fillw: 1}
+        ]},
+        {t: "column", id: "battery_page", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "battery_summary", text: "Battery information unavailable", fillw: 1},
+            {t: "button", id: "battery_policy", text: "Battery saver and policy", fillw: 1},
+            {t: "button", id: "battery_advanced", text: "Usage and charging settings", fillw: 1}
+        ]},
+        {t: "column", id: "date_time_page", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "time_summary", text: "Date and time unavailable", fillw: 1},
+            {t: "button", id: "hour_format", text: "Time format unavailable", fillw: 1},
+            {t: "button", id: "auto_time", text: "Automatic time unavailable", fillw: 1},
+            {t: "button", id: "auto_time_zone", text: "Automatic time zone unavailable", fillw: 1},
+            {t: "text", id: "time_policy", text: "", fillw: 1},
+            {t: "button", id: "time_device_access", text: "Allow OctoSense controls", fillw: 1},
+            {t: "button", id: "clock_edit", text: "Set date and time", fillw: 1},
+            {t: "column", id: "clock_editor", fillw: 1, spacing: 10, c: [
+                {t: "text", id: "clock_help", fillw: 1},
+                {t: "input", id: "clock_civil", placeholder: "YYYY-MM-DD HH:MM", fillw: 1},
+                {t: "text", text: "If this hour happens twice when clocks move backward:", fillw: 1},
+                {t: "button", id: "clock_first", text: "First occurrence", fillw: 1},
+                {t: "button", id: "clock_second", text: "Second occurrence", fillw: 1},
+                {t: "text", id: "clock_notice", fillw: 1},
+                {t: "button", id: "clock_save", text: "Save date and time", fillw: 1},
+                {t: "button", id: "clock_cancel", text: "Cancel", fillw: 1}
+            ]},
+            {t: "button", id: "zone_open", text: "Choose time zone", fillw: 1},
+            {t: "button", id: "time_advanced", text: "More date and time", fillw: 1}
+        ]}
+    ]},
+    {t: "scroll", id: "apps_list", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, spacing: 10, c: [
+        {t: "text", text: "Android apps for the current user. Built-in OctoSense modules share the Home package and its data.", fillw: 1},
+        {t: "button", id: "apps_defaults", text: "Default apps", fillw: 1},
+        {t: "input", id: "apps_query", placeholder: "Filter by name or package", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "apps_search", text: "Search", fillw: 1},
+            {t: "button", id: "apps_refresh", text: "Refresh", fillw: 1}
+        ]},
+        {t: "button", id: "apps_show_system", text: "System apps: Hidden", fillw: 1},
+        {t: "text", id: "apps_summary", text: "App list unavailable or loading.", fillw: 1},
+        {t: "text", id: "apps_notice", text: "", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "apps_previous", text: "Previous", fillw: 1},
+            {t: "button", id: "apps_next", text: "Next", fillw: 1}
+        ]},
+        {t: "column", id: "apps_rows", fillw: 1, spacing: 8, c: [
+            {t: "button", id: "app_row_0", fillw: 1},
+            {t: "button", id: "app_row_1", fillw: 1},
+            {t: "button", id: "app_row_2", fillw: 1},
+            {t: "button", id: "app_row_3", fillw: 1},
+            {t: "button", id: "app_row_4", fillw: 1},
+            {t: "button", id: "app_row_5", fillw: 1},
+            {t: "button", id: "app_row_6", fillw: 1},
+            {t: "button", id: "app_row_7", fillw: 1},
+            {t: "button", id: "app_row_8", fillw: 1},
+            {t: "button", id: "app_row_9", fillw: 1},
+            {t: "button", id: "app_row_10", fillw: 1},
+            {t: "button", id: "app_row_11", fillw: 1},
+            {t: "button", id: "app_row_12", fillw: 1},
+            {t: "button", id: "app_row_13", fillw: 1},
+            {t: "button", id: "app_row_14", fillw: 1},
+            {t: "button", id: "app_row_15", fillw: 1},
+            {t: "button", id: "app_row_16", fillw: 1},
+            {t: "button", id: "app_row_17", fillw: 1},
+            {t: "button", id: "app_row_18", fillw: 1},
+            {t: "button", id: "app_row_19", fillw: 1}
+        ]},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "apps_previous_bottom", text: "Previous", fillw: 1},
+            {t: "button", id: "apps_next_bottom", text: "Next", fillw: 1}
+        ]},
+        {t: "button", id: "apps_native", text: "Android app management", fillw: 1}
+      ]}
+    ]},
+    {t: "scroll", id: "default_apps_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "roles_availability", text: "", fillw: 1},
+{t: "text", id: "roles_note", text: "Choose which Android apps handle common tasks. OctoSense modules share Home’s package and do not have separate default-app roles.", fillw: 1},
+{t: "button", id: "roles_refresh", text: "Refresh default apps", fillw: 1},
+{t: "button", id: "role_overview_0", text: "", fillw: 1},
+{t: "button", id: "role_overview_1", text: "", fillw: 1},
+{t: "button", id: "role_overview_2", text: "", fillw: 1},
+{t: "button", id: "role_overview_3", text: "", fillw: 1},
+{t: "button", id: "role_overview_4", text: "", fillw: 1},
+{t: "button", id: "role_overview_5", text: "", fillw: 1},
+{t: "button", id: "role_overview_6", text: "", fillw: 1},
+{t: "button", id: "role_overview_7", text: "", fillw: 1},
+{t: "button", id: "roles_native", text: "Android default-app settings", fillw: 1}
+]}]},
+    {t: "scroll", id: "role_choices_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "role_identity", text: "", fillw: 1},
+{t: "text", id: "role_availability", text: "", fillw: 1},
+{t: "text", id: "role_notice", text: "", fillw: 1},
+{t: "button", id: "role_refresh", text: "Refresh choices", fillw: 1},
+{t: "text", id: "role_page", text: "", fillw: 1},
+{t: "button", id: "role_previous", text: "Previous", fillw: 1},
+{t: "button", id: "role_next", text: "Next", fillw: 1},
+{t: "button", id: "role_none", text: "Choose none…", fillw: 1},
+{t: "button", id: "role_row_0", text: "", fillw: 1},
+{t: "button", id: "role_row_1", text: "", fillw: 1},
+{t: "button", id: "role_row_2", text: "", fillw: 1},
+{t: "button", id: "role_row_3", text: "", fillw: 1},
+{t: "button", id: "role_row_4", text: "", fillw: 1},
+{t: "button", id: "role_row_5", text: "", fillw: 1},
+{t: "button", id: "role_row_6", text: "", fillw: 1},
+{t: "button", id: "role_row_7", text: "", fillw: 1},
+{t: "button", id: "role_row_8", text: "", fillw: 1},
+{t: "button", id: "role_row_9", text: "", fillw: 1},
+{t: "button", id: "role_row_10", text: "", fillw: 1},
+{t: "button", id: "role_row_11", text: "", fillw: 1},
+{t: "button", id: "role_row_12", text: "", fillw: 1},
+{t: "button", id: "role_row_13", text: "", fillw: 1},
+{t: "button", id: "role_row_14", text: "", fillw: 1},
+{t: "button", id: "role_row_15", text: "", fillw: 1},
+{t: "button", id: "role_row_16", text: "", fillw: 1},
+{t: "button", id: "role_row_17", text: "", fillw: 1},
+{t: "button", id: "role_row_18", text: "", fillw: 1},
+{t: "button", id: "role_row_19", text: "", fillw: 1},
+{t: "button", id: "role_previous_bottom", text: "Previous", fillw: 1},
+{t: "button", id: "role_next_bottom", text: "Next", fillw: 1},
+{t: "button", id: "role_native", text: "Android default-app settings", fillw: 1}
+]}]},
+    {t: "scroll", id: "app_notifications_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "an_identity", text: "", fillw: 1},
+{t: "column", id: "an_review", fillw: 1, spacing: 8, c: [{t: "text", id: "an_review_value", text: "", fillw: 1},
+{t: "text", id: "an_review_note", text: "", fillw: 1},
+{t: "button", id: "an_save", text: "Save notification change", fillw: 1},
+{t: "button", id: "an_cancel", text: "Cancel notification change", fillw: 1}]},
+{t: "text", id: "an_availability", text: "", fillw: 1},
+{t: "button", id: "an_toggle", text: "Turn app notifications off", fillw: 1},
+{t: "button", id: "an_refresh", text: "Refresh notifications", fillw: 1},
+{t: "text", id: "an_page", text: "", fillw: 1},
+{t: "text", id: "an_notice", text: "", fillw: 1},
+{t: "button", id: "an_previous", text: "Previous", fillw: 1},
+{t: "button", id: "an_next", text: "Next", fillw: 1},
+{t: "button", id: "an_row_0", text: "", fillw: 1},
+{t: "button", id: "an_row_1", text: "", fillw: 1},
+{t: "button", id: "an_row_2", text: "", fillw: 1},
+{t: "button", id: "an_row_3", text: "", fillw: 1},
+{t: "button", id: "an_row_4", text: "", fillw: 1},
+{t: "button", id: "an_row_5", text: "", fillw: 1},
+{t: "button", id: "an_row_6", text: "", fillw: 1},
+{t: "button", id: "an_row_7", text: "", fillw: 1},
+{t: "button", id: "an_row_8", text: "", fillw: 1},
+{t: "button", id: "an_row_9", text: "", fillw: 1},
+{t: "button", id: "an_row_10", text: "", fillw: 1},
+{t: "button", id: "an_row_11", text: "", fillw: 1},
+{t: "button", id: "an_row_12", text: "", fillw: 1},
+{t: "button", id: "an_row_13", text: "", fillw: 1},
+{t: "button", id: "an_row_14", text: "", fillw: 1},
+{t: "button", id: "an_row_15", text: "", fillw: 1},
+{t: "button", id: "an_row_16", text: "", fillw: 1},
+{t: "button", id: "an_row_17", text: "", fillw: 1},
+{t: "button", id: "an_row_18", text: "", fillw: 1},
+{t: "button", id: "an_row_19", text: "", fillw: 1},
+{t: "button", id: "an_previous_bottom", text: "Previous", fillw: 1},
+{t: "button", id: "an_next_bottom", text: "Next", fillw: 1},
+{t: "button", id: "an_native", text: "Android notification settings", fillw: 1}
+]}]},
+    {t: "scroll", id: "notification_channel_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "nc_identity", text: "", fillw: 1},
+{t: "column", id: "nc_review", fillw: 1, spacing: 8, c: [{t: "text", id: "nc_review_value", text: "", fillw: 1},
+{t: "text", id: "nc_review_note", text: "", fillw: 1},
+{t: "button", id: "nc_save", text: "Save notification change", fillw: 1},
+{t: "button", id: "nc_cancel", text: "Cancel notification change", fillw: 1}]},
+{t: "text", id: "nc_observed", text: "", fillw: 1},
+{t: "text", id: "nc_policy", text: "", fillw: 1},
+{t: "button", id: "nc_toggle", text: "Turn channel notifications off", fillw: 1},
+{t: "column", id: "nc_importance", fillw: 1, spacing: 8, c: [{t: "text", id: "nc_importance_hint", text: "Importance permits notification effects; Do Not Disturb and device policies can still suppress them.", fillw: 1},{t: "button", id: "nc_importance_min", text: "Silent, minimized", fillw: 1},{t: "button", id: "nc_importance_low", text: "Silent", fillw: 1},{t: "button", id: "nc_importance_default", text: "Alerting", fillw: 1},{t: "button", id: "nc_importance_high", text: "Alerting, allow pop-up", fillw: 1}]},
+{t: "button", id: "nc_refresh", text: "Refresh notifications", fillw: 1},
+{t: "button", id: "nc_native", text: "Android notification settings", fillw: 1}
+]}]},
+{t:"scroll",id:"keyboards_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+{t:"text",id:"keyboards_availability",text:"",fillw:1},
+{t:"text",id:"keyboard_current",text:"",fillw:1},
+{t:"button",id:"keyboard_choose_default",text:"Choose current keyboard",fillw:1},
+{t:"button",id:"keyboard_refresh",text:"Refresh keyboards",fillw:1},
+{t:"input",id:"keyboard_query",placeholder:"Filter keyboards",fillw:1},
+{t:"button",id:"keyboard_search",text:"Search keyboards",fillw:1},
+{t:"button",id:"keyboard_clear",text:"Clear keyboard filter",fillw:1},
+{t:"text",id:"keyboard_filter_hint",text:"",fillw:1},
+{t:"text",id:"keyboard_summary",text:"",fillw:1},
+{t:"button",id:"keyboard_row_0",text:"",fillw:1},
+{t:"button",id:"keyboard_row_1",text:"",fillw:1},
+{t:"button",id:"keyboard_row_2",text:"",fillw:1},
+{t:"button",id:"keyboard_row_3",text:"",fillw:1},
+{t:"button",id:"keyboard_row_4",text:"",fillw:1},
+{t:"button",id:"keyboard_row_5",text:"",fillw:1},
+{t:"button",id:"keyboard_row_6",text:"",fillw:1},
+{t:"button",id:"keyboard_row_7",text:"",fillw:1},
+{t:"button",id:"keyboard_row_8",text:"",fillw:1},
+{t:"button",id:"keyboard_row_9",text:"",fillw:1},
+{t:"button",id:"keyboard_row_10",text:"",fillw:1},
+{t:"button",id:"keyboard_row_11",text:"",fillw:1},
+{t:"button",id:"keyboard_row_12",text:"",fillw:1},
+{t:"button",id:"keyboard_row_13",text:"",fillw:1},
+{t:"button",id:"keyboard_row_14",text:"",fillw:1},
+{t:"button",id:"keyboard_row_15",text:"",fillw:1},
+{t:"button",id:"keyboard_row_16",text:"",fillw:1},
+{t:"button",id:"keyboard_row_17",text:"",fillw:1},
+{t:"button",id:"keyboard_row_18",text:"",fillw:1},
+{t:"button",id:"keyboard_row_19",text:"",fillw:1},
+{t:"button",id:"keyboard_previous",text:"Previous keyboards",fillw:1},
+{t:"button",id:"keyboard_next",text:"Next keyboards",fillw:1},
+{t:"button",id:"keyboard_native",text:"Android keyboard settings",fillw:1}
+]}]},
+{t:"scroll",id:"keyboard_detail_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+{t:"text",id:"keyboard_identity",text:"",fillw:1},
+{t:"text",id:"keyboard_state",text:"",fillw:1},
+{t:"button",id:"keyboard_enable",text:"Enable keyboard",fillw:1},
+{t:"button",id:"keyboard_disable",text:"Disable keyboard",fillw:1},
+{t:"text",text:"Android displays any required security and Direct Boot warnings before enabling a keyboard. Current state refreshes when you return.",fillw:1},
+{t:"button",id:"keyboard_settings",text:"Keyboard provider settings",fillw:1},
+{t:"button",id:"keyboard_subtypes",text:"Keyboard languages and subtypes",fillw:1},
+{t:"text",text:"Keyboard languages and subtypes open Android’s native editor. Provider settings belong to the selected keyboard app.",fillw:1},
+{t:"button",id:"keyboard_detail_refresh",text:"Refresh keyboard",fillw:1},
+{t:"button",id:"keyboard_detail_native",text:"Android keyboard settings",fillw:1}
+]}]},
+{t:"scroll",id:"system_language_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+{t:"text",id:"system_language_availability",text:"",fillw:1},
+{t:"text",id:"system_language_notice",text:"",fillw:1},
+{t:"column",id:"system_language_review_content",fillw:1,spacing:10,c:[
+{t:"text",id:"system_language_review_text",text:"",fillw:1},
+{t:"button",id:"system_language_apply",text:"Apply reviewed language order",fillw:1}
+]},
+{t:"button",id:"system_language_cancel",text:"Cancel language draft",fillw:1},
+{t:"column",id:"system_language_order_content",fillw:1,spacing:10,c:[
+{t:"text",id:"system_language_order_title",text:"Current language order",fillw:1},
+{t:"button",id:"system_language_add",text:"Add a language",fillw:1},
+{t:"button",id:"system_language_review",text:"Review language order",fillw:1},
+{t:"text",id:"system_language_order_summary",text:"",fillw:1},
+{t:"column",id:"system_language_current_0",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_0",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_0",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_0",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_0",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_1",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_1",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_1",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_1",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_1",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_2",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_2",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_2",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_2",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_2",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_3",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_3",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_3",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_3",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_3",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_4",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_4",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_4",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_4",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_4",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_5",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_5",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_5",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_5",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_5",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_6",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_6",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_6",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_6",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_6",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_7",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_7",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_7",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_7",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_7",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_8",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_8",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_8",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_8",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_8",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_9",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_9",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_9",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_9",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_9",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_10",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_10",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_10",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_10",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_10",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_11",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_11",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_11",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_11",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_11",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_12",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_12",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_12",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_12",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_12",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_13",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_13",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_13",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_13",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_13",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_14",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_14",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_14",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_14",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_14",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_15",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_15",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_15",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_15",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_15",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_16",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_16",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_16",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_16",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_16",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_17",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_17",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_17",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_17",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_17",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_18",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_18",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_18",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_18",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_18",text:"Remove",fillw:1}
+]},
+{t:"column",id:"system_language_current_19",fillw:1,spacing:8,c:[
+{t:"text",id:"system_language_label_19",text:"",fillw:1},
+{t:"row",spacing:8,c:[
+{t:"button",id:"system_language_up_19",text:"Move up",fillw:1},
+{t:"button",id:"system_language_down_19",text:"Move down",fillw:1}
+]},
+{t:"button",id:"system_language_remove_19",text:"Remove",fillw:1}
+]},
+{t:"row",spacing:8,c:[{t:"button",id:"system_language_order_previous",text:"Previous languages",fillw:1},{t:"button",id:"system_language_order_next",text:"Next languages",fillw:1}]}
+]},
+{t:"column",id:"system_language_catalog_content",fillw:1,spacing:10,c:[
+{t:"input",id:"system_language_query",text:"",placeholder:"Filter system languages",fillw:1},
+{t:"text",id:"system_language_filter_hint",text:"",fillw:1},
+{t:"row",spacing:8,c:[{t:"button",id:"system_language_search",text:"Search languages",fillw:1},{t:"button",id:"system_language_clear",text:"Clear filter",fillw:1}]},
+{t:"text",id:"system_language_catalog_summary",text:"",fillw:1},
+{t:"button",id:"system_language_row_0",text:"",fillw:1},
+{t:"button",id:"system_language_row_1",text:"",fillw:1},
+{t:"button",id:"system_language_row_2",text:"",fillw:1},
+{t:"button",id:"system_language_row_3",text:"",fillw:1},
+{t:"button",id:"system_language_row_4",text:"",fillw:1},
+{t:"button",id:"system_language_row_5",text:"",fillw:1},
+{t:"button",id:"system_language_row_6",text:"",fillw:1},
+{t:"button",id:"system_language_row_7",text:"",fillw:1},
+{t:"button",id:"system_language_row_8",text:"",fillw:1},
+{t:"button",id:"system_language_row_9",text:"",fillw:1},
+{t:"button",id:"system_language_row_10",text:"",fillw:1},
+{t:"button",id:"system_language_row_11",text:"",fillw:1},
+{t:"button",id:"system_language_row_12",text:"",fillw:1},
+{t:"button",id:"system_language_row_13",text:"",fillw:1},
+{t:"button",id:"system_language_row_14",text:"",fillw:1},
+{t:"button",id:"system_language_row_15",text:"",fillw:1},
+{t:"button",id:"system_language_row_16",text:"",fillw:1},
+{t:"button",id:"system_language_row_17",text:"",fillw:1},
+{t:"button",id:"system_language_row_18",text:"",fillw:1},
+{t:"button",id:"system_language_row_19",text:"",fillw:1},
+{t:"row",spacing:8,c:[{t:"button",id:"system_language_previous",text:"Previous choices",fillw:1},{t:"button",id:"system_language_next",text:"Next choices",fillw:1}]}
+]},
+{t:"button",id:"system_language_refresh",text:"Refresh system languages",fillw:1},
+{t:"button",id:"system_language_native",text:"Android language settings",fillw:1}
+]}]},
+{t:"scroll",id:"caption_language_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+    {t:"text",id:"caption_language_current",fillw:1},
+    {t:"text",id:"caption_language_availability",fillw:1},
+    {t:"text",text:"Choose the preferred language for captions. System default follows the device language.",fillw:1},
+    {t:"input",id:"caption_language_query",placeholder:"Filter caption languages",fillw:1},
+    {t:"button",id:"caption_language_search",text:"Search languages",fillw:1},
+    {t:"button",id:"caption_language_clear",text:"Clear language filter",fillw:1},
+    {t:"text",id:"caption_language_filter_hint",fillw:1},
+    {t:"button",id:"caption_language_refresh",text:"Refresh languages",fillw:1},
+    {t:"text",id:"caption_language_summary",fillw:1},
+    {t:"button",id:"caption_language_row_0",fillw:1},
+    {t:"button",id:"caption_language_row_1",fillw:1},
+    {t:"button",id:"caption_language_row_2",fillw:1},
+    {t:"button",id:"caption_language_row_3",fillw:1},
+    {t:"button",id:"caption_language_row_4",fillw:1},
+    {t:"button",id:"caption_language_row_5",fillw:1},
+    {t:"button",id:"caption_language_row_6",fillw:1},
+    {t:"button",id:"caption_language_row_7",fillw:1},
+    {t:"button",id:"caption_language_row_8",fillw:1},
+    {t:"button",id:"caption_language_row_9",fillw:1},
+    {t:"button",id:"caption_language_row_10",fillw:1},
+    {t:"button",id:"caption_language_row_11",fillw:1},
+    {t:"button",id:"caption_language_row_12",fillw:1},
+    {t:"button",id:"caption_language_row_13",fillw:1},
+    {t:"button",id:"caption_language_row_14",fillw:1},
+    {t:"button",id:"caption_language_row_15",fillw:1},
+    {t:"button",id:"caption_language_row_16",fillw:1},
+    {t:"button",id:"caption_language_row_17",fillw:1},
+    {t:"button",id:"caption_language_row_18",fillw:1},
+    {t:"button",id:"caption_language_row_19",fillw:1},
+    {t:"button",id:"caption_language_row_20",fillw:1},
+    {t:"button",id:"caption_language_row_21",fillw:1},
+    {t:"button",id:"caption_language_row_22",fillw:1},
+    {t:"button",id:"caption_language_row_23",fillw:1},
+    {t:"button",id:"caption_language_previous",text:"Previous languages",fillw:1},
+    {t:"button",id:"caption_language_next",text:"Next languages",fillw:1},
+    {t:"button",id:"caption_language_native",text:"Android caption settings",fillw:1}
+]}]},
+{t:"scroll",id:"app_language_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+    {t:"text",id:"app_language_identity",fillw:1},
+    {t:"text",id:"app_language_current",fillw:1},
+    {t:"text",id:"app_language_availability",fillw:1},
+    {t:"text",text:"Choose a language for this app. Android may restart the app to apply it. System default follows the device language.",fillw:1},
+    {t:"input",id:"app_language_query",placeholder:"Filter language choices",fillw:1},
+    {t:"button",id:"app_language_search",text:"Search languages",fillw:1},
+    {t:"button",id:"app_language_clear",text:"Clear filter",fillw:1},
+    {t:"text",id:"app_language_filter_hint",fillw:1},
+    {t:"button",id:"app_language_refresh",text:"Refresh languages",fillw:1},
+    {t:"text",id:"app_language_summary",fillw:1},
+    {t:"button",id:"app_language_row_0",fillw:1},
+    {t:"button",id:"app_language_row_1",fillw:1},
+    {t:"button",id:"app_language_row_2",fillw:1},
+    {t:"button",id:"app_language_row_3",fillw:1},
+    {t:"button",id:"app_language_row_4",fillw:1},
+    {t:"button",id:"app_language_row_5",fillw:1},
+    {t:"button",id:"app_language_row_6",fillw:1},
+    {t:"button",id:"app_language_row_7",fillw:1},
+    {t:"button",id:"app_language_row_8",fillw:1},
+    {t:"button",id:"app_language_row_9",fillw:1},
+    {t:"button",id:"app_language_row_10",fillw:1},
+    {t:"button",id:"app_language_row_11",fillw:1},
+    {t:"button",id:"app_language_row_12",fillw:1},
+    {t:"button",id:"app_language_row_13",fillw:1},
+    {t:"button",id:"app_language_row_14",fillw:1},
+    {t:"button",id:"app_language_row_15",fillw:1},
+    {t:"button",id:"app_language_row_16",fillw:1},
+    {t:"button",id:"app_language_row_17",fillw:1},
+    {t:"button",id:"app_language_row_18",fillw:1},
+    {t:"button",id:"app_language_row_19",fillw:1},
+    {t:"button",id:"app_language_previous",text:"Previous languages",fillw:1},
+    {t:"button",id:"app_language_next",text:"Next languages",fillw:1},
+    {t:"button",id:"app_language_native",text:"Android language settings",fillw:1}
+]}]},
+{t:"scroll",id:"app_storage_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+    {t:"text",id:"app_storage_identity",fillw:1},
+    {t:"text",id:"app_storage_sizes",fillw:1},
+    {t:"text",id:"app_storage_availability",fillw:1},
+    {t:"text",id:"app_storage_shared",fillw:1},
+    {t:"text",id:"app_storage_operation",fillw:1},
+    {t:"column",id:"app_storage_review",fillw:1,spacing:10,c:[
+        {t:"text",id:"app_storage_review_copy",fillw:1},
+        {t:"button",id:"app_storage_confirm",text:"Confirm storage change",fillw:1},
+        {t:"button",id:"app_storage_cancel",text:"Cancel storage change",fillw:1}
+    ]},
+    {t:"button",id:"app_storage_clear_cache",text:"Clear cache…",fillw:1},
+    {t:"button",id:"app_storage_clear_data",text:"Clear storage…",fillw:1},
+    {t:"button",id:"app_storage_manage_space",text:"Manage space…",fillw:1},
+    {t:"button",id:"app_storage_refresh",text:"Refresh storage",fillw:1},
+    {t:"button",id:"app_storage_native",text:"Android app settings",fillw:1}
+]}]},
+{t:"scroll",id:"app_battery_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[
+    {t:"text",id:"app_battery_identity",fillw:1},
+    {t:"text",id:"app_battery_mode",fillw:1},
+    {t:"text",id:"app_battery_availability",fillw:1},
+    {t:"column",id:"app_battery_review",fillw:1,spacing:10,c:[
+        {t:"text",id:"app_battery_review_copy",fillw:1},
+        {t:"button",id:"app_battery_confirm",text:"Confirm restricted battery policy",fillw:1},
+        {t:"button",id:"app_battery_cancel",text:"Cancel battery policy change",fillw:1}
+    ]},
+    {t:"text",text:"Restricted limits background work. Optimized lets Android balance background activity and battery use. Unrestricted permits more background activity and can use more battery.",fillw:1},
+    {t:"button",id:"app_battery_restricted",text:"Restricted",fillw:1},
+    {t:"button",id:"app_battery_optimized",text:"Optimized",fillw:1},
+    {t:"button",id:"app_battery_unrestricted",text:"Unrestricted",fillw:1},
+    {t:"button",id:"app_battery_refresh",text:"Refresh battery policy",fillw:1},
+    {t:"button",id:"app_battery_native",text:"Android app settings",fillw:1}
+]}]},
+{t: "scroll", id: "app_network_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "app_network_identity", text: "", fillw: 1},
+{t: "text", id: "app_network_availability", text: "", fillw: 1},
+{t: "text", id: "app_network_shared", text: "", fillw: 1},
+{t: "text", id: "app_network_saver", text: "", fillw: 1},
+{t: "button", id: "app_network_background", text: "", fillw: 1},
+{t: "button", id: "app_network_unrestricted", text: "", fillw: 1},
+{t: "button", id: "app_network_network", text: "", fillw: 1},
+{t: "button", id: "app_network_wifi", text: "", fillw: 1},
+{t: "button", id: "app_network_mobile", text: "", fillw: 1},
+{t: "button", id: "app_network_vpn", text: "", fillw: 1},
+{t: "button", id: "app_network_refresh", text: "Refresh network access", fillw: 1},
+{t: "button", id: "app_network_native", text: "Android app settings", fillw: 1}
+]}]},
+{t: "scroll", id: "app_permissions_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "permissions_identity", text: "", fillw: 1},
+{t: "text", id: "permissions_availability", text: "", fillw: 1},
+{t: "button", id: "permissions_refresh", text: "Refresh permissions", fillw: 1},
+{t: "text", id: "permissions_page", text: "", fillw: 1},
+{t: "text", id: "permissions_notice", text: "", fillw: 1},
+{t: "button", id: "permission_group_0", text: "", fillw: 1},
+{t: "button", id: "permission_group_1", text: "", fillw: 1},
+{t: "button", id: "permission_group_2", text: "", fillw: 1},
+{t: "button", id: "permission_group_3", text: "", fillw: 1},
+{t: "button", id: "permission_group_4", text: "", fillw: 1},
+{t: "button", id: "permission_group_5", text: "", fillw: 1},
+{t: "button", id: "permission_group_6", text: "", fillw: 1},
+{t: "button", id: "permission_group_7", text: "", fillw: 1},
+{t: "button", id: "permission_group_8", text: "", fillw: 1},
+{t: "button", id: "permission_group_9", text: "", fillw: 1},
+{t: "button", id: "permission_group_10", text: "", fillw: 1},
+{t: "button", id: "permission_group_11", text: "", fillw: 1},
+{t: "button", id: "permission_group_12", text: "", fillw: 1},
+{t: "button", id: "permission_group_13", text: "", fillw: 1},
+{t: "button", id: "permission_group_14", text: "", fillw: 1},
+{t: "button", id: "permission_group_15", text: "", fillw: 1},
+{t: "button", id: "permission_group_16", text: "", fillw: 1},
+{t: "button", id: "permission_group_17", text: "", fillw: 1},
+{t: "button", id: "permission_group_18", text: "", fillw: 1},
+{t: "button", id: "permission_group_19", text: "", fillw: 1},
+{t: "button", id: "permission_groups_previous", text: "Previous permission groups", fillw: 1},
+{t: "button", id: "permission_groups_next", text: "Next permission groups", fillw: 1},
+{t: "text", text: "Android applies each choice and presents any required warning. Specialized media and other advanced permission controls remain in Android app settings.", fillw: 1},
+{t: "button", id: "permissions_native", text: "Android app settings", fillw: 1}
+]}]},
+{t: "scroll", id: "permission_choices_page", fillw: 1, fillh: 1, c: [{t: "column", padx: 14, fillw: 1, spacing: 10, c: [
+{t: "text", id: "permission_identity", text: "", fillw: 1},
+{t: "text", id: "permission_availability", text: "", fillw: 1},
+{t: "button", id: "permission_refresh", text: "Refresh permissions", fillw: 1},
+{t: "text", id: "permission_detail", text: "", fillw: 1},
+{t: "button", id: "permission_choice_0", text: "", fillw: 1},
+{t: "button", id: "permission_choice_1", text: "", fillw: 1},
+{t: "button", id: "permission_choice_2", text: "", fillw: 1},
+{t: "button", id: "permission_choice_3", text: "", fillw: 1},
+{t: "button", id: "permission_choice_4", text: "", fillw: 1},
+{t: "button", id: "permission_choice_5", text: "", fillw: 1},
+{t: "button", id: "permission_choice_6", text: "", fillw: 1},
+{t: "button", id: "permission_choice_7", text: "", fillw: 1},
+{t: "button", id: "permission_choice_8", text: "", fillw: 1},
+{t: "text", text: "Android applies each choice and presents any required warning. Specialized media and other advanced permission controls remain in Android app settings.", fillw: 1},
+{t: "button", id: "permission_native", text: "Android app settings", fillw: 1}
+]}]},
+    {t: "scroll", id: "app_detail", fillw: 1, fillh: 1, c: [
+        {t: "column", fillw: 1, spacing: 12, c: [
+            {t: "text", id: "app_identity", text: "App details unavailable or loading.", fillw: 1},
+            {t: "button", id: "app_refresh", text: "Refresh details", fillw: 1},
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "app_launch", text: "Launch", fillw: 1},
+                {t: "button", id: "app_uninstall", text: "Uninstall…", fillw: 1}
+            ]},
+            {t: "text", text: "Android asks you to confirm uninstalling an app.", fillw: 1},
+            {t: "text", id: "app_metadata", text: "", fillw: 1},
+            {t: "text", id: "app_storage", text: "", fillw: 1},
+            {t: "text", id: "app_shared", text: "", fillw: 1},
+            {t: "button", id: "app_usage_access", text: "Allow storage statistics", fillw: 1},
+            {t: "button", id: "app_android_info", text: "Android app info", fillw: 1},
+            {t: "button", id: "app_notifications", text: "Notification settings", fillw: 1},
+            {t:"button",id:"app_language_open",text:"Language",fillw:1},
+            {t:"button",id:"app_storage_open",text:"Storage & cache",fillw:1},
+            {t:"button",id:"app_battery_open",text:"Battery usage",fillw:1},
+            {t: "button", id: "app_network_settings", text: "Network access", fillw: 1},
+            {t: "button", id: "app_permission_settings", text: "Permissions", fillw: 1},
+            {t: "text", id: "app_permissions_title", text: "Requested permissions", fillw: 1},
+            {t: "text", id: "app_permissions_note", text: "Manifest grant state is shown below. Use Permissions for common runtime choices; specialized controls remain in Android app settings.", fillw: 1},
+            {t: "text", id: "app_permissions_summary", text: "", fillw: 1},
+            {t: "column", id: "permission_navigation", fillw: 1, spacing: 8, c: [
+                {t: "row", spacing: 8, c: [
+                    {t: "button", id: "permissions_previous", text: "Previous", fillw: 1},
+                    {t: "button", id: "permissions_next", text: "Next", fillw: 1}
+                ]},
+                {t: "button", id: "permissions_first", text: "First permissions", fillw: 1}
+            ]},
+            {t: "text", id: "app_permission_0", fillw: 1},
+            {t: "text", id: "app_permission_1", fillw: 1},
+            {t: "text", id: "app_permission_2", fillw: 1},
+            {t: "text", id: "app_permission_3", fillw: 1},
+            {t: "text", id: "app_permission_4", fillw: 1},
+            {t: "text", id: "app_permission_5", fillw: 1},
+            {t: "text", id: "app_permission_6", fillw: 1},
+            {t: "text", id: "app_permission_7", fillw: 1},
+            {t: "text", id: "app_permission_8", fillw: 1},
+            {t: "text", id: "app_permission_9", fillw: 1},
+            {t: "text", id: "app_permission_10", fillw: 1},
+            {t: "text", id: "app_permission_11", fillw: 1},
+            {t: "text", id: "app_permission_12", fillw: 1},
+            {t: "text", id: "app_permission_13", fillw: 1},
+            {t: "text", id: "app_permission_14", fillw: 1},
+            {t: "text", id: "app_permission_15", fillw: 1},
+            {t: "text", id: "app_permission_16", fillw: 1},
+            {t: "text", id: "app_permission_17", fillw: 1},
+            {t: "text", id: "app_permission_18", fillw: 1},
+            {t: "text", id: "app_permission_19", fillw: 1}
+        ]}
+    ]},
+    {t: "scroll", id: "wifi_page", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, spacing: 12, c: [
+        {t: "button", id: "wifi_enabled", text: "Wi-Fi state unavailable", fillw: 1},
+        {t: "text", id: "wifi_connection", text: "Wi-Fi connection unavailable.", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "wifi_scan", text: "Scan", fillw: 1},
+            {t: "button", id: "wifi_refresh", text: "Refresh", fillw: 1}
+        ]},
+        {t: "text", id: "wifi_scan_status", fillw: 1},
+        {t: "button", id: "wifi_access", text: "Allow Wi-Fi access", fillw: 1},
+        {t: "text", id: "wifi_availability", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "wifi_available_tab", text: "Nearby", fillw: 1},
+            {t: "button", id: "wifi_saved_tab", text: "Saved", fillw: 1}
+        ]},
+        {t: "text", id: "wifi_list_summary", fillw: 1},
+        {t: "column", fillw: 1, spacing: 8, c: [
+            {t: "button", id: "wifi_row_0", fillw: 1},
+            {t: "button", id: "wifi_row_1", fillw: 1},
+            {t: "button", id: "wifi_row_2", fillw: 1},
+            {t: "button", id: "wifi_row_3", fillw: 1},
+            {t: "button", id: "wifi_row_4", fillw: 1},
+            {t: "button", id: "wifi_row_5", fillw: 1},
+            {t: "button", id: "wifi_row_6", fillw: 1},
+            {t: "button", id: "wifi_row_7", fillw: 1},
+            {t: "button", id: "wifi_row_8", fillw: 1},
+            {t: "button", id: "wifi_row_9", fillw: 1},
+            {t: "button", id: "wifi_row_10", fillw: 1},
+            {t: "button", id: "wifi_row_11", fillw: 1},
+            {t: "button", id: "wifi_row_12", fillw: 1},
+            {t: "button", id: "wifi_row_13", fillw: 1},
+            {t: "button", id: "wifi_row_14", fillw: 1},
+            {t: "button", id: "wifi_row_15", fillw: 1},
+            {t: "button", id: "wifi_row_16", fillw: 1},
+            {t: "button", id: "wifi_row_17", fillw: 1},
+            {t: "button", id: "wifi_row_18", fillw: 1},
+            {t: "button", id: "wifi_row_19", fillw: 1}
+        ]},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "wifi_previous", text: "Previous", fillw: 1},
+            {t: "button", id: "wifi_next", text: "Next", fillw: 1}
+        ]},
+        {t: "button", id: "wifi_native", text: "Advanced Wi-Fi in Android", fillw: 1}
+      ]}
+    ]},
+    {t: "scroll", id: "wifi_network_page", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "wifi_network_identity", fillw: 1},
+        {t: "text", id: "wifi_network_details", fillw: 1},
+        {t: "button", id: "wifi_network_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "wifi_connect", text: "Connect saved network", fillw: 1},
+        {t: "button", id: "wifi_configure", text: "Configure in Android", fillw: 1},
+        {t: "text", text: "Choose this network in Android for passwords and enterprise certificate settings.", fillw: 1},
+        {t: "button", id: "wifi_forget", text: "Forget saved network…", fillw: 1},
+        {t: "column", id: "wifi_forget_confirmation", fillw: 1, spacing: 8, c: [
+            {t: "text", text: "Forget this saved network? Connecting again may require its password or enterprise configuration.", fillw: 1},
+            {t: "button", id: "wifi_forget_confirm", text: "Forget this network", fillw: 1},
+            {t: "button", id: "wifi_forget_cancel", text: "Cancel", fillw: 1}
+        ]},
+        {t: "button", id: "wifi_network_native", text: "Advanced Wi-Fi in Android", fillw: 1}
+      ]}
+    ]},
+{t:"scroll",id:"control_picker_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[{t:"text",id:"control_picker_observed",fillw:1},{t:"text",id:"control_picker_summary",fillw:1},{t:"text",text:"Choosing a delay enables automatic clicks after the mouse stops moving. Back returns to the controls.",fillw:1},{t:"button",id:"control_picker_0",fillw:1},{t:"button",id:"control_picker_1",fillw:1},{t:"button",id:"control_picker_2",fillw:1},{t:"button",id:"control_picker_3",fillw:1},{t:"button",id:"control_picker_4",fillw:1},{t:"button",id:"control_picker_5",fillw:1},{t:"button",id:"control_picker_6",fillw:1},{t:"button",id:"control_picker_7",fillw:1},{t:"button",id:"control_picker_8",fillw:1},{t:"button",id:"control_picker_9",fillw:1},{t:"button",id:"control_picker_10",fillw:1},{t:"button",id:"control_picker_11",fillw:1},{t:"button",id:"control_picker_12",fillw:1},{t:"button",id:"control_picker_13",fillw:1},{t:"button",id:"control_picker_14",fillw:1},{t:"button",id:"control_picker_15",fillw:1},{t:"button",id:"control_picker_16",fillw:1},{t:"button",id:"control_picker_17",fillw:1},{t:"button",id:"control_picker_18",fillw:1},{t:"button",id:"control_picker_19",fillw:1},{t:"row",fillw:1,spacing:10,c:[{t:"button",id:"control_picker_previous",text:"Previous choices",fillw:1},{t:"button",id:"control_picker_next",text:"Next choices",fillw:1}]}]}]},
+{t:"scroll",id:"caption_choice_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,padx:14,spacing:12,c:[{t:"text",id:"caption_choice_observed",fillw:1},{t:"text",id:"caption_choice_summary",fillw:1},{t:"text",text:"Choosing a value applies it and turns captions on. Back returns to caption appearance.",fillw:1},{t:"row",id:"caption_choice_row_0",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_0",w:32,h:32,bg:0},{t:"button",id:"caption_choice_0",fillw:1}]},
+{t:"row",id:"caption_choice_row_1",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_1",w:32,h:32,bg:0},{t:"button",id:"caption_choice_1",fillw:1}]},
+{t:"row",id:"caption_choice_row_2",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_2",w:32,h:32,bg:0},{t:"button",id:"caption_choice_2",fillw:1}]},
+{t:"row",id:"caption_choice_row_3",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_3",w:32,h:32,bg:0},{t:"button",id:"caption_choice_3",fillw:1}]},
+{t:"row",id:"caption_choice_row_4",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_4",w:32,h:32,bg:0},{t:"button",id:"caption_choice_4",fillw:1}]},
+{t:"row",id:"caption_choice_row_5",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_5",w:32,h:32,bg:0},{t:"button",id:"caption_choice_5",fillw:1}]},
+{t:"row",id:"caption_choice_row_6",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_6",w:32,h:32,bg:0},{t:"button",id:"caption_choice_6",fillw:1}]},
+{t:"row",id:"caption_choice_row_7",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_7",w:32,h:32,bg:0},{t:"button",id:"caption_choice_7",fillw:1}]},
+{t:"row",id:"caption_choice_row_8",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_8",w:32,h:32,bg:0},{t:"button",id:"caption_choice_8",fillw:1}]},
+{t:"row",id:"caption_choice_row_9",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_9",w:32,h:32,bg:0},{t:"button",id:"caption_choice_9",fillw:1}]},
+{t:"row",id:"caption_choice_row_10",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_10",w:32,h:32,bg:0},{t:"button",id:"caption_choice_10",fillw:1}]},
+{t:"row",id:"caption_choice_row_11",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_11",w:32,h:32,bg:0},{t:"button",id:"caption_choice_11",fillw:1}]},
+{t:"row",id:"caption_choice_row_12",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_12",w:32,h:32,bg:0},{t:"button",id:"caption_choice_12",fillw:1}]},
+{t:"row",id:"caption_choice_row_13",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_13",w:32,h:32,bg:0},{t:"button",id:"caption_choice_13",fillw:1}]},
+{t:"row",id:"caption_choice_row_14",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_14",w:32,h:32,bg:0},{t:"button",id:"caption_choice_14",fillw:1}]},
+{t:"row",id:"caption_choice_row_15",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_15",w:32,h:32,bg:0},{t:"button",id:"caption_choice_15",fillw:1}]},
+{t:"row",id:"caption_choice_row_16",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_16",w:32,h:32,bg:0},{t:"button",id:"caption_choice_16",fillw:1}]},
+{t:"row",id:"caption_choice_row_17",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_17",w:32,h:32,bg:0},{t:"button",id:"caption_choice_17",fillw:1}]},
+{t:"row",id:"caption_choice_row_18",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_18",w:32,h:32,bg:0},{t:"button",id:"caption_choice_18",fillw:1}]},
+{t:"row",id:"caption_choice_row_19",fillw:1,spacing:10,c:[{t:"column",id:"caption_swatch_19",w:32,h:32,bg:0},{t:"button",id:"caption_choice_19",fillw:1}]},{t:"button",id:"caption_choice_previous",text:"Previous choices",fillw:1},{t:"button",id:"caption_choice_next",text:"Next choices",fillw:1}]}]},
+    {t: "scroll", id: "controls_page", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, padx: 14, spacing: 16, c: [
+        {t: "text", id: "controls_description", fillw: 1},
+        {t:"button",id:"caption_language_open",text:"Caption language",fillw:1},
+        {t:"button",id:"caption_custom_open",text:"Custom caption appearance",fillw:1},
+        {t:"column",id:"caption_custom_info",fillw:1,spacing:10,c:[{t:"text",id:"caption_custom_gate",fillw:1},{t:"column",id:"caption_preview_window",bg:0,fillw:1,pad:12,c:[{t:"column",id:"caption_preview_background",bg:0,fillw:1,pad:8,c:[{t:"text",id:"caption_preview_text",text:"The quick brown fox jumps over the lazy dog.",fillw:1}]}]},{t:"text",id:"caption_preview_note",fillw:1}]},
+        {t: "button", id: "history_open", text: "View notification history", fillw: 1},
+        {t: "column", id: "history_disable_review", fillw: 1, spacing: 10, c: [
+            {t: "text", text: "Turn off notification history? Saved history will be deleted and new notifications will no longer be saved.", fillw: 1},
+            {t: "button", id: "history_disable_confirm", text: "Turn off and delete history", fillw: 1},
+            {t: "button", id: "history_disable_cancel", text: "Cancel", fillw: 1}
+        ]},
+        {t: "button", id: "controls_refresh", text: "Refresh", fillw: 1},
+        {t: "column", id: "control_0", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_0_label", fillw: 1},
+            {t: "text", id: "control_0_value", fillw: 1},
+            {t: "column", id: "control_0_note", fillw: 1, c: [{t: "text", id: "control_0_availability", fillw: 1}]},
+            {t: "row", id: "control_0_pair", spacing: 8, c: [
+                {t: "button", id: "control_0_less", fillw: 1},
+                {t: "button", id: "control_0_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_0_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_0_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_0_choice_0", fillw: 1},
+                {t: "button", id: "control_0_choice_1", fillw: 1},
+                {t: "button", id: "control_0_choice_2", fillw: 1},
+                {t: "button", id: "control_0_choice_3", fillw: 1},
+                {t: "button", id: "control_0_choice_4", fillw: 1},
+                {t: "button", id: "control_0_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_1", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_1_label", fillw: 1},
+            {t: "text", id: "control_1_value", fillw: 1},
+            {t: "column", id: "control_1_note", fillw: 1, c: [{t: "text", id: "control_1_availability", fillw: 1}]},
+            {t: "row", id: "control_1_pair", spacing: 8, c: [
+                {t: "button", id: "control_1_less", fillw: 1},
+                {t: "button", id: "control_1_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_1_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_1_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_1_choice_0", fillw: 1},
+                {t: "button", id: "control_1_choice_1", fillw: 1},
+                {t: "button", id: "control_1_choice_2", fillw: 1},
+                {t: "button", id: "control_1_choice_3", fillw: 1},
+                {t: "button", id: "control_1_choice_4", fillw: 1},
+                {t: "button", id: "control_1_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_2", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_2_label", fillw: 1},
+            {t: "text", id: "control_2_value", fillw: 1},
+            {t: "column", id: "control_2_note", fillw: 1, c: [{t: "text", id: "control_2_availability", fillw: 1}]},
+            {t: "row", id: "control_2_pair", spacing: 8, c: [
+                {t: "button", id: "control_2_less", fillw: 1},
+                {t: "button", id: "control_2_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_2_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_2_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_2_choice_0", fillw: 1},
+                {t: "button", id: "control_2_choice_1", fillw: 1},
+                {t: "button", id: "control_2_choice_2", fillw: 1},
+                {t: "button", id: "control_2_choice_3", fillw: 1},
+                {t: "button", id: "control_2_choice_4", fillw: 1},
+                {t: "button", id: "control_2_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_3", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_3_label", fillw: 1},
+            {t: "text", id: "control_3_value", fillw: 1},
+            {t: "column", id: "control_3_note", fillw: 1, c: [{t: "text", id: "control_3_availability", fillw: 1}]},
+            {t: "row", id: "control_3_pair", spacing: 8, c: [
+                {t: "button", id: "control_3_less", fillw: 1},
+                {t: "button", id: "control_3_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_3_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_3_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_3_choice_0", fillw: 1},
+                {t: "button", id: "control_3_choice_1", fillw: 1},
+                {t: "button", id: "control_3_choice_2", fillw: 1},
+                {t: "button", id: "control_3_choice_3", fillw: 1},
+                {t: "button", id: "control_3_choice_4", fillw: 1},
+                {t: "button", id: "control_3_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_4", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_4_label", fillw: 1},
+            {t: "text", id: "control_4_value", fillw: 1},
+            {t: "column", id: "control_4_note", fillw: 1, c: [{t: "text", id: "control_4_availability", fillw: 1}]},
+            {t: "row", id: "control_4_pair", spacing: 8, c: [
+                {t: "button", id: "control_4_less", fillw: 1},
+                {t: "button", id: "control_4_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_4_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_4_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_4_choice_0", fillw: 1},
+                {t: "button", id: "control_4_choice_1", fillw: 1},
+                {t: "button", id: "control_4_choice_2", fillw: 1},
+                {t: "button", id: "control_4_choice_3", fillw: 1},
+                {t: "button", id: "control_4_choice_4", fillw: 1},
+                {t: "button", id: "control_4_choice_5", fillw: 1}
+            ]},
+            {t: "column", id: "dnd_section", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "dnd_mode_off", text: "Off", fillw: 1},
+                {t: "button", id: "dnd_mode_priority", text: "Priority only", fillw: 1},
+                {t: "button", id: "dnd_mode_alarms", text: "Alarms only", fillw: 1},
+                {t: "button", id: "dnd_mode_silence", text: "Total silence", fillw: 1},
+                {t: "text", text: "Priority only uses your current allowed interruptions.", fillw: 1},
+                {t: "button", id: "dnd_open", text: "Do Not Disturb", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_5", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_5_label", fillw: 1},
+            {t: "text", id: "control_5_value", fillw: 1},
+            {t: "column", id: "control_5_note", fillw: 1, c: [{t: "text", id: "control_5_availability", fillw: 1}]},
+            {t: "row", id: "control_5_pair", spacing: 8, c: [
+                {t: "button", id: "control_5_less", fillw: 1},
+                {t: "button", id: "control_5_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_5_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_5_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_5_choice_0", fillw: 1},
+                {t: "button", id: "control_5_choice_1", fillw: 1},
+                {t: "button", id: "control_5_choice_2", fillw: 1},
+                {t: "button", id: "control_5_choice_3", fillw: 1},
+                {t: "button", id: "control_5_choice_4", fillw: 1},
+                {t: "button", id: "control_5_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_6", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_6_label", fillw: 1},
+            {t: "text", id: "control_6_value", fillw: 1},
+            {t: "column", id: "control_6_note", fillw: 1, c: [{t: "text", id: "control_6_availability", fillw: 1}]},
+            {t: "row", id: "control_6_pair", spacing: 8, c: [
+                {t: "button", id: "control_6_less", fillw: 1},
+                {t: "button", id: "control_6_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_6_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_6_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_6_choice_0", fillw: 1},
+                {t: "button", id: "control_6_choice_1", fillw: 1},
+                {t: "button", id: "control_6_choice_2", fillw: 1},
+                {t: "button", id: "control_6_choice_3", fillw: 1},
+                {t: "button", id: "control_6_choice_4", fillw: 1},
+                {t: "button", id: "control_6_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_7", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_7_label", fillw: 1},
+            {t: "text", id: "control_7_value", fillw: 1},
+            {t: "column", id: "control_7_note", fillw: 1, c: [{t: "text", id: "control_7_availability", fillw: 1}]},
+            {t: "row", id: "control_7_pair", spacing: 8, c: [
+                {t: "button", id: "control_7_less", fillw: 1},
+                {t: "button", id: "control_7_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_7_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_7_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_7_choice_0", fillw: 1},
+                {t: "button", id: "control_7_choice_1", fillw: 1},
+                {t: "button", id: "control_7_choice_2", fillw: 1},
+                {t: "button", id: "control_7_choice_3", fillw: 1},
+                {t: "button", id: "control_7_choice_4", fillw: 1},
+                {t: "button", id: "control_7_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_8", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_8_label", fillw: 1},
+            {t: "text", id: "control_8_value", fillw: 1},
+            {t: "column", id: "control_8_note", fillw: 1, c: [{t: "text", id: "control_8_availability", fillw: 1}]},
+            {t: "row", id: "control_8_pair", spacing: 8, c: [
+                {t: "button", id: "control_8_less", fillw: 1},
+                {t: "button", id: "control_8_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_8_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_8_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_8_choice_0", fillw: 1},
+                {t: "button", id: "control_8_choice_1", fillw: 1},
+                {t: "button", id: "control_8_choice_2", fillw: 1},
+                {t: "button", id: "control_8_choice_3", fillw: 1},
+                {t: "button", id: "control_8_choice_4", fillw: 1},
+                {t: "button", id: "control_8_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_9", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_9_label", fillw: 1},
+            {t: "text", id: "control_9_value", fillw: 1},
+            {t: "column", id: "control_9_note", fillw: 1, c: [{t: "text", id: "control_9_availability", fillw: 1}]},
+            {t: "row", id: "control_9_pair", spacing: 8, c: [
+                {t: "button", id: "control_9_less", fillw: 1},
+                {t: "button", id: "control_9_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_9_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_9_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_9_choice_0", fillw: 1},
+                {t: "button", id: "control_9_choice_1", fillw: 1},
+                {t: "button", id: "control_9_choice_2", fillw: 1},
+                {t: "button", id: "control_9_choice_3", fillw: 1},
+                {t: "button", id: "control_9_choice_4", fillw: 1},
+                {t: "button", id: "control_9_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "column", id: "control_10", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "control_10_label", fillw: 1},
+            {t: "text", id: "control_10_value", fillw: 1},
+            {t: "column", id: "control_10_note", fillw: 1, c: [{t: "text", id: "control_10_availability", fillw: 1}]},
+            {t: "row", id: "control_10_pair", spacing: 8, c: [
+                {t: "button", id: "control_10_less", fillw: 1},
+                {t: "button", id: "control_10_more", fillw: 1}
+            ]},
+            {t: "button", id: "control_10_center", text: "Center", fillw: 1},
+            {t: "column", id: "control_10_choices", fillw: 1, spacing: 8, c: [
+                {t: "button", id: "control_10_choice_0", fillw: 1},
+                {t: "button", id: "control_10_choice_1", fillw: 1},
+                {t: "button", id: "control_10_choice_2", fillw: 1},
+                {t: "button", id: "control_10_choice_3", fillw: 1},
+                {t: "button", id: "control_10_choice_4", fillw: 1},
+                {t: "button", id: "control_10_choice_5", fillw: 1}
+            ]}
+        ]},
+        {t: "text", text: "Additional controls and detailed activity are still in Android Settings.", fillw: 1},
+        {t: "button", id: "controls_native", text: "More in Android Settings", fillw: 1}
+      ]}
+    ]},
+    {t: "scroll", id: "bt_page", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, spacing: 12, c: [
+        {t: "button", id: "bt_enabled", text: "Bluetooth state unavailable", fillw: 1},
+        {t: "text", id: "bt_scan_state", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_scan", text: "Scan", fillw: 1},
+            {t: "button", id: "bt_stop_scan", text: "Stop scan", fillw: 1}
+        ]},
+        {t: "button", id: "bt_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "bt_access", text: "Allow Bluetooth access", fillw: 1},
+        {t: "text", id: "bt_availability", fillw: 1},
+        {t: "text", id: "bt_name_observed", fillw: 1},
+        {t: "input", id: "bt_name", placeholder: "Bluetooth device name", fillw: 1},
+        {t: "text", id: "bt_name_note", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_name_cancel", text: "Cancel name", fillw: 1},
+            {t: "button", id: "bt_name_save", text: "Save name", fillw: 1}
+        ]},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_paired_tab", text: "Paired", fillw: 1},
+            {t: "button", id: "bt_nearby_tab", text: "Nearby", fillw: 1}
+        ]},
+        {t: "text", id: "bt_list_summary", fillw: 1},
+        {t: "column", fillw: 1, spacing: 8, c: [
+            {t: "button", id: "bt_row_0", fillw: 1},
+            {t: "button", id: "bt_row_1", fillw: 1},
+            {t: "button", id: "bt_row_2", fillw: 1},
+            {t: "button", id: "bt_row_3", fillw: 1},
+            {t: "button", id: "bt_row_4", fillw: 1},
+            {t: "button", id: "bt_row_5", fillw: 1},
+            {t: "button", id: "bt_row_6", fillw: 1},
+            {t: "button", id: "bt_row_7", fillw: 1},
+            {t: "button", id: "bt_row_8", fillw: 1},
+            {t: "button", id: "bt_row_9", fillw: 1},
+            {t: "button", id: "bt_row_10", fillw: 1},
+            {t: "button", id: "bt_row_11", fillw: 1},
+            {t: "button", id: "bt_row_12", fillw: 1},
+            {t: "button", id: "bt_row_13", fillw: 1},
+            {t: "button", id: "bt_row_14", fillw: 1},
+            {t: "button", id: "bt_row_15", fillw: 1},
+            {t: "button", id: "bt_row_16", fillw: 1},
+            {t: "button", id: "bt_row_17", fillw: 1},
+            {t: "button", id: "bt_row_18", fillw: 1},
+            {t: "button", id: "bt_row_19", fillw: 1}
+        ]},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_previous", text: "Previous", fillw: 1},
+            {t: "button", id: "bt_next", text: "Next", fillw: 1}
+        ]},
+        {t: "button", id: "bt_native", text: "More Bluetooth settings in Android", fillw: 1}
+      ]}
+    ]},
+    {t: "scroll", id: "bt_device_page", fillw: 1, fillh: 1, c: [
+      {t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "bt_device_identity", fillw: 1},
+        {t: "text", id: "bt_device_details", fillw: 1},
+        {t: "button", id: "bt_device_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "bt_pair", text: "Pair device", fillw: 1},
+        {t: "button", id: "bt_cancel_pair", text: "Cancel pairing", fillw: 1},
+        {t: "button", id: "bt_connect", text: "Connect", fillw: 1},
+        {t: "button", id: "bt_disconnect", text: "Disconnect", fillw: 1},
+        {t: "text", text: "Android will ask you to confirm pairing codes or other required permissions. Wait for Paired or Connected above to confirm the result.", fillw: 1},
+        {t: "text", id: "bt_phonebook_value", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_phonebook_ask", text: "Ask", fillw: 1},
+            {t: "button", id: "bt_phonebook_allow", text: "Allow", fillw: 1},
+            {t: "button", id: "bt_phonebook_deny", text: "Deny", fillw: 1}
+        ]},
+        {t: "text", id: "bt_messages_value", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "bt_messages_ask", text: "Ask", fillw: 1},
+            {t: "button", id: "bt_messages_allow", text: "Allow", fillw: 1},
+            {t: "button", id: "bt_messages_deny", text: "Deny", fillw: 1}
+        ]},
+        {t: "button", id: "bt_forget", text: "Forget paired device…", fillw: 1},
+        {t: "column", id: "bt_forget_confirmation", fillw: 1, spacing: 8, c: [
+            {t: "text", text: "Forget this paired device? You will need to pair again before reconnecting.", fillw: 1},
+            {t: "button", id: "bt_forget_confirm", text: "Forget this device", fillw: 1},
+            {t: "button", id: "bt_forget_cancel", text: "Cancel", fillw: 1}
+        ]},
+        {t: "button", id: "bt_device_native", text: "More Bluetooth settings in Android", fillw: 1}
+      ]}
+    ]}
+,
+    {t: "scroll", id: "accounts_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "accounts_visibility", fillw: 1},
+        {t: "button", id: "accounts_master", fillw: 1},
+        {t: "button", id: "accounts_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "accounts_access", text: "Choose accounts visible to OctoSense", fillw: 1},
+        {t: "button", id: "accounts_add", text: "Add account…", fillw: 1},
+        {t: "text", id: "account_summary", fillw: 1},
+        {t: "row", spacing: 8, c: [{t: "button", id: "account_previous", text: "Previous", fillw: 1},{t: "button", id: "account_next", text: "Next", fillw: 1}]},
+        {t: "button", id: "account_row_0", fillw: 1},
+        {t: "button", id: "account_row_1", fillw: 1},
+        {t: "button", id: "account_row_2", fillw: 1},
+        {t: "button", id: "account_row_3", fillw: 1},
+        {t: "button", id: "account_row_4", fillw: 1},
+        {t: "button", id: "account_row_5", fillw: 1},
+        {t: "button", id: "account_row_6", fillw: 1},
+        {t: "button", id: "account_row_7", fillw: 1},
+        {t: "button", id: "account_row_8", fillw: 1},
+        {t: "button", id: "account_row_9", fillw: 1},
+        {t: "button", id: "account_row_10", fillw: 1},
+        {t: "button", id: "account_row_11", fillw: 1},
+        {t: "button", id: "account_row_12", fillw: 1},
+        {t: "button", id: "account_row_13", fillw: 1},
+        {t: "button", id: "account_row_14", fillw: 1},
+        {t: "button", id: "account_row_15", fillw: 1},
+        {t: "button", id: "account_row_16", fillw: 1},
+        {t: "button", id: "account_row_17", fillw: 1},
+        {t: "button", id: "account_row_18", fillw: 1},
+        {t: "button", id: "account_row_19", fillw: 1},
+        {t: "button", id: "accounts_native", text: "More account settings in Android", fillw: 1}
+    ]}]},
+    {t: "scroll", id: "account_providers_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "provider_note", text: "Choose a provider. Android and the provider will handle sign-in.", fillw: 1},
+        {t: "button", id: "providers_refresh", text: "Refresh", fillw: 1},
+        {t: "text", id: "provider_summary", fillw: 1},
+        {t: "row", spacing: 8, c: [{t: "button", id: "provider_previous", text: "Previous", fillw: 1},{t: "button", id: "provider_next", text: "Next", fillw: 1}]},
+        {t: "button", id: "provider_row_0", fillw: 1},
+        {t: "button", id: "provider_row_1", fillw: 1},
+        {t: "button", id: "provider_row_2", fillw: 1},
+        {t: "button", id: "provider_row_3", fillw: 1},
+        {t: "button", id: "provider_row_4", fillw: 1},
+        {t: "button", id: "provider_row_5", fillw: 1},
+        {t: "button", id: "provider_row_6", fillw: 1},
+        {t: "button", id: "provider_row_7", fillw: 1},
+        {t: "button", id: "provider_row_8", fillw: 1},
+        {t: "button", id: "provider_row_9", fillw: 1},
+        {t: "button", id: "provider_row_10", fillw: 1},
+        {t: "button", id: "provider_row_11", fillw: 1},
+        {t: "button", id: "provider_row_12", fillw: 1},
+        {t: "button", id: "provider_row_13", fillw: 1},
+        {t: "button", id: "provider_row_14", fillw: 1},
+        {t: "button", id: "provider_row_15", fillw: 1},
+        {t: "button", id: "provider_row_16", fillw: 1},
+        {t: "button", id: "provider_row_17", fillw: 1},
+        {t: "button", id: "provider_row_18", fillw: 1},
+        {t: "button", id: "provider_row_19", fillw: 1}
+    ]}]},
+    {t: "scroll", id: "account_details_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "account_identity", fillw: 1},
+        {t: "text", id: "account_metadata", fillw: 1},
+        {t: "button", id: "account_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "account_remove", text: "Remove account…", fillw: 1},
+        {t: "text", id: "account_remove_note", text: "Account removal requires confirmation in Android.", fillw: 1},
+        {t: "text", id: "authority_summary", fillw: 1},
+        {t: "row", spacing: 8, c: [{t: "button", id: "authority_previous", text: "Previous", fillw: 1},{t: "button", id: "authority_next", text: "Next", fillw: 1}]},
+        {t: "button", id: "authority_row_0", fillw: 1},
+        {t: "button", id: "authority_row_1", fillw: 1},
+        {t: "button", id: "authority_row_2", fillw: 1},
+        {t: "button", id: "authority_row_3", fillw: 1},
+        {t: "button", id: "authority_row_4", fillw: 1},
+        {t: "button", id: "authority_row_5", fillw: 1},
+        {t: "button", id: "authority_row_6", fillw: 1},
+        {t: "button", id: "authority_row_7", fillw: 1},
+        {t: "button", id: "authority_row_8", fillw: 1},
+        {t: "button", id: "authority_row_9", fillw: 1},
+        {t: "button", id: "authority_row_10", fillw: 1},
+        {t: "button", id: "authority_row_11", fillw: 1},
+        {t: "button", id: "authority_row_12", fillw: 1},
+        {t: "button", id: "authority_row_13", fillw: 1},
+        {t: "button", id: "authority_row_14", fillw: 1},
+        {t: "button", id: "authority_row_15", fillw: 1},
+        {t: "button", id: "authority_row_16", fillw: 1},
+        {t: "button", id: "authority_row_17", fillw: 1},
+        {t: "button", id: "authority_row_18", fillw: 1},
+        {t: "button", id: "authority_row_19", fillw: 1}
+    ]}]},
+    {t: "scroll", id: "account_sync_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "account_sync_identity", fillw: 1},
+        {t: "text", id: "account_sync_state", fillw: 1},
+        {t: "button", id: "account_sync_refresh", text: "Refresh", fillw: 1},
+        {t: "button", id: "account_auto", fillw: 1},
+        {t: "button", id: "account_sync_now", text: "Sync now", fillw: 1},
+        {t: "button", id: "account_cancel_sync", text: "Cancel pending or active sync", fillw: 1},
+        {t: "text", id: "account_sync_note", text: "Sync now requests a sync. Android may wait for connectivity, battery policy, or the account provider.", fillw: 1}
+    ]}]}
+,
+    {t: "column", id: "settings_search_page", fillw: 1, fillh: 1, spacing: 10, c: [
+        {t: "input", id: "settings_query", placeholder: "Search settings / 搜索设置", fillw: 1},
+        {t: "button", id: "settings_search_clear", text: "Clear search", fillw: 1},
+        {t: "text", id: "settings_search_summary", fillw: 1},
+        {t: "scroll", id: "settings_results", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 10, c: [
+            {t: "row", spacing: 8, c: [
+                {t: "button", id: "settings_search_previous", text: "Previous", fillw: 1},
+                {t: "button", id: "settings_search_next", text: "Next", fillw: 1}
+            ]},
+            {t: "button", id: "settings_result_0", fillw: 1},
+            {t: "button", id: "settings_result_1", fillw: 1},
+            {t: "button", id: "settings_result_2", fillw: 1},
+            {t: "button", id: "settings_result_3", fillw: 1},
+            {t: "button", id: "settings_result_4", fillw: 1},
+            {t: "button", id: "settings_result_5", fillw: 1},
+            {t: "button", id: "settings_result_6", fillw: 1},
+            {t: "button", id: "settings_result_7", fillw: 1},
+            {t: "button", id: "settings_result_8", fillw: 1},
+            {t: "button", id: "settings_result_9", fillw: 1},
+            {t: "button", id: "settings_result_10", fillw: 1},
+            {t: "button", id: "settings_result_11", fillw: 1},
+            {t: "button", id: "settings_result_12", fillw: 1},
+            {t: "button", id: "settings_result_13", fillw: 1},
+            {t: "button", id: "settings_result_14", fillw: 1},
+            {t: "button", id: "settings_result_15", fillw: 1},
+            {t: "button", id: "settings_result_16", fillw: 1},
+            {t: "button", id: "settings_result_17", fillw: 1},
+            {t: "button", id: "settings_result_18", fillw: 1},
+            {t: "button", id: "settings_result_19", fillw: 1}
+        ]}]}
+    ]}
+,
+    {t: "scroll", id: "updates_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "updates_availability", fillw: 1},
+        {t: "text", id: "updates_current", fillw: 1},
+        {t: "button", id: "updates_refresh", text: "Refresh status", fillw: 1},
+        {t: "button", id: "updates_check", text: "Check for updates", fillw: 1},
+        {t: "text", id: "updates_check_state", fillw: 1},
+        {t: "text", id: "updates_offer", fillw: 1},
+        {t: "text", id: "updates_rom_state", fillw: 1},
+        {t: "text", id: "updates_home_state", fillw: 1},
+        {t: "button", id: "updates_rom", text: "Review system update…", fillw: 1},
+        {t: "button", id: "updates_home", text: "Review OctoSense Home update…", fillw: 1},
+        {t: "button", id: "updates_reboot", text: "Review restart…", fillw: 1},
+        {t: "column", id: "updates_confirmation", fillw: 1, spacing: 10, c: [
+            {t: "text", id: "updates_confirmation_text", fillw: 1},
+            {t: "button", id: "updates_confirm", text: "Install reviewed update", fillw: 1},
+            {t: "button", id: "updates_cancel_review", text: "Cancel", fillw: 1}
+        ]},
+        {t: "text", text: "Checking contacts the configured ROM update service. Status refreshes only read its current state.", fillw: 1}
+    ]}]}
+,
+    {t: "scroll", id: "advanced_network_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "text", id: "network_connection", fillw: 1},
+        {t: "button", id: "network_refresh", text: "Refresh", fillw: 1},
+        {t: "text", id: "network_availability", fillw: 1},
+        {t: "button", id: "network_airplane", fillw: 1},
+        {t: "button", id: "network_data_saver", fillw: 1},
+        {t: "text", text: "Data Saver limits background data on metered networks. App exceptions are managed separately.", fillw: 1},
+        {t: "text", id: "network_dns_observed", fillw: 1},
+        {t: "text", text: "Saved DNS configuration and encrypted DNS validation are separate. Saving a provider does not establish a working connection.", fillw: 1},
+        {t: "button", id: "network_dns_edit", text: "Edit Private DNS", fillw: 1},
+        {t: "column", id: "network_dns_editor", fillw: 1, spacing: 10, c: [
+            {t: "text", text: "Private DNS configuration", fillw: 1},
+            {t: "button", id: "network_dns_mode_off", text: "Off", fillw: 1},
+            {t: "button", id: "network_dns_mode_automatic", text: "Automatic", fillw: 1},
+            {t: "button", id: "network_dns_mode_hostname", text: "Provider hostname", fillw: 1},
+            {t: "input", id: "network_dns_hostname", placeholder: "DNS provider hostname", fillw: 1},
+            {t: "text", id: "network_dns_note", fillw: 1},
+            {t: "button", id: "network_dns_save", text: "Save", fillw: 1},
+            {t: "button", id: "network_dns_cancel", text: "Cancel", fillw: 1}
+        ]}
+    ]}]},
+    {t: "scroll", id: "time_zones_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 10, c: [
+        {t: "text", id: "zone_current", fillw: 1},
+        {t: "input", id: "zone_query", placeholder: "Search region or city", fillw: 1},
+        {t: "text", id: "zone_notice", fillw: 1},
+        {t: "text", id: "zone_count", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "zone_previous", text: "Previous", fillw: 1},
+            {t: "button", id: "zone_next", text: "Next", fillw: 1}
+        ]},
+        {t: "column", id: "zone_review", fillw: 1, spacing: 8, c: [
+            {t: "text", id: "zone_review_text", fillw: 1},
+            {t: "button", id: "zone_apply", text: "Use this time zone", fillw: 1},
+            {t: "button", id: "zone_cancel", text: "Cancel", fillw: 1}
+        ]},
+        {t: "button", id: "zone_row_0", fillw: 1},
+        {t: "button", id: "zone_row_1", fillw: 1},
+        {t: "button", id: "zone_row_2", fillw: 1},
+        {t: "button", id: "zone_row_3", fillw: 1},
+        {t: "button", id: "zone_row_4", fillw: 1},
+        {t: "button", id: "zone_row_5", fillw: 1},
+        {t: "button", id: "zone_row_6", fillw: 1},
+        {t: "button", id: "zone_row_7", fillw: 1},
+        {t: "button", id: "zone_row_8", fillw: 1},
+        {t: "button", id: "zone_row_9", fillw: 1},
+        {t: "button", id: "zone_row_10", fillw: 1},
+        {t: "button", id: "zone_row_11", fillw: 1},
+        {t: "button", id: "zone_row_12", fillw: 1},
+        {t: "button", id: "zone_row_13", fillw: 1},
+        {t: "button", id: "zone_row_14", fillw: 1},
+        {t: "button", id: "zone_row_15", fillw: 1},
+        {t: "button", id: "zone_row_16", fillw: 1},
+        {t: "button", id: "zone_row_17", fillw: 1},
+        {t: "button", id: "zone_row_18", fillw: 1},
+        {t: "button", id: "zone_row_19", fillw: 1}
+    ]}]}
+,
+    {t: "scroll", id: "notification_history_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 16, c: [
+        {t: "text", id: "history_status", fillw: 1},
+        {t: "button", id: "history_refresh", text: "Refresh history", fillw: 1},
+        {t: "text", id: "history_count", fillw: 1},
+        {t: "row", spacing: 8, c: [
+            {t: "button", id: "history_previous", text: "Previous", fillw: 1},
+            {t: "button", id: "history_next", text: "Next", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_0", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_0_source", fillw: 1},
+            {t: "text", id: "history_row_0_title", fillw: 1},
+            {t: "text", id: "history_row_0_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_1", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_1_source", fillw: 1},
+            {t: "text", id: "history_row_1_title", fillw: 1},
+            {t: "text", id: "history_row_1_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_2", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_2_source", fillw: 1},
+            {t: "text", id: "history_row_2_title", fillw: 1},
+            {t: "text", id: "history_row_2_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_3", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_3_source", fillw: 1},
+            {t: "text", id: "history_row_3_title", fillw: 1},
+            {t: "text", id: "history_row_3_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_4", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_4_source", fillw: 1},
+            {t: "text", id: "history_row_4_title", fillw: 1},
+            {t: "text", id: "history_row_4_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_5", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_5_source", fillw: 1},
+            {t: "text", id: "history_row_5_title", fillw: 1},
+            {t: "text", id: "history_row_5_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_6", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_6_source", fillw: 1},
+            {t: "text", id: "history_row_6_title", fillw: 1},
+            {t: "text", id: "history_row_6_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_7", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_7_source", fillw: 1},
+            {t: "text", id: "history_row_7_title", fillw: 1},
+            {t: "text", id: "history_row_7_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_8", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_8_source", fillw: 1},
+            {t: "text", id: "history_row_8_title", fillw: 1},
+            {t: "text", id: "history_row_8_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_9", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_9_source", fillw: 1},
+            {t: "text", id: "history_row_9_title", fillw: 1},
+            {t: "text", id: "history_row_9_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_10", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_10_source", fillw: 1},
+            {t: "text", id: "history_row_10_title", fillw: 1},
+            {t: "text", id: "history_row_10_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_11", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_11_source", fillw: 1},
+            {t: "text", id: "history_row_11_title", fillw: 1},
+            {t: "text", id: "history_row_11_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_12", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_12_source", fillw: 1},
+            {t: "text", id: "history_row_12_title", fillw: 1},
+            {t: "text", id: "history_row_12_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_13", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_13_source", fillw: 1},
+            {t: "text", id: "history_row_13_title", fillw: 1},
+            {t: "text", id: "history_row_13_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_14", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_14_source", fillw: 1},
+            {t: "text", id: "history_row_14_title", fillw: 1},
+            {t: "text", id: "history_row_14_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_15", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_15_source", fillw: 1},
+            {t: "text", id: "history_row_15_title", fillw: 1},
+            {t: "text", id: "history_row_15_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_16", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_16_source", fillw: 1},
+            {t: "text", id: "history_row_16_title", fillw: 1},
+            {t: "text", id: "history_row_16_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_17", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_17_source", fillw: 1},
+            {t: "text", id: "history_row_17_title", fillw: 1},
+            {t: "text", id: "history_row_17_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_18", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_18_source", fillw: 1},
+            {t: "text", id: "history_row_18_title", fillw: 1},
+            {t: "text", id: "history_row_18_text", fillw: 1}
+        ]},
+        {t: "column", id: "history_row_19", fillw: 1, spacing: 6, c: [
+            {t: "text", id: "history_row_19_source", fillw: 1},
+            {t: "text", id: "history_row_19_title", fillw: 1},
+            {t: "text", id: "history_row_19_text", fillw: 1}
+        ]}
+    ]}]}
+    ,{t:"scroll", id:"sounds_page", fillw:1, fillh:1, c:[{t:"column", fillw:1, spacing:12, c:[
+        {t:"text",id:"sounds_type",fillw:1},
+        {t:"button",id:"sounds_ringtone",text:"Phone ringtone",fillw:1},
+        {t:"button",id:"sounds_notification",text:"Notification sound",fillw:1},
+        {t:"button",id:"sounds_alarm",text:"Default alarm sound",fillw:1},
+        {t:"text",id:"sounds_current",fillw:1},
+        {t:"text",id:"sounds_status",fillw:1},
+        {t:"text",id:"sounds_draft",fillw:1},
+        {t:"button",id:"sounds_preview",text:"Preview",fillw:1},
+        {t:"button",id:"sounds_stop",text:"Stop preview",fillw:1},
+        {t:"button",id:"sounds_save",text:"Save sound",fillw:1},
+        {t:"button",id:"sounds_cancel",text:"Cancel selection",fillw:1},
+        {t:"button",id:"sounds_access",text:"Allow sound changes",fillw:1},
+        {t:"button",id:"sounds_refresh",text:"Refresh sounds",fillw:1},
+        {t:"text",id:"sounds_count",fillw:1},
+        {t:"row",fillw:1,spacing:12,c:[
+            {t:"button",id:"sounds_previous",text:"Previous",fillw:1},
+            {t:"button",id:"sounds_next",text:"Next",fillw:1}
+        ]},
+        {t:"button",id:"sound_row_0",fillw:1},
+        {t:"button",id:"sound_row_1",fillw:1},
+        {t:"button",id:"sound_row_2",fillw:1},
+        {t:"button",id:"sound_row_3",fillw:1},
+        {t:"button",id:"sound_row_4",fillw:1},
+        {t:"button",id:"sound_row_5",fillw:1},
+        {t:"button",id:"sound_row_6",fillw:1},
+        {t:"button",id:"sound_row_7",fillw:1},
+        {t:"button",id:"sound_row_8",fillw:1},
+        {t:"button",id:"sound_row_9",fillw:1},
+        {t:"button",id:"sound_row_10",fillw:1},
+        {t:"button",id:"sound_row_11",fillw:1},
+        {t:"button",id:"sound_row_12",fillw:1},
+        {t:"button",id:"sound_row_13",fillw:1},
+        {t:"button",id:"sound_row_14",fillw:1},
+        {t:"button",id:"sound_row_15",fillw:1},
+        {t:"button",id:"sound_row_16",fillw:1},
+        {t:"button",id:"sound_row_17",fillw:1},
+        {t:"button",id:"sound_row_18",fillw:1},
+        {t:"button",id:"sound_row_19",fillw:1}
+    ]}]}
+    ,{t:"scroll",id:"display_options_page",fillw:1,fillh:1,c:[{t:"column",fillw:1,spacing:12,c:[
+        {t:"column",id:"display_review",fillw:1,spacing:10,c:[
+            {t:"text",id:"display_review_value",fillw:1},
+            {t:"column",id:"night_time_editor",fillw:1,c:[{t:"input",id:"night_time_input",fillw:1,placeholder:"HH:MM or HH:MM:SS"}]},
+            {t:"text",id:"display_review_note",fillw:1},
+            {t:"button",id:"display_save",text:"Save",fillw:1},
+            {t:"button",id:"display_cancel",text:"Cancel",fillw:1}
+        ]},
+        {t:"button",id:"display_refresh",text:"Refresh display information",fillw:1},
+        {t:"text",id:"density_observed",text:"Display size unavailable",fillw:1},
+        {t:"text",id:"density_availability",fillw:1},
+        {t:"text",text:"Larger display size makes interface elements larger. Choose Default to remove a custom display size.",fillw:1},
+        {t:"button",id:"density_choice_0",fillw:1},
+        {t:"button",id:"density_choice_1",fillw:1},
+        {t:"button",id:"density_choice_2",fillw:1},
+        {t:"button",id:"density_choice_3",fillw:1},
+        {t:"button",id:"density_choice_4",fillw:1},
+        {t:"button",id:"density_choice_5",fillw:1},
+        {t:"button",id:"density_choice_6",fillw:1},
+        {t:"button",id:"density_choice_7",fillw:1},
+        {t:"text",id:"night_observed",text:"Night Light unavailable",fillw:1},
+        {t:"text",id:"night_availability",fillw:1},
+        {t:"button",id:"night_toggle",text:"Turn Night Light on",fillw:1},
+        {t:"button",id:"night_warmer",text:"Warmer",fillw:1},
+        {t:"button",id:"night_cooler",text:"Cooler",fillw:1},
+        {t:"text",text:"Schedule",fillw:1},
+        {t:"button",id:"night_disabled",text:"No schedule",fillw:1},
+        {t:"button",id:"night_custom",text:"Custom times",fillw:1},
+        {t:"button",id:"night_sunset",text:"Sunset to sunrise",fillw:1},
+        {t:"text",id:"night_location",fillw:1},
+        {t:"button",id:"night_start",text:"Edit start time",fillw:1},
+        {t:"button",id:"night_end",text:"Edit end time",fillw:1}
+    ]}]},
+{
+  t: "scroll",
+  fillw: 1,
+  id: "dnd_page",
+  fillh: 1,
+  c: [
+    {
+      t: "column",
+      fillw: 1,
+      padx: 14,
+      spacing: 12,
+      c: [
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_state"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_availability"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_manual_off",
+          text: "Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_manual_priority",
+          text: "Priority only"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_manual_alarms",
+          text: "Alarms only"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_manual_silence",
+          text: "Total silence"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_open",
+          text: "Allowed interruptions"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_rules_open",
+          text: "Schedules and rules"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_refresh",
+          text: "Refresh Do Not Disturb"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_native",
+          text: "Android Do Not Disturb settings"
+        }
+      ]
+    }
+  ]
+},
+{
+  t: "scroll",
+  fillw: 1,
+  id: "dnd_policy_page",
+  fillh: 1,
+  c: [
+    {
+      t: "column",
+      fillw: 1,
+      padx: 14,
+      spacing: 12,
+      c: [
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_note"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_repeat_note"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_refresh",
+          text: "Refresh interruption policy"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_0_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_0_1"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_0_2"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_0_3"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_1"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_1_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_1_1"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_1_2"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_1_3"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_2"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_2_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_2_1"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_2_2"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_3"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_3_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_3_1"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_4"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_4_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_4_1"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_5"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_5_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_5_1"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_6"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_6_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_6_1"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_7"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_7_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_7_1"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_policy_label_8"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_8_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_policy_8_1"
+        }
+      ]
+    }
+  ]
+},
+{
+  t: "scroll",
+  fillw: 1,
+  id: "dnd_rules_page",
+  fillh: 1,
+  c: [
+    {
+      t: "column",
+      fillw: 1,
+      padx: 14,
+      spacing: 12,
+      c: [
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_list_notice"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_list_summary"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_add",
+          text: "Add time schedule"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_rules_refresh",
+          text: "Refresh schedules"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_0"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_1"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_2"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_3"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_4"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_5"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_6"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_7"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_8"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_9"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_10"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_11"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_12"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_13"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_14"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_15"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_16"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_17"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_18"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_row_19"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_previous",
+          text: "Previous rules"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_next",
+          text: "Next rules"
+        }
+      ]
+    }
+  ]
+},
+{
+  t: "scroll",
+  fillw: 1,
+  id: "dnd_rule_page",
+  fillh: 1,
+  c: [
+    {
+      t: "column",
+      fillw: 1,
+      padx: 14,
+      spacing: 12,
+      c: [
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_rule_identity"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_rule_description"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_edit",
+          text: "Edit schedule"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_enabled",
+          text: "Enable schedule"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_delete",
+          text: "Delete schedule"
+        },
+        {
+          t: "column",
+          fillw: 1,
+          id: "dnd_delete_review",
+          spacing: 8,
+          c: [
+            {
+              t: "text",
+              fillw: 1,
+              text: "Delete this schedule? This removes its automatic Do Not Disturb timing."
+            },
+            {
+              t: "button",
+              fillw: 1,
+              id: "dnd_delete_confirm",
+              text: "Confirm delete schedule"
+            },
+            {
+              t: "button",
+              fillw: 1,
+              id: "dnd_delete_cancel",
+              text: "Cancel schedule deletion"
+            }
+          ]
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_rule_native",
+          text: "More rule settings in Android"
+        }
+      ]
+    }
+  ]
+},
+{
+  t: "scroll",
+  fillw: 1,
+  id: "dnd_editor_page",
+  fillh: 1,
+  c: [
+    {
+      t: "column",
+      fillw: 1,
+      padx: 14,
+      spacing: 12,
+      c: [
+        {
+          t: "text",
+          fillw: 1,
+          id: "dnd_draft_note"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          text: "Schedule name"
+        },
+        {
+          t: "input",
+          fillw: 1,
+          id: "dnd_name",
+          placeholder: "Schedule name"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          text: "Start time (24-hour HH:MM)"
+        },
+        {
+          t: "input",
+          fillw: 1,
+          id: "dnd_start",
+          placeholder: "22:00"
+        },
+        {
+          t: "text",
+          fillw: 1,
+          text: "End time (24-hour HH:MM)"
+        },
+        {
+          t: "input",
+          fillw: 1,
+          id: "dnd_end",
+          placeholder: "07:00"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_0",
+          text: "Sunday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_1",
+          text: "Monday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_2",
+          text: "Tuesday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_3",
+          text: "Wednesday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_4",
+          text: "Thursday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_5",
+          text: "Friday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_day_6",
+          text: "Saturday: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_exit",
+          text: "Exit at next alarm: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_draft_enabled",
+          text: "Schedule enabled: Off"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_save",
+          text: "Save schedule"
+        },
+        {
+          t: "button",
+          fillw: 1,
+          id: "dnd_cancel",
+          text: "Cancel schedule"
+        }
+      ]
+    }
+  ]
+}
+]}

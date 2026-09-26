@@ -1,16 +1,11 @@
 package dev.makepad.octosense;
 
 import android.app.Activity;
-import android.app.UiModeManager;
-import android.app.WallpaperManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
-import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -32,7 +27,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 /** Preview edits remain a draft until Apply. No renderer or app instance is replaced. */
 public final class ThemeSettingsActivity extends Activity {
@@ -177,49 +171,20 @@ public final class ThemeSettingsActivity extends Activity {
     private void applyTheme() {
         if(applying||draft.equals(saved)) return;
         final ThemeCatalog.Choice next=draft;
-        final boolean dark=next.dark(systemDark),rom=agent.available();
         applying=true;updateDraft();
         worker.execute(() -> {
-            if(!catalog.save(this,next)) {
+            ThemeApplier.Result result=ThemeApplier.apply(this,next,agent,binding);
+            if(!result.saved) {
                 runOnUiThread(() -> {if(isDestroyed()) return;applying=false;updateDraft();status.setText(copy("Theme could not be saved. Try again.","无法保存主题，请重试。"));});return;
             }
-            boolean systemChanged=false,backgroundChanged=false,modeChanged=next.appearance.equals("system");
-            ThemeCatalog.Preset preset=catalog.preset(next.preset);
-            try {
-                WallpaperManager manager=WallpaperManager.getInstance(this);
-                if(manager.isWallpaperSupported()&&manager.isSetWallpaperAllowed()) {
-                    Bitmap bitmap=Bitmap.createBitmap(720,1520,Bitmap.Config.ARGB_8888);
-                    Canvas canvas=new Canvas(bitmap);Paint paint=new Paint();
-                    paint.setShader(gradient(preset,next,dark,1520));canvas.drawRect(0,0,720,1520,paint);
-                    try {manager.setBitmap(bitmap,null,true,WallpaperManager.FLAG_SYSTEM);backgroundChanged=true;} finally {bitmap.recycle();}
-                }
-            } catch(Exception e) {android.util.Log.w("OctoSenseTheme","System wallpaper unavailable",e);}
-            // Finish the wallpaper update before selecting a fixed Monet seed.
-            if(rom) {
-                try {binding.await(3,TimeUnit.SECONDS);} catch(InterruptedException e) {Thread.currentThread().interrupt();}
-                systemChanged=agent.applyThemePalette(preset.seed);
-                try {
-                    if(!next.appearance.equals("system")) {
-                        UiModeManager manager=getSystemService(UiModeManager.class);
-                        int mode=dark?UiModeManager.MODE_NIGHT_YES:UiModeManager.MODE_NIGHT_NO;
-                        manager.setNightMode(mode);modeChanged=manager.getNightMode()==mode;
-                    }
-                } catch(RuntimeException e) {android.util.Log.w("OctoSenseTheme","System appearance unavailable",e);}
-            }
-            final boolean colors=systemChanged,wallpaper=backgroundChanged,mode=modeChanged;
             runOnUiThread(() -> {
                 if(isDestroyed()) return;
                 saved=next;applying=false;
-                String message=colors&&wallpaper&&mode?copy("Theme applied","主题已应用"):
+                String message=result.complete()?copy("Theme applied","主题已应用"):
                     copy("OctoSense theme applied. Some Android system styling is unavailable on this device.","OctoSense 主题已应用，此设备不支持部分 Android 系统样式设置。");
                 Toast.makeText(this,message,Toast.LENGTH_LONG).show();finish();
             });
         });
-    }
-    private static Shader gradient(ThemeCatalog.Preset p,ThemeCatalog.Choice choice,boolean dark,float height) {
-        int top=p.color(choice.wallpaper.equals("solid")?"background":"wallpaper_top",dark);
-        int bottom=p.color(choice.wallpaper.equals("solid")?"background":"wallpaper_bottom",dark);
-        return new LinearGradient(0,0,0,height,top,bottom,Shader.TileMode.CLAMP);
     }
     /** Small synthetic previews use catalog colors and contain no user data. */
     private final class Preview extends View {
@@ -240,7 +205,7 @@ public final class ThemeSettingsActivity extends Activity {
                 round(canvas,0,0,width,height,radius,p.color("surface",dark));
                 if(screen==0) {
                     android.graphics.Path clip=new android.graphics.Path();clip.addRoundRect(new RectF(0,0,width,height),radius,radius,android.graphics.Path.Direction.CW);
-                    canvas.save();canvas.clipPath(clip);paint.setShader(gradient(p,draft,dark,height));canvas.drawRect(0,0,width,height,paint);canvas.restore();
+                    canvas.save();canvas.clipPath(clip);paint.setShader(ThemeApplier.gradient(p,draft,dark,height));canvas.drawRect(0,0,width,height,paint);canvas.restore();
                     label(canvas,"9:41",48,48,29,p.color("text",dark),false);
                     for(int i=0;i<2;i++) {
                         round(canvas,12,67+i*49,147,41,p.radius/2,p.color("surface",dark));

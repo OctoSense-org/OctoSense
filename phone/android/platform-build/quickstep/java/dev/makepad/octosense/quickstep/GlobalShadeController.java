@@ -325,7 +325,7 @@ public final class GlobalShadeController implements AutoCloseable {
     }
     void settings(String destination) {
         dismiss();
-        if (!SystemSettings.open(context, destination)) Log.w(TAG, "Requested settings destination unavailable");
+        if (!SystemSettings.openPreferred(context, destination)) Log.w(TAG, "Requested settings destination unavailable");
     }
     boolean accessible(String operation) {
         Bundle capabilities = state.getBundle("capabilities");

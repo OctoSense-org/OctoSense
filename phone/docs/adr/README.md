@@ -5,3 +5,5 @@
 | [0001: Hybrid Android launcher and system bridge](0001-hybrid-android-launcher-and-system-bridge.md) | 2026-09-16 | Accepted |
 | [0002: Agentic app security model](0002-agentic-app-security-model.md) | 2026-09-19 | Proposed |
 | [0003: The app hub, its signatures, and the store app](0003-app-hub-and-store.md) | 2026-09-19 | Proposed |
+| [0004: Built-in OctoSense Settings](0004-builtin-settings.md) | 2026-09-24 | Accepted; full replacement in progress |
+| [0005: Settings application logic in Octoscript](0005-settings-octoscript-controller.md) | 2026-09-25 | Accepted; controller port in progress |

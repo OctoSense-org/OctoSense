@@ -25,7 +25,9 @@
     <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
     <!-- Usage access (granted by the person in Settings) lets Recents list the Android apps used lately. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.MODIFY_DAY_NIGHT_MODE" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <application
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
@@ -41,7 +43,9 @@
              from recreating the renderer and losing hosted app state. Numeric
              resource masks support Makepad's API 33 resource compiler, which predates
              the public assetsPaths flag name. Remaining bits are orientation,
-             screenSize, keyboardHidden and uiMode. -->
+             screenSize, keyboardHidden, uiMode, fontScale, density, screenLayout
+             and smallestScreenSize. The latter three preserve the renderer and
+             hosted state when display size changes across resource qualifiers. -->
         <activity
             android:name=".{class_name}"
             android:configChanges="@integer/octosense_home_config_changes"
@@ -87,7 +91,62 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <!-- The ROM's privileged base package takes these migrated routes
+                 ahead of Android Settings (priority 1). Keep this filter on the
+                 real Activity: Android matches an updated alias to its target
+                 before its base alias and would cap it against the wrong filter.
+                 Android caps ordinary
+                 APK installs to priority 0, retaining their native default. -->
+            <intent-filter android:priority="2">
+                <action android:name="android.settings.SETTINGS" />
+                <action android:name="android.settings.DISPLAY_SETTINGS" />
+                <action android:name="android.settings.SOUND_SETTINGS" />
+                <action android:name="android.settings.WIFI_SETTINGS" />
+                <action android:name="android.settings.BLUETOOTH_SETTINGS" />
+                <action android:name="android.settings.MANAGE_APPLICATIONS_SETTINGS" />
+                <action android:name="android.settings.APPLICATION_SETTINGS" />
+                <action android:name="android.settings.SYNC_SETTINGS" />
+                <action android:name="android.settings.LOCATION_SOURCE_SETTINGS" />
+                <action android:name="android.settings.BATTERY_SAVER_SETTINGS" />
+                <action android:name="android.settings.INTERNAL_STORAGE_SETTINGS" />
+                <action android:name="android.settings.DATE_SETTINGS" />
+                <action android:name="android.settings.DEVICE_INFO_SETTINGS" />
+                <action android:name="android.settings.SYSTEM_UPDATE_SETTINGS" />
+                <action android:name="android.settings.AIRPLANE_MODE_SETTINGS" />
+                <action android:name="android.settings.DATA_SAVER_SETTINGS" />
+                <action android:name="android.settings.PRIVACY_SETTINGS" />
+                <action android:name="android.settings.NOTIFICATION_SETTINGS" />
+                <action android:name="android.settings.ZEN_MODE_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        <!-- Keep new actions separate: updated-system filters are capped against their base APK. -->
+        <intent-filter android:priority="2">
+            <action android:name="android.settings.NIGHT_DISPLAY_SETTINGS" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
+        <intent-filter android:priority="2">
+            <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
+        <!-- PermissionController owns Defaults at priority 2. This separate
+             filter preserves older ROM action priorities after an APK update. -->
+        <intent-filter android:priority="3">
+            <action android:name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
         </activity>
+        <!-- Navigation into the one existing renderer. There is no second
+             Settings Activity and no duplicate launcher-catalog icon. -->
+        <activity-alias android:name="dev.makepad.octosense.SettingsEntry"
+            android:targetActivity=".{class_name}" android:exported="true"
+            android:label="@string/octosense_settings">
+            <meta-data android:name="dev.makepad.octosense.SETTINGS_DEFAULT_APPS" android:value="true" />
+            <meta-data android:name="dev.makepad.octosense.SETTINGS_DND" android:value="true" />
+            <intent-filter>
+                <action android:name="dev.makepad.octosense.action.SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
         <!-- Pin confirmation must not start a second Makepad renderer. -->
         <activity android:name="dev.makepad.octosense.ThemeSettingsActivity"
             android:label="@string/octosense_wallpaper_style"
@@ -133,8 +192,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+    <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>

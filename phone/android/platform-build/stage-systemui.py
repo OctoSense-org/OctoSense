@@ -17,6 +17,17 @@ REVISION = 'ff7620a38e54c5f7ec14a5b8ccc5be1ba41e2b1b'
 PREFIX = 'packages/SystemUI/'
 
 
+def reviewed_predecessors(path, expected):
+    """Exact earlier OctoSense output; never accept arbitrary dirty framework files."""
+    if path == 'AndroidManifest.xml':
+        sensors = '''        <service android:name=".octosense.OctoSenseSensorSettingsService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+'''
+        return {expected.replace(sensors, '')}
+    return set()
+
+
 def once(text, before, after):
     if text.count(before) != 1:
         raise RuntimeError('Pinned source mismatch: ' + before[:100])
@@ -44,6 +55,9 @@ def generate(read, inputs):
     manifest = read('AndroidManifest.xml')
     manifest = once(manifest, 'android:label="@string/app_label"', 'android:label="@string/octosense_system_label"')
     manifest = once(manifest, '        <!-- Keep theme in sync', '''        <meta-data android:name="dev.makepad.octosense.SYSTEM_INTERFACE" android:value="1" />
+        <service android:name=".octosense.OctoSenseSensorSettingsService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
         <activity android:name=".octosense.OctoSenseSystemActivity"
             android:exported="false" android:excludeFromRecents="true"
             android:showWhenLocked="false" android:theme="@style/Theme.OctoSense.System" />
@@ -145,14 +159,23 @@ def main():
         original[path] = result.stdout if result.returncode == 0 else None
     dirty = set(git('diff', 'HEAD', '--name-only').splitlines()) | set(git('ls-files', '--others', '--exclude-standard').splitlines())
     if not dirty <= {PREFIX + p for p in changes}: raise RuntimeError('Unrelated framework changes: ' + repr(dirty))
+    inspected = {}
+    migrations = []
     for path, expected in changes.items():
         file = repo / PREFIX / path
         actual = file.read_text() if file.exists() else None
+        inspected[path] = actual
         if args.verify and actual != expected: raise RuntimeError('Staged file differs: ' + path)
-        if not args.verify and actual not in (original[path], expected): raise RuntimeError('Preserve modified source: ' + path)
+        if not args.verify and actual not in (original[path], expected):
+            if actual not in reviewed_predecessors(path, expected): raise RuntimeError('Preserve modified source: ' + path)
+            migrations.append(PREFIX + path)
     if not args.check and not args.verify:
         with (args.tree / '.octosense-build.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for path, value in inspected.items():
+                file = repo / PREFIX / path
+                if (file.read_text() if file.exists() else None) != value:
+                    raise RuntimeError('Source changed after inspection: ' + path)
             for path, value in changes.items():
                 file = repo / PREFIX / path; file.parent.mkdir(parents=True, exist_ok=True)
                 if not file.exists() or file.read_text() != value: file.write_text(value)
@@ -160,7 +183,7 @@ def main():
         'framework_revision':REVISION,'target':'OctoSenseSystemUI','package':'com.android.systemui',
         'files': {PREFIX + p: hashlib.sha256(value.encode()).hexdigest() for p,value in changes.items()},
         'original_files': {PREFIX + p: hashlib.sha256(value.encode()).hexdigest() if value is not None else None for p,value in original.items()},
-        'device_deployed':False}
+        'reviewed_predecessor_migrations':migrations, 'device_deployed':False}
     args.report.parent.mkdir(parents=True, exist_ok=True); args.report.write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({'status':report['status'],'mode':report['mode'],'files':len(changes),'target':report['target']}))
 

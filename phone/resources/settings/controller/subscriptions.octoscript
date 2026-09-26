@@ -1,0 +1,81 @@
+// Desired native reads are application state. This function describes them;
+// it never enqueues reads or performs native effects during ordinary refresh.
+fn settings_subscriptions(s,o) {
+    let reads={}
+    let context={wifi_target:nil,bluetooth_target:nil,account_target:nil,authority_target:nil,account_scopes:[],app_target:nil,caption_visit:nil,date_time:false}
+    if o.android!=true { s.subscriptions=reads; s.host_context=context; return }
+    if s.page=="Apps" {
+        reads.apps={kind:"read",domain:"apps",query:s.apps.filter,include_system:s.apps.include_system,offset:s.apps.offset,generation:s.apps.generation}
+    }
+    let app_pages=["AppDetails","AppLanguage","AppStorage","AppBattery","AppNetwork","AppNotifications","NotificationChannel","AppPermissions","PermissionChoices"]
+    if settings_has(app_pages,s.page) {
+        let target=s.context["app_target"]
+        if target!=nil { context.app_target=target; reads.apps={kind:"read",domain:"app_details",target:target,offset:s.apps.permission_offset} }
+        if s.page=="AppNotifications" && s["notifications_ui"]!=nil && s.notifications_ui.entry!=nil {
+            reads.apps={kind:"read",domain:"app_entry",entry_id:s.notifications_ui.entry.entry_id,package:s.notifications_ui.entry.package}
+        }
+    }
+    for pair in [["AppBattery","app_battery"],["AppStorage","app_storage"],["AppNetwork","app_network"]] {
+        if s.page==pair[0] && context.app_target!=nil { reads[pair[1]]={kind:"read",domain:pair[1],target:context.app_target} }
+    }
+    if (s.page=="AppNotifications" || s.page=="NotificationChannel") && context.app_target!=nil && s.notifications_ui.entry==nil {
+        reads.app_notifications={kind:"read",domain:"app_notifications",target:context.app_target,offset:s.notifications_ui.offset,generation:s.notifications_ui.generation}
+    }
+    if s.page=="AppLanguage" && context.app_target!=nil { reads.app_language=settings_language_read(s,"app_language_ui") }
+    if s.page=="AppPermissions" || s.page=="PermissionChoices" {
+        let ui=settings_consent_ui(s,"permission_ui"); let group=nil; let offset=ui.offset; let generation=ui.generation
+        if ui.selected!=nil { group=settings_consent_meta("permission_ui",ui.selected).wire; offset=0; generation=nil }
+        if context.app_target!=nil { reads.permissions={kind:"read",domain:"permissions",package:context.app_target,group:group,offset:offset,generation:generation} }
+    }
+    if s.page=="DefaultApps" || s.page=="RoleChoices" {
+        let ui=settings_consent_ui(s,"roles_ui"); let role=nil; let offset=0; let generation=nil
+        if s.page=="RoleChoices" && ui.selected!=nil { role=settings_consent_meta("roles_ui",ui.selected).wire; offset=ui.offset; generation=ui.generation }
+        reads.roles={kind:"read",domain:"roles",role:role,offset:offset,generation:generation}
+    }
+    if s.page=="CaptionLanguage" { reads.caption_language=settings_language_read(s,"caption_language_ui") }
+    if s.page=="SystemLanguages" { reads.system_languages=settings_system_read(s) }
+    if s.page=="Keyboards" || s.page=="KeyboardDetails" {
+        let ui=settings_keyboard_ui(s); reads.keyboards={kind:"read",domain:"keyboards",query:ui.query,offset:ui.offset}
+    }
+    if s.page=="Controls" || s.page=="ControlChoices" {
+        if s.controls_section!="CaptionCustom" { let route=settings_route(s.controls_section); if route!=nil { reads.controls={kind:"read",domain:"controls",page:route.wire} } }
+    }
+    if (s.page=="Controls" && s.controls_section=="CaptionCustom") || s.page=="CaptionChoice" {
+        if s["caption_ui"]!=nil && s.caption_ui["visit"]!=nil {
+            context.caption_visit=s.caption_ui.visit
+            reads.caption_custom={kind:"read",domain:"caption_custom",visit:s.caption_ui.visit}
+        }
+    }
+    if s.page=="Wifi" || s.page=="WifiNetwork" { reads.wifi={kind:"read",domain:"wifi"}; if s.page=="WifiNetwork" { context.wifi_target=s.wifi_ui.selected } }
+    if s.page=="Bluetooth" || s.page=="BluetoothDevice" { reads.bluetooth={kind:"read",domain:"bluetooth"}; if s.page=="BluetoothDevice" { context.bluetooth_target=s.bt_ui.selected } }
+    if s.page=="Accounts" || s.page=="AccountProviders" {
+        reads.accounts={kind:"read",domain:"accounts"}
+        if s.page=="Accounts" { context.account_scopes=["master","access"] } else { context.account_scopes=["add"] }
+    }
+    if s.page=="AccountDetails" || s.page=="AccountSync" {
+        let ui=s.accounts_ui
+        if ui.account!=nil {
+            context.account_target=ui.account; reads.accounts={kind:"read",domain:"account_details",target:ui.account}
+            if s.page=="AccountDetails" { context.account_scopes=["remove"] }
+            if s.page=="AccountSync" { context.authority_target=ui.authority; context.account_scopes=["sync"] }
+        }
+    }
+    if settings_has(["Dnd","DndPolicy","DndRules","DndRule","DndEditor"],s.page) {
+        reads.dnd={kind:"read",domain:"dnd",offset:s.dnd_ui.offset,key:s.dnd_ui.generation}
+        if s.page=="Dnd" { reads.controls={kind:"read",domain:"controls",page:"notifications"} }
+    }
+    for pair in [["Updates","updates"],["AdvancedNetwork","network"],["DisplayOptions","display"]] {
+        if s.page==pair[0] { reads[pair[1]]={kind:"read",domain:pair[1]} }
+    }
+    if s.page=="DateTime" || s.page=="TimeZones" { context.date_time=true }
+    if s.page=="Sounds" {
+        let row=settings_sound_observed(s,o); let key=nil; let offset=0
+        if row!=nil { key=row.key; offset=row.offset }
+        reads.sounds={kind:"read",domain:"sounds",sound_type:text.lower(s.sound_ui.kind),key:key,offset:offset}
+    }
+    if s.page=="NotificationHistory" {
+        let key=nil; let offset=0; if o.notification_history!=nil { key=o.notification_history.key; offset=o.notification_history.offset }
+        reads.notification_history={kind:"read",domain:"notification_history",key:key,offset:offset}
+    }
+    s.subscriptions=reads; s.host_context=context
+}

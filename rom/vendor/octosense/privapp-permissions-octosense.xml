@@ -32,6 +32,10 @@
         <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
     </privapp-permissions>
     <privapp-permissions package="dev.makepad.octosense.agent">
+        <permission name="android.permission.CONTROL_DISPLAY_COLOR_TRANSFORMS"/>
+        <permission name="android.permission.MANAGE_TIME_AND_ZONE_DETECTION"/>
+        <permission name="android.permission.SUGGEST_MANUAL_TIME_AND_ZONE"/>
+        <permission name="android.permission.ACCESS_NOTIFICATIONS"/>
         <permission name="android.permission.REAL_GET_TASKS"/>
         <permission name="android.permission.MANAGE_ACTIVITY_TASKS"/>
         <permission name="android.permission.START_TASKS_FROM_RECENTS"/>
@@ -42,6 +46,7 @@
         <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
         <permission name="android.permission.NETWORK_SETTINGS"/>
         <permission name="android.permission.BLUETOOTH_PRIVILEGED"/>
+        <permission name="android.permission.MODIFY_PHONE_STATE"/>
         <permission name="android.permission.DEVICE_POWER"/>
         <permission name="android.permission.MANAGE_NOTIFICATIONS"/>
         <permission name="android.permission.INTERACT_ACROSS_USERS"/>

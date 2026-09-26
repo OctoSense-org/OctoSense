@@ -27,6 +27,12 @@ pub struct Selection {
     pub wallpaper: Wallpaper,
 }
 impl Selection {
+    pub fn encode(self) -> Value {
+        use makepad_strict_json::{obj, s};
+        obj(vec![("version", Value::Int(1)), ("preset", s(self.preset.id())),
+            ("appearance", s(match self.appearance { Appearance::System => "system", Appearance::Light => "light", Appearance::Dark => "dark" })),
+            ("wallpaper", s(match self.wallpaper { Wallpaper::Gradient => "gradient", Wallpaper::Solid => "solid" }))])
+    }
     /// Reject unsupported/corrupt records rather than partially changing a theme.
     pub fn decode(value: &Value) -> Option<Self> {
         if value.get("version")?.as_i64()? != 1 { return None; }

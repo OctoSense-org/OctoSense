@@ -29,6 +29,9 @@ jobs:
         run: python3 scripts/setup-home.py --check --cargo
       - name: Test Home, App Hub admission and runtime policy
         working-directory: home
+        env:
+          # Settings VM tests exercise production wall-clock limits.
+          RUST_TEST_THREADS: '1'
         run: |
           cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-app-hub-app -p octosense-news -p octosense-appcard
           # Maps' isolate tests need init_cx_os(), whose macOS game-input setup
