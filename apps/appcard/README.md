@@ -136,7 +136,7 @@ composer; `AppShell::shutdown` runs before the host frees the isolate.
 ## Provenance
 
 Moved here from
-[OctoSense-org/OctoSense-AppCard](https://github.com/OctoSense-org/OctoSense-AppCard)
+OctoSense-org/OctoSense-AppCard
 at commit `d0a836b8`, which had split it from
 [OctoSense-org/OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)
 (`app/` at commit `cbbda4da`). The full history of these files is there.

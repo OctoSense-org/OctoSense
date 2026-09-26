@@ -180,7 +180,7 @@ SurfaceView/TextureView-based app" problem. Directions to try:
   lofi is a radio stream). If it never showed video, treat as a first-time bring-up
   of WebView video over a GL SurfaceView, not a regression.
 
-## Hypotheses for Codex (in rough priority)
+## Hypotheses (in rough priority)
 
 1. **Z-order between two SurfaceViews.** The WebView's video SurfaceView is likely
    z-ordered *below* Makepad's GL SurfaceView (occluded). Explore making the video
