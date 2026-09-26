@@ -8,10 +8,15 @@ publish = false
 [dependencies]
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", features = ["appcard", "maps"] }
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4" }
-# The whole Octoscript-AppCard app as a library: routing brain, card store and
+# The whole AppCard assistant as a library, from the pinned
+# OctoSense-System-Apps checkout beside this repository (apps/appcard/app/app;
+# native-apps.lock.json, tools/setup-native.py): routing brain, card store and
 # transport, L0 lowering, sessions, composer, kernel agent — mounted here as
 # its `AppShell` widget. No default features: the app's own entry points
 # (`app_main!`, the dev monitor) stay out; this module is the entry point.
-octos-app = { git = "https://github.com/OctoSense-org/Octoscript-AppCard.git", rev = "9e8e4898b8a7c03dbcb62993e7826577411e489d", default-features = false }
+# Every octos crate comes from git octos-org/octos at the one rev octos-app
+# pins; OCTOSENSE_WORKSPACE (.cargo/config.toml) points its asset embedding
+# at the sibling framework checkouts.
+octos-app = { path = "../../../OctoSense-System-Apps/apps/appcard/app/app", default-features = false }
 # Tool arguments (`ask` takes `{"text": ...}`).
 serde_json = "1.0"
