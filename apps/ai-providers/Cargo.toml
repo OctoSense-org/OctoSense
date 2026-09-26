@@ -1,0 +1,13 @@
+# AI providers: the provider-config crate and the `llm` host service, in one
+# workspace so both test from here (`cargo test --workspace`). Shells and
+# AppCard link the crates by path; this manifest is for working on them.
+[workspace]
+resolver = "2"
+members = ["config"]
+
+# The provisioning QR's Argon2id (64 MiB, t=3) takes seconds unoptimised;
+# optimise just the KDF so debug builds and tests decode at release speed.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
