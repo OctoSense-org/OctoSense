@@ -19,12 +19,18 @@
 #   3. Add OpenAI on the host's sheet with the fake key sk-test-0000000000001234.
 #   4. Import by PICKER: "Choose image" (OCTOSENSE_LLM_TEST_IMAGE answers with
 #      the fixture instead of the open panel, which a hidden run cannot click
-#      through), a wrong PIN is refused and changes nothing, the right one
-#      replaces the list (OpenAI is gone).
+#      through), a wrong PIN is refused and changes nothing; the right one
+#      would replace the three saved providers, so the sheet asks first:
+#      Cancel closes it and keeps them, and on a second try Replace applies
+#      the code (OpenAI is gone).
 #   5. Add OpenAI again, Show QR for phone, grab the sheet, read the QR out of
 #      the grab (the service's own image search, rqrr) and open it with the
-#      PIN on the sheet: it equals the saved set and keys.
-#   6. No key text in /snap, /d, /log or the host log; no panic; /gq exits.
+#      PIN on the sheet: it equals the saved set and keys. The countdown
+#      ticks, and at 0 the sheet closes by itself (OCTOSENSE_LLM_QR_SECONDS
+#      shortens its five minutes to $QR_SECONDS s), with no Splash error in
+#      the log.
+#   6. No key text in /snap, /d, /log or the host log; no panic, no Splash
+#      error; /gq exits.
 # Artifacts: grabs/, export.png (the export sheet at full scale) and
 # export-pin.txt, for scanning on a phone.
 set -euo pipefail
@@ -36,6 +42,11 @@ SRC=$(cd "$ROOT" && python3 -c 'import json; print(json.load(open("system-apps.j
 FIXTURE=$(cd "$ROOT/$SRC/ai-providers/config/tests/fixtures" && pwd)/qr-a.png
 FIXTURE_PIN=7K3M-9QX2
 FAKE_KEY=sk-test-0000000000001234
+# The phone QR's lifetime in this run: long enough to grab and read the code.
+QR_SECONDS=${QR_SECONDS:-20}
+# What a Splash script error logs (the export sheet's countdown used to log
+# these every second).
+SPLASH_ERRORS='pop_stack_resolved|mes empty|splash host callback error|\[E\] splash'
 # Every key the run handles: none may show up in the UI tree or the logs.
 SECRETS='sk-test-|zai-test-|0000000000001234'
 WORK=${1:-$(mktemp -d -t octosense-ai-providers)}
@@ -51,7 +62,7 @@ cd "$WORK"
 env -u MAKEPAD_HOME -u MAKEPAD_WM_ROOT -u MAKEPAD_WM_THEME \
     OCTOSENSE_HOME="$WORK/home" OCTOS_APP_CORE_DIR="$WORK/octos" \
     OCTOSENSE_MAIL_VAULT=file OCTOSENSE_LLM_VAULT=file \
-    OCTOSENSE_LLM_TEST_IMAGE="$FIXTURE" \
+    OCTOSENSE_LLM_TEST_IMAGE="$FIXTURE" OCTOSENSE_LLM_QR_SECONDS="$QR_SECONDS" \
     MAKEPAD_HIDE_WINDOWS=1 "$BIN" --remote >"$LOG" 2>&1 &
 PID=$!
 PORT=
@@ -300,14 +311,30 @@ keys_end_with DEEPSEEK_API_KEY=0000 ZAI_API_KEY=0000 OPENAI_API_KEY=1234 || fail
 grab added-openai >/dev/null
 pass "OpenAI added on the sheet with a fake key (grab added-openai)"
 
-# 4. Import by the picker (test image), a wrong PIN first.
-read -r X Y < <(widget "Import code from image"); click "$X" "$Y"
-read -r SX SY SW SH < <(wait_sheet "llm.sheet.pick")
-sleep 1
-C=$(controls pick-sheet "$SX" "$SY" "$SW" "$SH")
-CHOOSE_Y=$(echo "$C" | nth_full 1); PIN_Y=$(echo "$C" | nth_full 3); read -r PX PY < <(echo "$C" | pill)
-click $((SX + SW / 2)) "$CHOOSE_Y"
-pin_prompt picked "$SX" "$SY" "$SW" "$SH" >/dev/null || fail "the sheet did not ask for the PIN after the pick"
+# 4. Import by the picker (test image), a wrong PIN first. Three providers are
+# saved, so the right PIN brings up the confirm step (two grey buttons, Cancel
+# then Replace) before anything changes.
+# `confirm_buttons NAME RECT…`: "CANCEL_X CANCEL_Y REPLACE_X REPLACE_Y".
+confirm_buttons() {
+    local C
+    for _ in $(seq 1 20); do
+        C=$(controls "$@" | awk '$1=="half"{printf "%s %s ", $2, $3; n++} END{if(n>=2) print ""}')
+        [ -n "$C" ] && { echo "$C"; return 0; }
+        sleep 0.5
+    done
+    return 1
+}
+pick_and_unlock() {
+    local X Y C
+    read -r X Y < <(widget "Import code from image"); click "$X" "$Y"
+    read -r SX SY SW SH < <(wait_sheet "llm.sheet.pick")
+    sleep 1
+    C=$(controls "$1-sheet" "$SX" "$SY" "$SW" "$SH")
+    CHOOSE_Y=$(echo "$C" | nth_full 1); PIN_Y=$(echo "$C" | nth_full 3); read -r PX PY < <(echo "$C" | pill)
+    click $((SX + SW / 2)) "$CHOOSE_Y"
+    pin_prompt "$1-picked" "$SX" "$SY" "$SW" "$SH" >/dev/null || fail "the sheet did not ask for the PIN after the pick"
+}
+pick_and_unlock pick1
 BEFORE=$(cat "$PROFILE")
 click $((SX + SW / 2)) "$PIN_Y"; text "0000-0000"; click "$PX" "$PY"; sleep 4
 [ -n "$(sheet_rect "llm.sheet.pick")" ] || fail "a wrong PIN closed the sheet"
@@ -316,15 +343,30 @@ grab wrong-pin >/dev/null
 click $((SX + SW / 2)) "$PIN_Y"
 for _ in 1 2 3 4 5 6 7 8 9; do key Backspace; done
 text "$FIXTURE_PIN"; click "$PX" "$PY"
+read -r CX CY RX RY < <(confirm_buttons confirm1 "$SX" "$SY" "$SW" "$SH") || fail "no confirm step for a code that replaces saved providers"
+[ "$(cat "$PROFILE")" = "$BEFORE" ] || fail "the code was applied before Replace"
+click "$CX" "$CY"
+for _ in $(seq 1 20); do [ -z "$(sheet_rect "llm.sheet.pick")" ] && break; sleep 0.5; done
+[ -z "$(sheet_rect "llm.sheet.pick")" ] || fail "Cancel on the confirm step left the sheet up"
+wait_widget "Cancelled."
+[ "$(cat "$PROFILE")" = "$BEFORE" ] || fail "Cancel on the confirm step changed the profile"
+[ "$(profile_families)" = "deepseek zai openai" ] || fail "profile after Cancel: $(profile_families)"
+pass "a code that would replace 3 providers asks first (grab confirm1); Cancel closed the sheet and kept the list"
+pick_and_unlock pick2
+click $((SX + SW / 2)) "$PIN_Y"; text "$FIXTURE_PIN"; click "$PX" "$PY"
+read -r CX CY RX RY < <(confirm_buttons confirm2 "$SX" "$SY" "$SW" "$SH") || fail "no confirm step on the second try"
+click "$RX" "$RY"
 for _ in $(seq 1 40); do [ "$(profile_families)" = "deepseek zai" ] && break; sleep 0.5; done
-[ "$(profile_families)" = "deepseek zai" ] || fail "the picked image did not replace the list: $(profile_families)"
+[ "$(profile_families)" = "deepseek zai" ] || fail "Replace did not apply the code: $(profile_families)"
 wait_widget "Imported DeepSeek · deepseek-chat, Z.ai · glm-4.6"
-pass "picked image imported after a refused wrong PIN (the list is QR-A's again)"
+pass "picked image imported after a refused wrong PIN and Replace (the list is QR-A's again)"
 
 # 5. The phone QR: add OpenAI again, show the code, read it from the grab.
 add_openai add2
+LOG_MARK=$(( $(wc -l <"$LOG") + 1 ))
 read -r X Y < <(widget "Show QR for phone"); click "$X" "$Y"
-wait_sheet "countdown :=" >/dev/null
+read -r SX SY SW SH < <(wait_sheet "countdown :=")
+SHOWN=$(date +%s)
 sleep 1
 PIN=$(get "snap?q=$(q "pin := Label")" | python3 -c '
 import json,re,sys
@@ -338,6 +380,35 @@ READ=$("$READ_QR" "$EXPORT" "$PIN" "$WORK/octos") || fail "the exported QR does 
 echo "$READ" | grep -q '"same_as_profile":true' || fail "$READ"
 echo "$READ" | grep -q '"family":"openai"' || fail "OpenAI missing from the code: $READ"
 pass "export QR read back from the grab (rqrr) with PIN $PIN: same set and keys as _main.json"
+# The countdown ticks: two grabs of the sheet two seconds apart differ (only
+# the "Expires in" line, below the PIN, changes on it: scroll down to it).
+same_sheet() {
+    python3 - "$1" "$2" "$SX" "$SY" "$SW" "$SH" "$WORK/sheet.py" <<'PY'
+import sys
+exec(open(sys.argv[7]).read().split("path, sx, sy")[0])
+a, b = read_png(sys.argv[1]), read_png(sys.argv[2])
+sx, sy, sw, sh = map(int, map(float, sys.argv[3:7]))
+rows = range(sy, min(sy + sh, a[1], b[1]))
+diff = sum(a[3][y][sx * a[2]:(sx + sw) * a[2]] != b[3][y][sx * b[2]:(sx + sw) * b[2]] for y in rows)
+sys.exit(0 if diff == 0 else 1)
+PY
+}
+scroll $((SX + SW / 2)) $((SY + SH / 2)) 600; sleep 1
+T1=$(grab countdown-1); sleep 2; T2=$(grab countdown-2)
+same_sheet "$T1" "$T2" && fail "the countdown does not tick (grabs countdown-1 and countdown-2 are the same)"
+# At 0 the sheet closes itself: the service's own close comes 5 s after the
+# lifetime (counted from before the code was sealed), so a sheet gone within
+# the lifetime + 2 s closed itself.
+for _ in $(seq 1 $((QR_SECONDS * 2 + 20))); do [ -z "$(sheet_rect "countdown :=")" ] && break; sleep 0.5; done
+CLOSED=$(( $(date +%s) - SHOWN ))
+[ -z "$(sheet_rect "countdown :=")" ] || fail "the export sheet did not close after $QR_SECONDS s"
+[ "$CLOSED" -le $((QR_SECONDS + 2)) ] || fail "the export sheet closed after ${CLOSED} s, not by its own countdown ($QR_SECONDS s)"
+grab export-closed >/dev/null
+if tail -n +"$LOG_MARK" "$LOG" | grep -Eq "$SPLASH_ERRORS"; then
+    tail -n +"$LOG_MARK" "$LOG" | grep -E "$SPLASH_ERRORS" | head -5
+    fail "Splash errors while the export sheet was up"
+fi
+pass "the countdown ticked and the sheet closed itself after ${CLOSED} s ($QR_SECONDS s lifetime); no Splash error during the export"
 
 # 6. No key text anywhere the UI or logs show; no panic.
 get "snap?all=1" >"$WORK/snap.json"; get "d" >"$WORK/dump.txt"; get "log?n=5000" >"$WORK/remote-log.json"
@@ -346,7 +417,8 @@ if grep -Eq "$SECRETS" "$WORK/snap.json" "$WORK/dump.txt" "$WORK/remote-log.json
     fail "key text in the UI tree or a log"
 fi
 grep -q "panicked" "$LOG" "$WORK/remote-log.json" && fail "panic in the log"
-pass "no key text in /snap, /d, /log or the host log; no panic"
+if grep -Eq "$SPLASH_ERRORS" "$LOG"; then grep -E "$SPLASH_ERRORS" "$LOG" | head -5; fail "Splash errors in the host log"; fi
+pass "no key text in /snap, /d, /log or the host log; no panic, no Splash error"
 
 get "gq?scale=0.5" >/dev/null
 for _ in $(seq 1 30); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
