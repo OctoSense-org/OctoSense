@@ -7,6 +7,11 @@
 These are shipping apps. Keep changes small, test them in a shell, and keep the
 rules in README.md.
 
+If you are building a new OctoSense app rather than changing these, you are in
+the wrong repository: follow OctoScript-App-Design-Flow's
+[AGENTS.md](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/AGENTS.md)
+and use the bundles here only as read-only examples.
+
 - An app is `apps/<name>/bundle/`: `manifest.json` + `main.splash` (+ artwork).
   Learn the language, the APIs and the development loop from
   [OctoScript App Design Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)

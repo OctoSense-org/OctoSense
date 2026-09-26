@@ -20,6 +20,15 @@ the agent shell on top of your operating system:
 Rules for agents working here are in [AGENTS.md](AGENTS.md) and
 [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md).
 
+**Building your own app?** You do not need to build or change this
+repository. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s
+reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then
+`docs/QUICKSTART.md`), and read the bundles here as worked examples
+(`apps/<name>/bundle/main.splash`). To run one next to your app, clone this
+repository into the same workspace and, from OctoScript-App-Design-Flow:
+`tools/octo run ../OctoSense-System-Apps/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
+(`--no-stamp` leaves this checkout unmodified; Mail needs a shell, see below).
+
 ## The apps
 
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
