@@ -21,7 +21,7 @@ development, and builds for OpenHarmony and the iOS simulator.
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | How to build and publish an OctoSense app | Not a build input. Start there to write an app for Home. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | Runtime release: names the Makepad and OctoScript revisions | Pinned in `home/native-runtime.lock.json`. |
 | [makepad](https://github.com/OctoSense-org/makepad) (OctoSense fork) | UI framework and the `cargo-makepad` packager | Checked out to `.sources/makepad` at the runtime's revision. |
-| [octos](https://github.com/octos-org/octos) | The agent kernel behind AppCard | One revision, the one OctoSense-System-Apps' `octos-app` pins. |
+| [octos](https://github.com/octos-org/octos) | The agent kernel behind AppCard (only in `app-appcard` builds) | One revision, the one OctoSense-System-Apps' `octos-app` pins. |
 
 The organisation overview is at
 [github.com/OctoSense-org](https://github.com/OctoSense-org).
@@ -32,7 +32,7 @@ The organisation overview is at
 | --- | --- |
 | `home/` | The Home Rust workspace (crate `octosense`), its Android, iOS and OpenHarmony resources |
 | `home/src/` | The shell: `mobile*.rs` is the phone shell, `apps.rs` wires the linked modules and system apps |
-| `home/apps/` | Native modules: `appcard` (the AppCard host), `reference`, and the comparison-only `news`, `photos` and `maps` |
+| `home/apps/` | Native modules: `appcard` (the AppCard host, opt-in), `reference`, and the comparison-only `news`, `photos` and `maps` |
 | `home/android/` | Gradle projects: AIDL contracts, System Bridge APK, Quickstep, SystemUI previews and platform build stagers |
 | `home/tools/` | `setup-native.py` (runtime sources), `build_app_icons.py`, `a11y-probe/` |
 | `home/scripts/` | Desktop smoke test, Makepad import sync (`upstream.py`), Android frame measurement |
@@ -93,7 +93,8 @@ Useful switches:
 
 | Switch | Effect |
 | --- | --- |
-| `--features mobile-apps` | Also link the native modules (Reference, Sheets, AppCard, and the native News, Photos and Maps, which then replace their script apps) |
+| `--features mobile-apps` | Also link the native modules (Reference, Sheets, and the native News, Photos and Maps, which then replace their script apps); not AppCard |
+| `--features app-appcard` | Also link the AppCard assistant, which is not shipped by default for now |
 | `-- --module <id>` | Host a linked module in-process instead of as a child process |
 | `-- --test-action <name>` | Fire a shell action at startup: `launch-<app id>`, `page:<n>`, `island:demo`, `capture:<path>`, `ask-appcard:<text>`, `taps:<x>,<y>@<s>` |
 | `MAKEPAD_WM_TEST_APP=<app>[:<count>]` | Launch an app (count times) once the shell is up |
@@ -217,7 +218,7 @@ one from a Mac.
 | --- | --- | --- |
 | System apps: News, Photos, Maps, Camera, Mail | OctoSense-System-Apps `apps/<name>/bundle/`, selected by `home/system-apps.json` | Contained script apps, packed into the build |
 | Store apps | The App Hub catalog, installed at run time | Contained script or card apps |
-| AppCard assistant | OctoSense-System-Apps `apps/appcard/app/app` (`octos-app`) | Native module, linked in |
+| AppCard assistant | OctoSense-System-Apps `apps/appcard/app/app` (`octos-app`) | Native module, opt-in (`app-appcard`); not shipped by default |
 | Native modules | `home/apps/*`, Sheets from Makepad | Linked modules, behind features |
 
 **System apps** ([ADR 0004](home/docs/adr/0004-system-apps-are-contained-script-apps.md)).
@@ -248,21 +249,30 @@ no script app collects a password, PIN or one-time code. A person types
 one only on a host-owned sheet, the runtime makes password fields inert in
 a contained app, and the App Hub gate refuses bundles that declare them.
 
-**Native modules.** Mobile builds always link Reference, Sheets, AppCard and
-App Hub. On a desktop build, features opt in:
+**Native modules.** Mobile builds always link Reference, Sheets and App Hub.
+On a desktop build, features opt in:
 
 | Feature | Links |
 | --- | --- |
 | `app-hub` (default) | App Hub, the Card runner, the system apps and the Mail service |
-| `app-reference`, `app-sheets`, `app-appcard` | Reference, Makepad Sheets, AppCard |
+| `app-reference`, `app-sheets` | Reference, Makepad Sheets |
+| `app-appcard` | AppCard, with the octos kernel (opt-in on every target, see below) |
 | `app-news`, `app-photos`, `app-maps` | The native News, Photos and Maps, for comparison; each replaces its script app |
 | `app-aichat` | Makepad's aichat assistant as a module |
-| `mobile-apps` | All of the above except `app-aichat` |
+| `mobile-apps` | All of the above except `app-aichat` and `app-appcard` |
 | `mobile-only` | The standalone phone shell (Android sets it itself) |
 
 **AppCard** ("Ask anything") is `octos-app`'s `AppShell`, hosted by
 `home/apps/appcard` as a path dependency into
-`.sources/system-apps/apps/appcard/app/app`. Its kernel, `octos`, is not a
+`.sources/system-apps/apps/appcard/app/app`. It is **not shipped for now**:
+it interfered with the other apps, so no build links it by default, not
+`mobile-apps` and not Android, iOS or OpenHarmony. Without it there is no
+AppCard tile, group or launcher entry, and `octos` is not in the build graph.
+To bring it back, build with `--features app-appcard` (for example
+`cargo run --features mobile-apps,app-appcard`, or pass the feature to
+`cargo makepad`); it needs the `.sources/system-apps` checkout that
+`scripts/setup-home.py` prepares, and pulls `octos-core`/`octos-cli` from the
+octos revision `octos-app` pins. Its kernel library, `octos`, is not a
 Cargo dependency of Home; to bundle it in an APK, set
 `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path>"` for the packager
 ([home/docs/android-appcard-build.md](home/docs/android-appcard-build.md),
@@ -320,8 +330,11 @@ python3 -m unittest discover -s tests -v
 python3 scripts/setup-home.py
 python3 scripts/setup-home.py --check --cargo
 cd home
-cargo check --locked --workspace --features mobile-apps
+cargo check --locked --features mobile-apps
+cargo tree --locked --features mobile-apps -i octos-core   # must not match: no octos without app-appcard
+cargo check --locked --workspace --features mobile-apps,app-appcard
 cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard
+cargo test --locked --features mobile-apps,app-appcard -p octosense appcard
 cargo test --locked -p octosense-maps -- --skip view::tests --skip module::tests
 cargo test --locked -p makepad-widgets splash_policy
 cargo test --locked -p makepad-script-std gate::tests

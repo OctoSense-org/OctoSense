@@ -49,7 +49,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-photos")]
     out.push(&octosense_photos::PHOTOS_MODULE);
-    #[cfg(any(feature = "app-appcard", native_mobile))]
+    // AppCard is opt-in on every target (not shipped by default for now).
+    #[cfg(feature = "app-appcard")]
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-news")]
     out.push(&octosense_news::NEWS_MODULE);
@@ -323,8 +324,13 @@ mod tests {
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
-        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail"]);
+        // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
+        let expected: &[&str] = if cfg!(feature = "app-appcard") {
+            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail"]
+        } else {
+            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail"]
+        };
+        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         // Camera and Mail have no native module: they are system script apps
         // (ADR 0004) the Card runner hosts, launched by their manifest id.
@@ -434,7 +440,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "mobile-apps"))]
+#[cfg(all(test, feature = "app-appcard"))]
 mod appcard_isolate_tests {
     /// The app's cards are Splash widgets, each in an ISOLATE that is minted
     /// without the framework's `sys`/`agent` engine; the AppCard module must
