@@ -116,29 +116,7 @@ app_main!(
 );
     };
 }
-#[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
-macro_rules! octosense_main_with_finance {
-    ($($extra:literal),* $(,)?) => { octosense_main!("octosense_finance/resources/ux/Inter-400.ttf", "octosense_finance/resources/ux/Inter-600.ttf", "octosense_finance/resources/ux/Inter-700.ttf", "octosense_finance/resources/ux/NotoSansSC-Regular.ttf", $($extra),*); };
-}
-#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-finance")))]
-macro_rules! octosense_main_with_finance {
-    ($($extra:literal),* $(,)?) => { octosense_main!($($extra),*); };
-}
-#[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
-macro_rules! octosense_main_with_robrix {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!(
-        "octosense_robrix/resources/fonts/system_latin.ttf",
-        "octosense_robrix/resources/fonts/system_cjk.ttc",
-        "octosense_robrix/resources/fonts/NotoColorEmoji.ttf",
-        "octosense_robrix/resources/fonts/LiberationMono-Regular.ttf",
-        $($extra),*
-    ); };
-}
-#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-robrix")))]
-macro_rules! octosense_main_with_robrix {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
-}
-octosense_main_with_robrix!();
+octosense_main!();
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -4758,32 +4736,6 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
-        if let Some(client) = self.module_host.client_of_module("robrix") {
-            let foreground = self.state.as_ref().map(|state| {
-                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
-            }).unwrap_or(false);
-            if let Some(instance) = self.module_host.get(client) {
-                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
-                if let Some(mut robrix) = instance.root.borrow_mut::<octosense_robrix::module::RobrixModuleView>() {
-                    robrix.set_foreground(cx, foreground);
-                }
-                makepad_widgets::widget_async::leave_isolate(cx, entry);
-            }
-        }
-        #[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
-        if let Some(client) = self.module_host.client_of_module("finance") {
-            let foreground = self.state.as_ref().map(|state| {
-                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
-            }).unwrap_or(false);
-            if let Some(instance) = self.module_host.get(client) {
-                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
-                if let Some(mut finance) = instance.root.borrow_mut::<octosense_finance::FinanceView>() {
-                    finance.set_foreground(cx, foreground);
-                }
-                makepad_widgets::widget_async::leave_isolate(cx, entry);
-            }
-        }
         // Recording belongs to the WM, including on Home and in an OS menu.
         // Forwarding this chord also starts a recorder in the focused child.
         if let Event::KeyDown(e) | Event::KeyUp(e) = event {
@@ -4801,6 +4753,10 @@ impl AppMain for App {
         // Android's Home button or gesture, with OctoSense as the Home app.
         if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);
+        if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) && event.back_pressed() {
+            self.phone_action(cx, mobile::PhoneHit::Back);
+            return;
+        }
         if let Some(ne) = self.style_frame.is_event(event) {
             if self.state.is_some() {
                 let dt=if self.style_time==0.0 {0.0}else{(ne.time-self.style_time).min(0.05)};

@@ -43,6 +43,8 @@ pub fn is_linked(id: &str) -> bool {
 fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
+    #[cfg(feature = "app-rinx")]
+    out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]

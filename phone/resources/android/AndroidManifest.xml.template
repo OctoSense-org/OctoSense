@@ -29,6 +29,7 @@
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:debuggable="{debuggable}"
@@ -36,6 +37,8 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="{target_sdk_version}">
         <meta-data android:name="android.max_aspect" android:value="2.1" />
+        <meta-data android:name="dev.makepad.android.APPLICATION_EXTENSION"
+            android:value="dev.makepad.octosense.MakepadAppExtension" />
         <activity
             android:name=".{class_name}"
             android:configChanges="orientation|screenSize|keyboardHidden"
