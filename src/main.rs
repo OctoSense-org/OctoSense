@@ -556,14 +556,24 @@ impl App {
             return;
         };
         let app = &app;
+        // An installed app opens only while the App Hub catalog still admits
+        // it. A system app (`os.*`) ships with the build and answers to no
+        // catalog.
+        #[cfg(feature = "app-hub")]
+        if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
+            if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
+                octosense_app_hub_app::data_root(cx), manifest_id) {
+                self.notify(cx, "Could not open app", &error);
+                return;
+            }
+        }
         let hub_port = self.state_mut().hub_port;
 
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
         // matches `\b<pattern>\b` case-insensitively against the window's
-        // CLASS OR TITLE and focuses the first hit.
+        // CLASS OR TITLE and focuses the first hit. A Card app focuses only
+        // an instance of itself (`apps::matches_running_app`).
         if app.policy == LaunchPolicy::OrFocus {
-            let pattern = app.id.clone();
-            let pattern = pattern.as_str();
             let mut existing: Vec<ClientId> = self
                 .state_mut()
                 .clients
@@ -576,8 +586,7 @@ impl App {
                         && !slot.pane
                         && !slot.is_preview
                         && slot.closing.is_none()
-                        && (clients::word_match(&slot.app, pattern)
-                            || clients::word_match(&slot.title, pattern))
+                        && apps::matches_running_app(app, &slot.app, &slot.title)
                 })
                 .map(|(id, _)| *id)
                 .collect();
@@ -595,7 +604,7 @@ impl App {
         // isolate of its own — never a process, never the pool.
         if self.apps.hosting(app_id) == Hosting::Module {
             if let Some(module) = self.apps.module(app_id) {
-                self.launch_module(cx, module);
+                self.launch_module(cx, module, app);
                 return;
             }
         }
@@ -1371,6 +1380,22 @@ impl App {
         self.request_close(cx, focus);
     }
 
+    /// App Hub finished installing (or updating) `id`. An update replaces
+    /// the bundle on disk, but a running Card keeps its old code and
+    /// permissions: end its instances so the next open takes the new one.
+    #[cfg(feature = "app-hub")]
+    fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
+        let launch_id = apps::installed_launch_id(id);
+        let clients: Vec<_> = self.state_mut().clients.iter()
+            .filter_map(|(&client, slot)| (slot.app == launch_id).then_some(client))
+            .collect();
+        for client in clients {
+            self.request_close(cx, client);
+        }
+        octosense_app_hub_app::icons::invalidate();
+        self.redraw_all(cx);
+    }
+
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
@@ -1941,8 +1966,8 @@ impl App {
     /// Open `module` as an instance of its own in this process: an isolate,
     /// a tile in the layout, a local endpoint on the bus. The ordinary
     /// launch path minus everything a process needs.
-    fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
-        let open = match module.open_schema().empty_open() {
+    fn launch_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule, app: &clients::AppDef) {
+        let open = match apps::module_open(module, app) {
             Ok(open) => open,
             Err(e) => {
                 log!("wm: {} cannot open without arguments: {}", module.id(), e);
@@ -1964,7 +1989,7 @@ impl App {
         };
         self.state_mut()
             .clients
-            .insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+            .insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
         let gap = self.state_mut().gap;
         self.state_mut().layout.insert(id, area, gap);
         // The tile is a module tile from its first draw; the root is seated
@@ -1983,7 +2008,7 @@ impl App {
             let frame = self.ai_bus.register_local(id, manifest);
             self.send_to_pane(frame);
         }
-        log!("wm: launched {} as client {} (in-process)", module.id(), id);
+        log!("wm: launched {} as client {} (in-process, {})", app.id, id, module.id());
         self.activate_client(cx, id);
         self.update_bar(cx);
         self.redraw_all(cx);
@@ -3925,6 +3950,11 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
+        // `apps/` in the platform data directory or OctoSense's own state.
+        #[cfg(feature = "app-hub")]
+        octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
+            .unwrap_or_else(octosense::paths::home).join("apps"));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4130,6 +4160,14 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
+            // The store opens what it offers: a built-in by id, an installed
+            // app by its manifest id.
+            #[cfg(feature = "app-hub")]
+            match wa.cast::<octosense_app_hub_app::AppHubAction>() {
+                octosense_app_hub_app::AppHubAction::Launch(id) => self.launch_app(cx, &id),
+                octosense_app_hub_app::AppHubAction::OpenInstalled(id) => self.launch_app(cx, &apps::installed_launch_id(&id)),
+                octosense_app_hub_app::AppHubAction::None => {}
+            }
             // The shell surfaces: the bar's presses and wheel, the menu's
             // activations, the flyouts' controls.
             match wa.cast::<ShellBarAction>() {
@@ -4254,6 +4292,10 @@ impl MatchEvent for App {
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         if self.state.is_some() {
+            #[cfg(feature = "app-hub")]
+            for id in octosense_app_hub_app::take_completed_installs() {
+                self.installed_app_changed(cx, &id);
+            }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
             self.drain_module_upstream();

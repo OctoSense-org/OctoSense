@@ -6,3 +6,8 @@ MAKEPAD_BUNDLE_IDENTIFIER = { value = "dev.makepad.octosense", force = true }
 
 # AppCards embeds assets from the pinned sibling framework, including Git builds.
 OCTOSENSE_WORKSPACE = { value = "..", relative = true }
+
+# The system apps App Hub's shell crate packs into this build (ADR 0004):
+# which apps, and where their bundles are (the pinned OctoSense-System-Apps
+# checkout beside this repository). Cargo passes it as an absolute path.
+OCTOSENSE_SYSTEM_APPS = { value = "system-apps.json", relative = true }
