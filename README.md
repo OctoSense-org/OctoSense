@@ -245,7 +245,7 @@ OCTOSENSE_MAIL_VAULT=file cargo run --release
 
 ### Remote-control bridge
 
-Every desktop Makepad app, this shell included, carries a localhost HTTP control surface. Start it with `MAKEPAD_REMOTE=1` (ephemeral port) or `MAKEPAD_REMOTE=<port>`, or `--remote[=PORT]`:
+Every desktop Makepad app, this shell included, carries a localhost HTTP control surface. Start it with `MAKEPAD_REMOTE=<port>`, `MAKEPAD_REMOTE=on` (ephemeral port; a number is always read as the port, so `1` means port 1 and fails), or `--remote[=PORT]`:
 
 ```sh
 MAKEPAD_REMOTE=8399 cargo run --release
@@ -269,7 +269,7 @@ Add `&wait=1` to an input route to answer after the next frame. The bridge injec
 On macOS, `MAKEPAD_HIDE_WINDOWS=1` keeps windows off screen while still rendering, so a remote-driven run does not take over the display:
 
 ```sh
-MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=1 cargo run --release
+MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=on cargo run --release
 ```
 
 Makepad's [`makepad_test`](https://github.com/OctoSense-org/makepad/tree/main/libs/makepad_test) crate (in the `../makepad` sibling) builds on the same two pieces: `#[makepad_test]` tests launch the app hidden, drive it over `--remote` with selectors and waits, and close it with `/gq`. This repository does not have a `makepad_test` suite yet.

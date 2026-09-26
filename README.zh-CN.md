@@ -245,7 +245,7 @@ OCTOSENSE_MAIL_VAULT=file cargo run --release
 
 ### 远程控制桥
 
-每个桌面端 Makepad 应用（包括本 Shell）都内置一个本机 HTTP 控制接口。用 `MAKEPAD_REMOTE=1`（临时端口）、`MAKEPAD_REMOTE=<port>` 或 `--remote[=PORT]` 启用：
+每个桌面端 Makepad 应用（包括本 Shell）都内置一个本机 HTTP 控制接口。用 `MAKEPAD_REMOTE=<port>`、`MAKEPAD_REMOTE=on`（临时端口；数字一律按端口解析，`1` 即端口 1，会绑定失败）或 `--remote[=PORT]` 启用：
 
 ```sh
 MAKEPAD_REMOTE=8399 cargo run --release
@@ -269,7 +269,7 @@ MAKEPAD_REMOTE=8399 cargo run --release
 在 macOS 上，`MAKEPAD_HIDE_WINDOWS=1` 让窗口不显示在屏幕上但仍然渲染，这样远程驱动的运行不会占用屏幕：
 
 ```sh
-MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=1 cargo run --release
+MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=on cargo run --release
 ```
 
 Makepad 的 [`makepad_test`](https://github.com/OctoSense-org/makepad/tree/main/libs/makepad_test) crate（位于 `../makepad` 同级目录中）正是基于这两者：`#[makepad_test]` 测试以隐藏窗口启动应用，通过 `--remote` 用选择器和等待条件驱动它，最后用 `/gq` 关闭。本仓库目前还没有 `makepad_test` 测试套件。
