@@ -123,12 +123,37 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 
 /// The app registry: the applications this WM is built around, in menu
 /// order. Curated on purpose — every row is one we run and verify, not a
-/// scan of whatever the workspace happens to contain.
-pub fn registry() -> &'static [AppDef] {
-    match crate::octosense::catalog::loaded() {
-        Ok(apps) => apps,
-        Err(_) => &[],
+/// scan of whatever the workspace happens to contain: the catalog's rows,
+/// the linked modules, then the apps App Hub's Card runner hosts (system
+/// apps and installed apps, read fresh so an install needs no restart).
+pub fn registry() -> Vec<AppDef> {
+    let base = crate::octosense::catalog::loaded().as_ref().cloned().unwrap_or_default();
+    merge_catalog(
+        base,
+        crate::apps::bundled_modules_catalog(),
+        crate::apps::system_card_apps(),
+        crate::apps::installed_card_apps(),
+    )
+}
+
+/// One row per id. A system app replaces a catalog row of the same id in
+/// place (it keeps that row's menu position): the system Mail, not
+/// Makepad's example Mail, even in a personal catalog. Otherwise the first
+/// definition wins — catalog rows, then linked modules. Installed ids live
+/// under `hub:`, so a manifest named after a built-in becomes its own row
+/// beside it, never a replacement. The internal `card` host is no row.
+fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, system: Vec<AppDef>, installed: Vec<AppDef>) -> Vec<AppDef> {
+    let mut system: Vec<Option<AppDef>> = system.into_iter().map(Some).collect();
+    let mut take_system = |id: &str| system.iter_mut().find(|a| a.as_ref().is_some_and(|a| a.id == id)).and_then(Option::take);
+    let mut rows: Vec<AppDef> = Vec::new();
+    for app in base.into_iter().chain(bundled) {
+        rows.push(take_system(&app.id).unwrap_or(app));
     }
+    rows.extend(system.into_iter().flatten());
+    rows.extend(installed);
+    let mut ids = std::collections::HashSet::new();
+    rows.retain(|app| app.id != "card" && ids.insert(app.id.clone()));
+    rows
 }
 
 /// Registered ids take precedence over binary aliases. A linked module
@@ -136,9 +161,9 @@ pub fn registry() -> &'static [AppDef] {
 /// process form) is still an app: its bundled definition answers, and the
 /// hosting rules decide whether it may open (`--module <id>` on a desktop).
 pub fn find_app(id: &str) -> Option<AppDef> {
-    registry().iter().find(|a| a.id == id)
-        .or_else(|| registry().iter().find(|a| a.bin == id)).cloned()
-        .or_else(|| crate::apps::bundled_catalog().into_iter().find(|a| a.id == id))
+    let apps = registry();
+    apps.iter().find(|a| a.id == id)
+        .or_else(|| apps.iter().find(|a| a.bin == id && a.bin != "card")).cloned()
 }
 
 /// `bin/omarchy-launch-or-focus`'s window test, verbatim:
@@ -992,6 +1017,22 @@ pub fn spawn_client(
 mod tests {
     use super::*;
 
+    #[test]
+    fn system_apps_replace_catalog_rows_and_installed_apps_never_shadow() {
+        let app = |id: &str, label: &str, bin: &str| AppDef::app(id, label, "", "", bin, LaunchPolicy::OrFocus);
+        let base = vec![app("browser", "Browser", "browser"), app("mail", "Makepad Mail", "mail"), app("notes", "Notes", "notes")];
+        let bundled = vec![app("apphub", "App Hub", "apphub"), app("card", "Internal host", "card")];
+        let system = vec![app("news", "News", "card"), app("mail", "Mail", "card")];
+        let installed = vec![app("hub:demo", "Demo", "card"), app("hub:mail", "Untrusted Mail", "card")];
+        let merged = merge_catalog(base, bundled, system, installed);
+        assert_eq!(
+            merged.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["browser", "mail", "notes", "apphub", "news", "hub:demo", "hub:mail"]
+        );
+        // The system Mail took the example's place, not its name only.
+        assert_eq!((merged[1].label.as_str(), merged[1].bin.as_str()), ("Mail", "card"));
+    }
+
     /// Cargo's checkout is Cargo's to manage: a build there is invisible to
     /// `cargo clean`, survives no refetch, and quietly grows the shared
     /// cache. Apps from the pinned revision build into OctoSense's own tree.
@@ -1131,6 +1172,11 @@ mod tests {
         };
         let mut metadata = std::collections::HashMap::new();
         for app in registry() {
+            // Linked modules and the apps the Card runner hosts are no
+            // process: nothing to build.
+            if app.package.is_empty() {
+                continue;
+            }
             let manifest = app
                 .manifest
                 .clone()

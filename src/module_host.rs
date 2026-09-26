@@ -63,7 +63,26 @@ pub struct ModuleHost {
 /// still need its crate resource resolver for their bundled fonts. Expose
 /// only that existing resolver during theme registration, then remove it.
 fn apply_module_style(vm: &mut ScriptVm, sheet: &desktop_style::StyleSheet) {
-    desktop_style::install(vm, sheet.clone());
+    let mut inherited = sheet.clone();
+    // A nested Splash (a Card app the `card` module runs) replays this
+    // trusted theme after its ambient `mod.res` has been stripped. Bind only
+    // the existing bundled-resource resolver in the theme's lexical scope, so
+    // that replay can still load the style's fonts. This does not publish a
+    // resource module to the card's source.
+    inherited.theme = format!(
+        "mod._octosense_widgets_before_style = mod.widgets\n\
+         mod._octosense_prelude_before_style = mod.prelude.widgets\n\
+         let crate_resource = mod.prelude.widgets.crate_resource\n{}", inherited.theme);
+    // widgets_mod rebuilds these namespaces, including the prelude a Card's
+    // lowered body uses. Retain host additions while letting the freshly
+    // themed framework names replace their old ones.
+    inherited.widgets = format!(
+        "{}\n\
+         mod.widgets = {{..mod._octosense_widgets_before_style, ..mod.widgets}}\n\
+         mod.prelude.widgets = {{..mod._octosense_prelude_before_style, ..mod.prelude.widgets}}\n\
+         mod._octosense_widgets_before_style = nil\n\
+         mod._octosense_prelude_before_style = nil\n", inherited.widgets);
+    desktop_style::install(vm, inherited);
     vm.with_reload(|vm| {
         script_eval!(vm, { mod.res = {crate_resource: mod.prelude.widgets.crate_resource} });
         makepad_widgets::widgets_mod(vm);

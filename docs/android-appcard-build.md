@@ -1,8 +1,10 @@
 # Android build with AppCard's framework, buildtool and bundled kernel
 
-OctoSense on the phone now runs the Octoscript-AppCard module (`apps/appcard`)
-on the makepad fork's AppCard framework line and needs three things the stock
-`cargo makepad` build does not give it:
+OctoSense on the phone now runs the AppCard assistant module (`apps/appcard`,
+which mounts `octos-app` from the pinned OctoSense-System-Apps checkout,
+`../OctoSense-System-Apps/apps/appcard/app/app`) on the makepad fork's AppCard
+framework line and needs three things the stock `cargo makepad` build does not
+give it:
 
 1. **The framework pin.** `Cargo.toml`, `apps/reference/Cargo.toml` and
    `apps/appcard/Cargo.toml` pin every makepad crate at the fork's
@@ -28,11 +30,12 @@ on the makepad fork's AppCard framework line and needs three things the stock
 ## Step by step
 
 ```sh
-# 0. Paths (adjust): a checkout of the fork and of Octoscript-AppCard (with its
-#    `octos` submodule initialised), and the Android toolchain dir that
-#    `cargo makepad android install-toolchain` produced earlier.
+# 0. Paths (adjust): a checkout of the fork, a checkout of octos-org/octos at
+#    the rev octos-app pins for every octos crate (18fcd3f1, see
+#    OctoSense-System-Apps apps/appcard/app/Cargo.toml), and the Android
+#    toolchain dir that `cargo makepad android install-toolchain` produced.
 FORK=/path/to/makepad-fork          # https://github.com/OctoSense-org/makepad.git
-APPCARD=/path/to/Octoscript-AppCard # octos submodule at deb433e9 or later
+OCTOS=/path/to/octos                # https://github.com/octos-org/octos.git at 18fcd3f16e527d2b601d7ae244f056fb711bb6b8
 TOOLCHAIN=/path/to/android_33_macos_aarch64   # ndk/, platforms/, build-tools/, platform-tools/, openjdk/
 
 # 1. The buildtool cargo-makepad. It looks for the toolchain relative to its
@@ -54,9 +57,9 @@ export CC_aarch64_linux_android="$LLVM/aarch64-linux-android33-clang"
 export CXX_aarch64_linux_android="$LLVM/aarch64-linux-android33-clang++"
 export AR_aarch64_linux_android="$LLVM/llvm-ar"
 export RANLIB_aarch64_linux_android="$LLVM/llvm-ranlib"
-( cd "$APPCARD/octos" && cargo build --release --target aarch64-linux-android \
+( cd "$OCTOS" && cargo build --release --target aarch64-linux-android \
     -p octos-cli --bin octos --features api,git,ast )
-KERNEL="$APPCARD/octos/target/aarch64-linux-android/release/octos"   # ~130 MB
+KERNEL="$OCTOS/target/aarch64-linux-android/release/octos"   # ~130 MB
 
 # 3. Build, install and launch OctoSense with the kernel bundled. From this
 #    repository's root, with the phone authorised over adb:

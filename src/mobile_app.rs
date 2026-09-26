@@ -178,7 +178,7 @@ impl App {
         self.state_mut().phone.tiles.note_launch(app_id, host::now());
         let Some(app) = crate::clients::find_app(app_id) else { return };
         if self.apps.hosting(app_id) == Hosting::Module {
-            if let Some(module) = self.apps.module(app_id) { self.launch_tile_module(cx, module); }
+            if let Some(module) = self.apps.module(app_id) { self.launch_tile_module(cx, module, &app); }
             return;
         }
         if !host::processes_available() { return; }
@@ -201,20 +201,20 @@ impl App {
             Err(err) => log!("wm: home tile launch of {} failed: {}", app.id, err),
         }
     }
-    fn launch_tile_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule) {
-        let open = match module.open_schema().empty_open() {
+    fn launch_tile_module(&mut self, cx: &mut Cx, module: &'static dyn AppModule, app: &clients::AppDef) {
+        let open = match crate::apps::module_open(module, app) {
             Ok(open) => open,
             Err(e) => { log!("wm: {} cannot open without arguments: {}", module.id(), e); return; }
         };
         let id = self.next_id;
         self.next_id += 1;
-        let viewport = self.tile_viewport(module.id()).unwrap_or_else(|| { let a = self.desk_area(cx); dvec2(a.w, a.h) });
+        let viewport = self.tile_viewport(&app.id).unwrap_or_else(|| { let a = self.desk_area(cx); dvec2(a.w, a.h) });
         if let Err(e) = self.module_host.create(cx, id, module, open, viewport) {
             log!("wm: module {} failed to start for its home tile: {}", module.id(), e);
             return;
         }
         let Some((manifest, root, vm_id)) = self.module_host.get(id).map(|i| (i.manifest(), i.root.clone(), i.vm_id)) else { return };
-        self.state_mut().clients.insert(id, clients::ClientSlot::module(id, module.id(), module.label()));
+        self.state_mut().clients.insert(id, clients::ClientSlot::module(id, &app.id, &app.label));
         self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
             d.mark_module(id);
             d.with_module_view(cx, id, |cx, v| v.set_root(cx, id, vm_id, root));
@@ -227,8 +227,8 @@ impl App {
             let frame = self.ai_bus.register_local(id, manifest);
             self.send_to_pane(frame);
         }
-        self.state_mut().phone.tiles.bind(module.id(), id, true);
-        log!("wm: launched {} as client {} for its home tile (in-process)", module.id(), id);
+        self.state_mut().phone.tiles.bind(&app.id, id, true);
+        log!("wm: launched {} as client {} for its home tile (in-process)", app.id, id);
         self.animate_phone(cx);
     }
     pub(super) fn configure_phone_mode(&mut self,cx:&mut Cx,previous:desktop::DesktopStyle,style:desktop::DesktopStyle) {
