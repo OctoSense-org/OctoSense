@@ -1,5 +1,7 @@
 # AppCard
 
+English | [简体中文](README.zh-CN.md)
+
 The **AppCard assistant runtime** — the "Ask anything" tile: the `octos-app`
 crate workspace and the card prompt corpora it compiles in. The OctoSense
 shells host it in a tile: you type a request, a routing brain (the AMA) picks
@@ -96,10 +98,13 @@ and `tools/build-android.sh`. For OpenHarmony, see
 
 ## Consumers
 
-A shell takes `octos-app` as a git dependency on this repository (Cargo finds
-the package inside the repository by name):
+A shell takes `octos-app` without its standalone entry points and mounts it
+as a widget:
 
 ```toml
+# as the shells do it: a path dependency on their pinned checkout of this repository
+octos-app = { path = "<checkout>/apps/appcard/app/app", default-features = false }
+# or a git dependency (Cargo finds the package inside the repository by name)
 octos-app = { git = "https://github.com/OctoSense-org/OctoSense-System-Apps.git", rev = "<sha>", default-features = false }
 ```
 
@@ -111,13 +116,22 @@ default, the parent of this repository, does not exist). A dependency's
 OpenHarmony also patches `nix` from the same octos rev, as `app/Cargo.toml`
 does.
 
-- **OctoSense ROM**, `home/apps/appcard`.
-- **OctoSense desktop shell** hosts it in a tile.
-- **Rinx** embeds the AppCard tile.
+The hosting API is in `app/app/src/host.rs`: call
+`octos_app::register_script_mods(vm)`, then mount `AppShell::create(vm)`, a
+widget that owns the app and draws `OctosAppBody` (the app's root without the
+standalone `Window`). `AppShell::ask` submits text as if typed into the
+composer; `AppShell::shutdown` runs before the host frees the isolate.
 
-Today these consumers pin rev `9e8e4898` of OctoSense-org/Octoscript-AppCard
-(now OctoScript-App-Design-Flow). Each one must repin to this repository in its
-own follow-up PR. Until then, changes made here do not reach them.
+- **OctoSense ROM**, `home/apps/appcard`, and **OctoSense-Desktop**,
+  `apps/appcard`: an `AppCardModule` that implements the shell's `AppModule`
+  trait around `AppShell`. Both move to this repository (at `4d99cb58`, with
+  octos `18fcd3f1`) in
+  [OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18) and
+  [OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36),
+  both open. Their `main` branches still pin rev `9e8e4898` of
+  OctoSense-org/Octoscript-AppCard (now OctoScript-App-Design-Flow), so
+  changes made here do not reach them until those merge.
+- **Rinx** embeds the AppCard tile; its repin is a separate follow-up.
 
 ## Provenance
 

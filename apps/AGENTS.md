@@ -10,14 +10,20 @@ rules in README.md.
   widget or call is not documented there or used by another app here, check the
   runtime source before using it.
 - Run a bundle on a desktop with App Hub's `card-host --bundle apps/<name>/bundle
-  --system --allow-unsigned` (add `MAKEPAD_REMOTE=<port>` to drive it over HTTP).
-  `--system` lets an `os.*` id and an empty digest through, as the shell does.
+  --system` (add `MAKEPAD_REMOTE=<port>` to drive it over HTTP; Photos also
+  takes `--static photos=<dir>`). `--system` lets an `os.*` id and an empty
+  digest through, as the shell does. These flags are on App Hub's
+  `apps/script-and-system-apps` branch (OctoSense-App-Hub#4) until it merges.
+  `card-host` registers no host services: run Mail in a shell with
+  `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 - Validate on a phone through the ROM's Home as a separate test package; never
   replace the device's installed Home.
 - Mail's service: change `apps/mail/host-service` and run
-  `cargo test -p octosense-mail-service` from the ROM's `home/`.
-- After a change, bump the shells' pin (`home/native-apps.lock.json` in the ROM)
-  in a pull request there.
+  `cargo test -p octosense-mail-service` from a shell workspace that links it
+  (the ROM's `home/`, or OctoSense-Desktop).
+- After a change, bump the shells' pins (`home/native-apps.lock.json` in the
+  ROM, `native-apps.lock.json` in OctoSense-Desktop) in a pull request there.
+  That wiring lands with OctoSense-ROM#18 and OctoSense-Desktop#36.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
 
