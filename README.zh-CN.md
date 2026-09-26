@@ -8,12 +8,12 @@ OctoSense-Desktop 是 [OctoSense](https://github.com/OctoSense-org)（运行在�
 
 | 仓库 | 与本仓库的关系 |
 | --- | --- |
-| [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM/blob/main/README.zh-CN.md) | 手机 Shell（`home/`）。相同的应用模型、相同的运行时补丁、相同的系统应用。 |
+| [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM/blob/main/README.zh-CN.md) | 手机 Shell（`home/`）。相同的应用模型、相同的运行时、相同的系统应用。 |
 | [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | 新闻、相册、地图、相机、邮件的应用包，邮件宿主服务，以及 AppCard 助手（`octos-app`）。以固定版本的同级目录检出。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店和 Card 运行器。以 Git crate `octosense-app-hub-app` 链接。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 固定 Makepad 与 OctoScript 版本的运行时发行版。以固定版本的同级目录检出。 |
-| [makepad（OctoSense 分支）](https://github.com/OctoSense-org/makepad) | 框架。以固定版本的同级目录检出，并打上经过评审的补丁。 |
+| [makepad（OctoSense 分支）](https://github.com/OctoSense-org/makepad) | 框架。以固定版本的同级目录检出。 |
 | [octos](https://github.com/octos-org/octos) | AppCard 助手背后的 Agent 内核。Git 依赖，只有一个版本（`18fcd3f1`）。 |
 
 ## 仓库结构
@@ -29,7 +29,7 @@ OctoSense-Desktop 是 [OctoSense](https://github.com/OctoSense-org)（运行在�
 | `system-apps.json` | 本次构建打包哪些系统应用，以及从哪里取。 |
 | `native-runtime.lock.json` | OctoScript-Makepad 发行版（并由它确定 Makepad 和 OctoScript）。 |
 | `native-apps.lock.json` | OctoSense-System-Apps 的版本。 |
-| `runtime-patches.lock.json`、`patches/runtime/` | 经过评审的 Makepad 补丁（[OctoSense-org/makepad#30](https://github.com/OctoSense-org/makepad/pull/30)）及其期望的源码树。 |
+| `runtime-patches.lock.json` | 固定 Makepad 之上经过评审的补丁及其期望的源码树。目前为空：固定的 Makepad 已包含 Shell 所需的一切。 |
 | `tools/setup-native.py` | 准备并检查固定版本的同级目录。 |
 | `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）、它们的 Python 测试，以及 `provision-appcard-llm.sh`（Android）。 |
 | `upstream/makepad.json` | 每个从 Makepad `apps/wm` 引入的文件的来源记录。 |
@@ -60,19 +60,19 @@ python3 tools/setup-native.py
 octosense-ws/
   OctoSense-Desktop/       this repository
   octoscript-makepad/      the release native-runtime.lock.json selects
-  makepad/, octoscript/    the revisions that release's runtime.json pins; makepad carries the patch
+  makepad/, octoscript/    the revisions that release's runtime.json pins
   OctoSense-System-Apps/   the revision native-apps.lock.json pins
 ```
 
 | 命令 | 作用 |
 | --- | --- |
-| `python3 tools/setup-native.py` | 按固定版本克隆缺失的同级仓库，并应用 Makepad 补丁。 |
+| `python3 tools/setup-native.py` | 按固定版本克隆缺失的同级仓库（并应用 `runtime-patches.lock.json` 中列出的补丁，如有）。 |
 | `python3 tools/setup-native.py --check` | 只校验同级目录，不做任何修改。 |
 | `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml` | 同时检查锁定的 Cargo 依赖图：只有一个 Makepad、一个 octos、一个 App Hub。 |
 | `python3 tools/setup-native.py --update` | 把干净的检出移动到锁定版本（在锁文件变更之后）。 |
 | `--root DIR`、`--cache DIR` | 使用其他工作区目录；复用本地 Git 对象缓存。 |
 
-同级目录中的本地修改会被保留；`--update` 只移动干净的检出。补丁所基于的提交（`runtime-patches.lock.json` 中的 `source_commit`）的干净检出，会被视为同一棵源码树。
+同级目录中的本地修改会被保留；`--update` 只移动干净的检出。当 `runtime-patches.lock.json` 列出补丁时，该补丁所基于的提交（`source_commit`）的干净检出，会被视为同一棵源码树。
 
 ## 构建与运行
 
@@ -154,7 +154,7 @@ launcher 把四类应用列在一起：
 
 ### 隔离与权限
 
-隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。Card 运行器只授予清单中列出的能力（邮件申请 `storage` 和 `mail`）。Makepad 补丁（[makepad#30](https://github.com/OctoSense-org/makepad/pull/30)）在 isolate 的每个出口执行这一约束：网络请求和 web socket 受应用的主机列表约束，原始 socket 和服务端被拒绝，文件访问限制在应用的存储沙箱内，密码和一次性验证码输入框在受约束的 isolate 中不起作用。
+隔离运行的应用是一个包：`manifest.json`（id、版本、能力）加上 `main.splash`。Card 运行器只授予清单中列出的能力（邮件申请 `storage` 和 `mail`）。固定的 Makepad（[makepad#30](https://github.com/OctoSense-org/makepad/pull/30)）在 isolate 的每个出口执行这一约束：网络请求和 web socket 受应用的主机列表约束，原始 socket 和服务端被拒绝，文件访问限制在应用的存储沙箱内，密码和一次性验证码输入框在受约束的 isolate 中不起作用。
 
 ### 宿主服务与宿主自有面板
 
@@ -295,9 +295,9 @@ cargo makepad android run -p octosense --release
 
 | 要更新的内容 | 修改 | 然后 |
 | --- | --- | --- |
-| Makepad / OctoScript | `native-runtime.lock.json`（新的 OctoScript-Makepad 发行版），以及 `Cargo.toml` 和 `apps/*/Cargo.toml` 中 Makepad Git 依赖的 `rev` | 必要时变基补丁，更新 `runtime-patches.lock.json`（base、sha256、tree） |
+| Makepad / OctoScript | `native-runtime.lock.json`（新的 OctoScript-Makepad 发行版），以及 `Cargo.toml` 和 `apps/*/Cargo.toml` 中 Makepad Git 依赖的 `rev` | 如需在其上打补丁，记录到 `runtime-patches.lock.json`（base、sha256、tree） |
 | 系统应用、邮件服务、AppCard | `native-apps.lock.json` 中的 `revision` | — |
-| App Hub | `Cargo.toml` 中 `octosense-app-hub-app` 的 `rev` 以及三个 `[patch]` 条目 | — |
+| App Hub | `Cargo.toml` 中 `octosense-app-hub-app` 的 `rev` | 与固定的 System-Apps 中 Mail 服务引用的 App Hub 版本（`octosense-appstore`）保持一致，使依赖图中只有一份 App Hub |
 
 任何更改之后：执行 `python3 tools/setup-native.py --update`，按需执行 `cargo update`，再运行 `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml` 和下面的测试。
 
