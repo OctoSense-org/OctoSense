@@ -261,23 +261,6 @@ mod tests {
         assert!(!matches_running_app(&app,"hub:news-other","News"));
     }
 
-    #[cfg(any(feature = "app-hub", native_mobile))]
-    #[test]
-    fn installed_apps_are_read_once_per_data_root_and_hub_generation() {
-        let reads = std::cell::Cell::new(0);
-        let timer = crate::clients::AppDef {id: installed_launch_id("org.example.timer"),label:"Timer".into(),bin:"card".into(),
-            package:String::new(),dir:String::new(),manifest:None,args:Vec::new(),policy:crate::clients::LaunchPolicy::OrFocus};
-        let load = || { reads.set(reads.get() + 1); vec![timer.clone()] };
-        let root = std::path::PathBuf::from("hub-root-a");
-        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
-        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
-        assert_eq!(reads.get(), 1, "the same data root and generation reuse the list");
-        cached_installed_apps((root, 8), &load);
-        assert_eq!(reads.get(), 2, "an install or update bumps the generation and is read at once");
-        cached_installed_apps(("hub-root-b".into(), 8), &load);
-        assert_eq!(reads.get(), 3, "another data root is read");
-    }
-
 
     #[cfg(feature = "mobile-apps")]
     #[test]
@@ -331,6 +314,23 @@ mod tests {
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
         }
+    }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn installed_apps_are_read_once_per_data_root_and_hub_generation() {
+        let reads = std::cell::Cell::new(0);
+        let timer = crate::clients::AppDef {id: installed_launch_id("org.example.timer"),label:"Timer".into(),bin:"card".into(),
+            package:String::new(),dir:String::new(),manifest:None,args:Vec::new(),policy:crate::clients::LaunchPolicy::OrFocus};
+        let load = || { reads.set(reads.get() + 1); vec![timer.clone()] };
+        let root = std::path::PathBuf::from("hub-root-a");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(reads.get(), 1, "the same data root and generation reuse the list");
+        cached_installed_apps((root, 8), &load);
+        assert_eq!(reads.get(), 2, "an install or update bumps the generation and is read at once");
+        cached_installed_apps(("hub-root-b".into(), 8), &load);
+        assert_eq!(reads.get(), 3, "another data root is read");
     }
 }
 
