@@ -94,7 +94,7 @@ python3 ../scripts/setup-home.py --check
 
 The artifact's `build.json` retains the original 494-test pre-package receipt. `validation/latest.json` records the subsequent 495-test run after restoring the authorization regression in a `cfg(test)` module, together with its test-file hash. No production source changed between that original packaging and the 495-test run. The original frozen build-source hashes remain in `source-sha256.json`.
 
-PR preparation also ran the full repository suite, `python3 -m unittest discover -s tests -v`, with the installed JDK: all 82 checks passed. Staging-shell syntax and pinned runtime-source verification passed. CI sets `RUST_TEST_THREADS=1` because these controller tests exercise the production VM's wall-clock limits.
+PR preparation also ran the full repository suite, `python3 -m unittest discover -s tests -v`, with the installed JDK: all 82 checks passed. Staging-shell syntax and pinned runtime-source verification passed. That revision serialized the VM tests to avoid production wall-clock cutoffs; the review follow-up removes those cutoffs and restores parallel tests.
 
 ## PR #21 rebase
 
@@ -105,3 +105,21 @@ The generated AIDL compiler-command header was removed from the rewritten Settin
 A generic read-only `View::scroll_pos`/`ViewRef::scroll_pos` exposes the scrollbar position already used when drawing. This replaces the former AppLanguage geometry approximation; script state owns when that observation is bookmarked and restored. Gesture cancellation is a pure `cancel_gesture` event that clears held targets without pausing services or stopping sound previews.
 
 The Maps workflow command passed 64 tests; nine existing TLS/network tests failed when their local server attempted `TcpListener::bind` (`PermissionDenied` / `Operation not permitted`). The workflow's existing 33 filtered view/module tests are unchanged. No network test was disabled or altered. An unrestricted run remains required; this session result is not a green CI claim.
+
+## PR #21 review follow-up
+
+Settings transitions now use deterministic instruction limits, plus the existing heap, stack, frame and data limits. No blocking or external operation is installed in this controller VM. Scheduler delays no longer abort a valid transition; malformed output and exhausted instruction budgets still discard the whole transition without issuing effects. Commands are not automatically retried.
+
+The ROM permission allowlist explicitly covers Home's night mode and the broker's secure settings/configuration permissions on `system_ext`. Agent-to-broker, PermissionController and SystemUI connections bind on first use, release after 30 seconds without a request, and retry only in response to a subsequent request. Shutdown, null binding and binding death also release the connection. This bounds the broker's idle lifetime without replaying commands.
+
+Home hides non-system overlay windows on Android 12+, and its Activity rejects fully or partially obscured gestures before either native views or the renderer receives input. If an overlay appears during a gesture, the Activity sends cancellation and rejects the rest of the gesture. The Android renderer translates cancellation into a non-activating release and clears capture; internal drag cancellation does not issue a drop.
+
+CI regenerates the Home Binder client with Android build-tools 35.0.0/platform 35 and compares the complete Java output with the checked-in file. The compiler invocation header is stripped before comparison to keep local paths out of source. Run `python3 scripts/generate-agent-aidl.py --check --sdk "$ANDROID_HOME"` locally.
+
+The earlier architecture record is now ADR 0006, leaving ADR 0004 available for PR #18. The obsolete empty `appstore` entry remains hidden at the user's request; the actual App Hub stays visible. PermissionController's existing staging regression covers identical repeat runs and preserving unrelated edits. Re-staging identical sources passes and does not require a destructive reset.
+
+Review validation passes the locked workspace compilation and single-runtime graph check, 673 application tests (including 502 Home tests), 73 Maps tests and 11 runtime-policy tests. The nine previously blocked Maps network fixtures now pass with unrestricted local socket access. Parallel controller tests include a 120 ms simulated descheduling pause and instruction-exhaustion rollback.
+
+The repository run exercised 86 checks: 85 passed initially, and the Android batch harness needed the new cancellation message shape. Its correction preserves the existing IME ordering checks and adds cancellation as an ordering barrier; all six tests in that suite passed on rerun. The new lifecycle tests cover lazy startup, idle renewal/expiry, failed binds, binding death, closure and obscured gestures. All 12 Agent adapter clients also compile against regenerated AIDL and Android SDK 35. The generated Home AIDL comparison passes.
+
+Standalone ARM64 release validation APK `2026092602` passes `settings_input_safety` on the dedicated Android API 35 emulator. The instrumentation drives the actual Activity dispatch and a native child button: a clean tap clicks, fully obscured input does not, a partial overlay appearing after press cancels the gesture, and a subsequent clean tap works. This is input-protection acceptance, not full Settings or privileged ROM acceptance. The emulator's previous Home APK is restored after the test. No physical-phone operation was performed. A platform-signed ROM build/boot and full ordinary/privileged Settings acceptance remain pending.

@@ -6,10 +6,10 @@ Status: Implemented in source; emulator acceptance pending
 
 ## Reason
 
-The user requires the Settings app itself to be authored in Octoscript. ADR 0004
+The user requires the Settings app itself to be authored in Octoscript. ADR 0006
 put its layout in Octoscript but retained navigation, interaction state, drafts,
 review flows, and event handling in Rust. That implementation does not meet the
-requested application boundary. This decision replaces that part of ADR 0004.
+requested application boundary. This decision replaces that part of ADR 0006.
 
 ## Application boundary
 
@@ -79,8 +79,8 @@ is authorized by this port; the current validation scope is emulator-only.
 
 The original source port passed 495 host tests with embedded mobile apps enabled and 31
 Java/repository Settings checks. Its standalone ARM64 development APK `2026092540`
-has been built and signed. Installation and Android acceptance remain pending
-because this session cannot create ADB's local listener. The source inventory
+has been built and signed. At that revision, installation and Android acceptance were blocked
+by the session's restricted ADB access. The source inventory
 and exact validation scope are recorded in
 [the migration inventory](../android/settings-octoscript-logic-inventory.md).
 PR #21's subsequent main rebase and validation are recorded separately there;

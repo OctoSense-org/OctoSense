@@ -3,7 +3,7 @@
 Updated: 2026-09-25. Target: the complete system Settings experience on the
 OctoSense OnePlus 6 ROM (LineageOS 22.2 / Android 15), implemented using the shared
 Octoscript–Makepad presentation and trusted typed service boundary in
-[ADR 0004](../adr/0004-builtin-settings.md).
+[ADR 0006](../adr/0006-builtin-settings.md).
 
 ## Audit baseline and status rules
 

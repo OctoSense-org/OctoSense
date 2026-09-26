@@ -68,7 +68,7 @@ storage statistics through a shared UID. Hosted OctoSense modules such as Mail
 and Settings share Home's Android package and data; they are not separate Android
 packages in this list.
 
-Implementation: [ADR 0004](../adr/0004-builtin-settings.md), the
+Implementation: [ADR 0006](../adr/0006-builtin-settings.md), the
 [full replacement parity ledger](settings-parity.md), and the
 [app theme contract](app-theme-contract.md). Complete replacement is the target;
 native links are temporary migration coverage. TalkBack support for every hosted

@@ -111,7 +111,7 @@ rendering, text input and typed Android bindings. See the
 Complete system Settings replacement is in progress; some areas still open
 Android Settings. See the [current controls and validation](docs/android/settings.md),
 [feature parity checklist](docs/android/settings-parity.md), and
-[architecture decision](docs/adr/0004-builtin-settings.md).
+[architecture decision](docs/adr/0006-builtin-settings.md).
 
 ## Mail preview on Android
 

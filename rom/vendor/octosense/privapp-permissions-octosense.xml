@@ -8,6 +8,11 @@
         <permission name="android.permission.START_TASKS_FROM_RECENTS"/>
         <permission name="android.permission.STATUS_BAR"/>
         <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
+        <permission name="android.permission.MODIFY_DAY_NIGHT_MODE"/>
+    </privapp-permissions>
+    <privapp-permissions package="dev.makepad.octosense.settingsbroker">
+        <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
+        <permission name="android.permission.CHANGE_CONFIGURATION"/>
     </privapp-permissions>
     <privapp-permissions package="dev.makepad.octosense.bridge">
         <permission name="android.permission.WRITE_SECURE_SETTINGS"/>

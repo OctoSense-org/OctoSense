@@ -6,7 +6,6 @@
 use makepad_strict_json::Value;
 use makepad_widgets::makepad_script::*;
 use std::collections::HashSet;
-use std::time::Duration;
 
 const MAX_BYTES: usize = 512 * 1024;
 const MAX_NODES: usize = 24_000;
@@ -225,12 +224,13 @@ fn install_text(vm: &mut ScriptVm) {
 fn call(vm: &mut ScriptVm, function: ScriptValue, args: &[ScriptValue]) -> Result<Value, String> {
     let errors = vm.bx.uncaught_error_count;
     vm.bx.captured_errors = Some(Vec::new());
-    vm.bx.run_budget = Some(ScriptRunBudget::from_durations(Duration::from_millis(50), Duration::from_millis(100), 1024));
+    // This effect-free VM admits only bounded data and local text operations.
+    // Count work, not descheduled time: CPU contention must not discard input.
+    // The instruction, stack, frame, heap and data limits still fail closed.
     let value = vm.with_stack_value_limit(16_384, |vm| vm.with_call_frame_limit(256, |vm| {
         vm.with_instruction_limit(1_000_000, |vm| vm.call(function, args))
     }));
     vm.drain_errors();
-    vm.bx.run_budget = None;
     if value.is_err() || vm.bx.uncaught_error_count != errors || vm.bx.threads.cur_ref().is_paused() {
         #[cfg(test)]
         eprintln!("Controller test diagnostics: {:?}", vm.take_errors().into_iter().take(3).collect::<Vec<_>>());
@@ -409,6 +409,21 @@ mod tests {
         assert!(controller.step(&event("click", Value::Bool(false)), &Value::Null, |_| Err::<(), _>("denied".into())).is_err());
         assert_eq!(controller.state().get("count"), Some(&Value::Int(0)));
         controller.step(&event("click", Value::Bool(false)), &Value::Null, |_| Ok(())).unwrap();
+        assert_eq!(controller.state().get("count"), Some(&Value::Int(1)));
+    }
+    #[test] fn scheduler_delay_does_not_discard_a_bounded_transition() {
+        let mut controller = controller(&format!("test.deschedule()\nstate.count=state.count+1\n{RETURN}"));
+        // A test-only host function models time spent off CPU. No such blocking
+        // operation is exposed to the bundled controller in production.
+        controller.vm.as_mut().unwrap().with_vm(|vm| {
+            let test = vm.bx.heap.new_object();
+            vm.add_method(test, id_lut!(deschedule), script_args_def!(), |_, _| {
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                NIL
+            });
+            vm.set_injected_global(id!(test), test.into());
+        });
+        controller.step(&event("click", Value::Null), &Value::Null, |_| Ok(())).unwrap();
         assert_eq!(controller.state().get("count"), Some(&Value::Int(1)));
     }
     #[test] fn incomplete_patches_and_cycles_fail_without_commit() {

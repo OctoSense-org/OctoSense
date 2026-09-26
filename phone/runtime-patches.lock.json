@@ -2,8 +2,8 @@
   "schema_version": 1,
   "makepad": {
     "patch": "home/runtime-patches/android-host-accessibility.patch",
-    "sha256": "3ef606e36390aad51ec87db59efed5c4a9451ff4de52f012cd29c5f244b5a30b",
+    "sha256": "bea29bdee2303b59a101b168a8fe915fae8a134e439723a93fd80a11382795d6",
     "base_revision": "1d3d383e84a66dbb18a4a860f505430c9d5b20f4",
-    "tree": "adeab147ca1db0733e7ae5855a9ae4523b449dff"
+    "tree": "a8348659e5548d1de26623ea27a5ab779bfd0d0f"
   }
 }

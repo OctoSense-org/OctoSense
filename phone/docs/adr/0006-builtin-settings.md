@@ -1,4 +1,6 @@
-# ADR 0004: Built-in OctoSense Settings
+# ADR 0006: Built-in OctoSense Settings
+
+Renumbered from ADR 0004 to avoid the independently proposed contained-apps ADR in PR #18.
 
 Date: 2026-09-24
 

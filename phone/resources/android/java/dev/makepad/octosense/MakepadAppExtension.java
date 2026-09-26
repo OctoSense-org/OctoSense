@@ -57,6 +57,8 @@ import org.json.JSONObject;
 /** Public launcher client and asynchronous bridge adapter in the Home process. */
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
+    private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
+    @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ThreadPoolExecutor worker=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(32),r -> new Thread(r,"OctoSenseAndroid"),new ThreadPoolExecutor.AbortPolicy());
@@ -139,6 +141,9 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
 
     public MakepadAppExtension(MakepadActivity activity) {
         this.activity=activity;
+        // Home also hosts trusted Settings, theme controls and native overlays.
+        // Protect its window before an external Settings intent can be handled.
+        if(android.os.Build.VERSION.SDK_INT>=31) activity.getWindow().setHideOverlayWindows(true);
         windowFocused=activity.hasWindowFocus();
         launcher=activity.getSystemService(LauncherApps.class);
         users=activity.getSystemService(UserManager.class);

@@ -7,6 +7,20 @@ A = "{http://schemas.android.com/apk/res/android}"
 
 
 class SettingsBrokerBoundaryTest(unittest.TestCase):
+    def test_privileged_settings_permissions_are_declared_on_the_install_partition(self):
+        allowlist = ET.parse(ROOT / 'vendor/octosense/privapp-permissions-octosense.xml').getroot()
+        permissions = {entry.get('package'): {p.get('name') for p in entry.findall('permission')}
+                       for entry in allowlist}
+        for package, required in {
+            'dev.makepad.octosense': {'android.permission.MODIFY_DAY_NIGHT_MODE'},
+            'dev.makepad.octosense.settingsbroker': {'android.permission.WRITE_SECURE_SETTINGS',
+                                                   'android.permission.CHANGE_CONFIGURATION'},
+        }.items():
+            self.assertTrue(required <= permissions.get(package, set()), package)
+        self.assertIn('system_ext_specific: true', (ROOT / 'vendor/octosense/settings-broker/Android.bp').read_text())
+        self.assertIn('$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/permissions/privapp-permissions-octosense.xml',
+                      (ROOT / 'vendor/octosense/octosense.mk').read_text())
+
     def test_only_finite_signed_settings_binders_are_exported_from_system_uid(self):
         manifest = ET.parse(ROOT / "vendor/octosense/settings-broker/AndroidManifest.xml").getroot()
         self.assertEqual(manifest.get(A + "sharedUserId"), "android.uid.system")
