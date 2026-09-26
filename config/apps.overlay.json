@@ -20,8 +20,11 @@
       "bin": "route"
     }
   },
+  "_drop": "mail and photos are OctoSense system apps (OctoSense-System-Apps, run by App Hub's Card runner) and take these ids; Makepad's example programs of the same name are not shipped.",
   "drop": [
-    "scope"
+    "scope",
+    "mail",
+    "photos"
   ],
   "append": [
     {"id": "image", "label": "Image Viewer", "source": "makepad", "package": "makepad-image", "bin": "image", "policy": "new"},

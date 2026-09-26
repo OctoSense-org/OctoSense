@@ -1,0 +1,4414 @@
+diff --git a/draw/src/text/layouter.rs b/draw/src/text/layouter.rs
+index 56f7a4d63..616010173 100644
+--- a/draw/src/text/layouter.rs
++++ b/draw/src/text/layouter.rs
+@@ -383,7 +383,7 @@ fn layout_multiline(mut self) -> LaidoutText {
+             .enumerate()
+         {
+             if line_index != 0 {
+-                self.finish_current_row(true);
++                self.finish_current_row(true, false);
+             }
+             if self.is_past_max_rows() {
+                 break;
+@@ -394,7 +394,7 @@ fn layout_multiline(mut self) -> LaidoutText {
+         if has_ellipsis_config {
+             self.apply_ellipsis_truncation()
+         } else {
+-            self.finish_current_row(false);
++            self.finish_current_row(false, false);
+             self.finish_with(false)
+         }
+     }
+@@ -457,7 +457,7 @@ fn layout_by_word(&mut self, len: usize) {
+                     } else if self.current_row_is_empty() && !self.current_row_is_continuation() {
+                         self.layout_by_grapheme(fitter.pop());
+                     } else {
+-                        self.finish_current_row(false);
++                        self.finish_current_row(false, true);
+                     }
+                 }
+             }
+@@ -482,7 +482,7 @@ fn layout_by_grapheme(&mut self, len: usize) {
+                     if self.current_row_is_empty() {
+                         self.layout_directly(fitter.pop());
+                     } else {
+-                        self.finish_current_row(false);
++                        self.finish_current_row(false, true);
+                     }
+                 }
+             }
+@@ -518,7 +518,8 @@ fn append_text(&mut self, text: &ShapedText) {
+         self.current_row_end += text.text.len();
+     }
+ 
+-    fn finish_current_row(&mut self, newline: bool) {
++    /// `soft_wrap`: the row ends because the next word did not fit.
++    fn finish_current_row(&mut self, newline: bool, soft_wrap: bool) {
+         let font = self.font_family.fonts().first();
+         let font_size_in_lpxs = self.style.font_size_in_lpxs();
+         let ascender_in_lpxs = font.map_or(0.0, |font| font.ascender_in_ems()) * font_size_in_lpxs;
+@@ -531,10 +532,12 @@ fn finish_current_row(&mut self, newline: bool) {
+             .text
+             .substr(self.current_row_start..self.current_row_end);
+         let mut width_in_lpxs = self.current_point_in_lpxs.x;
+-        if self.options.wrap {
++        if soft_wrap {
+             // A space consumed at a soft line break still belongs to the text
+             // (and caret positions), but must not widen or offset the visible
+             // line. Keep the glyphs and source text intact for hit testing.
++            // Only there: a run's last row keeps its trailing space, which is
++            // the gap before the next run (`to <b>Mail</b>`).
+             let visible_end = text.trim_end().len();
+             for glyph in self.glyphs.iter().rev() {
+                 if glyph.cluster < visible_end {
+@@ -722,7 +725,7 @@ fn finish_current_row_if_pending(&mut self) {
+         let has_pending_content =
+             self.current_row_start != self.current_row_end || !self.glyphs.is_empty();
+         if has_pending_content || self.rows.is_empty() {
+-            self.finish_current_row(false);
++            self.finish_current_row(false, false);
+         }
+     }
+ }
+@@ -1496,6 +1499,16 @@ fn letter_spacing_changes_layout_cache_and_wrapping() {
+         assert_eq!(centered.rows[0].text.as_str(), "CARD ");
+         assert!((centered.rows[0].width_in_lpxs - word.size_in_lpxs.width).abs() < 0.01);
+         assert!((centered.rows[0].origin_in_lpxs.x - 0.05).abs() < 0.01);
++
++        // A run that ends in a space, laid out where it fits: the space is
++        // the gap before whatever run follows (`to <b>Mail</b>`), not a
++        // soft line break, so it keeps its width.
++        let spaced = layouter.get_or_layout(BorrowedLayoutParams {
++            text: "CARD ",
++            options: LayoutOptions {max_width_in_lpxs: Some(1000.0), wrap: true, ..params.options},
++            ..params
++        });
++        assert!(spaced.rows[0].width_in_lpxs > word.size_in_lpxs.width + 1.0);
+     }
+ 
+     #[test]
+diff --git a/libs/html/src/lib.rs b/libs/html/src/lib.rs
+index bac0ce06e..03012b53d 100644
+--- a/libs/html/src/lib.rs
++++ b/libs/html/src/lib.rs
+@@ -3417,7 +3417,13 @@ fn text_lookups_skip_parser_artifacts() {
+     /// Treating U+00A0 and U+3000 as collapsible ate `&nbsp;` runs and the
+     /// full-width spaces in CJK text.
+     #[test]
+-    fn only_ascii_whitespace_collapses() {
++    fn a_space_before_an_inline_tag_is_kept() {
++        assert_eq!(text_of("<p>Welcome to <b>Mail</b> now</p>"), "Welcome to Mail now");
++        assert_eq!(text_of("<h2>Welcome to <b>Mail</b></h2><p>x</p>"), "Welcome to Mailx");
++    }
++
++    #[test]
++        fn only_ascii_whitespace_collapses() {
+         assert_eq!(text_of("<p>a&nbsp; b</p>"), "a\u{a0} b");
+         assert_eq!(text_of("<p>&nbsp;&nbsp;</p>"), "\u{a0}\u{a0}");
+         assert_eq!(text_of("<p>\u{3000}x\u{3000}</p>"), "\u{3000}x\u{3000}");
+diff --git a/platform/script/src/lib.rs b/platform/script/src/lib.rs
+index f929c8784..69d10c047 100644
+--- a/platform/script/src/lib.rs
++++ b/platform/script/src/lib.rs
+@@ -24,6 +24,7 @@ macro_rules! script_eval {
+ pub mod gen_index;
+ pub mod heap;
+ pub mod mod_gc;
++pub mod mod_feed;
+ pub mod mod_html;
+ pub mod math_aot;
+ pub mod mod_math;
+diff --git a/platform/script/src/mod_feed.rs b/platform/script/src/mod_feed.rs
+new file mode 100644
+index 000000000..497cbc9e0
+--- /dev/null
++++ b/platform/script/src/mod_feed.rs
+@@ -0,0 +1,872 @@
++//! `"<xml>".parse_feed(style)`: RSS 2.0 or Atom into an array of rows,
++//! `{title, link, source, published, summary, image}`, for an app that reads
++//! feeds. Parsing in script would spend an app's instruction budget on string
++//! scanning; this is pure computation, so every isolate may call it.
++//!
++//! `style` is `"google"` (titles end in ` - Source`), `"digest"` (TechMeme:
++//! titles end in ` (Outlet)`) or anything else for plain feeds. A document
++//! that is not a feed yields `nil`; a malformed one yields fewer rows.
++//!
++//! Items are split on `<item` / `<entry`, fields are the first matching
++//! element (CDATA unwrapped, entities decoded, tags stripped, whitespace
++//! collapsed), without an XML crate. Known limitation: an `<item` or
++//! `<title` inside a CDATA description can confuse the splitter, which costs
++//! that item its summary or title, never a panic.
++use crate::heap::*;
++use crate::makepad_live_id::live_id::*;
++use crate::native::*;
++use crate::value::*;
++use crate::*;
++
++const SUMMARY_CHARS: usize = 280;
++
++fn is_http_url(s: &str) -> bool {
++    ["http://", "https://"].iter().any(|scheme| s.get(..scheme.len()).is_some_and(|head| head.eq_ignore_ascii_case(scheme)))
++}
++
++/// One story, whatever the feed.
++#[derive(Clone, Debug, Default, PartialEq)]
++struct Headline {
++    title: String,
++    link: String,
++    source: String,
++    source_id: String,
++    published: Option<i64>,
++    points: Option<u32>,
++    comments: Option<u32>,
++    summary: String,
++    discussion: Option<String>,
++    image: Option<String>,
++}
++
++fn json_string(out: &mut String, s: &str) {
++    out.push('"');
++    for c in s.chars() {
++        match c {
++            '"' => out.push_str("\\\""),
++            '\\' => out.push_str("\\\\"),
++            '\n' => out.push_str("\\n"),
++            '\r' => out.push_str("\\r"),
++            '\t' => out.push_str("\\t"),
++            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
++            c => out.push(c),
++        }
++    }
++    out.push('"');
++}
++
++fn rows_json(rows: &[Headline]) -> String {
++    let mut out = String::from("[");
++    for (i, row) in rows.iter().enumerate() {
++        if i > 0 {
++            out.push(',');
++        }
++        out.push_str("{\"title\":");
++        json_string(&mut out, &row.title);
++        out.push_str(",\"link\":");
++        json_string(&mut out, &row.link);
++        out.push_str(",\"source\":");
++        json_string(&mut out, &row.source);
++        out.push_str(",\"summary\":");
++        json_string(&mut out, &row.summary);
++        out.push_str(",\"image\":");
++        json_string(&mut out, row.image.as_deref().unwrap_or(""));
++        out.push_str(",\"published\":");
++        match row.published {
++            Some(secs) => out.push_str(&secs.to_string()),
++            None => out.push('0'),
++        }
++        out.push('}');
++    }
++    out.push(']');
++    out
++}
++
++pub fn define_feed_module(heap: &mut ScriptHeap, native: &mut ScriptNative) {
++    native.add_type_method(
++        heap,
++        ScriptValueType::REDUX_STRING,
++        id!(parse_feed),
++        &[(id!(style), NIL)],
++        |vm, args| {
++            let sself = script_value!(vm, args.self);
++            let style_value = script_value!(vm, args.style);
++            let style = vm.bx.heap.string_with(style_value, |_, s| s.to_string()).unwrap_or_default();
++            let style = match style.as_str() {
++                "google" => Style { split_source: true, digest: false },
++                "digest" => Style { split_source: false, digest: true },
++                _ => Style::default(),
++            };
++            let Some(parsed) = vm.bx.heap.string_with(sself, |_, s| parse_styled(s, style)) else {
++                return script_err_unexpected!(vm.bx.threads.cur_ref().trap, "parse_feed called on non-string value");
++            };
++            let Ok(rows) = parsed else { return NIL };
++            let json = rows_json(&rows);
++            let mut json_parser = std::mem::take(&mut vm.bx.threads.cur().json_parser);
++            let result = json_parser.read_json(&json, &mut vm.bx.heap);
++            vm.bx.threads.cur().json_parser = json_parser;
++            result
++        },
++    );
++}
++
++
++
++/// How a feed spells its stories, beyond plain RSS or Atom.
++#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
++struct Style {
++    /// Google News: titles end in ` - Source`.
++    split_source: bool,
++    /// A digest (TechMeme): titles end in ` (Author/Outlet)` and the
++    /// description is `Outlet: headline` again.
++    digest: bool,
++}
++
++fn parse_styled(xml: &str, style: Style) -> Result<Vec<Headline>, String> {
++    // A feed that prefixes every Atom element (`<atom:entry>`) reads like
++    // a bare one once the prefix is dropped.
++    let unprefixed;
++    let xml = if !xml.contains("<entry") && xml.contains("<atom:entry") {
++        unprefixed = xml.replace("<atom:", "<").replace("</atom:", "</");
++        unprefixed.as_str()
++    } else {
++        xml
++    };
++    let (open, close, is_atom) = feed_kind(xml).ok_or_else(|| "not an RSS or Atom feed".to_string())?;
++    let rows = xml
++        .split(open)
++        .skip(1)
++        .filter_map(|chunk| {
++            // `chunk` starts right after `<item` / `<entry`: attributes or `>`.
++            let body = &chunk[chunk.find('>')? + 1..];
++            let body = body.split_once(close).map_or(body, |(b, _)| b);
++            parse_item(body, is_atom, style)
++        })
++        .collect();
++    Ok(rows)
++}
++
++const RSS: (&str, &str, bool) = ("<item", "</item>", false);
++const ATOM: (&str, &str, bool) = ("<entry", "</entry>", true);
++
++/// The item element to split on and whether the feed is Atom: the root
++/// element decides (`<feed>`; `<rss>` or `<rdf:RDF>`), else the first item
++/// element found.
++fn feed_kind(xml: &str) -> Option<(&'static str, &'static str, bool)> {
++    match root_element(xml) {
++        Some("feed") => Some(ATOM),
++        Some("rss" | "rdf:RDF") => Some(RSS),
++        _ if has_element(xml, "item") => Some(RSS),
++        _ if has_element(xml, "entry") => Some(ATOM),
++        _ => None,
++    }
++}
++
++/// The name of the root element: the first element after the prolog (a
++/// byte-order mark, whitespace, `<?...?>`, `<!--...-->`, `<!DOCTYPE ...>`).
++/// Looking only there keeps a `<feed>` inside a description from naming
++/// the kind.
++fn root_element(xml: &str) -> Option<&str> {
++    let prolog_space = |c: char| c.is_whitespace() || c == '\u{feff}';
++    let mut rest = xml.trim_start_matches(prolog_space);
++    loop {
++        let after_prolog = if let Some(after) = rest.strip_prefix("<?") {
++            after.split_once("?>")?.1
++        } else if let Some(after) = rest.strip_prefix("<!--") {
++            after.split_once("-->")?.1
++        } else if let Some(after) = rest.strip_prefix("<!") {
++            // A DOCTYPE with an internal subset (`[...]`) ends at its first
++            // inner `>`; what follows is not an element, so the caller falls
++            // back to the item heuristic. Feeds do not carry one.
++            after.split_once('>')?.1
++        } else {
++            break;
++        };
++        rest = after_prolog.trim_start_matches(prolog_space);
++    }
++    let name = rest.strip_prefix('<')?;
++    let end = name.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(name.len());
++    Some(&name[..end]).filter(|n| !n.is_empty())
++}
++
++/// Whether `xml` opens an element named exactly `name`.
++fn has_element(xml: &str, name: &str) -> bool {
++    let open = format!("<{name}");
++    let mut from = 0;
++    while let Some(pos) = xml[from..].find(&open) {
++        from += pos + open.len();
++        if xml[from..].chars().next().is_some_and(|c| c == '>' || c == '/' || c.is_whitespace()) {
++            return true;
++        }
++    }
++    false
++}
++
++/// One `<item>` / `<entry>` body as a row; None without a title or an http
++/// link.
++fn parse_item(body: &str, is_atom: bool, style: Style) -> Option<Headline> {
++    let mut title = clean_text(element_text(body, "title")?);
++    if title.is_empty() {
++        return None;
++    }
++    let link = if is_atom { atom_link(body) } else { rss_link(body) }?;
++    let mut source = if is_atom {
++        String::new()
++    } else {
++        element_text(body, "source").map(clean_text).unwrap_or_default()
++    };
++    if style.split_source {
++        if let Some((head, tail)) = split_google_source(&title) {
++            title = head;
++            source = tail;
++        }
++    }
++    if style.digest {
++        if let Some((head, outlet)) = trailing_outlet(&title) {
++            title = head;
++            source = outlet;
++        }
++    }
++    let mut summary = element_text(body, "description")
++        .or_else(|| element_text(body, "summary"))
++        .or_else(|| element_text(body, "content"))
++        .or_else(|| element_text(body, "content:encoded"))
++        .map(|d| truncate(&clean_text(d), SUMMARY_CHARS))
++        .unwrap_or_default();
++    // A description of `Outlet: headline` (a digest's): the outlet is the
++    // row's publisher when nothing named one, and a description that is
++    // only the headline again is no summary.
++    if let Some((outlet, rest)) = outlet_prefix(&title, &summary) {
++        if source.is_empty() {
++            source = outlet;
++        }
++        summary = rest;
++    }
++    let published = element_text(body, "pubDate")
++        .and_then(|d| parse_rfc822(d.trim()))
++        .or_else(|| element_text(body, "published").and_then(|d| parse_rfc3339(d.trim())))
++        .or_else(|| element_text(body, "updated").and_then(|d| parse_rfc3339(d.trim())))
++        .or_else(|| element_text(body, "dc:date").and_then(|d| parse_rfc3339(d.trim())));
++    // The model stamps `source_id` when the rows land: one reader serves
++    // every feed.
++    Some(Headline {
++        title,
++        link,
++        source,
++        source_id: String::new(),
++        published,
++        points: None,
++        comments: None,
++        summary,
++        discussion: None,
++        image: image_url(body),
++    })
++}
++
++/// The story's picture, when the item carries one: a `<media:content>`
++/// that is an image (its `medium` or `type` says so, or neither is given),
++/// a `<media:thumbnail>`, an `<enclosure>` with an image type, else the
++/// first `<img>` in the description or content. Only an http(s) URL
++/// counts, and it is asked for over https whatever the feed says: feeds
++/// still carry plain http picture links (TechMeme's), the app's own
++/// connections are held to transport security on Apple platforms, and a
++/// picture host without https costs the story its picture, not its row.
++fn image_url(body: &str) -> Option<String> {
++    media_image(body, "media:content", true)
++        .or_else(|| media_image(body, "media:thumbnail", false))
++        .or_else(|| media_image(body, "enclosure", true))
++        .or_else(|| inline_image(body))
++        .map(|url| match url.strip_prefix("http://") {
++            Some(rest) => format!("https://{rest}"),
++            None => url,
++        })
++}
++
++/// The `url` of the first `<tag>` element that is an image. `typed`: the
++/// element carries a `medium` or `type`, and it must say image when it
++/// does (an enclosure must say so; a media:content with neither is taken
++/// as one). Every such element is looked at, not just the first: a feed
++/// may list a video before its still.
++fn media_image(body: &str, tag: &str, typed: bool) -> Option<String> {
++    let open = format!("<{tag}");
++    let mut from = 0;
++    while let Some(pos) = body[from..].find(&open) {
++        let at = from + pos;
++        let after = &body[at + open.len()..];
++        let next = after.chars().next()?;
++        from = at + open.len();
++        if next != '>' && next != '/' && !next.is_whitespace() {
++            continue;
++        }
++        let tag_end = after.find('>')?;
++        let attrs = &after[..tag_end];
++        if typed {
++            let medium = attribute(attrs, "medium");
++            let kind = attribute(attrs, "type");
++            let says_image = medium.as_deref() == Some("image") || kind.as_deref().is_some_and(|t| t.starts_with("image/"));
++            let says_nothing = medium.is_none() && kind.is_none() && tag == "media:content";
++            if !says_image && !says_nothing {
++                continue;
++            }
++        }
++        if let Some(url) = attribute(attrs, "url").map(|u| decode_entities(&u)) {
++            if is_http_url(&url) {
++                return Some(url);
++            }
++        }
++    }
++    None
++}
++
++/// The first `<img src>` in the item's HTML description or content that is
++/// not a tiny one (a permalink icon, a tracking pixel: anything whose
++/// `width` or `height` says under `MIN_IMAGE_PX`). Tags and attributes in
++/// any case, values quoted or not.
++fn inline_image(body: &str) -> Option<String> {
++    let html = element_text(body, "description")
++        .or_else(|| element_text(body, "content:encoded"))
++        .or_else(|| element_text(body, "content"))?;
++    // CDATA markers dropped and entities decoded: feeds double-encode HTML.
++    let html = decode_entities(&html.replace("<![CDATA[", "").replace("]]>", ""));
++    // ASCII lowercasing keeps every byte offset, so positions found in the
++    // lowered copy index the original.
++    let lower = html.to_ascii_lowercase();
++    let mut from = 0;
++    while let Some(pos) = lower[from..].find("<img") {
++        let at = from + pos + 4;
++        let Some(tag_end) = lower[at..].find('>') else { break };
++        let attrs = &html[at..at + tag_end];
++        from = at + tag_end;
++        if is_tiny(attrs) {
++            continue;
++        }
++        if let Some(src) = attribute_ci(attrs, "src").map(|u| decode_entities(&u)) {
++            if is_http_url(&src) {
++                return Some(src);
++            }
++        }
++    }
++    None
++}
++
++/// Under this many pixels on a side an image is an icon, not a picture.
++const MIN_IMAGE_PX: f64 = 50.0;
++
++/// Whether an `<img>`'s `width` or `height` attribute says it is an icon.
++fn is_tiny(attrs: &str) -> bool {
++    ["width", "height"].iter().any(|key| {
++        attribute_ci(attrs, key)
++            .and_then(|v| v.trim().trim_end_matches("px").trim().parse::<f64>().ok())
++            .is_some_and(|px| px < MIN_IMAGE_PX)
++    })
++}
++
++/// `attribute` for HTML: the name in any case, the value quoted or bare
++/// (ending at whitespace).
++fn attribute_ci(attrs: &str, name: &str) -> Option<String> {
++    let lower = attrs.to_ascii_lowercase();
++    let key = format!("{}=", name.to_ascii_lowercase());
++    let mut from = 0;
++    while let Some(pos) = lower[from..].find(&key) {
++        let at = from + pos;
++        let before_ok = at == 0 || lower[..at].ends_with(|c: char| c.is_whitespace());
++        from = at + key.len();
++        if !before_ok {
++            continue;
++        }
++        let rest = &attrs[at + key.len()..];
++        let value = match rest.chars().next()? {
++            quote @ ('"' | '\'') => {
++                let value = &rest[1..];
++                &value[..value.find(quote)?]
++            }
++            _ => rest.split(|c: char| c.is_whitespace()).next().unwrap_or(""),
++        };
++        return Some(value.to_string());
++    }
++    None
++}
++
++/// `Outlet: headline …` in a description whose remainder opens with the
++/// item's own title: the outlet, and what is left after the headline
++/// (empty when the description was the headline alone). None when the
++/// description does not have that shape.
++fn outlet_prefix(title: &str, summary: &str) -> Option<(String, String)> {
++    // The colon alone: a stripped `<BR>` may have left no space after it.
++    let (outlet, rest) = summary.split_once(':')?;
++    let outlet = outlet.trim();
++    let rest = rest.trim_start();
++    if !looks_like_name(outlet) {
++        return None;
++    }
++    let title = title.trim().trim_end_matches('…').trim();
++    let head: String = title.chars().take(TITLE_MATCH_CHARS).collect();
++    if head.is_empty() || !rest.to_lowercase().starts_with(&head.to_lowercase()) {
++        return None;
++    }
++    let rest = rest.trim();
++    // What follows the headline, compared character by character (a
++    // lowercase form can differ in length from its original, so byte
++    // offsets of one never index the other).
++    let remainder = strip_prefix_ci(rest, title).unwrap_or("").trim();
++    let remainder = remainder.trim_start_matches(['—', '-', '·', ':', ',']).trim();
++    Some((outlet.to_string(), remainder.to_string()))
++}
++
++/// `text` after `prefix`, matched case-insensitively character by
++/// character; None when `text` does not start with it.
++fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
++    let mut rest = text;
++    for want in prefix.chars() {
++        let got = rest.chars().next()?;
++        if !got.to_lowercase().eq(want.to_lowercase()) {
++            return None;
++        }
++        rest = &rest[got.len_utf8()..];
++    }
++    Some(rest)
++}
++
++/// A digest title's trailing ` (Author/Outlet)` or ` (Outlet)`: the title
++/// without it, and the outlet (the last `/`-separated part). None when the
++/// title does not end that way, or what is in the parentheses is too long
++/// to be a name.
++fn trailing_outlet(title: &str) -> Option<(String, String)> {
++    let title = title.trim();
++    let inner_end = title.strip_suffix(')')?;
++    let open = inner_end.rfind('(')?;
++    let inner = inner_end[open + 1..].trim();
++    let head = inner_end[..open].trim_end();
++    if inner.is_empty() || head.is_empty() || inner.chars().count() > OUTLET_CHARS || inner.contains('(') {
++        return None;
++    }
++    let outlet = inner.rsplit('/').next().unwrap_or(inner).trim();
++    if outlet.is_empty() {
++        return None;
++    }
++    Some((head.to_string(), outlet.to_string()))
++}
++
++/// Whether `text` reads as an outlet's name rather than the start of a
++/// sentence: a few words, each capitalised or a number (`Financial Times`,
++/// `9to5Mac`, `The Verge`), connectors aside; no sentence punctuation.
++fn looks_like_name(text: &str) -> bool {
++    let words: Vec<&str> = text.split_whitespace().collect();
++    if words.is_empty() || text.chars().count() > OUTLET_CHARS || text.contains(['.', '!', '?']) {
++        return false;
++    }
++    words.iter().all(|word| {
++        matches!(*word, "of" | "the" | "and" | "de" | "for" | "&")
++            || word.chars().next().is_some_and(|c| c.is_uppercase() || c.is_ascii_digit())
++    })
++}
++
++/// An outlet's name is a few words: anything longer is a sentence with a
++/// colon in it.
++const OUTLET_CHARS: usize = 40;
++/// How much of the headline the description must open with.
++const TITLE_MATCH_CHARS: usize = 24;
++
++/// Google News titles end in ` - Source`; the last dash is the separator.
++fn split_google_source(title: &str) -> Option<(String, String)> {
++    let (head, tail) = title.rsplit_once(" - ")?;
++    let (head, tail) = (head.trim(), tail.trim());
++    (!head.is_empty() && !tail.is_empty()).then(|| (head.to_string(), tail.to_string()))
++}
++
++/// The first `<tag ...>...</tag>` in `xml` as its attribute text and raw
++/// inner text. A tag name must end at `>`, whitespace or `/`, so `title`
++/// never matches `titleX`. A self-closing element has empty inner text.
++fn element<'a>(xml: &'a str, tag: &str) -> Option<(&'a str, &'a str)> {
++    let open = format!("<{tag}");
++    let close = format!("</{tag}>");
++    let mut from = 0;
++    while let Some(pos) = xml[from..].find(&open) {
++        let at = from + pos;
++        let after = &xml[at + open.len()..];
++        let next = after.chars().next()?;
++        if next != '>' && next != '/' && !next.is_whitespace() {
++            from = at + 1;
++            continue;
++        }
++        let tag_end = after.find('>')?;
++        let attrs = after[..tag_end].trim_end();
++        if let Some(attrs) = attrs.strip_suffix('/') {
++            return Some((attrs, ""));
++        }
++        let content = &after[tag_end + 1..];
++        let end = content.find(&close)?;
++        return Some((attrs, &content[..end]));
++    }
++    None
++}
++
++/// The raw inner text of the first `<tag>` in `xml`.
++fn element_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
++    element(xml, tag).map(|(_, text)| text)
++}
++
++/// An RSS item's `<link>` when it is an http(s) URL, else its `<guid>` when
++/// that is one and not marked `isPermaLink="false"`.
++fn rss_link(body: &str) -> Option<String> {
++    element_text(body, "link")
++        .map(clean_text)
++        .filter(|l| is_http_url(l))
++        .or_else(|| permalink_guid(body))
++}
++
++fn permalink_guid(body: &str) -> Option<String> {
++    let (attrs, text) = element(body, "guid")?;
++    if attribute(attrs, "isPermaLink").is_some_and(|v| v.eq_ignore_ascii_case("false")) {
++        return None;
++    }
++    Some(clean_text(text)).filter(|g| is_http_url(g))
++}
++
++/// Atom links are `<link href="..." rel="..."/>`; the article is the one
++/// without `rel` or with `rel="alternate"`.
++fn atom_link(xml: &str) -> Option<String> {
++    let mut from = 0;
++    while let Some(pos) = xml[from..].find("<link") {
++        let at = from + pos;
++        let after = &xml[at + 5..];
++        let tag_end = after.find('>')?;
++        let attrs = &after[..tag_end];
++        // Past the whole tag: restarting inside it would rescan to its `>`
++        // once per `<link` in a wall of them.
++        from = at + 5 + tag_end + 1;
++        let rel = attribute(attrs, "rel");
++        if rel.as_deref().is_some_and(|r| r != "alternate") {
++            continue;
++        }
++        if let Some(href) = attribute(attrs, "href") {
++            let href = decode_entities(&href);
++            if is_http_url(&href) {
++                return Some(href);
++            }
++        }
++    }
++    None
++}
++
++fn attribute(attrs: &str, name: &str) -> Option<String> {
++    let key = format!("{name}=");
++    let mut from = 0;
++    while let Some(pos) = attrs[from..].find(&key) {
++        let at = from + pos;
++        let before_ok = at == 0 || attrs[..at].ends_with(|c: char| c.is_whitespace());
++        let rest = &attrs[at + key.len()..];
++        from = at + key.len();
++        if !before_ok {
++            continue;
++        }
++        let quote = rest.chars().next()?;
++        if quote != '"' && quote != '\'' {
++            continue;
++        }
++        let value = &rest[1..];
++        let end = value.find(quote)?;
++        return Some(value[..end].to_string());
++    }
++    None
++}
++
++/// CDATA markers dropped (they can sit anywhere in a description), entities
++/// decoded, HTML tags stripped, entities decoded again (feeds double-encode
++/// HTML in descriptions), whitespace collapsed.
++pub(crate) fn clean_text(raw: &str) -> String {
++    let text = raw.replace("<![CDATA[", "").replace("]]>", "");
++    let text = decode_entities(text.trim());
++    let text = strip_tags(&text);
++    let text = decode_entities(&text);
++    text.split_whitespace().collect::<Vec<_>>().join(" ")
++}
++
++/// What an angle-bracketed run turns into once stripped.
++enum TagKind {
++    /// Wraps words inside a sentence: dropped, so `<a>Example</a>:` keeps
++    /// its colon attached.
++    Inline,
++    /// Separates words or lines: a space, so `line<br/>break` never fuses.
++    Block,
++    /// Not an HTML tag at all: a title may well say `<3` or `x < y`.
++    Text,
++}
++
++const INLINE_TAGS: &[&str] = &[
++    "a", "abbr", "b", "big", "cite", "code", "del", "em", "font", "i", "ins", "mark", "q", "s", "small", "span",
++    "strike", "strong", "sub", "sup", "tt", "u",
++];
++
++const BLOCK_TAGS: &[&str] = &[
++    "article", "aside", "audio", "blockquote", "br", "center", "dd", "div", "dl", "dt", "figcaption", "figure",
++    "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "iframe", "img", "li", "nav", "ol", "p", "picture",
++    "pre", "section", "source", "table", "tbody", "td", "th", "thead", "tr", "ul", "video",
++];
++
++fn tag_kind(tag: &str) -> TagKind {
++    // Comments and processing instructions are markup too.
++    if tag.starts_with('!') || tag.starts_with('?') {
++        return TagKind::Block;
++    }
++    let name = tag
++        .trim_start_matches('/')
++        .split(|c: char| c.is_whitespace() || c == '/')
++        .next()
++        .unwrap_or("")
++        .to_ascii_lowercase();
++    if INLINE_TAGS.contains(&name.as_str()) {
++        TagKind::Inline
++    } else if BLOCK_TAGS.contains(&name.as_str()) {
++        TagKind::Block
++    } else {
++        TagKind::Text
++    }
++}
++
++/// Remove known HTML tags (see `TagKind`); an unclosed `<` is text.
++fn strip_tags(text: &str) -> String {
++    let mut out = String::with_capacity(text.len());
++    let mut rest = text;
++    while let Some(open) = rest.find('<') {
++        out.push_str(&rest[..open]);
++        let after = &rest[open..];
++        let Some(close) = after.find('>') else {
++            rest = after;
++            break;
++        };
++        match tag_kind(&after[1..close]) {
++            TagKind::Inline => {}
++            TagKind::Block => out.push(' '),
++            TagKind::Text => out.push_str(&after[..=close]),
++        }
++        rest = &after[close + 1..];
++    }
++    out.push_str(rest);
++    out
++}
++
++/// The scan for an entity's `;` looks at `&` and the ten bytes after it,
++/// so an entity is at most nine characters between `&` and `;`; the
++/// longest wanted, `&#x10FFFF;`, has eight.
++const MAX_ENTITY_LEN: usize = 10;
++
++/// The named entities feeds actually use, plus numeric ones. A numeric
++/// entity for a control character (other than tab, newline and carriage
++/// return) stays as written, so no feed can smuggle one into a label.
++pub(crate) fn decode_entities(text: &str) -> String {
++    let mut out = String::with_capacity(text.len());
++    let mut rest = text;
++    while let Some(pos) = rest.find('&') {
++        out.push_str(&rest[..pos]);
++        let after = &rest[pos..];
++        // Only look as far as an entity can reach, so a wall of `&` stays linear.
++        let Some(end) = after.bytes().take(MAX_ENTITY_LEN + 1).position(|b| b == b';') else {
++            out.push('&');
++            rest = &after[1..];
++            continue;
++        };
++        let entity = &after[1..end];
++        let decoded = match entity {
++            "amp" => Some('&'),
++            "lt" => Some('<'),
++            "gt" => Some('>'),
++            "quot" => Some('"'),
++            "apos" => Some('\''),
++            "nbsp" => Some(' '),
++            "mdash" => Some('—'),
++            "ndash" => Some('–'),
++            "hellip" => Some('…'),
++            "lsquo" => Some('‘'),
++            "rsquo" => Some('’'),
++            "ldquo" => Some('“'),
++            "rdquo" => Some('”'),
++            _ => numeric_entity(entity),
++        };
++        match decoded {
++            Some(c) => {
++                out.push(c);
++                rest = &after[end + 1..];
++            }
++            None => {
++                out.push('&');
++                rest = &after[1..];
++            }
++        }
++    }
++    out.push_str(rest);
++    out
++}
++
++/// `#65` or `#x41`, digits only (no sign), and never a control character
++/// other than tab, newline or carriage return.
++fn numeric_entity(entity: &str) -> Option<char> {
++    let number = entity.strip_prefix('#')?;
++    let code = match number.strip_prefix(['x', 'X']) {
++        Some(hex) if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) => u32::from_str_radix(hex, 16).ok()?,
++        Some(_) => return None,
++        None if !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()) => number.parse().ok()?,
++        None => return None,
++    };
++    char::from_u32(code).filter(|c| !c.is_control() || matches!(c, '\n' | '\t' | '\r'))
++}
++
++/// At most `max` characters: cut to `max - 1`, a trailing space dropped, an
++/// ellipsis appended.
++pub(crate) fn truncate(text: &str, max: usize) -> String {
++    if text.chars().count() <= max {
++        return text.to_string();
++    }
++    let cut: String = text.chars().take(max.saturating_sub(1)).collect();
++    format!("{}…", cut.trim_end())
++}
++
++const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
++
++/// `Wed, 16 Sep 2026 08:15:01 -0400`, the weekday and seconds optional,
++/// the zone `GMT`/`UT`/`UTC`/`Z`, `±HHMM`, or a US abbreviation.
++pub(crate) fn parse_rfc822(text: &str) -> Option<i64> {
++    let mut parts: Vec<&str> = text.split_whitespace().collect();
++    if parts.first().is_some_and(|p| p.ends_with(',')) {
++        parts.remove(0);
++    }
++    if parts.len() < 4 {
++        return None;
++    }
++    let day: i64 = parts[0].parse().ok()?;
++    let month_name = parts[1].to_lowercase();
++    let month = MONTHS.iter().position(|m| month_name.starts_with(m))? as i64 + 1;
++    let year: i64 = parts[2].parse().ok()?;
++    let year = if year < 100 { year + 2000 } else { year };
++    let clock = hms(parts[3])?;
++    let offset = parts.get(4).map(|z| zone_offset(z)).unwrap_or(0);
++    unix_seconds(year, month, day, clock, offset)
++}
++
++/// `2026-09-16T08:30:00+02:00`, `...Z`, fractional seconds allowed, a
++/// missing zone read as UTC.
++pub(crate) fn parse_rfc3339(text: &str) -> Option<i64> {
++    let (date, time) = text.split_once(['T', 't', ' '])?;
++    let mut d = date.split('-');
++    let year: i64 = d.next()?.parse().ok()?;
++    let month: i64 = d.next()?.parse().ok()?;
++    let day: i64 = d.next()?.parse().ok()?;
++    let zone_at = time.find(['Z', 'z', '+']).or_else(|| time.rfind('-')).unwrap_or(time.len());
++    let (clock, zone) = time.split_at(zone_at);
++    let clock = hms(clock.split('.').next()?)?;
++    unix_seconds(year, month, day, clock, zone_offset(zone))
++}
++
++/// Unix seconds for a civil date and clock in a zone `offset` seconds east
++/// of UTC; None when a date field is out of range. A day past its month's
++/// end is let through, as a feed's own clock would have it.
++fn unix_seconds(year: i64, month: i64, day: i64, (h, m, s): (i64, i64, i64), offset: i64) -> Option<i64> {
++    if !(1..=9999).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
++        return None;
++    }
++    Some(days_from_civil(year, month, day) * 86_400 + h * 3600 + m * 60 + s - offset)
++}
++
++/// `HH:MM` or `HH:MM:SS`, each field in range (a leap second allowed).
++fn hms(text: &str) -> Option<(i64, i64, i64)> {
++    let mut p = text.split(':');
++    let h: i64 = p.next()?.parse().ok()?;
++    let m: i64 = p.next()?.parse().ok()?;
++    let s: i64 = match p.next() {
++        Some(s) => s.parse().ok()?,
++        None => 0,
++    };
++    ((0..=23).contains(&h) && (0..=59).contains(&m) && (0..=60).contains(&s)).then_some((h, m, s))
++}
++
++/// Seconds east of UTC for a zone token. Zone names other than the UTC
++/// spellings and the US abbreviations (CET, BST, AEST, ...) are read as
++/// UTC: a time off by a few hours beats no time at all.
++fn zone_offset(zone: &str) -> i64 {
++    match zone.to_uppercase().as_str() {
++        "GMT" | "UT" | "UTC" | "Z" | "" => 0,
++        "EST" => -5 * 3600,
++        "EDT" => -4 * 3600,
++        "CST" => -6 * 3600,
++        "CDT" => -5 * 3600,
++        "MST" => -7 * 3600,
++        "MDT" => -6 * 3600,
++        "PST" => -8 * 3600,
++        "PDT" => -7 * 3600,
++        z => {
++            let sign = if z.starts_with('-') { -1 } else { 1 };
++            let digits: String = z.chars().filter(|c| c.is_ascii_digit()).collect();
++            if digits.len() < 4 {
++                return 0;
++            }
++            let hh: i64 = digits[..2].parse().unwrap_or(0);
++            let mm: i64 = digits[2..4].parse().unwrap_or(0);
++            sign * (hh * 3600 + mm * 60)
++        }
++    }
++}
++
++/// Days since 1970-01-01 for a proleptic Gregorian date.
++pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
++    let y = if m <= 2 { y - 1 } else { y };
++    let era = (if y >= 0 { y } else { y - 399 }) / 400;
++    let yoe = y - era * 400;
++    let mp = if m > 2 { m - 3 } else { m + 9 };
++    let doy = (153 * mp + 2) / 5 + d - 1;
++    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
++    era * 146_097 + doe - 719_468
++}
++
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const RSS: &str = r#"<?xml version="1.0"?><rss><channel><title>T</title>
++      <item><title><![CDATA[Rust 2.0 &amp; you]]></title><link>https://example.com/a</link>
++        <description>&lt;p&gt;Big &lt;b&gt;news&lt;/b&gt;&lt;/p&gt;</description>
++        <pubDate>Tue, 10 Jun 2025 12:00:00 GMT</pubDate>
++        <media:thumbnail url="http://img.example.com/a.jpg"/></item>
++      <item><title>Second - The Outlet</title><link>https://example.com/b</link></item>
++      <item><title></title><link>https://example.com/c</link></item>
++    </channel></rss>"#;
++
++    const ATOM: &str = r#"<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Atom post</title>
++      <link rel="alternate" href="https://example.org/p"/><updated>2025-06-10T12:00:00Z</updated>
++      <summary>Short</summary></entry></feed>"#;
++
++    #[test]
++    fn rss_items_become_rows_with_cleaned_text_times_and_https_images() {
++        let rows = parse_styled(RSS, Style::default()).unwrap();
++        assert_eq!(rows.len(), 2, "an untitled item is skipped");
++        assert_eq!(rows[0].title, "Rust 2.0 & you");
++        assert_eq!(rows[0].summary, "Big news");
++        assert_eq!(rows[0].published, Some(1_749_556_800));
++        assert_eq!(rows[0].image.as_deref(), Some("https://img.example.com/a.jpg"));
++        assert_eq!(rows[1].title, "Second - The Outlet", "plain style keeps the title whole");
++    }
++
++    #[test]
++    fn google_style_takes_the_outlet_off_the_title() {
++        let rows = parse_styled(RSS, Style { split_source: true, digest: false }).unwrap();
++        assert_eq!(rows[1].title, "Second");
++        assert_eq!(rows[1].source, "The Outlet");
++    }
++
++    #[test]
++    fn atom_entries_parse_and_non_feeds_are_refused() {
++        let rows = parse_styled(ATOM, Style::default()).unwrap();
++        assert_eq!(rows[0].link, "https://example.org/p");
++        assert_eq!(rows[0].published, Some(1_749_556_800));
++        assert!(parse_styled("<html><body>nope</body></html>", Style::default()).is_err());
++    }
++
++    #[test]
++    fn rows_serialize_to_json_the_script_reader_accepts() {
++        let rows = parse_styled(RSS, Style::default()).unwrap();
++        let json = rows_json(&rows);
++        assert!(json.starts_with("[{\"title\":\"Rust 2.0 & you\""), "{json}");
++        let quoted = rows_json(&[Headline { title: "a \"q\"\n".into(), ..Default::default() }]);
++        assert!(quoted.contains("\"a \\\"q\\\"\\n\""), "{quoted}");
++    }
++}
+diff --git a/platform/script/src/vm.rs b/platform/script/src/vm.rs
+index c19d2512c..c579c89c3 100644
+--- a/platform/script/src/vm.rs
++++ b/platform/script/src/vm.rs
+@@ -3,6 +3,7 @@
+ use crate::makepad_error_log::*;
+ use crate::makepad_live_id::*;
+ use crate::mod_gc::*;
++use crate::mod_feed::*;
+ use crate::mod_html::*;
+ use crate::mod_math::*;
+ use crate::mod_pod::*;
+@@ -1787,6 +1788,7 @@ pub fn new() -> Self {
+         define_std_module(&mut heap, &mut native);
+         define_regex_module(&mut heap, &mut native);
+         define_html_module(&mut heap, &mut native);
++        define_feed_module(&mut heap, &mut native);
+         define_shader_module(&mut heap, &mut native);
+         define_gc_module(&mut heap, &mut native);
+         let pod_builtins = define_pod_module(&mut heap, &mut native);
+diff --git a/platform/script/std/src/gate.rs b/platform/script/std/src/gate.rs
+index 9625a12cc..f74915c23 100644
+--- a/platform/script/std/src/gate.rs
++++ b/platform/script/std/src/gate.rs
+@@ -1,10 +1,11 @@
+ //! The one question every way out of an isolate asks: may THIS heap reach
+ //! THIS URL?
+ //!
+-//! Three paths issue requests on a script's behalf — `net.http_request`,
+-//! `res.http_resource` (artwork) and the data fetches behind `sys.*` — and
+-//! a network grant that covers only the first is not a grant. All three ask
+-//! here. The answer comes from a gate the embedding host installs; with no
++//! Four paths issue requests on a script's behalf — `net.http_request`,
++//! `net.web_socket`, `res.http_resource` (artwork) and the data fetches
++//! behind `sys.*` — and a network grant that covers only the first is not a
++//! grant. All of them ask here. Listening servers (`net.http_server`) and raw
++//! streams (`net.socket_stream`) name no URL, so they ask the socket gate. The answer comes from a gate the embedding host installs; with no
+ //! gate installed, everything is allowed, which is the behaviour every
+ //! existing host had. A host that installs a gate answers per heap, so an
+ //! app's allowlist follows its isolate and nothing else.
+@@ -16,6 +17,45 @@
+ 
+ thread_local! {
+     static URL_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
++    static MEDIA_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
++    static SOCKET_GATE: Cell<Option<ScriptSocketGate>> = const { Cell::new(None) };
++}
++
++/// `heap_key -> allowed`: may this heap open what a host list cannot
++/// describe — a listening server (`net.http_server`) or a raw TCP/TLS stream
++/// (`net.socket_stream`)? A server answers whoever connects, and a raw
++/// stream speaks any protocol to any port, so neither fits a per-URL gate.
++pub type ScriptSocketGate = fn(usize) -> bool;
++
++/// Install (or clear) the gate for listening servers and raw sockets. With
++/// no socket gate, both are allowed, as they were for every existing host.
++pub fn set_script_socket_gate(gate: Option<ScriptSocketGate>) {
++    SOCKET_GATE.with(|g| g.set(gate));
++}
++
++/// Whether `heap_key` may listen or open a raw socket. True when no gate is
++/// installed.
++pub fn script_sockets_allowed(heap_key: usize) -> bool {
++    SOCKET_GATE.with(|g| match g.get() {
++        Some(gate) => gate(heap_key),
++        None => true,
++    })
++}
++
++/// Install (or clear) the gate for media loads (`http_resource`: images and
++/// other artwork). A host can grant an app artwork from anywhere without
++/// granting it requests to anywhere. With no media gate, media answers to
++/// the URL gate like every other path.
++pub fn set_script_media_gate(gate: Option<ScriptUrlGate>) {
++    MEDIA_GATE.with(|g| g.set(gate));
++}
++
++/// Whether `heap_key` may load media from `url`.
++pub fn script_media_url_allowed(heap_key: usize, url: &str) -> bool {
++    match MEDIA_GATE.with(|g| g.get()) {
++        Some(gate) => gate(heap_key, url),
++        None => script_url_allowed(heap_key, url),
++    }
+ }
+ 
+ /// Install (or clear) the gate for this thread. Isolates are UI-thread-owned,
+@@ -102,4 +142,34 @@ fn only_heap_seven(heap: usize, _url: &str) -> bool {
+         assert!(!script_url_allowed(8, "https://anything.example"));
+         set_script_url_gate(None);
+     }
++
++    #[test]
++    fn media_falls_back_to_the_url_gate_until_it_has_its_own() {
++        fn only_heap_seven(heap: usize, _url: &str) -> bool {
++            heap == 7
++        }
++        fn every_heap(_heap: usize, _url: &str) -> bool {
++            true
++        }
++        set_script_url_gate(Some(only_heap_seven));
++        assert!(!script_media_url_allowed(8, "https://cdn.example/a.jpg"));
++        set_script_media_gate(Some(every_heap));
++        assert!(script_media_url_allowed(8, "https://cdn.example/a.jpg"));
++        assert!(!script_url_allowed(8, "https://cdn.example/a.jpg"), "requests keep their own gate");
++        set_script_media_gate(None);
++        set_script_url_gate(None);
++    }
++
++    #[test]
++    fn no_socket_gate_allows_sockets_and_a_gate_decides() {
++        set_script_socket_gate(None);
++        assert!(script_sockets_allowed(8));
++        fn only_heap_seven(heap: usize) -> bool {
++            heap == 7
++        }
++        set_script_socket_gate(Some(only_heap_seven));
++        assert!(script_sockets_allowed(7));
++        assert!(!script_sockets_allowed(8));
++        set_script_socket_gate(None);
++    }
+ }
+diff --git a/platform/script/std/src/net.rs b/platform/script/std/src/net.rs
+index ba16994ca..7814d6f8e 100644
+--- a/platform/script/std/src/net.rs
++++ b/platform/script/std/src/net.rs
+@@ -14,6 +14,11 @@
+ use std::sync::mpsc::channel;
+ use std::time::Duration;
+ 
++
++/// The response body cap for a script request that names none: an isolate
++/// may not buffer an unbounded body, and 16 MiB is past any page or feed.
++pub const SCRIPT_DEFAULT_BODY_LIMIT: u64 = 16 * 1024 * 1024;
++
+ pub struct ScriptWebSocket {
+     #[allow(unused)]
+     pub id: LiveId,
+@@ -786,7 +791,19 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
+             }
+ 
++            // A server answers whoever connects; no host list describes that.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_sockets_allowed(heap_key) {
++                return script_err_io!(vm.trap(), "this app may not open a listening server");
++            }
++            if vm.std_mut::<ScriptStd>().net.is_none() {
++                return script_err_io!(vm.trap(), "script net runtime is not configured");
++            }
++
+             let options = HttpServerOptions::script_from_value(vm, options);
++            let Ok(listen_address) = options.listen.parse() else {
++                return script_err_invalid_args!(vm.trap(), "invalid listen address {}", options.listen);
++            };
+             let events = HttpServerEvents::script_from_value(vm, events);
+ 
+             let (server_tx, server_rx) = channel();
+@@ -800,7 +817,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             });
+ 
+             let server = HttpServer {
+-                listen_address: options.listen.parse().unwrap(),
++                listen_address,
+                 post_max_size: 1024 * 1024 * 10,
+                 post_max_size_overrides: Vec::new(),
+                 pre_admit_posts: false,
+@@ -838,7 +855,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             {
+                 return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
+             }
+-            let request = HttpRequest::script_from_value(vm, request);
++            let mut request = HttpRequest::script_from_value(vm, request);
++            // A script that never names a limit reads back 0, which refused
++            // every body with "response body exceeds configured limit".
++            if request.max_response_body_bytes == 0 {
++                request.max_response_body_bytes = SCRIPT_DEFAULT_BODY_LIMIT;
++            }
+             let events = HttpEvents::script_from_value(vm, events);
+             // The host's per-isolate allowlist, when one is installed: a
+             // network grant that only opened this module would otherwise
+@@ -893,12 +915,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+         }
+         if prop == id!(error) {
+             if let Some(error) = error {
+-                return vm.new_string_with(|_vm, out| out.push_str(&error)).into();
++                return vm.bx.heap.new_string_from_str(&error).into();
+             }
+             return NIL;
+         }
+         if prop == id!(host) {
+-            return vm.new_string_with(|_vm, out| out.push_str(&host)).into();
++            return vm.bx.heap.new_string_from_str(&host).into();
+         }
+         script_err_not_found!(vm.trap(), "invalid socket_stream prop")
+     });
+@@ -1071,7 +1093,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             match socket_stream_poll(vm, handle) {
+                 SocketStreamPoll::Data(data) => {
+                     let string = String::from_utf8_lossy(&data);
+-                    vm.new_string_with(|_vm, out| out.push_str(&string)).into()
++                    vm.bx.heap.new_string_from_str(&string).into()
+                 }
+                 SocketStreamPoll::Closed(Some(err)) => script_err_io!(vm.trap(), "{err}"),
+                 SocketStreamPoll::Closed(None) => NIL,
+@@ -1116,6 +1138,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
+             }
+             let events = WebSocketEvents::script_from_value(vm, events);
++            // The same per-isolate allowlist as `http_request`: a socket is
++            // a request that stays open.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_url_allowed(heap_key, &request.url) {
++                return script_err_io!(vm.trap(), "this app may not reach {}", request.url);
++            }
+ 
+             let std = vm.std_mut::<ScriptStd>();
+             let Some(runtime) = std.net.as_ref() else {
+@@ -1143,6 +1171,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             if !script_has_proto!(vm, options, net.SocketStreamOptions) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid socket_stream arg type");
+             }
++            // A raw stream speaks any protocol to any port, so a host list
++            // cannot bound it: a policed isolate is refused outright.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_sockets_allowed(heap_key) {
++                return script_err_io!(vm.trap(), "this app may not open a raw socket");
++            }
+             // Raw sockets obey the same gate as http_request/web_socket, so a sandboxed
+             // VM without a net runtime can't open TCP connections.
+             if vm.std_mut::<ScriptStd>().net.is_none() {
+diff --git a/platform/src/event/finger.rs b/platform/src/event/finger.rs
+index 0fb1eabaf..bc7c319cd 100644
+--- a/platform/src/event/finger.rs
++++ b/platform/src/event/finger.rs
+@@ -493,6 +493,13 @@ pub fn is_digit_captured_elsewhere(&self, digit_id: DigitId, area: Area) -> bool
+         self.captures.iter().any(|v| v.digit_id == digit_id && v.area != area)
+     }
+ 
++    /// Every area that captured this digit. A container that only wants to
++    /// yield to its own children (a Button inside it), not to the scroll view
++    /// around it, compares these rects with its own.
++    pub fn digit_capture_areas(&self, digit_id: DigitId) -> Vec<Area> {
++        self.captures.iter().filter(|v| v.digit_id == digit_id).map(|v| v.area).collect()
++    }
++
+     /// The area that captured the touch with the given uid, if any.
+     /// Lets a raw `Event::LongPress` handler check which widget owns the press.
+     pub fn touch_capture_area(&self, uid: u64) -> Option<Area> {
+diff --git a/platform/src/script/res.rs b/platform/src/script/res.rs
+index f94c296b2..42b9f4cfe 100644
+--- a/platform/src/script/res.rs
++++ b/platform/src/script/res.rs
+@@ -1189,11 +1189,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                     _ if prop == id!(path) => {
+                         let path = res.abs_path.clone();
+                         drop(resources);
+-                        return vm
+-                            .new_string_with(|_vm, s| {
+-                                s.push_str(&path);
+-                            })
+-                            .into();
++                        // Charged like any string: an isolate under a heap
++                        // cap refuses the unbounded builder outright.
++                        return vm.bx.heap.new_string_from_str(&path).into();
+                     }
+                     _ if prop == id!(is_loaded) => {
+                         return matches!(res.data, CxScriptResourceData::Loaded(_)).into()
+@@ -1205,11 +1203,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                         if let CxScriptResourceData::Error(ref e) = res.data {
+                             let err = e.clone();
+                             drop(resources);
+-                            return vm
+-                                .new_string_with(|_vm, s| {
+-                                    s.push_str(&err);
+-                                })
+-                                .into();
++                            return vm.bx.heap.new_string_from_str(&err).into();
+                         }
+                         return NIL;
+                     }
+@@ -1340,7 +1334,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 let heap_key = vm.bx.heap.heap_key();
+                 // Artwork is a way out of the isolate too: a card with no
+                 // network grant was seen fetching nine images through here.
+-                if !makepad_script_std::script_url_allowed(heap_key, &url_string) {
++                if !makepad_script_std::script_media_url_allowed(heap_key, &url_string) {
+                     // Logged as well as raised: the widget that asked draws
+                     // nothing, and a silent blank is the hardest bug to find.
+                     crate::log!("Script resource refused by the host's allowlist: {url_string}");
+diff --git a/widgets/src/camera_preview.rs b/widgets/src/camera_preview.rs
+new file mode 100644
+index 000000000..72bccb9fb
+--- /dev/null
++++ b/widgets/src/camera_preview.rs
+@@ -0,0 +1,637 @@
++//! The device camera inside a script app: a live preview drawn natively, and
++//! capture and control from script.
++//!
++//! ```text
++//! cam := CameraPreview{width: Fill height: Fill facing: "back"
++//!     on_capture: || show(ui.cam.last())       // app-relative path of the new file
++//!     on_error: || say(ui.cam.error())}
++//! ui.cam.start()   ui.cam.stop()   ui.cam.switch()   ui.cam.facing()
++//! ui.cam.capture()                     // a JPEG into the app's storage
++//! ui.cam.record_start()  ui.cam.record_stop()   // an MP4
++//! ui.cam.set_zoom(2.0)  ui.cam.set_flash("off"|"on"|"auto"|"torch")
++//! ui.cam.set_exposure(-1.0)  ui.cam.focus(x, y)   // x, y 0..1 in the preview
++//! ui.cam.set_aspect(16 / 9)            // the viewfinder shape; reopens the camera
++//! ```
++//!
++//! A tap on the preview focuses there and a pinch zooms, natively
++//! (`tap_to_focus`, `pinch_zoom`, both on by default); `on_zoom` hears the
++//! new ratio once a pinch ends.
++//!
++//! Frames never pass through script: the preview is a platform texture, and
++//! script hears one call per finished capture. What an app under a policy
++//! gets: `camera` to open it at all; captures land in its own storage jail;
++//! `microphone` adds sound to a recording; `library` also offers each capture
++//! to the system photo library.
++//!
++//! The camera is a device the person can see is on, so it is released as soon
++//! as it is not needed: when the preview has not drawn for a second (its tile
++//! left the screen), when the app closes ([`release_isolate_devices`], which
++//! the host calls), and when its isolate is collected.
++use crate::{
++    makepad_derive_widget::*,
++    makepad_draw::*,
++    makepad_script::ScriptFnRef,
++    video::*,
++    view::View,
++    widget::*,
++    widget_async::{CxWidgetToScriptCallExt, ScriptAsyncResult},
++};
++use crate::makepad_draw::makepad_platform::permission::{Permission, PermissionStatus};
++use crate::makepad_draw::makepad_platform::video::{
++    CameraCaptureEvent, CameraCaptureRequest, CameraCaptureResult, CameraControl, CameraFlashMode, VideoFormat,
++    VideoFormatId, VideoInputId, VideoInputsEvent, VideoPixelFormat,
++};
++use crate::gesture_view::PinchTracker;
++use std::collections::HashMap;
++
++script_mod! {
++    use mod.prelude.widgets_internal.*
++    use mod.widgets.*
++
++    mod.widgets.CameraPreviewBase = #(CameraPreview::register_widget(vm))
++    mod.widgets.CameraPreview = set_type_default() do mod.widgets.CameraPreviewBase{
++        width: Fill
++        height: Fill
++        flow: Overlay
++        preview := Video{width: Fill height: Fill autoplay: false show_controls: false}
++    }
++}
++
++const WATCHDOG_SECONDS: f64 = 0.5;
++/// How long a camera may be without a permission answer before it opens
++/// anyway: a bare desktop binary never gets the prompt's completion, and the
++/// capture backend asks for access itself.
++const PERMISSION_GRACE_SECONDS: f64 = 2.0;
++
++thread_local! {
++    /// heap key -> the preview videos that heap's cameras opened.
++    static OPEN: std::cell::RefCell<HashMap<usize, Vec<VideoRef>>> = Default::default();
++}
++
++/// Stop every camera an isolate opened. Called from the isolate GC, and by a
++/// host when the app it runs closes, which can be long before the GC.
++pub fn release_cameras(cx: &mut Cx, heap_key: usize) {
++    let videos = OPEN.with(|o| o.borrow_mut().remove(&heap_key)).unwrap_or_default();
++    for video in videos {
++        video.stop_and_cleanup_resources(cx);
++    }
++}
++
++/// Everything a closing app holds that the person can see: its cameras and
++/// its web views. A host calls this when it closes an app.
++pub fn release_isolate_devices(cx: &mut Cx, heap_key: usize) {
++    release_cameras(cx, heap_key);
++    crate::web_reader::gc_web_readers(cx, &[heap_key]);
++}
++
++#[derive(Clone, Debug)]
++struct CameraChoice {
++    input_id: VideoInputId,
++    front: bool,
++    formats: Vec<VideoFormat>,
++}
++
++impl CameraChoice {
++    /// The best preview profile for a viewfinder aspect: nearest aspect, then
++    /// the most pixels within 1080p, then the better pixel format.
++    fn format_for(&self, aspect: f64) -> Option<(VideoFormatId, usize, usize)> {
++        let usable = |f: &&VideoFormat| {
++            matches!(f.pixel_format, VideoPixelFormat::NV12 | VideoPixelFormat::YUY2 | VideoPixelFormat::YUV420)
++                && f.width <= 1920
++                && f.height <= 1080
++                && f.height > 0
++        };
++        let pixel = |f: &VideoFormat| match f.pixel_format {
++            VideoPixelFormat::NV12 => 3,
++            VideoPixelFormat::YUY2 => 2,
++            VideoPixelFormat::YUV420 => 1,
++            _ => 0,
++        };
++        let key = |f: &VideoFormat| {
++            let d = ((f.width as f64 / f.height as f64) - aspect).abs();
++            ((d * 50.0).round() as i64, -((f.width * f.height) as i64), -pixel(f))
++        };
++        let best = self.formats.iter().filter(usable).min_by(|a, b| key(a).cmp(&key(b)))?;
++        Some((best.format_id, best.width, best.height))
++    }
++}
++
++/// Which camera a platform name describes: front when it says so, or the
++/// second of several that does not say it is the back one.
++fn is_front(name: &str, index: usize, count: usize) -> bool {
++    let name = name.to_lowercase();
++    name.contains("front") || name.contains("facetime") || name.contains("user") || (count > 1 && index == 1 && !name.contains("back"))
++}
++
++fn flash_mode(name: &str) -> Option<CameraFlashMode> {
++    match name {
++        "off" => Some(CameraFlashMode::Off),
++        "on" => Some(CameraFlashMode::On),
++        "auto" => Some(CameraFlashMode::Auto),
++        "torch" => Some(CameraFlashMode::Torch),
++        _ => None,
++    }
++}
++
++#[derive(Clone, Copy, Debug, Default, PartialEq)]
++enum State {
++    #[default]
++    Idle,
++    Starting,
++    Running,
++    Stopping,
++}
++
++#[derive(Script, ScriptHook, Widget)]
++pub struct CameraPreview {
++    #[deref]
++    view: View,
++    /// `"back"` or `"front"`.
++    #[live]
++    facing: String,
++    /// Width over height of the viewfinder: 4:3 for photos, 16:9 for video.
++    #[live(1.3333)]
++    aspect: f64,
++    #[live]
++    on_capture: ScriptFnRef,
++    #[live]
++    on_error: ScriptFnRef,
++    #[live]
++    on_zoom: ScriptFnRef,
++    #[live(true)]
++    tap_to_focus: bool,
++    #[live(true)]
++    pinch_zoom: bool,
++
++    #[rust]
++    pinch: PinchTracker,
++    #[rust]
++    pinch_base: f32,
++    /// The app asked for a preview (`start()`), and has not stopped it.
++    #[rust]
++    wanted: bool,
++    #[rust]
++    state: State,
++    #[rust]
++    cameras: Vec<CameraChoice>,
++    #[rust]
++    input: Option<VideoInputId>,
++    #[rust]
++    open_front: bool,
++    #[rust]
++    open_aspect: f64,
++    #[rust]
++    permission: Option<PermissionStatus>,
++    #[rust]
++    asked_at: f64,
++    #[rust]
++    timer: Option<Timer>,
++    #[rust]
++    drawn: bool,
++    #[rust]
++    registered: bool,
++    #[rust]
++    recording: Option<String>,
++    #[rust]
++    last: String,
++    #[rust]
++    last_error: String,
++    #[rust]
++    zoom: f32,
++}
++
++impl CameraPreview {
++    fn heap_key(&self) -> usize {
++        self.view.source.heap_key()
++    }
++
++    fn granted(&self, grant: &str) -> bool {
++        crate::splash_policy::service_allowed(self.heap_key(), grant).is_ok()
++    }
++
++    fn fail(&mut self, cx: &mut Cx, why: String) {
++        log!("camera preview: {why}");
++        self.last_error = why;
++        if self.on_error.as_object() != ScriptObject::ZERO {
++            cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), self.on_error.clone(), &[]);
++        }
++    }
++
++    fn video(&self, cx: &Cx) -> VideoRef {
++        self.view.video(cx, ids!(preview))
++    }
++
++    fn start(&mut self, cx: &mut Cx) -> bool {
++        if !self.granted("camera.preview") {
++            self.fail(cx, "this app was not granted the camera".into());
++            return false;
++        }
++        self.wanted = true;
++        if self.permission.is_none() {
++            self.asked_at = cx.seconds_since_app_start();
++            cx.request_permission(Permission::Camera);
++        }
++        if self.cameras.is_empty() {
++            // The platform publishes its list once; a preview mounted later
++            // asks again. The frame callback opens the capture session.
++            cx.video_input(0, |_frame| {});
++            cx.refresh_video_inputs();
++        }
++        if self.timer.is_none() {
++            self.timer = Some(cx.start_interval(WATCHDOG_SECONDS));
++        }
++        self.drawn = true;
++        self.drive(cx);
++        true
++    }
++
++    fn stop(&mut self, cx: &mut Cx) {
++        self.wanted = false;
++        self.halt(cx);
++        if let Some(timer) = self.timer.take() {
++            cx.stop_timer(timer);
++        }
++    }
++
++    /// Close the camera, keeping whether the app wants it: the watchdog
++    /// reopens it when the preview draws again.
++    fn halt(&mut self, cx: &mut Cx) {
++        if matches!(self.state, State::Starting | State::Running) {
++            if self.recording.take().is_some() {
++                if let Some(input) = self.input {
++                    cx.camera_capture(input, CameraCaptureRequest::StopVideo);
++                }
++            }
++            self.state = State::Stopping;
++            self.video(cx).stop_and_cleanup_resources(cx);
++        }
++    }
++
++    /// One step towards what the app wants, driven by the platform's events.
++    fn drive(&mut self, cx: &mut Cx) {
++        let want_front = self.facing == "front";
++        match self.state {
++            State::Running if want_front != self.open_front || (self.aspect - self.open_aspect).abs() > 0.05 => {
++                if self.cameras.iter().any(|c| c.front == want_front) {
++                    self.halt(cx);
++                }
++            }
++            State::Idle if self.wanted => {
++                match self.permission {
++                    Some(PermissionStatus::Granted) => {}
++                    Some(status) => {
++                        self.wanted = false;
++                        self.fail(cx, format!("camera permission {status:?}"));
++                        return;
++                    }
++                    None if cx.seconds_since_app_start() - self.asked_at < PERMISSION_GRACE_SECONDS => return,
++                    None => self.permission = Some(PermissionStatus::Granted),
++                }
++                let Some(choice) = self.cameras.iter().find(|c| c.front == want_front).or(self.cameras.first()).cloned() else {
++                    return;
++                };
++                let Some((format_id, _, _)) = choice.format_for(self.aspect) else { return };
++                let video = self.video(cx);
++                video.set_camera_preview_mode(cx, VideoCameraPreviewMode::Texture);
++                video.set_source_camera(cx, choice.input_id, format_id);
++                video.begin_playback(cx);
++                if !self.registered {
++                    self.registered = true;
++                    OPEN.with(|o| o.borrow_mut().entry(self.heap_key()).or_default().push(video.clone()));
++                }
++                self.state = State::Starting;
++                self.input = Some(choice.input_id);
++                self.open_front = choice.front;
++                self.open_aspect = self.aspect;
++            }
++            _ => {}
++        }
++    }
++
++    fn capture_path(&self, cx: &Cx, kind: &str, ext: &str) -> Option<(String, String)> {
++        let now = std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .map(|d| d.as_millis())
++            .unwrap_or(0);
++        let relative = format!("DCIM/{kind}_{now}.{ext}");
++        // A policed app's captures are its own: they land in its jail. The
++        // host's own surfaces write next to the host's data.
++        let real = if crate::splash_policy::is_enforced(self.heap_key()) {
++            if !crate::splash_storage::heap_has_room(self.heap_key()) {
++                return None;
++            }
++            crate::splash_policy::local_path_for_heap(self.heap_key(), &relative)?
++        } else {
++            format!("{}/{relative}", cx.get_data_dir()?)
++        };
++        if let Some(parent) = std::path::Path::new(&real).parent() {
++            let _ = std::fs::create_dir_all(parent);
++        }
++        Some((relative, real))
++    }
++
++    fn capture(&mut self, cx: &mut Cx) -> bool {
++        let (Some(input), State::Running) = (self.input, self.state) else {
++            self.fail(cx, "the camera is not running".into());
++            return false;
++        };
++        let Some((relative, real)) = self.capture_path(cx, "IMG", "jpg") else {
++            self.fail(cx, "this app's storage is full or missing".into());
++            return false;
++        };
++        self.last = relative;
++        let library = self.granted("library.write");
++        cx.camera_capture(input, CameraCaptureRequest::Photo { path: real, library });
++        true
++    }
++
++    fn record_start(&mut self, cx: &mut Cx) -> bool {
++        let (Some(input), State::Running) = (self.input, self.state) else {
++            self.fail(cx, "the camera is not running".into());
++            return false;
++        };
++        if self.recording.is_some() {
++            return true;
++        }
++        let Some((relative, real)) = self.capture_path(cx, "VID", "mp4") else {
++            self.fail(cx, "this app's storage is full or missing".into());
++            return false;
++        };
++        let audio = self.granted("microphone.record");
++        if audio {
++            cx.request_permission(Permission::AudioInput);
++        }
++        self.recording = Some(relative);
++        let library = self.granted("library.write");
++        cx.camera_capture(input, CameraCaptureRequest::StartVideo { path: real, audio, library });
++        true
++    }
++
++    fn record_stop(&mut self, cx: &mut Cx) {
++        if let (Some(input), Some(_)) = (self.input, self.recording.as_ref()) {
++            cx.camera_capture(input, CameraCaptureRequest::StopVideo);
++        }
++    }
++
++    fn control(&mut self, cx: &mut Cx, control: CameraControl) {
++        if let (Some(input), State::Running) = (self.input, self.state) {
++            cx.camera_control(input, control);
++        }
++    }
++
++    fn on_capture(&mut self, cx: &mut Cx, result: &CameraCaptureResult) {
++        match result {
++            CameraCaptureResult::Photo { .. } => self.notify_capture(cx),
++            CameraCaptureResult::VideoStopped { .. } => {
++                if let Some(relative) = self.recording.take() {
++                    self.last = relative;
++                }
++                self.notify_capture(cx);
++            }
++            CameraCaptureResult::Failed { what, error } => {
++                if what == "video" {
++                    self.recording = None;
++                }
++                self.fail(cx, format!("{what} failed: {error}"));
++            }
++            _ => {}
++        }
++    }
++
++    fn notify_capture(&mut self, cx: &mut Cx) {
++        if self.on_capture.as_object() != ScriptObject::ZERO {
++            cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), self.on_capture.clone(), &[]);
++        }
++    }
++}
++
++impl CameraPreview {
++    fn handle_gestures(&mut self, cx: &mut Cx, event: &Event) {
++        let area = self.view.area();
++        let rect = area.rect(cx);
++        if let (true, Event::TouchUpdate(touches)) = (self.pinch_zoom, event) {
++            use crate::gesture_view::PinchStep;
++            match self.pinch.update(touches, area.clipped_rect(cx)) {
++                PinchStep::Began(_) => self.pinch_base = if self.zoom > 0.0 { self.zoom } else { 1.0 },
++                PinchStep::Moved(scale, _) => {
++                    let zoom = (self.pinch_base * scale as f32).clamp(1.0, 10.0);
++                    if (zoom - self.zoom).abs() >= 0.02 {
++                        self.zoom = zoom;
++                        self.control(cx, CameraControl::ZoomRatio(zoom));
++                    }
++                }
++                PinchStep::Ended => {
++                    if self.on_zoom.as_object() != ScriptObject::ZERO {
++                        cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), self.on_zoom.clone(), &[(self.zoom as f64).into()]);
++                    }
++                }
++                PinchStep::Nothing => {}
++            }
++        }
++        if !self.tap_to_focus || rect.size.x <= 0.0 || rect.size.y <= 0.0 {
++            return;
++        }
++        // A tap the controls drawn over the preview did not claim.
++        if let Hit::FingerUp(e) = event.hits_with_capture_overload(cx, area, true) {
++            let child_claimed = cx.fingers.digit_capture_areas(e.digit_id).into_iter().any(|a| a != area && a.rect(cx).is_inside_of(rect) && a.rect(cx).size != rect.size);
++            if e.is_over && e.was_tap() && !self.pinch.pinching() && !child_claimed {
++                let x = (e.abs.x - rect.pos.x) / rect.size.x;
++                let y = (e.abs.y - rect.pos.y) / rect.size.y;
++                self.control(cx, CameraControl::FocusPoint { x: x.clamp(0.0, 1.0), y: y.clamp(0.0, 1.0) });
++            }
++        }
++    }
++}
++
++fn arg_number(vm: &mut ScriptVm, args: ScriptValue, index: usize) -> Option<f64> {
++    let args_obj = args.as_object()?;
++    let trap = vm.bx.threads.cur().trap.pass();
++    vm.bx.heap.vec_value(args_obj, index, trap).as_number()
++}
++
++fn arg_string(vm: &mut ScriptVm, args: ScriptValue, index: usize) -> Option<String> {
++    let args_obj = args.as_object()?;
++    let trap = vm.bx.threads.cur().trap.pass();
++    let value = vm.bx.heap.vec_value(args_obj, index, trap);
++    vm.bx.heap.cast_to_owned_string(value, "copying a camera argument")
++}
++
++impl Widget for CameraPreview {
++    fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue) -> ScriptAsyncResult {
++        let ret = |v: ScriptValue| ScriptAsyncResult::Return(v);
++        match method {
++            m if m == live_id!(start) => ret(vm.with_cx_mut(|cx| self.start(cx)).into()),
++            m if m == live_id!(stop) => {
++                vm.with_cx_mut(|cx| self.stop(cx));
++                ret(NIL)
++            }
++            m if m == live_id!(switch) => {
++                self.facing = if self.facing == "front" { "back".into() } else { "front".into() };
++                vm.with_cx_mut(|cx| self.drive(cx));
++                ret(NIL)
++            }
++            m if m == live_id!(set_facing) => {
++                if let Some(facing) = arg_string(vm, args, 0) {
++                    self.facing = facing;
++                    vm.with_cx_mut(|cx| self.drive(cx));
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(set_aspect) => {
++                if let Some(aspect) = arg_number(vm, args, 0).filter(|a| *a > 0.2 && *a < 5.0) {
++                    self.aspect = aspect;
++                    vm.with_cx_mut(|cx| self.drive(cx));
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(facing) => ret(vm.bx.heap.new_string_from_str(if self.facing == "front" { "front" } else { "back" })),
++            m if m == live_id!(capture) => ret(vm.with_cx_mut(|cx| self.capture(cx)).into()),
++            m if m == live_id!(record_start) => ret(vm.with_cx_mut(|cx| self.record_start(cx)).into()),
++            m if m == live_id!(record_stop) => {
++                vm.with_cx_mut(|cx| self.record_stop(cx));
++                ret(NIL)
++            }
++            m if m == live_id!(is_recording) => ret(self.recording.is_some().into()),
++            m if m == live_id!(is_running) => ret((self.state == State::Running).into()),
++            m if m == live_id!(set_zoom) => {
++                if let Some(zoom) = arg_number(vm, args, 0) {
++                    self.zoom = zoom.clamp(0.5, 20.0) as f32;
++                    let zoom = self.zoom;
++                    vm.with_cx_mut(|cx| self.control(cx, CameraControl::ZoomRatio(zoom)));
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(zoom) => ret((if self.zoom > 0.0 { self.zoom as f64 } else { 1.0 }).into()),
++            m if m == live_id!(set_flash) => {
++                if let Some(mode) = arg_string(vm, args, 0).as_deref().and_then(flash_mode) {
++                    vm.with_cx_mut(|cx| self.control(cx, CameraControl::Flash(mode)));
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(set_exposure) => {
++                if let Some(ev) = arg_number(vm, args, 0) {
++                    vm.with_cx_mut(|cx| self.control(cx, CameraControl::ExposureBias(ev.clamp(-4.0, 4.0) as f32)));
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(focus) => {
++                if let (Some(x), Some(y)) = (arg_number(vm, args, 0), arg_number(vm, args, 1)) {
++                    vm.with_cx_mut(|cx| {
++                        self.control(cx, CameraControl::FocusPoint { x: x.clamp(0.0, 1.0), y: y.clamp(0.0, 1.0) })
++                    });
++                }
++                ret(NIL)
++            }
++            m if m == live_id!(last) => ret(vm.bx.heap.new_string_from_str(&self.last)),
++            m if m == live_id!(error) => ret(vm.bx.heap.new_string_from_str(&self.last_error)),
++            _ => self.view.script_call(vm, method, args),
++        }
++    }
++
++    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        self.view.handle_event(cx, event, scope);
++        if self.timer.is_some_and(|t| t.is_event(event).is_some()) {
++            if self.drawn {
++                self.drawn = false;
++                if self.state == State::Idle {
++                    self.drive(cx);
++                }
++                self.view.redraw(cx);
++            } else if matches!(self.state, State::Starting | State::Running) {
++                // Not drawn since the last tick: the preview left the screen.
++                self.halt(cx);
++            }
++        }
++        if self.state == State::Running {
++            self.handle_gestures(cx, event);
++        }
++        match event {
++            Event::PermissionResult(result) if result.permission == Permission::Camera => {
++                self.permission = Some(result.status);
++                self.drive(cx);
++            }
++            Event::VideoInputs(VideoInputsEvent { descs }) => {
++                let count = descs.len();
++                self.cameras = descs
++                    .iter()
++                    .enumerate()
++                    .map(|(i, d)| CameraChoice { input_id: d.input_id, front: is_front(&d.name, i, count), formats: d.formats.clone() })
++                    .filter(|c| c.format_for(4.0 / 3.0).is_some())
++                    .collect();
++                self.drive(cx);
++            }
++            Event::VideoPlaybackPrepared(_) => {
++                if self.state == State::Starting {
++                    self.state = State::Running;
++                }
++            }
++            Event::VideoPlaybackResourcesReleased(_) => {
++                if self.state == State::Stopping {
++                    self.state = State::Idle;
++                }
++            }
++            Event::VideoDecodingError(e) => {
++                if matches!(self.state, State::Starting | State::Running) {
++                    self.state = State::Idle;
++                    let why = format!("the camera stopped: {}", e.error);
++                    self.fail(cx, why);
++                }
++            }
++            Event::Actions(actions) => {
++                for action in actions {
++                    let Some(capture) = action.downcast_ref::<CameraCaptureEvent>() else { continue };
++                    if Some(capture.input_id) == self.input {
++                        let result = capture.result.clone();
++                        self.on_capture(cx, &result);
++                    }
++                }
++            }
++            _ => {}
++        }
++    }
++
++    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
++        self.drawn = true;
++        self.view.draw_walk(cx, scope, walk)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn format(width: usize, height: usize, pixel_format: VideoPixelFormat, id: u64) -> VideoFormat {
++        VideoFormat { format_id: VideoFormatId(LiveId(id)), width, height, frame_rate: Some(30.0), pixel_format }
++    }
++
++    #[test]
++    fn the_preview_profile_matches_the_viewfinder_then_takes_the_most_pixels() {
++        let choice = CameraChoice {
++            input_id: VideoInputId(LiveId(1)),
++            front: false,
++            formats: vec![
++                format(640, 480, VideoPixelFormat::NV12, 1),
++                format(1440, 1080, VideoPixelFormat::NV12, 2),
++                format(1920, 1080, VideoPixelFormat::NV12, 3),
++                format(4032, 3024, VideoPixelFormat::NV12, 4),
++            ],
++        };
++        assert_eq!(choice.format_for(4.0 / 3.0).map(|f| (f.1, f.2)), Some((1440, 1080)), "4:3, and within 1080p");
++        assert_eq!(choice.format_for(16.0 / 9.0).map(|f| (f.1, f.2)), Some((1920, 1080)));
++    }
++
++    #[test]
++    fn a_camera_is_front_when_it_says_so_or_is_the_unnamed_second() {
++        assert!(is_front("Front Camera", 0, 2));
++        assert!(is_front("FaceTime HD Camera", 0, 1));
++        assert!(!is_front("Back Camera", 1, 2));
++        assert!(is_front("camera1", 1, 2));
++        assert!(!is_front("camera0", 0, 2));
++    }
++
++    #[test]
++    fn flash_names_map_and_unknown_ones_are_ignored() {
++        assert_eq!(flash_mode("torch"), Some(CameraFlashMode::Torch));
++        assert_eq!(flash_mode("strobe"), None);
++    }
++}
+diff --git a/widgets/src/gesture_view.rs b/widgets/src/gesture_view.rs
+new file mode 100644
+index 000000000..35d1a0dd9
+--- /dev/null
++++ b/widgets/src/gesture_view.rs
+@@ -0,0 +1,653 @@
++//! Gestures for script apps: a View whose taps, long presses, swipes, drags
++//! and pinches call the app's script, and a bottom sheet that rests at three
++//! heights and follows the finger between them.
++//!
++//! Recognition stays native. A pinch or a drag is dozens of touch updates a
++//! second; handing each to script would spend an installed app's instruction
++//! budget on arithmetic and stutter on an old phone. `GestureView` calls the
++//! script once per recognized gesture, and for the continuous ones (a drag, a
++//! pinch) at most once a frame and only when the value moved. `SheetView`
++//! needs no script at all while it moves; it tells the app where it came to
++//! rest.
++//!
++//! Neither widget grants anything: they are vocabulary, like a Button, and
++//! every isolate has them.
++//!
++//! ```text
++//! GestureView{
++//!     on_tap: |x, y| open_at(x, y)
++//!     on_double_tap: |x, y| toggle_zoom()
++//!     on_long_press: |x, y| show_menu(x, y)
++//!     on_swipe: |dx, dy| if dx < 0 { next() } else { previous() }
++//!     on_pan: |dx, dy, phase| drag(dx, dy, phase)      // phase 0 begin, 1 move, 2 end
++//!     on_pinch: |scale, x, y, phase| zoom(scale, phase) // scale relative to the pinch start
++//!     Image{...}
++//! }
++//! SheetView{ on_detent: |detent| sheet_moved(detent)  ...children }  // 0 peek, 1 half, 2 full
++//! ```
++//! Coordinates are relative to the view's top left.
++use crate::{
++    makepad_derive_widget::*,
++    makepad_draw::*,
++    makepad_script::ScriptFnRef,
++    view::View,
++    widget::*,
++    widget_async::CxWidgetToScriptCallExt,
++};
++use crate::makepad_draw::makepad_platform::event::{DigitId, TouchState, TouchUpdateEvent};
++
++script_mod! {
++    use mod.prelude.widgets_internal.*
++    use mod.widgets.*
++
++    mod.widgets.GestureViewBase = #(GestureView::register_widget(vm))
++    mod.widgets.GestureView = set_type_default() do mod.widgets.GestureViewBase{
++        width: Fill
++        height: Fit
++    }
++
++    mod.widgets.SheetViewBase = #(SheetView::register_widget(vm))
++    mod.widgets.SheetView = set_type_default() do mod.widgets.SheetViewBase{
++        width: Fill
++        height: Fill
++        flow: Down
++    }
++}
++
++/// Movement under this is still a tap: a finger is never perfectly still.
++const TAP_SLOP: f64 = 10.0;
++/// A second tap this soon after the first, this close to it, is a double tap.
++const DOUBLE_TAP_SECONDS: f64 = 0.3;
++const DOUBLE_TAP_DISTANCE: f64 = 24.0;
++/// A release this fast after this much travel along one axis is a swipe.
++const SWIPE_DISTANCE: f64 = 60.0;
++const SWIPE_SECONDS: f64 = 0.45;
++/// A pinch reports again once its scale has moved this much.
++const PINCH_STEP: f64 = 0.02;
++
++/// A swipe's direction, when the travel was one: the dominant axis carries
++/// at least 1.5 times the other, and far enough, fast enough.
++fn swipe(dx: f64, dy: f64, seconds: f64) -> Option<(f64, f64)> {
++    if seconds > SWIPE_SECONDS {
++        return None;
++    }
++    if dx.abs() >= SWIPE_DISTANCE && dx.abs() >= dy.abs() * 1.5 {
++        return Some((dx, 0.0));
++    }
++    if dy.abs() >= SWIPE_DISTANCE && dy.abs() >= dx.abs() * 1.5 {
++        return Some((0.0, dy));
++    }
++    None
++}
++
++#[derive(Clone, Copy, Debug)]
++struct Contact {
++    uid: u64,
++    pos: DVec2,
++}
++
++/// Two fingers down: the spread they started at.
++#[derive(Clone, Copy, Debug)]
++struct Spread {
++    first: u64,
++    second: u64,
++    distance: f64,
++}
++
++/// What one touch update did to a pinch.
++#[derive(Clone, Copy, Debug, Default, PartialEq)]
++pub(crate) enum PinchStep {
++    #[default]
++    Nothing,
++    Began(DVec2),
++    Moved(f64, DVec2),
++    Ended,
++}
++
++/// Follows the fingers that started inside the view and reports a pinch.
++#[derive(Clone, Debug, Default)]
++pub(crate) struct PinchTracker {
++    contacts: Vec<Contact>,
++    spread: Option<Spread>,
++}
++
++impl PinchTracker {
++    pub(crate) fn update(&mut self, event: &TouchUpdateEvent, bounds: Rect) -> PinchStep {
++        for touch in &event.touches {
++            match touch.state {
++                TouchState::Start => {
++                    if bounds.contains(touch.abs) && !self.contacts.iter().any(|c| c.uid == touch.uid) {
++                        self.contacts.push(Contact { uid: touch.uid, pos: touch.abs });
++                    }
++                }
++                TouchState::Stop => self.contacts.retain(|c| c.uid != touch.uid),
++                TouchState::Move | TouchState::Stable => {
++                    if let Some(contact) = self.contacts.iter_mut().find(|c| c.uid == touch.uid) {
++                        contact.pos = touch.abs;
++                    }
++                }
++            }
++        }
++        let contact = |uid: u64| self.contacts.iter().find(|c| c.uid == uid).copied();
++        match self.spread {
++            None if self.contacts.len() >= 2 => {
++                let (first, second) = (self.contacts[0], self.contacts[1]);
++                self.spread = Some(Spread {
++                    first: first.uid,
++                    second: second.uid,
++                    // A zero spread would make every later ratio infinite.
++                    distance: first.pos.distance(&second.pos).max(1.0),
++                });
++                PinchStep::Began((first.pos + second.pos) * 0.5)
++            }
++            Some(spread) => match (contact(spread.first), contact(spread.second)) {
++                (Some(first), Some(second)) => PinchStep::Moved(
++                    first.pos.distance(&second.pos) / spread.distance,
++                    (first.pos + second.pos) * 0.5,
++                ),
++                _ => {
++                    self.spread = None;
++                    PinchStep::Ended
++                }
++            },
++            None => PinchStep::Nothing,
++        }
++    }
++
++    pub(crate) fn pinching(&self) -> bool {
++        self.spread.is_some()
++    }
++
++    /// Whether any finger that started a pinch is still down: its release
++    /// must not read as a tap.
++    fn holding(&self) -> bool {
++        !self.contacts.is_empty()
++    }
++}
++
++/// One finger followed from the raw touch stream (see GestureView's
++/// handle_event): where and when it went down, and what it has become.
++#[derive(Clone, Copy, Debug)]
++struct TouchPress {
++    uid: u64,
++    start: DVec2,
++    time: f64,
++    panning: bool,
++    /// Spent on a long press: its release is no tap.
++    spent: bool,
++    last_sent: DVec2,
++}
++
++#[derive(Script, ScriptHook, Widget)]
++pub struct GestureView {
++    #[deref]
++    view: View,
++    #[live]
++    on_tap: ScriptFnRef,
++    #[live]
++    on_double_tap: ScriptFnRef,
++    #[live]
++    on_long_press: ScriptFnRef,
++    #[live]
++    on_swipe: ScriptFnRef,
++    #[live]
++    on_pan: ScriptFnRef,
++    #[live]
++    on_pinch: ScriptFnRef,
++
++    /// This press is ours: no child had already captured it.
++    #[rust]
++    live: bool,
++    /// The press moved past the tap slop: a drag, not a tap.
++    #[rust]
++    panning: bool,
++    /// Last drag deltas sent, so a still finger sends nothing.
++    #[rust]
++    pan_sent: DVec2,
++    #[rust]
++    last_tap: Option<(f64, DVec2)>,
++    #[rust]
++    pinch: PinchTracker,
++    #[rust]
++    touch: Option<TouchPress>,
++    #[rust]
++    pinch_sent: f64,
++    /// A pinch happened during this press: the fingers' release is not a
++    /// tap, a swipe or the end of a drag.
++    #[rust]
++    pinched: bool,
++}
++
++impl GestureView {
++    fn call(&self, cx: &mut Cx, script_fn: &ScriptFnRef, args: &[ScriptValue]) {
++        if script_fn.as_object() == ScriptObject::ZERO {
++            return;
++        }
++        cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), script_fn.clone(), args);
++    }
++
++    fn local(&self, cx: &Cx, abs: DVec2) -> DVec2 {
++        abs - self.view.area().rect(cx).pos
++    }
++
++    fn handle_touches(&mut self, cx: &mut Cx, event: &TouchUpdateEvent) {
++        let area = self.view.area();
++        let bounds = area.clipped_rect(cx);
++        for t in &event.touches {
++            match t.state {
++                TouchState::Start => {
++                    if self.touch.is_some() || !bounds.contains(t.abs) {
++                        continue;
++                    }
++                    let claimed = t.handled.get();
++                    if !claimed.is_empty() && claimed != area && is_inside(cx, claimed, area) {
++                        continue;
++                    }
++                    if !self.pinch.holding() || self.pinch.contacts.len() <= 1 {
++                        self.pinched = false;
++                    }
++                    self.touch = Some(TouchPress { uid: t.uid, start: t.abs, time: t.time, panning: false, spent: false, last_sent: DVec2::default() });
++                }
++                TouchState::Move | TouchState::Stable => {
++                    let Some(mut press) = self.touch.filter(|p| p.uid == t.uid) else { continue };
++                    if self.pinch.pinching() || self.pinched {
++                        continue;
++                    }
++                    let delta = t.abs - press.start;
++                    if !press.panning && delta.length() > TAP_SLOP {
++                        press.panning = true;
++                        self.call(cx, &self.on_pan.clone(), &[0.0.into(), 0.0.into(), 0.0.into()]);
++                    }
++                    if press.panning && (delta - press.last_sent).length() >= 1.0 {
++                        press.last_sent = delta;
++                        self.call(cx, &self.on_pan.clone(), &[delta.x.into(), delta.y.into(), 1.0.into()]);
++                    }
++                    self.touch = Some(press);
++                }
++                TouchState::Stop => {
++                    let Some(press) = self.touch.filter(|p| p.uid == t.uid) else { continue };
++                    self.touch = None;
++                    if self.pinched {
++                        continue;
++                    }
++                    let delta = t.abs - press.start;
++                    if press.panning {
++                        self.call(cx, &self.on_pan.clone(), &[delta.x.into(), delta.y.into(), 2.0.into()]);
++                        if let Some((dx, dy)) = swipe(delta.x, delta.y, t.time - press.time) {
++                            self.call(cx, &self.on_swipe.clone(), &[dx.into(), dy.into()]);
++                        }
++                    } else if !press.spent && delta.length() <= TAP_SLOP && bounds.contains(t.abs) {
++                        self.tap(cx, t.abs, t.time);
++                    }
++                }
++            }
++        }
++    }
++
++    fn tap(&mut self, cx: &mut Cx, abs: DVec2, time: f64) {
++        let at = self.local(cx, abs);
++        self.call(cx, &self.on_tap.clone(), &[at.x.into(), at.y.into()]);
++        let double = self
++            .last_tap
++            .is_some_and(|(t, pos)| time - t <= DOUBLE_TAP_SECONDS && pos.distance(&abs) <= DOUBLE_TAP_DISTANCE);
++        if double {
++            self.last_tap = None;
++            self.call(cx, &self.on_double_tap.clone(), &[at.x.into(), at.y.into()]);
++        } else {
++            self.last_tap = Some((time, abs));
++        }
++    }
++}
++
++/// Whether `inner` is a widget drawn inside `outer` (not `outer`'s own
++/// rect, and not one around it).
++fn is_inside(cx: &Cx, inner: Area, outer: Area) -> bool {
++    let (rect, own) = (inner.rect(cx), outer.rect(cx));
++    rect.is_inside_of(own) && rect.size != own.size
++}
++
++impl Widget for GestureView {
++    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
++        self.view.draw_walk(cx, scope, walk)
++    }
++
++    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        self.view.handle_event(cx, event, scope);
++        if !self.view.visible {
++            return;
++        }
++
++        if let Event::TouchUpdate(touches) = event {
++            let bounds = self.view.area().clipped_rect(cx);
++            match self.pinch.update(touches, bounds) {
++                PinchStep::Began(center) => {
++                    self.pinched = true;
++                    self.pinch_sent = 1.0;
++                    if self.panning {
++                        // The drag a first finger started gives way to the pinch.
++                        let at = self.pan_sent;
++                        self.call(cx, &self.on_pan.clone(), &[at.x.into(), at.y.into(), 2.0.into()]);
++                        self.panning = false;
++                    }
++                    let at = self.local(cx, center);
++                    self.call(cx, &self.on_pinch.clone(), &[1.0.into(), at.x.into(), at.y.into(), 0.0.into()]);
++                }
++                PinchStep::Moved(scale, center) => {
++                    if (scale / self.pinch_sent - 1.0).abs() >= PINCH_STEP {
++                        self.pinch_sent = scale;
++                        let at = self.local(cx, center);
++                        self.call(cx, &self.on_pinch.clone(), &[scale.into(), at.x.into(), at.y.into(), 1.0.into()]);
++                    }
++                }
++                PinchStep::Ended => {
++                    let scale = self.pinch_sent;
++                    self.call(cx, &self.on_pinch.clone(), &[scale.into(), 0.0.into(), 0.0.into(), 2.0.into()]);
++                }
++                PinchStep::Nothing => {}
++            }
++        }
++
++        // Touch is read from the raw stream and never claimed. Claiming it,
++        // even with a capture overload, marks the touch handled, and the
++        // scroll view around this one then never starts its drag: a list of
++        // GestureView rows would not scroll. A child that claimed the touch
++        // (a Button inside) still keeps it.
++        match event {
++            Event::TouchUpdate(touches) => {
++                self.handle_touches(cx, touches);
++                return;
++            }
++            Event::LongPress(press) => {
++                let fire = match self.touch.as_mut() {
++                    Some(p) if p.uid == press.uid && !p.panning && !p.spent && !self.pinched => {
++                        p.spent = true;
++                        true
++                    }
++                    _ => false,
++                };
++                if fire {
++                    let at = self.local(cx, press.abs);
++                    self.call(cx, &self.on_long_press.clone(), &[at.x.into(), at.y.into()]);
++                }
++                return;
++            }
++            _ => {}
++        }
++
++        match event.hits_with_capture_overload(cx, self.view.area(), true) {
++            Hit::FingerDown(e) => {
++                // A child that already owns this press (a Button) keeps it. A
++                // scroll view around us captures every press too; that one is
++                // not a child, and the tap is still ours.
++                self.live = !child_owns_press(cx, e.digit_id, self.view.area());
++                self.panning = false;
++                self.pan_sent = DVec2::default();
++                if !self.pinch.holding() {
++                    self.pinched = false;
++                }
++            }
++            Hit::FingerMove(e) if self.live && !self.pinch.pinching() && !self.pinched => {
++                let delta = e.abs - e.abs_start;
++                if !self.panning && delta.length() > TAP_SLOP {
++                    self.panning = true;
++                    self.call(cx, &self.on_pan.clone(), &[0.0.into(), 0.0.into(), 0.0.into()]);
++                }
++                if self.panning && (delta - self.pan_sent).length() >= 1.0 {
++                    self.pan_sent = delta;
++                    self.call(cx, &self.on_pan.clone(), &[delta.x.into(), delta.y.into(), 1.0.into()]);
++                }
++            }
++            Hit::FingerLongPress(e) if self.live && !self.panning && !self.pinched => {
++                let at = self.local(cx, e.abs);
++                // The press is spent on the long press: its release is no tap.
++                self.live = false;
++                self.call(cx, &self.on_long_press.clone(), &[at.x.into(), at.y.into()]);
++            }
++            Hit::FingerUp(e) if self.live => {
++                self.live = false;
++                if self.pinched {
++                    return;
++                }
++                let delta = e.abs - e.abs_start;
++                if self.panning {
++                    self.panning = false;
++                    self.call(cx, &self.on_pan.clone(), &[delta.x.into(), delta.y.into(), 2.0.into()]);
++                    if let Some((dx, dy)) = swipe(delta.x, delta.y, e.time - e.capture_time) {
++                        self.call(cx, &self.on_swipe.clone(), &[dx.into(), dy.into()]);
++                    }
++                    return;
++                }
++                if e.is_over && delta.length() <= TAP_SLOP && !e.has_long_press_occurred {
++                    self.tap(cx, e.abs, e.time);
++                }
++            }
++            _ => {}
++        }
++    }
++}
++
++/// Whether a widget inside `area` (not `area` itself, not one around it)
++/// captured this press.
++fn child_owns_press(cx: &Cx, digit_id: DigitId, area: Area) -> bool {
++    cx.fingers
++        .digit_capture_areas(digit_id)
++        .into_iter()
++        .any(|captured| captured != area && is_inside(cx, captured, area))
++}
++
++/// Of the sheet's own height: the peek, half and full resting heights.
++const PEEK_HEIGHT: f64 = 132.0;
++const HALF_FRACTION: f64 = 0.45;
++/// What full height leaves above the sheet, so a search bar stays reachable.
++const FULL_TOP_GAP: f64 = 96.0;
++/// Pixels a second: faster than this at release is a flick to the next rest.
++const FLICK_VELOCITY: f64 = 600.0;
++
++/// The three resting heights in a viewport this tall, rising. In a short
++/// viewport they close up rather than cross.
++fn sheet_heights(viewport_h: f64) -> [f64; 3] {
++    let half = viewport_h * HALF_FRACTION;
++    [PEEK_HEIGHT.min(half), half, (viewport_h - FULL_TOP_GAP).max(half)]
++}
++
++/// Where a released drag comes to rest: the nearest height, or for a flick
++/// the next one the way the finger was going (velocity is downwards, px/s).
++fn sheet_rest(at: f64, velocity: f64, viewport_h: f64) -> usize {
++    let heights = sheet_heights(viewport_h);
++    if velocity <= -FLICK_VELOCITY {
++        heights.iter().position(|h| *h > at + 0.5).unwrap_or(2)
++    } else if velocity >= FLICK_VELOCITY {
++        heights.iter().rposition(|h| *h < at - 0.5).unwrap_or(0)
++    } else {
++        let distance = |i: &usize| (heights[*i] - at).abs();
++        (0..3).min_by(|a, b| distance(a).total_cmp(&distance(b))).unwrap_or(0)
++    }
++}
++
++/// A bottom sheet: fills its parent, draws its children in a panel along the
++/// bottom edge at the current detent's height, follows a drag that starts on
++/// the panel, and eases to a detent on release. The app hears only where it
++/// came to rest (`on_detent`), and can move it with `detent: 0|1|2`.
++#[derive(Script, ScriptHook, Widget)]
++pub struct SheetView {
++    #[deref]
++    view: View,
++    /// The detent to rest at: 0 peek, 1 half, 2 full. Script may set it.
++    #[live(0.0)]
++    detent: f64,
++    #[live]
++    on_detent: ScriptFnRef,
++
++    #[rust]
++    height: f64,
++    /// While a finger is on the panel: the height it started at, and the
++    /// last (time, height) for the release velocity.
++    #[rust]
++    drag: Option<(f64, f64, f64)>,
++    #[rust]
++    prev: Option<(f64, f64)>,
++    #[rust]
++    viewport_h: f64,
++    #[rust]
++    next_frame: NextFrame,
++}
++
++impl SheetView {
++    fn target(&self) -> f64 {
++        sheet_heights(self.viewport_h)[self.detent.clamp(0.0, 2.0) as usize]
++    }
++}
++
++impl Widget for SheetView {
++    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
++        let outer = cx.peek_walk_turtle(walk);
++        if outer.size.y > 0.0 {
++            self.viewport_h = outer.size.y;
++        }
++        if self.height <= 0.0 {
++            self.height = self.target();
++        }
++        let mut inner = walk;
++        inner.height = Size::Fixed(self.height.max(0.0));
++        inner.abs_pos = Some(dvec2(outer.pos.x, outer.pos.y + outer.size.y - self.height));
++        cx.walk_turtle(walk);
++        self.view.draw_walk(cx, scope, inner)
++    }
++
++    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        self.view.handle_event(cx, event, scope);
++        if let Some(ne) = self.next_frame.is_event(event) {
++            let target = self.target();
++            if self.drag.is_none() {
++                // Ease a fixed share of the way each frame: settles in ~200 ms.
++                let step = (target - self.height) * 0.25;
++                if step.abs() < 0.5 {
++                    self.height = target;
++                } else {
++                    self.height += step;
++                    self.next_frame = cx.new_next_frame();
++                }
++                let _ = ne;
++                self.view.redraw(cx);
++            }
++        }
++        match event.hits_with_capture_overload(cx, self.view.area(), true) {
++            Hit::FingerDown(e) => {
++                if !child_owns_press(cx, e.digit_id, self.view.area()) {
++                    self.drag = Some((self.height, e.time, self.height));
++                    self.prev = None;
++                }
++            }
++            Hit::FingerMove(e) => {
++                if let Some((from, _, _)) = self.drag {
++                    let [lowest, _, highest] = sheet_heights(self.viewport_h);
++                    let now = (from - (e.abs.y - e.abs_start.y)).clamp(lowest, highest);
++                    self.prev = self.drag.map(|(_, t, h)| (t, h));
++                    self.drag = Some((from, e.time, now));
++                    self.height = now;
++                    self.view.redraw(cx);
++                }
++            }
++            Hit::FingerUp(e) => {
++                if let Some((_, time, at)) = self.drag.take() {
++                    // Downwards velocity: the sheet shrinks as the finger descends.
++                    let velocity = match self.prev {
++                        Some((t0, h0)) if time > t0 => -(at - h0) / (time - t0),
++                        _ => 0.0,
++                    };
++                    let _ = e;
++                    let rest = sheet_rest(at, velocity, self.viewport_h) as f64;
++                    let moved = rest != self.detent.clamp(0.0, 2.0).floor();
++                    self.detent = rest;
++                    self.next_frame = cx.new_next_frame();
++                    if moved && self.on_detent.as_object() != ScriptObject::ZERO {
++                        cx.widget_to_script_call(
++                            self.widget_uid(),
++                            NIL,
++                            self.view.source.clone(),
++                            self.on_detent.clone(),
++                            &[rest.into()],
++                        );
++                    }
++                }
++            }
++            _ => {}
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::makepad_draw::makepad_platform::event::TouchPoint;
++    use std::cell::Cell;
++
++    fn touches(points: &[(u64, TouchState, f64, f64)]) -> TouchUpdateEvent {
++        TouchUpdateEvent {
++            time: 1.0,
++            window_id: WindowId(0, 0),
++            modifiers: KeyModifiers::default(),
++            touches: points
++                .iter()
++                .map(|&(uid, state, x, y)| TouchPoint {
++                    uid,
++                    state,
++                    abs: dvec2(x, y),
++                    time: 1.0,
++                    rotation_angle: 0.0,
++                    force: 1.0,
++                    radius: dvec2(1.0, 1.0),
++                    handled: Cell::new(Area::Empty),
++                    sweep_lock: Cell::new(Area::Empty),
++                })
++                .collect(),
++        }
++    }
++
++    #[test]
++    fn a_swipe_is_fast_and_along_one_axis() {
++        assert_eq!(swipe(-120.0, 10.0, 0.2), Some((-120.0, 0.0)));
++        assert_eq!(swipe(5.0, 90.0, 0.2), Some((0.0, 90.0)));
++        assert_eq!(swipe(-120.0, 100.0, 0.2), None, "a diagonal is no swipe");
++        assert_eq!(swipe(-120.0, 0.0, 1.0), None, "a slow drag is no swipe");
++        assert_eq!(swipe(-30.0, 0.0, 0.1), None, "nor is a short one");
++    }
++
++    #[test]
++    fn two_fingers_inside_the_view_pinch_relative_to_their_start() {
++        let bounds = Rect { pos: dvec2(0.0, 0.0), size: dvec2(400.0, 400.0) };
++        let mut pinch = PinchTracker::default();
++        assert_eq!(pinch.update(&touches(&[(1, TouchState::Start, 100.0, 200.0)]), bounds), PinchStep::Nothing);
++        assert_eq!(
++            pinch.update(&touches(&[(2, TouchState::Start, 300.0, 200.0)]), bounds),
++            PinchStep::Began(dvec2(200.0, 200.0))
++        );
++        assert_eq!(
++            pinch.update(&touches(&[(2, TouchState::Move, 500.0, 200.0)]), bounds),
++            PinchStep::Moved(2.0, dvec2(300.0, 200.0))
++        );
++        assert_eq!(pinch.update(&touches(&[(1, TouchState::Stop, 100.0, 200.0)]), bounds), PinchStep::Ended);
++        assert!(pinch.holding(), "a finger is still down: its release is not a tap");
++        pinch.update(&touches(&[(2, TouchState::Stop, 500.0, 200.0)]), bounds);
++        assert!(!pinch.holding());
++    }
++
++    #[test]
++    fn a_finger_that_starts_outside_the_view_is_not_part_of_its_pinch() {
++        let bounds = Rect { pos: dvec2(0.0, 0.0), size: dvec2(100.0, 100.0) };
++        let mut pinch = PinchTracker::default();
++        pinch.update(&touches(&[(1, TouchState::Start, 50.0, 50.0)]), bounds);
++        assert_eq!(pinch.update(&touches(&[(2, TouchState::Start, 500.0, 50.0)]), bounds), PinchStep::Nothing);
++    }
++
++    #[test]
++    fn the_sheet_rests_at_the_nearest_detent_or_flicks_to_the_next() {
++        assert_eq!(sheet_heights(800.0), [132.0, 360.0, 704.0]);
++        assert_eq!(sheet_rest(200.0, 0.0, 800.0), 0);
++        assert_eq!(sheet_rest(300.0, 0.0, 800.0), 1);
++        assert_eq!(sheet_rest(200.0, -900.0, 800.0), 1, "an upward flick goes to the next detent up");
++        assert_eq!(sheet_rest(650.0, 900.0, 800.0), 1, "a downward flick to the next one down");
++        let [peek, half, full] = sheet_heights(200.0);
++        assert!(peek <= half && half <= full && full <= 200.0);
++    }
++}
+diff --git a/widgets/src/lib.rs b/widgets/src/lib.rs
+index 4c6418776..211cf4086 100644
+--- a/widgets/src/lib.rs
++++ b/widgets/src/lib.rs
+@@ -33,6 +33,9 @@
+ 
+ // Modules ordered to match script_mod calls
+ pub mod rubber_view;
++pub mod gesture_view;
++pub mod web_reader;
++pub mod camera_preview;
+ pub mod scroll_bar;
+ pub mod scroll_bars;
+ pub mod scroll_motion;
+@@ -363,6 +366,8 @@ pub fn widgets_mod(vm: &mut ScriptVm) {
+     crate::view_ui::script_mod(vm);
+     crate::grid::script_mod(vm);
+     crate::rubber_view::script_mod(vm);
++    crate::gesture_view::script_mod(vm);
++    crate::web_reader::script_mod(vm);
+ 
+     crate::label::script_mod(vm);
+     crate::link_label::script_mod(vm);
+@@ -444,6 +449,7 @@ pub fn widgets_mod(vm: &mut ScriptVm) {
+     crate::callout_tooltip::script_mod(vm);
+     crate::popup_notification::script_mod(vm);
+     crate::video::script_mod(vm);
++    crate::camera_preview::script_mod(vm);
+     crate::page_flip::script_mod(vm);
+     crate::hosted_view::script_mod(vm);
+     crate::file_tree::script_mod(vm);
+diff --git a/widgets/src/map/archive.rs b/widgets/src/map/archive.rs
+index baef27a1f..3d9b67fef 100644
+--- a/widgets/src/map/archive.rs
++++ b/widgets/src/map/archive.rs
+@@ -468,6 +468,10 @@ struct CachedHttpRange {
+ /// HTTP `.mkmap` source using one whole-root GET and strict shard ranges.
+ pub struct HttpRangeByteSource {
+     root_url: String,
++    /// The script heap this source fetches for (0 = the host's own): every
++    /// request answers to that heap's allowlist, like the rest of the network
++    /// paths a card can reach.
++    heap_key: usize,
+     disk_cache: Option<ArchiveCacheStore>,
+     requests: HashMap<LiveId, HttpNetworkRead>,
+     queued: Vec<PendingHttpRead>,
+@@ -496,6 +500,7 @@ fn new_with_disk_cache(
+     ) -> Self {
+         Self {
+             root_url: root_url.into().trim_end_matches('/').to_string(),
++            heap_key: 0,
+             disk_cache,
+             requests: HashMap::new(),
+             queued: Vec::new(),
+@@ -575,6 +580,17 @@ fn issue(&mut self, cx: &mut Cx, mut pending: HttpNetworkRead) {
+                 (url, Some(format!("bytes={offset}-{end}")), len)
+             }
+         };
++        if !crate::splash_policy::url_allowed(self.heap_key, &url) {
++            crate::log!("map archive fetch refused by the host's allowlist: {url}");
++            for waiter in &pending.waiters {
++                self.ready.push_back(ReadCompletion {
++                    token: waiter.token,
++                    result: Err("refused by the host's allowlist".to_string()),
++                });
++            }
++            cx.redraw_all();
++            return;
++        }
+         #[cfg(target_arch = "wasm32")]
+         let url = format!(
+             "{url}#makepad-http=archive&tiles={tile_label}&priority={priority}&bytes={max_body}"
+@@ -2023,6 +2039,14 @@ pub fn http(root_url: impl Into<String>, workers: ArchiveWorkerPool) -> Self {
+         ))
+     }
+ 
++    /// [`Self::http`] on behalf of a script heap, whose allowlist every
++    /// request then answers to.
++    pub fn http_for_heap(root_url: impl Into<String>, workers: ArchiveWorkerPool, heap_key: usize) -> Self {
++        let mut source = HttpRangeByteSource::new(root_url);
++        source.heap_key = heap_key;
++        Self::Http(TileArchive::new(source, workers))
++    }
++
+     pub fn request_tile(
+         &mut self,
+         cx: &mut Cx,
+diff --git a/widgets/src/map/view.rs b/widgets/src/map/view.rs
+index 4581c70af..7bc1d7167 100644
+--- a/widgets/src/map/view.rs
++++ b/widgets/src/map/view.rs
+@@ -4312,6 +4312,10 @@ struct LabelLists {
+ 
+ // --- MapView widget ---
+ 
++/// How many Overpass mirrors a tile request tries before it gives up on the
++/// ones an app's policy does not list.
++const OVERPASS_MIRROR_TRIES: u8 = 8;
++
+ #[derive(Script, Widget)]
+ pub struct MapView {
+     /// The @cam readout in the corner: the exact command to recreate this
+@@ -7542,7 +7546,8 @@ fn install_overlay_sources(&mut self, cx: &mut Cx) {
+             .overlays
+             .iter()
+             .map(|overlay| {
+-                let (archive, local_mbtiles_path, filter) = match &overlay.source {
++                let source = self.jailed_tile_source(overlay.source.clone());
++                let (archive, local_mbtiles_path, filter) = match &source {
+                     TileSourceConfig::LocalArchive { mbtiles_path, .. } => {
+                         let (path, filter) = split_overlay_option(mbtiles_path);
+                         if is_mkmap_path_shape(path) {
+@@ -7558,7 +7563,7 @@ fn install_overlay_sources(&mut self, cx: &mut Cx) {
+                     TileSourceConfig::HttpArchive { root_url, .. } => {
+                         let (root_url, filter) = split_overlay_option(root_url);
+                         (
+-                            Some(MapTileArchive::http(root_url, workers.clone())),
++                            Some(MapTileArchive::http_for_heap(root_url, workers.clone(), self.source.heap_key())),
+                             None,
+                             filter,
+                         )
+@@ -7575,7 +7580,33 @@ fn install_overlay_sources(&mut self, cx: &mut Cx) {
+         self.apply_archive_cache_budgets(cx);
+     }
+ 
++    /// A local archive config as this map's script heap may read it: the
++    /// paths of a card under a policy resolve inside its storage jail, and a
++    /// path that cannot (no jail, or one that climbs out) reads nothing.
++    fn jailed_tile_source(&self, config: TileSourceConfig) -> TileSourceConfig {
++        let heap_key = self.source.heap_key();
++        let jail = |path: &str| {
++            if path.is_empty() {
++                return String::new();
++            }
++            crate::splash_policy::local_path_for_heap(heap_key, path).unwrap_or_default()
++        };
++        match config {
++            TileSourceConfig::LocalArchive { mbtiles_path, detail_mbtiles_path, bridge_dz_path } => {
++                TileSourceConfig::LocalArchive {
++                    mbtiles_path: jail(&mbtiles_path),
++                    detail_mbtiles_path: jail(&detail_mbtiles_path),
++                    bridge_dz_path: jail(&bridge_dz_path),
++                }
++            }
++            TileSourceConfig::HttpArchive { root_url, detail_root_url, bridge_dz_path } => {
++                TileSourceConfig::HttpArchive { root_url, detail_root_url, bridge_dz_path: jail(&bridge_dz_path) }
++            }
++        }
++    }
++
+     fn install_archive_source(&mut self, cx: &mut Cx, config: TileSourceConfig) {
++        let config = self.jailed_tile_source(config);
+         self.archive_generation = self.archive_generation.wrapping_add(1).max(1);
+         self.style_epoch = self.style_epoch.wrapping_add(1).max(1);
+         if let Some(archive) = self.base_archive.as_mut() {
+@@ -7610,9 +7641,9 @@ fn install_archive_source(&mut self, cx: &mut Cx, config: TileSourceConfig) {
+                 self.mbtiles_path.clear();
+                 self.detail_mbtiles_path = detail_root_url.clone();
+                 self.bridge_dz_mbtiles_path = bridge_dz_path.clone();
+-                self.base_archive = Some(MapTileArchive::http(root_url, workers.clone()));
++                self.base_archive = Some(MapTileArchive::http_for_heap(root_url, workers.clone(), self.source.heap_key()));
+                 self.detail_archive = needs_separate_detail_archive(&config)
+-                    .then(|| MapTileArchive::http(detail_root_url, workers));
++                    .then(|| MapTileArchive::http_for_heap(detail_root_url, workers, self.source.heap_key()));
+                 self.use_local_mbtiles = true;
+                 self.use_network = false;
+             }
+@@ -9389,7 +9420,18 @@ fn request_tile(
+         }
+ 
+         let query = overpass_query(tile_key);
+-        let endpoint = overpass_endpoint(tile_key, attempts, cx.seconds_since_app_start() as u64);
++        // The endpoint rotates across mirrors per tile and attempt. An app
++        // under a policy may list only some of them: use the next one it may
++        // reach rather than failing the tile on the mirror it may not.
++        let now = cx.seconds_since_app_start() as u64;
++        let heap_key = self.source.heap_key();
++        let Some(endpoint) = (0..OVERPASS_MIRROR_TRIES)
++            .map(|k| overpass_endpoint(tile_key, attempts.wrapping_add(k), now))
++            .find(|endpoint| crate::splash_policy::url_allowed(heap_key, endpoint))
++        else {
++            self.mark_tile_failed(tile_key, "refused by the host's allowlist");
++            return false;
++        };
+         let mut request = HttpRequest::new(endpoint.to_string(), HttpMethod::POST);
+         request.set_header("Content-Type".to_string(), "text/plain".to_string());
+         request.set_header("Accept".to_string(), "application/json".to_string());
+@@ -13557,7 +13599,7 @@ fn nav_update(&mut self, cx: &mut Cx, rect: Rect) {
+             // Where the DEVICE is: the last fix, else the card's declared
+             // centre (a fact it observed), else nothing — the camera does not
+             // move on its own.
+-            let fix = crate::makepad_draw::makepad_platform::gps::last_gps_fix()
++            let fix = crate::splash_policy::gps_fix_for_heap(self.source.heap_key())
+                 .map(|f| (f.lat, f.lon))
+                 .filter(|(lat, lon)| is_a_place(*lat, *lon))
+                 .or(Some((self.center_lat, self.center_lon)))
+diff --git a/widgets/src/splash.rs b/widgets/src/splash.rs
+index 2262d0f2b..53db34c04 100644
+--- a/widgets/src/splash.rs
++++ b/widgets/src/splash.rs
+@@ -281,9 +281,13 @@ fn eval_styled_body(&mut self,cx:&mut Cx,preserve:bool) {
+                         crate::desktop_style::apply_widgets(vm);
+                         crate::script_eval!(vm, {mod.res = nil});
+                         crate::widget_async::apply_splash_isolate_mods(vm);
++                        crate::widget_async::forget_granted_isolate_mods(heap_key);
+                     });
+                 }
+             }
++            // Vocabulary this app's grants entitle it to, now that its policy
++            // is seated (see `register_splash_isolate_mod_for`).
++            crate::widget_async::apply_granted_isolate_mods(vm);
+             // Everything on `mod` that is not the body's own; whatever the run
+             // adds beyond this is the body's.
+             let mut known = module_keys(vm);
+@@ -742,7 +746,7 @@ pub fn call_script_fn_with_strings(&mut self, cx: &mut Cx, name: LiveId, args: &
+             }
+             let vals: Vec<ScriptValue> = args
+                 .iter()
+-                .map(|s| vm.new_string_with(|_vm, out| out.push_str(s)))
++                .map(|s| vm.bx.heap.new_string_from_str(s))
+                 .collect();
+             vm.with_instruction_limit(WIDGET_SCRIPT_INSTRUCTION_LIMIT, |vm| {
+                 vm.call(fnval, &vals);
+@@ -1234,6 +1238,14 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let mut payload = String::new();
+             vm.bx.heap.to_json_inner(payload_value, &mut payload);
+ 
++            // A notify carries no sender, so the host acts on it as if its own
++            // card sent it. An app under a policy may only post one when it
++            // was granted `agent`; anything else would let an installed app
++            // drive the host's agent.
++            if let Err(reason) = crate::splash_policy::service_allowed(vm.bx.heap.heap_key(), "agent.notify") {
++                log!("splash: refused agent.notify {event_id:?}: {reason}");
++                return NIL;
++            }
+             Cx::post_action(SplashAction::Notify { event_id, payload });
+             NIL
+         },
+@@ -1565,7 +1577,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let url = geocode_url(&name);
++            let url = geocode_url(&name, vm.bx.heap.heap_key());
+             let out = match vm.host.cx_mut().script_data_fetch(&url) {
+                 Some(bytes) => geocode_pluck(&bytes, field.trim())
+                     .unwrap_or_else(|| "—".to_string()),
+@@ -1617,7 +1629,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let url = geocode_url(&name);
++            let url = geocode_url(&name, vm.bx.heap.heap_key());
+             let key = if field.trim() == "lon" { "lon" } else { "lat" };
+             let n = vm
+                 .host
+@@ -3054,7 +3066,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let out = pref_at(field.trim()).unwrap_or_else(|| "\u{2014}".to_string());
++            let out = pref_at(vm.bx.heap.heap_key(), field.trim()).unwrap_or_else(|| "\u{2014}".to_string());
+             vm.bx.heap.new_string_from_str(&out)
+         },
+     );
+@@ -3079,7 +3091,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let Some(id) = collection_at("reading", index) else {
++            let Some(id) = collection_at(vm.bx.heap.heap_key(), "reading", index) else {
+                 return vm.bx.heap.new_string_from_str("—");
+             };
+             let key = match field.trim().to_ascii_lowercase().as_str() {
+@@ -3335,8 +3347,8 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let mut ticker = String::new();
+             vm.bx.heap.cast_to_string(ticker_v, &mut ticker);
+             let ticker = ticker.trim();
+-            let held = (0..collection_len("watchlist"))
+-                .filter_map(|i| collection_at("watchlist", i))
++            let held = (0..collection_len_for(vm.bx.heap.heap_key(), "watchlist"))
++                .filter_map(|i| collection_at(vm.bx.heap.heap_key(), "watchlist", i))
+                 .any(|t| t == ticker);
+             vm.bx.heap.new_string_from_str(if held { "1" } else { "0" })
+         },
+@@ -3360,7 +3372,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let Some(name) = collection_at("topics", index) else {
++            let Some(name) = collection_at(vm.bx.heap.heap_key(), "topics", index) else {
+                 return vm.bx.heap.new_string_from_str("—");
+             };
+             // json_pluck walks a dot-path from the ROOT (it is not a text
+@@ -3411,7 +3423,11 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+         id_lut!(link),
+         script_args_def!(field = NIL),
+         |vm, _args| {
+-            let url = LINK.read().map(|s| s.clone()).unwrap_or_default();
++            let url = if crate::splash_policy::profile_allowed(vm.bx.heap.heap_key()) {
++                LINK.read().map(|s| s.clone()).unwrap_or_default()
++            } else {
++                String::new()
++            };
+             vm.bx.heap.new_string_from_str(&url)
+         },
+     );
+@@ -3725,7 +3741,9 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let fix = crate::makepad_draw::makepad_platform::gps::last_gps_fix();
++            // Without the `location` grant this reads as "no fix yet", the
++            // state every card already handles.
++            let fix = crate::splash_policy::gps_fix_for_heap(vm.bx.heap.heap_key());
+             match field.trim().to_ascii_lowercase().as_str() {
+                 "ok" => ScriptValue::from_f64(if fix.is_some() { 1.0 } else { 0.0 }),
+                 "lon" => ScriptValue::from_f64(fix.map(|f| f.lon).unwrap_or(-9999.0)),
+@@ -3756,7 +3774,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             let field_v = script_value!(vm, args.field);
+             let mut field = String::new();
+             vm.bx.heap.cast_to_string(field_v, &mut field);
+-            let Some(ticker) = collection_at("watchlist", index) else {
++            let Some(ticker) = collection_at(vm.bx.heap.heap_key(), "watchlist", index) else {
+                 // Past the end of the list. Empty rather than an em dash: a row
+                 // that does not exist is not a row whose value failed to load.
+                 return vm.bx.heap.new_string_from_str("");
+@@ -3819,14 +3837,14 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+             } else {
+                 vm.bx.heap.cast_to_string(unit_value, &mut unit);
+             }
+-            let Some(name) = collection_at("cities", index) else {
++            let Some(name) = collection_at(vm.bx.heap.heap_key(), "cities", index) else {
+                 return vm.bx.heap.new_string_from_str("");
+             };
+             // The one field that needs no network: it IS what was stored.
+             if field.trim() == "name" {
+                 return vm.bx.heap.new_string_from_str(&name);
+             }
+-            let geo = geocode_url(&name);
++            let geo = geocode_url(&name, vm.bx.heap.heap_key());
+             let (lat, lon) = match vm.host.cx_mut().script_data_fetch(&geo) {
+                 None => {
+                     let placeholder = vm.host.cx_mut().script_data_placeholder(&geo);
+@@ -3879,7 +3897,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+         sys,
+         id_lut!(citiesnum),
+         script_args_def!(),
+-        |_vm, _args| ScriptValue::from_f64(collection_len("cities") as f64),
++        |vm, _args| ScriptValue::from_f64(collection_len_for(vm.bx.heap.heap_key(), "cities") as f64),
+     );
+ 
+     vm.add_method(
+@@ -3959,7 +3977,7 @@ pub fn register_agent_module(vm: &mut ScriptVm) {
+         sys,
+         id_lut!(watchlistnum),
+         script_args_def!(),
+-        |_vm, _args| ScriptValue::from_f64(collection_len("watchlist") as f64),
++        |vm, _args| ScriptValue::from_f64(collection_len_for(vm.bx.heap.heap_key(), "watchlist") as f64),
+     );
+ 
+     vm.set_injected_global(id!(sys), sys.into());
+@@ -4017,7 +4035,10 @@ fn locale_field(field: &str) -> String {
+     }
+ }
+ 
+-fn pref_at(field: &str) -> Option<String> {
++fn pref_at(heap_key: usize, field: &str) -> Option<String> {
++    if !crate::splash_policy::profile_allowed(heap_key) {
++        return None;
++    }
+     PREFS.read().ok()?.as_ref()?.get(field).cloned()
+ }
+ 
+@@ -4048,7 +4069,20 @@ pub fn collection_len(name: &str) -> usize {
+         .unwrap_or(0)
+ }
+ 
+-fn collection_at(name: &str, index: usize) -> Option<String> {
++/// [`collection_len`] as a given isolate may see it: empty without the
++/// `profile` grant, like a user who saved nothing.
++fn collection_len_for(heap_key: usize, name: &str) -> usize {
++    if crate::splash_policy::profile_allowed(heap_key) {
++        collection_len(name)
++    } else {
++        0
++    }
++}
++
++fn collection_at(heap_key: usize, name: &str, index: usize) -> Option<String> {
++    if !crate::splash_policy::profile_allowed(heap_key) {
++        return None;
++    }
+     COLLECTIONS
+         .read()
+         .ok()?
+@@ -5502,7 +5536,7 @@ fn nav_step_field(route: &ParsedNavRoute, d: f64, field: &str) -> String {
+ /// card's. Detecting CJK by codepoint range is enough: the alternative is asking
+ /// the generating model to romanise names, which is another thing for it to get
+ /// silently wrong.
+-fn geocode_url(name: &str) -> String {
++fn geocode_url(name: &str, heap_key: usize) -> String {
+     let name = name.trim();
+     // An EMPTY name means "where the device is" — the weather exemplar's
+     // `state city { shape: text, initial: "" }` is documented as exactly
+@@ -5516,7 +5550,9 @@ fn geocode_url(name: &str) -> String {
+     // search, which resolves to nothing and keeps the placeholder path:
+     // never invent a place.
+     if name.is_empty() {
+-        if let Some(fix) = crate::makepad_draw::makepad_platform::gps::last_gps_fix() {
++        // The fix only for an app granted `location`: a blank name must not
++        // become a way to learn where the device is without asking.
++        if let Some(fix) = crate::splash_policy::gps_fix_for_heap(heap_key) {
+             return format!(
+                 "https://photon.komoot.io/reverse?lat={:.2}&lon={:.2}&lang=en",
+                 fix.lat, fix.lon
+@@ -5894,3 +5930,45 @@ pub(crate) fn sim_clock_secs() -> f64 {
+     static START: OnceLock<std::time::Instant> = OnceLock::new();
+     START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+ }
++
++#[cfg(test)]
++mod policy_gate_tests {
++    use super::*;
++
++    /// `sys.gps(...)`, `sys.watchlistnum()` and `agent.notify` run inside a
++    /// real isolate: first unpoliced (the host's own card), then under a
++    /// policy that lacks each grant, then with the grants.
++    #[test]
++    fn a_policed_isolate_needs_grants_for_location_the_users_lists_and_the_agent() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        crate::makepad_draw::makepad_platform::gps::set_gps_fix(52.37, 4.89, 10.0);
++        set_collections(std::collections::BTreeMap::from([(
++            "watchlist".to_string(),
++            vec!["NVDA".to_string(), "AAPL".to_string()],
++        )]));
++        let vm_id = cx.alloc_splash_vm();
++        let read = |cx: &mut Cx| {
++            cx.with_script_vm_id(vm_id, |vm| {
++                register_agent_module(vm);
++                let ok = vm.eval(crate::makepad_script::script! { sys.gps("ok") }).as_number();
++                let lists = vm.eval(crate::makepad_script::script! { sys.watchlistnum() }).as_number();
++                (ok, lists)
++            })
++        };
++        let heap = cx.with_script_vm_id(vm_id, |vm| vm.bx.heap.heap_key());
++
++        assert_eq!(read(&mut cx), (Some(1.0), Some(2.0)), "the host's own card sees both");
++
++        crate::splash_policy::set_policy_for_heap(heap, vec!["net".into()], vec![], None);
++        assert_eq!(read(&mut cx), (Some(0.0), Some(0.0)), "no grant reads as no fix and no saved lists");
++        assert!(crate::splash_policy::service_allowed(heap, "agent.notify").is_err());
++
++        crate::splash_policy::set_policy_for_heap(heap, vec!["location".into(), "profile".into()], vec![], None);
++        assert_eq!(read(&mut cx), (Some(1.0), Some(2.0)));
++
++        crate::splash_policy::gc_policies(&[heap]);
++        set_collections(Default::default());
++        cx.free_splash_vm(vm_id);
++    }
++}
+diff --git a/widgets/src/splash_host.rs b/widgets/src/splash_host.rs
+index d1c7a0c25..81529af28 100644
+--- a/widgets/src/splash_host.rs
++++ b/widgets/src/splash_host.rs
+@@ -136,6 +136,18 @@ pub fn take_splash_host_requests() -> Vec<SplashHostRequest> {
+     BRIDGE.with(|b| std::mem::take(&mut b.borrow_mut().queue))
+ }
+ 
++/// Drains only the requests from these isolates, leaving every other host's
++/// queued: a host that runs some isolates (an app runner) must not swallow
++/// the requests of isolates another host answers.
++pub fn take_splash_host_requests_for(heap_keys: &[usize]) -> Vec<SplashHostRequest> {
++    BRIDGE.with(|b| {
++        let mut b = b.borrow_mut();
++        let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut b.queue).into_iter().partition(|r| heap_keys.contains(&r.heap_key));
++        b.queue = rest;
++        mine
++    })
++}
++
+ /// Answers one request: `Ok(json)` becomes `{ok: true, data: <parsed>}`,
+ /// `Err(msg)` becomes `{ok: false, error: msg}`. Returns what happened, so a
+ /// host can log undeliverable answers instead of wondering why an app hangs.
+@@ -171,7 +183,7 @@ pub fn splash_host_respond(
+                 let data = parser.read_json(json, &mut vm.bx.heap);
+                 (true, data, NIL)
+             }
+-            Err(msg) => (false, NIL, vm.new_string_with(|_vm, s| s.push_str(msg))),
++            Err(msg) => (false, NIL, vm.bx.heap.new_string_from_str(msg)),
+         };
+         let obj = vm.bx.heap.new_object();
+         let trap = vm.bx.threads.cur().trap.pass();
+@@ -198,6 +210,11 @@ pub fn splash_host_respond(
+         }
+     });
+     });
++    // What the callback asked of its widgets (`ui.list.render()`) is queued,
++    // and the queue is worked on the next event. An answer delivered after
++    // the host handled its event would otherwise wait for the person to
++    // touch the screen.
++    SignalToUI::set_ui_signal();
+     if !contained {
+         // The callback panicked; the panic was contained and that isolate is
+         // suspect, but the host app carries on.
+@@ -262,7 +279,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return match callback {
+                     Some(callback) => {
+                         let obj = vm.bx.heap.new_object();
+-                        let error = vm.new_string_with(|_vm, s| s.push_str(&reason));
++                        let error = vm.bx.heap.new_string_from_str(&reason);
+                         let trap = vm.bx.threads.cur().trap.pass();
+                         vm.bx.heap.set_value(obj, id!(is_ok).into(), false.into(), trap);
+                         vm.bx.heap.set_value(obj, id!(data).into(), NIL, trap);
+@@ -371,6 +388,19 @@ fn take_drains_and_gc_drops_dead_state() {
+         });
+     }
+ 
++    #[test]
++    fn a_host_takes_only_its_own_isolates_requests() {
++        let _ = take_splash_host_requests();
++        queue_raw(31, 1, "mail.list");
++        queue_raw(32, 2, "weather.get");
++        let mine = take_splash_host_requests_for(&[31]);
++        assert_eq!(mine.len(), 1);
++        assert_eq!(mine[0].service, "mail.list");
++        let rest = take_splash_host_requests();
++        assert_eq!(rest.len(), 1, "the other host's request stays queued");
++        assert_eq!(rest[0].heap_key, 32);
++    }
++
+     #[test]
+     fn tags_and_caps_are_per_heap() {
+         set_tag_for_heap(1, Some("one".into()));
+diff --git a/widgets/src/splash_policy.rs b/widgets/src/splash_policy.rs
+index 9bb895860..04cf78b36 100644
+--- a/widgets/src/splash_policy.rs
++++ b/widgets/src/splash_policy.rs
+@@ -8,7 +8,13 @@
+ //!
+ //! - [`service_allowed`] — before a `host.request` is queued (ADR 0002 §2);
+ //! - [`url_allowed`] — from every network path, through the gate installed
+-//!   in `makepad-script-std` (ADR 0002 §3);
++//!   in `makepad-script-std` (ADR 0002 §3): `net.http_request`,
++//!   `net.web_socket`, `sys.*` data fetches, artwork, map tiles, web cards
++//!   and a `Video`'s network source;
++//! - [`sockets_allowed`] — before `net.http_server` listens or
++//!   `net.socket_stream` connects. Neither names a URL a host list could
++//!   judge, and no capability covers them (`net` is requests to the listed
++//!   hosts), so a policed isolate gets neither;
+ //! - [`charge`] — after every evaluation and callback, against a cumulative
+ //!   instruction budget (ADR 0002 §4).
+ //!
+@@ -42,6 +48,9 @@ pub struct HeapPolicy {
+ /// Set (or replace) the policy for a heap. Enforcement starts here: a heap
+ /// that never had this called is not enforced.
+ pub fn set_policy_for_heap(heap_key: usize, capabilities: Vec<String>, hosts: Vec<String>, instruction_budget: Option<u64>) {
++    // A policy nothing consults is not a policy: whoever sets one, the gates
++    // that read it are in place from here on.
++    install_url_gate();
+     POLICIES.with(|p| {
+         let mut p = p.borrow_mut();
+         let used = p.get(&heap_key).map(|old| old.instructions_used).unwrap_or(0);
+@@ -110,6 +119,139 @@ pub fn url_allowed(heap_key: usize, url: &str) -> bool {
+     })
+ }
+ 
++/// May this heap open a listening server or a raw socket? Only when it is
++/// not policed. A server answers whoever connects and a raw stream speaks any
++/// protocol to any port; a contained app's way out is a request to a listed
++/// host, and nothing wider.
++pub fn sockets_allowed(heap_key: usize) -> bool {
++    !is_enforced(heap_key)
++}
++
++/// May this heap know where the device is? Location is a service family
++/// like any other, granted as `location`; an unpoliced heap keeps the old
++/// behaviour. Every reader of the platform fix on a script's behalf asks
++/// here: `sys.gps`, the blank-name geocode fallback, the map's follow camera.
++pub fn location_allowed(heap_key: usize) -> bool {
++    service_allowed(heap_key, "location.get").is_ok()
++}
++
++/// The device's last GPS fix as this heap may see it: `None` without the
++/// `location` grant, exactly as if the device had no fix yet, so a card's
++/// no-fix path is also its no-permission path.
++pub fn gps_fix_for_heap(heap_key: usize) -> Option<crate::makepad_draw::makepad_platform::gps::GpsFix> {
++    if location_allowed(heap_key) {
++        crate::makepad_draw::makepad_platform::gps::last_gps_fix()
++    } else {
++        None
++    }
++}
++
++/// May this heap read what the user keeps in the host: saved lists
++/// (`sys.watchlist`, cities, reading, topics), stored preferences and the page
++/// open in the reader. These are published process-wide for the host's own
++/// cards; an app under a policy needs the `profile` grant to see them.
++pub fn profile_allowed(heap_key: usize) -> bool {
++    service_allowed(heap_key, "profile.read").is_ok()
++}
++
++/// A file a widget was told to read, as this heap may read it. An unpoliced
++/// heap reads the path as given. A policed heap's paths are app-visible paths
++/// inside its storage jail, so a card cannot point a widget (a map archive,
++/// say) at a file of the host's; with no jail, it reads nothing.
++pub fn local_path_for_heap(heap_key: usize, path: &str) -> Option<String> {
++    if !is_enforced(heap_key) {
++        return Some(path.to_string());
++    }
++    let root = crate::splash_storage::root_for_heap(heap_key)?;
++    let real = crate::splash_storage::resolve_jailed(&root, path).ok()?;
++    crate::splash_storage::verify_no_symlinks(&root, &real).ok()?;
++    Some(real.to_string_lossy().into_owned())
++}
++
++/// The hosts a policed heap may reach, or `None` for an unpoliced heap. For
++/// a surface the gate cannot stand in front of — a system WebView fetches on
++/// its own — so it can be told the same list.
++pub fn hosts_for_heap(heap_key: usize) -> Option<Vec<String>> {
++    POLICIES.with(|p| p.borrow().get(&heap_key).map(|policy| policy.hosts.clone()))
++}
++
++/// The host of `url` when it is https and names a public host: not loopback,
++/// private, link-local, shared or unspecified, not a single-label or
++/// `.local`/`.internal`/`.localhost` name, and not an IP written in a form
++/// only some resolvers read as one (`0x7f.1`). What a grant to reach "any
++/// public page" may reach, and nothing on the device's own network.
++pub fn public_https_host(url: &str) -> Result<String, String> {
++    if !url.get(..8).is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://")) {
++        return Err("only https:// URLs are allowed".into());
++    }
++    let host = makepad_script_std::url_host(url).ok_or("missing host")?;
++    let bare = host.trim_start_matches('[').trim_end_matches(']');
++    if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
++        return if is_public_ip(ip) { Ok(host) } else { Err(format!("host not permitted (private/internal): {host}")) };
++    }
++    let last = host.rsplit('.').next().unwrap_or("");
++    let numeric = last.bytes().all(|b| b.is_ascii_digit()) || last.starts_with("0x");
++    if numeric || !host.contains('.') || host.starts_with('[') {
++        return Err(format!("host not permitted (not a public name): {host}"));
++    }
++    if host == "localhost" || [".localhost", ".internal", ".local", ".lan", ".home.arpa"].iter().any(|s| host.ends_with(s)) {
++        return Err(format!("host not permitted (private/internal): {host}"));
++    }
++    Ok(host)
++}
++
++fn is_public_ip(ip: std::net::IpAddr) -> bool {
++    use std::net::IpAddr;
++    match ip {
++        IpAddr::V4(v4) => {
++            let [a, b, ..] = v4.octets();
++            !(v4.is_loopback()
++                || v4.is_private()
++                || v4.is_link_local()
++                || v4.is_unspecified()
++                || v4.is_broadcast()
++                || v4.is_documentation()
++                || v4.is_multicast()
++                || a == 0
++                || (a == 100 && (64..128).contains(&b)))
++        }
++        IpAddr::V6(v6) => {
++            if let Some(v4) = v6.to_ipv4_mapped() {
++                return is_public_ip(IpAddr::V4(v4));
++            }
++            let first = v6.segments()[0];
++            !(v6.is_loopback()
++                || v6.is_unspecified()
++                || v6.is_multicast()
++                || (first & 0xfe00) == 0xfc00
++                || (first & 0xffc0) == 0xfe80)
++        }
++    }
++}
++
++/// May this heap load `url` as media (an image, artwork)? Its host list
++/// answers first; the `images` grant adds any public https host, for an app
++/// that shows pictures from wherever its content links (a feed reader's
++/// thumbnails). A load is still a request, so the grant is its own consent.
++pub fn media_allowed(heap_key: usize, url: &str) -> bool {
++    url_allowed(heap_key, url)
++        || (is_enforced(heap_key)
++            && may_run(heap_key)
++            && service_allowed(heap_key, "images.any").is_ok()
++            && public_https_host(url).is_ok())
++}
++
++/// May this heap open `url` as a page in the system WebView? Its host list
++/// answers first; the `web` grant adds any public https page, for a reader.
++/// Such a page gets no bridge into the app.
++pub fn page_allowed(heap_key: usize, url: &str) -> bool {
++    url_allowed(heap_key, url)
++        || (is_enforced(heap_key)
++            && may_run(heap_key)
++            && service_allowed(heap_key, "web.open").is_ok()
++            && public_https_host(url).is_ok())
++}
++
+ /// Record `instructions` run by this heap. Returns false once the budget is
+ /// spent, and stays false: the heap is exhausted from then on.
+ pub fn charge(heap_key: usize, instructions: u64) -> bool {
+@@ -143,6 +285,8 @@ pub(crate) fn install_url_gate() {
+     INSTALLED.with(|installed| {
+         if !installed.get() {
+             makepad_script_std::set_script_url_gate(Some(url_allowed));
++            makepad_script_std::set_script_media_gate(Some(media_allowed));
++            makepad_script_std::set_script_socket_gate(Some(sockets_allowed));
+             installed.set(true);
+         }
+     });
+@@ -226,6 +370,95 @@ fn replacing_a_policy_keeps_what_was_already_spent() {
+         gc_policies(&[905]);
+     }
+ 
++    #[test]
++    fn location_needs_the_location_grant() {
++        gc_policies(&[908]);
++        assert!(location_allowed(908), "an unpoliced heap reads the fix as before");
++        set_policy_for_heap(908, vec!["net".into()], vec![], None);
++        assert!(!location_allowed(908));
++        assert!(gps_fix_for_heap(908).is_none(), "no grant reads as no fix");
++        set_policy_for_heap(908, vec!["location".into()], vec![], None);
++        assert!(location_allowed(908));
++        assert!(!profile_allowed(908), "location does not cover the user's saved lists");
++        set_policy_for_heap(908, vec!["profile".into()], vec![], None);
++        assert!(profile_allowed(908));
++        gc_policies(&[908]);
++    }
++
++    #[test]
++    fn a_policed_heap_reads_local_files_only_inside_its_jail() {
++        gc_policies(&[909]);
++        assert_eq!(local_path_for_heap(909, "/etc/hosts").as_deref(), Some("/etc/hosts"));
++        set_policy_for_heap(909, vec![], vec![], None);
++        assert!(local_path_for_heap(909, "maps/world.mkmap").is_none(), "no jail, no files");
++        crate::splash_storage::set_root_for_heap(909, Some("/jail/app".into()));
++        assert_eq!(
++            local_path_for_heap(909, "maps/world.mkmap").as_deref(),
++            Some("/jail/app/maps/world.mkmap")
++        );
++        assert!(local_path_for_heap(909, "../../etc/hosts").is_none(), "no climbing out");
++        crate::splash_storage::set_root_for_heap(909, None);
++        gc_policies(&[909]);
++    }
++
++    #[test]
++    fn a_public_host_is_https_and_off_the_devices_network() {
++        for ok in ["https://news.ycombinator.com/", "https://CDN.Example.org:8443/a.jpg", "https://8.8.8.8/", "https://[2606:4700::1111]/"] {
++            assert!(public_https_host(ok).is_ok(), "{ok}");
++        }
++        for bad in [
++            "http://example.com/",
++            "https://localhost/",
++            "https://127.0.0.1/",
++            "https://10.0.0.8/",
++            "https://172.20.1.1/",
++            "https://192.168.1.1/",
++            "https://169.254.169.254/latest/meta-data",
++            "https://100.64.0.1/",
++            "https://0.0.0.0/",
++            "https://[::1]/",
++            "https://[fd00::1]/",
++            "https://[fe80::1]/",
++            "https://[::ffff:127.0.0.1]/",
++            "https://0x7f.1/",
++            "https://2130706433/",
++            "https://router/",
++            "https://printer.local/",
++            "https://nas.home.arpa/",
++            "https://evil.com@127.0.0.1/",
++        ] {
++            assert!(public_https_host(bad).is_err(), "{bad}");
++        }
++    }
++
++    #[test]
++    fn images_and_web_grants_open_public_https_only() {
++        set_policy_for_heap(910, vec!["net".into()], vec!["hn.algolia.com".into()], None);
++        assert!(media_allowed(910, "https://hn.algolia.com/logo.png"), "its own hosts, as before");
++        assert!(!media_allowed(910, "https://cdn.example.org/a.jpg"));
++        assert!(!page_allowed(910, "https://example.org/story"));
++        set_policy_for_heap(910, vec!["net".into(), "images".into(), "web".into()], vec!["hn.algolia.com".into()], None);
++        assert!(media_allowed(910, "https://cdn.example.org/a.jpg"));
++        assert!(page_allowed(910, "https://example.org/story"));
++        assert!(!media_allowed(910, "https://192.168.1.1/a.jpg"), "never the device's network");
++        assert!(!page_allowed(910, "http://example.org/story"), "never plain http");
++        assert!(!url_allowed(910, "https://cdn.example.org/a.jpg"), "neither grant widens requests");
++        gc_policies(&[910]);
++        assert!(media_allowed(910, "https://anything.example/"), "an unpoliced heap, as before");
++    }
++
++    #[test]
++    fn a_policed_heap_opens_no_server_and_no_raw_socket_whatever_it_holds() {
++        gc_policies(&[911]);
++        assert!(sockets_allowed(911), "an unpoliced heap, as before");
++        set_policy_for_heap(911, vec!["net".into(), "storage".into(), "web".into()], vec!["127.0.0.1".into()], None);
++        assert!(!sockets_allowed(911), "no grant and no listed host covers a socket");
++        assert!(!makepad_script_std::script_sockets_allowed(911), "setting a policy installs the gate");
++        assert!(makepad_script_std::script_url_allowed(911, "ws://127.0.0.1:9/"), "the url gate is in too");
++        gc_policies(&[911]);
++        assert!(makepad_script_std::script_sockets_allowed(911));
++    }
++
+     #[test]
+     fn gc_forgets_a_heap_entirely() {
+         set_policy_for_heap(906, vec![], vec![], Some(1));
+diff --git a/widgets/src/splash_storage.rs b/widgets/src/splash_storage.rs
+index 4b91cb6bf..778e6e745 100644
+--- a/widgets/src/splash_storage.rs
++++ b/widgets/src/splash_storage.rs
+@@ -111,6 +111,19 @@ pub(crate) fn gc_roots(dead_heaps: &[usize]) {
+     });
+ }
+ 
++/// Whether a heap's jail is under its byte quota: what a native writer
++/// into the jail (the camera) checks before it adds a file.
++pub(crate) fn heap_has_room(heap_key: usize) -> bool {
++    let Some(root) = root_for_heap(heap_key) else { return false };
++    let quota = JAIL_QUOTAS.with(|q| q.borrow().get(&heap_key).copied()).unwrap_or(MAX_TOTAL_BYTES);
++    jail_usage(&root).0 < quota
++}
++
++/// The sandbox root assigned to a heap, if any.
++pub(crate) fn root_for_heap(heap_key: usize) -> Option<PathBuf> {
++    SANDBOX_ROOTS.with(|r| r.borrow().get(&heap_key).cloned())
++}
++
+ fn root_for_vm(vm: &ScriptVm) -> Option<PathBuf> {
+     let heap_key = vm.bx.heap.heap_key();
+     SANDBOX_ROOTS.with(|r| r.borrow().get(&heap_key).cloned())
+@@ -155,7 +168,7 @@ pub fn resolve_jailed(root: &Path, virtual_path: &str) -> Result<PathBuf, String
+ /// be a plain file/dir. The API can't create links, but if one ever appears
+ /// in the jail (a bug elsewhere, a hostile unpacker later), it must not
+ /// redirect I/O outside.
+-fn verify_no_symlinks(root: &Path, real: &Path) -> Result<(), String> {
++pub(crate) fn verify_no_symlinks(root: &Path, real: &Path) -> Result<(), String> {
+     let mut cursor = root.to_path_buf();
+     let rel = real.strip_prefix(root).map_err(|_| "path escapes the app's storage")?;
+     for comp in rel.components() {
+@@ -233,7 +246,21 @@ pub fn script_mod(vm: &mut ScriptVm) {
+         let path = script_value!(vm, args.path);
+         match target(vm, path) {
+             Ok((_root, real)) => match std::fs::read_to_string(&real) {
+-                Ok(text) => vm.new_string_with(|_vm, s| s.push_str(&text)).into(),
++                Ok(text) => vm.bx.heap.new_string_from_str(&text).into(),
++                Err(_) => script_err_io!(vm.trap(), "file not found"),
++            },
++            Err(e) => script_err_io!(vm.trap(), "{}", e),
++        }
++    });
++
++    // `fs.read_bytes(path)`: a file as a byte array, for what is not text (a
++    // photo the camera took, to hand to an Image). Charged to the heap like
++    // any allocation.
++    vm.add_method(fs, id_lut!(read_bytes), script_args_def!(path = NIL), |vm, args| {
++        let path = script_value!(vm, args.path);
++        match target(vm, path) {
++            Ok((_root, real)) => match std::fs::read(&real) {
++                Ok(bytes) => vm.bx.heap.new_array_from_vec_u8(bytes).into(),
+                 Err(_) => script_err_io!(vm.trap(), "file not found"),
+             },
+             Err(e) => script_err_io!(vm.trap(), "{}", e),
+diff --git a/widgets/src/text_input.rs b/widgets/src/text_input.rs
+index dc0829f7f..5b60547f9 100644
+--- a/widgets/src/text_input.rs
++++ b/widgets/src/text_input.rs
+@@ -525,6 +525,9 @@
+     }
+ }
+ 
++/// What a refused secret field shows instead of its placeholder.
++const SECRET_REFUSED: &str = "Apps can't ask for passwords";
++
+ #[derive(Script, Widget, Animator)]
+ pub struct TextInput {
+     #[uid]
+@@ -890,6 +893,21 @@ pub fn empty_text(&self) -> &str {
+         &self.empty_text
+     }
+ 
++    /// A contained app may not collect a secret. A password field (or one
++    /// that asks the keyboard for a password or a one-time code, which also
++    /// invites autofill) inside a policed isolate takes no input: secrets are
++    /// typed on the host's own sheet and go to the service that needs them,
++    /// never through the app. Host-owned isolates (a service's sheet) and the
++    /// shell's own UI are not policed and keep working.
++    pub(crate) fn refuses_secret(&self) -> bool {
++        let secret = self.is_password
++            || matches!(
++                self.content_type,
++                TextInputContentType::Password | TextInputContentType::NewPassword | TextInputContentType::OneTimeCode
++            );
++        secret && crate::splash_policy::is_enforced(self.source.heap_key())
++    }
++
+     /// Text presented by the input, including its placeholder and masking.
+     pub fn display_text(&self) -> String {
+         if self.text.is_empty() {
+@@ -1084,7 +1102,10 @@ fn layout_text(&mut self, cx: &mut Cx2d) {
+ 
+     fn draw_text(&mut self, cx: &mut Cx2d) -> Rect {
+         let inner_walk = self.inner_walk();
+-        let text_rect = if self.text.is_empty() {
++        let text_rect = if self.refuses_secret() {
++            self.draw_text
++                .draw_walk(cx, inner_walk, self.label_align, SECRET_REFUSED)
++        } else if self.text.is_empty() {
+             self.draw_text
+                 .draw_walk(cx, inner_walk, self.label_align, &self.empty_text)
+         } else {
+@@ -2484,6 +2505,14 @@ fn disabled(&self, cx: &Cx) -> bool {
+     }
+ 
+     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
++        if self.refuses_secret() {
++            // Never focused, so no keyboard opens and nothing is typed.
++            if !self.text.is_empty() {
++                self.text.clear();
++                self.draw_bg.redraw(cx);
++            }
++            return;
++        }
+         if self.animator_handle_event(cx, event).must_redraw() {
+             self.draw_bg.redraw(cx);
+             self.draw_cursor.redraw(cx);
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 1fee14b5e..55574072b 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -1375,9 +1375,27 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                             return;
+                         }
+                     }
+-                    VideoDataSource::Network { url } => VideoSource::Network(url.to_string()),
++                    // The platform player fetches and reads on its own, so the
++                    // isolate's policy is asked here, before it is handed a
++                    // source: a network URL answers to the host list like any
++                    // request, a path to the app's storage jail.
++                    VideoDataSource::Network { url } => {
++                        let heap_key = self.source_ref.heap_key();
++                        if !crate::splash_policy::url_allowed(heap_key, url) {
++                            error!("Video source refused by the host's allowlist: {url}");
++                            self.should_prepare_playback = false;
++                            return;
++                        }
++                        VideoSource::Network(url.to_string())
++                    }
+                     VideoDataSource::Filesystem { path } => {
+-                        VideoSource::Filesystem(path.to_string())
++                        let heap_key = self.source_ref.heap_key();
++                        let Some(path) = crate::splash_policy::local_path_for_heap(heap_key, path) else {
++                            error!("Video source refused: {path} is outside this app's storage");
++                            self.should_prepare_playback = false;
++                            return;
++                        };
++                        VideoSource::Filesystem(path)
+                     }
+                     VideoDataSource::Camera {
+                         input_id,
+diff --git a/widgets/src/view.rs b/widgets/src/view.rs
+index d02cf4902..ad333ec3e 100644
+--- a/widgets/src/view.rs
++++ b/widgets/src/view.rs
+@@ -139,6 +139,10 @@ pub struct View {
+     script_async: ScriptAsyncCalls,
+     #[rust]
+     applying_style_render: bool,
++    /// An `on_render` result is being applied: its children are built fresh
++    /// rather than applied over the previous render's (see `on_after_apply`).
++    #[rust]
++    applying_render: bool,
+     #[rust]
+     item_tap_live: bool,
+ 
+@@ -214,6 +218,7 @@ fn on_after_apply(
+         if !apply.is_eval() {
+             if let Some(obj) = value.as_object() {
+                 let mut anon_index = 0usize;
++                let rendering = self.applying_render;
+                 vm.vec_with(obj, |vm, vec| {
+                     for kv in vec {
+                         // Determine the id: use prefixed id if available, otherwise use numbered id for anonymous children
+@@ -240,7 +245,19 @@ fn on_after_apply(
+                             if let Some((_, node)) =
+                                 self.children.iter_mut().find(|(id2, _)| *id2 == id)
+                             {
+-                                node.script_apply(vm, apply, scope, kv.value);
++                                // An `on_render` result is built fresh, as the first
++                                // render was. Applied over the previous render's
++                                // instance, a child keeps what the new object does not
++                                // restate: a slot that held a card with a picture keeps
++                                // the picture's named child, and a label re-laid-out
++                                // with longer text lost its wrap width. A render is a
++                                // function of the app's state, not an edit of the
++                                // last one.
++                                if rendering {
++                                    *node = WidgetRef::script_from_value_scoped(vm, scope, kv.value);
++                                } else {
++                                    node.script_apply(vm, apply, scope, kv.value);
++                                }
+                             } else {
+                                 let widget =
+                                     WidgetRef::script_from_value_scoped(vm, scope, kv.value);
+@@ -854,6 +871,28 @@ fn script_call(
+         method: LiveId,
+         args: ScriptValue,
+     ) -> ScriptAsyncResult {
++        // `ui.panel.set_visible(false)`: show and hide from script, so an app
++        // can keep a stateful child (a reader's web view) instead of
++        // re-rendering it away.
++        if method == live_id!(set_visible) {
++            let mut visible = None;
++            if let Some(args_obj) = args.as_object() {
++                let trap = vm.bx.threads.cur().trap.pass();
++                visible = vm.bx.heap.vec_value(args_obj, 0, trap).as_bool();
++            }
++            if let Some(visible) = visible {
++                if visible != self.visible {
++                    self.visible = visible;
++                    // A view that was hidden has no drawn area to invalidate,
++                    // so its own redraw would repaint nothing.
++                    vm.with_cx_mut(|cx| cx.redraw_all());
++                }
++            }
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(is_visible) {
++            return ScriptAsyncResult::Return(self.visible.into());
++        }
+         if method == live_id!(render) || method == live_id!(render_style) {
+             // `me` protos off `self.source`, and the caller's `args` object
+             // travels into the VM that owns `on_render` — both are heap values,
+@@ -920,8 +959,10 @@ fn script_result(&mut self, vm: &mut ScriptVm, id: ScriptAsyncId, result: Script
+                 let declaration = self.source.clone();
+                 let style=call.method()==id!(render_style);
+                 self.applying_style_render=style;
++                self.applying_render=!style;
+                 self.script_apply(vm, &if style {Apply::ScriptReapply}else{Apply::Reload}, &mut Scope::empty(), me_obj.into());
+                 self.applying_style_render=false;
++                self.applying_render=false;
+                 self.source = declaration;
+                 self.redraw(vm.cx_mut());
+             }
+diff --git a/widgets/src/web_card.rs b/widgets/src/web_card.rs
+index 952bbfa3f..7a1dd6b16 100644
+--- a/widgets/src/web_card.rs
++++ b/widgets/src/web_card.rs
+@@ -95,42 +95,7 @@ fn inject_widget_kit(html: &str) -> String {
+ /// adds the allowlist) and `download` (which doesn't — its bytes land in the
+ /// sandbox, so the SSRF block is the protection that matters).
+ fn check_https_public(url: &str) -> Result<String, String> {
+-    let rest = url
+-        .strip_prefix("https://")
+-        .ok_or_else(|| "only https:// URLs are allowed".to_string())?;
+-    let host = rest
+-        .split(|c| c == '/' || c == '?' || c == '#')
+-        .next()
+-        .unwrap_or("")
+-        .split('@')
+-        .next_back()
+-        .unwrap_or("")
+-        .split(':')
+-        .next()
+-        .unwrap_or("")
+-        .to_ascii_lowercase();
+-    if host.is_empty() {
+-        return Err("missing host".into());
+-    }
+-    let blocked_prefix = ["127.", "10.", "192.168.", "169.254.", "0."];
+-    let private_172 = host.starts_with("172.")
+-        && host
+-            .split('.')
+-            .nth(1)
+-            .and_then(|o| o.parse::<u8>().ok())
+-            .map(|o| (16..=31).contains(&o))
+-            .unwrap_or(false);
+-    if host == "localhost"
+-        || host == "::1"
+-        || host.ends_with(".localhost")
+-        || host.ends_with(".internal")
+-        || host.ends_with(".local")
+-        || blocked_prefix.iter().any(|p| host.starts_with(p))
+-        || private_172
+-    {
+-        return Err(format!("host not permitted (private/internal): {}", host));
+-    }
+-    Ok(host)
++    crate::splash_policy::public_https_host(url)
+ }
+ 
+ /// Enforce the `http.fetch` capability gate: SSRF guard + the host must be on the
+@@ -148,6 +113,54 @@ fn fetch_host_allowed(url: &str) -> Result<(), String> {
+     }
+ }
+ 
++/// The bridge tool a card under a policy may call, and the grant it needs.
++/// `None` = never, under a policy: the WebView bridge's files and downloads
++/// live outside the app's jail, and its share sheet and notices are the host's
++/// to raise. An unpoliced card (the host's own) keeps every tool.
++fn policed_tool_grant(tool: &str) -> Option<&'static str> {
++    match tool {
++        "ping" => Some(""),
++        "http.fetch" => Some("net.fetch"),
++        "clipboard.write" => Some("clipboard.write"),
++        _ => None,
++    }
++}
++
++/// A Content-Security-Policy that holds a policed card's own document to its
++/// host list. The WebView fetches for itself, out of reach of the script
++/// gate; this is how the same allowlist follows it there. Inline script and
++/// style stay allowed (the kit and the card are inline); nothing may frame,
++/// and nothing loads from a host the manifest does not name.
++fn policy_csp(hosts: &[String]) -> String {
++    let mut sources = String::new();
++    for host in hosts {
++        // A host list entry is a bare host (any port) or host:port.
++        if host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']')) {
++            sources.push_str(" https://");
++            sources.push_str(host);
++        }
++    }
++    format!(
++        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'{sources}; \
++         img-src data: blob:{sources}; media-src blob:{sources}; font-src data:{sources}; \
++         connect-src{none}{sources}; frame-src 'none'; form-action 'none'; base-uri 'none'",
++        none = if sources.is_empty() { " 'none'" } else { "" },
++    )
++}
++
++/// Put `csp` at the very start of the head, ahead of anything that could
++/// fetch, so it governs the whole document.
++fn inject_csp(html: &str, csp: &str) -> String {
++    let tag = format!("<meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\">");
++    match html.find("<head>") {
++        Some(i) => {
++            let at = i + "<head>".len();
++            format!("{}{}{}", &html[..at], tag, &html[at..])
++        }
++        None => format!("<head>{tag}</head>{html}"),
++    }
++}
++
+ script_mod! {
+     use mod.prelude.widgets_internal.*
+ 
+@@ -350,6 +363,11 @@ fn load_settled(&mut self, cx: &mut Cx) {
+         // inline HTML — used to isolate loadHTMLString from the overlay path.
+         if let Some(url) = self.html.trim().strip_prefix("URLTEST:") {
+             let url = url.trim().to_string();
++            if !crate::splash_policy::page_allowed(self.source.heap_key(), &url) {
++                log!("web_card navigation refused by the host's allowlist: {url}");
++                self.loaded_html = self.html.clone();
++                return;
++            }
+             if !self.spawned {
+                 cx.system_browser(id).spawn(&url);
+                 self.spawned = true;
+@@ -366,7 +384,10 @@ fn load_settled(&mut self, cx: &mut Cx) {
+             cx.system_browser(id).spawn("about:blank");
+             self.spawned = true;
+         }
+-        let html = inject_widget_kit(&self.html);
++        let mut html = inject_widget_kit(&self.html);
++        if let Some(hosts) = crate::splash_policy::hosts_for_heap(self.source.heap_key()) {
++            html = inject_csp(&html, &policy_csp(&hosts));
++        }
+         let base = self.base_url_or_default().to_string();
+         cx.system_browser(id).set_html(&html, &base);
+         self.loaded_html = self.html.clone();
+@@ -396,6 +417,19 @@ fn reject(&mut self, cx: &mut Cx, call_id: i64, msg: &str) {
+ 
+     /// Dispatch one `octos.invoke(tool, args)`. `args` is a JSON string from the card.
+     fn handle_invoke(&mut self, cx: &mut Cx, call_id: i64, tool: &str, args: &str) {
++        let heap_key = self.source.heap_key();
++        if crate::splash_policy::is_enforced(heap_key) {
++            let allowed = match policed_tool_grant(tool) {
++                Some("") => Ok(()),
++                Some(grant) => crate::splash_policy::service_allowed(heap_key, grant),
++                None => Err(format!("{tool} is not available to installed apps")),
++            };
++            if let Err(why) = allowed {
++                log!("web_card {tool} DENIED: {why}");
++                self.reject(cx, call_id, &format!("{tool} denied: {why}"));
++                return;
++            }
++        }
+         match tool {
+             // Round-trip probe: echo the args object back untouched.
+             "ping" => {
+@@ -407,7 +441,19 @@ fn handle_invoke(&mut self, cx: &mut Cx, call_id: i64, tool: &str, args: &str) {
+             // a host allowlist + SSRF guard before any request leaves the device.
+             "http.fetch" => match FetchArgs::deserialize_json(args) {
+                 Ok(a) => {
+-                    if let Err(why) = fetch_host_allowed(&a.url) {
++                    let allowed = if crate::splash_policy::is_enforced(heap_key) {
++                        // The app's own host list, still https and public.
++                        check_https_public(&a.url).and_then(|_| {
++                            if crate::splash_policy::url_allowed(heap_key, &a.url) {
++                                Ok(())
++                            } else {
++                                Err("host not on this app's allowlist".to_string())
++                            }
++                        })
++                    } else {
++                        fetch_host_allowed(&a.url)
++                    };
++                    if let Err(why) = allowed {
+                         log!("web_card http.fetch DENIED: {} ({})", a.url, why);
+                         self.reject(cx, call_id, &format!("http.fetch denied: {}", why));
+                     } else {
+@@ -715,6 +761,18 @@ fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawSt
+ 
+         // A DSL-set `url` (no inline html) navigates once on first draw, so a
+         // runsplash card can embed a live web pane via `WebCard{ url: "…" }`.
++        if self.html.is_empty()
++            && !self.url.is_empty()
++            && self.loaded_html != self.url
++            && !crate::splash_policy::page_allowed(self.source.heap_key(), &self.url)
++        {
++            // A card under a policy opens only pages on its host list, or
++            // any public https page with the `web` grant. The top-level
++            // document is what the gate can see; the page's own subresources
++            // are the page's, as in any browser, and it gets no bridge.
++            log!("web_card navigation refused by the host's allowlist: {}", self.url);
++            self.loaded_html = self.url.clone();
++        }
+         if self.html.is_empty() && !self.url.is_empty() && self.loaded_html != self.url {
+             let id = self.browser_id();
+             if !self.spawned {
+@@ -774,3 +832,27 @@ pub fn detach(&self, cx: &mut Cx) {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod policy_tests {
++    use super::*;
++
++    #[test]
++    fn a_policed_document_may_reach_only_its_hosts() {
++        let csp = policy_csp(&["api.example.com".into(), "127.0.0.1:5000".into(), "evil.com; script-src *".into()]);
++        assert!(csp.contains("connect-src https://api.example.com https://127.0.0.1:5000;"));
++        assert!(!csp.contains("evil.com"), "a malformed host cannot extend the policy");
++        assert!(policy_csp(&[]).contains("connect-src 'none';"));
++        let html = inject_csp("<html><head><title>x</title></head></html>", &policy_csp(&[]));
++        assert!(html.starts_with("<html><head><meta http-equiv=\"Content-Security-Policy\""));
++    }
++
++    #[test]
++    fn a_policed_card_keeps_only_the_bridge_tools_it_can_be_granted() {
++        assert_eq!(policed_tool_grant("http.fetch"), Some("net.fetch"));
++        assert_eq!(policed_tool_grant("clipboard.write"), Some("clipboard.write"));
++        for tool in ["fs.read", "fs.write", "download", "dialog.open", "share", "notify"] {
++            assert_eq!(policed_tool_grant(tool), None, "{tool}");
++        }
++    }
++}
+diff --git a/widgets/src/web_reader.rs b/widgets/src/web_reader.rs
+new file mode 100644
+index 000000000..c5951fb7e
+--- /dev/null
++++ b/widgets/src/web_reader.rs
+@@ -0,0 +1,233 @@
++//! A web page inside a script app: the platform's own web view (WKWebView,
++//! Android's WebView) glued to this widget's rect, driven from script.
++//!
++//! ```text
++//! reader := WebReader{width: Fill height: Fill on_error: || show(ui.reader.error())}
++//! ui.reader.open("https://example.org/story")   // true when it opened
++//! ui.reader.close()
++//! ui.reader.is_open()
++//! ui.reader.error()                              // why the last page failed
++//! ```
++//!
++//! The page gets no bridge into the app: it is a page, not part of the
++//! program. What may be opened answers to the app's policy: a host on its
++//! list, or with the `web` grant any public https page, followed through its
++//! own links and redirects (a feed's story link is often a redirector). An app
++//! without `web` gets a view that stays on the page it opened.
++//!
++//! The web view sits over the window, so it only moves or hides when this
++//! widget draws or is told to. While a page is open a watchdog asks for a
++//! redraw every half second and hides the overlay when the last one did not
++//! draw this widget (its tile went off screen); the next draw puts it back.
++//! Every web view an isolate opened is closed when the isolate is collected,
++//! so an app that closes cannot leave a page on the window.
++use crate::{
++    makepad_derive_widget::*,
++    makepad_draw::*,
++    makepad_script::ScriptFnRef,
++    view::View,
++    widget::*,
++    widget_async::{CxWidgetToScriptCallExt, ScriptAsyncResult},
++};
++use std::collections::HashMap;
++
++const WATCHDOG_SECONDS: f64 = 0.5;
++
++script_mod! {
++    use mod.prelude.widgets_internal.*
++    use mod.widgets.*
++
++    mod.widgets.WebReaderBase = #(WebReader::register_widget(vm))
++    mod.widgets.WebReader = set_type_default() do mod.widgets.WebReaderBase{
++        width: Fill
++        height: Fill
++    }
++}
++
++thread_local! {
++    /// heap key -> the web views that heap's readers spawned.
++    static OPENED: std::cell::RefCell<HashMap<usize, Vec<SystemBrowserId>>> = Default::default();
++}
++
++/// Close every web view opened by readers in these (dead) heaps.
++pub(crate) fn gc_web_readers(cx: &mut Cx, dead_heaps: &[usize]) {
++    let ids: Vec<SystemBrowserId> = OPENED.with(|o| {
++        let mut o = o.borrow_mut();
++        dead_heaps.iter().filter_map(|heap| o.remove(heap)).flatten().collect()
++    });
++    for id in ids {
++        let mut browser = cx.system_browser(id);
++        browser.detach();
++        browser.close();
++    }
++}
++
++#[derive(Script, ScriptHook, Widget)]
++pub struct WebReader {
++    #[deref]
++    view: View,
++    /// Called when a page is refused or fails to load; `error()` says why.
++    #[live]
++    on_error: ScriptFnRef,
++
++    #[rust]
++    last_error: String,
++    #[rust]
++    url: Option<String>,
++    #[rust]
++    spawned: bool,
++    #[rust]
++    open: bool,
++    #[rust]
++    overlay_visible: bool,
++    #[rust]
++    timer: Option<Timer>,
++    #[rust]
++    drawn: bool,
++    #[rust]
++    failed: bool,
++}
++
++impl WebReader {
++    /// Each reader owns its web view: its uid is unique in the process.
++    fn browser_id(&self) -> SystemBrowserId {
++        SystemBrowserId(LiveId(self.widget_uid().0))
++    }
++
++    fn heap_key(&self) -> usize {
++        self.view.source.heap_key()
++    }
++
++    fn report(&mut self, cx: &mut Cx, why: String) {
++        log!("web reader: {why}");
++        self.last_error = why;
++        if self.on_error.as_object() != ScriptObject::ZERO {
++            cx.widget_to_script_call(self.widget_uid(), NIL, self.view.source.clone(), self.on_error.clone(), &[]);
++        }
++    }
++
++    /// Open `url`, when this app may. Returns whether it opened.
++    pub fn open(&mut self, cx: &mut Cx, url: &str) -> bool {
++        let heap = self.heap_key();
++        if !crate::splash_policy::page_allowed(heap, url) {
++            self.report(cx, format!("refused {url}: not on this app's host list, and no `web` grant"));
++            return false;
++        }
++        // Navigable only for an app that may reach any public page: its
++        // links and redirects stay inside what it was granted.
++        let navigable = !crate::splash_policy::is_enforced(heap)
++            || crate::splash_policy::service_allowed(heap, "web.open").is_ok();
++        let id = self.browser_id();
++        if navigable {
++            cx.system_browser(id).spawn_navigable(url);
++        } else {
++            cx.system_browser(id).spawn(url);
++        }
++        if !self.spawned {
++            OPENED.with(|o| o.borrow_mut().entry(heap).or_default().push(id));
++        }
++        self.spawned = true;
++        self.failed = false;
++        self.url = Some(url.to_string());
++        self.open = true;
++        self.overlay_visible = true;
++        self.drawn = true;
++        if self.timer.is_none() {
++            self.timer = Some(cx.start_interval(WATCHDOG_SECONDS));
++        }
++        self.view.redraw(cx);
++        true
++    }
++
++    pub fn close(&mut self, cx: &mut Cx) {
++        if !self.open {
++            return;
++        }
++        self.open = false;
++        self.hide_overlay(cx);
++        if let Some(timer) = self.timer.take() {
++            cx.stop_timer(timer);
++        }
++        self.view.redraw(cx);
++    }
++
++    fn hide_overlay(&mut self, cx: &mut Cx) {
++        if self.spawned && self.overlay_visible {
++            let area = self.view.area();
++            cx.system_browser(self.browser_id()).update(area, false);
++        }
++        self.overlay_visible = false;
++        self.drawn = false;
++    }
++}
++
++impl Widget for WebReader {
++    fn script_call(&mut self, vm: &mut ScriptVm, method: LiveId, args: ScriptValue) -> ScriptAsyncResult {
++        if method == live_id!(open) {
++            let mut url = None;
++            if let Some(args_obj) = args.as_object() {
++                let trap = vm.bx.threads.cur().trap.pass();
++                let value = vm.bx.heap.vec_value(args_obj, 0, trap);
++                url = vm.bx.heap.cast_to_owned_string(value, "copying a reader url");
++            }
++            let Some(url) = url else { return ScriptAsyncResult::Return(FALSE) };
++            let opened = vm.with_cx_mut(|cx| self.open(cx, url.trim()));
++            return ScriptAsyncResult::Return(opened.into());
++        }
++        if method == live_id!(close) {
++            vm.with_cx_mut(|cx| self.close(cx));
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(is_open) {
++            return ScriptAsyncResult::Return(self.open.into());
++        }
++        if method == live_id!(error) {
++            return ScriptAsyncResult::Return(vm.bx.heap.new_string_from_str(&self.last_error));
++        }
++        if method == live_id!(url) {
++            let url = vm.bx.heap.new_string_from_str(self.url.as_deref().unwrap_or(""));
++            return ScriptAsyncResult::Return(url);
++        }
++        self.view.script_call(vm, method, args)
++    }
++
++    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
++        self.view.handle_event(cx, event, scope);
++        if self.timer.is_some_and(|timer| timer.is_event(event).is_some()) {
++            // Drawn since the last tick: ask for the redraw the next one
++            // looks for. Not drawn: the tile is off screen; hide.
++            if self.drawn {
++                self.drawn = false;
++                self.view.redraw(cx);
++            } else {
++                self.hide_overlay(cx);
++            }
++        }
++        if let Event::Actions(actions) = event {
++            for action in actions {
++                if let Some(err) = action.downcast_ref::<crate::makepad_draw::makepad_platform::event::NativeSystemBrowserPageError>() {
++                    if err.browser_id == self.browser_id().0.get_value() && self.open {
++                        self.failed = true;
++                        self.hide_overlay(cx);
++                        let why = format!("could not load {}: {}", self.url.as_deref().unwrap_or(""), err.description);
++                        self.report(cx, why);
++                    }
++                }
++            }
++        }
++    }
++
++    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
++        let step = self.view.draw_walk(cx, scope, walk);
++        if step.is_done() && self.spawned && (self.open || self.overlay_visible) {
++            let show = self.open && !self.failed;
++            let area = self.view.area();
++            cx.system_browser(self.browser_id()).update(area, show);
++            if show {
++                self.overlay_visible = true;
++                self.drawn = true;
++            }
++        }
++        step
++    }
++}
+diff --git a/widgets/src/widget.rs b/widgets/src/widget.rs
+index 09209b1cb..b6e496a1b 100644
+--- a/widgets/src/widget.rs
++++ b/widgets/src/widget.rs
+@@ -787,6 +787,28 @@ pub fn script_call(
+         if method == live_id!(visible) {
+             return ScriptAsyncResult::Return(self.visible().into());
+         }
++        // Text likewise: a widget with `Widget::set_text` (an `Html` view's
++        // body, say) takes it from script without a `script_call` of its own.
++        if method == live_id!(set_text) {
++            let Some(args_obj) = args.as_object() else {
++                return ScriptAsyncResult::Return(NIL);
++            };
++            let trap = vm.bx.threads.cur().trap.pass();
++            let value = vm.bx.heap.vec_value(args_obj, 0, trap);
++            let Some(text) = vm.bx.heap.cast_to_owned_string(value, "copying widget text") else {
++                return ScriptAsyncResult::Return(script_err_wrong_value!(
++                    vm.trap(),
++                    "set_text expects a string, got {:?}",
++                    value.value_type()
++                ));
++            };
++            vm.with_cx_mut(|cx| self.set_text(cx, &text));
++            return ScriptAsyncResult::Return(NIL);
++        }
++        if method == live_id!(text) {
++            let text = self.text();
++            return ScriptAsyncResult::Return(vm.bx.heap.new_string_from_str(&text));
++        }
+         ScriptAsyncResult::MethodNotFound
+     }
+ 
+diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
+index 63acffe8c..ffa296b59 100644
+--- a/widgets/src/widget_async.rs
++++ b/widgets/src/widget_async.rs
+@@ -95,6 +95,58 @@ pub fn register_splash_isolate_mod(f: fn(&mut ScriptVm)) {
+     HOST_ISOLATE_MODS.with(|g| g.borrow_mut().push(f));
+ }
+ 
++thread_local! {
++    /// Host mods that only isolates holding a grant receive, with the grant.
++    static GRANTED_ISOLATE_MODS: RefCell<Vec<(&'static str, fn(&mut ScriptVm))>> = const { RefCell::new(Vec::new()) };
++    /// heap key -> indices into `GRANTED_ISOLATE_MODS` already installed there.
++    static GRANTED_INSTALLED: RefCell<HashMap<usize, Vec<usize>>> = RefCell::new(HashMap::new());
++}
++
++/// Install a script mod only into the isolates granted `grant`.
++///
++/// [`register_splash_isolate_mod`] reaches every isolate, so vocabulary a host
++/// registers for its own cards also lands in every installed app. A mod
++/// registered here is installed into an isolate under a policy only when that
++/// policy grants `grant` (a capability family such as `agent`, or an exact
++/// service name), and into an unpoliced isolate (the host's own surfaces)
++/// always.
++///
++/// The grant is known only once the host has seated the policy, which is
++/// after allocation, so these mods install when a Splash first evaluates its
++/// body, before the body runs. A later policy that drops the grant does not
++/// remove a mod already installed: set the policy before the body loads.
++pub fn register_splash_isolate_mod_for(grant: &'static str, f: fn(&mut ScriptVm)) {
++    GRANTED_ISOLATE_MODS.with(|g| g.borrow_mut().push((grant, f)));
++}
++
++/// Install the granted mods this isolate is entitled to and does not yet
++/// have. Cheap when there is nothing new to install.
++pub(crate) fn apply_granted_isolate_mods(vm: &mut ScriptVm) {
++    let heap_key = vm.bx.heap.heap_key();
++    let mods = GRANTED_ISOLATE_MODS.with(|mods| mods.borrow().clone());
++    for (index, (grant, install)) in mods.into_iter().enumerate() {
++        let installed = GRANTED_INSTALLED.with(|i| i.borrow().get(&heap_key).is_some_and(|done| done.contains(&index)));
++        if installed {
++            continue;
++        }
++        let entitled = !crate::splash_policy::is_enforced(heap_key)
++            || crate::splash_policy::service_allowed(heap_key, grant).is_ok();
++        if entitled {
++            install(vm);
++            GRANTED_INSTALLED.with(|i| i.borrow_mut().entry(heap_key).or_default().push(index));
++        }
++    }
++}
++
++/// Forget which granted mods a heap has, so the next
++/// [`apply_granted_isolate_mods`] installs them again: a theme rebuild
++/// replaces the modules they bound into.
++pub(crate) fn forget_granted_isolate_mods(heap_key: usize) {
++    GRANTED_INSTALLED.with(|i| {
++        i.borrow_mut().remove(&heap_key);
++    });
++}
++
+ /// Reinstall trusted host vocabulary after a theme rebuild replaces mod.widgets.
+ /// Clone first so an installer can register another module without borrowing the list.
+ pub(crate) fn apply_splash_isolate_mods(vm: &mut ScriptVm) {
+@@ -156,6 +208,13 @@ pub fn gc_dead_splash_isolates(cx: &mut Cx) {
+     crate::splash_storage::gc_roots(&dead_heaps);
+     crate::splash_host::gc_bridge(&dead_heaps);
+     crate::splash_policy::gc_policies(&dead_heaps);
++    for heap in &dead_heaps {
++        forget_granted_isolate_mods(*heap);
++    }
++    // Web views and cameras an app opened do not outlive it.
++    for heap in &dead_heaps {
++        crate::camera_preview::release_isolate_devices(cx, *heap);
++    }
+     crate::desktop_style::gc_heaps(cx,&dead_heaps);
+     // And the resource cache, which is keyed by heap ADDRESS: dropping a heap
+     // frees that address for the next isolate, and a leftover entry would hand
+@@ -494,7 +553,8 @@ fn alloc_splash_vm_with_network(&mut self, network_enabled: bool) -> SplashVmId
+             // loads) and the network (web_url/http resources) without going
+             // through the gated net runtime. Raw sockets are gated separately:
+             // the stdlib's `net.socket_stream` errors when no net runtime is
+-            // configured, same as `net.http_request`.
++            // configured, same as `net.http_request`, and under a policy it
++            // and `net.http_server` are refused outright (splash_policy).
+             // `cx.quit` would let any mini-app close the whole host process.
+             let strip = crate::makepad_script::script! {
+                 mod.fs = nil
+@@ -1794,6 +1854,135 @@ fn install_probe(vm: &mut ScriptVm) {
+         cx.free_splash_vm(third);
+     }
+ 
++    #[test]
++    fn a_granted_mod_reaches_only_the_isolates_holding_its_grant() {
++        fn install_granted_probe(vm: &mut ScriptVm) {
++            vm.eval(crate::makepad_script::script! {
++                mod.granted_probe = 7
++            });
++        }
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        register_splash_isolate_mod_for("agent", install_granted_probe);
++
++        let has_probe = |cx: &mut Cx, vm_id| {
++            cx.with_script_vm_id(vm_id, |vm| {
++                apply_granted_isolate_mods(vm);
++                !vm.eval(crate::makepad_script::script! { mod.granted_probe }).is_err()
++            })
++        };
++        let heap = |cx: &mut Cx, vm_id| cx.with_script_vm_id(vm_id, |vm| vm.bx.heap.heap_key());
++
++        let host_own = cx.alloc_splash_vm();
++        let denied = cx.alloc_splash_vm();
++        let granted = cx.alloc_splash_vm();
++        let denied_heap = heap(&mut cx, denied);
++        let granted_heap = heap(&mut cx, granted);
++        crate::splash_policy::set_policy_for_heap(denied_heap, vec!["net".into()], vec![], None);
++        crate::splash_policy::set_policy_for_heap(granted_heap, vec!["agent".into()], vec![], None);
++
++        assert!(has_probe(&mut cx, host_own), "an unpoliced isolate is the host's own");
++        assert!(!has_probe(&mut cx, denied), "a policy without the grant never sees it");
++        assert!(has_probe(&mut cx, granted));
++
++        crate::splash_policy::gc_policies(&[denied_heap, granted_heap]);
++        cx.free_splash_vm(host_own);
++        cx.free_splash_vm(denied);
++        cx.free_splash_vm(granted);
++    }
++
++    /// A probe found `net.web_socket`, `net.socket_stream` and
++    /// `net.http_server` skipping the host list that `net.http_request`
++    /// answers to. Each is tried from a host-owned isolate and from a
++    /// contained app holding `net` and a listed host.
++    #[test]
++    fn a_contained_app_opens_sockets_and_servers_only_as_its_policy_allows() {
++        let run = |cx: &mut Cx, vm_id, code: String| {
++            cx.with_script_vm_id(vm_id, |vm| {
++                let script_mod = crate::makepad_script::ScriptMod {
++                    cargo_manifest_path: String::new(),
++                    module_path: "net_policy_probe".into(),
++                    file: "net_policy_probe".into(),
++                    line: 0,
++                    column: 0,
++                    code,
++                    values: vec![],
++                };
++                !vm.eval(script_mod).is_err()
++            })
++        };
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        let port = listener.local_addr().unwrap().port();
++        let web_socket = |host: &str| format!(
++            "use mod.net\nnet.web_socket(\"ws://{host}:{port}/\" net.WebSocketEvents{{}})"
++        );
++        let raw_socket = format!(
++            "use mod.net\nnet.socket_stream(net.SocketStreamOptions{{host: \"127.0.0.1\" port: \"{port}\"}})"
++        );
++        let server = "use mod.net\nnet.http_server(net.HttpServerOptions{listen: \"127.0.0.1:0\"} net.HttpServerEvents{})".to_string();
++
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        let host_own = cx.alloc_splash_vm_with_network(true);
++        let app = cx.alloc_splash_vm_with_network(true);
++        let app_heap = cx.with_script_vm_id(app, |vm| vm.bx.heap.heap_key());
++        crate::splash_policy::set_policy_for_heap(app_heap, vec!["net".into()], vec!["127.0.0.1".into()], None);
++
++        assert!(run(&mut cx, host_own, web_socket("127.0.0.1")), "a host-owned isolate opens a web socket");
++        assert!(run(&mut cx, host_own, web_socket("elsewhere.example")), "to any host, as before");
++        assert!(run(&mut cx, host_own, raw_socket.clone()), "and a raw socket");
++        assert!(run(&mut cx, host_own, server.clone()), "and listens");
++
++        assert!(run(&mut cx, app, web_socket("127.0.0.1")), "an app reaches its listed host over a web socket");
++        assert!(!run(&mut cx, app, web_socket("elsewhere.example")), "and no other");
++        assert!(!run(&mut cx, app, raw_socket.clone()), "a raw socket is refused even to a listed host");
++        assert!(!run(&mut cx, app, server.clone()), "and so is a listening server");
++
++        crate::splash_policy::set_policy_for_heap(app_heap, vec!["net".into()], vec![], None);
++        assert!(!run(&mut cx, app, web_socket("127.0.0.1")), "an empty host list reaches nothing");
++
++        crate::splash_policy::gc_policies(&[app_heap]);
++        cx.free_splash_vm(host_own);
++        cx.free_splash_vm(app);
++        drop(listener);
++    }
++
++    #[test]
++    fn a_contained_app_cannot_draw_a_password_field() {
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        let field = |cx: &mut Cx, vm_id| {
++            cx.with_script_vm_id(vm_id, |vm| {
++                let v = vm.eval(crate::makepad_script::script! {
++                    use mod.prelude.widgets.*
++                    View{
++                        secret := TextInput{is_password: true}
++                        plain := TextInput{}
++                        code := TextInput{content_type: TextInputContentType.OneTimeCode}
++                    }
++                });
++                WidgetRef::script_from_value(vm, v)
++            })
++        };
++        let refuses = |cx: &Cx, view: &WidgetRef, id| view.widget(cx, &[id]).borrow::<crate::text_input::TextInput>().unwrap().refuses_secret();
++        let host_own = cx.alloc_splash_vm();
++        let app = cx.alloc_splash_vm();
++        let app_heap = cx.with_script_vm_id(app, |vm| vm.bx.heap.heap_key());
++        crate::splash_policy::set_policy_for_heap(app_heap, vec!["storage".into()], vec![], None);
++
++        let sheet = field(&mut cx, host_own);
++        assert!(!refuses(&cx, &sheet, live_id!(secret)), "a host-owned sheet collects the password");
++        let contained = field(&mut cx, app);
++        assert!(refuses(&cx, &contained, live_id!(secret)), "an app's password field takes nothing");
++        assert!(refuses(&cx, &contained, live_id!(code)), "nor a one-time-code field, which invites autofill");
++        assert!(!refuses(&cx, &contained, live_id!(plain)));
++
++        drop((sheet, contained));
++        crate::splash_policy::gc_policies(&[app_heap]);
++        cx.free_splash_vm(host_own);
++        cx.free_splash_vm(app);
++    }
++
+     #[test]
+     fn entering_an_isolate_makes_it_the_current_vm_and_leaving_restores_the_outer_one() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));
+@@ -2067,6 +2256,67 @@ fn pane_refresh_drops_inserted_host() {
+         assert_eq!(n, 2, "render after pane refresh did not commit");
+     }
+ 
++    #[test]
++    fn a_rerender_builds_each_child_from_its_new_template() {
++        const RERENDER: &str = r#"
++    let items = []
++    let WithExtra = View{ height: Fit extra := Label{ text: "x" } }
++    let Plain = View{ height: Fit }
++    fn load(){
++        host.request("t.items", {}, fn(r){
++            items = r.data.items
++            ui.item_list.render()
++        })
++    }
++    item_list := View{ height: Fit, on_render: || {
++        for it in items {
++            if it.extra { WithExtra{} } else { Plain{} }
++        }
++    } }
++"#;
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        let template = cx.with_vm(|vm| {
++            crate::script_mod(vm);
++            let v = vm.eval(crate::makepad_script::script! {
++                use mod.prelude.widgets.*
++                use mod.widgets.*
++                View{ splash := Splash{} }
++            });
++            vm.bx.heap.new_object_ref(v.as_object().unwrap())
++        });
++        let pane = cx.with_vm(|vm| {
++            let v = vm.eval(crate::makepad_script::script! {
++                use mod.prelude.widgets.*
++                View{ height: Fit }
++            });
++            WidgetRef::script_from_value(vm, v)
++        });
++        set_ui_root(&mut cx, &pane);
++        let host = cx.with_vm(|vm| WidgetRef::script_from_value(vm, template.as_object().into()));
++        cx.widget_tree_insert_child_deep(pane.widget_uid(), live_id!(apphost), host.clone());
++        host.widget(&cx, &[live_id!(splash)]).set_text(&mut cx, RERENDER);
++        let item_list = host.widget(&cx, &[live_id!(item_list)]);
++        assert!(!item_list.is_empty());
++        let splash = host.widget(&cx, &[live_id!(splash)]);
++        let render = |cx: &mut Cx, json: &str| {
++            assert!(splash.borrow_mut::<Splash>().unwrap().call_script_fn(cx, live_id!(load), &[]));
++            pump_widget_async(cx);
++            let reqs = crate::splash_host::take_splash_host_requests();
++            assert_eq!(reqs.len(), 1);
++            crate::splash_host::splash_host_respond(cx, reqs[0].heap_key, reqs[0].req_id, Ok(json));
++            pump_widget_async(cx);
++            let first = item_list.borrow::<View>().unwrap().children.first().map(|(_, w)| w.clone()).unwrap();
++            !first.widget(cx, &[live_id!(extra)]).is_empty()
++        };
++        assert!(render(&mut cx, r#"{"items":[{"extra":true}]}"#), "the first render has the extra child");
++        assert!(
++            !render(&mut cx, r#"{"items":[{"extra":false}]}"#),
++            "a slot whose template changed keeps nothing of the old one"
++        );
++        drop(host);
++        gc_dead_splash_isolates(&mut cx);
++    }
++
+     #[test]
+     fn second_isolate_render_commits() {
+         let mut cx = Cx::new(Box::new(|_, _| {}));

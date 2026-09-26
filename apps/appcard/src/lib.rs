@@ -171,6 +171,7 @@ mod tests {
                 storage: cx_storage_for_test(vm),
                 viewport: makepad_app_module::Viewport { size: dvec2(400.0, 700.0) },
                 replies,
+                windows: Default::default(),
             };
             let parts = APPCARD_MODULE.create(vm, open, handles);
             let errors = vm.take_errors();

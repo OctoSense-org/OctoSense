@@ -59,14 +59,6 @@
     "policy": "focus"
   },
   {
-    "id": "photos",
-    "label": "Photos",
-    "source": "makepad",
-    "package": "makepad-photos",
-    "bin": "photos",
-    "policy": "focus"
-  },
-  {
     "id": "clock",
     "label": "Clock",
     "source": "makepad",
@@ -88,14 +80,6 @@
     "source": "makepad",
     "package": "makepad-finance",
     "bin": "finance",
-    "policy": "focus"
-  },
-  {
-    "id": "mail",
-    "label": "Mail",
-    "source": "makepad",
-    "package": "makepad-mail",
-    "bin": "mail",
     "policy": "focus"
   },
   {

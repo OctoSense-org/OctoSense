@@ -1122,6 +1122,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "charset"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1f927b07c74ba84c7e5fe4db2baeb3e996ab2688992e39ac68ce3220a677c7e"
+dependencies = [
+ "base64 0.22.1",
+ "encoding_rs",
+]
+
+[[package]]
 name = "chromiumoxide"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1366,7 +1376,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1650,6 +1660,29 @@ dependencies = [
  "getrandom 0.4.3",
  "hybrid-array",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "cssparser"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e901edd733a1472f944a45116df3f846f54d37e67e68640ac8bb69689aca2aa"
+dependencies = [
+ "cssparser-macros",
+ "dtoa-short",
+ "itoa",
+ "phf 0.11.3",
+ "smallvec 1.16.1",
+]
+
+[[package]]
+name = "cssparser-macros"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
+dependencies = [
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2061,6 +2094,21 @@ name = "downcast-rs"
 version = "1.2.1"
 
 [[package]]
+name = "dtoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
+
+[[package]]
+name = "dtoa-short"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd1511a7b6a56299bd043a9c167a6d2bfb37bf84a6dfceaba651168adfb43c87"
+dependencies = [
+ "dtoa",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,6 +2154,12 @@ dependencies = [
  "subtle",
  "zeroize",
 ]
+
+[[package]]
+name = "ego-tree"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2972feb8dffe7bc8c5463b1dacda1b0dfbed3710e50f977d965429692d74cd8"
 
 [[package]]
 name = "either"
@@ -2425,7 +2479,7 @@ checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2711,6 +2765,15 @@ name = "fxhash"
 version = "0.2.1"
 dependencies = [
  "byteorder 1.5.0",
+]
+
+[[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4972,6 +5035,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailparse"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60819a97ddcb831a5614eb3b0174f3620e793e97e09195a395bfa948fd68ed2f"
+dependencies = [
+ "charset",
+ "data-encoding",
+ "quoted_printable",
+]
+
+[[package]]
 name = "makepad-ai"
 version = "1.0.0"
 dependencies = [
@@ -5067,7 +5141,7 @@ name = "makepad-draw"
 version = "2.0.0"
 dependencies = [
  "ab_glyph_rasterizer",
- "fxhash",
+ "fxhash 0.2.1",
  "makepad-gif",
  "makepad-live-id",
  "makepad-math",
@@ -6560,7 +6634,7 @@ dependencies = [
 [[package]]
 name = "octos-agent"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6585,7 +6659,7 @@ dependencies = [
  "metrics",
  "oauth2",
  "octos-bus",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-llm",
  "octos-memory",
  "octos-plugin",
@@ -6621,7 +6695,6 @@ dependencies = [
 [[package]]
 name = "octos-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
 dependencies = [
  "blake3",
  "chrono",
@@ -6633,7 +6706,7 @@ dependencies = [
  "octos-app-render",
  "octos-app-store",
  "octos-app-transport",
- "octos-core 2.0.3-rc.12 (git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8)",
+ "octos-core",
  "octoscript-node",
  "octoscript-ui-l0",
  "reqwest 0.12.28",
@@ -6648,7 +6721,6 @@ dependencies = [
 [[package]]
 name = "octos-app-render"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
 dependencies = [
  "streaming-markdown-kit",
 ]
@@ -6656,12 +6728,11 @@ dependencies = [
 [[package]]
 name = "octos-app-store"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
 dependencies = [
  "chrono",
  "keyring",
  "log",
- "octos-core 2.0.3-rc.12 (git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8)",
+ "octos-core",
  "serde",
  "serde_json",
  "uuid",
@@ -6670,14 +6741,13 @@ dependencies = [
 [[package]]
 name = "octos-app-transport"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
 dependencies = [
  "android_logger",
  "chrono",
  "futures-util",
  "log",
  "octos-cli",
- "octos-core 2.0.3-rc.12 (git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8)",
+ "octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -6691,7 +6761,7 @@ dependencies = [
 [[package]]
 name = "octos-bus"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -6705,7 +6775,7 @@ dependencies = [
  "futures",
  "lru",
  "metrics",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -6720,7 +6790,7 @@ dependencies = [
 [[package]]
 name = "octos-cli"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "agent-client-protocol",
  "argon2",
@@ -6750,7 +6820,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "octos-agent",
  "octos-bus",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-diagnostics",
  "octos-fleet",
  "octos-fleet-worker",
@@ -6812,26 +6882,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "octos-core"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
-dependencies = [
- "chrono",
- "eyre",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "octos-diagnostics"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "eyre",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -6840,10 +6896,10 @@ dependencies = [
 [[package]]
 name = "octos-fleet"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "eyre",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "redb",
  "rusqlite",
  "serde",
@@ -6856,12 +6912,12 @@ dependencies = [
 [[package]]
 name = "octos-fleet-worker"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "async-trait",
  "eyre",
  "octos-agent",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-fleet",
  "octos-llm",
  "octos-memory",
@@ -6873,7 +6929,7 @@ dependencies = [
 [[package]]
 name = "octos-llm"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6883,7 +6939,7 @@ dependencies = [
  "jsonwebtoken",
  "libc",
  "metrics",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "redb",
  "reqwest 0.12.28",
  "secrecy",
@@ -6897,13 +6953,13 @@ dependencies = [
 [[package]]
 name = "octos-memory"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "bincode",
  "chrono",
  "eyre",
  "hnsw_rs",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "redb",
  "regex",
  "serde",
@@ -6916,7 +6972,7 @@ dependencies = [
 [[package]]
 name = "octos-pipeline"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6924,7 +6980,7 @@ dependencies = [
  "futures",
  "glob",
  "octos-agent",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-llm",
  "octos-memory",
  "octos-plugin",
@@ -6938,7 +6994,7 @@ dependencies = [
 [[package]]
 name = "octos-plugin"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "eyre",
  "metrics",
@@ -6952,7 +7008,7 @@ dependencies = [
 [[package]]
 name = "octos-sandbox"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "clap",
  "eyre",
@@ -6967,7 +7023,7 @@ dependencies = [
 [[package]]
 name = "octos-services"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "chrono",
  "dirs",
@@ -6975,7 +7031,7 @@ dependencies = [
  "flate2",
  "futures",
  "octos-bus",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-llm",
  "reqwest 0.12.28",
  "serde",
@@ -6988,14 +7044,14 @@ dependencies = [
 [[package]]
 name = "octos-store"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "constant_time_eq 0.3.1",
  "eyre",
  "getrandom 0.2.17",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "redb",
  "serde",
  "serde_json",
@@ -7008,7 +7064,7 @@ dependencies = [
 [[package]]
 name = "octos-swarm"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7027,12 +7083,12 @@ dependencies = [
 [[package]]
 name = "octos-workflows"
 version = "2.0.3-rc.12"
-source = "git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d#9e8e4898b8a7c03dbcb62993e7826577411e489d"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "chrono",
  "eyre",
  "octos-agent",
- "octos-core 2.0.3-rc.12 (git+https://github.com/OctoSense-org/Octoscript-AppCard.git?rev=9e8e4898b8a7c03dbcb62993e7826577411e489d)",
+ "octos-core",
  "octos-pipeline",
  "serde",
  "serde_json",
@@ -7041,14 +7097,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "octoscript-makepad"
+version = "0.1.0"
+dependencies = [
+ "octoscript-render",
+ "octoscript-ui-l0",
+ "serde_json",
+]
+
+[[package]]
 name = "octoscript-node"
 version = "0.1.0"
+
+[[package]]
+name = "octoscript-render"
+version = "0.1.0"
+dependencies = [
+ "makepad-script",
+ "octoscript-node",
+ "serde_json",
+]
 
 [[package]]
 name = "octoscript-ui-l0"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "serde_json",
+]
+
+[[package]]
+name = "octoscript-widgets"
+version = "0.1.0"
+dependencies = [
+ "makepad-widgets",
  "serde_json",
 ]
 
@@ -7067,9 +7149,52 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+ "octosense-app-hub-app",
  "octosense-appcard",
+ "octosense-mail-service",
  "octosense-reference",
  "rinx",
+]
+
+[[package]]
+name = "octosense-app-hub"
+version = "0.1.0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "ed25519-dalek",
+ "hex",
+ "octosense-app-policy",
+ "rand_core 0.9.5",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
+name = "octosense-app-hub-app"
+version = "0.1.0"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-theme",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "octosense-appstore",
+ "serde_json",
+]
+
+[[package]]
+name = "octosense-app-policy"
+version = "0.1.0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+dependencies = [
+ "blake3",
+ "makepad-widgets",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7080,6 +7205,39 @@ dependencies = [
  "makepad-widgets",
  "octos-app",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-appstore"
+version = "0.1.0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "octoscript-makepad",
+ "octoscript-widgets",
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "serde_json",
+]
+
+[[package]]
+name = "octosense-mail-service"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ego-tree",
+ "keyring",
+ "mailparse",
+ "makepad-android-state",
+ "makepad-jni-sys",
+ "octosense-appstore",
+ "rustls",
+ "scraper",
+ "serde_json",
+ "sha2 0.10.9",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -7266,6 +7424,7 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
 dependencies = [
+ "phf_macros 0.11.3",
  "phf_shared 0.11.3",
 ]
 
@@ -7284,7 +7443,7 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
 dependencies = [
- "phf_macros",
+ "phf_macros 0.13.1",
  "phf_shared 0.13.1",
  "serde",
 ]
@@ -7327,6 +7486,19 @@ checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
 dependencies = [
  "fastrand",
  "phf_shared 0.13.1",
+]
+
+[[package]]
+name = "phf_macros"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84ac04429c13a7ff43785d75ad27569f2951ce0ffd30a3321230db2fc727216"
+dependencies = [
+ "phf_generator 0.11.3",
+ "phf_shared 0.11.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -9020,6 +9192,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "scraper"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5f3a24d916e78954af99281a455168d4a9515d65eca99a18da1b813689c4ad9"
+dependencies = [
+ "cssparser",
+ "ego-tree",
+ "html5ever 0.35.0",
+ "precomputed-hash",
+ "selectors",
+ "tendril 0.4.3",
+]
+
+[[package]]
 name = "scroll"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9118,6 +9304,25 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "selectors"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5685b6ae43bfcf7d2e7dfcfb5d8e8f61b46442c902531e41a32a9a8bf0ee0fb6"
+dependencies = [
+ "bitflags 2.13.2",
+ "cssparser",
+ "derive_more 2.1.1",
+ "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "new_debug_unreachable",
+ "phf 0.11.3",
+ "phf_codegen 0.11.3",
+ "precomputed-hash",
+ "servo_arc",
+ "smallvec 1.16.1",
 ]
 
 [[package]]
@@ -9323,6 +9528,15 @@ checksum = "66cf8fedced2fcf12406bcb34223dffb92eaf34908ede12fed414c82b7f00b3e"
 dependencies = [
  "base16ct",
  "serde",
+]
+
+[[package]]
+name = "servo_arc"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930"
+dependencies = [
+ "stable_deref_trait",
 ]
 
 [[package]]
@@ -10713,6 +10927,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "ureq"
+version = "3.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
+dependencies = [
+ "base64 0.23.1",
+ "flate2",
+ "log",
+ "percent-encoding",
+ "rustls",
+ "rustls-pki-types",
+ "ureq-proto",
+ "utf8-zero",
+ "webpki-roots",
+]
+
+[[package]]
+name = "ureq-proto"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f86fd172ccca569e458f61b6bdd6220965a9ef36e672a6852953b51a0e1583be"
+dependencies = [
+ "base64 0.23.1",
+ "http",
+ "httparse",
+ "log",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10763,6 +11006,12 @@ name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
+
+[[package]]
+name = "utf8-zero"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8c0a043c9540bae7c578c88f91dda8bd82e59ae27c21baca69c8b191aaf5a6e"
 
 [[package]]
 name = "utf8_iter"

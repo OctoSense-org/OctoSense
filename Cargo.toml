@@ -57,6 +57,18 @@ octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
+# App Hub, as every OctoSense shell links it (OctoSense-App-Hub
+# crates/app-hub-app): the native store module (`apphub`), the Card runner
+# module (`card`) that runs contained script apps, the system apps packed at
+# build time from the selection `OCTOSENSE_SYSTEM_APPS` names
+# (system-apps.json, .cargo/config.toml), installed apps and their icons.
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6", optional = true }
+# The `mail` host service the Mail system app calls through `host.request`:
+# accounts, message lists and send run here, with the passwords the host
+# holds; the app never gets a socket or a secret. From the pinned
+# OctoSense-System-Apps checkout beside this repository
+# (native-apps.lock.json, tools/setup-native.py).
+octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
 rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "5ad2c1739e5b4776588518ab76440a5367c9968e", default-features = false, features = ["octosense-module"], optional = true }
@@ -71,12 +83,17 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", default-features = false }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", default-features = false }
 
 [features]
-default = []
+# App Hub is part of the standard launcher: the store, the Card runner and
+# the system apps (News, Photos, Maps, Camera, Mail) it runs.
+default = ["app-hub"]
 # Also usable on desktop for testing the same embedded apps with --module.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard"]
+# Photos is the system app here; `app-photos` links Makepad's native Photos
+# module instead, for comparison (a linked module of the same id wins).
+mobile-apps = ["app-reference", "app-sheets", "app-appcard", "app-hub"]
+# App Hub and the host services its system apps call.
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
@@ -115,6 +132,7 @@ panic = "unwind"
 # Resolve the exact framework sources prepared by tools/setup-native.py.
 
 [patch."https://github.com/OctoSense-org/makepad.git"]
+makepad-script = { path = "../makepad/platform/script" }
 makepad-widgets = { path = "../makepad/widgets" }
 makepad-code-editor = { path = "../makepad/code_editor" }
 makepad-ai = { path = "../makepad/libs/makepad_ai" }
@@ -136,6 +154,8 @@ makepad-markdown-widgets = { path = "../makepad/libs/markdown_widgets" }
 octoscript-ui-l0 = { path = "../octoscript/crates/octoscript-ui-l0" }
 
 [patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
+octoscript-makepad = { path = "../octoscript-makepad/crates/octoscript-makepad" }
+octoscript-widgets = { path = "../octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = "../octoscript-makepad/crates/octoscript-node" }
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
@@ -151,3 +171,13 @@ makepad-code-editor = { path = "../makepad/code_editor" }
 # Rinx's Matrix patches (see Rinx's Cargo.toml).
 [patch."https://github.com/ruma/ruma"]
 ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
+
+# One App Hub. The Mail host service pins App Hub's `octosense-appstore` at
+# an older rev than the shell crate above; two copies would be two host
+# service registries, and the Card runner would never see Mail's. A patch
+# cannot point a source at another rev of itself, so every App Hub library
+# resolves through the www host alias of the same repository, at the pin.
+[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
+octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }

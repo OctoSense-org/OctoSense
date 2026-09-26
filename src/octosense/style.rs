@@ -50,7 +50,9 @@ impl DesktopStyle {
 
 pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
     if style != DesktopStyle::OctoSense {
-        return StyleSheet::load_with_appearance(style.framework(), dark);
+        let mut sheet = StyleSheet::load_with_appearance(style.framework(), dark);
+        sheet.icons = icon_assets(style.framework());
+        return sheet;
     }
     let read = |name: &str, bundled: &str| {
         // Source checkouts reload on selection; installed/mobile builds use embedded data.
@@ -74,15 +76,122 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
         name: if dark { "macos-dark" } else { "macos" }.into(),
         theme: read(theme_name, theme),
         widgets: read(widgets_name, widgets),
-        icons: app_icon::load_assets(UpstreamStyle::Macos),
+        icons: icon_assets(UpstreamStyle::Macos),
     }
 }
 
+/// The framework's artwork for a style, plus what this shell's apps need:
+/// App Hub's own store icon, and for Maps (a system app the framework has no
+/// art for) the route app's map, which it is the successor of. News, Photos
+/// and Mail keep the framework's art; a system app whose bundle ships an
+/// icon (Camera) draws that instead (`InstalledIcons`).
+pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
+    fn wear(assets: &mut Vec<app_icon::IconAsset>, name: &str, svg: String) {
+        match assets.iter_mut().find(|asset| asset.name == name) {
+            Some(asset) => asset.svg = svg,
+            None => assets.push(app_icon::IconAsset { name: name.into(), svg }),
+        }
+    }
+    let mut assets = app_icon::load_assets(style);
+    if !assets.iter().any(|asset| asset.name == "maps") {
+        if let Some(route) = assets.iter().find(|asset| asset.name == "route").map(|asset| asset.svg.clone()) {
+            wear(&mut assets, "maps", route);
+        }
+    }
+    #[cfg(feature = "app-hub")]
+    wear(&mut assets, "apphub", octosense_app_hub_app::APP_ICON_SVG.into());
+    assets.sort_by(|a, b| a.name.cmp(&b.name));
+    assets
+}
+
 #[derive(Default)]
-pub struct AppIconDraw(app_icon::AppIconDraw);
+pub struct AppIconDraw {
+    draw: app_icon::AppIconDraw,
+    #[cfg(feature = "app-hub")]
+    library: InstalledIcons,
+    /// The styles whose icon catalog this drawer has seen to, by discriminant.
+    installed: [bool; UpstreamStyle::ALL.len()],
+}
 impl AppIconDraw {
     pub fn draw(&mut self, cx: &mut Cx2d, name: &str, style: DesktopStyle, rect: Rect, opacity: f32, ink: Vec4f) {
-        self.0.draw(cx, name, style.framework(), rect, opacity, ink);
+        #[cfg(feature = "app-hub")]
+        if self.library.draw(cx, name, rect, opacity) {
+            return;
+        }
+        let style = style.framework();
+        // A style can be drawn before its sheet is applied (a crossfade's
+        // target, the first frame); the framework would then fall back to
+        // its own artwork, which has no Maps or App Hub.
+        if !std::mem::replace(&mut self.installed[style as usize], true) {
+            app_icon::install(cx, style, &icon_assets(style));
+        }
+        self.draw.draw(cx, name, style, rect, opacity, ink);
+    }
+}
+
+/// Launcher art App Hub owns: an installed app's icon (`hub:<id>`), and a
+/// system app's own art when its bundle ships one (ADR 0004).
+#[cfg(feature = "app-hub")]
+#[derive(Default)]
+struct InstalledIcons {
+    root: Option<std::path::PathBuf>,
+    generation: u64,
+    entries: std::collections::HashMap<String, Option<InstalledIcon>>,
+}
+#[cfg(feature = "app-hub")]
+enum InstalledIcon {
+    Svg(DrawSvg),
+    Png(DrawImage, Texture),
+}
+
+#[cfg(feature = "app-hub")]
+impl InstalledIcons {
+    fn draw(&mut self, cx: &mut Cx2d, name: &str, rect: Rect, opacity: f32) -> bool {
+        use octosense_app_hub_app::icons::{self, IconData};
+        let system = name.strip_prefix("hub:").is_none() && crate::apps::system_card_apps().iter().any(|a| a.id == name);
+        let Some(id) = name.strip_prefix("hub:").or(system.then_some(name)) else { return false; };
+        let Some(root) = octosense_app_hub_app::data_root_if_set() else { return false; };
+        let generation = icons::generation();
+        if self.root.as_ref() != Some(&root) || self.generation != generation {
+            self.entries.clear();
+            self.root = Some(root.clone());
+            self.generation = generation;
+        }
+        if self.entries.len() >= 256 && !self.entries.contains_key(name) {
+            self.entries.clear();
+        }
+        let icon = self.entries.entry(name.into()).or_insert_with(|| {
+            let data = if system { octosense_app_hub_app::system_icon(id)? } else { icons::read_installed_icon(&root, id)? };
+            match data {
+                IconData::Svg(source) => {
+                    let mut draw = cx.with_vm(|vm| DrawSvg::script_new_with_default(vm));
+                    draw.load_from_str(&source);
+                    let (width, height) = draw.svg_doc.as_ref()?.logical_size();
+                    draw.content_bounds = (0.0, 0.0, width, height);
+                    Some(InstalledIcon::Svg(draw))
+                }
+                IconData::Png(data) => {
+                    let buffer = image_cache::ImageBuffer::from_png(&data).ok()?;
+                    let texture = buffer.into_new_texture(cx);
+                    let draw = cx.with_vm(|vm| DrawImage::script_new_with_default(vm));
+                    Some(InstalledIcon::Png(draw, texture))
+                }
+            }
+        });
+        match icon {
+            Some(InstalledIcon::Svg(draw)) => {
+                draw.color = vec4(-1.0, -1.0, -1.0, -1.0);
+                draw.opacity = opacity;
+                draw.draw_abs(cx, rect);
+            }
+            Some(InstalledIcon::Png(draw, texture)) => {
+                draw.draw_vars.set_texture(0, texture);
+                draw.opacity = opacity;
+                draw.draw_abs(cx, rect);
+            }
+            None => return false,
+        }
+        true
     }
 }
 
@@ -102,7 +211,7 @@ mod tests {
                 assert_eq!(sheet.name, if dark { "macos-dark" } else { "macos" });
                 assert_eq!(StyleSheet::parse(&sheet.to_json()), Some(sheet.clone()));
                 assert_eq!(UpstreamStyle::parse(&sheet.name), Some(UpstreamStyle::Macos));
-                assert_eq!(sheet.icons, app_icon::load_assets(UpstreamStyle::Macos));
+                assert_eq!(sheet.icons, icon_assets(UpstreamStyle::Macos));
                 desktop_style::install(vm, sheet);
                 vm.bx.captured_errors = Some(Vec::new());
                 vm.with_reload(makepad_widgets::script_mod);
