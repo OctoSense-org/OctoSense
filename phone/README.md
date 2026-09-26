@@ -22,7 +22,7 @@ its own identity, data and policy. They are hosted bundles, not Android APKs.
 
 The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News, OctosMap, App Hub and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
 
-The Home source was originally split from the desktop [OctoSense](https://github.com/OctoSense-org/OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). Home and the desktop still share much of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
+The Home source was originally split from the desktop [OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) (then named OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). Home and the desktop still share much of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
 
 ## Build and run on a phone
 
