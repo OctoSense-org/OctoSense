@@ -68,8 +68,8 @@ The exact invocation used for the foundation PR, with the paths of that
 session, for the record:
 
 ```sh
-MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/private/tmp/claude-505/-Users-user-home-splash/0bdb704b-c531-48c0-b6a5-009881090313/scratchpad/appcard-apk/octos/target/aarch64-linux-android/release/octos" \
-  /private/tmp/claude-505/-Users-user-home-splash/0bdb704b-c531-48c0-b6a5-009881090313/scratchpad/bt-1b11c4a/target/debug/cargo-makepad \
+MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/abs/path/to/octos/target/aarch64-linux-android/release/octos" \
+  /abs/path/to/makepad-buildtool/target/debug/cargo-makepad \
   makepad android run -p octosense --release
 ```
 
