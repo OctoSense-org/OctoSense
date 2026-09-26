@@ -70,7 +70,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # (.cargo/config.toml -> system-apps.json) from the OctoSense-System-Apps
 # checkout native-apps.lock.json pins beside this one. The App Hub store is
 # not linked here; only the runner and the system apps are.
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6", optional = true }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066", optional = true }
 # Host services the system apps call through `host.request` (services.rs in
 # App Hub's appstore crate): `mail` keeps Mail's accounts and passwords.
 octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
@@ -182,7 +182,7 @@ ruma = { git = "https://github.com/project-robius/ruma.git", branch = "tsp" }
 # (as OctoSense ROM Home does). Drop this once OctoSense-System-Apps pins the
 # same App Hub rev.
 [patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
-octosense-app-hub-app = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
-octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
-octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
-octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-app-hub-app = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }
+octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "f69aad56ebf91d365cf1967665268ec197a21066" }

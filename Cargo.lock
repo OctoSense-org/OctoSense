@@ -2815,7 +2815,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
  "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -7179,7 +7179,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=f69aad56ebf91d365cf1967665268ec197a21066#f69aad56ebf91d365cf1967665268ec197a21066"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7195,7 +7195,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=f69aad56ebf91d365cf1967665268ec197a21066#f69aad56ebf91d365cf1967665268ec197a21066"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7209,7 +7209,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=f69aad56ebf91d365cf1967665268ec197a21066#f69aad56ebf91d365cf1967665268ec197a21066"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7230,7 +7230,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=4605128d46fb982828d8198e0d71d62a39c7d6d6#4605128d46fb982828d8198e0d71d62a39c7d6d6"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=f69aad56ebf91d365cf1967665268ec197a21066#f69aad56ebf91d365cf1967665268ec197a21066"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
