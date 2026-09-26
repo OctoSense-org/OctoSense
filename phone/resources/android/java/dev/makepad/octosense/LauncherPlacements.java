@@ -110,8 +110,10 @@ public final class LauncherPlacements {
             if(split<=0 || split==target.length()-1) throw new IllegalArgumentException("Invalid shortcut identity");
         }
     }
+    // A bundled module id, or hub: and the manifest id App Hub admitted.
+    // hosted_identity in android_integration.rs accepts the same set.
     public static boolean isHosted(String id) {
-        return id!=null && id.matches("[a-z][a-z0-9_-]{0,127}");
+        return id!=null && id.matches("[a-z][a-z0-9_-]{0,127}|hub:(?!\\.)(?!.*\\.\\.)[a-z0-9.-]{1,64}");
     }
     private JSONObject model(ArrayList<String> favorites,ArrayList<String> dock,ArrayList<String> hidden,ArrayList<String> order) throws JSONException {
         JSONObject model=new JSONObject().put("version",2).put("favorites",new JSONArray(favorites)).put("dock",new JSONArray(dock)).put("hidden_hosted",new JSONArray(hidden)).put("order",new JSONArray(order))

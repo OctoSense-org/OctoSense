@@ -607,7 +607,7 @@ found on the way. `docs/maps.md` describes what is there.
 Found in the review of the second sync from mobile on 2026-09-25
 (`docs/home-migration.md`).
 
-- [ ] **HUB-01 — P1: Android placements reject `hub:` ids.**
+- [x] **HUB-01 — P1: Android placements reject `hub:` ids.**
 
   An installed App Hub app's launcher id is `hub:<manifest-id>`, but both
   placement validators accept only `[a-z][a-z0-9_-]{0,127}` for a hosted
@@ -624,6 +624,15 @@ Found in the review of the second sync from mobile on 2026-09-25
   and still reject other colons; change them in step; add `placement_tests`
   cases for a `hub:` id in `order`, `dock`, `hidden_hosted`, `pairs` and
   `hidden_tiles`.
+
+  Fixed on 2026-09-25: `hosted_identity` and `LauncherPlacements.isHosted`
+  accept a bundled module id or `hub:` and a manifest id as App Hub's policy
+  admits it (1 to 64 of `a-z 0-9 . -`, not starting with `.`, no `..`). One
+  table, `home/tests/fixtures/hosted_identities.json`, is checked by
+  `placement_tests` and by `tests/test_hosted_identities.py` (the Java
+  pattern), so the two stay in step; `pairs` and `hidden_tiles` use the same
+  check. Not yet exercised on a device with an installed Hub app, since the
+  public catalog is empty.
 
 - [ ] **HUB-02 — P2: Installed apps are read from disk on every lookup.**
 

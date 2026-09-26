@@ -161,7 +161,16 @@ fn unit(v: &Value, k: &str) -> Option<f64> {
         _ => None,
     }
 }
+/// A hosted app: a bundled module id, or `hub:` and the manifest id App Hub
+/// admitted (1 to 64 of `a-z 0-9 . -`, never navigating). The Java store's
+/// `LauncherPlacements.isHosted` accepts the same set.
 fn hosted_identity(id: &str) -> bool {
+    if let Some(manifest) = id.strip_prefix("hub:") {
+        return (1..=64).contains(&manifest.len())
+            && manifest.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-'))
+            && !manifest.starts_with('.')
+            && !manifest.contains("..");
+    }
     let bytes = id.as_bytes();
     !bytes.is_empty()
         && bytes.len() <= 128
@@ -217,6 +226,24 @@ mod placement_tests {
         ] {
             assert!(decode(invalid).is_none(), "accepted {invalid}");
         }
+    }
+    #[test]
+    fn hosted_identities_follow_the_table_shared_with_the_java_store() {
+        let table = makepad_strict_json::parse(include_str!("../tests/fixtures/hosted_identities.json").as_bytes()).unwrap();
+        for (key, expected) in [("valid", true), ("invalid", false)] {
+            for id in table.get(key).and_then(Value::as_arr).unwrap() {
+                let id = id.as_str().unwrap();
+                assert_eq!(hosted_identity(id), expected, "{key} identity {id:?}");
+            }
+        }
+    }
+    #[test]
+    fn installed_hub_apps_keep_their_order_dock_slot_and_visibility() {
+        let text = r#"{"version":2,"favorites":[],"dock":["hub:org.example.timer","","",""],"hidden_hosted":["hub:org.example.notes"],"order":["hub:org.example.timer","sheets"]}"#;
+        let (_, dock, hidden, order) = decode_placements(&makepad_strict_json::parse(text.as_bytes()).unwrap()).unwrap();
+        assert_eq!(dock, ["hub:org.example.timer", "", "", ""]);
+        assert_eq!(hidden, ["hub:org.example.notes"]);
+        assert_eq!(order, ["hub:org.example.timer", "sheets"]);
     }
 }
 fn decode_placements(value: &Value) -> Option<(Vec<String>, Vec<String>, Vec<String>, Vec<String>)> {
