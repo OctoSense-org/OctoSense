@@ -7,13 +7,68 @@
 release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
 shared with AppCards, Mail and the other OctoSense applications.
 
-Before building, run `python3 tools/setup-native.py` (Python 3.9+). The framework
-repositories are siblings of this app: `../octoscript-makepad`, `../makepad`
-and `../octoscript`. Local changes are preserved; `--update` only updates clean
-checkouts. CI verifies the selected release and rejects duplicate Makepad sources.
-Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
+Before building, run `python3 tools/setup-native.py` (Python 3.9+). The pinned
+repositories are siblings of this app:
+
+| Sibling | Pinned by | What it is |
+| --- | --- | --- |
+| `../octoscript-makepad` | `native-runtime.lock.json` | the runtime release |
+| `../makepad`, `../octoscript` | that release's `runtime.json` | the framework; Makepad carries the reviewed patch in `runtime-patches.lock.json` |
+| `../OctoSense-System-Apps` | `native-apps.lock.json` | the system apps' bundles, the Mail host service and the AppCard assistant |
+
+Makepad's patch is [OctoSense-org/makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
+(contained script apps, host services), the same one OctoSense ROM's Home
+applies; setup applies it to the locked revision and checks the resulting tree.
+A clean checkout of the commit the patch was cut from (`source_commit`) is
+accepted as the same tree. Local changes are preserved; `--update` only updates
+clean checkouts. CI verifies the selected release and rejects duplicate Makepad
+and octos sources. Use `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml`
 to check the local dependency graph. Existing platform rendering backends remain
 part of their applications; the framework controls the shared VM and UI sources.
+
+## App model
+
+OctoSense-Desktop takes its apps the way OctoSense ROM's Home does. There are
+four kinds, and the launcher lists them together:
+
+| Kind | Where it comes from | How it runs |
+| --- | --- | --- |
+| **System apps** — News, Photos, Maps, Camera, Mail | [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) `apps/<name>/bundle`, chosen by [system-apps.json](system-apps.json) and packed into the build | contained Splash programs (ADR 0004), each in its own isolate under the permissions its manifest asks for, run by App Hub's Card runner (the `card` module); ids `os.<name>`, launcher ids `<name>` |
+| **Store apps** | the signed App Hub catalog, installed from the App Hub store (`apphub`) | the same Card runner, under `hub:<manifest-id>`; each open is checked against the catalog, and an update closes the old instances |
+| **Native modules** | Rust crates linked into this binary | in-process `AppModule`s; only trusted ones: App Hub (store and Card runner), the AppCard assistant, Reference, and the optional `app-*` features |
+| **Developer programs** | [config/apps.json](config/apps.json): Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, …) | separate processes in tiles, built on first launch (see *Add an app*) |
+
+App Hub is on by default (feature `app-hub`): it links
+[`octosense-app-hub-app`](https://github.com/OctoSense-org/OctoSense-App-Hub/tree/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app)
+and the Mail host service (`octosense-mail-service`, in
+`../OctoSense-System-Apps/apps/mail/host-service`), which keeps Mail's accounts
+and passwords on the host; the Mail app never gets a socket or a secret. A
+system app takes precedence over a catalog row of the same id, so Makepad's
+example **Mail** and **Photos** programs are no longer in `config/apps.json`
+or `config/apps.makepad.json` (`drop` in `config/apps.overlay.json`); if a
+personal catalog still lists them, the system app replaces the row. A linked
+native module of the same id wins over a system app, for comparison builds
+(`--features app-photos` links Makepad's native Photos).
+
+`.cargo/config.toml` sets `OCTOSENSE_SYSTEM_APPS` to `system-apps.json`;
+without it the build ships no system apps. The desktop has no photo library of
+its own, so `system-apps.json` mounts no `photos` assets: Photos shows its
+sample library from the thumbnails its bundle ships (`thumbs/`, every photo),
+and a photo opened full size has no full-resolution file behind it. Home
+mounts its own `apps/photos/resources/photos` (87 MB) for that; a desktop that
+wants it adds `"assets": {"photos": {"photos": "<dir>"}}` to its selection.
+
+To try Mail without an account or the keychain, run with its demo mailbox
+(a file vault, no network, password `demo`):
+
+```sh
+MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release
+```
+
+With a real account, Mail stores passwords in the macOS keychain; an
+unsigned development binary is a new program to the keychain after every
+rebuild, so macOS asks again each time. `OCTOSENSE_MAIL_VAULT=file` keeps
+them in a 0600 file in Mail's host directory instead, for development.
 
 
 A Makepad desktop that hosts compatible applications inside one window. The shell comes from Makepad's WM app; framework libraries remain external Cargo dependencies pinned to the same upstream commit.
@@ -63,15 +118,21 @@ cargo makepad android run -p octosense --release
 The Android launcher label is **OctoSense** and its application ID is `dev.makepad.octosense`. It installs separately from an existing MakeOS Android app because the application ID changed.
 
 `run` builds, installs, and launches the app; `build` only creates the APK.
-Native Android/iOS builds automatically link **Reference, Sheets, and Photos**
-as embedded apps. They need no extra feature flags after runtime setup. On an
-installed device, the launcher derives its default catalog from those linked
-modules. Missing Clock/Weather tiles give their space to the available app icons.
+Native Android/iOS builds automatically link **Reference and Sheets** as
+embedded apps, and App Hub with the system apps (News, Photos, Maps, Camera,
+Mail) through the default `app-hub` feature. They need no extra feature flags
+after runtime setup. On an installed device, the launcher derives its default
+catalog from those linked modules and system apps. Missing Clock/Weather tiles
+give their space to the available app icons.
 
 The phone build also links **AppCard** (`apps/appcard`, feature `app-appcard`
-on desktop): the whole Octoscript-AppCard app, hosted in-process in a wide
-home tile. The module takes `octos-app` — the crate the standalone AppCard APK
-is built from — as a git library and mounts its `AppShell` widget: the routing
+on desktop): the whole AppCard assistant, hosted in-process in a wide home
+tile. The module takes `octos-app` — the crate the standalone AppCard APK is
+built from — from the pinned OctoSense-System-Apps checkout
+(`apps/appcard/app/app`, without its default `standalone` feature; every octos
+crate comes from git octos-org/octos at the one rev octos-app pins, and
+`OCTOSENSE_WORKSPACE` in `.cargo/config.toml` points its asset embedding at the
+sibling framework checkouts) and mounts its `AppShell` widget: the routing
 brain, the card store and transport, the L0 lowering pipeline, sessions, the
 composer and the kernel agent all run inside the tile's isolate. The kernel
 (`liboctos.so serve --stdio`) is spawned from this APK's native library dir
@@ -110,16 +171,15 @@ the app, not your desktop photo library; local Qwen weights are not packaged.
 To exercise the same embedded apps on desktop:
 
 ```sh
-cargo run --features mobile-apps -- --module reference --module sheets --module photos
+cargo run --features mobile-apps -- --module reference --module sheets
 ```
 
 Reference shares its counter and text-input view between the standalone desktop
-process and the embedded mobile module. Sheets and Photos remain external Git
-crates at the same pinned Makepad revision.
+process and the embedded mobile module. Sheets remains an external Git crate at
+the same pinned Makepad revision.
 
-Mobile app support is still partial: Sheets needs grid-label and toolbar fixes,
-and Photos needs a picture library/import setup. These follow-ups are tracked
-in [BACKLOG.md](BACKLOG.md).
+Mobile app support is still partial: Sheets needs grid-label and toolbar fixes.
+These follow-ups are tracked in [BACKLOG.md](BACKLOG.md).
 
 The iOS startup policy is covered by tests, but a complete iOS build currently
 fails in the pinned Makepad Metal backend; see [validation](docs/validation.md).
@@ -132,7 +192,7 @@ The default [config/apps.json](config/apps.json) includes Reference and Makepad'
 cargo run -- --apps config/apps.makepad.json
 ```
 
-It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Photos, Clock, Weather, Finance, Mail, Notes, Calendar, Reminders, Calculator, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
+It includes Reference plus Makepad's Browser, Files, Terminal, Mixer, Task Manager, Sheets, Clock, Weather, Finance, Notes, Calendar, Reminders, Calculator, Fabric, Score, Video Player, Route, VJ, Fab and Director. Image/PDF viewers are registered for file-opening and previews, and AI is registered for the assistant pane (F10). These three helper apps also appear in the launcher unless their IDs (`image`, `pdf`, `aichat`) are listed in `~/.octosense/wm/launcher.hides`.
 
 Makepad's apps carry `"source": "makepad"` instead of a path: they resolve through Cargo's dependency graph to the shared runtime checkout prepared above, or to Cargo's cached checkout when Git dependencies are used without path overrides. Each app builds on demand using its package's normal default features. Those builds go to `~/.octosense/build/makepad` rather than into Cargo's cache, which Cargo alone manages. The catalog uses the workspace root manifest to preserve the apps' expected working directory. Files retains the catalog's `--demo` argument; remove it to browse your real filesystem. Fab uses its built-in demo unless you add explicit file arguments. Upstream replaced Studio with Director; the catalog keeps the `studio` ID for existing launch references and runs `makepad-director`. No apps start automatically; `--assistant` remains opt-in.
 
@@ -193,7 +253,7 @@ OctoSense state lives under `~/.octosense`; `OCTOSENSE_HOME` selects another dir
 
 Optional launch flags are `--assistant`, `--prewarm`, `--demo-home`, and `--download-wallpapers`. Assistant/prewarm flags require matching apps in your catalog. Theme importing remains an explicit action in the theme menu.
 
-Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-photos`, and `app-aichat` Cargo features; all are off by default. A module must be linked and selected with `--module <id>` or `wm/apps.splash`. This initial milestone validates process hosting. It does not provide runtime loading of native shared libraries or embedding of unrelated native desktop windows.
+Upstream's linked-module infrastructure is retained behind `app-sheets`, `app-photos`, and `app-aichat` Cargo features; all are off by default. A module must be linked and selected with `--module <id>` or `wm/apps.splash`. App Hub's modules are the exception: the store and the apps its Card runner hosts (system and installed apps) have no process form and always open in-process. This initial milestone validates process hosting. It does not provide runtime loading of native shared libraries or embedding of unrelated native desktop windows.
 
 ## Local AI setup
 
@@ -237,6 +297,7 @@ manual commands and how to investigate a failed candidate.
 
 ```sh
 cargo test --locked --workspace
+cargo test --locked --workspace --features mobile-apps
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 

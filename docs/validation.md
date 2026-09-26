@@ -431,3 +431,28 @@ The diagnostic call stack is in `target/upstream-20260911/trace-tap/host.log`.
 The starting dirty working tree is preserved in
 `target/upstream-20260911/before/`; the integration diff and exact file list
 are saved beside it. Source checkouts were read only.
+
+## App Hub, system apps and the AppCard repin, 2026-09-26
+
+Branch `apps/app-hub-system-apps`, on macOS 26 (Apple silicon), with the
+siblings prepared by `tools/setup-native.py` (makepad at the patched tree
+`3889a349`, OctoSense-System-Apps `4d99cb58`).
+
+- `cargo check --workspace`, and with `--features mobile-apps`: clean.
+- `cargo test --workspace`: 228 passed; with `--features mobile-apps`: 231
+  passed (the bundled-catalog test lists the five system apps as Card apps and
+  opens every native module). `cargo test -p octosense-mail-service`: 7 passed.
+- `python3 -m unittest discover -s scripts -p 'test_*.py'`: 57 passed.
+- `python3 scripts/upstream.py catalog`: the catalog matches the pinned
+  revision under the overlay (which now drops `mail` and `photos`).
+- `setup-native.py --check --cargo-manifest Cargo.toml` on a fresh sibling
+  workspace: one Makepad, one octos (`octos-core` from octos-org/octos
+  `18fcd3f1` only, also with `--features app-rinx`: Rinx `5ad2c173` pins no
+  octos), one `octosense-appstore`.
+- Release run with `MAKEPAD_REMOTE` and `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`
+  (isolated `OCTOSENSE_HOME` and `OCTOSENSE_APP_DATA`): the dock and launcher
+  list App Hub, News, Photos, Maps, Camera and Mail; Mail opened in the Card
+  runner (`card: os.mail running under 2 capability(ies)`), its sign-in sheet
+  drew over the app, the demo account (password `demo`) signed in and the
+  inbox listed the demo messages; Photos opened on its Collections page with
+  the bundle's thumbnails. No keychain prompt: the demo uses the file vault.
