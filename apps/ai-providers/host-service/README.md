@@ -21,6 +21,7 @@ octosense_llm_service::register_with(
     octosense_llm_service::Options::default()
         .core_dir(core_dir)                       // where profiles/_main.json lives
         .scanner(Arc::new(MyScanner::default()))  // phone only
+        .image_picker(Arc::new(MyPicker::default())) // a QR from a picture
         .on_changed(|| restart_appcard_core()),   // any thread
 );
 ```
@@ -29,6 +30,10 @@ octosense_llm_service::register_with(
 - `vault`: overrides where keys go (tests, `OCTOSENSE_LLM_VAULT=file`).
 - `scanner`: an `Arc<dyn QrScanner>`. Leave it out on the desktop; the import
   sheet then takes a pasted `OCTOS1E:` code only.
+- `image_picker`: an `Arc<dyn QrImagePicker>`: a file dialog on the desktop,
+  the photo picker on a phone. The import sheet then offers "Choose image" and
+  reads the provider QR out of the picture (a screenshot, a photo of the
+  screen). `llm.providers` reports `image_picker: true`.
 - `on_changed`: called after the saved provider set changed (save, reorder,
   removal, import). Restart the AppCard kernel from it (it may run on a worker
   thread: post to the UI thread).
@@ -67,6 +72,31 @@ for action in actions {
     if let Some(c) = action.downcast_ref::<NativeQrCancelled>() { scanner.finish(Err(c.reason.clone())) }
 }
 ```
+
+### An image picker
+
+```rust
+pub enum PickError { Cancelled, Failed(String) }
+pub type ImageDone = Box<dyn FnOnce(Result<Vec<u8>, PickError>) + Send>;
+
+pub trait QrImagePicker: Send + Sync {
+    /// Let the person choose one image and call `done` exactly once.
+    fn pick(&self, done: ImageDone);
+}
+```
+
+`pick` is called on the UI thread when the person taps "Choose image" on the
+import sheet; `done` may be called from any thread, exactly once. Hand over
+the file's encoded bytes as stored (PNG or JPEG; do not decode them): the
+service decodes, finds the QR (it tries the image as is, thresholded, scaled
+down and scaled up, so a phone screenshot with a small code in it works),
+refuses anything over 20 MB or 40 megapixels, and then asks for the PIN on
+the same sheet, exactly as after a camera scan. `Err(PickError::Cancelled)`
+leaves the sheet as it was; `Err(PickError::Failed(why))` shows `why`.
+
+A shell whose picker is modal and synchronous can call `done` inside `pick`;
+one driven by Makepad events keeps `done` until its result action arrives, as
+the scanner above does.
 
 ## Where keys go
 

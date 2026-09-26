@@ -6,7 +6,7 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `llm.providers` | – | `{primary, fallbacks, scanner, store}`: each provider `{id, family, label, model, custom_model, base_url, api_type, key}`, `key` being `"set ••••1234"`, `"missing"`, `"not needed"` or `"keychain locked"`; `scanner` says the host can scan a QR; `store` where keys go (`keychain`, `secrets folder`, `profile`) |
+//! | `llm.providers` | – | `{primary, fallbacks, scanner, image_picker, store}`: each provider `{id, family, label, model, custom_model, base_url, api_type, key}`, `key` being `"set ••••1234"`, `"missing"`, `"not needed"` or `"keychain locked"`; `scanner` says the host can scan a QR; `image_picker` that it can read one from a chosen image; `store` where keys go (`keychain`, `secrets folder`, `profile`) |
 //! | `llm.families` | – | `[{id, label, default_model, key_required, default_base_url}]`, octos's registry |
 //! | `llm.add_provider` | – | `{id, label}` once the person saves it on the host's sheet |
 //! | `llm.edit_provider` | `{id}` | `{id, label}` (the id changes with the route) once saved on the sheet |
@@ -65,6 +65,28 @@ pub trait QrScanner: Send + Sync {
     fn scan(&self, done: ScanDone);
 }
 
+/// Why a pick produced no image.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PickError {
+    /// The person closed the picker without choosing.
+    Cancelled,
+    /// The picker or the file failed; the text is shown on the sheet.
+    Failed(String),
+}
+
+/// Called with a pick's result, once, from any thread: the chosen file's
+/// encoded bytes as stored (PNG or JPEG; the service decodes them), or why
+/// there are none.
+pub type ImageDone = Box<dyn FnOnce(Result<Vec<u8>, PickError>) + Send>;
+
+/// The shell's image picker (a file dialog on the desktop, the photo picker
+/// on a phone): the import sheet reads a provider QR out of the image, e.g.
+/// a screenshot. The service never links Makepad itself.
+pub trait QrImagePicker: Send + Sync {
+    /// Let the person choose one image and call `done` exactly once.
+    fn pick(&self, done: ImageDone);
+}
+
 /// Called after the provider set changed on disk (a save, a removal, an
 /// import): the shell restarts the AppCard kernel so it reads the new
 /// profile. Runs on whichever thread made the change.
@@ -82,6 +104,9 @@ pub struct Options {
     /// The camera scanner, where the device has one: the import sheet then
     /// scans, and the app offers "Scan QR from desktop".
     pub scanner: Option<Arc<dyn QrScanner>>,
+    /// The image picker, where the shell has one: the import sheet then
+    /// offers "Choose image" and reads the QR out of the chosen picture.
+    pub image_picker: Option<Arc<dyn QrImagePicker>>,
     pub on_changed: Option<OnChanged>,
 }
 
@@ -96,6 +121,10 @@ impl Options {
     }
     pub fn scanner(mut self, scanner: Arc<dyn QrScanner>) -> Self {
         self.scanner = Some(scanner);
+        self
+    }
+    pub fn image_picker(mut self, picker: Arc<dyn QrImagePicker>) -> Self {
+        self.image_picker = Some(picker);
         self
     }
     pub fn on_changed(mut self, f: impl Fn() + Send + Sync + 'static) -> Self {
@@ -121,6 +150,7 @@ pub fn register_with(options: Options) {
     octosense_appstore::services::register_host_service(Box::new(LlmService {
         shared: Arc::new(Shared { path: profile::profile_path(&core_dir), vault, on_changed: options.on_changed, lock: Mutex::new(()) }),
         scanner: options.scanner,
+        image_picker: options.image_picker,
         pending: Arc::default(),
         export: Arc::default(),
         generation: 0,
@@ -181,6 +211,7 @@ type ExportJob = (u64, Option<Result<String, String>>);
 pub struct LlmService {
     shared: Arc<Shared>,
     scanner: Option<Arc<dyn QrScanner>>,
+    image_picker: Option<Arc<dyn QrImagePicker>>,
     /// Shared with the workers: they answer the app on success.
     pending: Arc<Mutex<Option<Pending>>>,
     export: Arc<Mutex<Option<ExportJob>>>,
@@ -458,13 +489,13 @@ impl HostService for LlmService {
         let id = text(&call.args, "id").to_string();
         match call.method() {
             "providers" => {
-                let (shared, scanner) = (self.shared.clone(), self.scanner.is_some());
+                let (shared, scanner, image_picker) = (self.shared.clone(), self.scanner.is_some(), self.image_picker.is_some());
                 work(move || {
                     let answer = shared.open().map(|store| {
                         let entries: Vec<Value> = store.list.iter().map(|p| entry(&store, p)).collect();
                         json!({
                             "primary": entries.first(), "fallbacks": entries.iter().skip(1).collect::<Vec<_>>(),
-                            "scanner": scanner, "store": shared.vault.kind(),
+                            "scanner": scanner, "image_picker": image_picker, "store": shared.vault.kind(),
                         })
                     });
                     reply.send(answer);
