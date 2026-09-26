@@ -4,9 +4,9 @@
 Beside this repository, in one workspace directory:
 
   octoscript-makepad/     the release native-runtime.lock.json selects
-  makepad/, octoscript/   at the revisions that release's runtime.json pins;
-                          makepad carries the reviewed product patch
-                          runtime-patches.lock.json names (contained apps)
+  makepad/, octoscript/   at the revisions that release's runtime.json pins,
+                          plus any reviewed patch runtime-patches.lock.json
+                          names (none today)
   OctoSense-System-Apps/  at the revision native-apps.lock.json pins: the
                           system app bundles system-apps.json selects, the
                           Mail host service and the AppCard assistant
