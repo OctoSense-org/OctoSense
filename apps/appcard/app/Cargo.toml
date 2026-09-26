@@ -18,6 +18,9 @@ authors = ["octos-app contributors"]
 octos-app-store     = { path = "crates/octos-app-store" }
 octos-app-transport = { path = "crates/octos-app-transport" }
 octos-app-render    = { path = "crates/octos-app-render" }
+# LLM provider sets (registry, _main.json merge, the provisioning QR): the
+# AI providers app's crate, shared with its `llm` host service.
+octosense-llm-config = { path = "../../ai-providers/config" }
 
 # Octos: ONE source for every octos crate — git octos-org/octos at a single
 # rev on main (the merge of octos-org/octos#2541, which upstreamed the AppCard
@@ -103,3 +106,10 @@ octoscript-node = { path = "../../../../octoscript-makepad/crates/octoscript-nod
 
 [patch."https://github.com/ZhangHanDong/makepad.git"]
 makepad-widgets = { path = "../../../../makepad/widgets" }
+
+# The provisioning QR's Argon2id (64 MiB, t=3) takes seconds unoptimised;
+# optimise just the KDF so debug builds and tests decode at release speed.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

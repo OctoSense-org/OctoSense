@@ -346,8 +346,76 @@ pub fn apply_provision_string(prov: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Apply an LLM-only QR / intent payload. Accepted payloads (all parsed by
+/// `octosense_llm_config::qr`):
+///
+/// - the legacy self-contained JSON object
+///   `{"llm_family":..,"llm_model":..,"llm_key":..,"llm_base_url":..,"llm_api_type":..}`
+///   — replaces `config.llm.primary` only, fallbacks are kept;
+/// - octos's `OCTOS1:` profile QR — replaces the whole provider set
+///   (primary + fallbacks) and upserts every key it carries;
+/// - `OCTOS1E:` (PIN-wrapped) — refused here with a "needs PIN" error; the
+///   caller collects the PIN and uses [`apply_provision_payload`].
+///
+/// Keys land in `_main.json` → `config.env_vars.<KEY_ENV>` under the name
+/// octos's registry reads for the family. Server connection/auth settings are
+/// deliberately handled only by `makepad.APP_CONFIG` (a code carrying them is
+/// refused).
+pub fn apply_provision_config_json(payload: &str) -> Result<String, String> {
+    apply_provision_payload(payload, None)
+}
+
+/// [`apply_provision_config_json`] with the PIN for an `OCTOS1E:` code.
+///
+/// With a PIN this runs Argon2id over 64 MiB: call it off the UI thread.
+pub fn apply_provision_payload(payload: &str, pin: Option<&str>) -> Result<String, String> {
+    let path = octos_profile_config_path()?;
+    apply_provision_payload_at_path(&path, payload, pin)
+}
+
+/// Path-injected implementation so persistence can be tested without touching
+/// the real desktop or Android profile.
+fn apply_provision_payload_at_path(path: &Path, payload: &str, pin: Option<&str>) -> Result<String, String> {
+    use octosense_llm_config::qr;
+    let format = qr::format_of(payload);
+    if format == Some(qr::Format::Encrypted) && pin.is_none_or(|p| p.trim().is_empty()) {
+        return Err("provision: this QR is PIN-protected — enter the PIN shown beside it".into());
+    }
+    let provisioning = qr::decode(payload, pin).map_err(|e| format!("provision: {e}"))?;
+    if format == Some(qr::Format::LegacyJson) {
+        let primary = provisioning
+            .set
+            .primary
+            .as_ref()
+            .ok_or_else(|| "provision: no provider in LLM config".to_string())?;
+        octosense_llm_config::profile::save_merge_primary(path, primary, &provisioning.secrets)
+            .map_err(|e| format!("provision: write {}: {e}", path.display()))?;
+        log::info!("provisioned LLM {} (key {})", primary.label(), primary.key_env);
+        return Ok(format!("llm={}", primary.family));
+    }
+    let summary = octosense_llm_config::apply_to_profile(path, &provisioning)
+        .map_err(|e| format!("provision: write {}: {e}", path.display()))?;
+    log::info!("provisioned LLM set: {summary}");
+    let primary = provisioning.set.primary.as_ref().map(|p| p.label()).unwrap_or_default();
+    Ok(match provisioning.set.fallbacks.len() {
+        0 => format!("llm={primary}"),
+        n => format!("llm={primary} (+{n} fallback{})", if n == 1 { "" } else { "s" }),
+    })
+}
+
+/// The embedded kernel's `_main.json` profile config (same HOME the kernel is
+/// spawned with: `$HOME/octos-home/.octos/profiles/_main.json`).
+fn octos_profile_config_path() -> Result<PathBuf, String> {
+    octosense_llm_config::profile::default_core_dir()
+        .map(|dir| octosense_llm_config::profile::profile_path(&dir))
+        .ok_or_else(|| "no HOME set".to_string())
+}
+
+// Test adapters: the provisioning tests below predate the shared crate and
+// drive it through the old legacy-JSON entry points.
+
+#[cfg(test)]
+#[derive(Debug)]
 struct LlmProvisionConfig {
     llm_family: String,
     llm_model: Option<String>,
@@ -356,101 +424,31 @@ struct LlmProvisionConfig {
     llm_api_type: Option<String>,
 }
 
-/// Apply an LLM-only QR / intent payload — a self-contained JSON object:
-/// `{"llm_family":..,"llm_model":..,"llm_key":..}`.
-/// Writes the LLM provider/model/key into the octos profile config
-/// (`_main.json` → config.llm + config.env_vars.<PROVIDER>_API_KEY). Server
-/// connection/auth settings are deliberately handled only by `makepad.APP_CONFIG`.
-pub fn apply_provision_config_json(payload: &str) -> Result<String, String> {
-    let config = parse_llm_provision_config(payload)?;
-    apply_llm_config(
-        &config.llm_family,
-        config.llm_model.as_deref(),
-        Some(&config.llm_key),
-        config.llm_base_url.as_deref(),
-        config.llm_api_type.as_deref(),
-    )?;
-    Ok(format!("llm={}", config.llm_family))
-}
-
+#[cfg(test)]
 fn parse_llm_provision_config(payload: &str) -> Result<LlmProvisionConfig, String> {
-    let config: LlmProvisionConfig = serde_json::from_str(payload.trim())
-        .map_err(|e| format!("provision: invalid LLM config: {e}"))?;
-    if config.llm_family.trim().is_empty() {
-        return Err("provision: llm_family must not be empty".into());
+    use octosense_llm_config::qr;
+    if qr::format_of(payload) != Some(qr::Format::LegacyJson) {
+        return Err("provision: not an LLM config JSON object".into());
     }
-    if config.llm_key.trim().is_empty() {
-        return Err("provision: llm_key must not be empty".into());
-    }
-    if config
-        .llm_model
-        .as_deref()
-        .is_some_and(|model| model.trim().is_empty())
-    {
-        return Err("provision: llm_model must not be empty".into());
-    }
-    if let Some(base_url) = &config.llm_base_url {
-        let url = validate_server_url(base_url)?;
-        if !url.username().is_empty() || url.password().is_some()
-            || url.query().is_some() || url.fragment().is_some()
-        {
-            return Err("provision: llm_base_url must be an endpoint without credentials, query or fragment".into());
-        }
-    }
-    if let Some(api_type) = &config.llm_api_type {
-        if !matches!(api_type.as_str(), "openai" | "anthropic" | "responses") {
-            return Err("provision: llm_api_type must be openai, anthropic or responses".into());
-        }
-    }
-    Ok(config)
+    let p = qr::decode(payload, None).map_err(|e| format!("provision: {e}"))?;
+    let primary = p.set.primary.expect("legacy JSON always has a primary");
+    Ok(LlmProvisionConfig {
+        llm_key: p.secrets.get(&primary.key_env).cloned().unwrap_or_default(),
+        llm_family: primary.family,
+        llm_model: primary.model,
+        llm_base_url: primary.base_url,
+        llm_api_type: primary.api_type.map(|t| t.as_str().to_string()),
+    })
 }
 
-/// The octos provider `family_id` → the env var octos reads its key from.
-///
-/// These must match `octos-llm/src/registry/*`'s `api_key_env`, because octos
-/// looks the key up by ITS name, not by ours. The fallback is
-/// `<FAMILY>_API_KEY` uppercased, which is right for families whose name is a
-/// single word and WRONG for any that is hyphenated — `moonshot-coding` came
-/// out as `MOONSHOT-CODING_API_KEY`: not a legal env var, and not one of the
-/// three names that family reads. A coding-plan key provisioned by QR landed
-/// somewhere nothing would ever look.
+/// The octos provider `family_id` → the env var octos reads its key from
+/// (`octosense_llm_config::registry`, mirrored from octos-llm's registry).
+#[cfg(test)]
 fn key_env_for(family: &str) -> String {
-    match family {
-        "zai" => "ZAI_API_KEY".into(),
-        "deepseek" => "DEEPSEEK_API_KEY".into(),
-        "openai" => "OPENAI_API_KEY".into(),
-        "anthropic" => "ANTHROPIC_API_KEY".into(),
-        "gemini" => "GEMINI_API_KEY".into(),
-        "openrouter" => "OPENROUTER_API_KEY".into(),
-        // The subscription coding plans, whose keys the plain endpoints reject.
-        "moonshot-coding" | "kimi-coding" => "KIMI_CODING_API_KEY".into(),
-        "moonshot" => "MOONSHOT_API_KEY".into(),
-        "zai-coding" => "ZAI_CODING_API_KEY".into(),
-        // A hyphen cannot appear in an env var name, so it becomes an
-        // underscore rather than an unusable key nobody reads.
-        other => format!("{}_API_KEY", other.to_uppercase().replace('-', "_")),
-    }
+    octosense_llm_config::registry::key_env_for(family)
 }
 
-/// The embedded kernel's `_main.json` profile config (same HOME the kernel is
-/// spawned with: `$HOME/octos-home/.octos/profiles/_main.json`).
-fn octos_profile_config_path() -> Result<PathBuf, String> {
-    if let Some(dir) = std::env::var_os("OCTOS_APP_CORE_DIR").filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(dir).join("profiles/_main.json"));
-    }
-    let home = std::env::var("HOME").map_err(|_| "no HOME set".to_string())?;
-    Ok(PathBuf::from(home).join("octos-home/.octos/profiles/_main.json"))
-}
-
-/// Merge the provider/model/key into `_main.json` without disturbing the rest of
-/// the config. Takes effect on the next kernel/session start.
-fn apply_llm_config(family: &str, model: Option<&str>, key: Option<&str>, base_url: Option<&str>, api_type: Option<&str>) -> Result<(), String> {
-    let path = octos_profile_config_path()?;
-    apply_llm_config_at_path(&path, family, model, key, base_url, api_type)
-}
-
-/// Path-injected implementation so persistence can be tested without touching
-/// the real desktop or Android profile.
+#[cfg(test)]
 fn apply_llm_config_at_path(
     path: &Path,
     family: &str,
@@ -459,80 +457,13 @@ fn apply_llm_config_at_path(
     base_url: Option<&str>,
     api_type: Option<&str>,
 ) -> Result<(), String> {
-    let mut root: serde_json::Value = if path.exists() {
-        serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
-            .map_err(|e| format!("parse {}: {e}", path.display()))?
-    } else {
-        serde_json::json!({})
-    };
-    if !root.get("config").map(|c| c.is_object()).unwrap_or(false) {
-        root["config"] = serde_json::json!({});
-    }
-    // octos's `UserProfile` deserializer REQUIRES `id`, `name`, `created_at`
-    // and `updated_at` (no serde defaults), and the AppUI runtime bootstrap
-    // (`ensure_session_profile_runtime`) skips profiles with
-    // `enabled: false`. A bare `{config}` file parses as *no profile* —
-    // `ProfileStore::get` returns Err → the session opens but every
-    // `turn/start` fails with "profile '_main' is not configured". Fill the
-    // envelope on first write (and heal older bare files on re-provision)
-    // so a freshly provisioned device works without manual profile surgery.
-    if root.get("id").and_then(|v| v.as_str()).is_none() {
-        root["id"] = serde_json::json!("_main");
-    }
-    if root.get("name").and_then(|v| v.as_str()).is_none() {
-        root["name"] = serde_json::json!("Main");
-    }
-    root["enabled"] = serde_json::json!(true);
-    let now = chrono::Utc::now().to_rfc3339();
-    if root.get("created_at").and_then(|v| v.as_str()).is_none() {
-        root["created_at"] = serde_json::json!(now);
-    }
-    root["updated_at"] = serde_json::json!(now);
-    let cfg = root["config"].as_object_mut().unwrap();
-
-    let mut primary = serde_json::Map::new();
-    primary.insert("family_id".into(), serde_json::json!(family));
-    if let Some(m) = model {
-        primary.insert("model_id".into(), serde_json::json!(m));
-    }
-    if base_url.is_some() || api_type.is_some() {
-        let mut route = serde_json::Map::new();
-        if let Some(url) = base_url {
-            route.insert("base_url".into(), serde_json::json!(url.trim()));
-        }
-        if let Some(protocol) = api_type {
-            route.insert("api_type".into(), serde_json::json!(protocol));
-        }
-        primary.insert("route".into(), serde_json::Value::Object(route));
-    }
-    let llm = cfg.entry("llm").or_insert_with(|| serde_json::json!({}));
-    if !llm.is_object() {
-        *llm = serde_json::json!({});
-    }
-    llm["primary"] = serde_json::Value::Object(primary);
-    if llm.get("fallbacks").is_none() {
-        llm["fallbacks"] = serde_json::json!([]);
-    }
-
-    if let Some(k) = key {
-        let env_name = key_env_for(family);
-        let env = cfg.entry("env_vars").or_insert_with(|| serde_json::json!({}));
-        if !env.is_object() {
-            *env = serde_json::json!({});
-        }
-        env[env_name] = serde_json::json!(k);
-    }
-
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    std::fs::write(path, serde_json::to_vec_pretty(&root).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
-    log::info!(
-        "provisioned LLM family={family} model={model:?} key={}",
-        if key.is_some() { "set" } else { "kept" }
-    );
-    Ok(())
+    let mut primary = octosense_llm_config::Provider::new(family, model.map(str::to_string));
+    primary.base_url = base_url.map(|u| u.trim().to_string());
+    primary.api_type = api_type.and_then(octosense_llm_config::ApiType::parse);
+    let env = key
+        .map(|k| std::collections::BTreeMap::from([(primary.key_env.clone(), k.to_string())]))
+        .unwrap_or_default();
+    octosense_llm_config::profile::save_merge_primary(path, &primary, &env).map_err(|e| e.to_string())
 }
 
 /// Cheap URL validation for the Step 1 input. Accepts `http://` and
@@ -724,6 +655,74 @@ mod qr_provision_audit {
             v["config"]["env_vars"]["KIMI_CODING_API_KEY"], "sk-kimi-TEST",
             "a coding-plan key must be readable by octos: {}", v["config"]["env_vars"]
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Families whose key env the old hand-written table got wrong: octos's
+    /// registry reads these names, so a key filed under the old
+    /// `<FAMILY>_API_KEY` guess (`VERTEX_API_KEY`, `Z.AI_API_KEY`,
+    /// `GLM_API_KEY`, `QWEN_API_KEY`, `GOOGLE_API_KEY`, `NIM_API_KEY`) was
+    /// never read.
+    #[test]
+    fn aliases_use_the_registry_key_env() {
+        for (family, env) in [
+            ("vertex", "VERTEX_SA_JSON"),
+            ("z.ai", "ZAI_API_KEY"),
+            ("glm", "ZHIPU_API_KEY"),
+            ("qwen", "DASHSCOPE_API_KEY"),
+            ("google", "GEMINI_API_KEY"),
+            ("nim", "NVIDIA_API_KEY"),
+        ] {
+            assert_eq!(key_env_for(family), env, "{family}");
+        }
+    }
+
+    /// An octos profile QR: PIN-wrapped needs the PIN, and then provisions
+    /// the whole set (primary + fallback + both keys).
+    #[test]
+    fn octos_qr_needs_a_pin_then_provisions_the_set() {
+        let dir = std::env::temp_dir().join(format!("qr-octos1e-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("_main.json");
+        std::fs::write(&path, br#"{"config":{"custom":"keep"}}"#).unwrap();
+        let set = octosense_llm_config::ProviderSet {
+            primary: Some(octosense_llm_config::Provider::new("deepseek", Some("deepseek-chat".into()))),
+            fallbacks: vec![octosense_llm_config::Provider::new("zai", Some("glm-4.6".into()))],
+        };
+        let secrets = std::collections::BTreeMap::from([
+            ("DEEPSEEK_API_KEY".to_string(), "sk-test-0000".to_string()),
+            ("ZAI_API_KEY".to_string(), "zai-test-0000".to_string()),
+        ]);
+        let text = octosense_llm_config::qr::encode_encrypted(
+            &octosense_llm_config::qr::Provisioning { set, secrets },
+            "7K3M-9QX2",
+        )
+        .unwrap();
+
+        let err = apply_provision_payload_at_path(&path, &text, None).unwrap_err();
+        assert!(err.contains("PIN"), "{err}");
+        let err = apply_provision_payload_at_path(&path, &text, Some("0000-0000")).unwrap_err();
+        assert!(err.contains("wrong PIN") && !err.contains("sk-test"), "{err}");
+
+        let what = apply_provision_payload_at_path(&path, &text, Some("7K3M-9QX2")).unwrap();
+        assert_eq!(what, "llm=deepseek/deepseek-chat (+1 fallback)");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(v["config"]["custom"], "keep");
+        assert_eq!(v["config"]["llm"]["fallbacks"][0]["family_id"], "zai");
+        assert_eq!(v["config"]["env_vars"]["DEEPSEEK_API_KEY"], "sk-test-0000");
+        assert_eq!(v["config"]["env_vars"]["ZAI_API_KEY"], "zai-test-0000");
+
+        // A legacy JSON code afterwards replaces only the primary.
+        let what = apply_provision_payload_at_path(
+            &path,
+            r#"{"llm_family":"moonshot-coding","llm_model":"k3","llm_key":"sk-kimi-TEST"}"#,
+            None,
+        )
+        .unwrap();
+        assert_eq!(what, "llm=moonshot-coding");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(v["config"]["llm"]["primary"]["family_id"], "moonshot-coding");
+        assert_eq!(v["config"]["llm"]["fallbacks"][0]["family_id"], "zai");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

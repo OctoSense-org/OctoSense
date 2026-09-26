@@ -13,7 +13,7 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "0d36f50b9f0fdfbd8247b5deb8da8baa53c83066" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "59004274ef0334b4fc25cd1ebac0caf80547c64a" }
 serde_json = "1"
 base64 = "0.22"
 chrono = "0.4"

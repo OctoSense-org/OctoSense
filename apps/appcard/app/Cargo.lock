@@ -5025,6 +5025,7 @@ dependencies = [
  "octos-core",
  "octoscript-node",
  "octoscript-ui-l0",
+ "octosense-llm-config",
  "reqwest 0.12.28",
  "robius-open",
  "serde",
@@ -5422,6 +5423,21 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-llm-config"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "chrono",
+ "flate2",
+ "qrcode",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "url",
 ]
 
 [[package]]

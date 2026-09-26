@@ -50,6 +50,9 @@ robius-open = { git = "https://github.com/project-robius/robius" }
 octos-app-store     = { workspace = true, features = ["keychain"] }
 octos-app-transport = { workspace = true }
 octos-app-render    = { workspace = true }
+# LLM provider sets: the provisioning QR (OCTOS1/OCTOS1E + legacy JSON), the
+# octos provider registry, and the `_main.json` merge (`app::login`).
+octosense-llm-config = { workspace = true }
 
 # Protocol types.
 octos-core = { workspace = true }

@@ -5,7 +5,7 @@
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)
 （运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用：
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）和邮件（Mail）**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）和 AI providers**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 OctoScript（Splash）
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限严格等于其
   `manifest.json` 所申请的内容，与商店应用受到的隔离完全相同。它们同时也是
@@ -37,6 +37,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Maps](apps/maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、路线和驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
 | [Camera](apps/camera/bundle) | `os.camera` | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library` | 无 | 无 |
 | [Mail](apps/mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信 | `storage`、`mail` | 无（由服务联网，而不是应用） | [`mail`](apps/mail/host-service) |
+| [AI providers](apps/ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](apps/ai-providers/host-service) |
 | [AppCard](apps/appcard) | 原生 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片 | 不适用（不是 bundle） | 不适用 | 不适用 |
 
 每项权限的含义由 App Hub 的封闭列表定义（`crates/app-policy/src/manifest.rs`
@@ -55,8 +56,8 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
   OctoSense-Desktop 不挂载任何目录，所以那里的查看器没有原图。
 - **News、Maps**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
-- **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。宿主服务固定引用 App Hub
-  `0d36f50b`（OctoSense-App-Hub#4 合并后的 main），与 Shell 链接的版本相同，
+- **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务都固定引用 App Hub
+  `59004274`（OctoSense-App-Hub#11 合并后的 main，新增 `llm` 能力），与 Shell 链接的版本相同，
   因此无需 `[patch]`，Shell 的依赖图中就只有一份 `octosense-appstore` 和一个
   宿主服务注册表。
 - **脚本 bundle 在本仓库没有 CI。** `.github/workflows/appcard.yml` 只覆盖

@@ -32,7 +32,11 @@ and use the bundles here only as read-only examples.
 - After a change, bump the shells' pins (`home/native-apps.lock.json` in the
   ROM, `native-apps.lock.json` in OctoSense-Desktop) in a pull request there.
   If you move the Mail service's App Hub rev, move the shells' App Hub pin
-  with it: one App Hub rev per shell.
+  with it: one App Hub rev per shell. The `llm` service names the same App Hub
+  rev as Mail; move both together.
+- AI providers: `apps/ai-providers/{config,host-service}` test from
+  `apps/ai-providers` with `cargo test --workspace`; AppCard links the config
+  crate, so run AppCard's checks too when it changes.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
 

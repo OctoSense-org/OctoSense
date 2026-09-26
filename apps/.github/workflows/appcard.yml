@@ -3,17 +3,20 @@ name: AppCard
 # The AppCard assistant runtime (apps/appcard/): prepare the locked
 # Octoscript-Makepad runtime beside the repository, run the runtime-lock
 # tests, clippy the app crates, and check the Cargo graph has one Makepad.
-# Script apps under apps/<name>/bundle/ are not built here.
+# Script apps under apps/<name>/bundle/ are not built here; AppCard links
+# apps/ai-providers/config, so a change there runs this too.
 
 on:
   pull_request:
     paths:
       - 'apps/appcard/**'
+      - 'apps/ai-providers/config/**'
       - '.github/workflows/appcard.yml'
   push:
     branches: [main]
     paths:
       - 'apps/appcard/**'
+      - 'apps/ai-providers/config/**'
       - '.github/workflows/appcard.yml'
   workflow_dispatch:
 

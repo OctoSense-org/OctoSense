@@ -5,7 +5,7 @@ English | [简体中文](README.zh-CN.md)
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system:
 
-- **News, Photos, Maps, Camera and Mail** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail and AI providers** are *contained script apps*. Each is
   an OctoScript (Splash) program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under exactly the permissions its `manifest.json` asks
   for. That is the same containment a store app gets. They are also worked
@@ -13,6 +13,12 @@ the agent shell on top of your operating system:
 - **Mail's host service** (`apps/mail/host-service`) is the Rust half of Mail:
   IMAP/POP3/SMTP, the account store and the sign-in sheet, run by the shell.
   The app gets mail, never a password or a socket.
+- **The `llm` host service** (`apps/ai-providers/host-service`) is the Rust half
+  of AI providers: the assistant's LLM providers over octos's model catalog,
+  keys in the platform secret store, Test connection, and moving providers
+  between devices by a PIN-protected `OCTOS1E` QR (camera, image or paste).
+  Keys are typed and QRs drawn only on the host's own sheets; the app sees
+  masked status.
 - **AppCard** (`apps/appcard`) is the one native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the [octos](https://github.com/octos-org/octos) agent kernel.
@@ -38,13 +44,14 @@ repository into the same workspace and, from OctoScript-App-Design-Flow:
 | [Maps](apps/maps/bundle) | `os.maps` | `MapView` map, place search, places, routes and a drive mode; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
 | [Camera](apps/camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
 | [Mail](apps/mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](apps/mail/host-service) |
+| [AI providers](apps/ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](apps/ai-providers/host-service) |
 | [AppCard](apps/appcard) | native | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card | n/a (not a bundle) | n/a | n/a |
 
 What each capability means is defined by App Hub's closed list
 (`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
 pictures from any public https host, `web` opens a page in the system WebView,
 `library` offers captures to the system photo library, `mail` reaches the
-host's mail service. `net` reaches only the hosts the manifest lists.
+host's mail service, `llm` reaches the host's LLM-provider service. `net` reaches only the hosts the manifest lists.
 
 ### Status and known gaps
 
@@ -61,8 +68,9 @@ host's mail service. `net` reaches only the hosts the manifest lists.
 - **News, Maps**: run in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
-  The host service pins App Hub `0d36f50b` (main after
-  OctoSense-App-Hub#4), the rev the shells link, so a shell's graph has one
+  Mail's and the `llm` host services pin App Hub `59004274` (main after
+  OctoSense-App-Hub#11, which adds the `llm` capability), the rev the shells
+  link, so a shell's graph has one
   `octosense-appstore` and one host-service registry without a `[patch]`.
 - **Script bundles have no CI here.** `.github/workflows/appcard.yml` covers
   only `apps/appcard/**`.
@@ -116,6 +124,8 @@ in that shell's repository.
 ```
 apps/<name>/bundle/          a contained script app: manifest.json, main.splash, artwork
 apps/mail/host-service/      octosense-mail-service, the `mail` host service (Rust)
+apps/ai-providers/           the `llm` host service (host-service/) and octosense-llm-config (config/:
+                             octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
 apps/appcard/                the native AppCard assistant
   app/                       Cargo workspace: octos-app + store/transport/render crates
   a2app/                     Splash card memory (specs, widget patterns, lint rules), compiled in
