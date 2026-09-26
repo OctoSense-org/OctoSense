@@ -14,7 +14,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、准入检查、`hub` 命令行、`card-host`，以及各 Shell 共用的 crate `octosense-app-hub-app` | 作为 git 依赖固定在 `home/Cargo.toml`。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何开发并发布 OctoSense 应用 | 不参与构建。要为 Home 开发应用，从这里开始。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 运行时发布版本：指定 Makepad 与 OctoScript 的版本 | 版本固定在 `home/native-runtime.lock.json`。 |
-| [makepad](https://github.com/OctoSense-org/makepad)（OctoSense 分支） | UI 框架及打包工具 `cargo-makepad` | 按运行时指定的版本检出到 `.sources/makepad`，并叠加一个经过审查的补丁。 |
+| [makepad](https://github.com/OctoSense-org/makepad)（OctoSense 分支） | UI 框架及打包工具 `cargo-makepad` | 按运行时指定的版本检出到 `.sources/makepad`。 |
 | [octos](https://github.com/octos-org/octos) | AppCard 背后的 Agent 内核 | 只用一个版本，即 OctoSense-System-Apps 中 `octos-app` 所固定的版本。 |
 
 组织概览见 [OctoSense 组织主页](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)。
@@ -32,7 +32,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | `home/docs/` | Home 的 ADR、Android 与性能记录、设计笔记 |
 | `home/*.lock.json`、`home/system-apps.json` | 源码版本锁定和系统应用选择（见[版本固定与更新](#版本固定与更新)） |
 | `vendor/octosense/` | ROM 产品层：makefile、权限、资源覆盖、sepolicy、系统 agent |
-| `patches/` | LineageOS 与内核补丁；`patches/runtime/` 存放经过审查的 Makepad 补丁 |
+| `patches/` | LineageOS 与内核补丁；当 `home/runtime-patches.lock.json` 列出 Makepad 补丁时，`patches/runtime/` 存放该补丁（目前没有） |
 | `scripts/` | Home 构建、ROM 产物准备、构建、刷机、发布和手机检查 |
 | `web-installer/` | 面向 OnePlus 6 的 WebUSB 安装器（本地开发预览版） |
 | `docs/` | ROM 的 ADR，以及构建、刷机、更新和验证记录 |
@@ -58,7 +58,7 @@ python3 scripts/setup-home.py              # check out every pin into .sources/
 python3 scripts/setup-home.py --check --cargo
 ```
 
-setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本，应用经过审查的 Makepad 补丁，并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
+setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本（并应用 `home/runtime-patches.lock.json` 列出的经过审查的 Makepad 补丁；目前没有），并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
 
 ### 在桌面上运行 Home
 
@@ -186,16 +186,16 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 | `home/native-apps.lock.json` | OctoSense-System-Apps 的版本（`.sources/system-apps`） |
 | `home/system-apps.json` | 包含哪些系统应用，以及 Home 为它们挂载的资源 |
 | `home/native-runtime.lock.json` | OctoScript-Makepad 的版本；其 `runtime.json` 指定 Makepad 与 OctoScript |
-| `home/runtime-patches.lock.json` | 经过审查的 Makepad 补丁：基础版本、来源提交、SHA-256、应用后的 tree |
+| `home/runtime-patches.lock.json` | 运行时之上经过审查的 Makepad 补丁（基础版本、来源提交、SHA-256、应用后的 tree）；目前为空 |
 | `home/Cargo.toml`、`home/Cargo.lock` | Makepad 的 `rev`（必须与运行时一致）、App Hub 的 `rev`、`nix` 使用的 octos `rev` |
 | `home/upstream/makepad.json` | 从 Makepad 导入的窗口管理器源码的来源记录 |
 
-Cargo 清单保证**每种依赖只有一个来源**：`[patch]` 把所有 Makepad crate（包括 App Hub 的 crate 和 `octos-app` 引用的那些）指向 `.sources/makepad`，把所有 App Hub crate 指向 Home 固定的 App Hub 版本；`nix` 取自 `octos-app` 所用的同一个 octos 版本。
+Cargo 清单保证**每种依赖只有一个来源**：`[patch]` 把所有 Makepad crate（包括 App Hub 的 crate 和 `octos-app` 引用的那些）指向 `.sources/makepad`；`nix` 取自 `octos-app` 所用的同一个 octos 版本。App Hub 不需要 `[patch]`：Home 和 Mail 宿主服务引用同一个 App Hub 版本，因此依赖图中只有一个 App Hub 来源。
 
 - **System-Apps**。在 `home/native-apps.lock.json` 中写入新版本，运行 `python3 scripts/setup-home.py --update`；如果 `octos-app` 的依赖有变化，在 `home/` 下不带 `--locked` 构建一次，并提交 `home/Cargo.lock`。如果新的 System-Apps 固定了不同的 octos 版本，把 `home/Cargo.toml` 中 `nix` 的补丁也移到该版本。
-- **Makepad / OctoScript**。更新 `home/native-runtime.lock.json` 中的 OctoScript-Makepad 版本，把其中的 Makepad 版本同步到 `home/Cargo.toml` 和 `home/apps/*/Cargo.toml` 的每个 `rev = "…"`，并对运行时补丁做 rebase 或删除。任何不一致都会让 `setup-home.py --check --cargo` 失败。完整流程见 [home/docs/makepad-fork.md（英文）](home/docs/makepad-fork.md#adopting-a-fork-revision)。
-- **运行时补丁**。`patches/runtime/makepad-contained-apps.patch` 在 Makepad `1d3d383e` 之上携带 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）。setup 应用补丁后将其保留为已暂存状态；`--check` 只接受记录中的那个 tree。makepad#30 合并且运行时版本越过它之后，从 `home/runtime-patches.lock.json` 中删除 `makepad` 条目，并删除补丁文件。
-- **App Hub**。同时修改 `octosense-app-hub-app` 的 `rev`（两处依赖声明），以及 `[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]` 中四个 App Hub crate 的 `rev`。
+- **Makepad / OctoScript**。更新 `home/native-runtime.lock.json` 中的 OctoScript-Makepad 版本，把其中的 Makepad 版本同步到 `home/Cargo.toml` 和 `home/apps/*/Cargo.toml` 的每个 `rev = "…"`，并对运行时补丁（如有）做 rebase 或删除。任何不一致都会让 `setup-home.py --check --cargo` 失败。完整流程见 [home/docs/makepad-fork.md（英文）](home/docs/makepad-fork.md#adopting-a-fork-revision)。
+- **运行时补丁**。目前没有：运行时的 Makepad（main `cd812acd`）已包含 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）。如果某个修复必须先于运行时发布上线，把补丁放进 `patches/runtime/`，并在 `home/runtime-patches.lock.json` 中记录为 `makepad` 条目；setup 应用补丁后将其保留为已暂存状态，`--check` 只接受记录中的那个 tree。
+- **App Hub**。把 `octosense-app-hub-app` 的 `rev`（两处依赖声明）改为固定的 System-Apps 中 Mail 宿主服务为 `octosense-appstore` 引用的 App Hub 版本。两个 App Hub 版本意味着两个宿主服务注册表，Card 运行器将看不到 Mail 的服务。
 
 ## 测试与验证
 

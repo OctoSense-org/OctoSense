@@ -20,7 +20,7 @@ development, and builds for OpenHarmony and the iOS simulator.
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | Signed catalog, admission gate, `hub` CLI, `card-host`, and the shared shell crate `octosense-app-hub-app` | Git dependency pinned in `home/Cargo.toml`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | How to build and publish an OctoSense app | Not a build input. Start there to write an app for Home. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | Runtime release: names the Makepad and OctoScript revisions | Pinned in `home/native-runtime.lock.json`. |
-| [makepad](https://github.com/OctoSense-org/makepad) (OctoSense fork) | UI framework and the `cargo-makepad` packager | Checked out to `.sources/makepad` at the runtime's revision, plus one reviewed patch. |
+| [makepad](https://github.com/OctoSense-org/makepad) (OctoSense fork) | UI framework and the `cargo-makepad` packager | Checked out to `.sources/makepad` at the runtime's revision. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel behind AppCard | One revision, the one OctoSense-System-Apps' `octos-app` pins. |
 
 The organisation overview is at
@@ -39,7 +39,7 @@ The organisation overview is at
 | `home/docs/` | Home ADRs, Android and performance records, design notes |
 | `home/*.lock.json`, `home/system-apps.json` | Source pins and the system-app selection (see [Pins and updates](#pins-and-updates)) |
 | `vendor/octosense/` | ROM product layer: makefiles, permissions, overlays, sepolicy, the privileged agent |
-| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds the reviewed Makepad patch |
+| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (none today) |
 | `scripts/` | Home builds, ROM staging, build, flash, release and phone checks |
 | `web-installer/` | WebUSB installer for the OnePlus 6 (local developer preview) |
 | `docs/` | ROM ADRs, build, flashing, update and validation records |
@@ -71,8 +71,8 @@ python3 scripts/setup-home.py --check --cargo
 ```
 
 Setup checks out OctoSense-System-Apps, OctoScript-Makepad, Makepad and
-OctoScript at their locked revisions, applies the reviewed Makepad patch, and
-refuses to touch a checkout with local changes. `--update` moves clean
+OctoScript at their locked revisions (applying any reviewed Makepad patch
+`home/runtime-patches.lock.json` names; none today), and refuses to touch a checkout with local changes. `--update` moves clean
 checkouts to new pins; `--check` changes nothing and fails unless every
 checkout matches its lock; `--cargo` also rejects a second copy of any core
 Makepad crate in the dependency graph.
@@ -276,14 +276,15 @@ to its WebSocket transport and login screen.
 | `home/native-apps.lock.json` | OctoSense-System-Apps revision (`.sources/system-apps`) |
 | `home/system-apps.json` | Which system apps ship, and the assets Home mounts for them |
 | `home/native-runtime.lock.json` | OctoScript-Makepad revision; its `runtime.json` names Makepad and OctoScript |
-| `home/runtime-patches.lock.json` | The reviewed Makepad patch: base revision, source commit, SHA-256, resulting tree |
+| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, source commit, SHA-256, resulting tree); empty today |
 | `home/Cargo.toml`, `home/Cargo.lock` | Makepad `rev` (must equal the runtime's), App Hub `rev`, the octos `rev` used for `nix` |
 | `home/upstream/makepad.json` | Provenance of the window-manager sources imported from Makepad |
 
 The Cargo manifests keep **one source of each**: `[patch]` sections point
 every Makepad crate (including the copies App Hub's crate and `octos-app`
-name) at `.sources/makepad`, and every App Hub crate at Home's App Hub pin;
-`nix` comes from the same octos revision `octos-app` uses.
+name) at `.sources/makepad`; `nix` comes from the same octos revision
+`octos-app` uses. App Hub needs no `[patch]`: Home and the Mail host service
+name the same App Hub revision, so the graph has one App Hub source.
 
 - **System-Apps.** Set the new revision in `home/native-apps.lock.json`, run
   `python3 scripts/setup-home.py --update`, then build once from `home/`
@@ -293,19 +294,19 @@ name) at `.sources/makepad`, and every App Hub crate at Home's App Hub pin;
 - **Makepad / OctoScript.** Move the OctoScript-Makepad pin in
   `home/native-runtime.lock.json`, repeat its Makepad revision in every
   `rev = "…"` in `home/Cargo.toml` and `home/apps/*/Cargo.toml`, and rebase
-  or drop the runtime patch. `setup-home.py --check --cargo` fails on any
+  or drop any runtime patch. `setup-home.py --check --cargo` fails on any
   mismatch. The full procedure is in
   [home/docs/makepad-fork.md](home/docs/makepad-fork.md#adopting-a-fork-revision).
-- **Runtime patch.** `patches/runtime/makepad-contained-apps.patch` carries
-  [makepad#30](https://github.com/OctoSense-org/makepad/pull/30) (contained
-  script apps) on top of Makepad `1d3d383e`. Setup applies it and leaves it
-  staged; `--check` accepts only the exact recorded tree. When makepad#30
-  merges and the runtime moves past it, remove the `makepad` entry from
-  `home/runtime-patches.lock.json` and the patch file.
+- **Runtime patch.** None today: the runtime's Makepad (main `cd812acd`)
+  includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
+  (contained script apps). When a fix must ship ahead of a runtime release,
+  put the patch in `patches/runtime/` and record it as a `makepad` entry in
+  `home/runtime-patches.lock.json`; setup applies it and leaves it staged, and
+  `--check` accepts only the exact recorded tree.
 - **App Hub.** Change the `rev` of `octosense-app-hub-app` (both
-  dependency lines) and of the four App Hub crates in the
-  `[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]` section
-  together.
+  dependency lines) to the App Hub revision the pinned System-Apps' Mail host
+  service names for `octosense-appstore`. Two App Hub revisions would mean two
+  host-service registries, and the Card runner would never see Mail's.
 
 ## Testing and validation
 
