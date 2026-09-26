@@ -50,11 +50,19 @@ for _ in $(seq 1 120); do
 done
 [ -n "$PORT" ] || fail "no remote port in $LOG"
 get() { curl -fsS "127.0.0.1:$PORT/$1"; }
-key() { get "k?k=press&c=$1&wait=1${2:-}" >/dev/null; }
+# Input waits for the next frame; while a bundle unpacks on the UI thread the
+# wait can time out after the key was delivered. What a key did is checked
+# through the log and snapshots, so a timed-out wait is only noted.
+key() {
+    local out
+    out=$(curl -s "127.0.0.1:$PORT/k?k=press&c=$1&wait=1${2:-}")
+    case $out in *'"err"'*) echo "note: key $1: $out" ;; esac
+}
 grab() {
     local png
     for _ in 1 2 3 4 5; do
-        png=$(get "g?scale=0.5" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("png",""))')
+        # A hidden window's grab can miss its frame ("retry"): ask again.
+        png=$(curl -s "127.0.0.1:$PORT/g?scale=0.5" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("png",""))' || true)
         [ -n "$png" ] && { cp "$png" "$WORK/grabs/$1.png"; return; }
         sleep 1
     done
@@ -132,9 +140,14 @@ pass "Mail's host-owned sign-in sheet is up (not signed in)"
 if [[ " $APPS " == *" ai-providers "* ]]; then
     key Escape
     launch "ai providers"
+    sleep 3
+    if grep -q 'os.ai-providers requests unknown capability' "$LOG"; then
+        fail "App Hub's policy at this pin does not know the \`llm\` capability; AI providers is refused (its notice is drawn)"
+    fi
     wait_log "card: os.ai-providers running under"
     sleep 2
     grab ai-providers
+    snap "No providers yet" | grep -q "^card Splash" || fail "AI providers shows no empty list"
     NAME=$(label_of ai-providers)
     [ -z "$(ls -A "$WORK/octos" 2>/dev/null)" ] || echo "note: octos core dir is not empty"
     pass "$NAME opened: $(grep -o 'card: os.ai-providers running under.*' "$LOG" | head -1)"

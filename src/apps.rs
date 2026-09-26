@@ -119,6 +119,12 @@ pub fn is_system_app(id: &str) -> bool {
 ///   keychain; `OCTOSENSE_MAIL_VAULT=file` keeps them in an owner-only file
 ///   under the host directory instead). `mail_demo` in MAKEPAD_APP_CONFIG
 ///   serves a demo mailbox, as in OctoSense ROM Home.
+/// - `llm`: the assistant's LLM providers for AI providers (`os.ai-providers`),
+///   written to the AppCard kernel's octos profile (`OCTOS_APP_CORE_DIR`, else
+///   `~/octos-home/.octos`); keys in the keychain entry octos reads
+///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No QR
+///   scanner: the desktop has no camera scanner, so a profile QR is imported by
+///   pasting it.
 #[cfg(feature = "system-apps")]
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -133,6 +139,14 @@ fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        let mut llm = octosense_llm_service::Options::default();
+        if let Some(dir) = octosense_llm_config::profile::default_core_dir() {
+            llm = llm.core_dir(dir);
+        }
+        // TODO(ai-providers): pass `on_changed` to restart the AppCard
+        // kernel when the provider set changes; until then a running AppCard
+        // reads the new profile when it next starts.
+        octosense_llm_service::register_with(llm);
     });
 }
 

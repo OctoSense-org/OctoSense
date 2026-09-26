@@ -1605,6 +1605,29 @@ mod tests {
         assert_eq!(centered_card_top(smaller, 280.0, 8.0, Some(300.0)), 138.0);
     }
 
+    /// Start > Settings is Appearance alone until the build ships the AI
+    /// providers system app; then it is a submenu that also opens it.
+    #[test]
+    fn start_settings_offers_ai_providers_once_it_ships() {
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.descend("start");
+        let ships = launcher::apps().iter().any(|app| app.id == AI_PROVIDERS);
+        model.sel = model.rows.iter().position(|r| r.target == "start.settings").unwrap();
+        assert_eq!(model.activate(), None);
+        if ships {
+            assert_eq!(model.path, "start.settings");
+            model.sel = model
+                .rows
+                .iter()
+                .position(|r| r.target == "start.settings.ai-providers")
+                .unwrap();
+            assert_eq!(model.activate().as_deref(), Some(AI_PROVIDERS));
+        } else {
+            assert_eq!(model.path, "style");
+        }
+    }
+
     #[test]
     fn navigating_between_menus_recenters_after_a_search() {
         let mut model = MenuModel::default();

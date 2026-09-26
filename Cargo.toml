@@ -74,6 +74,10 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # Host services the system apps call through `host.request` (services.rs in
 # App Hub's appstore crate): `mail` keeps Mail's accounts and passwords.
 octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
+# `llm` keeps the assistant's LLM providers for the AI providers app; the
+# config crate names the AppCard kernel's octos home it writes.
+octosense-llm-service = { path = "../OctoSense-System-Apps/apps/ai-providers/host-service", optional = true }
+octosense-llm-config = { path = "../OctoSense-System-Apps/apps/ai-providers/config", optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries. Link the
 # available modules into native mobile builds without requiring CLI flags.
@@ -90,7 +94,7 @@ mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "syst
 # The system apps (system-apps.json) and the Card runner that hosts them,
 # each in its own isolate under its manifest's policy, plus their host
 # services. Always module-hosted: a script app has no process form.
-system-apps = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
+system-apps = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
