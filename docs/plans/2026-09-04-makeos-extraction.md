@@ -2,7 +2,6 @@
 
 > Historical record from before the OctoSense rename. Original names, commands and artifact paths are retained for traceability.
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task after the user agrees to the scope.
 
 **Goal:** Create a minimal MakeOS project in this directory that opens with `cargo run`, hosts compatible Makepad applications, and records every copied upstream file for deliberate updates.
 
