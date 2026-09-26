@@ -52,10 +52,9 @@ host's mail service. `net` reaches only the hosts the manifest lists.
 - **News, Maps**: run in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
-  The host service pins App Hub `7180acfc`, older than the `4605128d` the
-  shells link, so each shell carries a `[patch]` to keep one
-  `octosense-appstore`. Moving the service to the shells' App Hub rev is a
-  known follow-up.
+  The host service pins App Hub `0d36f50b` (main after
+  OctoSense-App-Hub#4), the rev the shells link, so a shell's graph has one
+  `octosense-appstore` and one host-service registry without a `[patch]`.
 - **Script bundles have no CI here.** `.github/workflows/appcard.yml` covers
   only `apps/appcard/**`.
 - **AppCard `personal-data` skill** reads the old native Mail module's
