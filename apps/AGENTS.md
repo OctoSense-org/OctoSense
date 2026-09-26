@@ -20,3 +20,24 @@ rules in README.md.
   in a pull request there.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
+
+## AppCard (apps/appcard)
+
+AppCard is the one native app: a Cargo workspace, not a bundle. Its own rules
+are in [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md); in short:
+
+- Prepare the sibling runtime from `apps/appcard`: `python3 tools/setup-native.py`
+  (Makepad, Octoscript, Octoscript-Makepad land beside this repository, at the
+  release `native-runtime.lock.json` selects). Never vendor them here.
+- Build and test in `apps/appcard/app`: `cargo check`, `cargo test --workspace`,
+  and `cargo clippy -p octos-app -p octos-app-store -p octos-app-transport
+  -p octos-app-render --all-targets --no-deps -- -D warnings`. If you touched
+  `apps/appcard/tools/core` or `setup-native.py`, also run
+  `PYTHONPATH=tools python3 -m unittest core.test_native_runtime` from
+  `apps/appcard`.
+- Relative paths out of `apps/appcard` (Cargo `[patch]`, `build.rs`,
+  `tools/core/native_paths.py`) assume the sibling workspace is the parent of
+  the repository root. Keep them consistent if anything moves.
+- Octos is one git source at one rev (`apps/appcard/app/Cargo.toml`); do not
+  add an octos submodule or path dependency.
+- CI for it is `.github/workflows/appcard.yml`, filtered to `apps/appcard/**`.
