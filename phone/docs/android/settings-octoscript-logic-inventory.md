@@ -116,7 +116,9 @@ Home hides non-system overlay windows on Android 12+, and its Activity rejects f
 
 CI regenerates the Home Binder client with Android build-tools 35.0.0/platform 35 and compares the complete Java output with the checked-in file. The compiler invocation header is stripped before comparison to keep local paths out of source. Run `python3 scripts/generate-agent-aidl.py --check --sdk "$ANDROID_HOME"` locally.
 
-The earlier architecture record is now ADR 0006, leaving ADR 0004 available for PR #18. The obsolete empty `appstore` entry remains hidden at the user's request; the actual App Hub stays visible. PermissionController's existing staging regression covers identical repeat runs and preserving unrelated edits. Re-staging identical sources passes and does not require a destructive reset.
+The earlier architecture record is now ADR 0006, leaving ADR 0004 available for PR #18. The obsolete empty `appstore` entry remains hidden at the user's request; the actual App Hub stays visible.
+
+PermissionController accepts identical repeat staging, but an older generated adapter can differ from both upstream and the next version's expected bytes. The build-host `stage-forks.sh` wrapper now resets the integration's manifest, build file and OctoSense adapter/contract directories before staging the new version, as it already does for Quickstep and SystemUI. Local edits under those integration-owned paths are replaced. Unrelated Permission files are preserved and still block staging when dirty. An integration regression invokes the real wrapper and Permission stager in temporary Git repositories, covering identical re-runs, changed adapter/manifest sources, obsolete adapters, and preservation of unrelated tracked and untracked edits.
 
 Review validation passes the locked workspace compilation and single-runtime graph check, 673 application tests (including 502 Home tests), 73 Maps tests and 11 runtime-policy tests. The nine previously blocked Maps network fixtures now pass with unrestricted local socket access. Parallel controller tests include a 120 ms simulated descheduling pause and instruction-exhaustion rollback.
 
