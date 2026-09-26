@@ -1018,14 +1018,52 @@ index c19d2512c..c579c89c3 100644
          define_gc_module(&mut heap, &mut native);
          let pod_builtins = define_pod_module(&mut heap, &mut native);
 diff --git a/platform/script/std/src/gate.rs b/platform/script/std/src/gate.rs
-index 9625a12cc..7818426ef 100644
+index 9625a12cc..f74915c23 100644
 --- a/platform/script/std/src/gate.rs
 +++ b/platform/script/std/src/gate.rs
-@@ -16,6 +16,23 @@
+@@ -1,10 +1,11 @@
+ //! The one question every way out of an isolate asks: may THIS heap reach
+ //! THIS URL?
+ //!
+-//! Three paths issue requests on a script's behalf — `net.http_request`,
+-//! `res.http_resource` (artwork) and the data fetches behind `sys.*` — and
+-//! a network grant that covers only the first is not a grant. All three ask
+-//! here. The answer comes from a gate the embedding host installs; with no
++//! Four paths issue requests on a script's behalf — `net.http_request`,
++//! `net.web_socket`, `res.http_resource` (artwork) and the data fetches
++//! behind `sys.*` — and a network grant that covers only the first is not a
++//! grant. All of them ask here. Listening servers (`net.http_server`) and raw
++//! streams (`net.socket_stream`) name no URL, so they ask the socket gate. The answer comes from a gate the embedding host installs; with no
+ //! gate installed, everything is allowed, which is the behaviour every
+ //! existing host had. A host that installs a gate answers per heap, so an
+ //! app's allowlist follows its isolate and nothing else.
+@@ -16,6 +17,45 @@
  
  thread_local! {
      static URL_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
 +    static MEDIA_GATE: Cell<Option<ScriptUrlGate>> = const { Cell::new(None) };
++    static SOCKET_GATE: Cell<Option<ScriptSocketGate>> = const { Cell::new(None) };
++}
++
++/// `heap_key -> allowed`: may this heap open what a host list cannot
++/// describe — a listening server (`net.http_server`) or a raw TCP/TLS stream
++/// (`net.socket_stream`)? A server answers whoever connects, and a raw
++/// stream speaks any protocol to any port, so neither fits a per-URL gate.
++pub type ScriptSocketGate = fn(usize) -> bool;
++
++/// Install (or clear) the gate for listening servers and raw sockets. With
++/// no socket gate, both are allowed, as they were for every existing host.
++pub fn set_script_socket_gate(gate: Option<ScriptSocketGate>) {
++    SOCKET_GATE.with(|g| g.set(gate));
++}
++
++/// Whether `heap_key` may listen or open a raw socket. True when no gate is
++/// installed.
++pub fn script_sockets_allowed(heap_key: usize) -> bool {
++    SOCKET_GATE.with(|g| match g.get() {
++        Some(gate) => gate(heap_key),
++        None => true,
++    })
 +}
 +
 +/// Install (or clear) the gate for media loads (`http_resource`: images and
@@ -1045,7 +1083,7 @@ index 9625a12cc..7818426ef 100644
  }
  
  /// Install (or clear) the gate for this thread. Isolates are UI-thread-owned,
-@@ -102,4 +119,21 @@ fn only_heap_seven(heap: usize, _url: &str) -> bool {
+@@ -102,4 +142,34 @@ fn only_heap_seven(heap: usize, _url: &str) -> bool {
          assert!(!script_url_allowed(8, "https://anything.example"));
          set_script_url_gate(None);
      }
@@ -1066,9 +1104,22 @@ index 9625a12cc..7818426ef 100644
 +        set_script_media_gate(None);
 +        set_script_url_gate(None);
 +    }
++
++    #[test]
++    fn no_socket_gate_allows_sockets_and_a_gate_decides() {
++        set_script_socket_gate(None);
++        assert!(script_sockets_allowed(8));
++        fn only_heap_seven(heap: usize) -> bool {
++            heap == 7
++        }
++        set_script_socket_gate(Some(only_heap_seven));
++        assert!(script_sockets_allowed(7));
++        assert!(!script_sockets_allowed(8));
++        set_script_socket_gate(None);
++    }
  }
 diff --git a/platform/script/std/src/net.rs b/platform/script/std/src/net.rs
-index ba16994ca..1f68adf25 100644
+index ba16994ca..7814d6f8e 100644
 --- a/platform/script/std/src/net.rs
 +++ b/platform/script/std/src/net.rs
 @@ -14,6 +14,11 @@
@@ -1083,7 +1134,36 @@ index ba16994ca..1f68adf25 100644
  pub struct ScriptWebSocket {
      #[allow(unused)]
      pub id: LiveId,
-@@ -838,7 +843,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -786,7 +791,19 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
+             }
+ 
++            // A server answers whoever connects; no host list describes that.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_sockets_allowed(heap_key) {
++                return script_err_io!(vm.trap(), "this app may not open a listening server");
++            }
++            if vm.std_mut::<ScriptStd>().net.is_none() {
++                return script_err_io!(vm.trap(), "script net runtime is not configured");
++            }
++
+             let options = HttpServerOptions::script_from_value(vm, options);
++            let Ok(listen_address) = options.listen.parse() else {
++                return script_err_invalid_args!(vm.trap(), "invalid listen address {}", options.listen);
++            };
+             let events = HttpServerEvents::script_from_value(vm, events);
+ 
+             let (server_tx, server_rx) = channel();
+@@ -800,7 +817,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             });
+ 
+             let server = HttpServer {
+-                listen_address: options.listen.parse().unwrap(),
++                listen_address,
+                 post_max_size: 1024 * 1024 * 10,
+                 post_max_size_overrides: Vec::new(),
+                 pre_admit_posts: false,
+@@ -838,7 +855,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
              {
                  return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
              }
@@ -1097,7 +1177,7 @@ index ba16994ca..1f68adf25 100644
              let events = HttpEvents::script_from_value(vm, events);
              // The host's per-isolate allowlist, when one is installed: a
              // network grant that only opened this module would otherwise
-@@ -893,12 +903,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -893,12 +915,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
          }
          if prop == id!(error) {
              if let Some(error) = error {
@@ -1112,7 +1192,7 @@ index ba16994ca..1f68adf25 100644
          }
          script_err_not_found!(vm.trap(), "invalid socket_stream prop")
      });
-@@ -1071,7 +1081,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
+@@ -1071,7 +1093,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
              match socket_stream_poll(vm, handle) {
                  SocketStreamPoll::Data(data) => {
                      let string = String::from_utf8_lossy(&data);
@@ -1121,6 +1201,32 @@ index ba16994ca..1f68adf25 100644
                  }
                  SocketStreamPoll::Closed(Some(err)) => script_err_io!(vm.trap(), "{err}"),
                  SocketStreamPoll::Closed(None) => NIL,
+@@ -1116,6 +1138,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid net arg type");
+             }
+             let events = WebSocketEvents::script_from_value(vm, events);
++            // The same per-isolate allowlist as `http_request`: a socket is
++            // a request that stays open.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_url_allowed(heap_key, &request.url) {
++                return script_err_io!(vm.trap(), "this app may not reach {}", request.url);
++            }
+ 
+             let std = vm.std_mut::<ScriptStd>();
+             let Some(runtime) = std.net.as_ref() else {
+@@ -1143,6 +1171,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
+             if !script_has_proto!(vm, options, net.SocketStreamOptions) {
+                 return script_err_type_mismatch!(vm.trap(), "invalid socket_stream arg type");
+             }
++            // A raw stream speaks any protocol to any port, so a host list
++            // cannot bound it: a policed isolate is refused outright.
++            let heap_key = vm.bx.heap.heap_key();
++            if !crate::gate::script_sockets_allowed(heap_key) {
++                return script_err_io!(vm.trap(), "this app may not open a raw socket");
++            }
+             // Raw sockets obey the same gate as http_request/web_socket, so a sandboxed
+             // VM without a net runtime can't open TCP connections.
+             if vm.std_mut::<ScriptStd>().net.is_none() {
 diff --git a/platform/src/event/finger.rs b/platform/src/event/finger.rs
 index 0fb1eabaf..bc7c319cd 100644
 --- a/platform/src/event/finger.rs
@@ -3018,13 +3124,46 @@ index d1c7a0c25..81529af28 100644
      fn tags_and_caps_are_per_heap() {
          set_tag_for_heap(1, Some("one".into()));
 diff --git a/widgets/src/splash_policy.rs b/widgets/src/splash_policy.rs
-index 9bb895860..eb1e9f794 100644
+index 9bb895860..04cf78b36 100644
 --- a/widgets/src/splash_policy.rs
 +++ b/widgets/src/splash_policy.rs
-@@ -110,6 +110,131 @@ pub fn url_allowed(heap_key: usize, url: &str) -> bool {
+@@ -8,7 +8,13 @@
+ //!
+ //! - [`service_allowed`] — before a `host.request` is queued (ADR 0002 §2);
+ //! - [`url_allowed`] — from every network path, through the gate installed
+-//!   in `makepad-script-std` (ADR 0002 §3);
++//!   in `makepad-script-std` (ADR 0002 §3): `net.http_request`,
++//!   `net.web_socket`, `sys.*` data fetches, artwork, map tiles, web cards
++//!   and a `Video`'s network source;
++//! - [`sockets_allowed`] — before `net.http_server` listens or
++//!   `net.socket_stream` connects. Neither names a URL a host list could
++//!   judge, and no capability covers them (`net` is requests to the listed
++//!   hosts), so a policed isolate gets neither;
+ //! - [`charge`] — after every evaluation and callback, against a cumulative
+ //!   instruction budget (ADR 0002 §4).
+ //!
+@@ -42,6 +48,9 @@ pub struct HeapPolicy {
+ /// Set (or replace) the policy for a heap. Enforcement starts here: a heap
+ /// that never had this called is not enforced.
+ pub fn set_policy_for_heap(heap_key: usize, capabilities: Vec<String>, hosts: Vec<String>, instruction_budget: Option<u64>) {
++    // A policy nothing consults is not a policy: whoever sets one, the gates
++    // that read it are in place from here on.
++    install_url_gate();
+     POLICIES.with(|p| {
+         let mut p = p.borrow_mut();
+         let used = p.get(&heap_key).map(|old| old.instructions_used).unwrap_or(0);
+@@ -110,6 +119,139 @@ pub fn url_allowed(heap_key: usize, url: &str) -> bool {
      })
  }
  
++/// May this heap open a listening server or a raw socket? Only when it is
++/// not policed. A server answers whoever connects and a raw stream speaks any
++/// protocol to any port; a contained app's way out is a request to a listed
++/// host, and nothing wider.
++pub fn sockets_allowed(heap_key: usize) -> bool {
++    !is_enforced(heap_key)
++}
++
 +/// May this heap know where the device is? Location is a service family
 +/// like any other, granted as `location`; an unpoliced heap keeps the old
 +/// behaviour. Every reader of the platform fix on a script's behalf asks
@@ -3153,15 +3292,16 @@ index 9bb895860..eb1e9f794 100644
  /// Record `instructions` run by this heap. Returns false once the budget is
  /// spent, and stays false: the heap is exhausted from then on.
  pub fn charge(heap_key: usize, instructions: u64) -> bool {
-@@ -143,6 +268,7 @@ pub(crate) fn install_url_gate() {
+@@ -143,6 +285,8 @@ pub(crate) fn install_url_gate() {
      INSTALLED.with(|installed| {
          if !installed.get() {
              makepad_script_std::set_script_url_gate(Some(url_allowed));
 +            makepad_script_std::set_script_media_gate(Some(media_allowed));
++            makepad_script_std::set_script_socket_gate(Some(sockets_allowed));
              installed.set(true);
          }
      });
-@@ -226,6 +352,83 @@ fn replacing_a_policy_keeps_what_was_already_spent() {
+@@ -226,6 +370,95 @@ fn replacing_a_policy_keeps_what_was_already_spent() {
          gc_policies(&[905]);
      }
  
@@ -3240,6 +3380,18 @@ index 9bb895860..eb1e9f794 100644
 +        assert!(!url_allowed(910, "https://cdn.example.org/a.jpg"), "neither grant widens requests");
 +        gc_policies(&[910]);
 +        assert!(media_allowed(910, "https://anything.example/"), "an unpoliced heap, as before");
++    }
++
++    #[test]
++    fn a_policed_heap_opens_no_server_and_no_raw_socket_whatever_it_holds() {
++        gc_policies(&[911]);
++        assert!(sockets_allowed(911), "an unpoliced heap, as before");
++        set_policy_for_heap(911, vec!["net".into(), "storage".into(), "web".into()], vec!["127.0.0.1".into()], None);
++        assert!(!sockets_allowed(911), "no grant and no listed host covers a socket");
++        assert!(!makepad_script_std::script_sockets_allowed(911), "setting a policy installs the gate");
++        assert!(makepad_script_std::script_url_allowed(911, "ws://127.0.0.1:9/"), "the url gate is in too");
++        gc_policies(&[911]);
++        assert!(makepad_script_std::script_sockets_allowed(911));
 +    }
 +
      #[test]
@@ -3364,6 +3516,40 @@ index dc0829f7f..5b60547f9 100644
          if self.animator_handle_event(cx, event).must_redraw() {
              self.draw_bg.redraw(cx);
              self.draw_cursor.redraw(cx);
+diff --git a/widgets/src/video.rs b/widgets/src/video.rs
+index 1fee14b5e..55574072b 100644
+--- a/widgets/src/video.rs
++++ b/widgets/src/video.rs
+@@ -1375,9 +1375,27 @@ fn maybe_prepare_playback(&mut self, cx: &mut Cx) {
+                             return;
+                         }
+                     }
+-                    VideoDataSource::Network { url } => VideoSource::Network(url.to_string()),
++                    // The platform player fetches and reads on its own, so the
++                    // isolate's policy is asked here, before it is handed a
++                    // source: a network URL answers to the host list like any
++                    // request, a path to the app's storage jail.
++                    VideoDataSource::Network { url } => {
++                        let heap_key = self.source_ref.heap_key();
++                        if !crate::splash_policy::url_allowed(heap_key, url) {
++                            error!("Video source refused by the host's allowlist: {url}");
++                            self.should_prepare_playback = false;
++                            return;
++                        }
++                        VideoSource::Network(url.to_string())
++                    }
+                     VideoDataSource::Filesystem { path } => {
+-                        VideoSource::Filesystem(path.to_string())
++                        let heap_key = self.source_ref.heap_key();
++                        let Some(path) = crate::splash_policy::local_path_for_heap(heap_key, path) else {
++                            error!("Video source refused: {path} is outside this app's storage");
++                            self.should_prepare_playback = false;
++                            return;
++                        };
++                        VideoSource::Filesystem(path)
+                     }
+                     VideoDataSource::Camera {
+                         input_id,
 diff --git a/widgets/src/view.rs b/widgets/src/view.rs
 index d02cf4902..ad333ec3e 100644
 --- a/widgets/src/view.rs
@@ -3936,7 +4122,7 @@ index 09209b1cb..b6e496a1b 100644
      }
  
 diff --git a/widgets/src/widget_async.rs b/widgets/src/widget_async.rs
-index 63acffe8c..1f953d7bf 100644
+index 63acffe8c..ffa296b59 100644
 --- a/widgets/src/widget_async.rs
 +++ b/widgets/src/widget_async.rs
 @@ -95,6 +95,58 @@ pub fn register_splash_isolate_mod(f: fn(&mut ScriptVm)) {
@@ -4012,7 +4198,17 @@ index 63acffe8c..1f953d7bf 100644
      crate::desktop_style::gc_heaps(cx,&dead_heaps);
      // And the resource cache, which is keyed by heap ADDRESS: dropping a heap
      // frees that address for the next isolate, and a leftover entry would hand
-@@ -1794,6 +1853,79 @@ fn install_probe(vm: &mut ScriptVm) {
+@@ -494,7 +553,8 @@ fn alloc_splash_vm_with_network(&mut self, network_enabled: bool) -> SplashVmId
+             // loads) and the network (web_url/http resources) without going
+             // through the gated net runtime. Raw sockets are gated separately:
+             // the stdlib's `net.socket_stream` errors when no net runtime is
+-            // configured, same as `net.http_request`.
++            // configured, same as `net.http_request`, and under a policy it
++            // and `net.http_server` are refused outright (splash_policy).
+             // `cx.quit` would let any mini-app close the whole host process.
+             let strip = crate::makepad_script::script! {
+                 mod.fs = nil
+@@ -1794,6 +1854,135 @@ fn install_probe(vm: &mut ScriptVm) {
          cx.free_splash_vm(third);
      }
  
@@ -4051,6 +4247,62 @@ index 63acffe8c..1f953d7bf 100644
 +        cx.free_splash_vm(host_own);
 +        cx.free_splash_vm(denied);
 +        cx.free_splash_vm(granted);
++    }
++
++    /// A probe found `net.web_socket`, `net.socket_stream` and
++    /// `net.http_server` skipping the host list that `net.http_request`
++    /// answers to. Each is tried from a host-owned isolate and from a
++    /// contained app holding `net` and a listed host.
++    #[test]
++    fn a_contained_app_opens_sockets_and_servers_only_as_its_policy_allows() {
++        let run = |cx: &mut Cx, vm_id, code: String| {
++            cx.with_script_vm_id(vm_id, |vm| {
++                let script_mod = crate::makepad_script::ScriptMod {
++                    cargo_manifest_path: String::new(),
++                    module_path: "net_policy_probe".into(),
++                    file: "net_policy_probe".into(),
++                    line: 0,
++                    column: 0,
++                    code,
++                    values: vec![],
++                };
++                !vm.eval(script_mod).is_err()
++            })
++        };
++        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
++        let port = listener.local_addr().unwrap().port();
++        let web_socket = |host: &str| format!(
++            "use mod.net\nnet.web_socket(\"ws://{host}:{port}/\" net.WebSocketEvents{{}})"
++        );
++        let raw_socket = format!(
++            "use mod.net\nnet.socket_stream(net.SocketStreamOptions{{host: \"127.0.0.1\" port: \"{port}\"}})"
++        );
++        let server = "use mod.net\nnet.http_server(net.HttpServerOptions{listen: \"127.0.0.1:0\"} net.HttpServerEvents{})".to_string();
++
++        let mut cx = Cx::new(Box::new(|_, _| {}));
++        cx.with_vm(crate::script_mod);
++        let host_own = cx.alloc_splash_vm_with_network(true);
++        let app = cx.alloc_splash_vm_with_network(true);
++        let app_heap = cx.with_script_vm_id(app, |vm| vm.bx.heap.heap_key());
++        crate::splash_policy::set_policy_for_heap(app_heap, vec!["net".into()], vec!["127.0.0.1".into()], None);
++
++        assert!(run(&mut cx, host_own, web_socket("127.0.0.1")), "a host-owned isolate opens a web socket");
++        assert!(run(&mut cx, host_own, web_socket("elsewhere.example")), "to any host, as before");
++        assert!(run(&mut cx, host_own, raw_socket.clone()), "and a raw socket");
++        assert!(run(&mut cx, host_own, server.clone()), "and listens");
++
++        assert!(run(&mut cx, app, web_socket("127.0.0.1")), "an app reaches its listed host over a web socket");
++        assert!(!run(&mut cx, app, web_socket("elsewhere.example")), "and no other");
++        assert!(!run(&mut cx, app, raw_socket.clone()), "a raw socket is refused even to a listed host");
++        assert!(!run(&mut cx, app, server.clone()), "and so is a listening server");
++
++        crate::splash_policy::set_policy_for_heap(app_heap, vec!["net".into()], vec![], None);
++        assert!(!run(&mut cx, app, web_socket("127.0.0.1")), "an empty host list reaches nothing");
++
++        crate::splash_policy::gc_policies(&[app_heap]);
++        cx.free_splash_vm(host_own);
++        cx.free_splash_vm(app);
++        drop(listener);
 +    }
 +
 +    #[test]
@@ -4092,7 +4344,7 @@ index 63acffe8c..1f953d7bf 100644
      #[test]
      fn entering_an_isolate_makes_it_the_current_vm_and_leaving_restores_the_outer_one() {
          let mut cx = Cx::new(Box::new(|_, _| {}));
-@@ -2067,6 +2199,67 @@ fn pane_refresh_drops_inserted_host() {
+@@ -2067,6 +2256,67 @@ fn pane_refresh_drops_inserted_host() {
          assert_eq!(n, 2, "render after pane refresh did not commit");
      }
  
