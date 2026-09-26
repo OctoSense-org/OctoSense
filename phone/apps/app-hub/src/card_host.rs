@@ -27,6 +27,8 @@ impl AppModule for CardModule {
         octosense_appstore::cardapp::CARD_MODULE.open_schema()
     }
     fn register(&self, vm: &mut ScriptVm) {
+        // The runner opens system apps by id: they must be registered first.
+        crate::system_apps();
         octosense_appstore::cardapp::CARD_MODULE.register(vm);
         script_mod(vm);
     }
@@ -202,6 +204,17 @@ impl Widget for HostedHubCard {
                     });
                 }
             };
+            // A host service's sheet over the app (a sign-in), drawn on top
+            // in its own isolate.
+            let sheet_ref = self.inner.splash(cx, ids!(sheet));
+            let up = sheet_ref.borrow().filter(|s| s.view.visible).and_then(|s| cx.script_ref_vm_id(&s.view.source));
+            if let Some(vm_id) = up {
+                if let Some(mut sheet) = sheet_ref.borrow_mut() {
+                    with_isolate(cx, vm_id, |cx| {
+                        sheet.draw_walk_all(cx, scope, Walk::fill());
+                    });
+                }
+            }
         }
         cx.end_turtle();
         DrawStep::done()

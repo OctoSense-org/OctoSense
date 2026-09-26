@@ -35,7 +35,7 @@ impl Default for AppRegistry {
 
 /// A linked module by id, without a registry: what the launcher asks.
 pub fn is_linked(id: &str) -> bool {
-    linked_modules().iter().any(|m| m.id() == id) || installed_card_apps().iter().any(|a| a.id == id)
+    linked_modules().iter().any(|m| m.id() == id) || card_apps().iter().any(|a| a.id == id)
 }
 
 /// Mobile includes its bundled modules automatically; desktop opts in with
@@ -47,17 +47,17 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
-    #[cfg(any(feature = "app-photos", native_mobile))]
+    #[cfg(feature = "app-photos")]
     out.push(&octosense_photos::PHOTOS_MODULE);
     #[cfg(any(feature = "app-appcard", native_mobile))]
     out.push(&octosense_appcard::APPCARD_MODULE);
-    #[cfg(any(feature = "app-mail", native_mobile))]
+    #[cfg(feature = "app-mail")]
     out.push(&octosense_mail::MAIL_MODULE);
-    #[cfg(any(feature = "app-news", native_mobile))]
+    #[cfg(feature = "app-news")]
     out.push(&octosense_news::NEWS_MODULE);
-    #[cfg(any(feature = "app-maps", native_mobile))]
+    #[cfg(feature = "app-maps")]
     out.push(&octosense_maps::MAPS_MODULE);
-    #[cfg(any(feature = "app-camera", native_mobile))]
+    #[cfg(feature = "app-camera")]
     out.push(&octosense_camera::CAMERA_MODULE);
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
@@ -71,7 +71,60 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
 /// entries (catalog IDs cannot contain a colon).
 pub fn installed_launch_id(manifest_id: &str) -> String { format!("hub:{manifest_id}") }
 pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
-    (app.bin == "card").then(|| app.id.strip_prefix("hub:")).flatten()
+    if app.bin != "card" {
+        return None;
+    }
+    app.id.strip_prefix("hub:").or_else(|| app.args.iter().find_map(|a| a.strip_prefix(SYSTEM_ARG)))
+}
+
+/// A system app's launcher row carries its manifest id as this argument.
+const SYSTEM_ARG: &str = "--system=";
+
+/// System apps (ADR 0004): first-party apps App Hub ships as contained script
+/// bundles, run by the Card runner. Each keeps its short launcher id (`news`
+/// for `os.news`), so its icon, home tile and dock place are the ones it
+/// always had. A linked native module of the same id wins, for comparison
+/// builds (`app-news`).
+pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    {
+        register_host_services();
+        let native: Vec<&str> = linked_modules().iter().map(|m| m.id()).collect();
+        return octosense_app_hub_app::system_apps().into_iter()
+            .filter_map(|app| {
+                let short = app.id.strip_prefix("os.")?;
+                (!native.contains(&short)).then(|| crate::clients::AppDef {
+                    id: short.into(), label: app.name.into(), bin: "card".into(),
+                    package: String::new(), dir: String::new(), manifest: None,
+                    args: vec![format!("{SYSTEM_ARG}{}", app.id)], policy: crate::clients::LaunchPolicy::OrFocus,
+                })
+            }).collect();
+    }
+    #[allow(unreachable_code)]
+    Vec::new()
+}
+
+/// The services contained apps call through `host.request` (ADR 0004): mail
+/// keeps accounts and passwords for the Mail app. `mail_demo` in
+/// MAKEPAD_APP_CONFIG serves a demo mailbox instead, as the native Mail did.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn register_host_services() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let demo = std::env::var("MAKEPAD_APP_CONFIG")
+            .ok()
+            .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
+            .and_then(|config| config.get("mail_demo").and_then(|v| v.as_bool()))
+            .unwrap_or(false);
+        if demo { octosense_mail_service::register_demo() } else { octosense_mail_service::register() }
+    });
+}
+
+/// Every launcher row the Card runner opens: system apps, then installed ones.
+pub fn card_apps() -> Vec<crate::clients::AppDef> {
+    let mut apps = system_card_apps();
+    apps.extend(installed_card_apps());
+    apps
 }
 
 pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title: &str) -> bool {
@@ -101,7 +154,7 @@ pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
     let mut catalog = bundled_modules_catalog();
     // The `card` host module is not an app a person opens; the apps it runs are.
     catalog.retain(|app| app.id != "card");
-    catalog.extend(installed_card_apps());
+    catalog.extend(card_apps());
     catalog
 }
 
@@ -159,7 +212,7 @@ impl AppRegistry {
         if let Some(module) = self.modules.iter().copied().find(|m| m.id() == id) {
             return Some(module);
         }
-        if installed_card_apps().iter().any(|app| app.id == id) {
+        if card_apps().iter().any(|app| app.id == id) {
             return self.modules.iter().copied().find(|m| m.id() == "card");
         }
         None
@@ -178,7 +231,7 @@ impl AppRegistry {
         }
         // An installed card app has no process form anywhere: the `card`
         // module hosts it on every platform, no switch needed.
-        if installed_card_apps().iter().any(|app| app.id == id) && self.module("card").is_some() {
+        if card_apps().iter().any(|app| app.id == id) && self.module("card").is_some() {
             return Hosting::Module;
         }
         match self.overrides.get(id) {

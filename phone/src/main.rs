@@ -138,7 +138,7 @@ macro_rules! octosense_main_with_robrix {
 macro_rules! octosense_main_with_robrix {
     ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
 }
-#[cfg(any(feature = "app-camera", native_mobile))]
+#[cfg(feature = "app-camera")]
 macro_rules! octosense_main_with_camera {
     ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!(
         "octosense_camera/resources/service/NotoSansSC-Regular.ttf",
@@ -147,11 +147,11 @@ macro_rules! octosense_main_with_camera {
         $($extra),*
     ); };
 }
-#[cfg(not(any(feature = "app-camera", native_mobile)))]
+#[cfg(not(feature = "app-camera"))]
 macro_rules! octosense_main_with_camera {
     ($($extra:literal),* $(,)?) => { octosense_main_with_robrix!($($extra),*); };
 }
-#[cfg(any(feature = "app-mail", native_mobile))]
+#[cfg(feature = "app-mail")]
 octosense_main_with_camera!(
     "octosense_mail/resources/ux/Inter-200.ttf",
     "octosense_mail/resources/ux/Inter-300.ttf",
@@ -160,7 +160,7 @@ octosense_main_with_camera!(
     "octosense_mail/resources/ux/Inter-600.ttf",
     "octosense_mail/resources/ux/Inter-700.ttf",
 );
-#[cfg(not(any(feature = "app-mail", native_mobile)))]
+#[cfg(not(feature = "app-mail"))]
 octosense_main_with_camera!();
 
 script_mod! {
@@ -662,7 +662,8 @@ impl App {
         };
         let app = &app;
         #[cfg(any(feature = "app-hub", native_mobile))]
-        if let Some(manifest_id) = apps::card_manifest_id(app) {
+        // A system app ships with the build and answers to no catalog.
+        if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
                 octosense_app_hub_app::data_root(cx), manifest_id) {
                 self.notify(cx, "Could not open app", &error);
@@ -4793,7 +4794,7 @@ impl AppMain for App {
                 makepad_widgets::widget_async::leave_isolate(cx, entry);
             }
         }
-        #[cfg(any(feature = "app-mail", native_mobile))]
+        #[cfg(feature = "app-mail")]
         if let Some(client) = self.module_host.client_of_module("mail") {
             let foreground = self.state.as_ref().map(|state| {
                 !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)

@@ -62,6 +62,7 @@ makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail = { path = "../.sources/appcards/apps/mail/native", optional = true }
+octosense-mail-service = { path = "../.sources/appcards/apps/mail/host-service", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
@@ -84,14 +85,14 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-mail = { path = "../.sources/appcards/apps/mail/native" }
 octosense-appcard = { path = "apps/appcard" }
-octosense-news = { path = "apps/news" }
 octosense-app-hub-app = { path = "apps/app-hub" }
-octosense-camera = { path = "../.sources/camera/apps/camera/native" }
-octosense-maps = { path = "apps/maps" }
+# Mail, News, Photos, Maps and Camera ship as contained script apps
+# (system-apps/, ADR 0004); the `mail` host service keeps Mail's accounts
+# and passwords. `app-mail`, `app-news`, `app-photos`, `app-maps` and
+# `app-camera` link the native modules instead, for comparison.
+octosense-mail-service = { path = "../.sources/appcards/apps/mail/host-service" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", default-features = false }
-octosense-photos = { path = "apps/photos" }
 
 [features]
 # App Hub is part of the standard launcher, including local desktop runs.
@@ -103,20 +104,26 @@ default = ["app-hub"]
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
 mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-appcard", "app-mail", "app-news", "app-maps", "app-camera", "app-hub"]
-app-hub = ["dep:octosense-app-hub-app"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
+# The native Mail module. Without it, Mail is the system script app
+# (`os.mail`, ADR 0004) over the `mail` host service.
 app-mail = ["dep:octosense-mail"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
-# The native Photos library, albums, and Memories app.
+# The native Photos library, albums, and Memories app. Without it, Photos is
+# the system script app (`os.photos`, ADR 0004).
 app-photos = ["dep:octosense-photos"]
 # The AppCard module (one L0 weather card in a tile) linked in.
 app-appcard = ["dep:octosense-appcard"]
-# The News module (headlines in a tile) linked in.
+# The native News module (headlines in a tile) linked in. Without it, News
+# is the system script app App Hub ships (`os.news`, ADR 0004).
 app-news = ["dep:octosense-news"]
-# The Camera module (the Mate 70 Air replica over Makepad video input) linked in.
+# The native Camera module (the Mate 70 Air replica over Makepad video input)
+# linked in. Without it, Camera is the system script app (`os.camera`).
 app-camera = ["dep:octosense-camera"]
-# The OctosMap module (maps, places, directions, navigation) linked in.
+# The native OctosMap module (maps, places, directions, navigation) linked
+# in. Without it, Maps is the system script app (`os.maps`, ADR 0004).
 app-maps = ["dep:octosense-maps"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).

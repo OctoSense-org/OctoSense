@@ -5660,6 +5660,7 @@ dependencies = [
  "octosense-appcard",
  "octosense-camera",
  "octosense-mail",
+ "octosense-mail-service",
  "octosense-maps",
  "octosense-news",
  "octosense-photos",
@@ -5669,7 +5670,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=7180acfc2ffbc2577a6a2cc5faa83ab10c02696d#7180acfc2ffbc2577a6a2cc5faa83ab10c02696d"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5699,7 +5700,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=7180acfc2ffbc2577a6a2cc5faa83ab10c02696d#7180acfc2ffbc2577a6a2cc5faa83ab10c02696d"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -5720,7 +5721,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=97c2a1fd9aa49a6b87586f228e070e0c16b1067b#97c2a1fd9aa49a6b87586f228e070e0c16b1067b"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=7180acfc2ffbc2577a6a2cc5faa83ab10c02696d#7180acfc2ffbc2577a6a2cc5faa83ab10c02696d"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -5767,6 +5768,25 @@ dependencies = [
  "octoscript-node",
  "octoscript-ui-l0",
  "octoscript-widgets",
+ "rustls",
+ "scraper",
+ "serde_json",
+ "sha2 0.10.9",
+ "webpki-roots",
+]
+
+[[package]]
+name = "octosense-mail-service"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ego-tree",
+ "keyring",
+ "mailparse",
+ "makepad-android-state",
+ "makepad-jni-sys",
+ "octosense-appstore",
  "rustls",
  "scraper",
  "serde_json",

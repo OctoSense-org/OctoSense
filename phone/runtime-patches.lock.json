@@ -1,3 +1,16 @@
 {
-  "schema_version": 1
+  "schema_version": 1,
+  "makepad": {
+    "base_revision": "1d3d383e84a66dbb18a4a860f505430c9d5b20f4",
+    "source_commit": "d94e5e6cac31c20d6c6caa4a7efecab79b907368",
+    "patch": "patches/runtime/makepad-contained-apps.patch",
+    "sha256": "71b1f34d15ce58e2971f6d443aa870519cd35bbbd6926cf9ea7fd96643b2447c",
+    "tree": "4b7802ccf9f621e1552a4bf68d26b8308c0ad275",
+    "product_fixes": [
+      "Contained script apps (OctoSense-org/makepad#30): every path out of an isolate answers to its policy; images/web grants; WebReader, GestureView, SheetView, CameraPreview; parse_feed and fs.read_bytes.",
+      "Host services: a host takes only its own isolates' requests, and an asynchronous answer wakes the UI.",
+      "A contained app cannot collect a secret: password and one-time-code fields are inert in a policed isolate.",
+      "Text: a run's trailing space keeps its width unless the row wraps there; every widget takes text/set_text from script."
+    ]
+  }
 }
