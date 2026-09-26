@@ -16,16 +16,20 @@
 //! | `llm.remove` | `{id}` | `{}`; its key leaves the profile when no provider reads it |
 //! | `llm.test` | `{id}` | `{ok, ms, error?}` after one tiny request to the provider (`ok` is a Splash keyword: a script tests `error == nil`) |
 //! | `llm.export_qr` | `{ids?}` | `{}` when the person closes the sheet that shows the phone QR (all providers, or `ids`) |
-//! | `llm.import_qr` | – | `{applied: [label]}` once a scanned, picked, dropped or pasted code is imported on the sheet |
+//! | `llm.import_qr` | – | `{applied: [label]}` once a scanned, picked, dropped or pasted code is imported on the sheet (after a Replace when it replaces saved providers) |
 //!
 //! The app never sees a key, a PIN or a QR. `add_provider`, `edit_provider`,
 //! `export_qr` and `import_qr` raise the host's sheet, a separate isolate
 //! over the app; only calls from that sheet (`llm.sheet.submit`,
-//! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.scan`, `llm.sheet.pick`,
-//! `llm.sheet.image`, `llm.sheet.import`)
+//! `llm.sheet.cancel`, `llm.sheet.qr`, `llm.sheet.show`, `llm.sheet.scan`,
+//! `llm.sheet.pick`, `llm.sheet.image`, `llm.sheet.import`,
+//! `llm.sheet.replace`)
 //! can carry a key, a PIN or a code, and `dispatch` refuses them from
 //! anyone else. The export sheet draws an `OCTOS1E:` code (octos's PIN-sealed
-//! profile QR) and its PIN, and closes itself after five minutes. The import
+//! profile QR) and its PIN, and closes itself after five minutes (the
+//! service closes it too, should the sheet stop counting); nothing keeps the
+//! code or the PIN once it is closed. A code that would replace saved
+//! providers is imported only after the person confirms it. The import
 //! sheet asks the shell's [`QrScanner`] for the camera where there is one,
 //! reads the code out of an image from the shell's [`QrImagePicker`] or
 //! dropped on the app ([`offer_image`]) where the shell offers those, and
@@ -56,6 +60,21 @@ use vault::Vault;
 
 /// How long the phone QR stays up.
 pub const QR_LIFETIME_SECS: u64 = 300;
+
+/// A shorter phone-QR lifetime for end-to-end tests, in seconds
+/// (`OCTOSENSE_LLM_QR_SECONDS`, used when [`Options::qr_lifetime_secs`] is
+/// not set). It can only shorten the lifetime: anything over
+/// [`QR_LIFETIME_SECS`] is cut to it.
+pub const QR_LIFETIME_ENV: &str = "OCTOSENSE_LLM_QR_SECONDS";
+
+/// The phone QR's lifetime: `wanted` (or the test variable), 3 s to
+/// [`QR_LIFETIME_SECS`].
+fn qr_lifetime(wanted: Option<u64>) -> u64 {
+    wanted
+        .or_else(|| std::env::var(QR_LIFETIME_ENV).ok().and_then(|v| v.trim().parse().ok()))
+        .unwrap_or(QR_LIFETIME_SECS)
+        .clamp(3, QR_LIFETIME_SECS)
+}
 
 /// Called with a scan's result, once, from any thread: the decoded text, or
 /// why there is none (`"cancelled"`, `"permission_denied"`, `"unsupported"`…).
@@ -116,6 +135,10 @@ pub struct Options {
     /// on it.
     pub image_drops: bool,
     pub on_changed: Option<OnChanged>,
+    /// How long the phone QR stays up, in seconds (at most
+    /// [`QR_LIFETIME_SECS`], which is the default). `None`: the
+    /// [`QR_LIFETIME_ENV`] variable, else the default.
+    pub qr_lifetime_secs: Option<u64>,
 }
 
 impl Options {
@@ -144,6 +167,11 @@ impl Options {
         self.on_changed = Some(Arc::new(f));
         self
     }
+    /// Shorten how long the phone QR stays up (tests).
+    pub fn qr_lifetime_secs(mut self, secs: u64) -> Self {
+        self.qr_lifetime_secs = Some(secs);
+        self
+    }
 }
 
 /// Offer the service to the Card runner with the default core dir and the
@@ -169,6 +197,7 @@ pub fn register_with(options: Options) {
         pending: Arc::default(),
         export: Arc::default(),
         generation: 0,
+        qr_lifetime: qr_lifetime(options.qr_lifetime_secs),
     }));
 }
 
@@ -209,6 +238,16 @@ struct Pending {
     app_id: String,
     reply: Replier,
     kind: Kind,
+    /// An opened code waiting for the person to confirm that it replaces the
+    /// saved providers (the import sheet's Replace). Dropped with the sheet.
+    held: Option<Held>,
+}
+
+/// A decoded code held for Replace: its set and keys, and whether it is the
+/// old single-provider format (which replaces the primary only).
+struct Held {
+    provisioning: qr::Provisioning,
+    legacy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -265,7 +304,10 @@ fn read_image(bytes: &[u8], pending: &Mutex<Option<Pending>>) -> Value {
         Ok(code) => {
             let needs_pin = qr::format_of(&code) == Some(qr::Format::Encrypted);
             match pending.lock().unwrap().as_mut() {
-                Some(Pending { kind: Kind::Import { scanned }, .. }) => *scanned = Some(code),
+                Some(Pending { kind: Kind::Import { scanned }, held, .. }) => {
+                    *scanned = Some(code);
+                    *held = None;
+                }
                 _ => return image_answer(false, false, Some("No app is waiting for this sheet.".into())),
             }
             image_answer(needs_pin, false, None)
@@ -286,6 +328,7 @@ pub struct LlmService {
     pending: Arc<Mutex<Option<Pending>>>,
     export: Arc<Mutex<Option<ExportJob>>>,
     generation: u64,
+    qr_lifetime: u64,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -347,7 +390,7 @@ impl LlmService {
         }
         *self.export.lock().unwrap() = None;
         IMAGE_WAITER.lock().unwrap().take();
-        *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind });
+        *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind, held: None });
         host.open_sheet(sheet);
     }
 
@@ -436,7 +479,7 @@ impl LlmService {
         let generation = self.generation;
         self.raise(app_id, reply, Kind::Export(generation), sheets::export_waiting(), host);
         *self.export.lock().unwrap() = Some((generation, None));
-        let (shared, export, pending) = (self.shared.clone(), self.export.clone(), self.pending.clone());
+        let (shared, export, pending, lifetime) = (self.shared.clone(), self.export.clone(), self.pending.clone(), self.qr_lifetime);
         work(move || {
             let sheet = (|| {
                 let store = shared.open()?;
@@ -445,42 +488,55 @@ impl LlmService {
                 let code = qr::encode_encrypted(&provisioning, &pin).map_err(|e| e.to_string())?;
                 let (size, modules) = qr::render_matrix(&code).map_err(|e| e.to_string())?;
                 let labels: Vec<String> = chosen.iter().map(label_of).collect();
-                Ok(sheets::export(size, &modules, &pin, &labels, QR_LIFETIME_SECS))
+                Ok(sheets::export(size, &modules, &pin, &labels, lifetime))
             })();
             if let Some(job) = export.lock().unwrap().as_mut().filter(|job| job.0 == generation) {
                 job.1 = Some(sheet);
             }
-            // The sheet closes itself; this closes it for a host whose
-            // sheet stopped ticking.
-            std::thread::sleep(std::time::Duration::from_secs(QR_LIFETIME_SECS + 2));
+            // The sheet closes itself at 0; this closes it, a little later,
+            // for a host whose sheet stopped counting.
+            std::thread::sleep(std::time::Duration::from_secs(lifetime + 5));
             let mut pending = pending.lock().unwrap();
             if pending.as_ref().is_some_and(|p| p.kind == Kind::Export(generation)) {
                 let waiting = pending.take().unwrap();
+                // A sheet never shown must not be shown later.
+                if export.lock().unwrap().as_ref().is_some_and(|job| job.0 == generation) {
+                    *export.lock().unwrap() = None;
+                }
                 close_sheet_later(&waiting.app_id);
                 waiting.reply.send(Ok(json!({"expired": true})));
             }
         });
     }
 
-    /// The waiting sheet asks for the finished one.
-    fn export_ready(&mut self, reply: Replier, host: &mut dyn ServiceHost) {
+    /// The waiting sheet asks whether the finished one is ready
+    /// (`{ready}`); it then asks for it with `llm.sheet.show`.
+    fn export_ready(&mut self, reply: Replier) {
+        let Some(Kind::Export(generation)) = self.pending_kind() else {
+            return reply.send(Err("No code is being prepared.".into()));
+        };
+        let export = self.export.lock().unwrap();
+        match export.as_ref().filter(|job| job.0 == generation) {
+            None => reply.send(Err("No code is being prepared.".into())),
+            Some((_, None)) => reply.send(Ok(json!({"ready": false}))),
+            Some((_, Some(Ok(_)))) => reply.send(Ok(json!({"ready": true}))),
+            Some((_, Some(Err(e)))) => reply.send(Err(e.clone())),
+        }
+    }
+
+    /// Swap the finished sheet in for the waiting one. Shown once: the code
+    /// and the PIN are not kept here after.
+    fn export_show(&mut self, reply: Replier, host: &mut dyn ServiceHost) {
         let Some(Kind::Export(generation)) = self.pending_kind() else {
             return reply.send(Err("No code is being prepared.".into()));
         };
         let mut export = self.export.lock().unwrap();
-        match export.as_mut().filter(|job| job.0 == generation) {
-            None => reply.send(Err("No code is being prepared.".into())),
-            Some((_, None)) => reply.send(Ok(json!({"ready": false}))),
-            Some((_, Some(result))) => match result.clone() {
-                Ok(sheet) => {
-                    // Shown once; the PIN is not kept.
-                    *export = None;
-                    host.open_sheet(sheet);
-                    reply.send(Ok(json!({"ready": true})));
-                }
-                Err(e) => reply.send(Err(e)),
-            },
+        if !matches!(export.as_ref(), Some((g, Some(Ok(_)))) if *g == generation) {
+            return reply.send(Err("The code is not ready.".into()));
         }
+        let Some((_, Some(Ok(sheet)))) = export.take() else { unreachable!() };
+        host.open_sheet(sheet);
+        reply.send(Ok(json!({})));
     }
 
     fn scan(&mut self, reply: Replier) {
@@ -497,8 +553,9 @@ impl LlmService {
                 let Some(format) = qr::format_of(&code) else {
                     return reply.send(Err("That is not an OctoSense provider code.".into()));
                 };
-                if let Some(Pending { kind: Kind::Import { scanned }, .. }) = pending.lock().unwrap().as_mut() {
+                if let Some(Pending { kind: Kind::Import { scanned }, held, .. }) = pending.lock().unwrap().as_mut() {
                     *scanned = Some(code.trim().to_string());
+                    *held = None;
                 }
                 reply.send(Ok(json!({"needs_pin": format == qr::Format::Encrypted})));
             }
@@ -537,6 +594,9 @@ impl LlmService {
         let Some(Kind::Import { scanned }) = self.pending_kind() else {
             return reply.send(Err("No app is waiting for this sheet.".into()));
         };
+        if let Some(p) = self.pending.lock().unwrap().as_mut() {
+            p.held = None;
+        }
         let pasted = text(args, "text").trim().to_string();
         let Some(code) = Some(pasted).filter(|c| !c.is_empty()).or(scanned) else {
             return reply.send(Err("Scan or paste a code first.".into()));
@@ -549,31 +609,80 @@ impl LlmService {
                 Ok(p) => p,
                 Err(e) => return reply.send(Err(e.to_string())),
             };
-            let applied = shared.change(|_, list| {
-                let incoming = model::list_of(&provisioning.set);
-                if legacy {
-                    // The old single-provider code replaces the primary only.
-                    let primary = incoming.into_iter().next().ok_or("The code names no provider.")?;
-                    let rest: Vec<Provider> = list.iter().skip(1).filter(|p| model::id_of(p) != model::id_of(&primary)).cloned().collect();
-                    *list = std::iter::once(primary).chain(rest).collect();
-                } else {
-                    *list = incoming;
-                }
-                let labels: Vec<String> = model::list_of(&provisioning.set).iter().map(label_of).collect();
-                Ok((provisioning.secrets.clone(), json!({"applied": labels})))
-            });
-            match applied {
-                Err(e) => reply.send(Err(e)),
-                Ok(answer) => {
-                    if let Some(waiting) = pending.lock().unwrap().take() {
-                        close_sheet_later(&waiting.app_id);
-                        waiting.reply.send(Ok(answer.clone()));
-                    }
-                    IMAGE_WAITER.lock().unwrap().take();
-                    reply.send(Ok(answer));
-                }
+            let saved = match shared.open() {
+                Ok(store) => store.list,
+                Err(e) => return reply.send(Err(e)),
+            };
+            if saved.is_empty() {
+                return apply_import(&shared, &pending, &provisioning, legacy, reply);
             }
+            // Providers are saved: say what goes, and wait for Replace.
+            let message = replace_message(&saved, &model::list_of(&provisioning.set), legacy);
+            match pending.lock().unwrap().as_mut() {
+                Some(p) if matches!(p.kind, Kind::Import { .. }) => p.held = Some(Held { provisioning, legacy }),
+                _ => return reply.send(Err("No app is waiting for this sheet.".into())),
+            }
+            reply.send(Ok(json!({"confirm": true, "message": message, "applied": []})));
         });
+    }
+
+    /// Replace on the import sheet: apply the code held for it.
+    fn replace(&mut self, reply: Replier) {
+        let held = match self.pending.lock().unwrap().as_mut() {
+            Some(p) if matches!(p.kind, Kind::Import { .. }) => p.held.take(),
+            _ => return reply.send(Err("No app is waiting for this sheet.".into())),
+        };
+        let Some(Held { provisioning, legacy }) = held else {
+            return reply.send(Err("Import the code first.".into()));
+        };
+        let (shared, pending) = (self.shared.clone(), self.pending.clone());
+        work(move || apply_import(&shared, &pending, &provisioning, legacy, reply));
+    }
+}
+
+/// "This replaces your 2 providers (A, B) with 1 from the code (C)."
+fn replace_message(saved: &[Provider], incoming: &[Provider], legacy: bool) -> String {
+    let names = |list: &[Provider]| list.iter().map(label_of).collect::<Vec<_>>().join(", ");
+    let count = |n: usize| if n == 1 { "1 provider".to_string() } else { format!("{n} providers") };
+    if legacy {
+        let from = incoming.first().map(label_of).unwrap_or_default();
+        return format!("This replaces your primary provider ({}) with {from} from the code.", label_of(&saved[0]));
+    }
+    format!(
+        "This replaces your {} ({}) with {} from the code ({}).",
+        count(saved.len()),
+        names(saved),
+        if incoming.len() == 1 { "1".to_string() } else { incoming.len().to_string() },
+        names(incoming)
+    )
+}
+
+/// Save an opened code's providers and keys, close the sheet and answer the
+/// app and the sheet.
+fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning: &qr::Provisioning, legacy: bool, reply: Replier) {
+    let applied = shared.change(|_, list| {
+        let incoming = model::list_of(&provisioning.set);
+        if legacy {
+            // The old single-provider code replaces the primary only.
+            let primary = incoming.into_iter().next().ok_or("The code names no provider.")?;
+            let rest: Vec<Provider> = list.iter().skip(1).filter(|p| model::id_of(p) != model::id_of(&primary)).cloned().collect();
+            *list = std::iter::once(primary).chain(rest).collect();
+        } else {
+            *list = incoming;
+        }
+        let labels: Vec<String> = model::list_of(&provisioning.set).iter().map(label_of).collect();
+        Ok((provisioning.secrets.clone(), json!({"applied": labels})))
+    });
+    match applied {
+        Err(e) => reply.send(Err(e)),
+        Ok(answer) => {
+            if let Some(waiting) = pending.lock().unwrap().take() {
+                close_sheet_later(&waiting.app_id);
+                waiting.reply.send(Ok(answer.clone()));
+            }
+            IMAGE_WAITER.lock().unwrap().take();
+            reply.send(Ok(json!({"confirm": false, "message": "", "applied": answer["applied"]})));
+        }
     }
 }
 
@@ -666,12 +775,26 @@ impl HostService for LlmService {
                 reply.send(Ok(json!({})));
             }
             "sheet.submit" => self.submit(&call.args, reply),
-            "sheet.qr" => self.export_ready(reply, host),
+            "sheet.qr" => self.export_ready(reply),
+            "sheet.show" => self.export_show(reply, host),
+            "sheet.replace" => self.replace(reply),
             "sheet.scan" => self.scan(reply),
             "sheet.import" => self.import(&call.args, reply),
             "sheet.pick" => self.pick(reply),
             "sheet.image" => self.await_image(reply),
             other => reply.send(Err(format!("llm has no method {other:?}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_qr_lifetime_can_only_be_shortened() {
+        assert_eq!(qr_lifetime(Some(10)), 10);
+        assert_eq!(qr_lifetime(Some(0)), 3);
+        assert_eq!(qr_lifetime(Some(86_400)), QR_LIFETIME_SECS);
     }
 }

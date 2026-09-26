@@ -94,7 +94,7 @@ fn submit(){{
     host.request("llm.sheet.submit", {{family: family model: ui.model.text() base_url: ui.base_url.text() api_type: protocol key: ui.key.text()}},
         fn(r){{ if r.is_ok {{ ui.status.set_text("Saved") }} else {{ ui.status.set_text(r.error) }} }})
 }}
-fn cancel(){{ host.request("llm.sheet.cancel", {{}}, fn(r){{}}) }}
+fn cancel(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
 {STYLES}"##,
         family = lit(family),
         api = api,
@@ -154,21 +154,26 @@ fn cancel(){{ host.request("llm.sheet.cancel", {{}}, fn(r){{}}) }}
     script
 }
 
-/// Shown while the code is sealed (Argon2id takes a moment): it asks for
-/// the finished sheet until the service swaps it in.
+/// Shown while the code is sealed (Argon2id takes a moment): it asks whether
+/// the finished sheet is ready and then asks the service to swap it in.
+///
+/// A sheet swap re-runs the new program in the same isolate, and the timers
+/// the old program armed keep firing into code that is gone (Splash logs
+/// `pop_stack_resolved on empty stack` for each). So no sheet arms a
+/// repeating timer: each poll is a one-shot re-armed from its answer, and the
+/// swap itself (`llm.sheet.show`) is asked for without a callback, since the
+/// answer would arrive after this program is replaced.
 pub fn export_waiting() -> String {
     let mut script = format!(
-        r##"let poll_timer = nil
-fn poll(){{
+        r##"fn poll(){{
     host.request("llm.sheet.qr", {{}}, fn(r){{
-        if !r.is_ok {{
-            ui.status.set_text(r.error)
-            if poll_timer != nil {{ stop_timer(poll_timer); poll_timer = nil }}
-        }}
+        if !r.is_ok {{ ui.status.set_text(r.error) return }}
+        if r.data.ready == true {{ host.request("llm.sheet.show", {{}}, nil) return }}
+        start_timeout(0.3, || poll())
     }})
 }}
-fn cancel(){{ host.request("llm.sheet.cancel", {{}}, fn(r){{}}) }}
-poll_timer = start_interval(0.3, || poll())
+fn cancel(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
+start_timeout(0.1, || poll())
 {STYLES}"##
     );
     script.push_str(&frame(
@@ -230,29 +235,35 @@ pub fn module_px(size: usize) -> usize {
 }
 
 /// The phone QR, its PIN beside it, and a countdown after which the sheet
-/// closes itself.
+/// closes itself (the service closes it too, a moment later, should this
+/// program stop). The countdown is a chain of one-shot timers under a name
+/// other than `tick`: Splash calls a body's `fn tick()` once a second by
+/// itself, which would count down twice as fast.
 pub fn export(size: usize, modules: &[bool], pin: &str, labels: &[String], lifetime_secs: u64) -> String {
     let mut script = format!(
         r##"let left = {lifetime_secs}
-let tick_timer = nil
+let closing = false
 fn close(){{
-    if tick_timer != nil {{ stop_timer(tick_timer); tick_timer = nil }}
-    host.request("llm.sheet.cancel", {{}}, fn(r){{}})
+    if closing {{ return }}
+    closing = true
+    host.request("llm.sheet.cancel", {{}}, nil)
 }}
-fn tick(){{
+fn count_down(){{
+    if closing {{ return }}
     left = left - 1
     if left <= 0 {{ close() return }}
     let m = floor(left / 60)
     let s = left - m * 60
     if s < 10 {{ ui.countdown.set_text("Expires in " + m + ":0" + s) }} else {{ ui.countdown.set_text("Expires in " + m + ":" + s) }}
+    start_timeout(1, || count_down())
 }}
-tick_timer = start_interval(1, || tick())
+start_timeout(1, || count_down())
 let Dark = SolidView{{height: Fill draw_bg.color: #x000000}}
 let Light = View{{height: Fill}}
 let QrRow = View{{width: Fit flow: Right}}
 {STYLES}"##
     );
-    let minutes = lifetime_secs / 60;
+    let expires = format!("{}:{:02}", lifetime_secs / 60, lifetime_secs % 60);
     let content = format!(
         r#"        Title{{text: "OctoSense · Code for your phone"}}
         Note{{text: "On the phone, open AI providers and choose Scan QR from desktop, then type the PIN. The code carries your keys: close it when you are done."}}
@@ -260,7 +271,7 @@ let QrRow = View{{width: Fit flow: Right}}
 {qr}        }}
         Caption{{text: "PIN"}}
         pin := Label{{width: Fill align: Align{{x: 0.5}} text: "{pin}" draw_text.color: ink draw_text.text_style: theme.font_bold{{font_size: 28}}}}
-        countdown := Caption{{text: "Expires in {minutes}:00"}}
+        countdown := Caption{{text: "Expires in {expires}"}}
         Note{{text: "Providers: {providers}"}}"#,
         qr = qr_views(size, modules, module_px(size)),
         pin = lit(pin),
@@ -276,13 +287,23 @@ let QrRow = View{{width: Fit flow: Right}}
 
 /// Import a code: scan it (where the host has a scanner), read it out of an
 /// image (chosen with the host's picker, or dropped on the app where the host
-/// passes drops on), or paste it, then type its PIN.
+/// passes drops on), or paste it, then type its PIN. A code that would
+/// replace providers already saved is confirmed first: the service answers
+/// the import with `confirm: true` and what would be replaced, and the sheet
+/// asks Replace (`llm.sheet.replace`) or Cancel (nothing changes).
 pub fn import(can_scan: bool, can_pick: bool, can_drop: bool) -> String {
     let mut script = format!(
         r##"let can_scan = {can_scan}
 let can_pick = {can_pick}
 let can_drop = {can_drop}
+let confirming = false
+fn unconfirm(){{
+    confirming = false
+    ui.confirm.set_visible(false)
+    ui.import_btn.set_text("Import")
+}}
 fn scan(){{
+    unconfirm()
     ui.status.set_text("")
     ui.note.set_text("Point the camera at the code on your computer…")
     host.request("llm.sheet.scan", {{}}, fn(r){{
@@ -295,6 +316,7 @@ fn read_image(r){{
     if !r.is_ok {{ ui.note.set_text("") ui.status.set_text(r.error) return }}
     if r.data.cancelled == true {{ ui.note.set_text("") return }}
     if r.data.error != nil {{ ui.note.set_text("") ui.status.set_text(r.data.error) return }}
+    unconfirm()
     ui.status.set_text("")
     if r.data.needs_pin == true {{ ui.note.set_text("Code read from the image. Type the PIN shown beside it.") }} else {{ ui.note.set_text("Code read from the image. Tap Import.") }}
 }}
@@ -311,14 +333,28 @@ fn await_drop(){{
         }}
     }})
 }}
+fn replace(){{
+    ui.status.set_text("")
+    host.request("llm.sheet.replace", {{}}, fn(r){{
+        if r.is_ok {{ ui.note.set_text("Imported") }} else {{ unconfirm() ui.status.set_text(r.error) }}
+    }})
+}}
 fn submit(){{
+    if confirming {{ replace() return }}
     ui.status.set_text("")
     ui.note.set_text("Checking the code…")
     host.request("llm.sheet.import", {{text: ui.code.text() pin: ui.pin.text()}}, fn(r){{
-        if r.is_ok {{ ui.note.set_text("Imported") }} else {{ ui.note.set_text("") ui.status.set_text(r.error) }}
+        if !r.is_ok {{ ui.note.set_text("") ui.status.set_text(r.error) return }}
+        if r.data.confirm == true {{
+            confirming = true
+            ui.note.set_text("")
+            ui.confirm_note.set_text(r.data.message)
+            ui.confirm.set_visible(true)
+            ui.import_btn.set_text("Replace")
+        }} else {{ ui.note.set_text("Imported") }}
     }})
 }}
-fn cancel(){{ host.request("llm.sheet.cancel", {{}}, fn(r){{}}) }}
+fn cancel(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
 if can_scan {{ start_timeout(0.1, || scan()) }}
 if can_drop {{ await_drop() }}
 {STYLES}"##
@@ -345,6 +381,13 @@ if can_drop {{ await_drop() }}
         r#"        Title{{text: "OctoSense · Import providers"}}
         Note{{text: "Show the code on your computer: AI providers, Show QR for phone. The keys it carries go to OctoSense, not to the app that asked."}}
         status := Status{{}}
+        confirm := RoundedView{{visible: false width: Fill height: Fit flow: Down spacing: 8 padding: 12 show_bg: true draw_bg.color: #xfff4e5 draw_bg.border_radius: 12.0
+            confirm_note := Label{{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{{font_size: 14}}}}
+            View{{width: Fill height: Fit flow: Right spacing: 6
+                Choice{{text: "Cancel" on_click: || cancel()}}
+                Choice{{text: "Replace" draw_text +: {{color: #xff3b30 color_hover: #xff3b30 color_down: #xff3b30}} on_click: || replace()}}
+            }}
+        }}
         note := Note{{}}{buttons}{image_note}
         Caption{{text: "{paste} (OCTOS1E:…)"}}
         code := Field{{empty_text: "OCTOS1E:…"}}
@@ -354,7 +397,7 @@ if can_drop {{ await_drop() }}
     script.push_str(&frame(
         r#"            Plain{text: "Cancel" on_click: || cancel()}
             View{width: Fill height: 1}
-            Primary{text: "Import" on_click: || submit()}"#,
+            import_btn := Primary{text: "Import" on_click: || submit()}"#,
         &content,
     ));
     script

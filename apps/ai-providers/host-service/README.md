@@ -132,6 +132,27 @@ image.", "…not an OctoSense provider code.", "That image is too large (at
 most 20 MB and 40 megapixels)." (checked from the header, before decoding)
 and "That file is not a PNG or JPEG image.".
 
+## The phone QR and the import
+
+The export sheet shows the `OCTOS1E:` code and its PIN for five minutes,
+counting down, and closes itself at 0 (the service closes it too, 5 s later,
+should the sheet stop counting); the code and the PIN are held by that sheet
+only and are gone with it. `OCTOSENSE_LLM_QR_SECONDS` (or
+`Options::qr_lifetime_secs`) shortens the five minutes for end-to-end tests;
+it cannot lengthen them.
+
+Sheets are swapped in the same Splash isolate, and a swap does not stop the
+timers the old program armed, so no sheet arms a repeating timer (the waiting
+sheet polls with one-shot timers, then asks for the swap with
+`llm.sheet.show` and no callback), and none defines `fn tick()`, which
+Splash itself calls once a second.
+
+An import into an empty list applies the code at once. When providers are
+saved, the right PIN only opens the code: the sheet says what it replaces
+("This replaces your 2 providers (…) with 1 from the code (…).") and waits
+for Replace (`llm.sheet.replace`); Cancel closes the sheet and changes
+nothing.
+
 ## Where keys go
 
 octos reads a key from `config.env_vars.<ENV>` in the profile; a `keychain:`

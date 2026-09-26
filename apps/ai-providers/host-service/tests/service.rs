@@ -278,14 +278,21 @@ fn pin_of(body: &str) -> String {
 fn export(rig: &mut Rig, args: Value) -> (usize, String, String) {
     let waiting = rig.send(APP, "llm.export_qr", args, false);
     assert!(rig.host.body().contains("llm.sheet.qr"), "a waiting sheet first");
+    // Not ready yet: the swap is refused.
+    let mut ready = false;
     for _ in 0..400 {
-        let ready = rig.sheet("llm.sheet.qr", json!({})).unwrap();
-        if ready["ready"] == true {
+        if rig.sheet("llm.sheet.qr", json!({})).unwrap()["ready"] == true {
+            ready = true;
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    assert!(ready, "the code was sealed");
+    assert!(rig.host.body().contains("llm.sheet.qr"), "ready does not swap the sheet by itself");
+    rig.sheet("llm.sheet.show", json!({})).unwrap();
     let body = rig.host.body().to_string();
+    // Shown once: nothing is left to show again.
+    assert!(rig.sheet("llm.sheet.show", json!({})).is_err());
     assert!(body.contains("// qr-begin"), "the QR sheet replaced the waiting one");
     let (size, rows) = matrix_of(&body);
     (waiting, scan_png(size, &rows), pin_of(&body))
@@ -355,7 +362,8 @@ fn a_pasted_code_imports_after_the_right_pin() {
     assert!(missing.contains("PIN"), "{missing}");
     assert!(still_waiting(waiting), "a wrong PIN leaves the app waiting");
     let answer = rig.sheet("llm.sheet.import", json!({"text": format!("  {code}\n"), "pin": pin.to_lowercase()})).unwrap();
-    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_eq!(answer["confirm"], false, "nothing saved: nothing to confirm");
+    assert_eq!(wait(waiting).unwrap()["applied"], answer["applied"]);
     assert_imported(&mut rig, &answer);
 }
 
@@ -382,7 +390,7 @@ fn a_scanned_code_imports_after_the_pin() {
     assert_eq!(rig.sheet("llm.sheet.scan", json!({})).unwrap(), json!({"needs_pin": true}));
     assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": "WRONG-PIN1"})).unwrap_err().contains("wrong PIN"));
     let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": pin})).unwrap();
-    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_eq!(wait(waiting).unwrap()["applied"], answer["applied"]);
     assert_imported(&mut rig, &answer);
 }
 
@@ -449,6 +457,95 @@ fn test_sends_one_tiny_request_and_never_echoes_the_key() {
     assert!(seen[0].starts_with("POST /v1/chat/completions"));
     assert!(seen[0].contains("\"max_tokens\":1"));
     assert!(rig.ask("llm.test", json!({"id": "nope"})).unwrap_err().contains("no such provider"));
+}
+
+#[test]
+fn the_export_sheet_expires_and_forgets_the_code() {
+    let mut rig = Rig::with("expire", |o| o.qr_lifetime_secs(3));
+    two_providers(&mut rig);
+    let (waiting, _code, _pin) = export(&mut rig, Value::Null);
+    let body = rig.host.body().to_string();
+    // The sheet counts the lifetime it was given down, and closes itself.
+    assert!(body.contains("let left = 3"), "the sheet counts from the lifetime");
+    assert!(body.contains("Expires in 0:03"));
+    assert!(body.contains("if left <= 0 { close() return }"));
+    // Nobody closes it: the service does, just after the lifetime, and the
+    // app hears so; the code and the PIN are gone from the service.
+    let started = std::time::Instant::now();
+    let closed = loop {
+        if let Some((_, _, result)) = take_replies_for(&[waiting]).pop() {
+            break result.map(|s| serde_json::from_str::<Value>(&s).unwrap()).unwrap();
+        }
+        assert!(started.elapsed().as_secs() < 15, "the export never expired");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert_eq!(closed, json!({"expired": true}));
+    assert!(started.elapsed().as_secs() >= 3, "not before its lifetime");
+    assert!(rig.sheet("llm.sheet.qr", json!({})).unwrap_err().contains("No code"));
+    assert!(rig.sheet("llm.sheet.show", json!({})).unwrap_err().contains("No code"));
+    // A new export starts afresh, with a new PIN.
+    let (waiting, _, pin) = export(&mut rig, Value::Null);
+    assert_eq!(pin.len(), 9);
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    assert_eq!(wait(waiting).unwrap(), json!({}));
+}
+
+#[test]
+fn a_code_that_replaces_saved_providers_waits_for_replace() {
+    let mut rig = Rig::new("confirm", None);
+    two_providers(&mut rig);
+    let code = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config/tests/fixtures/qr-a.txt")).unwrap();
+    let before = rig.profile_text();
+    let changes = rig.changed.load(Ordering::SeqCst);
+
+    // Cancel at the confirm step changes nothing.
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(rig.host.body().contains("llm.sheet.replace"));
+    assert!(rig.sheet("llm.sheet.replace", json!({})).unwrap_err().contains("Import the code first"));
+    assert!(rig.sheet("llm.sheet.import", json!({"text": code, "pin": "0000-0000"})).unwrap_err().contains("wrong PIN"));
+    let asked = rig.sheet("llm.sheet.import", json!({"text": code, "pin": QR_A_PIN})).unwrap();
+    assert_eq!(asked["confirm"], true);
+    assert_eq!(
+        asked["message"],
+        "This replaces your 2 providers (DeepSeek · deepseek-chat, Z.ai · glm-5-turbo) with 2 from the code (DeepSeek · deepseek-chat, Z.ai · glm-4.6)."
+    );
+    assert!(!asked.to_string().contains("sk-test"), "no key in the question");
+    assert!(still_waiting(waiting), "the app waits for Replace");
+    assert_eq!(rig.profile_text(), before, "nothing saved before Replace");
+    // The app cannot press Replace.
+    assert!(rig.ask("llm.sheet.replace", json!({})).unwrap_err().contains("for the host's sheet"));
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    assert_eq!(wait(waiting).unwrap_err(), "Cancelled.");
+    assert_eq!(rig.profile_text(), before, "Cancel changes nothing");
+    assert_eq!(rig.changed.load(Ordering::SeqCst), changes);
+    assert_eq!(rig.vault.get("DEEPSEEK_API_KEY").unwrap().as_deref(), Some(DEEPSEEK_KEY));
+
+    // Replace applies it.
+    let waiting = rig.send(APP, "llm.import_qr", Value::Null, false);
+    assert!(rig.sheet("llm.sheet.replace", json!({})).unwrap_err().contains("Import the code first"), "a cancelled code is not kept");
+    assert_eq!(rig.sheet("llm.sheet.import", json!({"text": code, "pin": QR_A_PIN})).unwrap()["confirm"], true);
+    let answer = rig.sheet("llm.sheet.replace", json!({})).unwrap();
+    assert_eq!(answer["confirm"], false);
+    assert_eq!(wait(waiting).unwrap(), json!({"applied": answer["applied"]}));
+    assert_qr_a_imported(&mut rig, &answer);
+}
+
+#[test]
+fn no_sheet_arms_a_timer_that_outlives_it() {
+    // A swapped sheet keeps its isolate, and with it any repeating timer the
+    // old program armed; Splash also calls a `fn tick()` once a second.
+    let size = 21;
+    let modules = vec![false; size * size];
+    for body in [
+        sheets::edit(None),
+        sheets::export_waiting(),
+        sheets::export(size, &modules, "ABCD-EFGH", &["x".into()], 300),
+        sheets::import(true, true, true),
+    ] {
+        assert!(!body.contains("start_interval"), "{body}");
+        assert!(!body.contains("fn tick"), "{body}");
+    }
+    assert!(sheets::export_waiting().contains("host.request(\"llm.sheet.show\", {}, nil)"));
 }
 
 #[test]
@@ -540,7 +637,7 @@ fn a_picked_image_imports_after_the_pin() {
     assert!(wrong.contains("wrong PIN"), "{wrong}");
     assert!(still_waiting(waiting));
     let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap();
-    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_eq!(wait(waiting).unwrap()["applied"], answer["applied"]);
     assert_qr_a_imported(&mut rig, &answer);
 }
 
@@ -578,7 +675,7 @@ fn a_dropped_image_imports_after_the_pin() {
     let rearmed = rig.send(APP, "llm.sheet.image", json!({}), true);
     assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": "0000-0000"})).unwrap_err().contains("wrong PIN"));
     let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap();
-    assert_eq!(wait(waiting).unwrap(), answer);
+    assert_eq!(wait(waiting).unwrap()["applied"], answer["applied"]);
     assert_qr_a_imported(&mut rig, &answer);
     // The import ended the wait: a later drop is not the service's.
     assert!(!wants_image() && !offer_image(qr_a_png()));
