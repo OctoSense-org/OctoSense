@@ -528,14 +528,14 @@ fn a_picked_image_imports_after_the_pin() {
     // The app cannot pick for the sheet.
     assert!(rig.ask("llm.sheet.pick", json!({})).unwrap_err().contains("for the host's sheet"));
 
-    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"cancelled": true}));
+    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"needs_pin": false, "cancelled": true, "error": null}));
     assert!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"].as_str().unwrap().contains("permission denied"));
     assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"], "No QR code found in that image.");
     assert!(rig.sheet("llm.sheet.pick", json!({})).unwrap()["error"].as_str().unwrap().contains("too large"));
     assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap_err().contains("Scan or paste"));
     assert!(still_waiting(waiting), "failed picks leave the sheet up");
 
-    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"needs_pin": true}));
+    assert_eq!(rig.sheet("llm.sheet.pick", json!({})).unwrap(), json!({"needs_pin": true, "cancelled": false, "error": null}));
     let wrong = rig.sheet("llm.sheet.import", json!({"text": "", "pin": "0000-0000"})).unwrap_err();
     assert!(wrong.contains("wrong PIN"), "{wrong}");
     assert!(still_waiting(waiting));
@@ -574,7 +574,7 @@ fn a_dropped_image_imports_after_the_pin() {
     let armed = rig.send(APP, "llm.sheet.image", json!({}), true);
     assert!(still_waiting(armed));
     assert!(offer_image(qr_a_png()));
-    assert_eq!(wait(armed).unwrap(), json!({"needs_pin": true}));
+    assert_eq!(wait(armed).unwrap(), json!({"needs_pin": true, "cancelled": false, "error": null}));
     let rearmed = rig.send(APP, "llm.sheet.image", json!({}), true);
     assert!(rig.sheet("llm.sheet.import", json!({"text": "", "pin": "0000-0000"})).unwrap_err().contains("wrong PIN"));
     let answer = rig.sheet("llm.sheet.import", json!({"text": "", "pin": QR_A_PIN})).unwrap();

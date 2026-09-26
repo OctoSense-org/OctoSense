@@ -251,18 +251,24 @@ pub fn offer_image(bytes: Vec<u8>) -> bool {
     true
 }
 
+/// What the import sheet reads after an image: every field present (a Splash
+/// script may not read a missing one), `error` null unless it failed.
+fn image_answer(needs_pin: bool, cancelled: bool, error: Option<String>) -> Value {
+    json!({"needs_pin": needs_pin, "cancelled": cancelled, "error": error})
+}
+
 /// Find the code in `bytes` and keep it on the import sheet: the answer the
-/// sheet reads (`{needs_pin}` or `{error}`).
+/// sheet reads.
 fn read_image(bytes: &[u8], pending: &Mutex<Option<Pending>>) -> Value {
     match image_qr::find_code(bytes) {
-        Err(e) => json!({"error": e}),
+        Err(e) => image_answer(false, false, Some(e)),
         Ok(code) => {
             let needs_pin = qr::format_of(&code) == Some(qr::Format::Encrypted);
             match pending.lock().unwrap().as_mut() {
                 Some(Pending { kind: Kind::Import { scanned }, .. }) => *scanned = Some(code),
-                _ => return json!({"error": "No app is waiting for this sheet."}),
+                _ => return image_answer(false, false, Some("No app is waiting for this sheet.".into())),
             }
-            json!({"needs_pin": needs_pin})
+            image_answer(needs_pin, false, None)
         }
     }
 }
@@ -500,8 +506,8 @@ impl LlmService {
     }
 
     /// "Choose image": the shell's picker, then the code read out of the
-    /// picture on a worker. Answers `{needs_pin}`, `{cancelled: true}` or
-    /// `{error}` (the sheet stays up for another try).
+    /// picture on a worker. Answers `{needs_pin, cancelled, error}` (after an
+    /// error the sheet stays up for another try).
     fn pick(&mut self, reply: Replier) {
         if !matches!(self.pending_kind(), Some(Kind::Import { .. })) {
             return reply.send(Err("No app is waiting for this sheet.".into()));
@@ -511,8 +517,8 @@ impl LlmService {
         };
         let pending = self.pending.clone();
         picker.pick(Box::new(move |result| match result {
-            Err(PickError::Cancelled) => reply.send(Ok(json!({"cancelled": true}))),
-            Err(PickError::Failed(why)) => reply.send(Ok(json!({"error": format!("Could not open the image ({why}).")}))),
+            Err(PickError::Cancelled) => reply.send(Ok(image_answer(false, true, None))),
+            Err(PickError::Failed(why)) => reply.send(Ok(image_answer(false, false, Some(format!("Could not open the image ({why})."))))),
             Ok(bytes) => work(move || reply.send(Ok(read_image(&bytes, &pending)))),
         }));
     }

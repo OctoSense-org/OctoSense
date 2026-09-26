@@ -3,6 +3,7 @@
 // typed and shown only on OctoSense's own sheets, never here.
 let providers = []      // primary first: {id, family, label, model, custom_model, base_url, api_type, key, index}
 let scanner = false     // the host can scan a QR
+let image_picker = false // the host can read a QR from a chosen image
 let store = ""          // where keys go: keychain, secrets folder, profile
 let results = []        // [{id, text, ok}] from Test
 let confirm_remove = ""
@@ -23,6 +24,8 @@ fn load(){
         store = r.data.store
         ui.scan.set_visible(scanner)
         ui.paste.set_visible(!scanner)
+        image_picker = r.data.image_picker == true
+        if image_picker { ui.paste.set_text("Import code from image") } else { ui.paste.set_text("Paste code") }
         if store == "profile" { ui.where.set_text("Keys are kept in the assistant's private settings on this device.") } else { ui.where.set_text("Keys are kept in the " + store + ".") }
         ui.rows.render()
     })
