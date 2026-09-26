@@ -60,14 +60,12 @@
 
 ## Shell 如何使用本仓库
 
-Shell 固定引用本仓库的某个版本，并选择要内置哪些应用。这部分接入**正在进行**，
-见两个未合并的 PR：
-[OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18)
-（Home，独立启动器和 ROM 镜像）和
-[OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)。
-在它们合并之前，各 Shell 的 `main` 分支仍使用旧的原生模块和 Octoscript-AppCard。
-
-合并这些 PR 后，Shell 会：
+Shell 固定引用本仓库的某个版本，并选择要内置哪些应用：OctoSense-ROM 的 Home
+（独立启动器和 ROM 镜像，自
+[OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18) 起）和
+OctoSense-Desktop（自
+[OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36) 起）。
+Shell 会：
 
 1. 在 `native-apps.lock.json` 中固定本仓库版本（ROM：`home/native-apps.lock.json`，
    检出到 `.sources/system-apps`；Desktop：同级目录 `../OctoSense-System-Apps`）。
@@ -87,7 +85,7 @@ Shell 固定引用本仓库的某个版本，并选择要内置哪些应用。�
 
 3. 链接 `octosense-mail-service`（对固定检出的 path 依赖）并在启动时注册：
    真实账户用 `register()`，Shell 的应用配置中 `mail_demo: true` 时用
-   `register_demo()`。
+   `register_demo()`。Shell 链接的 App Hub 版本与该服务为 `octosense-appstore` 引用的版本相同，因此只有一个宿主服务注册表。
 4. 以 `default-features = false` 链接 AppCard 的 `octos-app`，并通过其
    `AppShell` 控件挂载（见 [AppCard 助手](#appcard-助手)）。
 
@@ -143,12 +141,11 @@ bundle 的源地址（Photos：`let assets = "{{assets}}"`，然后
 
 App Hub 的 `card-host` 按 manifest 解析出的策略运行单个 bundle，准入顺序与设备
 一致。`--system`、`--static` 参数以及宿主服务支持在 App Hub 的
-`apps/script-and-system-apps` 分支上
-（[OctoSense-App-Hub#4](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/4)，
-未合并）；App Hub 的 `main` 还没有。
+`main` 上（自
+[OctoSense-App-Hub#4](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/4) 起）。
 
 ```sh
-# 在检出该分支的 OctoSense-App-Hub 中
+# 在 OctoSense-App-Hub 的检出中
 cargo build --release -p octosense-card-host --bin card-host
 
 card-host --bundle <System-Apps>/apps/news/bundle --system
@@ -174,7 +171,7 @@ card-host --bundle <System-Apps>/apps/photos/bundle --system --static photos=<�
 构建中用演示邮箱运行 Mail（任意地址，密码 `demo`，示例邮件，发送不会真正发出）：
 
 ```sh
-# 带 #36 的 OctoSense-Desktop（仓库根目录），或带 #18 的 ROM Home（在 home/ 中）
+# OctoSense-Desktop（仓库根目录），或 ROM Home（在 home/ 中）
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
 ```
 

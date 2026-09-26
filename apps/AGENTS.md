@@ -16,8 +16,7 @@ rules in README.md.
 - Run a bundle on a desktop with App Hub's `card-host --bundle apps/<name>/bundle
   --system` (add `MAKEPAD_REMOTE=<port>` to drive it over HTTP; Photos also
   takes `--static photos=<dir>`). `--system` lets an `os.*` id and an empty
-  digest through, as the shell does. These flags are on App Hub's
-  `apps/script-and-system-apps` branch (OctoSense-App-Hub#4) until it merges.
+  digest through, as the shell does. These flags are on App Hub `main`.
   `card-host` registers no host services: run Mail in a shell with
   `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 - Validate on a phone through the ROM's Home as a separate test package; never
@@ -27,7 +26,8 @@ rules in README.md.
   (the ROM's `home/`, or OctoSense-Desktop).
 - After a change, bump the shells' pins (`home/native-apps.lock.json` in the
   ROM, `native-apps.lock.json` in OctoSense-Desktop) in a pull request there.
-  That wiring lands with OctoSense-ROM#18 and OctoSense-Desktop#36.
+  If you move the Mail service's App Hub rev, move the shells' App Hub pin
+  with it: one App Hub rev per shell.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
 

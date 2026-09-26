@@ -112,12 +112,11 @@ octos rev patch `nix`。
 
 - **OctoSense ROM** 的 `home/apps/appcard` 和 **OctoSense-Desktop** 的
   `apps/appcard`：一个围绕 `AppShell`、实现 Shell 的 `AppModule` trait 的
-  `AppCardModule`。两者都在
+  `AppCardModule`。两者都从各自 `native-apps.lock.json` 固定的 System-Apps 版本
+  构建它（自
   [OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18) 和
   [OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)
-  （均未合并）中改为使用本仓库（`4d99cb58`，octos `18fcd3f1`）。它们的 `main`
-  分支仍固定在 OctoSense-org/Octoscript-AppCard（现为 OctoScript-App-Design-Flow）
-  的 `9e8e4898`，因此在这两个 PR 合并之前，这里的改动不会到达它们。
+  起），octos 为 `18fcd3f1`；这里的改动在它们移动该固定版本后到达。
 - **Rinx** 嵌入了 AppCard 磁贴；它的版本迁移是单独的后续工作。
 
 ## 来源
