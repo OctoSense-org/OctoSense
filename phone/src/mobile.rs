@@ -178,8 +178,10 @@ impl Default for PhoneState {
 }
 impl PhoneState {
     pub fn navigation_rect(&self) -> Rect {
+        // The native KeyboardView already resizes this viewport above the
+        // IME. Only the shell's simulated keyboard overlays the viewport.
         Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
-            (self.viewport.size.y - self.keyboard.max(self.native_keyboard)).max(1.0)) }
+            (self.viewport.size.y - self.keyboard).max(1.0)) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
         self.native_keyboard=match event {

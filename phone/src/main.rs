@@ -148,6 +148,9 @@ script_mod! {
                 show_caption_bar: false
                 body +: {
                     flow: Down
+                    // Keep hosted editors and their navigation visible above
+                    // the native IME instead of panning the whole shell.
+                    keyboard_resize: #(crate::mobile_navigation::ENABLED)
                     // The wallpaper layer: the theme's image (crop-to-fill)
                     // over the theme's deep background.
                         // The desk bar: the shell bar on a desktop style, the
