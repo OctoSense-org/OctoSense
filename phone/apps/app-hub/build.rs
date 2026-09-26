@@ -2,10 +2,15 @@
 //! Built-ins consume the icon declaration only; publishing a Card bundle still
 //! requires the complete Hub listing and manifest, validated by the Hub gate.
 //!
-//! Also pack every system app under `system-apps/` (ADR 0004): each bundle
-//! directory becomes a pack with its digest stamped, and a sibling
-//! `<name>.assets.json` (`{"photos": "apps/photos/resources/photos"}`) names
-//! directories compiled in as static artwork served at `<prefix>/<file>`.
+//! Also pack the system apps the shell includes (ADR 0004). Their bundles live
+//! with their apps in Octoscript-AppCard, `apps/<name>/script/`, pinned by
+//! `native-apps.lock.json`; the shell's `system-apps.json` names which to
+//! include and mounts artwork the shell owns:
+//! `{"source": "../.sources/appcards/apps", "apps": ["news"],
+//!   "assets": {"photos": {"photos": "apps/photos/resources/photos"}}}`.
+//! Each bundle becomes a pack with its digest stamped; each asset directory is
+//! compiled in as static artwork served at `<prefix>/<file>`.
+//! `OCTOSENSE_SYSTEM_APPS` points at another selection file.
 use std::path::{Component, Path, PathBuf};
 
 fn main() {
@@ -30,30 +35,34 @@ fn main() {
 
 fn system_apps() {
     let crate_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let repo = crate_dir.join("../..").canonicalize().expect("repository root");
-    let apps_dir = repo.join("system-apps");
+    let shell = crate_dir.join("../..").canonicalize().expect("shell root");
+    println!("cargo:rerun-if-env-changed=OCTOSENSE_SYSTEM_APPS");
+    let selection_path = std::env::var_os("OCTOSENSE_SYSTEM_APPS").map(PathBuf::from).unwrap_or_else(|| shell.join("system-apps.json"));
+    println!("cargo:rerun-if-changed={}", selection_path.display());
+    let selection: serde_json::Value = std::fs::read(&selection_path)
+        .map(|bytes| serde_json::from_slice(&bytes).expect("parse system-apps.json"))
+        .unwrap_or_else(|_| serde_json::json!({"apps": []}));
+    let base = selection_path.parent().unwrap_or(&shell).to_path_buf();
+    let source = base.join(selection["source"].as_str().unwrap_or("."));
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    println!("cargo:rerun-if-changed={}", apps_dir.display());
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&apps_dir)
-        .map(|entries| entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-        .unwrap_or_default();
-    dirs.sort();
+    let names: Vec<String> = selection["apps"].as_array().map(|a| a.iter().filter_map(|n| n.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let dirs: Vec<(String, PathBuf)> = names.into_iter().map(|name| {
+        let dir = source.join(&name).join("script");
+        assert!(dir.join("manifest.json").is_file(), "system app {name}: no bundle at {} (run scripts/setup-home.py)", dir.display());
+        (name, dir)
+    }).collect();
     let mut code = String::from("pub fn register_system_apps() {\n");
     // Launcher art a system app ships in its bundle, by its short id.
     let mut icons = String::from("pub const SYSTEM_ICONS: &[(&str, bool, &[u8])] = &[\n");
-    for dir in dirs {
+    for (name, dir) in dirs {
         watch(&dir);
-        let name = dir.file_name().unwrap().to_string_lossy().to_string();
         let packed = octosense_app_hub::pack::pack_system_app(&dir).expect("pack system app");
         let pack_path = out.join(format!("system-{name}.pack.json"));
         std::fs::write(&pack_path, &packed.pack_json).unwrap();
         let mut assets = String::new();
-        let assets_json = apps_dir.join(format!("{name}.assets.json"));
-        if assets_json.is_file() {
-            println!("cargo:rerun-if-changed={}", assets_json.display());
-            let mounts: serde_json::Value = serde_json::from_slice(&std::fs::read(&assets_json).unwrap()).expect("assets json");
-            for (prefix, rel) in mounts.as_object().expect("assets object") {
-                let dir = repo.join(rel.as_str().expect("assets path"));
+        if let Some(mounts) = selection["assets"][&name].as_object() {
+            for (prefix, rel) in mounts {
+                let dir = base.join(rel.as_str().expect("assets path"));
                 println!("cargo:rerun-if-changed={}", dir.display());
                 let mut files: Vec<PathBuf> = std::fs::read_dir(&dir).expect("assets dir").flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
                 files.sort();

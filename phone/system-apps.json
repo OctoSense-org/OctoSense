@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "source": "../.sources/appcards/apps",
+  "apps": ["news", "photos", "maps", "camera", "mail"],
+  "assets": {
+    "photos": { "photos": "apps/photos/resources/photos" }
+  }
+}
