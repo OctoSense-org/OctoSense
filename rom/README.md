@@ -10,6 +10,8 @@ agent, Quickstep and SystemUI in a LineageOS 22.2 (Android 15) image for the
 OnePlus 6 (`enchilada`). The same Home also runs in a window on macOS for
 development, and builds for OpenHarmony and the iOS simulator.
 
+> **Building an OctoSense app?** You do not need this repository to build, check or publish one: start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then `docs/QUICKSTART.md`). Installing your own bundle on a phone is not supported yet; to see it in a shell before publication, use OctoSense-Desktop with a local catalog ([its README](https://github.com/OctoSense-org/OctoSense-Desktop#try-your-own-app-before-it-is-published)).
+
 ## Where this repository sits
 
 | Repository | Role | How this repository uses it |

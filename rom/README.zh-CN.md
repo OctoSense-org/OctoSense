@@ -4,6 +4,8 @@
 
 OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad](https://github.com/OctoSense-org/makepad) 构建。本仓库包含手机 Shell **OctoSense Home**（`home/`）及其全部交付方式：既可以作为普通桌面应用安装在任意 Android 手机上，也可以连同具有系统权限的 agent、Quickstep 和 SystemUI 一起预装进面向 OnePlus 6（一加 6，`enchilada`）的 LineageOS 22.2（Android 15）镜像。同一套 Home 还能在 macOS 上以窗口形式运行，方便开发，并可构建 OpenHarmony 应用和 iOS 模拟器版本。
 
+> **要开发 OctoSense 应用？** 构建、检查和发布应用都不需要本仓库：请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。目前还不支持把自己的应用包安装到手机上；想在发布前在 Shell 中看到它，请用指向本地目录的 OctoSense-Desktop（见[其 README](https://github.com/OctoSense-org/OctoSense-Desktop/blob/main/README.zh-CN.md#发布前试用自己的应用)）。
+
 ## 本仓库在整体中的位置
 
 | 仓库 | 作用 | 本仓库如何使用它 |
