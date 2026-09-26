@@ -53,8 +53,8 @@ visible until user action, so they do not need a fabricated dismissal timer.
 ## Reproducibility and acceptance
 
 `runtime-patches.lock.json` pins the combined
-`runtime-patches/android-host-accessibility.patch` against Makepad57b31c9. It
-retains the earlier IME handoff changes. An independent Git index reconstruction
+`patches/runtime/makepad-contained-apps.patch` against Makepad `1d3d383`. It
+combines the contained-app runtime with the Settings accessibility and IME changes. An independent Git index reconstruction
 verifies the complete patched tree before APK packaging.
 
 Home2534's full510 app tests,20 relevant Java contract/IME tests, and three focused

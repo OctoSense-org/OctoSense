@@ -1,5 +1,7 @@
 # Android performance and launcher records
 
+English | [简体中文](README.zh-CN.md)
+
 Engineering records for the phone shell on the OnePlus 6 bench (15–16 September 2026). Raw runs, traces, APKs and helper scripts they cite live in the bench machine's `target/perf-artifacts/` (ignored by git); the records carry the hashes and per-run tables.
 
 - [perf-gap-analysis.md](perf-gap-analysis.md) — where the frames go: per-scenario diagnosis, ranked costs, the kgsl GPU/clock measurements, why the Vulkan build is slower, and the two candidate rounds that landed (scene cache, flat materials, sheet capture, deferred app capture, fade overlay).

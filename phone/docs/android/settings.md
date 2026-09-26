@@ -432,7 +432,7 @@ one character), while its ACTION_UP reached `MakepadSurface` (inserting it again
 The trace recorded event identity and text lengths, never typed text. The stable
 Search input was not remounted or written during typing.
 
-The registered `home/runtime-patches/android-host-accessibility.patch` makes the surface
+The registered `patches/runtime/makepad-contained-apps.patch` makes the surface
 insert characters on ACTION_DOWN, matching the existing input-connection path.
 Key-release callbacks, repeats and legacy ACTION_MULTIPLE remain supported. Both
 handoff directions now have one insertion edge; there is no timing/text-based

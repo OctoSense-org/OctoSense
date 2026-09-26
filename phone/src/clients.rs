@@ -121,10 +121,10 @@ fn manifest_value(manifest: &str, key: &str) -> Option<String> {
 /// scan of whatever the workspace happens to contain.
 pub fn registry() -> Vec<AppDef> {
     let base = crate::octosense::catalog::loaded().as_ref().cloned().unwrap_or_default();
-    merge_catalog(base, crate::apps::bundled_modules_catalog(), crate::apps::installed_card_apps())
+    merge_catalog(base, crate::apps::bundled_modules_catalog(), crate::apps::card_apps())
 }
 
-/// Native definitions take precedence. Installed apps are read on each
+/// Native definitions take precedence. System and installed apps are read on each
 /// refresh so installation/removal never depends on restarting Home.
 fn merge_catalog(base: Vec<AppDef>, bundled: Vec<AppDef>, installed: Vec<AppDef>) -> Vec<AppDef> {
     let mut ids = std::collections::HashSet::new();

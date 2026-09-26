@@ -14,15 +14,23 @@ python3 scripts/setup-home.py --check --cargo
 Requires Python 3.9+, Git and Rust stable. The setup script prepares exact
 revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-runtime.lock.json` selects the framework release and
-`home/native-apps.lock.json` selects Mail/AppCards and Camera sources. App Hub
-is the in-tree `home/apps/app-hub` crate; its OctoSense-App-Hub backend crates
-are pinned in `home/apps/app-hub/Cargo.toml` and `home/Cargo.lock`.
+`home/native-apps.lock.json` selects the OctoSense-System-Apps source that holds the system script apps (`apps/<name>/bundle/`, chosen by `home/system-apps.json`) and the Mail host service. App Hub
+is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
+`crates/app-hub-app`), a git dependency pinned in `home/Cargo.toml` and
+`home/Cargo.lock` at the same revision as its backend crates. Its build packs
+the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `home/.cargo/config.toml`
+sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
+from the same pinned OctoSense-System-Apps checkout
+(`.sources/system-apps/apps/appcard/app/app`).
 
-The runtime's Makepad (main `1d3d383e`) already has the isolate controls App
-Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
-needed it records the exact patch, its originating Makepad commit, SHA-256 and
-resulting Git tree; setup applies it to the pinned checkout and leaves it
-staged, and `--check` accepts only that exact tree. `--check` always rejects
+The runtime's Makepad (main `1d3d383e`) has the isolate controls App Hub
+requires, but not yet the contained script apps of makepad#30, so
+`home/runtime-patches.lock.json` names one patch,
+`patches/runtime/makepad-contained-apps.patch`. The lock records the exact
+patch, its originating Makepad commit, SHA-256 and resulting Git tree. The same
+patch also carries Settings accessibility, IME and input-protection fixes; setup
+applies it to the pinned checkout and leaves it staged, and `--check` accepts
+only that exact tree. `--check` always rejects
 staged, unstaged or untracked source changes.
 The separate Makepad/Octoscript repositories are dependencies, not vendored
 copies of the launcher. No mobile repository or sibling-worktree name is used.
@@ -76,8 +84,8 @@ python3 scripts/stage-home.py
 scripts/stage-forks.sh /path/to/lineage-tree
 ```
 
-`stage-forks.sh` retains its existing reset of previously staged SystemUI and
-Quickstep files in the OS tree. Run it only on the designated build tree with no
+`stage-forks.sh` resets previously staged SystemUI and Quickstep files and the
+PermissionController integration paths in the OS tree. Run it only on the designated build tree with no
 active OS build or unrelated edits in those paths. It now takes Home's sources
 from this checkout, and no longer accepts a separate launcher checkout.
 The Linux OS build still uses `scripts/build-rom.sh` / `run-rom-rootfs.sh` and
@@ -94,6 +102,10 @@ Options: `--dry-run` prints the plan; `--offline` uses cached dependencies;
 `--version-code` overrides the automatic code; `--output` selects an artifact
 directory; `--packager` uses an already built compatible `cargo-makepad` instead
 of compiling the pinned packager. Such an override is recorded in the receipt.
+Compiling the pinned packager currently fails: it runs `cargo build --locked`
+in `.sources/makepad`, which has no `Cargo.lock`. Build it with
+`cargo build --release --manifest-path .sources/makepad/tools/cargo_makepad/Cargo.toml`
+and pass `--packager .sources/makepad/target/release/cargo-makepad`.
 
 `publish-release.sh` defaults to the ROM output directory and verifies its
 adjacent receipt before including Home in the existing ROM update feed. The
@@ -104,7 +116,7 @@ verification. Signer inputs must still be the established ROM identity.
 ## App Hub behavior and remaining device validation
 
 Both delivery modes link the same App Hub and card-host modules from the
-in-tree `home/apps/app-hub` crate (`octosense-app-hub-app`, enabled by the
+shared `octosense-app-hub-app` crate (OctoSense-App-Hub `crates/app-hub-app`, enabled by the
 default `app-hub` feature, which `mobile-apps` includes), built on the pinned
 OctoSense-App-Hub backend. Bundle installation requires neither root nor
 Android package installation permission.

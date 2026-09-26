@@ -109,7 +109,8 @@ keep their earlier wording and offsets.
 
 Release gates: App Hub installs into a staging root and publishes the verified
 bundle by renaming, keeping the previous bundle until the new one is in place
-(`home/apps/app-hub/src/catalog.rs`). This settles the non-atomic replacement
+(`home/apps/app-hub/src/catalog.rs` then; now OctoSense-App-Hub
+`crates/app-hub-app/src/catalog.rs`). This settles the non-atomic replacement
 gate. Android runtime containment remains open. Installed Hub apps cannot yet be
 placed on the Android home page (`HUB-01` in `home/BACKLOG.md`).
 
@@ -119,7 +120,8 @@ Work outside mobile main:
   for a frame") is cherry-picked. Its other commits were already here or are
   superseded by the AppCard `9e8e4898` pin.
 - PR #11's Calendar module hosting is left as a follow-up (`home/BACKLOG.md`);
-  its source is in the pinned AppCard at `.sources/appcards/apps/calendar/native`.
+  its source is in OctoScript-App-Design-Flow (formerly Octoscript-AppCard) at
+  [`apps/calendar/native`](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/cbbda4da0a9d0fbf13497335dd3342b71f35e71f/apps/calendar/native).
 - Unreferenced mobile commit `45dbbfb` is superseded: its `allowBackup="false"`,
   `phone_client_texture` and Mail hosting are already here.
 

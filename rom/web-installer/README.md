@@ -1,6 +1,6 @@
 # OctoSense Installer — developer preview
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 A static WebUSB installer for the OnePlus 6 development recipe. Public-origin
 installation is disabled until signed release verification and hardware

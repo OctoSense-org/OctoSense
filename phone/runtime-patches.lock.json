@@ -1,9 +1,18 @@
 {
   "schema_version": 1,
   "makepad": {
-    "patch": "home/runtime-patches/android-host-accessibility.patch",
-    "sha256": "bea29bdee2303b59a101b168a8fe915fae8a134e439723a93fd80a11382795d6",
     "base_revision": "1d3d383e84a66dbb18a4a860f505430c9d5b20f4",
-    "tree": "a8348659e5548d1de26623ea27a5ab779bfd0d0f"
+    "source_commit": "d7a834c74783e2032bc9e2cb9e693eaa2927b1d9",
+    "patch": "patches/runtime/makepad-contained-apps.patch",
+    "sha256": "b2f8d959037284f2fc7c1b6d9918a443383ced22018b6607c69068f0ccb7f99b",
+    "tree": "4990d3717a3963fcdeaf2fa9ecd4eb9d91085d6d",
+    "product_fixes": [
+      "Contained script apps (OctoSense-org/makepad#30): every path out of an isolate answers to its policy; images/web grants; WebReader, GestureView, SheetView, CameraPreview; parse_feed and fs.read_bytes.",
+      "Host services: a host takes only its own isolates' requests, and an asynchronous answer wakes the UI.",
+      "A contained app cannot collect a secret: password and one-time-code fields are inert in a policed isolate.",
+      "Text: a run's trailing space keeps its width unless the row wraps there; every widget takes text/set_text from script.",
+      "Sockets and servers: net.web_socket answers to the app's host list like net.http_request; net.socket_stream and net.http_server are refused in a policed isolate; a Video's network and file sources answer to the host list and the storage jail.",
+      "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation. Applied alongside the contained-app changes from source_commit."
+    ]
   }
 }

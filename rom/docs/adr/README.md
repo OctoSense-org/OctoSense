@@ -1,5 +1,7 @@
 # ROM architecture decision records
 
+English | [简体中文](README.zh-CN.md)
+
 Product-wide ROM and delivery decisions live here. Home-specific records remain
 in [home/docs/adr](../../home/docs/adr/README.md).
 
