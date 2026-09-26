@@ -4403,6 +4403,10 @@ impl AppMain for App {
             }
         }
         self.phone_animation_event(cx,event);
+        if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) && event.back_pressed() {
+            self.phone_action(cx, mobile::PhoneHit::Back);
+            return;
+        }
         if let Some(ne) = self.style_frame.is_event(event) {
             if self.state.is_some() {
                 let dt=if self.style_time==0.0 {0.0}else{(ne.time-self.style_time).min(0.05)};
