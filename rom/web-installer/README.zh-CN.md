@@ -1,6 +1,6 @@
 # OctoSense Installer — 开发预览版
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
 这是通过 WebUSB 为 OnePlus 6 安装 OctoSense ROM 的静态网页工具。在完成发布签名验证和真机验证之前，公共网站上的刷写功能保持禁用。架构及公开发布条件见 [ADR 0001（英文）](../docs/adr/0001-public-web-installer.md)。
 

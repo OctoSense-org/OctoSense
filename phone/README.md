@@ -1,65 +1,32 @@
 # OctoSense Home
 
-## Shared Octoscript-Makepad runtime
+English | [简体中文](README.zh-CN.md)
 
-`native-runtime.lock.json` selects one
-[Octoscript-Makepad](https://github.com/OctoSense-org/Octoscript-Makepad)
-release. Its `runtime.json` owns the exact Makepad and Octoscript revisions,
-shared with AppCards, Mail and the other OctoSense applications.
+The OctoSense phone shell: a Makepad app that is the device's Home screen.
+Home pages with live tiles and app pairs, a gesture layer, the shade
+(notifications left, controls right), Recents, a live island for ongoing
+activities, and hosted apps drawn in-process inside its tiles: App Hub and
+the apps it runs, the system apps, AppCard, Reference and Sheets.
 
-This application is maintained inside `octosense-rom/home`. From the product
-root, run `python3 scripts/setup-home.py` (Python 3.9+) to prepare pinned
-framework and native-app sources in `.sources/`. The runtime's Makepad already
-carries the isolate policy App Hub requires. Local changes are preserved.
-Use `python3 scripts/setup-home.py --check --cargo` from the product root to
-verify the selected sources and reject duplicate Makepad crates.
+Setup, builds for every target, pins and CI are in the
+[root README](../README.md). This page is the Home-specific deep dive.
 
-The supported APK entry point is `../scripts/build-home.sh`; see
-[Home builds](../docs/home-build.md) for standalone and ROM signing. Both modes
-include App Hub. Store installations appear as individual Home apps, each with
-its own identity, data and policy. They are hosted bundles, not Android APKs.
+## Relation to OctoSense-Desktop
 
+Home was split from the desktop shell,
+[OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) (then
+named OctoSense), on 15 September 2026, at the tip of its mobile shell chain
+(PRs #22 to #28). The two still share much of their source (`src/main.rs`,
+`desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor). The phone
+build is the `mobile_only` configuration of the one crate: `build.rs` turns
+it on for Android, and `--features mobile-only` turns it on elsewhere.
+Desktop-only work belongs in the desktop repository. A shared
+`octosense-core` crate is the intended next step, so fixes stop needing
+cherry-picks. `upstream/makepad.json` records which window-manager files were
+imported from Makepad; `scripts/upstream.py` compares and merges them
+([docs/upstream.md](docs/upstream.md)).
 
-The OctoSense phone shell: a Makepad Android app that is the device's Home screen — home pages with live tiles and app pairs, a gesture layer, the shade (notifications left, controls right), Recents, a live island for ongoing activities, and hosted apps (Reference, Sheets, Photos, News, OctosMap, App Hub and the whole Octoscript-AppCard) drawn in-process inside its tiles. It runs on the [OctoSense-org/makepad](https://github.com/OctoSense-org/makepad) fork.
-
-The Home source was originally split from the desktop [OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) (then named OctoSense) on 15 September 2026, at the tip of the mobile shell chain (its PRs #22–#28). Home and the desktop still share much of their source (`src/main.rs`, `desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the Android build is the `mobile-only` configuration of that one crate. Desktop-only work stays in the desktop repository; a shared `octosense-core` crate is the intended next step, so fixes stop needing cherry-picks.
-
-## Build and run on a phone
-
-Requires Rust stable, an installed Android SDK/toolchain and a device on ADB.
-Prepare the native apps with `python3 ../scripts/setup-home.py`. Build
-`cargo-makepad` from the exact sibling revision selected by the shared runtime;
-it carries this app's Java activity (the system browser, HOME, GPS, share and
-deep-link intents), so upstream's tool builds an APK that panics on the first
-News tap — [docs/build-tool.md](docs/build-tool.md) has the measured
-difference and the failure:
-
-```sh
-python3 tools/setup-native.py --check --cargo-manifest Cargo.toml
-cargo build --release --manifest-path ../.sources/makepad/tools/cargo_makepad/Cargo.toml
-../.sources/makepad/target/release/cargo-makepad makepad android \
-  --sdk-path=/path/to/existing/android_sdk build -p octosense --release
-```
-
-To have plain `cargo makepad` be that tool, install it over the stock one, and
-again whenever the fork's tool code or Java changes:
-
-```sh
-cargo install --path ../.sources/makepad/tools/cargo_makepad --force
-```
-
-For iOS, the same tool builds for the simulator (Xcode with an iOS runtime; the
-booted simulator receives the app) — iOS needs `mobile-only` passed by hand,
-Android gets it from `build.rs`:
-
-```sh
-../.sources/makepad/target/release/cargo-makepad makepad apple ios \
-  --org=dev.makepad --app=octosense run-sim -p octosense --features mobile-only
-```
-
-`run` builds, installs and launches; `build` only makes the APK (`target/android/makepad-android-apk/octosense/apk/octo_sense.apk`). Application ID `dev.makepad.octosense`, label **OctoSense**. Reference, Sheets, Photos, News, OctosMap, App Hub and AppCard are linked in automatically; to bundle AppCard's kernel, add `MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=<path to the octos aarch64 build>"` — the recipe is in [docs/android-appcard-build.md](docs/android-appcard-build.md). Without it the AppCard tile falls back to its WebSocket transport and login screen.
-
-### Make it the Home app
+## The Home role
 
 The activity offers the `HOME` intent filter and is `singleInstance`. On a device you control:
 
@@ -75,7 +42,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 (`…navbar.gestural` restores gestures.) The privileged route — owning the gesture zone and Recents — is sized in [docs/android/launcher-plan.md](docs/android/launcher-plan.md) and not started.
 
-### Gestures
+## Gestures
 
 | Where | Gesture | Does |
 |---|---|---|
@@ -99,62 +66,68 @@ A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation
 
 Search opens only by pulling down on Home; the App Library has no search bar. Search ranks names that start with what you typed first and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
 
-## System apps: News, Photos, Maps, Camera, Mail
+## System apps
 
-These five are contained script apps (ADR 0004). Their bundles live with their
-apps in OctoSense-System-Apps (`apps/<name>/bundle/`, pinned by
-`native-apps.lock.json`); `system-apps.json` names which this Home includes and
-mounts the artwork it owns. App Hub's Card runner runs each in its own isolate
-under its manifest's policy, in the standalone Home and in the ROM alike.
+News, Photos, Maps, Camera and Mail are contained script apps
+([ADR 0004](docs/adr/0004-system-apps-are-contained-script-apps.md)). Their
+bundles live in OctoSense-System-Apps (`apps/<name>/bundle/`, pinned by
+`native-apps.lock.json`); `system-apps.json` names which this Home ships and
+mounts the artwork Home owns (Photos' sample library,
+`apps/photos/resources/photos`). App Hub's Card runner runs each in its own
+isolate under its manifest's policy, in the standalone Home and in the ROM
+alike. Each keeps its short launcher id (`news` for `os.news`), so icons,
+tiles and the dock are unchanged.
 
 Mail reads and sends through the `mail` host service (`apps/mail/host-service`
-in the same repository): the person signs in on the host's own sheet, the
+in OctoSense-System-Apps): the person signs in on the host's own sheet, the
 password stays in the keychain or behind an Android Keystore key, and the app
 never holds a socket or a password. For a demo mailbox (password `demo`):
 
 ```sh
+# desktop, from home/
+MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release --features mobile-only
+# phone
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
 `app-news`, `app-photos` and `app-maps` link the earlier native modules in
-place of their script apps, for comparison; Mail and Camera have no native
-module any more.
+place of their script apps, for comparison until the script apps are measured
+on a device; their notes are [docs/photos.md](docs/photos.md) and
+[docs/maps.md](docs/maps.md). Mail and Camera have no native module any more.
+
+## App Hub
+
+App Hub (`apphub`) browses the signed OctoSense catalog, searches, shows app
+details, installs verified bundles and keeps an installed-app Library.
+Installed apps open in contained Card instances (`card`) and appear
+separately in the launcher and Recents. Both come from App Hub's shared shell
+crate `octosense-app-hub-app` (OctoSense-App-Hub `crates/app-hub-app`), linked
+by the default `app-hub` feature and on every mobile build. The **Preview
+catalog** switch shows the built-in apps while the live catalog is empty.
+
+See the crate's
+[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app/README.md)
+at the pinned revision and the [native design evidence](docs/design/app-hub/README.md).
+App authors start with
+[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).
 
 ## Run on a desktop
 
-The same shell in a phone-sized window, on Metal/DX/GL:
+The same shell in a phone-sized window, on Metal, DirectX or OpenGL:
 
 ```sh
 cargo run --release --features mobile-only
 cargo run --release --features mobile-only -- --test-action island:demo --test-action capture:/tmp/shell.png
 ```
 
-`--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`, `ask-appcard:<text>`) and `capture:<path>` writes the presented frame every 5 s, so a scripted run can be looked at without a screen. A plain `cargo run` is the universal desktop shell of the desktop repository; it is kept building here but is not this repository's product. Like that repository's, it starts in **OctoSense Light** with its bundled wallpaper, settled before the first frame; Omarchy and the other styles remain in the style menu.
-
-## Photos
-
-The bundled Photos app has separate Library and Collections tabs, a photo viewer,
-editable albums, favorites, People, search, and automatic Memory slideshows.
-It starts with 19 offline sample photos, including the generated family portraits.
-See [Photos usage, adding photos, and device validation](docs/photos.md).
-
-## App Hub
-
-App Hub provides browsing, search, app details, verified installation and an
-installed-app Library using the signed OctoSense App Hub catalog. Installed
-apps open in contained Card instances and appear separately in the launcher
-and Recents. Android and standard desktop builds include App Hub automatically,
-including `cargo run --release --features mobile-only`.
-
-The **Preview catalog** switch opens a separate collection of built-in
-OctoSense apps for browsing while the live catalog is empty. See
-[App Hub usage and local install fixtures](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app/README.md) and
-[native design evidence](docs/design/app-hub/README.md).
-
-For app authors, start with
-[Build your first Hub app](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/FIRST-APP.md).
-The Hub owns the shared [icon guidelines](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/ICONS.md)
-and [development guide map](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/main/docs/DEVELOPMENT.md).
+`--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`,
+`ask-appcard:<text>`, `launch-<app id>`, `taps:<x>,<y>@<s>`), and
+`capture:<path>` writes the presented frame every 5 s, so a scripted run can
+be inspected without a screen. `MAKEPAD_APP_CONFIG='{"test_actions":[...]}'`
+passes the same list where arguments cannot be given. A plain `cargo run` is
+the universal desktop shell of the desktop repository; it keeps building here
+but is not this repository's product. It starts in **OctoSense Light** with
+its bundled wallpaper; Omarchy and the other styles remain in the style menu.
 
 ## Performance
 
@@ -170,33 +143,61 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 
 ## Layout
 
-- `src/mobile*.rs` — the phone shell: state and navigation (`mobile.rs`), the gesture recognizer (`mobile_gestures.rs`), the surface that draws home, drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups, the shade, the island, the thinking octopus, the perf monitor.
-- `src/desk/phone.rs` — the desk's phone composition: hosted-app captures, the kept home scene and its blur pyramid, the compositor path.
-- `resources/android/AndroidManifest.xml.template` — the activity (Home role, share and deep-link intents).
-- `resources/icons/apps/<style>/` — App icons: this shell's own artwork for News (a front page with the paper's N, on red) and OctosMap (a folded map under a pin, on green), one 64×64 SVG per framework style, written by `python3 tools/build_app_icons.py` (`--sheet <path>` also renders a review sheet, with `rsvg-convert`). The framework ships the icons, keyed by app id and style; `octosense::style::icon_assets` lays these two over its list, every stylesheet carries the result to hosted apps, and the shell's icon drawer installs it for a style before its first draw. Windows 2000 keeps the framework's sixteen-pixel art. The renderer has no clip paths, masks, filters or text, so the art stays inside its tile by construction; a test holds the files to that.
-- `apps/app-hub`, `apps/appcard`, `apps/maps`, `apps/news`, `apps/photos`, `apps/reference` — the local hosted modules built into the APK. News is laid out after Apple News: a Today page with a section per source (Hacker News, TechMeme, Google News and up to four RSS or Atom feeds), a Following page that switches sources on and off and adds or removes feeds, a Saved page, Search, and a floating glass bottom bar; a light skin, and a dark one when the host is dark. A tap opens the story in the app's own reader on the platform's web view, and the story's `•••` sheet saves it, opens it in the Browser app when the host has one, or copies its link. It draws a wide home tile. Its design and hosting notes are in `docs/plans/2026-09-16-news-app-design.md`, `2026-09-16-news-app-phase2-design.md` and `2026-09-16-news-app-phase3-design.md`. OctosMap is laid out after Google Maps: a full-screen map under a search bar, a place sheet, directions by car, on foot and by bike, and turn-by-turn navigation with a simulated drive, on public OpenStreetMap services; it opens from the home grid and the App Library. Its behaviour, its services and their terms are in `docs/maps.md`, its design in `docs/plans/2026-09-18-octosmap-design.md`.
-- `docs/` — records and recipes; `docs/android/` the performance and launcher records.
+- `src/mobile*.rs`: the phone shell. State and navigation (`mobile.rs`), the
+  gesture recognizer (`mobile_gestures.rs`), the surface that draws home,
+  drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups,
+  the shade, the island, the thinking octopus, the perf monitor.
+- `src/apps.rs`: which modules this build links, the system apps and
+  installed apps as launcher rows, and how each is hosted.
+- `src/desk/phone.rs`: the desk's phone composition: hosted-app captures, the
+  kept home scene and its blur pyramid, the compositor path.
+- `resources/android/AndroidManifest.xml.template`: the activity (Home role,
+  share and deep-link intents).
+- `resources/icons/apps/<style>/`: this shell's own icons for News and
+  OctosMap, one 64x64 SVG per framework style, written by
+  `python3 tools/build_app_icons.py` (`--sheet <path>` also renders a review
+  sheet with `rsvg-convert`). The renderer has no clip paths, masks, filters
+  or text, so the art stays inside its tile by construction; a test holds the
+  files to that.
+- `apps/appcard`: hosts the AppCard assistant (`octos-app`, a path dependency
+  into `../.sources/system-apps/apps/appcard/app/app`).
+- `apps/reference`: the reference module.
+- `apps/news`, `apps/photos`, `apps/maps`: the native comparison modules
+  (features `app-news`, `app-photos`, `app-maps`). Their design notes are in
+  `docs/plans/`.
+- `android/`: the System Bridge, contracts, Quickstep and SystemUI projects
+  ([android/README.md](android/README.md)).
+- `docs/`: records and recipes; `docs/adr/` the Home decisions;
+  `docs/android/` the performance and launcher records.
 
 ## Dependencies
 
-- Framework: the exact Octoscript-Makepad release selected by `native-runtime.lock.json`. Its `runtime.json` pins Makepad and Octoscript. Cargo patches resolve the prepared siblings, with one widgets/platform/script graph; do not substitute a moving branch. How the fork relates to upstream Makepad, why the siblings are shallow clones and how a pin moves: [docs/makepad-fork.md](docs/makepad-fork.md).
-- `OctoSense-org/Octoscript-AppCard` (`octos-app`, the hosted AppCard) and, through it, `Octoscript`, `Octoscript-Makepad` (component kits) and a few chart/diagram crates.
-- The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at build time (above).
+- Framework: the Octoscript-Makepad release selected by
+  `native-runtime.lock.json`; its `runtime.json` pins Makepad and OctoScript.
+  Cargo `[patch]` sections resolve every Makepad crate to
+  `../.sources/makepad`, so the graph has one widgets/platform/script. Do not
+  substitute a moving branch. How the fork relates to upstream Makepad and how
+  a pin moves: [docs/makepad-fork.md](docs/makepad-fork.md).
+- App Hub: `octosense-app-hub-app` and its backend crates, one pinned
+  revision (the `[patch]` in `Cargo.toml` explains the `www.github.com` alias).
+- OctoSense-System-Apps (`native-apps.lock.json`): the system-app bundles,
+  the Mail host service and `octos-app`, which brings octos from
+  `octos-org/octos` at one revision.
+- The AppCard kernel is not a Cargo dependency: `liboctos.so` is bundled at
+  APK build time with `MAKEPAD_ANDROID_EXTRA_LIBS`
+  ([docs/android-appcard-build.md](docs/android-appcard-build.md); its pins
+  predate the current ones). Without it, the AppCard tile falls back to its
+  WebSocket transport and login screen.
 
-Tests: `cargo test --features mobile-only mobile -- --test-threads=1` runs the shell's unit tests (gestures, pages, island, shade, groups, tiles). `docs/validation.md` and `docs/android/validation-record.md` hold the device validation.
+## Tests and state
 
-State lives under `~/.octosense` on desktop and the app's data directory on Android; `OCTOSENSE_HOME` relocates it.
+`cargo test --features mobile-only mobile -- --test-threads=1` runs the
+shell's unit tests (gestures, pages, island, shade, groups, tiles). The full
+CI set is in the [root README](../README.md#testing-and-validation).
+`scripts/smoke.py` launches a release build under `MAKEPAD_REMOTE` and drives
+it over HTTP. [docs/validation.md](docs/validation.md) and
+[docs/android/validation-record.md](docs/android/validation-record.md) hold
+the device validation.
 
-## Robrix Matrix module
-
-Robrix2 is imported into the sibling AppCards repository at
-`apps/robrix/native` and linked as `octosense-robrix`. It uses this launcher's
-locked Octoscript-Makepad release and opens as an embedded module by default.
-Run `cargo run --release -- --test-action launch-robrix`; for the macOS phone
-shell add `--features mobile-apps,mobile-only` before `--`.
-
-The AppCards checkout and its `octos` submodule are required. The accompanying
-AppCard/octos rusqlite 0.37 update unifies SQLite with the Matrix SDK. Both
-launchers patch the legacy AppCard Git dependencies to that canonical checkout.
-See `apps/robrix/README.md` in that AppCards checkout for
-Android build instructions, the message AppCard format and validation scope.
+State lives under `~/.octosense` on desktop and in the app's data directory on
+Android; `OCTOSENSE_HOME` relocates it.
