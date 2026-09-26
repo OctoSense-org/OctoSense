@@ -1,12 +1,12 @@
-# Dev/ops tool — NOT part of the app build. Encodes an octos LLM config as a QR
-# the app composer scans to provision a key on-device. Rust replacement for the
-# former scripts/llm_qr.py (this repo is Rust — no Python).
-#   cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family zai --model glm-5.2 --prompt-key --svg /tmp/zai.svg
+# Dev/ops tool — NOT part of the app build. Encodes an LLM provider set as the
+# provisioning QR OctoSense scans (octos OCTOS1E by default, legacy a2app JSON
+# with --legacy). The format lives in apps/ai-providers/config.
+#   cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family deepseek --prompt-key --out qr.png
 [package]
 name = "llm-qr"
 version = "0.1.0"
 edition = "2021"
-description = "Encode an octos LLM config as a QR the app composer scans to provision itself"
+description = "Encode an LLM provider set as the QR OctoSense scans to provision itself"
 license = "Apache-2.0"
 publish = false
 
@@ -15,11 +15,13 @@ name = "llm-qr"
 path = "src/main.rs"
 
 [dependencies]
+octosense-llm-config = { path = "../../../ai-providers/config", features = ["png"] }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rpassword = "7"
 serde_json = "1"
 
-[dev-dependencies]
-# The Android scanner uses rqrr too. This round-trip test guarantees the QR
-# modules emitted by this tool remain decodable by the phone-side decoder.
-rqrr = { version = "0.10", default-features = false }
+# Argon2id (64 MiB, t=3) takes seconds unoptimised; optimise just the KDF.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
