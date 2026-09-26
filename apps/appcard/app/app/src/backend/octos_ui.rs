@@ -164,8 +164,13 @@ impl OctosUiAgent {
         let workspace_cwd = config.workspace_cwd.clone();
         let fallback_profile = config.profile_id.0.clone();
         let stdio_transport = config.stdio.is_some() || cfg!(target_env = "ohos");
+        // 8 MiB worker stacks: on OpenHarmony this runtime also runs the
+        // embedded octos server (`octos_cli::embedded::serve_io`), whose
+        // dispatcher overflows Tokio's default 2 MiB stack. Every octos entry
+        // point (chat, ACP, gateway, MCP) builds its runtime the same way.
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
+            .thread_stack_size(8 * 1024 * 1024)
             .enable_all()
             .build()
             .expect("octos-ui-agent: tokio runtime build");
