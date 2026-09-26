@@ -66,15 +66,12 @@ host's mail service. `net` reaches only the hosts the manifest lists.
 
 ## How shells consume this repository
 
-The shells pin a revision of this repository and choose which apps to ship.
-This wiring is **in progress** in two open pull requests:
-[OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18)
-(Home, standalone launcher and ROM image) and
-[OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36).
-Until they merge, the shells' `main` branches still use the older native
-modules and Octoscript-AppCard.
-
-With those PRs, a shell:
+The shells pin a revision of this repository and choose which apps to ship:
+OctoSense-ROM's Home (standalone launcher and ROM image, since
+[OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18)) and
+OctoSense-Desktop (since
+[OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)).
+A shell:
 
 1. Pins this repository in `native-apps.lock.json` (ROM: `home/native-apps.lock.json`,
    checked out at `.sources/system-apps`; Desktop: a sibling checkout at
@@ -96,7 +93,9 @@ With those PRs, a shell:
 
 3. Links `octosense-mail-service` (path dependency on the pinned checkout) and
    registers it at startup: `register()` for real accounts, or
-   `register_demo()` when the shell's app config has `mail_demo: true`.
+   `register_demo()` when the shell's app config has `mail_demo: true`. The
+   shell links App Hub at the same rev the service names for
+   `octosense-appstore`, so there is one host-service registry.
 4. Links AppCard's `octos-app` with `default-features = false` and mounts it
    through its `AppShell` widget (see [AppCard](#the-appcard-assistant)).
 
@@ -154,13 +153,11 @@ the same network allowlist. How to write such an app (language, APIs, the
 
 App Hub's `card-host` runs one bundle under the policy its manifest resolves
 to, with the same admission order a device uses. The `--system` and `--static`
-flags, and host-service support, are on App Hub's `apps/script-and-system-apps`
-branch
-([OctoSense-App-Hub#4](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/4),
-open); App Hub `main` does not have them yet.
+flags, and host-service support, are on App Hub `main` (since
+[OctoSense-App-Hub#4](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/4)).
 
 ```sh
-# in an OctoSense-App-Hub checkout on that branch
+# in an OctoSense-App-Hub checkout
 cargo build --release -p octosense-card-host --bin card-host
 
 card-host --bundle <System-Apps>/apps/news/bundle --system
@@ -187,7 +184,7 @@ a shell build that links the service, with the demo mailbox (any address,
 password `demo`, sample messages, sends that go nowhere):
 
 ```sh
-# OctoSense-Desktop with #36 (repository root), or ROM Home with #18 (in home/)
+# OctoSense-Desktop (repository root), or ROM Home (in home/)
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
 ```
 

@@ -124,13 +124,11 @@ composer; `AppShell::shutdown` runs before the host frees the isolate.
 
 - **OctoSense ROM**, `home/apps/appcard`, and **OctoSense-Desktop**,
   `apps/appcard`: an `AppCardModule` that implements the shell's `AppModule`
-  trait around `AppShell`. Both move to this repository (at `4d99cb58`, with
-  octos `18fcd3f1`) in
+  trait around `AppShell`. Both build it from the System-Apps revision their
+  `native-apps.lock.json` pins (since
   [OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18) and
-  [OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36),
-  both open. Their `main` branches still pin rev `9e8e4898` of
-  OctoSense-org/Octoscript-AppCard (now OctoScript-App-Design-Flow), so
-  changes made here do not reach them until those merge.
+  [OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)),
+  with octos `18fcd3f1`; a change here reaches them when they move that pin.
 - **Rinx** embeds the AppCard tile; its repin is a separate follow-up.
 
 ## Provenance
