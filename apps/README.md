@@ -1,7 +1,7 @@
 # OctoSense System Apps
 
 The first-party apps every OctoSense device ships: **News, Photos, Maps, Camera,
-Mail and AppCard**. The first five are *contained script apps* (OctoSense ROM
+Mail, AI providers and AppCard**. The first six are *contained script apps* (OctoSense ROM
 `home/docs/adr/0004`): a Splash program run by App Hub's Card runner in its own
 isolate, under the permissions its manifest asks for, exactly like an app a
 developer publishes through the App Hub. AppCard is the one native app: a Rust
@@ -14,13 +14,17 @@ module the shells link.
 | Maps | [apps/maps/bundle](apps/maps/bundle) | `storage`, `net`, `location` | map, places, routes |
 | Camera | [apps/camera/bundle](apps/camera/bundle) | `storage`, `camera`, `microphone`, `library` | over the runtime's `CameraPreview` |
 | Mail | [apps/mail/bundle](apps/mail/bundle) | `storage`, `mail` | calls the [`mail` host service](apps/mail/host-service) |
+| AI providers | [apps/ai-providers/bundle](apps/ai-providers/bundle) | `storage`, `llm` | the assistant's LLM providers and the phone QR, through the [`llm` host service](apps/ai-providers/host-service); keys, PINs and codes stay on the host's sheets |
 | AppCard | [apps/appcard](apps/appcard) (native) | — | the AppCard assistant — the "Ask anything" tile: an AI assistant that generates L0 cards; a native Rust module (`octos-app`) the shells link, not yet a script app |
 
 ## Layout
 
 ```
 apps/<name>/bundle/         the app: manifest.json, main.splash, artwork
-apps/<name>/host-service/   a Rust service the app calls through host.request (Mail only)
+apps/<name>/host-service/   a Rust service the app calls through host.request (Mail, AI providers)
+apps/ai-providers/config/   octosense-llm-config: the octos provider registry, the
+                            profile merge and the OCTOS1/OCTOS1E QR, shared by the
+                            `llm` service, AppCard and tools/llm-qr
 apps/appcard/               the native AppCard runtime: app/ (cargo workspace with
                             octos-app), a2app/ and a2app-l0/ (card corpora compiled
                             in), personal-data/, tools/, docs/
@@ -45,11 +49,14 @@ The OctoSense shells pin a revision of it and choose which apps to ship:
   launcher and inside the ROM image.
 - **OctoSense desktop shell**: not wired yet; it would pin and select the same way.
 
-The Mail host service (`octosense-mail-service`) and AppCard's `octos-app`
-(`apps/appcard/app/app`) are linked by the shell; a shell takes `octos-app` as
-a git dependency on this repository. Its
-tests run from a shell workspace that links it: in the ROM,
-`cd home && cargo test -p octosense-mail-service`.
+The host services (`octosense-mail-service`, `octosense-llm-service`) and
+AppCard's `octos-app` (`apps/appcard/app/app`) are linked by the shell; a shell
+takes `octos-app` as a git dependency on this repository. Mail's tests run from
+a shell workspace that links it: in the ROM,
+`cd home && cargo test -p octosense-mail-service`. AI providers' crates test
+from their own workspace: `cd apps/ai-providers && cargo test --workspace`
+(see [its README](apps/ai-providers/host-service/README.md) for the sibling
+checkouts it needs and how a shell registers the service).
 
 ## Rules for these apps
 

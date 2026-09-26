@@ -16,6 +16,9 @@ rules in README.md.
   replace the device's installed Home.
 - Mail's service: change `apps/mail/host-service` and run
   `cargo test -p octosense-mail-service` from the ROM's `home/`.
+- AI providers: `apps/ai-providers/{config,host-service}` test from
+  `apps/ai-providers` with `cargo test --workspace`; AppCard links the config
+  crate, so run AppCard's checks too when it changes.
 - After a change, bump the shells' pin (`home/native-apps.lock.json` in the ROM)
   in a pull request there.
 - Never add a password or one-time-code field to an app; secrets belong to a
