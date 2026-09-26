@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "makepad": {
+    "base_revision": "1d3d383e84a66dbb18a4a860f505430c9d5b20f4",
+    "source_commit": "d7a834c74783e2032bc9e2cb9e693eaa2927b1d9",
+    "patch": "patches/runtime/makepad-contained-apps.patch",
+    "sha256": "70419d98644af0820816f8bbc480365fa214c71f96eea0dba4b541c7ec9d59a2",
+    "tree": "3889a3496226def432ecdf8131a9d12eb822e59b",
+    "product_fixes": [
+      "Contained script apps (OctoSense-org/makepad#30): every path out of an isolate answers to its policy; images/web grants; WebReader, GestureView, SheetView, CameraPreview; parse_feed and fs.read_bytes.",
+      "Host services: a host takes only its own isolates' requests, and an asynchronous answer wakes the UI.",
+      "A contained app cannot collect a secret: password and one-time-code fields are inert in a policed isolate.",
+      "Text: a run's trailing space keeps its width unless the row wraps there; every widget takes text/set_text from script.",
+      "Sockets and servers: net.web_socket answers to the app's host list like net.http_request; net.socket_stream and net.http_server are refused in a policed isolate; a Video's network and file sources answer to the host list and the storage jail."
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "repositories": {
+    "system-apps": {
+      "url": "https://github.com/OctoSense-org/OctoSense-System-Apps.git",
+      "revision": "4d99cb589d00207a9a63e32d46de6685843929d1",
+      "path": "OctoSense-System-Apps"
+    }
+  }
+}
