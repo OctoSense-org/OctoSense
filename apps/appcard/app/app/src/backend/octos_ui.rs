@@ -1330,7 +1330,7 @@ mod generation_terminal_tests {
     fn legacy_completed(turn: &TurnId) -> UiNotification {
         UiNotification::TurnCompleted(TurnCompletedEvent {
             session_id: SessionKey("_main:test".into()), topic: None, turn_id: turn.clone(),
-            cursor: None, tokens_in: None, tokens_out: None, session_result: None,
+            cursor: None, tokens_in: None, tokens_out: None, session_result: None, token_usage: None,
         })
     }
 
@@ -1503,7 +1503,7 @@ mod generation_terminal_tests {
         assert!(agent.translate_notification(terminal(&turn, TurnTerminalOutcome::Completed)).is_empty());
         assert!(agent.translate_notification(UiNotification::TurnCompleted(TurnCompletedEvent {
             session_id: SessionKey("_main:test".into()), topic: None, turn_id: turn,
-            cursor: None, tokens_in: None, tokens_out: None, session_result: None,
+            cursor: None, tokens_in: None, tokens_out: None, session_result: None, token_usage: None,
         })).is_empty());
     }
 

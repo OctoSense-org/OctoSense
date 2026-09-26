@@ -20,13 +20,14 @@ octos-app-transport = { path = "crates/octos-app-transport" }
 octos-app-render    = { path = "crates/octos-app-render" }
 
 # Octos: ONE source for every octos crate — git octos-org/octos at a single
-# rev (branch appcard/mate70-on-main until its commits are upstreamed to main).
+# rev on main (the merge of octos-org/octos#2541, which upstreamed the AppCard
+# work from branch appcard/mate70-on-main).
 # The crates inherit from their own workspace, which cargo reads out of the
 # checkout. Move octos-core and octos-cli together; a consumer that also
 # depends on octos must use the same rev, or the graph gets two octos.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f" }
 # OpenHarmony only (see octos-app-transport): the core linked in-process.
-octos-cli  = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8", default-features = false }
+octos-cli  = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f", default-features = false }
 
 # Async / wire
 tokio              = { version = "1", features = ["rt", "macros", "net", "time", "sync"] }
@@ -49,9 +50,12 @@ log      = "0.4"
 # Framework source overrides below use the sibling release prepared by
 # tools/setup-native.py from Octoscript-Makepad/runtime.json.
 
-# octos's OpenHarmony-safe nix (its ioctl ABI differs from Linux), taken from
-# the vendor/ directory of the same octos rev. (octos also vendors mmap-rs
-# 0.6.1, but this graph resolves mmap-rs 0.7.0, so that patch would be unused.)
+# OpenHarmony-safe nix 0.29 (for rustyline; OHOS's ioctl ABI differs from
+# Linux): crates.io nix 0.29.0 plus `target_env = "ohos"` in
+# src/sys/ioctl/linux.rs. octos main does not vendor it (octos#2541 dropped the
+# vendor/ tree), so it still comes from the vendor/ directory of the former
+# branch rev 18fcd3f1 (branch appcard/mate70-on-main). It is not an octos crate:
+# `cargo tree -i octos-core` still sees one octos source.
 [patch.crates-io]
 nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
 
