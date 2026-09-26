@@ -8,12 +8,12 @@ OctoSense-Desktop is the desktop shell of [OctoSense](https://github.com/OctoSen
 
 | Repository | Role for this repo |
 | --- | --- |
-| [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM) | The phone shell (`home/`). Same app model, same runtime patch, same system apps. |
+| [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM) | The phone shell (`home/`). Same app model, same runtime, same system apps. |
 | [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | News, Photos, Maps, Camera and Mail bundles, the Mail host service and the AppCard assistant (`octos-app`). Pinned sibling checkout. |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | The runtime release that pins Makepad and OctoScript. Pinned sibling checkout. |
-| [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Pinned sibling checkout, plus a reviewed patch. |
+| [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Pinned sibling checkout. |
 | [octos](https://github.com/octos-org/octos) | The agent kernel behind the AppCard assistant. Git dependency, one revision (`18fcd3f1`). |
 
 ## Repository layout
@@ -29,7 +29,7 @@ OctoSense-Desktop is the desktop shell of [OctoSense](https://github.com/OctoSen
 | `system-apps.json` | Which system apps this build packs, and from where. |
 | `native-runtime.lock.json` | The OctoScript-Makepad release (and through it, Makepad and OctoScript). |
 | `native-apps.lock.json` | The OctoSense-System-Apps revision. |
-| `runtime-patches.lock.json`, `patches/runtime/` | The reviewed Makepad patch ([OctoSense-org/makepad#30](https://github.com/OctoSense-org/makepad/pull/30)) and its expected tree. |
+| `runtime-patches.lock.json` | Reviewed patches on top of the pinned Makepad, with their expected trees. Empty today: the pinned Makepad carries everything the shell needs. |
 | `tools/setup-native.py` | Prepares and checks the pinned sibling checkouts. |
 | `scripts/` | `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, and `provision-appcard-llm.sh` (Android). |
 | `upstream/makepad.json` | Provenance of every file imported from Makepad's `apps/wm`. |
@@ -60,19 +60,19 @@ Result:
 octosense-ws/
   OctoSense-Desktop/       this repository
   octoscript-makepad/      the release native-runtime.lock.json selects
-  makepad/, octoscript/    the revisions that release's runtime.json pins; makepad carries the patch
+  makepad/, octoscript/    the revisions that release's runtime.json pins
   OctoSense-System-Apps/   the revision native-apps.lock.json pins
 ```
 
 | Command | Effect |
 | --- | --- |
-| `python3 tools/setup-native.py` | Clone missing siblings at their pinned revisions and apply the Makepad patch. |
+| `python3 tools/setup-native.py` | Clone missing siblings at their pinned revisions (and apply any patch `runtime-patches.lock.json` names). |
 | `python3 tools/setup-native.py --check` | Verify the siblings without changing anything. |
 | `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml` | Also check the locked Cargo graph: one Makepad, one octos, one App Hub. |
 | `python3 tools/setup-native.py --update` | Move clean checkouts to the locked revisions (after the lock files change). |
 | `--root DIR`, `--cache DIR` | Use another workspace directory; reuse local Git object caches. |
 
-Local changes in a sibling are preserved; `--update` only moves clean checkouts. A clean checkout of the commit the patch was cut from (`source_commit` in `runtime-patches.lock.json`) is accepted as the same tree.
+Local changes in a sibling are preserved; `--update` only moves clean checkouts. When `runtime-patches.lock.json` names a patch, a clean checkout of the commit it was cut from (`source_commit`) is accepted as the same tree.
 
 ## Build and run
 
@@ -154,7 +154,7 @@ Precedence: a linked native module beats a system app of the same id, and a syst
 
 ### Containment and permissions
 
-A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. The Card runner grants only the capabilities the manifest lists (Mail asks for `storage` and `mail`). The Makepad patch ([makepad#30](https://github.com/OctoSense-org/makepad/pull/30)) enforces this at every exit of an isolate: network and web sockets answer to the app's host list, raw sockets and servers are refused, files stay in the app's storage jail, and password or one-time-code fields are inert inside a policed isolate.
+A contained app is a bundle: `manifest.json` (id, version, capabilities) plus `main.splash`. The Card runner grants only the capabilities the manifest lists (Mail asks for `storage` and `mail`). The pinned Makepad ([makepad#30](https://github.com/OctoSense-org/makepad/pull/30)) enforces this at every exit of an isolate: network and web sockets answer to the app's host list, raw sockets and servers are refused, files stay in the app's storage jail, and password or one-time-code fields are inert inside a policed isolate.
 
 ### Host services and host-owned sheets
 
@@ -295,9 +295,9 @@ Phone builds always link Reference, Sheets and AppCard, and App Hub with the sys
 
 | To move | Edit | Then |
 | --- | --- | --- |
-| Makepad / OctoScript | `native-runtime.lock.json` (a new OctoScript-Makepad release), and the `rev` of the Makepad Git dependencies in `Cargo.toml` and `apps/*/Cargo.toml` | Rebase the patch if needed, update `runtime-patches.lock.json` (base, sha256, tree) |
+| Makepad / OctoScript | `native-runtime.lock.json` (a new OctoScript-Makepad release), and the `rev` of the Makepad Git dependencies in `Cargo.toml` and `apps/*/Cargo.toml` | If a patch is needed on top, record it in `runtime-patches.lock.json` (base, sha256, tree) |
 | System apps, Mail service, AppCard | `revision` in `native-apps.lock.json` | — |
-| App Hub | `rev` of `octosense-app-hub-app` and the three `[patch]` entries in `Cargo.toml` | — |
+| App Hub | `rev` of `octosense-app-hub-app` in `Cargo.toml` | Keep it at the App Hub rev the pinned System-Apps Mail service names (`octosense-appstore`), so the graph has one App Hub |
 
 After any change: `python3 tools/setup-native.py --update`, `cargo update` as needed, then `python3 tools/setup-native.py --check --cargo-manifest Cargo.toml` and the tests below.
 
