@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.keyboardsfixture">
+    <uses-sdk android:minSdkVersion="35" android:targetSdkVersion="35" />
+    <queries><intent><action android:name="android.view.InputMethod" /></intent></queries>
+    <application android:label="OctoSense keyboard editor fixture" android:allowBackup="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".KeyboardEditorActivity" android:exported="true" android:windowSoftInputMode="stateAlwaysVisible" />
+        <receiver android:name=".EditorObservation" android:exported="true" android:permission="android.permission.DUMP" />
+        <receiver android:name=".NativeKeyboardObservation" android:exported="true" android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

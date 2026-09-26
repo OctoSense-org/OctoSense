@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -56,6 +57,8 @@ import org.json.JSONObject;
 /** Public launcher client and asynchronous bridge adapter in the Home process. */
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
+    private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
+    @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ThreadPoolExecutor worker=new ThreadPoolExecutor(1,1,0,TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(32),r -> new Thread(r,"OctoSenseAndroid"),new ThreadPoolExecutor.AbortPolicy());
@@ -81,6 +84,27 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private final Map<String,ShortcutInfo> shortcuts=new HashMap<>();
     private ISystemBridge bridge;
     private dev.makepad.octosense.agent.AgentPlatformClient agent;
+    private WifiSettingsClient wifiSettings;
+    private BluetoothSettingsClient bluetoothSettings;
+    private AccountsSettingsClient accountsSettings;
+    private UpdatesSettingsClient updatesSettings;
+    private NetworkSettingsClient networkSettings;
+    private DisplaySettingsClient displaySettings;
+    private SoundsSettingsClient soundsSettings;
+    private AppNotificationsSettingsClient appNotificationsSettings;
+    private RolesSettingsClient rolesSettings;
+    private PermissionsSettingsClient permissionsSettings;
+    private DndSettingsClient dndSettings;
+    private AppNetworkSettingsClient appNetworkSettings;
+    private AppBatterySettingsClient appBatterySettings;
+    private AppStorageSettingsClient appStorageSettings;
+    private AppLanguageSettingsClient appLanguageSettings;
+    private volatile SystemLanguageSettingsClient systemLanguageSettings;
+    private volatile KeyboardSettingsClient keyboardSettings;
+    private volatile CaptionCustomSettingsClient captionCustomSettings;
+    private volatile CaptionLanguageSettingsClient captionLanguageSettings;
+    private AndroidAccessibilityPreferences accessibilityPreferences;
+    private final CountDownLatch agentBinding=new CountDownLatch(1);
     private long catalogRevision;
     private LauncherPlacements placements;
     private File placementFile;
@@ -97,7 +121,9 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private long bridgeRevision=-1;
     private boolean bound;
     private volatile boolean destroyed;
-    private boolean resumed;
+    private volatile boolean resumed;
+    private volatile boolean windowFocused;
+    private final android.view.ViewTreeObserver.OnWindowFocusChangeListener settingsFocusListener;
     private int reconnectAttempt;
     /** The shell's appearance, for the system-bar icons and the native dialogs. */
     private volatile boolean shellDark;
@@ -105,6 +131,9 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
     private final SharedPreferences hints;
     /** The shell's hit regions as accessibility nodes (ShellAccessibility.java). */
     private final ShellAccessibility accessibility;
+    private final SettingsAccessibility settingsAccessibility;
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_SETTINGS_ENTRY=new java.util.concurrent.atomic.AtomicLong(1);
+    private final SettingsEntryContract.Delivery settingsEntryDelivery=new SettingsEntryContract.Delivery();
     private final LinkedHashMap<String,String[]> outbound=new LinkedHashMap<>();
     private boolean flushScheduled;
     private boolean resyncNeeded;
@@ -112,6 +141,10 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
 
     public MakepadAppExtension(MakepadActivity activity) {
         this.activity=activity;
+        // Home also hosts trusted Settings, theme controls and native overlays.
+        // Protect its window before an external Settings intent can be handled.
+        if(android.os.Build.VERSION.SDK_INT>=31) activity.getWindow().setHideOverlayWindows(true);
+        windowFocused=activity.hasWindowFocus();
         launcher=activity.getSystemService(LauncherApps.class);
         users=activity.getSystemService(UserManager.class);
         homeGeometry=new HomeGeometryClient(activity,this::offer,this::emit);
@@ -157,17 +190,39 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         else activity.registerReceiver(profileCallback,profileEvents);
         hints=activity.getSharedPreferences("octosense-hints",Context.MODE_PRIVATE);
         accessibility=new ShellAccessibility(activity,index -> emit("a11y.activate",json("index",index)));
+        settingsAccessibility=new SettingsAccessibility(activity,
+                request -> offer(() -> emit("settings.a11y.action",request)),
+                active -> accessibility.setImportantForAccessibility(active
+                        ?android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                        :android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES),
+                enabled -> offer(() -> emit("settings.a11y.enabled",json("schema",1,"enabled",enabled))));
         // The ROM's agent platform: real tasks for Recents when present, nothing lost when absent.
         agent=new dev.makepad.octosense.agent.AgentPlatformClient(activity,state -> {
+            agentBinding.countDown();
             emit("agent.connection",json("state",state));
             if(state.equals("connected")) offer(this::publishRecentApps);
         });
         activity.getApplicationOverlay().addView(accessibility,new android.widget.FrameLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        activity.getApplicationOverlay().addView(settingsAccessibility,new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT));
         activity.registerComponentCallbacks(new android.content.ComponentCallbacks() {
             @Override public void onConfigurationChanged(Configuration configuration) { offer(MakepadAppExtension.this::emitUiMode); }
             @Override public void onLowMemory() {}
         });
+        accessibilityPreferences=new AndroidAccessibilityPreferences(activity,main,()->offer(this::emitUiMode));
+        settingsAccessibility.setWindowFocused(windowFocused);
+        settingsFocusListener=focused -> {
+            windowFocused=focused;
+            if(destroyed)return;
+            // Retire virtual actions immediately on the UI thread. Preserve
+            // this edge in the worker packet even if focus changes again.
+            settingsAccessibility.setWindowFocused(focused);
+            if(!focused&&captionCustomSettings!=null)captionCustomSettings.retireInBackground();
+            if(!focused)offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});
+            offer(() -> emitUiMode(focused));
+        };
+        activity.getWindow().getDecorView().getViewTreeObserver().addOnWindowFocusChangeListener(settingsFocusListener);
         refreshCatalog();
         onIntent(activity.getIntent());
     }
@@ -218,11 +273,15 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             return true;
         } catch(Exception e) { return false; }
     }
-    private void emitUiMode() {
+    private void emitUiMode() { emitUiMode(windowFocused); }
+    private void emitUiMode(boolean focused) {
         Configuration configuration=activity.getResources().getConfiguration();
         boolean night=(configuration.uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
         boolean reduceMotion=Settings.Global.getFloat(activity.getContentResolver(),Settings.Global.ANIMATOR_DURATION_SCALE,1f)==0f;
-        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion));
+        emit("launcher.ui_mode",json("dark",night,"font_scale_percent",Math.round(configuration.fontScale*100f),"reduce_motion",reduceMotion,"activity_resumed",resumed,"activity_focused",focused,
+                "accessibility_preferences",accessibilityPreferences==null?null:accessibilityPreferences.snapshot(configuration),
+                "accessibility_enabled",settingsAccessibility!=null&&settingsAccessibility.enabledNow(),
+                "theme",ThemeCatalog.get(activity).read(activity).json()));
     }
     /** Recently used Android apps for the shell's Recents, newest first, when usage access is granted. */
     @SuppressWarnings("deprecation")
@@ -414,6 +473,34 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if("widgets.layout".equals(channel)) {widgets.layout(payload);return;}
         if("home.layout".equals(channel)) {homeGeometry.layout(payload);return;}
         if("a11y.layout".equals(channel)) {accessibility.layout(payload);return;}
+        if("settings.a11y.layout".equals(channel)) {
+            if(resumed&&!destroyed)settingsAccessibility.layout(payload);else settingsAccessibility.clear();
+            return;
+        }
+        if("settings.a11y.result".equals(channel)) {settingsAccessibility.result(payload);return;}
+        if("settings.entry.ready".equals(channel)||"settings.entry.received".equals(channel)) {
+            offer(() -> {
+                try {
+                    JSONObject packet=new JSONObject(payload);Object schema=packet.get("schema");
+                    if(!(schema instanceof Integer)||((Integer)schema)!=1)return;
+                    if("settings.entry.ready".equals(channel)) {
+                        boolean first=!settingsEntryDelivery.isReady();
+                        SettingsEntryContract.Entry entry=settingsEntryDelivery.ready();
+                        // Bootstrap can also discard the first Activity and
+                        // accessibility observations. Reconcile once, after
+                        // native readiness; repeating it would create a
+                        // ui_mode -> ready feedback loop.
+                        if(first)emitUiMode();
+                        sendSettingsEntry(entry);
+                    }
+                    else {
+                        Object id=packet.get("id");
+                        if(id instanceof Integer||id instanceof Long)settingsEntryDelivery.received(((Number)id).longValue());
+                    }
+                }catch(JSONException malformed) { /* The retained entry waits for a valid receipt. */ }
+            });
+            return;
+        }
         if(!offer(() -> {
             long id=0;
             String resultChannel="bridge".equals(channel) ? "bridge.result" : "launcher.result";
@@ -433,6 +520,135 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             scheduleRecovery();
         }
     }
+    private synchronized AccountsSettingsClient accountsSettings() {
+        if(destroyed) throw new IllegalStateException("Activity destroyed");
+        if(accountsSettings==null) accountsSettings=new AccountsSettingsClient(activity,agent);return accountsSettings;
+    }
+    private synchronized UpdatesSettingsClient updatesSettings() {
+        if(destroyed) throw new IllegalStateException("Activity destroyed");
+        if(updatesSettings==null) updatesSettings=new UpdatesSettingsClient(activity,agent);return updatesSettings;
+    }
+    private synchronized DisplaySettingsClient displaySettings() {
+        if(destroyed)throw new IllegalStateException("Activity destroyed");
+        if(displaySettings==null)displaySettings=new DisplaySettingsClient(activity,agent);return displaySettings;
+    }
+    private synchronized NetworkSettingsClient networkSettings() {
+        if(destroyed) throw new IllegalStateException("Activity destroyed");
+        if(networkSettings==null) networkSettings=new NetworkSettingsClient(activity,agent);return networkSettings;
+    }
+    private synchronized AppNotificationsSettingsClient appNotificationsSettings() {
+        if(destroyed)throw new IllegalStateException("Activity destroyed");
+        if(appNotificationsSettings==null)appNotificationsSettings=new AppNotificationsSettingsClient(agent,() -> resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return appNotificationsSettings;
+    }
+    private synchronized RolesSettingsClient rolesSettings(){
+        if(destroyed)throw new IllegalStateException("Activity destroyed");
+        if(rolesSettings==null)rolesSettings=new RolesSettingsClient(agent,() -> resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return rolesSettings;
+    }
+    private synchronized PermissionsSettingsClient permissionsSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(permissionsSettings==null)permissionsSettings=new PermissionsSettingsClient(agent,() -> resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return permissionsSettings;
+    }
+    private synchronized CaptionLanguageSettingsClient captionLanguageSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client unavailable");
+        if(captionLanguageSettings==null)captionLanguageSettings=new CaptionLanguageSettingsClient(new CaptionLanguageSettingsClient.Bridge(){
+            @Override public JSONObject snapshot(long id,String key,String query,int offset)throws Exception{return agent.captionLanguageSnapshot(id,key,query,offset);}
+            @Override public String select(String key,String choice)throws Exception{return agent.captionLanguageSet(key,choice);}
+        },()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return captionLanguageSettings;
+    }
+    private synchronized CaptionCustomSettingsClient captionCustomSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(captionCustomSettings==null)captionCustomSettings=new CaptionCustomSettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return captionCustomSettings;
+    }
+    private static long captionVisit(Object value){if(!(value instanceof Integer||value instanceof Long)||((Number)value).longValue()<=0)throw new IllegalArgumentException("Invalid caption visit");return ((Number)value).longValue();}
+    private synchronized KeyboardSettingsClient keyboardSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client unavailable");
+        if(keyboardSettings==null)keyboardSettings=new KeyboardSettingsClient(new KeyboardSettingsClient.Bridge(){
+            @Override public JSONObject snapshot(long id,String query,int offset)throws Exception{return agent.keyboardsSnapshot(id,query,offset);}
+            @Override public android.app.PendingIntent prepare(long id,String key,String target,String operation)throws Exception{return agent.keyboardFlow(id,key,target,operation);}
+        },()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return keyboardSettings;
+    }
+    private synchronized SystemLanguageSettingsClient systemLanguageSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client unavailable");
+        if(systemLanguageSettings==null)systemLanguageSettings=new SystemLanguageSettingsClient(new SystemLanguageSettingsClient.Bridge(){
+            @Override public JSONObject snapshot(long id,String key,String parent,String query,int offset)throws Exception{return agent.systemLanguagesSnapshot(id,key,parent,query,offset);}
+            @Override public String apply(String key,String[] targets)throws Exception{return agent.systemLanguagesApply(key,targets);}
+        },()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return systemLanguageSettings;
+    }
+    private synchronized AppLanguageSettingsClient appLanguageSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(appLanguageSettings==null)appLanguageSettings=new AppLanguageSettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return appLanguageSettings;
+    }
+    private synchronized AppStorageSettingsClient appStorageSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(appStorageSettings==null)appStorageSettings=new AppStorageSettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return appStorageSettings;
+    }
+    private synchronized AppBatterySettingsClient appBatterySettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(appBatterySettings==null)appBatterySettings=new AppBatterySettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return appBatterySettings;
+    }
+    private synchronized AppNetworkSettingsClient appNetworkSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(appNetworkSettings==null)appNetworkSettings=new AppNetworkSettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return appNetworkSettings;
+    }
+    private synchronized DndSettingsClient dndSettings(){
+        if(agent==null)throw new IllegalStateException("Agent client not initialized");
+        if(dndSettings==null)dndSettings=new DndSettingsClient(agent,()->resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return dndSettings;
+    }
+    private static int dndInt(Object value,int min,int max){
+        if(!(value instanceof Integer||value instanceof Long))throw new IllegalArgumentException("DND integer required");
+        long number=((Number)value).longValue();if(number<min||number>max)throw new IllegalArgumentException("DND value out of range");return (int)number;
+    }
+    private static boolean dndBool(Object value){if(!(value instanceof Boolean))throw new IllegalArgumentException("DND boolean required");return (Boolean)value;}
+    private static String dndOptionalString(Object value){if(value==null||value==JSONObject.NULL)return null;if(!(value instanceof String))throw new IllegalArgumentException("DND string required");return (String)value;}
+    private void dndResult(long id,String reason){result(id,reason.equals("dnd_applied")||reason.equals("dnd_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);}
+    private synchronized SoundsSettingsClient soundsSettings() {
+        if(destroyed)throw new IllegalStateException("Activity destroyed");
+        if(soundsSettings==null)soundsSettings=new SoundsSettingsClient(activity,agent,() -> resumed&&!destroyed&&!activity.isFinishing()&&activity.hasWindowFocus());
+        return soundsSettings;
+    }
+    private void soundResult(long id,String reason) {
+        boolean accepted=reason.equals("sound_applied")||reason.equals("sound_preview_started")||reason.equals("sound_preview_requested")||reason.equals("sound_silent")||reason.equals("sound_stopped");
+        result(id,accepted?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);
+    }
+    private void networkResult(long id,String reason) {result(id,reason.equals("network_applied")||reason.equals("network_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);}
+    private void updateResult(long id,String reason) {
+        boolean accepted=reason.equals("update_check_requested")||reason.equals("update_install_requested")||reason.equals("update_reboot_requested");
+        result(id,accepted?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);
+    }
+    private void syncResult(long id,String reason) {result(id,reason.equals("sync_applied")||reason.equals("sync_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);}
+    private synchronized BluetoothSettingsClient bluetoothSettings() {
+        if(destroyed) throw new IllegalStateException("Activity destroyed");
+        if(bluetoothSettings==null) bluetoothSettings=new BluetoothSettingsClient(activity,agent);
+        return bluetoothSettings;
+    }
+    private void bluetoothResult(long id,String reason) {
+        boolean accepted=reason.equals("bluetooth_requested")||reason.equals("bluetooth_name_applied")||reason.equals("bluetooth_sharing_applied");
+        result(id,accepted?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);
+    }
+    private static String stringField(JSONObject command,String field) throws JSONException {
+        Object value=command.get(field);if(!(value instanceof String)) throw new IllegalArgumentException("String required");return (String)value;
+    }
+    private synchronized WifiSettingsClient wifiSettings() {
+        if(destroyed) throw new IllegalStateException("Activity destroyed");
+        if(wifiSettings==null) wifiSettings=new WifiSettingsClient(activity,agent);
+        return wifiSettings;
+    }
+    private void wifiResult(long id,String reason) {
+        boolean accepted=reason.equals("wifi_requested")||reason.equals("wifi_scan_requested");
+        result(id,accepted?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);
+    }
     private void launcherCommand(JSONObject command) throws Exception {
         String operation=command.getString("operation"); long id=command.optLong("id",0);
         switch(operation) {
@@ -441,6 +657,277 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             case "haptic": { String kind=command.optString("kind","tick"); main.post(() -> haptic(kind)); break; }
             case "recent_apps": publishRecentApps(); break;
             case "system_bars": shellDark=command.optBoolean("dark",false); main.post(this::applyWindowChrome); break;
+            case "theme_snapshot": emitUiMode();break;
+            case "display_snapshot": {Protocol.requireCommand(id);emit("launcher.display_state",displaySettings().snapshot(id));break;}
+            case "display_density":case "display_night": {
+                Protocol.requireCommand(id);
+                dev.makepad.octosense.display.DisplaySettingsContract.Setting setting="display_density".equals(operation)
+                    ?dev.makepad.octosense.display.DisplaySettingsContract.Setting.DENSITY
+                    :dev.makepad.octosense.display.DisplaySettingsContract.Setting.parse(stringField(command,"setting"));
+                if("display_night".equals(operation)&&setting==dev.makepad.octosense.display.DisplaySettingsContract.Setting.DENSITY)throw new IllegalArgumentException("Night Light setting required");
+                String reason=displaySettings().set(stringField(command,"key"),setting,command.get("display_density".equals(operation)?"choice":"value"));
+                result(id,reason.equals("display_applied")||reason.equals("display_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "network_snapshot": {Protocol.requireCommand(id);emit("launcher.network_state",networkSettings().snapshot(id));break;}
+            case "network_airplane": {Protocol.requireCommand(id);networkResult(id,networkSettings().airplane(stringField(command,"key"),dev.makepad.octosense.network.NetworkSettingsContract.enabled(command.get("enabled"))));break;}
+            case "network_data_saver": {Protocol.requireCommand(id);networkResult(id,networkSettings().dataSaver(stringField(command,"key"),dev.makepad.octosense.network.NetworkSettingsContract.enabled(command.get("enabled"))));break;}
+            case "network_private_dns": {
+                Protocol.requireCommand(id);String mode=stringField(command,"mode");
+                String hostname=dev.makepad.octosense.network.NetworkSettingsContract.dnsHostname(mode,command.has("hostname")?command.get("hostname"):null);
+                networkResult(id,networkSettings().privateDns(stringField(command,"key"),mode,hostname));break;
+            }
+            case "updates_snapshot": {Protocol.requireCommand(id);emit("launcher.updates_state",updatesSettings().snapshot(id));break;}
+            case "updates_check": {Protocol.requireCommand(id);updateResult(id,updatesSettings().check());break;}
+            case "updates_install": {Protocol.requireCommand(id);updateResult(id,updatesSettings().install(stringField(command,"offer_key"),stringField(command,"part")));break;}
+            case "updates_reboot": {Protocol.requireCommand(id);updateResult(id,updatesSettings().reboot(stringField(command,"reboot_key")));break;}
+            case "accounts_snapshot": {Protocol.requireCommand(id);emit("launcher.accounts_state",accountsSettings().snapshot(id));break;}
+            case "account_details": {Protocol.requireCommand(id);emit("launcher.account_details",accountsSettings().details(id,stringField(command,"key")));break;}
+            case "accounts_master_sync": {
+                Protocol.requireCommand(id);syncResult(id,accountsSettings().master(dev.makepad.octosense.accounts.AccountsSettingsContract.enabled(command.get("enabled"))));break;
+            }
+            case "account_sync": {
+                Protocol.requireCommand(id);dev.makepad.octosense.accounts.AccountsSettingsContract.SyncAction action=dev.makepad.octosense.accounts.AccountsSettingsContract.SyncAction.parse(stringField(command,"action"));
+                Boolean value=dev.makepad.octosense.accounts.AccountsSettingsContract.syncValue(action,command.has("enabled")?command.get("enabled"):null);
+                syncResult(id,accountsSettings().sync(stringField(command,"key"),stringField(command,"authority_key"),action,value));break;
+            }
+            case "account_add": {Protocol.requireCommand(id);openAccountFlow(id,accountsSettings().add(stringField(command,"provider_key")));break;}
+            case "account_remove": {Protocol.requireCommand(id);openAccountFlow(id,accountsSettings().remove(stringField(command,"key")));break;}
+            case "accounts_access": {Protocol.requireCommand(id);openSettingsAppIntent(id,accountsSettings().access());break;}
+            case "bluetooth_snapshot": {Protocol.requireCommand(id);emit("launcher.bluetooth_state",bluetoothSettings().snapshot(id));break;}
+            case "bluetooth_enabled": {
+                Protocol.requireCommand(id);bluetoothResult(id,bluetoothSettings().enabled(dev.makepad.octosense.bluetooth.BluetoothSettingsContract.enabled(command.get("enabled"))));break;
+            }
+            case "bluetooth_scan": {
+                Protocol.requireCommand(id);bluetoothResult(id,bluetoothSettings().scan(dev.makepad.octosense.bluetooth.BluetoothSettingsContract.enabled(command.get("enabled"))));break;
+            }
+            case "bluetooth_name": {Protocol.requireCommand(id);bluetoothResult(id,bluetoothSettings().name(stringField(command,"name")));break;}
+            case "bluetooth_device": {
+                Protocol.requireCommand(id);bluetoothResult(id,bluetoothSettings().device(stringField(command,"key"),
+                        dev.makepad.octosense.bluetooth.BluetoothSettingsContract.Action.parse(stringField(command,"action"))));break;
+            }
+            case "bluetooth_sharing": {
+                Protocol.requireCommand(id);bluetoothResult(id,bluetoothSettings().sharing(stringField(command,"key"),stringField(command,"kind"),stringField(command,"value")));break;
+            }
+            case "bluetooth_access": {Protocol.requireCommand(id);openSettingsAppIntent(id,bluetoothSettings().access());break;}
+            case "keyboards_snapshot": {Protocol.requireCommand(id);emit("launcher.keyboards_state",keyboardSettings().snapshot(id,stringField(command,"query"),dndInt(command.get("offset"),0,127)));break;}
+            case "keyboard_flow": {Protocol.requireCommand(id);openKeyboardFlow(id,keyboardSettings().prepare(id,stringField(command,"key"),stringField(command,"target"),stringField(command,"operation")));break;}
+            case "system_languages_snapshot": {Protocol.requireCommand(id);emit("launcher.system_languages_state",systemLanguageSettings().snapshot(id,stringField(command,"key"),stringField(command,"parent"),stringField(command,"query"),dndInt(command.get("offset"),0,4095)));break;}
+            case "system_languages_apply": {
+                Protocol.requireCommand(id);JSONArray values=command.getJSONArray("order");if(values.length()<1||values.length()>128)throw new IllegalArgumentException("Invalid language order");String[] targets=new String[values.length()];for(int i=0;i<targets.length;i++){Object target=values.get(i);if(!(target instanceof String))throw new IllegalArgumentException("Invalid language target");targets[i]=(String)target;}
+                String reason=systemLanguageSettings().apply(stringField(command,"key"),targets);result(id,reason.equals("languages_applied")||reason.equals("languages_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "caption_language_snapshot": {Protocol.requireCommand(id);emit("launcher.caption_language",captionLanguageSettings().snapshot(id,stringField(command,"key"),stringField(command,"query"),dndInt(command.get("offset"),0,1024)));break;}
+            case "caption_language_set": {Protocol.requireCommand(id);String reason=captionLanguageSettings().select(stringField(command,"key"),stringField(command,"choice"));result(id,reason.equals("control_applied")||reason.equals("control_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;}
+            case "caption_custom_snapshot": {Protocol.requireCommand(id);emit("launcher.caption_custom_state",captionCustomSettings().snapshot(id,captionVisit(command.get("visit"))));break;}
+            case "caption_custom_set": {Protocol.requireCommand(id);String reason=captionCustomSettings().select(captionVisit(command.get("visit")),stringField(command,"field"),stringField(command,"value"));result(id,reason.equals("control_applied")||reason.equals("control_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;}
+            case "caption_custom_close": {Protocol.requireCommand(id);captionCustomSettings().closeInBackground(captionVisit(command.get("visit")));break;}
+            case "controls_snapshot": {
+                Protocol.requireCommand(id);Object page=command.get("page");
+                if(!(page instanceof String)) throw new IllegalArgumentException("Invalid controls page");
+                dev.makepad.octosense.controls.SettingsControlsContract.Page parsed=dev.makepad.octosense.controls.SettingsControlsContract.Page.parse((String)page);
+                JSONObject snapshot=agent.controlsSnapshot(id,parsed);
+                if(snapshot==null) snapshot=new dev.makepad.octosense.controls.SettingsControlsBackend(activity,false,null).snapshot(id,parsed);
+                emit("launcher.controls_state",snapshot);break;
+            }
+            case "sounds_snapshot": {
+                Protocol.requireCommand(id);Object raw=command.opt("key");
+                if(raw!=null&&raw!=JSONObject.NULL&&!(raw instanceof String))throw new IllegalArgumentException("Invalid sound key");
+                String key=raw instanceof String?(String)raw:null;Object page=command.get("offset");
+                if(!(page instanceof Integer||page instanceof Long))throw new IllegalArgumentException("Invalid sound offset");
+                long offset=((Number)page).longValue();if(offset<0||offset>=dev.makepad.octosense.sounds.SoundSettingsContract.MAX_ROWS)throw new IllegalArgumentException("Invalid sound offset");
+                emit("launcher.sounds_state",soundsSettings().snapshot(id,stringField(command,"type"),key,(int)offset));break;
+            }
+            case "sound_preview":case "sound_save": {
+                Protocol.requireCommand(id);soundResult(id,soundsSettings().action(stringField(command,"type"),stringField(command,"key"),stringField(command,"target"),"sound_save".equals(operation)));break;
+            }
+            case "sound_stop": {Protocol.requireCommand(id);soundResult(id,soundsSettings().stop());break;}
+            case "sounds_access": {Protocol.requireCommand(id);openSettingsAppIntent(id,soundsSettings().access());break;}
+            case "app_notifications_snapshot": {
+                Protocol.requireCommand(id);Object raw=command.opt("generation"),page=command.get("offset");
+                if(raw!=null&&raw!=JSONObject.NULL&&!(raw instanceof String))throw new IllegalArgumentException("Invalid notification generation");
+                if(!(page instanceof Integer||page instanceof Long))throw new IllegalArgumentException("Invalid notification offset");
+                long offset=((Number)page).longValue();if(offset<0||offset>=dev.makepad.octosense.notifications.AppNotificationsContract.MAX_ROWS)throw new IllegalArgumentException("Invalid notification offset");
+                emit("launcher.app_notifications_state",appNotificationsSettings().snapshot(id,stringField(command,"package"),(int)offset,raw instanceof String?(String)raw:null));break;
+            }
+            case "roles_snapshot": {
+                Protocol.requireCommand(id);Object role=command.opt("role"),generation=command.opt("generation"),page=command.get("offset");
+                if(role!=null&&role!=JSONObject.NULL&&!(role instanceof String)||generation!=null&&generation!=JSONObject.NULL&&!(generation instanceof String))throw new IllegalArgumentException("Invalid role selector");
+                if(!(page instanceof Integer||page instanceof Long))throw new IllegalArgumentException("Invalid role offset");
+                long offset=((Number)page).longValue();if(offset<0||offset>=dev.makepad.octosense.roles.RolesSettingsContract.MAX_ROWS)throw new IllegalArgumentException("Invalid role offset");
+                emit("launcher.roles_state",rolesSettings().snapshot(id,role instanceof String?dev.makepad.octosense.roles.RolesSettingsContract.RoleId.parse((String)role):null,(int)offset,generation instanceof String?(String)generation:null));break;
+            }
+            case "role_confirm": {
+                Protocol.requireCommand(id);openRoleFlow(id,rolesSettings().confirmation(dev.makepad.octosense.roles.RolesSettingsContract.RoleId.parse(stringField(command,"role")),stringField(command,"key"),stringField(command,"target")));break;
+            }
+            case "permissions_snapshot": {
+                Protocol.requireCommand(id);Object group=command.opt("group"),generation=command.opt("generation"),page=command.get("offset");
+                if(group!=null&&group!=JSONObject.NULL&&!(group instanceof String)||generation!=null&&generation!=JSONObject.NULL&&!(generation instanceof String))throw new IllegalArgumentException("Invalid permission selector");
+                if(!(page instanceof Integer||page instanceof Long))throw new IllegalArgumentException("Invalid permission offset");
+                long offset=((Number)page).longValue();if(offset<0||offset>=dev.makepad.octosense.permissions.PermissionsSettingsContract.MAX_GROUPS)throw new IllegalArgumentException("Invalid permission offset");
+                emit("launcher.permissions_state",permissionsSettings().snapshot(id,stringField(command,"package"),group instanceof String?dev.makepad.octosense.permissions.PermissionsSettingsContract.Group.parse((String)group):null,(int)offset,generation instanceof String?(String)generation:null));break;
+            }
+            case "permission_choice": {
+                Protocol.requireCommand(id);openPermissionFlow(id,permissionsSettings().operation(stringField(command,"package"),dev.makepad.octosense.permissions.PermissionsSettingsContract.Group.parse(stringField(command,"group")),stringField(command,"key"),stringField(command,"target")));break;
+            }
+            case "app_language_snapshot": {
+                Protocol.requireCommand(id);
+                emit("launcher.app_language",appLanguageSettings().snapshot(id,stringField(command,"package"),stringField(command,"key"),stringField(command,"parent"),stringField(command,"query"),dndInt(command.get("offset"),0,1020)));break;
+            }
+            case "app_language_set": {
+                Protocol.requireCommand(id);String reason=appLanguageSettings().select(stringField(command,"package"),stringField(command,"key"),stringField(command,"choice"));
+                result(id,reason.equals("app_language_applied")||reason.equals("app_language_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "app_storage_snapshot": {
+                Protocol.requireCommand(id);emit("launcher.app_storage_state",appStorageSettings().snapshot(id,stringField(command,"package")));break;
+            }
+            case "app_storage_action": {
+                Protocol.requireCommand(id);android.os.Bundle response=appStorageSettings().action(stringField(command,"package"),stringField(command,"key"),stringField(command,"action"));
+                String reason=response.getString("reason","app_storage_unavailable");
+                if(reason.equals("app_storage_flow_opened")){openAppStorageFlow(id,response.getParcelable("flow"));break;}
+                result(id,reason.equals("app_storage_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "app_battery_snapshot": {
+                Protocol.requireCommand(id);emit("launcher.app_battery_state",appBatterySettings().snapshot(id,stringField(command,"package")));break;
+            }
+            case "app_battery_set": {
+                Protocol.requireCommand(id);String reason=appBatterySettings().set(stringField(command,"package"),stringField(command,"key"),stringField(command,"mode"));
+                result(id,reason.equals("app_battery_applied")||reason.equals("app_battery_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "app_network_snapshot": {
+                Protocol.requireCommand(id);emit("launcher.app_network_state",appNetworkSettings().snapshot(id,stringField(command,"package")));break;
+            }
+            case "app_network_set": {
+                Protocol.requireCommand(id);String reason=appNetworkSettings().set(stringField(command,"package"),stringField(command,"key"),dev.makepad.octosense.appnetwork.AppNetworkContract.Field.parse(stringField(command,"field")),dndBool(command.get("enabled")));
+                result(id,reason.equals("app_network_applied")||reason.equals("app_network_unchanged")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "dnd_snapshot": {
+                Protocol.requireCommand(id);emit("launcher.dnd_state",dndSettings().snapshot(id,dndInt(command.get("offset"),0,255),dndOptionalString(command.opt("generation"))));break;
+            }
+            case "dnd_policy_set": {
+                Protocol.requireCommand(id);dndResult(id,dndSettings().policy(stringField(command,"key"),dev.makepad.octosense.dnd.DndSettingsContract.Field.parse(stringField(command,"field")),stringField(command,"value")));break;
+            }
+            case "dnd_schedule_save": {
+                Protocol.requireCommand(id);Object rawDays=command.get("days");if(!(rawDays instanceof JSONArray))throw new IllegalArgumentException("DND day array required");
+                JSONArray array=(JSONArray)rawDays;if(array.length()>7)throw new IllegalArgumentException("DND day array too large");int[] days=new int[array.length()];for(int i=0;i<days.length;i++)days[i]=dndInt(array.get(i),1,7);
+                dev.makepad.octosense.dnd.DndSettingsContract.Schedule schedule=new dev.makepad.octosense.dnd.DndSettingsContract.Schedule(stringField(command,"name"),days,dndInt(command.get("start_minute"),0,1439),dndInt(command.get("end_minute"),0,1439),dndBool(command.get("exit_at_alarm")),dndBool(command.get("enabled")));
+                dndResult(id,dndSettings().schedule(stringField(command,"key"),dndOptionalString(command.opt("target")),schedule));break;
+            }
+            case "dnd_rule_enabled": {Protocol.requireCommand(id);dndResult(id,dndSettings().enabled(stringField(command,"key"),stringField(command,"target"),dndBool(command.get("enabled"))));break;}
+            case "dnd_rule_delete": {Protocol.requireCommand(id);dndResult(id,dndSettings().delete(stringField(command,"key"),stringField(command,"target")));break;}
+            case "app_notifications_set": {
+                Protocol.requireCommand(id);
+                String reason=appNotificationsSettings().set(stringField(command,"package"),stringField(command,"key"),stringField(command,"target"),
+                    dev.makepad.octosense.notifications.AppNotificationsContract.Action.parse(stringField(command,"action")),stringField(command,"value"));
+                result(id,"notifications_applied".equals(reason)?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "notification_history": {
+                Protocol.requireCommand(id);
+                Object raw=command.opt("key");
+                if(raw!=null&&raw!=JSONObject.NULL&&!(raw instanceof String)) throw new IllegalArgumentException("Invalid history key");
+                String key=raw instanceof String?(String)raw:null;
+                Object page=command.get("offset");
+                if(!(page instanceof Integer||page instanceof Long)) throw new IllegalArgumentException("Invalid history offset");
+                long number=((Number)page).longValue();
+                if(number<0||number>=dev.makepad.octosense.notifications.NotificationHistoryContract.MAX_ROWS) throw new IllegalArgumentException("Invalid history offset");
+                JSONObject snapshot=agent.notificationHistory(id,key,(int)number);
+                if(snapshot==null) snapshot=json("schema",1,"request_id",id,"status","unavailable","enabled",JSONObject.NULL,
+                        "key",JSONObject.NULL,"offset",0,"total",0,"truncated",false,"rows",new JSONArray());
+                emit("launcher.notification_history",snapshot);break;
+            }
+            case "control_set": {
+                Protocol.requireCommand(id);Object page=command.get("page"),control=command.get("control"),value=command.get("value");
+                if(!(page instanceof String)||!(control instanceof String)||!(value instanceof String)) throw new IllegalArgumentException("Invalid control");
+                dev.makepad.octosense.controls.SettingsControlsContract.Page parsed=dev.makepad.octosense.controls.SettingsControlsContract.Page.parse((String)page);
+                String reason=agent.setControl(parsed,dev.makepad.octosense.controls.SettingsControlsContract.Control.parse(parsed,(String)control),(String)value);
+                result(id,reason.equals("control_applied")||reason.equals("control_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "wifi_snapshot": {
+                Protocol.requireCommand(id);emit("launcher.wifi_state",wifiSettings().snapshot(id));break;
+            }
+            case "wifi_enabled": {
+                Protocol.requireCommand(id);
+                wifiResult(id,wifiSettings().enabled(dev.makepad.octosense.wifi.WifiSettingsContract.enabled(command.get("enabled"))));break;
+            }
+            case "wifi_scan": {Protocol.requireCommand(id);wifiResult(id,wifiSettings().scan());break;}
+            case "wifi_network": {
+                Protocol.requireCommand(id);Object key=command.get("key"),action=command.get("action");
+                if(!(key instanceof String)||!(action instanceof String)) throw new IllegalArgumentException("Invalid Wi-Fi action");
+                dev.makepad.octosense.wifi.WifiSettingsContract.Action parsed=dev.makepad.octosense.wifi.WifiSettingsContract.Action.parse((String)action);
+                if(parsed==dev.makepad.octosense.wifi.WifiSettingsContract.Action.CONFIGURE)
+                    openSettingsAppIntent(id,wifiSettings().configure((String)key));
+                else wifiResult(id,wifiSettings().network((String)key,parsed));
+                break;
+            }
+            case "wifi_access": {Protocol.requireCommand(id);openSettingsAppIntent(id,wifiSettings().access());break;}
+            case "apps_catalog": {
+                Protocol.requireCommand(id);
+                Object query=command.get("query"),includeSystem=command.get("include_system"),generation=command.opt("generation");
+                if(!(query instanceof String)||!(includeSystem instanceof Boolean)
+                        ||(generation!=null&&generation!=JSONObject.NULL&&!(generation instanceof String))) throw new IllegalArgumentException("Invalid catalog request");
+                emit("launcher.apps_catalog",new AppsSettingsBackend(activity).catalog(id,(String)query,(Boolean)includeSystem,
+                        AppsSettingsContract.offset(command.get("offset")),generation instanceof String?(String)generation:null));break;
+            }
+            case "app_details": {
+                Protocol.requireCommand(id);Object name=command.get("package");
+                if(!(name instanceof String)) throw new IllegalArgumentException("Invalid package");
+                emit("launcher.app_details",new AppsSettingsBackend(activity).details(id,(String)name,
+                        AppsSettingsContract.offset(command.get("permission_offset"))));break;
+            }
+            case "app_action": {
+                Protocol.requireCommand(id);Object name=command.get("package"),action=command.get("action");
+                if(!(name instanceof String)||!(action instanceof String)) throw new IllegalArgumentException("Invalid app action");
+                openSettingsAppIntent(id,new AppsSettingsBackend(activity).actionIntent((String)name,AppsSettingsContract.Action.parse((String)action)));break;
+            }
+            case "apps_usage_access": {
+                Protocol.requireCommand(id);openSettingsAppIntent(id,new AppsSettingsBackend(activity).usageIntent());break;
+            }
+            case "device_settings_snapshot": {
+                Protocol.requireCommand(id);
+                emit("launcher.device_settings",new DeviceSettingsBackend(activity,agent).snapshot(id));break;
+            }
+            case "date_time_set": {
+                Protocol.requireCommand(id);
+                String key=stringField(command,"key"),action=stringField(command,"action"),value=stringField(command,"value");
+                String occurrence=command.has("occurrence")?stringField(command,"occurrence"):null;
+                dev.makepad.octosense.datetime.DateTimeContract.key(key);
+                dev.makepad.octosense.datetime.DateTimeContract.validate(dev.makepad.octosense.datetime.DateTimeContract.Action.parse(action),value,occurrence);
+                String reason=agent.setDateTime(key,action,value,occurrence);
+                emit("launcher.device_settings",new DeviceSettingsBackend(activity,agent).snapshot(id));
+                result(id,reason.equals("time_applied")||reason.equals("time_requested")?Protocol.COMPLETED:Protocol.UNCERTAIN,reason);break;
+            }
+            case "device_setting": {
+                Protocol.requireCommand(id);
+                DeviceSetting setting=DeviceSetting.parse(command.getString("setting"));
+                Object value=command.get("value");
+                DeviceSettingsBackend backend=new DeviceSettingsBackend(activity,agent);
+                boolean confirmed=backend.apply(setting,value);
+                emit("launcher.device_settings",backend.snapshot(id));
+                result(id,confirmed?Protocol.COMPLETED:Protocol.UNCERTAIN,confirmed?"setting_applied":"setting_not_confirmed");
+                if(setting==DeviceSetting.FONT_SCALE) emitUiMode();
+                break;
+            }
+            case "device_settings_access": {
+                Protocol.requireCommand(id);final long commandId=id;
+                main.post(() -> {
+                    boolean opened=dev.makepad.octosense.contracts.SystemSettings.open(activity,"home_write_settings");
+                    result(commandId,opened?Protocol.COMPLETED:Protocol.UNSUPPORTED,opened?"settings_opened":"setting_unavailable");
+                });break;
+            }
+            case "theme_apply": {
+                Protocol.requireCommand(id);
+                ThemeCatalog.Choice choice=ThemeApplier.parseChoice(activity,command.getJSONObject("theme"));
+                ThemeApplier.Result applied=ThemeApplier.apply(activity,choice,agent,agentBinding);
+                emitUiMode();
+                emit("launcher.result",json("id",id,"status",applied.saved?Protocol.COMPLETED:Protocol.UNCERTAIN,
+                        "reason",applied.reason(),"theme_saved",applied.saved,"system_palette",applied.palette,
+                        "system_wallpaper",applied.wallpaper,"system_appearance",applied.appearance));
+                break;
+            }
+            case "theme_appearance": {
+                ThemeCatalog catalog=ThemeCatalog.get(activity);
+                if(catalog.save(activity,catalog.read(activity).appearance(command.optBoolean("dark",false)?"dark":"light"))) emitUiMode();
+                break;
+            }
             case "hint_seen": {
                 String hint=command.optString("hint","");
                 if(!hint.isEmpty()&&hint.length()<32) hints.edit().putBoolean(hint,true).apply();
@@ -477,10 +964,8 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             case "home_menu": main.post(() -> {
                 if(destroyed || activity.isFinishing()) return;
                 boolean hiddenTiles=command.optInt("hidden_tiles",0)>0;
-                // The shell draws its own wallpaper, so the item switches its
-                // appearance rather than Android's wallpaper it never shows.
                 boolean dark=command.optBoolean("dark",false);
-                String appearance=dark?"Light appearance":"Dark appearance";
+                String appearance=activity.getString(dev.makepad.android.R.string.octosense_wallpaper_style);
                 int columns=command.optInt("columns",4);
                 String grid=columns>=5?"Grid: 4 columns":"Grid: 5 columns";
                 int nextColumns=columns>=5?4:5;
@@ -489,7 +974,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                 String[] items=hiddenTiles?new String[]{"Widgets",appearance,grid,pulls,"System setup","Show hidden tiles"}:new String[]{"Widgets",appearance,grid,pulls,"System setup"};
                 dialog(dark).setTitle("Home").setItems(items,(dialog,which) -> {
                     if(which==0) widgets.show();
-                    else if(which==1) emit("launcher.appearance_toggle",json());
+                    else if(which==1) activity.startActivity(new Intent(activity,ThemeSettingsActivity.class));
                     else if(which==2) placementEdit(() -> placements().setColumns(nextColumns));
                     else if(which==3) placementEdit(() -> placements().setLauncherShade(systemPanel));
                     else if(which==4) dev.makepad.octosense.contracts.SystemSettings.open(activity,"access");
@@ -539,6 +1024,83 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             }
             default: result(id,Protocol.UNSUPPORTED,"unknown_launcher_operation");
         }
+    }
+    private void openAccountFlow(long id,AccountsSettingsClient.Flow flow) {
+        if(flow==null||(flow.intent==null&&flow.pending==null)) {result(id,Protocol.UNSUPPORTED,"account_target_changed");return;}
+        if(flow.intent!=null) {openSettingsAppIntent(id,flow.intent);return;}
+        main.post(() -> {
+            if(destroyed||!resumed||activity.isFinishing()||!activity.hasWindowFocus()) {result(id,Protocol.UNCERTAIN,"operation_failed");return;}
+            try {
+                // Android 14+ requires the visible sender to explicitly lend its
+                // launch privilege to this user-requested, broker-owned token.
+                // The broker does not grant background launches when creating it.
+                android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+                // The pinned compile SDK exposes the boolean setter. Android
+                // 15 ComponentOptions maps true to START_ALLOWED (mode 1).
+                if(android.os.Build.VERSION.SDK_INT>=34) options.setPendingIntentBackgroundActivityLaunchAllowed(true);
+                activity.startIntentSender(flow.pending.getIntentSender(),null,0,0,0,options.toBundle());
+                result(id,Protocol.COMPLETED,"settings_opened");
+            } catch(android.content.IntentSender.SendIntentException|SecurityException unavailable) {result(id,Protocol.UNSUPPORTED,"account_target_changed");}
+        });
+    }
+    private void openKeyboardFlow(long id,android.app.PendingIntent flow){
+        if(flow==null||!flow.isImmutable()||flow.getCreatorUid()!=android.os.Process.SYSTEM_UID||!"dev.makepad.octosense.settingsbroker".equals(flow.getCreatorPackage())){result(id,Protocol.UNSUPPORTED,"keyboard_target_changed");return;}
+        main.post(()->{
+            if(destroyed||!resumed||activity.isFinishing()||!activity.hasWindowFocus()){result(id,Protocol.UNCERTAIN,"keyboard_restricted");return;}
+            try{android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();if(android.os.Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityLaunchAllowed(true);
+                activity.startIntentSender(flow.getIntentSender(),null,0,0,0,options.toBundle());result(id,Protocol.COMPLETED,"keyboard_flow_opened");
+            }catch(android.content.IntentSender.SendIntentException|SecurityException unavailable){result(id,Protocol.UNSUPPORTED,"keyboard_target_changed");}
+        });
+    }
+    private void openRoleFlow(long id,android.app.PendingIntent flow){
+        if(flow==null){result(id,Protocol.UNSUPPORTED,"role_target_changed");return;}
+        main.post(() -> {
+            if(destroyed||!resumed||activity.isFinishing()||!activity.hasWindowFocus()){result(id,Protocol.UNCERTAIN,"role_restricted");return;}
+            try{
+                android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+                if(android.os.Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityLaunchAllowed(true);
+                activity.startIntentSender(flow.getIntentSender(),null,0,0,0,options.toBundle());
+                result(id,Protocol.COMPLETED,"role_confirmation_opened");
+            }catch(android.content.IntentSender.SendIntentException|SecurityException unavailable){result(id,Protocol.UNSUPPORTED,"role_target_changed");}
+        });
+    }
+    private void openAppStorageFlow(long id,android.app.PendingIntent flow){
+        if(flow==null||!flow.isImmutable()||flow.getCreatorUid()!=android.os.Process.SYSTEM_UID||!"dev.makepad.octosense.settingsbroker".equals(flow.getCreatorPackage())){result(id,Protocol.UNSUPPORTED,"app_storage_target_changed");return;}
+        main.post(() -> {
+            if(destroyed||!resumed||activity.isFinishing()||!activity.hasWindowFocus()){result(id,Protocol.UNCERTAIN,"app_storage_restricted");return;}
+            try{
+                android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+                if(android.os.Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityLaunchAllowed(true);
+                activity.startIntentSender(flow.getIntentSender(),null,0,0,0,options.toBundle());
+                result(id,Protocol.COMPLETED,"app_storage_flow_opened");
+            }catch(android.content.IntentSender.SendIntentException|SecurityException unavailable){result(id,Protocol.UNSUPPORTED,"app_storage_target_changed");}
+        });
+    }
+    private void openPermissionFlow(long id,android.app.PendingIntent flow){
+        if(flow==null){result(id,Protocol.UNSUPPORTED,"permission_target_changed");return;}
+        main.post(() -> {
+            if(destroyed||!resumed||activity.isFinishing()||!activity.hasWindowFocus()){result(id,Protocol.UNCERTAIN,"permission_restricted");return;}
+            try{
+                android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+                if(android.os.Build.VERSION.SDK_INT>=34)options.setPendingIntentBackgroundActivityLaunchAllowed(true);
+                activity.startIntentSender(flow.getIntentSender(),null,0,0,0,options.toBundle());
+                result(id,Protocol.COMPLETED,"permission_flow_opened");
+            }catch(android.content.IntentSender.SendIntentException|SecurityException unavailable){result(id,Protocol.UNSUPPORTED,"permission_target_changed");}
+        });
+    }
+    private void openSettingsAppIntent(long id,Intent intent) {
+        if(intent==null) {result(id,Protocol.UNSUPPORTED,"setting_unavailable");return;}
+        // Only finite intents constructed and checked on the worker reach this
+        // point. Android owns the confirmation and final uninstall outcome.
+        main.post(() -> {
+            if(destroyed||!resumed||activity.isFinishing()) {result(id,Protocol.UNCERTAIN,"operation_failed");return;}
+            try {
+                // Keep native editors/consent in the calling task so Back
+                // returns to the selected OctoSense Settings page.
+                activity.startActivity(intent);
+                result(id,Protocol.COMPLETED,"settings_opened");
+            } catch(android.content.ActivityNotFoundException|SecurityException unavailable) {result(id,Protocol.UNSUPPORTED,"setting_unavailable");}
+        });
     }
     private void refreshCatalog() {
         homeGeometry.catalogChanged();
@@ -948,14 +1510,51 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         }
     }
     @Override public void onResume() {
-        resumed=true; homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); main.post(() -> { if(!destroyed && agent!=null) agent.bind(); }); requestResync();
+        windowFocused=activity.hasWindowFocus();
+        settingsAccessibility.setWindowFocused(windowFocused);
+        resumed=true;settingsAccessibility.onResume(); homeGeometry.onResume(); widgets.onResume(); refreshCatalog(); bindBridge(); main.post(() -> { if(!destroyed && agent!=null) agent.bind(); }); requestResync();
         main.post(this::applyWindowChrome);
         offer(() -> {emitUiMode();emitHints();publishRecentApps();flushEvents();});
     }
-    @Override public void onPause() { resumed=false;closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause(); }
+    @Override public void onPause() {
+        if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
+        resumed=false;windowFocused=false;settingsAccessibility.onPause();if(soundsSettings!=null)agent.stopSoundInBackground();closePlacementMenu();replyComposer.close(); homeGeometry.onPause(); widgets.onPause();
+        // Retain the latest lifecycle observation too: a queued pre-pause
+        // ui_mode snapshot must not leave Settings polling in the background.
+        offer(() -> {if(soundsSettings!=null)soundsSettings.invalidate();if(appNotificationsSettings!=null)appNotificationsSettings.invalidate();if(rolesSettings!=null)rolesSettings.invalidate();if(permissionsSettings!=null)permissionsSettings.invalidate();if(dndSettings!=null)dndSettings.invalidate();if(appNetworkSettings!=null)appNetworkSettings.invalidate();if(appBatterySettings!=null)appBatterySettings.invalidate();if(appStorageSettings!=null)appStorageSettings.invalidate();if(appLanguageSettings!=null)appLanguageSettings.invalidate();if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();emitUiMode();});
+    }
     @Override public boolean onActivityResult(int request,int result,Intent data) {return widgets.onActivityResult(request,result,data);}
     @Override public boolean onBackPressed() {return replyComposer.close()||widgets.hide();}
+    private void sendSettingsEntry(SettingsEntryContract.Entry entry) {
+        if(entry!=null) {
+            JSONObject packet=json("schema",1,"id",entry.id,"route",entry.route);
+            if(entry.packageName!=null)try{packet.put("package",entry.packageName);}catch(Exception impossible){return;}
+            emit("settings.entry",packet);
+        }
+    }
     @Override public void onIntent(Intent intent) {
+        if(intent!=null) {
+            try {
+                String action=intent.getAction();
+                String requested=null;boolean valid=true;
+                if(SettingsEntryContract.ACTION.equals(action)&&intent.hasExtra(SettingsEntryContract.EXTRA_ROUTE)) {
+                    Object value=intent.getExtras().get(SettingsEntryContract.EXTRA_ROUTE);
+                    valid=value instanceof String;if(valid)requested=(String)value;
+                }
+                final String packageName=SettingsEntryContract.APP_NOTIFICATIONS.equals(action)
+                        ?SettingsEntryContract.packageSelector(intent.hasExtra(android.provider.Settings.EXTRA_APP_PACKAGE)
+                            ?intent.getExtras().get(android.provider.Settings.EXTRA_APP_PACKAGE):null):null;
+                String route=SettingsEntryContract.APP_NOTIFICATIONS.equals(action)
+                        ?(packageName!=null?"app_notifications":null):valid?SettingsEntryContract.route(action,requested):null;
+                if(route!=null&&intent.getData()==null&&intent.getType()==null&&intent.getSelector()==null) {
+                    replyComposer.close();widgets.hide();closePlacementMenu();homeGeometry.invalidate();
+                    long id=NEXT_SETTINGS_ENTRY.getAndUpdate(value -> value==Long.MAX_VALUE?value:value+1);
+                    if(id>0&&id<Long.MAX_VALUE)offer(() -> sendSettingsEntry(settingsEntryDelivery.stage(id,route,packageName)));
+                }
+            }catch(RuntimeException malformed) { /* Untrusted Intent extras never become a host command. */ }
+        }
+        if(intent!=null&&Intent.ACTION_MAIN.equals(intent.getAction())&&intent.hasCategory(Intent.CATEGORY_HOME))
+            offer(() -> {settingsEntryDelivery.cancel();outbound.remove("settings.entry");});
         // singleInstance Home can already exist when the shell explicitly
         // launches an owned validation activity. Enable its test host here too.
         if(validationBuild&&validationRemote==null&&intent!=null&&intent.getBooleanExtra("--remote",false)) {
@@ -977,11 +1576,23 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});
+        if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
+        android.view.ViewTreeObserver focusObserver=activity.getWindow().getDecorView().getViewTreeObserver();
+        if(focusObserver.isAlive())focusObserver.removeOnWindowFocusChangeListener(settingsFocusListener);
+        settingsAccessibility.destroy();
+        if(accessibilityPreferences!=null)accessibilityPreferences.close();
+        synchronized(this) {
+            destroyed=true;
+            if(wifiSettings!=null) wifiSettings.close();
+            if(bluetoothSettings!=null) bluetoothSettings.close();
+            if(soundsSettings!=null) {SoundsSettingsClient closing=soundsSettings;Thread cleanup=new Thread(closing::close,"OctoSenseSoundStop");cleanup.setDaemon(true);cleanup.start();}
+        }
         closePlacementMenu();
         replyComposer.close();
         homeGeometry.onDestroy();
         widgets.onDestroy();
-        if(agent!=null) agent.unbind();
+        if(agent!=null) {if(soundsSettings!=null)agent.stopSoundInBackground();agent.unbind();}
         if(validationRemote!=null) try {validationRemote.close();} catch(java.io.IOException ignored) {}
         launcher.unregisterCallback(packageCallback);
         activity.unregisterReceiver(profileCallback);

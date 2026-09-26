@@ -61,6 +61,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
         out.push(&octosense_app_hub_app::CARD_MODULE);
     }
+    out.push(&crate::settings_app::SETTINGS_MODULE);
     out
 }
 
@@ -168,14 +169,19 @@ fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> 
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
     let mut catalog = bundled_modules_catalog();
-    // The `card` host module is not an app a person opens; the apps it runs are.
-    catalog.retain(|app| app.id != "card");
     catalog.extend(card_apps());
+    catalog.retain(|app| catalog_visible(&app.id));
     catalog
 }
 
+pub(crate) fn catalog_visible(id: &str) -> bool {
+    // Keep the card host internal and the retired empty store out of the
+    // launcher. The current apphub module and installed cards remain visible.
+    !matches!(id, "card" | "appstore")
+}
+
 pub fn bundled_modules_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
+    linked_modules().iter().filter(|module| catalog_visible(module.id())).map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -242,6 +248,7 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
+        if id == "settings" && self.module(id).is_some() { return Hosting::Module; }
         if matches!(id, "robrix" | "finance" | "apphub") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
@@ -319,9 +326,9 @@ mod tests {
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {
-            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "camera", "mail"]
+            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail"]
         } else {
-            &["reference", "sheets", "photos", "news", "maps", "apphub", "camera", "mail"]
+            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail"]
         };
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
@@ -351,6 +358,43 @@ mod tests {
                 assert!(vm.take_errors().is_empty(), "{} must initialize without script errors", app.id);
             });
             assert!(host.teardown(&mut cx, client));
+        }
+    }
+
+    #[test]
+    fn bundled_apps_receive_same_base_theme_without_recreation() {
+        use makepad_widgets::*;
+        use crate::mobile_theme::{Preset,Selection};
+        let registry=AppRegistry::default();
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host=crate::module_host::ModuleHost::default();
+        for (index,app) in bundled_catalog().iter().enumerate() {
+            let module=registry.module(&app.id).unwrap();
+            let client=index as u64+1;
+            let schema = module.open_schema();
+            let open = if let Some(manifest_id) = card_manifest_id(app) {
+                schema.validate(&format!("{{\"app\":{}}}", makepad_strict_json::Value::Str(manifest_id.into()).to_json()), &[])
+            } else {
+                schema.empty_open()
+            }.unwrap();
+            host.create(&mut cx,client,module,open,dvec2(400.0,700.0)).unwrap();
+            let uid=host.get(client).unwrap().root.widget_uid();
+            for (preset,dark) in [(Preset::Paper,true),(Preset::Vivid,false)] {
+                let choice=Selection {preset,..Default::default()};
+                host.apply_style(&mut cx,&choice.sheet(crate::desktop::DesktopStyle::Android,dark));
+                let instance=host.get(client).unwrap();
+                assert_eq!(instance.root.widget_uid(),uid,"{} must retain its instance",app.id);
+                cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
+                    let theme=vm.module(id!(theme));let p=choice.palette(dark);
+                    for (role,color) in [("color_bg_app",p.background),("color_text",p.text),("color_focus",p.accent)] {
+                        let rgba=(((color.x*255.0).round() as u32)<<24)|(((color.y*255.0).round() as u32)<<16)|(((color.z*255.0).round() as u32)<<8)|255;
+                        assert_eq!(vm.bx.heap.value(theme,LiveId::from_str(role).into(),NoTrap).as_color(),Some(rgba),"{} {role}",app.id);
+                    }
+                    assert!(vm.take_errors().is_empty(),"{} must accept a shared theme",app.id);
+                });
+            }
+            assert!(host.teardown(&mut cx,client));
         }
     }
 

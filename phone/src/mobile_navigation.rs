@@ -127,7 +127,10 @@ impl FloatingNavigation {
     }
 
     pub fn step(&mut self, dt: f64) -> bool {
-        let t = 1.0 - (-dt * 24.0).exp();
+        self.step_with_motion(dt, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, reduced: bool) -> bool {
+        let t = if reduced {1.0} else {1.0 - (-dt * 24.0).exp()};
         let tracking = self.tracking();
         let mut active = false;
         let mut settle = |value: &mut f64, target: f64| {

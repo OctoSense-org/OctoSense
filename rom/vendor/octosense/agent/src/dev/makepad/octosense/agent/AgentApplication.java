@@ -17,6 +17,7 @@ public class AgentApplication extends Application {
     private static AgentApplication instance;
     private Updater updater;
     private UpdateNotifier notifier;
+    private UpdateSettings updateSettings;
     private final ExecutorService work = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate() {
@@ -25,12 +26,14 @@ public class AgentApplication extends Application {
         updater = new Updater(this);
         notifier = new UpdateNotifier(this);
         updater.setListener(notifier::progress);
+        updateSettings=new UpdateSettings(this,updater,work);
         startService(new Intent(this, AgentPlatformService.class));
         UpdateJobService.schedule(this);
     }
 
     static AgentApplication get() { return instance; }
     Updater updater() { return updater; }
+    UpdateSettings updateSettings() {return updateSettings;}
     UpdateNotifier notifier() { return notifier; }
     /** Network and install work runs here, never on the main or a Binder thread for long. */
     ExecutorService work() { return work; }

@@ -2,6 +2,9 @@
 <!-- Runtime permissions granted to OctoSense system apps on first boot. -->
 <exceptions>
     <exception package="dev.makepad.octosense.agent">
+        <!-- Trusted Settings helper; ordinary Home uses Android permission consent. -->
+        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="false"/>
+        <permission name="android.permission.BLUETOOTH_SCAN" fixed="false"/>
         <!-- The updater's "available / installing / restart" notification. -->
         <permission name="android.permission.POST_NOTIFICATIONS" fixed="false"/>
     </exception>

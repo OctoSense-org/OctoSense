@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.makepad.octosense.dndfixture">
+    <uses-sdk android:minSdkVersion="35" android:targetSdkVersion="35" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application android:label="OctoSense synthetic DND validation" android:debuggable="true">
+        <service android:name=".DndRankingListener" android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+    <instrumentation android:name=".DndFixture"
+        android:targetPackage="dev.makepad.octosense.dndfixture" />
+</manifest>

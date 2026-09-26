@@ -1,0 +1,104 @@
+// Application semantics belong to the controller. Native accessibility only
+// traverses rendered geometry and maps these identities to monotonic node IDs.
+fn settings_accessibility_detail(s) {
+    let app=s.context["app_target"]
+    if settings_has(["AppDetails","AppStorage","AppBattery","AppNetwork","AppPermissions"],s.page) { return app }
+    if s.page=="AppNotifications" { return [app,s.notifications_ui.entry] }
+    if s.page=="NotificationChannel" { return [app,s.notifications_ui.selected] }
+    if s.page=="PermissionChoices" { return [app,s.permission_ui.selected] }
+    if s.page=="RoleChoices" { return s.roles_ui.selected }
+    if s.page=="AppLanguage" { return [app,s.app_language_ui.parent] }
+    if s.page=="SystemLanguages" { return [s.system_language_ui.adding,s.system_language_ui.review,s.system_language_ui.parent] }
+    if s.page=="KeyboardDetails" { let row=s.keyboard_ui.selected; if row!=nil { return [row.id,row.target] }; return nil }
+    if s.page=="ControlChoices" { return [s.controls_section,s.control_ui.field] }
+    if s.page=="CaptionChoice" { return [s.caption_ui.visit,s.caption_ui.field] }
+    if s.page=="Controls" { if s.controls_section=="CaptionCustom" { return [s.controls_section,s.caption_ui.visit] }; return s.controls_section }
+    if s.page=="DndRule" || s.page=="DndEditor" { return s.dnd_ui.selected }
+    if s.page=="WifiNetwork" { return s.wifi_ui.selected }
+    if s.page=="BluetoothDevice" { return s.bt_ui.selected }
+    if s.page=="AccountDetails" { return s.accounts_ui.account }
+    if s.page=="AccountSync" { return [s.accounts_ui.account,s.accounts_ui.authority] }
+    if s.page=="Sounds" { return s.sound_ui.kind }
+    // Queries, pages within a catalog, and polling keys deliberately do not
+    // change the pane. Individual row semantics retire replaced targets.
+    return nil
+}
+fn settings_accessibility_candidate(s,o,id) {
+    if settings_has(["AppBattery","AppStorage","AppNetwork"],s.page) { return settings_app_policy_candidate(s,id,o) }
+    if s.page=="DisplayOptions" { return settings_display_candidate(s,o,id) }
+    if s.page=="AppNotifications" || s.page=="NotificationChannel" { return settings_notifications_candidate(s,o,id) }
+    if settings_has(["Dnd","DndPolicy","DndRules","DndRule","DndEditor"],s.page) {
+        if s.page=="Dnd" { let r=settings_dnd_manual(o,id); if r!=nil { return r } }
+        return settings_dnd_candidate(s,o,id)
+    }
+    return nil
+}
+fn settings_accessibility_refresh(s,o,out) {
+    let texts={}; let enabled=[]
+    for patch in out.patch {
+        if patch.op=="text" { texts[patch.id]=patch.value }
+        if patch.op=="enabled" && patch.value { enabled.push(patch.id) }
+    }
+    s.focus_links=[]
+    if s.page=="Search" { s.focus_links=[{button:"settings_search_clear",input:"settings_query"}] }
+    s.accessibility={key:[s.page,settings_accessibility_detail(s)].to_json(),pane:settings_or(texts["title"],settings_page_title(s))}
+    for pair in [
+        ["brightness_less","Decrease brightness by 10%"],["brightness_more","Increase brightness by 10%"],
+        ["volume_less","Decrease media volume by 10%"],["volume_more","Increase media volume by 10%"],
+        ["alarm_less","Decrease alarm volume by 10%"],["alarm_more","Increase alarm volume by 10%"],
+        ["ring_less","Decrease ring volume by 10%"],["ring_more","Increase ring volume by 10%"],
+        ["notification_less","Decrease notification volume by 10%"],["notification_more","Increase notification volume by 10%"],
+        ["timeout_less","Shorten screen timeout"],["timeout_more","Lengthen screen timeout"],
+        ["font_less","Decrease font size"],["font_more","Increase font size"],
+        ["keyboard_query","Filter keyboards"],["system_language_query","Filter system languages"],
+        ["caption_language_query","Filter caption languages"],["app_language_query","Filter language choices"],
+        ["settings_query","Search settings"],["apps_query","Search installed apps"],["bt_name","Bluetooth device name"],
+        ["network_dns_hostname","Private DNS provider hostname"],["clock_civil","Manual date and time, YYYY-MM-DD HH:MM"],
+        ["zone_query","Search time zones"],["night_time_input","Night Light schedule time, HH:MM or HH:MM:SS"],
+        ["night_warmer","Make Night Light warmer"],["night_cooler","Make Night Light cooler"],
+        ["display_save","Save reviewed display setting"],["display_cancel","Cancel display change"],
+        ["apply_theme","Apply theme"],["cancel_theme","Cancel theme changes"],
+        ["dnd_name","Schedule name"],["dnd_start","Start time"],["dnd_end","End time"]
+    ] { settings_patch(out,"label",pair[0],pair[1]) }
+    for pair in [["mode_system","Appearance"],["mode_light","Appearance"],["mode_dark","Appearance"],["solid","Wallpaper"],["gradient","Wallpaper"],["octosense","Theme"],["minimal","Theme"],["paper","Theme"],["vivid","Theme"]] {
+        if texts[pair[0]]!=nil { settings_patch(out,"label",pair[0],pair[1]+": "+texts[pair[0]]) }
+    }
+    for pair in [["bt_phonebook","Share contacts"],["bt_messages","Share messages"]] {
+        for value in [["ask","Ask"],["allow","Allow"],["deny","Deny"]] {
+            let id=pair[0]+"_"+value[0]
+            settings_patch(out,"label",id,pair[1]+": "+settings_or(texts[id],value[1]))
+        }
+    }
+    if s.page=="AppBattery" {
+        for id in ["app_battery_restricted","app_battery_optimized","app_battery_unrestricted","app_battery_confirm"] {
+            let label=settings_or(texts[id],"Confirm restricted battery policy")
+            settings_patch(out,"label",id,"Battery policy: "+label)
+        }
+        nil
+    }
+    if s.page=="Dnd" {
+        for value in ["off","priority","alarms","silence"] {
+            let id="dnd_manual_"+value
+            settings_patch(out,"label",id,"Do Not Disturb: "+settings_or(texts[id],settings_dnd_mode(value)))
+        }
+        nil
+    }
+    if s.page=="DndPolicy" {
+        let i=0
+        for field in settings_dnd_fields() {
+            let j=0
+            for value in field[2] {
+                let id="dnd_policy_"+i+"_"+j
+                settings_patch(out,"label",id,field[1]+": "+settings_or(texts[id],value)); j=j+1
+            }
+            i=i+1
+        }
+        nil
+    }
+    // Complete reviewed requests are identities: an old Android node cannot
+    // activate a replacement capability in the same compiled button slot.
+    for id in enabled {
+        let request=settings_accessibility_candidate(s,o,id)
+        if request!=nil { settings_patch(out,"semantic",id,"request:"+request.to_json()) }
+    }
+}

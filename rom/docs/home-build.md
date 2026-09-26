@@ -25,13 +25,13 @@ from the same pinned OctoSense-System-Apps checkout
 `--features app-appcard`: it is not shipped for now, so default,
 `mobile-apps` and native mobile builds leave it and octos out.
 
-The runtime's Makepad (main `cd812acd`) has the isolate controls App Hub
-requires and the contained script apps of makepad#30, so
-`home/runtime-patches.lock.json` names no patch. When one is needed it records
-the exact patch, its originating Makepad commit, SHA-256 and resulting Git
-tree; setup applies it to the pinned checkout and leaves it staged, and
-`--check` accepts only that exact tree. `--check` always rejects
-staged, unstaged or untracked source changes.
+The runtime's Makepad (main `cd812acd`) includes the contained-app and isolate
+controls from makepad#30. `home/runtime-patches.lock.json` now records only the
+Settings overlay, `patches/runtime/makepad-settings.patch`, for Android input,
+accessibility and renderer integration. The old contained-app patch is removed.
+The lock records the pinned base, patch SHA-256 and resulting Git tree; setup
+applies it to the pinned checkout and leaves it staged. `--check` accepts only
+that exact tree and rejects additional staged, unstaged or untracked source changes.
 The separate Makepad/Octoscript repositories are dependencies, not vendored
 copies of the launcher. No mobile repository or sibling-worktree name is used.
 
@@ -84,8 +84,8 @@ python3 scripts/stage-home.py
 scripts/stage-forks.sh /path/to/lineage-tree
 ```
 
-`stage-forks.sh` retains its existing reset of previously staged SystemUI and
-Quickstep files in the OS tree. Run it only on the designated build tree with no
+`stage-forks.sh` resets previously staged SystemUI and Quickstep files and the
+PermissionController integration paths in the OS tree. Run it only on the designated build tree with no
 active OS build or unrelated edits in those paths. It now takes Home's sources
 from this checkout, and no longer accepts a separate launcher checkout.
 The Linux OS build still uses `scripts/build-rom.sh` / `run-rom-rootfs.sh` and

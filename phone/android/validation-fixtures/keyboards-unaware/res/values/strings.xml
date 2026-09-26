@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">OctoSense Test Keyboard Unaware</string>
+    <string name="english">Test English</string>
+    <string name="chinese">Test Chinese</string>
+</resources>

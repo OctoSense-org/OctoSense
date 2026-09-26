@@ -1,0 +1,497 @@
+// Ordinary Controls application logic; native capabilities remain authoritative.
+fn settings_control_descriptors() { return [
+    {"page":"Location","id":"LocationEnabled","wire":"location_enabled","label":"Use location","mode":"pair"},
+    {"page":"Location","id":"WifiScanning","wire":"wifi_scanning","label":"Wi-Fi scanning","mode":"pair"},
+    {"page":"Location","id":"BluetoothScanning","wire":"bluetooth_scanning","label":"Bluetooth scanning","mode":"pair"},
+    {"page":"Privacy","id":"CameraAccess","wire":"camera_access","label":"Camera access","mode":"pair"},
+    {"page":"Privacy","id":"MicrophoneAccess","wire":"microphone_access","label":"Microphone access","mode":"pair"},
+    {"page":"Notifications","id":"LockscreenNotifications","wire":"lockscreen_notifications","label":"Show lock screen notifications","mode":"pair"},
+    {"page":"Notifications","id":"LockscreenSensitive","wire":"lockscreen_sensitive","label":"Show sensitive content on lock screen","mode":"pair"},
+    {"page":"Notifications","id":"NotificationHistory","wire":"notification_history","label":"Notification history","mode":"pair"},
+    {"page":"Notifications","id":"NotificationBubbles","wire":"notification_bubbles","label":"Allow notification bubbles","mode":"pair"},
+    {"page":"Notifications","id":"DndMode","wire":"dnd_mode","label":"Do Not Disturb","mode":"dnd"},
+    {"page":"BatteryPolicy","id":"BatterySaver","wire":"battery_saver","label":"Battery saver","mode":"pair"},
+    {"page":"BatteryPolicy","id":"BatteryThreshold","wire":"battery_threshold","label":"Start battery saver at","mode":"threshold"},
+    {"page":"BatteryPolicy","id":"BatteryDisableAt90","wire":"battery_disable_at_90","label":"Turn saver off at 90%","mode":"pair"},
+    {"page":"BatteryPolicy","id":"AdaptiveBattery","wire":"adaptive_battery","label":"Adaptive battery","mode":"pair"},
+    {"page":"SoundFeedback","id":"ChargingSounds","wire":"charging_sounds","label":"Charging sounds","mode":"pair"},
+    {"page":"SoundFeedback","id":"ChargingVibration","wire":"charging_vibration","label":"Charging vibration","mode":"pair"},
+    {"page":"SoundFeedback","id":"LockSounds","wire":"lock_sounds","label":"Screen lock sounds","mode":"pair"},
+    {"page":"SoundFeedback","id":"DialpadTones","wire":"dialpad_tones","label":"Dial pad tones","mode":"pair"},
+    {"page":"SoundFeedback","id":"VibrationEnabled","wire":"vibration_enabled","label":"Vibration and haptics","mode":"pair"},
+    {"page":"SoundFeedback","id":"KeyboardVibration","wire":"keyboard_vibration","label":"Keyboard vibration","mode":"pair"},
+    {"page":"SoundFeedback","id":"RingVibration","wire":"ring_vibration","label":"Ring vibration intensity","mode":"choices"},
+    {"page":"SoundFeedback","id":"NotificationVibration","wire":"notification_vibration","label":"Notification vibration intensity","mode":"choices"},
+    {"page":"SoundFeedback","id":"AlarmVibration","wire":"alarm_vibration","label":"Alarm vibration intensity","mode":"choices"},
+    {"page":"SoundFeedback","id":"MediaVibration","wire":"media_vibration","label":"Media vibration intensity","mode":"choices"},
+    {"page":"SoundFeedback","id":"TouchVibration","wire":"touch_vibration","label":"Touch vibration intensity","mode":"choices"},
+    {"page":"AccessibilityVision","id":"ColorInversion","wire":"color_inversion","label":"Color inversion","mode":"pair"},
+    {"page":"AccessibilityVision","id":"ColorCorrection","wire":"color_correction","label":"Use color correction","mode":"pair"},
+    {"page":"AccessibilityVision","id":"ColorCorrectionMode","wire":"color_correction_mode","label":"Color correction mode","mode":"choices"},
+    {"page":"AccessibilityHearing","id":"MonoAudio","wire":"mono_audio","label":"Mono audio","mode":"pair"},
+    {"page":"AccessibilityHearing","id":"AudioBalance","wire":"audio_balance","label":"Audio balance","mode":"balance"},
+    {"page":"AccessibilityHearing","id":"CaptionsEnabled","wire":"captions_enabled","label":"Use captions","mode":"pair"},
+    {"page":"AccessibilityHearing","id":"CaptionsFontScale","wire":"captions_font_scale","label":"Caption text size","mode":"choices"},
+    {"page":"AccessibilityHearing","id":"CaptionsPreset","wire":"captions_preset","label":"Caption style","mode":"choices"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"HighContrast"},"wire":"high_contrast_text","label":"High contrast text","mode":"pair"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"BoldText"},"wire":"bold_text","label":"Bold text","mode":"pair"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"RemoveAnimations"},"wire":"remove_animations","label":"Remove animations","mode":"pair"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"TouchHold"},"wire":"touch_hold_delay","label":"Touch & hold delay","mode":"choices"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"ActionTimeout"},"wire":"action_timeout","label":"Time to take action","mode":"choices"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"Autoclick"},"wire":"autoclick","label":"Automatic click","mode":"picker"},
+    {"page":"AccessibilityTextInteraction","id":{"TextInteraction":"LargePointer"},"wire":"large_pointer","label":"Large mouse pointer","mode":"pair"}
+] }
+fn settings_control_descriptions() { return {
+    "AccessibilityTextInteraction": "Adjust text, animation and interaction preferences. Automatic clicks require a mouse. Timeouts apply to apps that support Android accessibility recommendations.",
+    "CaptionCustom": "Custom caption colors, opacity, edges and typeface. Choosing an appearance option also turns captions on. Apps may render captions differently.",
+    "AccessibilityHearing": "Adjust mono audio and left/right balance. Choosing a caption size or style also turns captions on. Preferences apply in apps that support Android captions. Choose caption language and custom appearance below. Hearing devices remain in Android settings.",
+    "AccessibilityVision": "Color changes apply across apps. Choose a correction mode independently of turning correction on. Other accessibility features remain in Android settings.",
+    "Location": "Location and background scanning for this Android user. Apps still need their own location permission.",
+    "Privacy": "Control camera and microphone access across apps. Individual app permissions remain separate.",
+    "Notifications": "Notification behavior for this Android user. Priority only uses your current allowed interruptions.",
+    "SoundFeedback": "Saved sound and vibration preferences. Silent mode and Do Not Disturb can suppress playback. Charging vibration also depends on charging sounds. Options follow the device’s supported vibration levels.",
+    "BatteryPolicy": "Power saving and background battery policy. Availability depends on the device and current charging state."
+} }
+fn settings_control_fields(section) {
+    let result=[]
+    for field in settings_control_descriptors() { if field.page==section { result.push(field) } }
+    return result
+}
+fn settings_control_ui(s) {
+    if s["control_ui"]==nil { s["control_ui"]={section:"",field:nil,offset:0,pressed:nil,history_review:false} }
+    if s["control_ui"].section!=s.controls_section {
+        s["control_ui"]={section:s.controls_section,field:nil,offset:0,pressed:nil,history_review:false}
+    }
+    return s["control_ui"]
+}
+fn settings_controls_observed(s,o) {
+    if o.controls==nil || o.controls.page!=s.controls_section { return nil }
+    return o.controls
+}
+fn settings_control_row(s,o,field) {
+    let observed=settings_controls_observed(s,o)
+    if observed==nil || field==nil { return nil }
+    for row in observed.controls { if row.id.to_json()==field.id.to_json() { return row } }
+    return nil
+}
+fn settings_control_field(s,wire) {
+    for field in settings_control_fields(s.controls_section) { if field.wire==wire { return field } }
+    return nil
+}
+fn settings_control_unit_values() { return [
+    ["Off","off","Off"],["On","on","On"],["Priority","priority","Priority only"],
+    ["Alarms","alarms","Alarms only"],["Silence","silence","Total silence"],
+    ["DeviceDefault","default","Device default"],["Low","low","Low"],
+    ["Medium","medium","Medium"],["High","high","High"],
+    ["Deuteranomaly","deuteranomaly","Red-green, green weak"],
+    ["Protanomaly","protanomaly","Red-green, red weak"],["Tritanomaly","tritanomaly","Blue-yellow"],
+    ["Grayscale","grayscale","Grayscale"],["CaptionApp","caption_app","Set by app"],
+    ["CaptionWhiteBlack","caption_white_black","White on black"],
+    ["CaptionBlackWhite","caption_black_white","Black on white"],
+    ["CaptionYellowBlack","caption_yellow_black","Yellow on black"],
+    ["CaptionYellowBlue","caption_yellow_blue","Yellow on blue"],["CaptionCustom","caption_custom","Custom"]
+] }
+// TextValue stores custom animation observations as f32 bit patterns. Decode
+// those bits as data for their label; they can never become writable choices.
+fn settings_control_float_bits(bits) {
+    if bits>=2147483648 { bits=bits-2147483648 }
+    let exponent=mod.math.floor(bits/8388608)
+    let mantissa=bits-exponent*8388608
+    let power=exponent-150
+    if exponent!=0 { mantissa=mantissa+8388608 } else { power=-149 }
+    while power>0 { mantissa=mantissa*2; power=power-1 }
+    while power<0 { mantissa=mantissa/2; power=power+1 }
+    return mantissa
+}
+fn settings_control_timeout_label(n) {
+    for pair in [[0,"Default"],[10000,"10 seconds"],[30000,"30 seconds"],[60000,"1 minute"],[120000,"2 minutes"]] {
+        if n==pair[0] { return pair[1] }
+    }
+    return "Custom: "+n+" ms"
+}
+fn settings_control_value(value) {
+    if value==nil { return nil }
+    if value.is_string() {
+        for row in settings_control_unit_values() {
+            if row[0]==value { return {wire:row[1],label:row[2],kind:"unit",number:nil} }
+        }
+        return nil
+    }
+    if value["Percent"]!=nil {
+        let label=""+value["Percent"]+"%"
+        if value["Percent"]==0 { label="Never" }
+        return {wire:""+value["Percent"],label:label,kind:"percent",number:value["Percent"]}
+    }
+    if value["Balance"]!=nil {
+        let number=value["Balance"].to_f64()
+        let absolute=number; let side="right"
+        if number<0 { absolute=0-number; side="left" }
+        let label=""+(absolute*100)+"% "+side
+        if number==0 { label="Centered" }
+        return {wire:"balance:"+value["Balance"],label:label,kind:"balance",number:number}
+    }
+    if value["BalancePercent"]!=nil {
+        let number=value["BalancePercent"]
+        let absolute=number; let side="right"
+        if number<0 { absolute=0-number; side="left" }
+        let label=""+absolute+"% "+side
+        if number==0 { label="Center" }
+        return {wire:"balance_percent:"+number,label:label,kind:"balance_percent",number:number}
+    }
+    if value["CaptionScale"]!=nil { return {wire:"caption_scale:"+value["CaptionScale"],label:""+(value["CaptionScale"].to_f64()*100)+"%",kind:"caption_scale",number:value["CaptionScale"].to_f64()} }
+    let t=value["TextInteraction"]
+    if t==nil { return nil }
+    if t["FontWeight"]!=nil { return {wire:"font_weight:"+t["FontWeight"],label:"Custom weight adjustment: "+t["FontWeight"],kind:"observed",number:t["FontWeight"]} }
+    if t["AnimationScales"]!=nil {
+        let a=settings_control_float_bits(t["AnimationScales"][0])
+        let b=settings_control_float_bits(t["AnimationScales"][1])
+        let c=settings_control_float_bits(t["AnimationScales"][2])
+        return {wire:"animation_scales:"+a+","+b+","+c,label:"Custom animation scales: "+a+", "+b+", "+c,kind:"observed",number:nil}
+    }
+    if t["HoldMs"]!=nil {
+        let label="Custom: "+t["HoldMs"]+" ms"
+        for pair in [[400,"Short (400 ms)"],[1000,"Medium (1 second)"],[1500,"Long (1.5 seconds)"]] { if t["HoldMs"]==pair[0] { label=pair[1] } }
+        return {wire:"hold_ms:"+t["HoldMs"],label:label,kind:"hold_ms",number:t["HoldMs"]}
+    }
+    if t["TimeoutMs"]!=nil {
+        let a=t["TimeoutMs"][0]; let b=t["TimeoutMs"][1]
+        let label="Custom: controls "+a+" ms, other content "+b+" ms"
+        if a==b { label=settings_control_timeout_label(a) }
+        return {wire:"timeout_pair_ms:"+a+","+b,label:label,kind:"timeout_ms",number:a,other:b}
+    }
+    if t["Autoclick"]!=nil {
+        let on=t["Autoclick"][0]; let n=t["Autoclick"][1]
+        let label="Off"; let prefix="autoclick_off_ms:"
+        if on { label="On · "+n+" ms"; prefix="autoclick_ms:" }
+        return {wire:prefix+n,label:label,kind:"autoclick",number:n,on:on}
+    }
+    if t["HoldPreset"]!=nil {
+        for row in [[400,"short","Short"],[1000,"medium","Medium"],[1500,"long","Long"]] {
+            if t["HoldPreset"]==row[0] { return {wire:"hold:"+row[1],label:row[2],kind:"hold",number:row[0]} }
+        }
+    }
+    if t["TimeoutPreset"]!=nil {
+        for pair in [[0,"default"],[10000,"seconds10"],[30000,"seconds30"],[60000,"minute1"],[120000,"minutes2"]] {
+            if t["TimeoutPreset"]==pair[0] { return {wire:"timeout:"+pair[1],label:settings_control_timeout_label(pair[0]),kind:"timeout",number:pair[0]} }
+        }
+    }
+    if t["AutoclickDelay"]!=nil { return {wire:"autoclick_delay:"+t["AutoclickDelay"],label:""+t["AutoclickDelay"]+" ms",kind:"autoclick_delay",number:t["AutoclickDelay"]} }
+    return nil
+}
+fn settings_control_selected(choice,observed) {
+    let a=settings_control_value(choice); let b=settings_control_value(observed)
+    if a==nil || b==nil { return false }
+    if a.wire==b.wire { return true }
+    if a.kind=="hold" && b.kind=="hold_ms" { return a.number==b.number }
+    if a.kind=="timeout" && b.kind=="timeout_ms" { return a.number==b.number && b.number==b.other }
+    if a.kind=="autoclick_delay" && b.kind=="autoclick" { return b.on && a.number==b.number }
+    return a.wire=="off" && b.kind=="autoclick" && !b.on
+}
+fn settings_control_permitted(s,o,field,value) {
+    if o.android!=true || s.pending { return false }
+    let row=settings_control_row(s,o,field)
+    if row==nil || row.availability!="Available" || row.value==nil || value==nil { return false }
+    let wanted=settings_control_value(value)
+    if wanted==nil { return false }
+    for option in row.options {
+        let info=settings_control_value(option)
+        if info!=nil && info.wire==wanted.wire { return true }
+    }
+    return false
+}
+fn settings_control_request(s,o,field,value) {
+    if !settings_control_permitted(s,o,field,value) { return nil }
+    return {kind:"control",page:settings_route(s.controls_section).wire,control:field.wire,value:settings_control_value(value).wire}
+}
+fn settings_control_neighbor(s,o,field,higher) {
+    let row=settings_control_row(s,o,field)
+    if row==nil || row.availability!="Available" || row.value==nil { return nil }
+    let current=settings_control_value(row.value)
+    if current==nil { return nil }
+    if field.mode=="balance" || field.mode=="threshold" {
+        let chosen=nil; let number=nil
+        for option in row.options {
+            let info=settings_control_value(option)
+            if info!=nil {
+                let n=info.number
+                if field.mode=="balance" { n=n/100 }
+                if (higher && n>current.number) || (!higher && n<current.number) {
+                    if chosen==nil || (higher && n<number) || (!higher && n>number) { chosen=option; number=n }
+                }
+            }
+        }
+        return chosen
+    }
+    if field.mode!="pair" { return nil }
+    let value="Off"
+    if higher { value="On" }
+    if settings_control_selected(value,row.value) { return nil }
+    return value
+}
+fn settings_control_candidate(s,o,id) {
+    let fields=settings_control_fields(s.controls_section)
+    let index=0
+    for field in fields {
+        let prefix="control_"+index
+        let row=settings_control_row(s,o,field)
+        if id==prefix+"_less" || id==prefix+"_more" {
+            return settings_control_request(s,o,field,settings_control_neighbor(s,o,field,id==prefix+"_more"))
+        }
+        if id==prefix+"_center" && field.mode=="balance" {
+            if row!=nil && row.value!=nil && settings_control_value(row.value).number!=0 { return settings_control_request(s,o,field,{BalancePercent:0}) }
+        }
+        if field.mode=="choices" && row!=nil {
+            let i=0
+            for option in row.options {
+                if i<6 && id==prefix+"_choice_"+i { return settings_control_request(s,o,field,option) }
+                i=i+1
+            }
+        }
+        if field.mode=="dnd" && row!=nil {
+            for value in ["Off","Priority","Alarms","Silence"] {
+                let info=settings_control_value(value)
+                if id=="dnd_mode_"+info.wire && !settings_control_selected(value,row.value) { return settings_control_request(s,o,field,value) }
+            }
+        }
+        index=index+1
+    }
+    return nil
+}
+fn settings_control_picker_candidate(s,o,index) {
+    let ui=settings_control_ui(s)
+    let field=settings_control_field(s,ui.field)
+    let row=settings_control_row(s,o,field)
+    if field==nil || field.mode!="picker" || row==nil || ui.offset+index>=row.options.len() { return nil }
+    return settings_control_request(s,o,field,row.options[ui.offset+index])
+}
+fn settings_control_dispatch(s,e,o,out,request) {
+    let ui=settings_control_ui(s)
+    if e.kind=="press" {
+        ui.pressed=nil
+        if request!=nil { ui.pressed={id:e.id,request:request.to_json()} }
+        return true
+    }
+    if e.kind=="release" { ui.pressed=nil; return true }
+    if e.kind!="click" { return false }
+    let previous=ui.pressed; ui.pressed=nil
+    if request==nil { return true }
+    if previous!=nil && (previous.id!=e.id || previous.request!=request.to_json()) { return true }
+    if request.control=="notification_history" && request.value=="off" {
+        ui.history_review=true
+        settings_scroll(out,"controls_page")
+        return true
+    }
+    settings_request(out,request)
+    return true
+}
+fn settings_controls_event(s,e,o,out) {
+    let ui=settings_control_ui(s)
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" {
+        ui.pressed=nil
+        if e.kind!="pause" { ui.history_review=false; ui.field=nil; ui.offset=0 }
+        return false
+    }
+    if s.controls_section=="CaptionCustom" { return false }
+    if s.page=="ControlChoices" {
+        if e.kind=="back" || (e.kind=="click" && e.id=="back") {
+            ui.field=nil; ui.offset=0; ui.pressed=nil; s.page="Controls"
+            return true
+        }
+        let i=0
+        while i<20 {
+            if e.id=="control_picker_"+i { return settings_control_dispatch(s,e,o,out,settings_control_picker_candidate(s,o,i)) }
+            i=i+1
+        }
+        if !s.pending && e.kind=="click" {
+            let field=settings_control_field(s,ui.field)
+            let row=settings_control_row(s,o,field)
+            let length=0
+            if row!=nil { length=row.options.len() }
+            if e.id=="control_picker_next" && ui.offset+20<length { ui.offset=ui.offset+20; ui.pressed=nil; settings_scroll(out,"control_picker_page"); return true }
+            if e.id=="control_picker_previous" && ui.offset>0 { ui.offset=settings_max(0,ui.offset-20); ui.pressed=nil; settings_scroll(out,"control_picker_page"); return true }
+        }
+        return false
+    }
+    if s.page!="Controls" { return false }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") { ui.history_review=false; ui.pressed=nil; return false }
+    if e.kind=="click" {
+        if e.id=="controls_refresh" {
+            if o.android==true && !s.pending { settings_request(out,{kind:"read",domain:"controls",page:settings_route(s.controls_section).wire}) }
+            return true
+        }
+        if e.id=="controls_native" {
+            if o.android==true && !s.pending {
+                let destination="accessibility"
+                for row in [["Location","location"],["Privacy","privacy"],["Notifications","notifications"],["BatteryPolicy","battery"],["SoundFeedback","sound"]] { if row[0]==s.controls_section { destination=row[1] } }
+                settings_request(out,{kind:"open",destination:destination})
+            }
+            return true
+        }
+        if e.id=="history_disable_cancel" { ui.history_review=false; return true }
+        if e.id=="history_disable_confirm" && s.controls_section=="Notifications" {
+            let field=settings_control_field(s,"notification_history")
+            let row=settings_control_row(s,o,field)
+            if ui.history_review && row!=nil && row.value=="On" {
+                let request=settings_control_request(s,o,field,"Off")
+                if request!=nil { ui.history_review=false; settings_request(out,request) }
+            }
+            return true
+        }
+        if e.id=="history_open" { ui.history_review=false; return false }
+        let index=0
+        for field in settings_control_fields(s.controls_section) {
+            if field.mode=="picker" && e.id=="control_"+index+"_more" {
+                let row=settings_control_row(s,o,field)
+                if o.android==true && !s.pending && row!=nil && row.options.len()>0 {
+                    ui.field=field.wire; ui.offset=0; ui.pressed=nil; s.page="ControlChoices"
+                    settings_scroll(out,"control_picker_page")
+                }
+                return true
+            }
+            index=index+1
+        }
+    }
+    if e.id.search("control_")==0 || e.id.search("dnd_mode_")==0 {
+        return settings_control_dispatch(s,e,o,out,settings_control_candidate(s,o,e.id))
+    }
+    return false
+}
+fn settings_control_availability(row) {
+    if row==nil { return "Waiting for Android…" }
+    if row.options.len()>0 { return "" }
+    for pair in [["Available","Read only"],["Restricted","Restricted by device policy or screen lock"],["Unsupported","Not supported on this device"],["Unavailable","Unavailable"]] {
+        if row.availability==pair[0] { return pair[1] }
+    }
+    return "Unavailable"
+}
+fn settings_control_button(out,id,label,context,request) {
+    settings_text(out,id,label)
+    settings_patch(out,"label",id,context+": "+label)
+    settings_enabled(out,id,request!=nil)
+    if request!=nil { settings_patch(out,"semantic",id,"control:"+request.page+":"+request.control+":"+request.value) }
+}
+fn settings_controls_refresh(s,o,out) {
+    let ui=settings_control_ui(s)
+    if s.controls_section=="CaptionCustom" { return }
+    if s.page!="Controls" && s.page!="ControlChoices" { return }
+    let ready=o.android==true && !s.pending
+    let fields=settings_control_fields(s.controls_section)
+    if s.page=="ControlChoices" {
+        let field=settings_control_field(s,ui.field)
+        if field==nil { return }
+        let row=settings_control_row(s,o,field)
+        let options=[]; let current=nil
+        if row!=nil { options=row.options; current=row.value }
+        let start=settings_min(ui.offset,options.len())
+        let end=settings_min(start+20,options.len())
+        let observed="Unavailable"
+        let info=settings_control_value(current)
+        if info!=nil { observed=info.label }
+        settings_text(out,"title",field.label)
+        settings_text(out,"control_picker_observed",field.label+": "+observed)
+        let summary="No authorized choices. Return and refresh the controls."
+        if options.len()>0 { summary="Choices "+(start+1)+"–"+end+" of "+options.len() }
+        settings_text(out,"control_picker_summary",summary)
+        settings_enabled(out,"control_picker_previous",!s.pending && start>0)
+        settings_enabled(out,"control_picker_next",!s.pending && end<options.len())
+        let i=0
+        while i<20 {
+            let id="control_picker_"+i
+            let shown=start+i<options.len()
+            settings_visible(out,id,shown)
+            settings_enabled(out,id,false)
+            if shown {
+                let option=options[start+i]
+                let label=settings_control_value(option).label
+                if settings_control_selected(option,current) { label=label+" · Selected" }
+                settings_control_button(out,id,label,field.label,settings_control_picker_candidate(s,o,i))
+            }
+            i=i+1
+        }
+        return
+    }
+    settings_text(out,"controls_description",settings_control_descriptions()[s.controls_section])
+    settings_enabled(out,"controls_refresh",ready)
+    settings_enabled(out,"controls_native",ready)
+    let notifications=s.controls_section=="Notifications"
+    settings_visible(out,"history_open",notifications)
+    settings_enabled(out,"history_open",ready)
+    settings_visible(out,"history_disable_review",notifications && ui.history_review)
+    let history=settings_control_field(s,"notification_history")
+    let history_row=settings_control_row(s,o,history)
+    let can_disable=false
+    if notifications && ui.history_review && history_row!=nil && history_row.value=="On" {
+        can_disable=settings_control_permitted(s,o,history,"Off")
+    }
+    settings_enabled(out,"history_disable_confirm",can_disable)
+    settings_enabled(out,"history_disable_cancel",!s.pending)
+    settings_visible(out,"dnd_section",notifications)
+    settings_enabled(out,"dnd_open",ready)
+    let index=0
+    while index<11 {
+        let prefix="control_"+index
+        let shown=index<fields.len()
+        settings_visible(out,prefix,shown)
+        if shown {
+            let field=fields[index]
+            let row=settings_control_row(s,o,field)
+            let observed=nil; let info=nil
+            if row!=nil { observed=row.value; info=settings_control_value(observed) }
+            let value="Unavailable"
+            if info!=nil { value=info.label }
+            settings_text(out,prefix+"_label",field.label)
+            settings_text(out,prefix+"_value",value)
+            let note=settings_control_availability(row)
+            if note==value { note="" }
+            settings_text(out,prefix+"_availability",note)
+            settings_visible(out,prefix+"_note",note!="")
+            settings_visible(out,prefix+"_pair",field.mode!="choices" && field.mode!="dnd")
+            settings_visible(out,prefix+"_choices",field.mode=="choices")
+            settings_visible(out,prefix+"_center",field.mode=="balance")
+            settings_visible(out,prefix+"_less",field.mode!="picker")
+            if field.mode=="picker" {
+                settings_text(out,prefix+"_more","Choose")
+                settings_patch(out,"label",prefix+"_more",field.label+": Choose")
+                settings_patch(out,"semantic",prefix+"_more","control-picker-open:"+s.controls_section+":"+field.wire)
+                settings_enabled(out,prefix+"_more",ready && row!=nil && row.options.len()>0)
+            } else if field.mode=="choices" {
+                let i=0
+                while i<6 {
+                    let id=prefix+"_choice_"+i
+                    let present=row!=nil && i<row.options.len()
+                    settings_visible(out,id,present)
+                    settings_enabled(out,id,false)
+                    if present {
+                        let option=row.options[i]
+                        let label=settings_control_value(option).label
+                        if settings_control_selected(option,observed) { label=label+" · Selected" }
+                        settings_control_button(out,id,label,field.label,settings_control_request(s,o,field,option))
+                    }
+                    i=i+1
+                }
+                nil
+            } else if field.mode=="dnd" {
+                for option in ["Off","Priority","Alarms","Silence"] {
+                    let info=settings_control_value(option)
+                    let selected=settings_control_selected(option,observed)
+                    let label=info.label
+                    if selected { label=label+" · Selected" }
+                    let request=nil
+                    if !selected { request=settings_control_request(s,o,field,option) }
+                    settings_control_button(out,"dnd_mode_"+info.wire,label,field.label,request)
+                }
+                nil
+            } else {
+                let less="Off"; let more="On"
+                if field.mode=="threshold" { less="Lower"; more="Higher" }
+                if field.mode=="balance" { less="Left 1%"; more="Right 1%" }
+                settings_control_button(out,prefix+"_less",less,field.label,settings_control_candidate(s,o,prefix+"_less"))
+                settings_control_button(out,prefix+"_more",more,field.label,settings_control_candidate(s,o,prefix+"_more"))
+                if field.mode=="balance" { settings_control_button(out,prefix+"_center","Center",field.label,settings_control_candidate(s,o,prefix+"_center")) }
+            }
+            // Keep a result for the enclosing conditional in this script VM.
+            nil
+        }
+        index=index+1
+    }
+}

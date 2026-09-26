@@ -1,0 +1,243 @@
+// Scoped caption appearance editor. Values, labels, paging and preview live here.
+fn settings_caption_ui(s) {
+    if s["caption_ui"]==nil { s.caption_ui={visit:nil,field:nil,offset:0,pressed:nil,back_search:false} }
+    return s.caption_ui
+}
+fn settings_caption_fields() { return [
+    {name:"Typeface",wire:"caption_typeface",label:"Typeface"},
+    {name:"Foreground",wire:"caption_foreground_color",label:"Text color"},
+    {name:"ForegroundOpacity",wire:"caption_foreground_opacity",label:"Text opacity"},
+    {name:"EdgeType",wire:"caption_edge_type",label:"Edge type"},
+    {name:"EdgeColor",wire:"caption_edge_color",label:"Edge color"},
+    {name:"Background",wire:"caption_background_color",label:"Background color"},
+    {name:"BackgroundOpacity",wire:"caption_background_opacity",label:"Background opacity"},
+    {name:"Window",wire:"caption_window_color",label:"Window color"},
+    {name:"WindowOpacity",wire:"caption_window_opacity",label:"Window opacity"} ] }
+fn settings_caption_active(s) { return (s.page=="Controls" && s.controls_section=="CaptionCustom") || s.page=="CaptionChoice" }
+fn settings_caption_observed(s,o) {
+    let n=o.caption_custom
+    if n!=nil && n.visit==s.caption_ui.visit && settings_caption_active(s) { return n }
+    return nil
+}
+fn settings_caption_row(s,o,field) {
+    let n=settings_caption_observed(s,o)
+    if n!=nil { for row in n.controls.controls { if row.id["CaptionCustom"]==field { return row } } }
+    return nil
+}
+fn settings_caption_field(name) { for field in settings_caption_fields() { if field.name==name { return field } }; return nil }
+fn settings_caption_choices(s,o) {
+    let row=settings_caption_row(s,o,s.caption_ui.field)
+    if row==nil { return [] }
+    let result=[]
+    for value in row.options { if value["CaptionDetail"]!=nil { result.push(value.CaptionDetail) } }
+    return result
+}
+// mod.math.floor is a shader f32 builtin; packed ARGB needs exact f64 arithmetic.
+fn settings_caption_floor(n) { return n-n%1 }
+fn settings_caption_rgb(n) { return [settings_caption_floor(n/65536)%256,settings_caption_floor(n/256)%256,n%256,settings_caption_floor(n/16777216)] }
+fn settings_caption_swatch(n) { return 4278190080+settings_caption_floor(n/16)*85*65536+(settings_caption_floor(n/4)%4)*85*256+(n%4)*85 }
+fn settings_caption_color_label(n) {
+    let rgb=n%16777216
+    for pair in [[16777215,"White"],[0,"Black"],[16711680,"Red"],[16776960,"Yellow"],[65280,"Green"],[65535,"Cyan"],[255,"Blue"],[16711935,"Magenta"]] { if rgb==pair[0] { return pair[1] } }
+    let channels=settings_caption_rgb(n)
+    return "RGB "+channels[0]+", "+channels[1]+", "+channels[2]
+}
+fn settings_caption_faces() { return [["default","Default"],["sans","Sans-serif"],["condensed","Sans-serif condensed"],["mono_sans","Sans-serif monospace"],["serif","Serif"],["mono_serif","Serif monospace"],["casual","Casual"],["cursive","Cursive"],["small_caps","Small capitals"]] }
+fn settings_caption_edges() { return [["default","Default"],["none","None"],["outline","Outline"],["shadow","Drop shadow"],["raised","Raised"],["depressed","Depressed"]] }
+fn settings_caption_value(value) {
+    if value==nil { return {label:"Unavailable",wire:nil,color:nil} }
+    if value.is_string() {
+        if value=="SwatchDefault" { return {label:"Default (set by app)",wire:"caption_swatch:default",color:nil} }
+        if value=="SwatchNone" { return {label:"None",wire:"caption_swatch:none",color:nil} }
+        return {label:"Custom typeface (kept)",wire:nil,color:nil}
+    }
+    let packed=value["Packed"]
+    if value["Swatch"]!=nil { packed=settings_caption_swatch(value.Swatch) }
+    if packed!=nil {
+        let label=settings_caption_color_label(packed); let wire=nil; let color=nil
+        if value["Swatch"]!=nil { wire="caption_swatch:"+value.Swatch }
+        if packed<16777216 { label="Default (set by app)"; if settings_caption_floor(packed/256)%65536==0 { label="None" } }
+        else { color=settings_caption_rgb(packed); let i=0; while i<4 { color[i]=color[i]/255; i=i+1 }; nil }
+        return {label:label,wire:wire,color:color}
+    }
+    let alpha=value["Opacity"]; let wire=nil
+    if value["Alpha"]!=nil { alpha=value.Alpha; wire="caption_alpha:"+alpha }
+    if alpha!=nil {
+        let n=settings_round(alpha*1000/255)
+        let fraction=n%10
+        let label=""+settings_caption_floor(n/10)+"."+fraction+"%"
+        for row in [[64,"25%"],[128,"50%"],[192,"75%"],[255,"100%"]] { if alpha==row[0] { label=row[1] } }
+        return {label:label,wire:wire,color:nil}
+    }
+    if value["Typeface"]!=nil { let row=settings_caption_faces()[value.Typeface]; return {label:row[1],wire:"caption_typeface:"+row[0],color:nil} }
+    if value["Edge"]!=nil { let row=settings_caption_edges()[value.Edge]; return {label:row[1],wire:"caption_edge:"+row[0],color:nil} }
+    if value["EdgeObserved"]!=nil {
+        let n=value.EdgeObserved+1; let label="Custom edge type ("+value.EdgeObserved+")"
+        if n>=0 && n<6 { label=settings_caption_edges()[n][1] }
+        return {label:label,wire:nil,color:nil}
+    }
+    return {label:"Unavailable",wire:nil,color:nil}
+}
+fn settings_caption_selected(choice,current) {
+    if current==nil { return false }
+    if choice.to_json()==current.to_json() { return true }
+    if current.is_string() { return false }
+    let packed=current["Packed"]
+    if packed!=nil {
+        if choice=="SwatchDefault" { return packed<16777216 && settings_caption_floor(packed/256)%65536!=0 }
+        if choice=="SwatchNone" { return packed<16777216 && settings_caption_floor(packed/256)%65536==0 }
+        if !choice.is_string() && choice["Swatch"]!=nil { return packed>=16777216 && packed%16777216==settings_caption_swatch(choice.Swatch)%16777216 }
+    }
+    if !choice.is_string() {
+        if choice["Alpha"]!=nil { return choice.Alpha==current["Opacity"] }
+        if choice["Edge"]!=nil && current["EdgeObserved"]!=nil { return choice.Edge-1==current.EdgeObserved }
+    }
+    return false
+}
+fn settings_caption_candidate(s,o,index) {
+    let n=settings_caption_observed(s,o); let ui=s.caption_ui
+    if o.android!=true || s.pending || n==nil || !n.active || n.custom!=true { return nil }
+    let row=settings_caption_row(s,o,ui.field); let choices=settings_caption_choices(s,o)
+    if row==nil || row.value==nil || row.availability!="Available" || ui.offset+index>=choices.len() { return nil }
+    let field=settings_caption_field(ui.field); let value=settings_caption_value(choices[ui.offset+index])
+    if field==nil || value.wire==nil { return nil }
+    return {kind:"caption_custom",visit:ui.visit,field:field.wire,value:value.wire}
+}
+fn settings_caption_renew(s,o,out) {
+    let ui=settings_caption_ui(s); ui.visit=o["caption_visit_seed"]; ui.pressed=nil
+    if ui.visit!=nil && o.android==true { settings_request(out,{kind:"read",domain:"caption_custom",visit:ui.visit}) }
+}
+fn settings_caption_enter(s,o,out,from_search) {
+    let ui=settings_caption_ui(s); ui.back_search=from_search; ui.field=nil; ui.offset=0
+    s.page="Controls"; s.controls_section="CaptionCustom"
+    settings_caption_renew(s,o,out)
+}
+fn settings_caption_event(s,e,o,out) {
+    let ui=settings_caption_ui(s)
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" { ui.pressed=nil; return false }
+    let hearing=s.page=="Controls" && s.controls_section=="AccessibilityHearing"
+    if hearing && e.kind=="click" && e.id=="caption_custom_open" {
+        let field=settings_control_field(s,"captions_preset"); let row=settings_control_row(s,o,field)
+        if o.android==true && !s.pending && row!=nil && row.value=="CaptionCustom" { settings_caption_enter(s,o,out,false); settings_scroll(out,"controls_page") }
+        return true
+    }
+    if !settings_caption_active(s) { return false }
+    if e.kind=="caption_renew" { settings_caption_renew(s,o,out); return true }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") {
+        ui.pressed=nil
+        if s.page=="CaptionChoice" { s.page="Controls" }
+        else {
+            ui.visit=nil
+            if ui.back_search { s.page="Search"; s.search_destination=nil }
+            else { s.controls_section="AccessibilityHearing"; s.controls_parent="System"; settings_scroll(out,"controls_page"); settings_request(out,{kind:"read",domain:"controls",page:"accessibility_hearing"}) }
+        }
+        return true
+    }
+    if e.kind=="click" && e.id=="controls_refresh" { if o.android==true && !s.pending { settings_caption_renew(s,o,out) }; return true }
+    if s.page=="Controls" {
+        let i=0
+        for field in settings_caption_fields() {
+            if e.kind=="click" && e.id=="control_"+i+"_more" {
+                let row=settings_caption_row(s,o,field.name)
+                if o.android==true && !s.pending && row!=nil && row.options.len()>0 { ui.field=field.name; ui.offset=0; ui.pressed=nil; s.page="CaptionChoice"; settings_scroll(out,"caption_choice_page") }
+                return true
+            }
+            i=i+1
+        }
+        return false
+    }
+    let choices=settings_caption_choices(s,o)
+    if e.kind=="click" && !s.pending {
+        if e.id=="caption_choice_next" && ui.offset+20<choices.len() { ui.offset=ui.offset+20; ui.pressed=nil; settings_scroll(out,"caption_choice_page"); return true }
+        if e.id=="caption_choice_previous" && ui.offset>0 { ui.offset=settings_max(0,ui.offset-20); ui.pressed=nil; settings_scroll(out,"caption_choice_page"); return true }
+    }
+    let i=0
+    while i<20 {
+        if e.id=="caption_choice_"+i {
+            let r=settings_caption_candidate(s,o,i)
+            if e.kind=="press" { ui.pressed=nil; if r!=nil { ui.pressed={id:e.id,request:r.to_json()} }; return true }
+            if e.kind=="release" { ui.pressed=nil; return true }
+            if e.kind=="click" { let previous=ui.pressed; ui.pressed=nil; if r!=nil && (previous==nil || (previous.id==e.id && previous.request==r.to_json())) { settings_request(out,r) }; return true }
+        }
+        i=i+1
+    }
+    return false
+}
+fn settings_caption_color(out,id,slot,value) { out.patch.push({op:"color",id:id,slot:slot,value:value}) }
+fn settings_caption_preview(s,o,field,fallback) {
+    let row=settings_caption_row(s,o,field); let packed=fallback
+    if row!=nil && row.value!=nil && row.value["CaptionDetail"]!=nil {
+        let v=row.value.CaptionDetail
+        if !v.is_string() && v["Packed"]!=nil {
+            if v.Packed>=16777216 { packed=v.Packed }
+            else if settings_caption_floor(v.Packed/256)%65536==0 { packed=0 }
+        }
+    }
+    let rgba=settings_caption_rgb(packed); let i=0; while i<4 { rgba[i]=rgba[i]/255; i=i+1 }; return rgba
+}
+fn settings_caption_refresh(s,o,out) {
+    let ui=settings_caption_ui(s); let active=settings_caption_active(s)
+    let hearing=s.page=="Controls" && s.controls_section=="AccessibilityHearing"
+    settings_visible(out,"caption_custom_open",hearing)
+    let enabled=false
+    if hearing { let row=settings_control_row(s,o,settings_control_field(s,"captions_preset")); enabled=o.android==true && !s.pending && row!=nil && row.value=="CaptionCustom" }
+    settings_enabled(out,"caption_custom_open",enabled)
+    settings_visible(out,"caption_custom_info",active)
+    if !active { return }
+    let n=settings_caption_observed(s,o); let gate="Reading custom caption appearance…"
+    if n!=nil {
+        gate="Default lets the captioning app choose. None makes that background transparent."
+        if n.custom==false { gate="Choose Custom under Caption style to edit appearance." }
+        else if n.custom!=true { gate="Custom caption appearance is unavailable from the connected Android service." }
+        else if !n.active { gate="This appearance session ended. Refresh to review current choices." }
+    }
+    settings_text(out,"caption_custom_gate",gate)
+    settings_caption_color(out,"caption_preview_text","text",settings_caption_preview(s,o,"Foreground",4294967295))
+    settings_caption_color(out,"caption_preview_background","background",settings_caption_preview(s,o,"Background",4278190080))
+    settings_caption_color(out,"caption_preview_window","background",settings_caption_preview(s,o,"Window",0))
+    settings_text(out,"caption_preview_note","Color and opacity preview. Default is shown with this sample’s white text, black background and transparent window. Android typefaces and edge effects are listed above; this sample uses the OctoSense font without those effects.")
+    if s.page=="Controls" {
+        settings_text(out,"controls_description","Customize caption text, colors and opacity. Changes apply through Android’s caption settings.")
+        settings_enabled(out,"controls_refresh",o.android==true && !s.pending)
+        settings_enabled(out,"controls_native",o.android==true && !s.pending)
+        for id in ["history_open","history_disable_review","dnd_section"] { settings_visible(out,id,false) }
+        let fields=settings_caption_fields(); let i=0
+        while i<11 {
+            let prefix="control_"+i; settings_visible(out,prefix,i<fields.len())
+            if i<fields.len() {
+                let field=fields[i]; let row=settings_caption_row(s,o,field.name); let value=nil
+                if row!=nil && row.value!=nil { value=row.value["CaptionDetail"] }
+                settings_text(out,prefix+"_label",field.label); settings_text(out,prefix+"_value",settings_caption_value(value).label)
+                let note=settings_control_availability(row); settings_text(out,prefix+"_availability",note); settings_visible(out,prefix+"_note",note!="")
+                settings_visible(out,prefix+"_pair",true); settings_visible(out,prefix+"_choices",false); settings_visible(out,prefix+"_center",false); settings_visible(out,prefix+"_less",false)
+                settings_text(out,prefix+"_more","Choose"); settings_patch(out,"label",prefix+"_more",field.label+": Choose"); settings_patch(out,"semantic",prefix+"_more","caption:"+ui.visit+":"+field.wire)
+                settings_enabled(out,prefix+"_more",o.android==true && !s.pending && row!=nil && row.options.len()>0)
+            }
+            i=i+1
+        }
+        return
+    }
+    let field=settings_caption_field(ui.field); if field==nil { return }
+    let choices=settings_caption_choices(s,o); let row=settings_caption_row(s,o,ui.field); let current=nil
+    if row!=nil && row.value!=nil { current=row.value["CaptionDetail"] }
+    let start=settings_min(ui.offset,choices.len()); let end=settings_min(start+20,choices.len())
+    settings_text(out,"title",field.label)
+    settings_text(out,"caption_choice_observed",field.label+": "+settings_caption_value(current).label)
+    let summary="No authorized choices. Return and refresh caption appearance."
+    if choices.len()>0 { summary="Choices "+(start+1)+"–"+end+" of "+choices.len() }
+    settings_text(out,"caption_choice_summary",summary)
+    settings_enabled(out,"caption_choice_previous",!s.pending && start>0); settings_enabled(out,"caption_choice_next",!s.pending && end<choices.len())
+    let i=0
+    while i<20 {
+        let shown=start+i<choices.len(); let id="caption_choice_"+i
+        settings_visible(out,"caption_choice_row_"+i,shown); settings_visible(out,"caption_swatch_"+i,false); settings_enabled(out,id,false); settings_text(out,id,"")
+        if shown {
+            let v=choices[start+i]; let info=settings_caption_value(v); let label=info.label; let r=settings_caption_candidate(s,o,i)
+            if settings_caption_selected(v,current) { label=label+" · Selected" }
+            settings_text(out,id,label); settings_patch(out,"label",id,field.label+": "+label); settings_enabled(out,id,r!=nil)
+            if r!=nil { settings_patch(out,"semantic",id,"caption-choice:"+r.to_json()) }
+            if info.color!=nil { settings_visible(out,"caption_swatch_"+i,true); settings_caption_color(out,"caption_swatch_"+i,"background",info.color) }
+        }
+        i=i+1
+    }
+}

@@ -60,6 +60,28 @@ public class AgentPlatformService extends Service {
     private InputManager input;
     private KeyguardManager keyguard;
     private StatusBarManager statusBar;
+    private dev.makepad.octosense.wifi.WifiSettingsBackend wifiSettings;
+    private dev.makepad.octosense.controls.SettingsControlsBackend settingsControls;
+    private SensorSettingsClient sensorSettings;
+    private ZenSettingsClient zenSettings;
+    private AppNetworkClient appNetworkSettings;
+    private AppBatteryClient appBatterySettings;
+    private AppStorageClient appStorageSettings;
+    private AppLanguageClient appLanguageSettings;
+    private SystemLanguageClient systemLanguageSettings;
+    private KeyboardClient keyboardSettings;
+    private CaptionCustomSessions captionCustomSettings;
+    private CaptionLocalePlatformSettings captionLanguageSettings;
+    private AppNotificationsClient appNotifications;
+    private RolesSettingsClient rolesSettings;
+    private PermissionsSettingsClient permissionsSettings;
+    private DateTimePlatformSettings dateTimeSettings;
+    private dev.makepad.octosense.display.DisplaySettingsBackend displaySettings;
+    private NotificationHistorySettings notificationHistory;
+    private dev.makepad.octosense.sounds.SoundSettingsBackend soundSettings;
+    private AccountSettingsClient accountSettings;
+    private dev.makepad.octosense.bluetooth.BluetoothSettingsBackend bluetoothSettings;
+    private dev.makepad.octosense.network.NetworkSettingsBackend networkSettings;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -67,10 +89,53 @@ public class AgentPlatformService extends Service {
         input = getSystemService(InputManager.class);
         keyguard = getSystemService(KeyguardManager.class);
         statusBar = getSystemService(StatusBarManager.class);
+        wifiSettings = new dev.makepad.octosense.wifi.WifiSettingsBackend(this,true);
+        bluetoothSettings=new dev.makepad.octosense.bluetooth.BluetoothSettingsBackend(this,true,new BluetoothPlatformSettings());
+        networkSettings=new dev.makepad.octosense.network.NetworkSettingsBackend(this,true,new NetworkPlatformSettings(this));
+        sensorSettings=new SensorSettingsClient(this);
+        zenSettings=new ZenSettingsClient(this);
+        appNetworkSettings=new AppNetworkClient(this);
+        appBatterySettings=new AppBatteryClient(this);
+        appStorageSettings=new AppStorageClient(this);
+        appLanguageSettings=new AppLanguageClient(this);
+        systemLanguageSettings=new SystemLanguageClient(this);
+        keyboardSettings=new KeyboardClient(this);
+        captionCustomSettings=new CaptionCustomSessions(this);
+        captionLanguageSettings=new CaptionLocalePlatformSettings(this);
+        appNotifications=new AppNotificationsClient(this);
+        rolesSettings=new RolesSettingsClient(this);
+        permissionsSettings=new PermissionsSettingsClient(this);
+        dateTimeSettings=new DateTimePlatformSettings(this);
+        displaySettings=new dev.makepad.octosense.display.DisplaySettingsBackend(this,new DisplayPlatformSettings(this),() -> ActivityManager.getCurrentUser()==0&&getSystemService(android.os.UserManager.class).isAdminUser());
+        notificationHistory=new NotificationHistorySettings(this);
+        soundSettings=new dev.makepad.octosense.sounds.SoundSettingsBackend(this,() -> ActivityManager.getCurrentUser()==0);
+        accountSettings=new AccountSettingsClient(this);
+        settingsControls = new dev.makepad.octosense.controls.SettingsControlsBackend(this,true,new SettingsPlatformControls(this,sensorSettings,zenSettings));
         Log.i(TAG, "agent platform up, uid " + Process.myUid());
     }
 
     @Override public IBinder onBind(Intent intent) { return binder; }
+    @Override public void onDestroy() {
+        if(notificationHistory!=null) notificationHistory.close();
+        if(soundSettings!=null) soundSettings.close();
+        if(wifiSettings!=null) wifiSettings.close();
+        if(sensorSettings!=null) sensorSettings.close();
+        if(zenSettings!=null) zenSettings.close();
+        if(accountSettings!=null) accountSettings.close();
+        if(appNotifications!=null) appNotifications.close();
+        if(rolesSettings!=null) rolesSettings.close();
+        if(permissionsSettings!=null) permissionsSettings.close();
+        if(appNetworkSettings!=null)appNetworkSettings.close();
+        if(appBatterySettings!=null)appBatterySettings.close();
+        if(appStorageSettings!=null)appStorageSettings.close();
+        if(appLanguageSettings!=null)appLanguageSettings.close();
+        if(systemLanguageSettings!=null)systemLanguageSettings.close();
+        if(keyboardSettings!=null)keyboardSettings.close();
+        if(captionCustomSettings!=null)captionCustomSettings.destroy();
+        if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();
+        if(bluetoothSettings!=null) bluetoothSettings.close();
+        super.onDestroy();
+    }
     @Override public int onStartCommand(Intent intent, int flags, int startId) { return START_STICKY; }
 
     // ---- gate -------------------------------------------------------------
@@ -134,9 +199,33 @@ public class AgentPlatformService extends Service {
         if (has("android.permission.READ_FRAME_BUFFER")) caps.add("screen");
         if (has("android.permission.INJECT_EVENTS")) caps.add("input");
         if (has("android.permission.WRITE_SECURE_SETTINGS")) caps.add("settings");
+        if (has("android.permission.WRITE_SECURE_SETTINGS")) caps.add("settings_controls_v1");
+        if (has("android.permission.WRITE_SECURE_SETTINGS")) caps.add("caption_custom_v1");
+        if (has("android.permission.WRITE_SECURE_SETTINGS")) caps.add("caption_language_v1");
+        caps.add("accounts_settings_v1");
+        if(has("android.permission.MANAGE_TIME_AND_ZONE_DETECTION")) caps.add("date_time_settings_v1");
+        if(has("android.permission.ACCESS_NOTIFICATIONS")) caps.add("notification_history_v1");
+        caps.add("sounds_settings_v1");
+        caps.add("display_settings_v1");
+        caps.add("app_notifications_v1");
+        caps.add("roles_settings_v1");
+        caps.add("permissions_settings_v1");
+        caps.add("dnd_settings_v1");
+        caps.add("app_network_settings_v1");
+        caps.add("app_battery_v1");
+        caps.add("app_storage_v1");
+        caps.add("app_language_v1");
+        caps.add("system_languages_v1");
+        caps.add("keyboards_v1");
+        if(has("android.permission.NETWORK_SETTINGS")) caps.add("network_settings_v1");
+        if (has("android.permission.BLUETOOTH_PRIVILEGED") && has("android.permission.BLUETOOTH_CONNECT")
+                && has("android.permission.BLUETOOTH_SCAN") && has("android.permission.MODIFY_PHONE_STATE")) caps.add("bluetooth_settings_v1");
+        if (has("android.permission.NETWORK_SETTINGS") && has("android.permission.ACCESS_WIFI_STATE")
+                && has("android.permission.CHANGE_WIFI_STATE")) caps.add("wifi_settings_v1");
         if (has("android.permission.START_TASKS_FROM_RECENTS")) caps.add("apps");
         if (has("android.permission.STATUS_BAR")) caps.add("statusbar");
         if (has("android.permission.REBOOT") && has("android.permission.INSTALL_PACKAGES")) caps.add("update");
+        if (has("android.permission.REBOOT") && has("android.permission.INSTALL_PACKAGES")) caps.add("updates_settings_v1");
         // "tree" (the system-wide accessibility node tree) needs an
         // AccessibilityService; it lands with the ShellAccessibility bridge.
         b.putStringArrayList("capabilities", caps);
@@ -346,6 +435,7 @@ public class AgentPlatformService extends Service {
     /** "rom", "home" or "all": starts in the background and returns at once. */
     Bundle applyUpdateAsync(String part) {
         String what = part == null ? "all" : part;
+        if(!Arrays.asList("rom","home","all").contains(what)) return fail("invalid_update_part");
         AgentApplication.get().work().execute(() -> {
             try {
                 Bundle check = updater().check();
@@ -368,7 +458,84 @@ public class AgentPlatformService extends Service {
 
     // ---- Binder -----------------------------------------------------------
 
+    private Bundle wifiGuarded(String operation,Op op) {
+        // This persistent helper is created for its Android user. Until a
+        // per-user service binding exists, refuse another foreground user;
+        // never leak owner profiles into a secondary user's Settings page.
+        int callerUser=android.os.UserHandle.getUserId(Binder.getCallingUid());
+        int ownUser=android.os.UserHandle.myUserId();
+        if(callerUser!=ownUser) {caller(operation);return fail("wrong_user");}
+        return guarded(operation,() -> {
+            if(ActivityManager.getCurrentUser()!=ownUser||keyguard.isKeyguardLocked()) return fail("keyguard");
+            return op.run();
+        });
+    }
+    private Bundle dndResult(Bundle result) {
+        if(result!=null)return result;
+        Bundle unavailable=new Bundle();unavailable.putBoolean("ok",false);unavailable.putString("reason","dnd_unavailable");return unavailable;
+    }
+    private Bundle soundResult(String reason) {
+        Bundle result=ok();result.putBoolean("ok",Arrays.asList("sound_applied","sound_preview_started","sound_preview_requested","sound_silent","sound_stopped").contains(reason));
+        result.putString("reason",reason);return result;
+    }
+    private Bundle wifiResult(String reason) {
+        Bundle result=ok();
+        boolean accepted=reason.equals("wifi_requested")||reason.equals("wifi_scan_requested");
+        result.putBoolean("ok",accepted);result.putString("reason",reason);return result;
+    }
+    private Bundle updateResult(String reason) {
+        Bundle result=ok();result.putBoolean("ok",Arrays.asList("update_check_requested","update_install_requested","update_reboot_requested").contains(reason));
+        result.putString("reason",reason);return result;
+    }
+    private Bundle networkResult(String reason) {
+        Bundle result=ok();result.putBoolean("ok",reason.equals("network_applied")||reason.equals("network_requested"));result.putString("reason",reason);return result;
+    }
+
+    private Bundle accountJson(String json) {
+        if(json==null) return fail("accounts_unavailable");Bundle result=ok();result.putString("json",json);return result;
+    }
+    private Bundle syncResult(String reason) {
+        Bundle result=ok();result.putString("reason",reason);result.putBoolean("ok",reason.equals("sync_applied")||reason.equals("sync_requested"));return result;
+    }
+    private Bundle accountFlow(android.app.PendingIntent pending) {
+        if(pending==null) return fail("account_target_changed");Bundle result=ok();result.putParcelable("pending",pending);return result;
+    }
+    private Bundle bluetoothResult(String reason) {
+        Bundle result=ok();result.putString("reason",reason);
+        result.putBoolean("ok",reason.equals("bluetooth_requested")||reason.equals("bluetooth_name_applied")||reason.equals("bluetooth_sharing_applied"));return result;
+    }
     private final IAgentPlatform.Stub binder = new IAgentPlatform.Stub() {
+        @Override public Bundle getNetworkSnapshot(long id) {return wifiGuarded("networkSnapshot",() -> {
+            Bundle result=ok();result.putString("json",networkSettings.snapshot(id).toString());return result;
+        });}
+        @Override public Bundle networkAirplane(String key,boolean enabled) {return wifiGuarded("networkAirplane",() -> networkResult(networkSettings.airplane(key,enabled)));}
+        @Override public Bundle networkDataSaver(String key,boolean enabled) {return wifiGuarded("networkDataSaver",() -> networkResult(networkSettings.dataSaver(key,enabled)));}
+        @Override public Bundle networkPrivateDns(String key,String mode,String hostname) {return wifiGuarded("networkPrivateDns",() -> networkResult(networkSettings.privateDns(key,mode,hostname)));}
+        @Override public Bundle getUpdatesSnapshot(long id) {return wifiGuarded("updatesSnapshot",() -> {
+            Bundle result=ok();result.putString("json",AgentApplication.get().updateSettings().snapshot(id).toString());return result;
+        });}
+        @Override public Bundle checkReviewedUpdates() {return wifiGuarded("updatesCheck",() -> updateResult(AgentApplication.get().updateSettings().check()));}
+        @Override public Bundle installReviewedUpdate(String key,String part) {return wifiGuarded("updatesInstall",() -> updateResult(AgentApplication.get().updateSettings().install(key,part)));}
+        @Override public Bundle rebootReviewedUpdate(String key) {return wifiGuarded("updatesReboot",() -> updateResult(AgentApplication.get().updateSettings().reboot(key)));}
+        @Override public Bundle getAccountsSnapshot(long id) {return wifiGuarded("accountsSnapshot",() -> accountJson(accountSettings.snapshot(id)));}
+        @Override public Bundle getAccountDetails(long id,String key) {return wifiGuarded("accountDetails",() -> accountJson(accountSettings.details(id,key)));}
+        @Override public Bundle setAccountsMasterSync(boolean value) {return wifiGuarded("accountsMasterSync",() -> syncResult(accountSettings.master(value)));}
+        @Override public Bundle accountSync(String key,String authority,String action,boolean value) {return wifiGuarded("accountSync",() -> {
+            dev.makepad.octosense.accounts.AccountsSettingsContract.SyncAction parsed=dev.makepad.octosense.accounts.AccountsSettingsContract.SyncAction.parse(action);
+            return syncResult(accountSettings.sync(key,authority,parsed,parsed==dev.makepad.octosense.accounts.AccountsSettingsContract.SyncAction.AUTO?value:null));
+        });}
+        @Override public Bundle accountAddition(String key) {return wifiGuarded("accountAddition",() -> accountFlow(accountSettings.addition(key)));}
+        @Override public Bundle accountRemoval(String key) {return wifiGuarded("accountRemoval",() -> accountFlow(accountSettings.removal(key)));}
+        @Override public Bundle getBluetoothSnapshot(long id) {return wifiGuarded("bluetoothSnapshot",() -> {
+            Bundle result=ok();result.putString("json",bluetoothSettings.snapshot(id).toString());return result;
+        });}
+        @Override public Bundle setBluetoothEnabled(boolean value) {return wifiGuarded("bluetoothEnabled",() -> bluetoothResult(bluetoothSettings.enabled(value)));}
+        @Override public Bundle scanBluetooth(boolean value) {return wifiGuarded("bluetoothScan",() -> bluetoothResult(bluetoothSettings.scan(value)));}
+        @Override public Bundle setBluetoothName(String name) {return wifiGuarded("bluetoothName",() -> bluetoothResult(bluetoothSettings.name(name)));}
+        @Override public Bundle bluetoothDevice(String key,String action) {return wifiGuarded("bluetoothDevice",() ->
+            bluetoothResult(bluetoothSettings.device(key,dev.makepad.octosense.bluetooth.BluetoothSettingsContract.Action.parse(action))));}
+        @Override public Bundle bluetoothSharing(String key,String kind,String value) {return wifiGuarded("bluetoothSharing",() ->
+            bluetoothResult(bluetoothSettings.sharing(key,kind,value)));}
         @Override public Bundle getCapabilities() { return guarded("capabilities", AgentPlatformService.this::capabilities); }
         @Override public Bundle getTasks(int max) { return guarded("tasks", () -> tasks(max)); }
         @Override public Bundle getTaskSnapshot(int id, int w) { return guarded("taskSnapshot", () -> taskSnapshot(id, w)); }
@@ -391,6 +558,135 @@ public class AgentPlatformService extends Service {
         @Override public Bundle applyUpdate(String part) { return guarded("updateApply", () -> applyUpdateAsync(part)); }
         @Override public Bundle getUpdateStatus() { return guarded("updateStatus", () -> updater().status()); }
         @Override public Bundle rebootToUpdate() { return guarded("updateReboot", () -> updater().reboot()); }
+        @Override public Bundle getWifiSnapshot(long id) {return wifiGuarded("wifiSnapshot",() -> {
+            Bundle result=ok();result.putString("json",wifiSettings.snapshot(id).toString());return result;
+        });}
+        @Override public Bundle setWifiEnabled(boolean enabled) {
+            return wifiGuarded("wifiEnabled",() -> wifiResult(wifiSettings.setEnabled(enabled)));
+        }
+        @Override public Bundle scanWifi() {return wifiGuarded("wifiScan",() -> wifiResult(wifiSettings.scan()));}
+        @Override public Bundle wifiNetwork(String key,String action) {return wifiGuarded("wifiNetwork",() ->
+                wifiResult(wifiSettings.network(key,dev.makepad.octosense.wifi.WifiSettingsContract.Action.parse(action))));}
+        @Override public Bundle wifiConfiguration(String key) {return wifiGuarded("wifiConfiguration",() -> {
+            Intent intent=wifiSettings.configureObserved(key);
+            if(intent==null) return fail("wifi_target_changed");
+            Bundle result=ok();result.putParcelable("intent",intent);return result;
+        });}
+        @Override public Bundle getControlsSnapshot(long id,String page) {return wifiGuarded("controlsSnapshot",() -> {
+            Bundle result=ok();result.putString("json",settingsControls.snapshot(id,
+                    dev.makepad.octosense.controls.SettingsControlsContract.Page.parse(page)).toString());return result;
+        });}
+        @Override public Bundle setControl(String page,String control,String value) {return wifiGuarded("setControl",() -> {
+            dev.makepad.octosense.controls.SettingsControlsContract.Page parsed=dev.makepad.octosense.controls.SettingsControlsContract.Page.parse(page);
+            dev.makepad.octosense.controls.SettingsControlsContract.Control selected=dev.makepad.octosense.controls.SettingsControlsContract.Control.parse(parsed,control);
+            selected.validate(value);
+            if(selected==dev.makepad.octosense.controls.SettingsControlsContract.Control.NOTIFICATION_HISTORY) notificationHistory.invalidate();
+            String reason=settingsControls.apply(parsed,selected,value);
+            Bundle result=ok();result.putBoolean("ok",reason.equals("control_applied")||reason.equals("control_requested"));result.putString("reason",reason);return result;
+        });}
+        @Override public Bundle getCaptionCustomSnapshot(long id,IBinder owner,String session,long visit) {
+            final int pid=Binder.getCallingPid();return wifiGuarded("captionCustomSnapshot",()->{Bundle result=ok();result.putString("json",captionCustomSettings.snapshot(id,owner,session,visit,pid).toString());return result;});
+        }
+        @Override public Bundle setCaptionCustom(IBinder owner,String session,long visit,String field,String value) {
+            final int pid=Binder.getCallingPid();return wifiGuarded("captionCustomSet",()->{String reason=captionCustomSettings.apply(owner,session,visit,field,value,pid);Bundle result=ok();result.putBoolean("ok",reason.equals("control_applied")||reason.equals("control_requested"));result.putString("reason",reason);return result;});
+        }
+        @Override public Bundle closeCaptionCustom(IBinder owner,String session,long visit) {
+            final int pid=Binder.getCallingPid();return guarded("captionCustomClose",()->{captionCustomSettings.close(owner,session,visit,pid);return ok();});
+        }
+        @Override public Bundle getCaptionLanguageSnapshot(long id,String key,String query,int offset){return wifiGuarded("captionLanguageSnapshot",()->captionLanguageSettings.snapshot(id,key,query,offset));}
+        @Override public Bundle setCaptionLanguage(String key,String choice){return wifiGuarded("captionLanguageSet",()->{String reason=captionLanguageSettings.select(key,choice);Bundle result=ok();result.putBoolean("ok",reason.equals("control_applied")||reason.equals("control_requested"));result.putString("reason",reason);return result;});}
+        @Override public Bundle getDateTimeSnapshot(long id) {return wifiGuarded("dateTimeSnapshot",() -> {
+            Bundle result=ok();result.putString("json",dateTimeSettings.snapshot(id).toString());return result;
+        });}
+        @Override public Bundle getSoundsSnapshot(long id,String type,String key,int offset) {return wifiGuarded("soundsSnapshot",() -> {
+            Bundle result=ok();result.putString("json",soundSettings.snapshot(id,type,key,offset).toString());return result;
+        });}
+        @Override public Bundle previewSound(String type,String key,String target) {return wifiGuarded("soundPreview",() -> soundResult(soundSettings.preview(type,key,target)));}
+        @Override public Bundle saveSound(String type,String key,String target) {return wifiGuarded("soundSave",() -> soundResult(soundSettings.save(type,key,target)));}
+        @Override public Bundle getAppNotifications(long id,String pkg,int offset,String generation) {return wifiGuarded("appNotificationsSnapshot",() -> {
+            Bundle snapshot=appNotifications.snapshot(id,pkg,offset,generation);if(snapshot!=null)return snapshot;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.notifications.AppNotificationsContract.unavailable(id,pkg,"unavailable").toString());return unavailable;
+        });}
+        @Override public Bundle getRolesSnapshot(long id,String role,int offset,String generation) {return wifiGuarded("rolesSnapshot",() -> {
+            Bundle snapshot=rolesSettings.snapshot(id,role,offset,generation);if(snapshot!=null)return snapshot;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.roles.RolesSettingsContract.unavailable(id,role==null?null:dev.makepad.octosense.roles.RolesSettingsContract.RoleId.parse(role),"unavailable").toString());return unavailable;
+        });}
+        @Override public Bundle confirmRole(String role,String key,String target) {return wifiGuarded("roleConfirmation",() -> {
+            Bundle flow=rolesSettings.confirmation(role,key,target);return flow==null?fail("role_target_changed"):flow;
+        });}
+        @Override public Bundle getPermissionsSnapshot(long id,String pkg,String group,int offset,String generation) {return wifiGuarded("permissionsSnapshot",() -> {
+            Bundle snapshot=permissionsSettings.snapshot(id,pkg,group,offset,generation);if(snapshot!=null)return snapshot;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.permissions.PermissionsSettingsContract.unavailable(id,pkg,group==null?null:dev.makepad.octosense.permissions.PermissionsSettingsContract.Group.parse(group),"unavailable").toString());return unavailable;
+        });}
+        @Override public Bundle requestPermissionChoice(String pkg,String group,String key,String target) {return wifiGuarded("permissionChoice",() -> {
+            Bundle flow=permissionsSettings.operation(pkg,group,key,target);return flow==null?fail("permission_target_changed"):flow;
+        });}
+        @Override public Bundle getKeyboardsSnapshot(long id,String query,int offset){return wifiGuarded("keyboardsSnapshot",()->{
+            dev.makepad.octosense.keyboards.KeyboardContract.read(id,query,offset);Bundle state=keyboardSettings.snapshot(id,query,offset);if(state!=null)return state;
+            Bundle out=ok();out.putString("json",dev.makepad.octosense.keyboards.KeyboardJson.unavailable(id,query,"unavailable").toString());return out;
+        });}
+        @Override public Bundle prepareKeyboardFlow(long id,String key,String target,String operation){return wifiGuarded("keyboardFlow",()->{
+            dev.makepad.octosense.keyboards.KeyboardContract.flow(id,key,target,operation);Bundle flow=keyboardSettings.prepare(id,key,target,operation);return flow==null?fail("keyboard_target_changed"):flow;
+        });}
+        @Override public Bundle getSystemLanguagesSnapshot(long id,String key,String parent,String query,int offset){return wifiGuarded("systemLanguagesSnapshot",()->{
+            Bundle state=systemLanguageSettings.snapshot(id,key,parent,query,offset);if(state!=null)return state;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.systemlanguage.SystemLanguageContract.unavailable(id,query,"unavailable","service_unavailable").toString());return unavailable;
+        });}
+        @Override public Bundle applySystemLanguages(String key,String[] targets){return wifiGuarded("systemLanguagesApply",()->{
+            String reason=systemLanguageSettings.apply(key,targets);Bundle out=new Bundle();out.putString("reason",reason);out.putBoolean("ok",reason.equals("languages_applied")||reason.equals("languages_requested"));return out;
+        });}
+        @Override public Bundle getAppLanguageSnapshot(long id,String pkg,String key,String parent,String query,int offset){return wifiGuarded("appLanguageSnapshot",()->{
+            Bundle state=appLanguageSettings.snapshot(id,pkg,key,parent,query,offset);if(state!=null)return state;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.applanguage.AppLanguageContract.unavailable(id,pkg,query,"unavailable","service_unavailable").toString());return unavailable;
+        });}
+        @Override public Bundle setAppLanguage(String pkg,String key,String choice){return wifiGuarded("appLanguageSet",()->{
+            String reason=appLanguageSettings.select(pkg,key,choice);Bundle out=new Bundle();out.putString("reason",reason);out.putBoolean("ok",reason.equals("app_language_applied")||reason.equals("app_language_requested"));return out;
+        });}
+        @Override public Bundle getAppStorageSnapshot(long id,String pkg){return wifiGuarded("appStorageSnapshot",()->{
+            Bundle state=appStorageSettings.snapshot(id,pkg);if(state!=null)return state;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.appstorage.AppStorageContract.unavailable(id,pkg).toString());return unavailable;
+        });}
+        @Override public Bundle applyAppStorage(String pkg,String key,String action){return wifiGuarded("appStorageAction",()->{
+            Bundle state=appStorageSettings.action(pkg,key,action);if(state!=null)return state;
+            Bundle unavailable=new Bundle();unavailable.putBoolean("ok",false);unavailable.putString("reason","app_storage_unavailable");return unavailable;
+        });}
+        @Override public Bundle getAppBatterySnapshot(long id,String pkg){return wifiGuarded("appBatterySnapshot",()->{
+            Bundle state=appBatterySettings.snapshot(id,pkg);if(state!=null)return state;
+            Bundle unavailable=ok();unavailable.putString("json",dev.makepad.octosense.battery.AppBatteryContract.unavailable(id,pkg).toString());return unavailable;
+        });}
+        @Override public Bundle setAppBattery(String pkg,String key,String mode){return wifiGuarded("appBatterySet",()->{
+            String reason=appBatterySettings.set(pkg,key,mode);Bundle result=new Bundle();result.putString("reason",reason);result.putBoolean("ok",reason.equals("app_battery_applied")||reason.equals("app_battery_requested"));return result;
+        });}
+        @Override public Bundle getAppNetworkSnapshot(long id,String pkg){return wifiGuarded("appNetworkSnapshot",()->{
+            Bundle state=appNetworkSettings.snapshot(id,pkg);if(state!=null)return state;
+            Bundle unavailable=ok();unavailable.putString("json",new dev.makepad.octosense.appnetwork.AppNetworkBackend(null,SystemClock::elapsedRealtime).snapshot(id,pkg).toString());return unavailable;
+        });}
+        @Override public Bundle setAppNetwork(String pkg,String key,String field,boolean enabled){return wifiGuarded("appNetworkSet",()->{
+            Bundle state=appNetworkSettings.set(pkg,key,field,enabled);return state==null?fail("app_network_unavailable"):state;
+        });}
+        @Override public Bundle getDndSnapshot(long id,int offset,String generation) {return wifiGuarded("dndSnapshot",()->dndResult(zenSettings.settingsSnapshot(id,offset,generation)));}
+        @Override public Bundle setDndPolicy(String key,String field,String value) {return wifiGuarded("dndPolicy",()->dndResult(zenSettings.policy(key,field,value)));}
+        @Override public Bundle saveDndSchedule(String key,String target,String name,int[] days,int start,int end,boolean exitAtAlarm,boolean enabled) {return wifiGuarded("dndSchedule",()->dndResult(zenSettings.schedule(key,target,name,days,start,end,exitAtAlarm,enabled)));}
+        @Override public Bundle setDndRuleEnabled(String key,String target,boolean enabled) {return wifiGuarded("dndEnabled",()->dndResult(zenSettings.enabled(key,target,enabled)));}
+        @Override public Bundle deleteDndRule(String key,String target) {return wifiGuarded("dndDelete",()->dndResult(zenSettings.deleteRule(key,target)));}
+        @Override public Bundle setAppNotification(String pkg,String key,String target,String action,String value) {return wifiGuarded("appNotificationsSet",() -> {
+            String reason=appNotifications.set(pkg,key,target,action,value);Bundle result=ok();result.putBoolean("ok",reason.equals("notifications_applied"));result.putString("reason",reason);return result;
+        });}
+        @Override public Bundle getDisplaySnapshot(long id) {return wifiGuarded("displaySnapshot",() -> {
+            Bundle result=ok();result.putString("json",displaySettings.snapshot(id).toString());return result;
+        });}
+        @Override public Bundle setDisplaySetting(String key,String setting,String value) {return wifiGuarded("displaySet",() -> {
+            String reason=displaySettings.set(key,dev.makepad.octosense.display.DisplaySettingsContract.Setting.parse(setting),value);
+            Bundle result=ok();result.putBoolean("ok",reason.equals("display_applied")||reason.equals("display_requested"));result.putString("reason",reason);return result;
+        });}
+        @Override public Bundle stopSound() {return guarded("soundStop",() -> {soundSettings.stop();return soundResult("sound_stopped");});}
+        @Override public Bundle getNotificationHistory(long id,String key,int offset) {return wifiGuarded("notificationHistory",() -> {
+            Bundle result=ok();result.putString("json",notificationHistory.snapshot(id,key,offset).toString());return result;
+        });}
+        @Override public Bundle setDateTime(String key,String action,String value,String occurrence) {return wifiGuarded("setDateTime",() -> {
+            String reason=dateTimeSettings.apply(key,action,value,occurrence);
+            Bundle result=ok();result.putBoolean("ok",reason.equals("time_applied")||reason.equals("time_requested"));result.putString("reason",reason);return result;
+        });}
     };
 
     // ---- dumpsys harness --------------------------------------------------

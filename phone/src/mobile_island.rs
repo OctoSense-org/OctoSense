@@ -438,6 +438,9 @@ impl IslandState {
     /// activities and countdowns, follows the shade, tweens the pill.
     /// True while something still moves.
     pub fn step(&mut self, dt: f64, now: f64, gesture: Option<ShellGesture>) -> bool {
+        self.step_with_motion(dt, now, gesture, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, now: f64, gesture: Option<ShellGesture>, reduced: bool) -> bool {
         for r in take_reports() { self.apply(r, now); }
         #[cfg(feature = "app-appcard")]
         self.poll_appcard(now);
@@ -457,7 +460,7 @@ impl IslandState {
             _ => {}
         }
         if self.activities.is_empty() { self.expanded = false; }
-        let t = 1.0 - (-dt * 16.0).exp();
+        let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         let presence = if self.activities.is_empty() || self.shade_open { 0.0 } else { 1.0 - self.shade_pull };
         let open = if self.expanded && presence > 0.5 { 1.0 } else { 0.0 };
         let mut moving = false;
@@ -471,12 +474,12 @@ impl IslandState {
         // 25-minute countdown does not hold the loop at 60 fps.
         let soon = |at: f64| at - now < 0.05;
         // A visible octopus animates every frame while its turn runs.
-        let thinking = self.presence > 0.01 && !self.shade_open && self.activities.iter().any(|a| a.thinking());
+        let thinking = !reduced && self.presence > 0.01 && !self.shade_open && self.activities.iter().any(|a| a.thinking());
         moving
             || thinking
             || self.auto_finish.iter().any(|(_, at)| soon(*at))
             || self.activities.iter().any(|a| a.done() || matches!(a.kind, ActivityKind::Countdown { until } if soon(until)))
-            || !self.anim.get().settled
+            || (!reduced && !self.anim.get().settled)
     }
 }
 
@@ -573,7 +576,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
     let mut a = island.anim.get();
     if a.settled && a.w == 0.0 { a.w = target_w; a.h = target_h; }
     let dt = if a.t == 0.0 { 1.0 / 60.0 } else { (now - a.t).clamp(0.0, 0.05) };
-    let k = 1.0 - (-dt * 18.0).exp();
+    let k = if cx.accessibility_preferences().reduce_motion() {1.0} else {1.0 - (-dt * 18.0).exp()};
     a.w += (target_w - a.w) * k;
     a.h += (target_h - a.h) * k;
     a.settled = (a.w - target_w).abs() < 0.5 && (a.h - target_h).abs() < 0.5;
@@ -603,7 +606,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let mut x = r.pos.x + 12.0;
         let mid = r.pos.y + pill_h * 0.5;
         // A kernel turn in flight: the thinking octopus instead of the glyph.
-        if primary.thinking() { crate::mobile_octopus::draw(cx, d, rect(x, mid - glyph * 0.5, glyph, glyph), now, ink); }
+        if primary.thinking() { crate::mobile_octopus::draw(cx, d, rect(x, mid - glyph * 0.5, glyph, glyph), if cx.accessibility_preferences().reduce_motion() {0.0} else {now}, ink); }
         else { icons.draw(cx, &primary.source, style, rect(x, mid - glyph * 0.5, glyph, glyph), compact, ink); }
         x += glyph + 8.0;
         d.label_elided(cx, rect(x, r.pos.y, title_w, pill_h), true, px, ink, HAlign::Left, &primary.title);
@@ -632,7 +635,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
         let inner_w = r.size.x - 36.0;
         for (index, activity) in island.activities.iter().enumerate() {
             let glyph = 30.0;
-            if activity.thinking() { crate::mobile_octopus::draw(cx, d, rect(left, y + 4.0, glyph, glyph), now, ink); }
+            if activity.thinking() { crate::mobile_octopus::draw(cx, d, rect(left, y + 4.0, glyph, glyph), if cx.accessibility_preferences().reduce_motion() {0.0} else {now}, ink); }
             else { icons.draw(cx, &activity.source, style, rect(left, y + 4.0, glyph, glyph), card, ink); }
             let text_x = left + glyph + 12.0;
             let status = activity.status(now);

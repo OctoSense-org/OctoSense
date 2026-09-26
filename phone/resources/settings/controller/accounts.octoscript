@@ -1,0 +1,107 @@
+// Current-user account visibility, provider handoff and per-authority sync.
+fn settings_accounts_init(s) { if s["accounts_ui"]==nil { s.accounts_ui={account:nil,authority:nil,account_offset:0,provider_offset:0,authority_offset:0,pressed:nil} } }
+fn settings_account_details(s,o) { let d=o.account_details; if d!=nil && d.target==s.accounts_ui.account { return d }; return nil }
+fn settings_account_authority(s,o) { let d=settings_account_details(s,o); if d!=nil { for r in d.authorities { if r.target==s.accounts_ui.authority { return r } } }; return nil }
+fn settings_accounts_read(s,o,out) {
+    if !o.android { return }
+    if s.page=="Accounts" || s.page=="AccountProviders" { settings_request(out,{kind:"read",domain:"accounts"}) }
+    else if s.accounts_ui.account!=nil { settings_request(out,{kind:"read",domain:"account_details",target:s.accounts_ui.account}) }
+}
+fn settings_accounts_list(s,o,prefix) {
+    if prefix=="account" && o.accounts!=nil { return o.accounts.accounts }
+    if prefix=="provider" && o.accounts!=nil { return o.accounts.providers }
+    let d=settings_account_details(s,o); if prefix=="authority" && d!=nil { return d.authorities }; return []
+}
+fn settings_accounts_candidate(s,o,id) {
+    let a=o.accounts; let d=settings_account_details(s,o); let authority=settings_account_authority(s,o)
+    if s.page=="Accounts" && a!=nil {
+        if id=="accounts_master" && a.can_set_master_sync && a.master_sync!=nil { return {kind:"accounts",operation:"Master",enabled:!a.master_sync} }
+        if id=="accounts_access" && a.can_request_access { return {kind:"accounts",operation:"Access"} }
+    }
+    if s.page=="AccountDetails" && id=="account_remove" && d!=nil && d.exists && d.can_remove { return {kind:"accounts",operation:"Remove",target:d.target} }
+    if s.page=="AccountSync" && d!=nil && d.exists && authority!=nil {
+        if id=="account_auto" && authority.can_automatic && authority.automatic!=nil { return {kind:"accounts",operation:"Automatic",account:d.target,authority:authority.target,enabled:!authority.automatic} }
+        if id=="account_sync_now" && authority.can_sync { return {kind:"accounts",operation:"SyncNow",account:d.target,authority:authority.target} }
+        if id=="account_cancel_sync" && authority.can_cancel { return {kind:"accounts",operation:"Cancel",account:d.target,authority:authority.target} }
+    }
+    return nil
+}
+fn settings_accounts_prefix(s) { return settings_named(s.page,[["Accounts","account"],["AccountProviders","provider"],["AccountDetails","authority"]],"") }
+fn settings_accounts_event(s,e,o,out) {
+    settings_accounts_init(s); let ui=s.accounts_ui
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; return false }
+    for prefix in ["account","provider","authority"] { let key=prefix+"_offset"; if ui[key]>0 && ui[key]>=settings_accounts_list(s,o,prefix).len() { ui[key]=0; settings_scroll(out,settings_active_scroll(s.page)) } }
+    if !settings_has(["Accounts","AccountProviders","AccountDetails","AccountSync"],s.page) { return false }
+    let ready=o.android && !s.pending; let prefix=settings_accounts_prefix(s); let rows=settings_accounts_list(s,o,prefix)
+    let row=nil; let i=0; let offset=0; if prefix!="" { offset=ui[prefix+"_offset"] }
+    while i<20 { if e.id==prefix+"_row_"+i && offset+i<rows.len() { row=rows[offset+i] }; i=i+1 }
+    let candidate=settings_accounts_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,target:nil,request:candidate}; if row!=nil { ui.pressed.target=row.target }; return row!=nil || candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" || !ready { return false }
+    if settings_has(["accounts_refresh","providers_refresh","account_refresh","account_sync_refresh"],e.id) { settings_accounts_read(s,o,out); return true }
+    if s.page=="Accounts" && e.id=="accounts_add" { if o.accounts!=nil && o.accounts.providers.len()>0 { s.page="AccountProviders"; settings_accounts_read(s,o,out) }; return true }
+    if prefix!="" && (e.id==prefix+"_previous" || e.id==prefix+"_next") {
+        if e.id==prefix+"_previous" { ui[prefix+"_offset"]=settings_max(0,offset-20) } else if offset+20<rows.len() { ui[prefix+"_offset"]=offset+20 }
+        ui.pressed=nil; settings_scroll(out,settings_active_scroll(s.page)); return true
+    }
+    if row!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.target!=row.target) { return true }
+        if prefix=="account" { ui.account=row.target; ui.authority=nil; ui.authority_offset=0; s.page="AccountDetails"; settings_accounts_read(s,o,out) }
+        else if prefix=="provider" { if row.can_add { settings_request(out,{kind:"accounts",operation:"Add",target:row.target}) }; return true }
+        else { ui.authority=row.target; s.page="AccountSync" }
+        settings_scroll(out,settings_active_scroll(s.page)); return true
+    }
+    if candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+        settings_request(out,candidate); return true
+    }
+    return false
+}
+fn settings_account_visibility(value) { return settings_named(value,[["Full","Accounts for the current Android user."],["Limited","Only accounts visible to OctoSense are listed. Other accounts may exist on this phone."],["Unavailable","Account information is unavailable. Unlock the device and refresh."]],"Waiting for account information…") }
+fn settings_accounts_refresh(s,o,out) {
+    settings_accounts_init(s); if !settings_has(["Accounts","AccountProviders","AccountDetails","AccountSync"],s.page) { return }
+    let ui=s.accounts_ui; let a=o.accounts; let d=settings_account_details(s,o); let authority=settings_account_authority(s,o); let ready=o.android && !s.pending
+    let visibility=nil; let master=nil; if a!=nil { visibility=a.visibility; master=a.master_sync }
+    settings_text(out,"accounts_visibility",settings_account_visibility(visibility)); settings_text(out,"accounts_master",settings_bool_label("Automatic sync",master)); settings_visible(out,"accounts_access",a!=nil && a.can_request_access)
+    for id in ["accounts_master","accounts_access","account_remove","account_auto","account_sync_now","account_cancel_sync"] { settings_enabled(out,id,ready && settings_accounts_candidate(s,o,id)!=nil) }
+    for id in ["accounts_refresh","providers_refresh","account_refresh","account_sync_refresh"] { settings_enabled(out,id,ready) }
+    settings_enabled(out,"accounts_add",ready && a!=nil && a.providers.len()>0)
+    let identity="Waiting for account information…"; let metadata=""
+    if d!=nil { identity="This account is no longer available to OctoSense."; if d.exists { identity=settings_or(d.name,"Unavailable"); metadata=settings_or(d.label,"Unavailable")+"\n"+settings_or(d.account_type,"Unavailable")+"\n"+settings_account_visibility(d.visibility) } }
+    settings_text(out,"account_identity",identity); settings_text(out,"account_metadata",metadata)
+    for prefix in ["account","provider","authority"] {
+        let rows=settings_accounts_list(s,o,prefix); let offset=ui[prefix+"_offset"]; let available=false; let total=0; let truncated=false
+        if prefix=="account" && a!=nil { available=a.visibility!="Unavailable"; total=a.accounts_total; truncated=a.accounts_truncated }
+        if prefix=="provider" && a!=nil { available=a.visibility!="Unavailable"; total=a.providers_total; truncated=a.providers_truncated }
+        if prefix=="authority" && d!=nil { available=d.authorities_available; total=d.authorities_total; truncated=d.truncated }
+        let summary="List unavailable."
+        if available {
+            summary=settings_named(prefix,[["account","No accounts are currently visible to OctoSense."],["provider","No account providers are available."]],"No visible sync services for this account.")
+            if rows.len()>0 { summary=""+(offset+1)+"–"+settings_min(offset+20,rows.len())+" of "+total; if truncated { summary=summary+" (limited list)" } }
+        }
+        settings_text(out,prefix+"_summary",summary); settings_enabled(out,prefix+"_previous",!s.pending && offset>0); settings_enabled(out,prefix+"_next",!s.pending && offset+20<rows.len())
+        let i=0
+        while i<20 {
+            let row=nil; let id=prefix+"_row_"+i; if offset+i<rows.len() { row=rows[offset+i] }
+            settings_visible(out,id,row!=nil); let permitted=row!=nil; if prefix=="provider" && row!=nil { permitted=row.can_add }; settings_enabled(out,id,ready && permitted)
+            if row!=nil {
+                let label=row.label
+                if prefix=="account" { label=row.name+"\n"+row.label+" · "+row.account_type }
+                if prefix=="provider" { label=row.label+"\n"+row.account_type }
+                if prefix=="authority" { label=row.label+"\n"+row.authority+"\n"+settings_bool_label("Automatic sync",row.automatic) }
+                settings_text(out,id,label); settings_patch(out,"semantic",id,prefix+":"+row.target)
+            }
+            i=i+1
+        }
+        nil
+    }
+    let sync_identity="This sync service is no longer available."; let sync_state=""; let automatic=nil
+    if authority!=nil {
+        sync_identity=authority.label; automatic=authority.automatic
+        sync_state=authority.authority+"\nAccount: "+settings_or(d.name,"Unavailable")+"\n"+settings_bool_label("Automatic sync",automatic)+"\n"+settings_bool_label("Sync enabled by provider",authority.syncable)+"\n"+settings_bool_label("Active",authority.active)+"\n"+settings_bool_label("Pending",authority.pending)
+    }
+    settings_text(out,"account_sync_identity",sync_identity); settings_text(out,"account_sync_state",sync_state); settings_text(out,"account_auto",settings_bool_label("Automatic sync",automatic))
+}
