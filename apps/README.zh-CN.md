@@ -57,7 +57,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 - **News、Maps**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务都固定引用 App Hub
-  `59004274`（OctoSense-App-Hub#11 合并后的 main，新增 `llm` 能力），与 Shell 链接的版本相同，
+  `3e993d4c`（OctoSense-App-Hub#12 合并后的 main；#11 新增了 `llm` 能力），与 Shell 链接的版本相同，
   因此无需 `[patch]`，Shell 的依赖图中就只有一份 `octosense-appstore` 和一个
   宿主服务注册表。
 - **脚本 bundle 在本仓库没有 CI。** `.github/workflows/appcard.yml` 只覆盖
