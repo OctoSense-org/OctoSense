@@ -71,7 +71,7 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
-rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "d2469eabd7b2a582fab68192202af540f40f1168", default-features = false, features = ["octosense-module"], optional = true }
+rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "c85e6b4b0056d8cb2cedbc8269b952786c61e4c7", default-features = false, features = ["octosense-module"], optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
