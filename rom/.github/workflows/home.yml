@@ -30,7 +30,10 @@ jobs:
       - name: Test Home, App Hub admission and runtime policy
         working-directory: home
         run: |
-          cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-app-hub-app -p octosense-news -p octosense-appcard
+          # octosense-app-hub-app is App Hub's shared shell crate, a git
+          # dependency with dev-dependencies: cargo cannot test it from here;
+          # OctoSense-App-Hub's CI tests it.
+          cargo test --locked --features mobile-apps -p octosense -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard
           # Maps' isolate tests need init_cx_os(), whose macOS game-input setup
           # traps off the main thread, where libtest runs tests (RUNTIME-01).
           cargo test --locked -p octosense-maps -- --skip view::tests --skip module::tests

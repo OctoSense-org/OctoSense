@@ -45,7 +45,7 @@ path = "src/main.rs"
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
-# `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
+# `appcard,maps`: the AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4", features = ["appcard", "maps"] }
 makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "1d3d383e84a66dbb18a4a860f505430c9d5b20f4" }
@@ -62,13 +62,16 @@ makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service", optional = true }
-# The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
-# the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
+# The whole AppCard assistant (OctoSense-System-Apps apps/appcard) hosted in
+# a tile, in-process (Phase B of the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 octosense-appcard = { path = "apps/appcard", optional = true }
 # News: headlines from Hacker News, TechMeme, Google News and the person's
 # own feeds, in a tab per source; a wide home tile on the phone.
 octosense-news = { path = "apps/news", optional = true }
-octosense-app-hub-app = { path = "apps/app-hub", optional = true }
+# App Hub's shell integration (store, Card runner, system apps, icons),
+# shared with every OctoSense shell; its build packs the system apps named by
+# OCTOSENSE_SYSTEM_APPS (.cargo/config.toml -> system-apps.json).
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6", optional = true }
 # OctosMap: a map under a search bar, places, directions by car, on foot and
 # by bike, and turn-by-turn navigation.
 octosense-maps = { path = "apps/maps", optional = true }
@@ -82,7 +85,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 [target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard" }
-octosense-app-hub-app = { path = "apps/app-hub" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
 # Mail, News, Photos, Maps and Camera ship as contained script apps
 # (OctoSense-System-Apps apps/<name>/bundle/, chosen by system-apps.json,
 # ADR 0004); the `mail` host service keeps Mail's accounts and passwords.
@@ -121,7 +124,7 @@ app-maps = ["dep:octosense-maps"]
 app-aichat = ["dep:makepad-aichat"]
 
 [workspace]
-members = [".", "apps/reference", "apps/appcard", "apps/news", "apps/photos", "apps/maps", "apps/app-hub"]
+members = [".", "apps/reference", "apps/appcard", "apps/news", "apps/photos", "apps/maps"]
 default-members = ["."]
 resolver = "2"
 
@@ -138,14 +141,13 @@ opt-level = 1
 # .so): fat LTO refuses that ("cannot prefer dynamic linking when performing
 # LTO"), and `panic = "abort"` breaks the cdylib link against the prebuilt
 # aarch64-linux-android std, which ships the unwind runtime. Same profile as
-# Octoscript-AppCard's app/Cargo.toml documents.
+# the AppCard app's Cargo.toml documents.
 lto = false
 panic = "unwind"
 
-# One makepad lineage. `octos-app` (Octoscript-AppCard) pins makepad dd8562e in
-# its own manifest; a patch cannot point a source at another rev of itself, so
-# every crate of this URL (the workspace's and octos-app's) resolves through the
-# www host alias of the same repository, at the workspace pin.
+# One makepad source. Every makepad crate the graph pulls — Home's, octos-app's
+# and App Hub's shell crate's (which names its own makepad rev, including
+# makepad-wm-theme) — resolves to the one pinned checkout below.
 
 # Resolve the exact framework sources prepared by tools/setup-native.py.
 
@@ -177,6 +179,21 @@ octoscript-node = { path = "../.sources/octoscript-makepad/crates/octoscript-nod
 makepad-widgets = { path = "../.sources/makepad/widgets" }
 
 # OpenHarmony's ioctl ABI differs from Linux; this is the reviewed native-mobile
-# fix from mobile PR #10. Keep the patch pinned with the rest of the build graph.
+# fix from mobile PR #10, vendored by octos. octos-app's own [patch] does not
+# reach this workspace, so Home takes nix from the SAME octos rev octos-app
+# pins for octos-core/octos-cli (one octos source).
 [patch.crates-io]
-nix = { git = "https://github.com/octos-org/octos.git", rev = "deb433e9a452c03d8fe7f4f6a26b42785c47ced7" }
+nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }
+
+# One App Hub source. Home links App Hub's shell crate at the pin above, but
+# the Mail host service (OctoSense-System-Apps) names octosense-appstore at an
+# older App Hub rev; two appstore copies would keep two host-service registries,
+# and the Card runner would never see Mail's service. A patch cannot point a
+# source at another rev of itself, so every App Hub crate — Home's and the Mail
+# service's — resolves through the www host alias of the same repository, at
+# Home's pin. Drop this once OctoSense-System-Apps pins the same App Hub rev.
+[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
+octosense-app-hub-app = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }
+octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "4605128d46fb982828d8198e0d71d62a39c7d6d6" }

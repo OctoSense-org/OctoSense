@@ -1,5 +1,10 @@
 # App Hub design evidence
 
+The native App Hub module these records describe (`apps/app-hub/...` in the
+JSON records below) now lives in OctoSense-App-Hub as `crates/app-hub-app`
+(crate `octosense-app-hub-app`), which Home links as a git dependency. The
+records keep the paths they were validated at.
+
 References: the user's five App Store screenshots are kept locally in the
 Git-ignored `appstore/` directory; they are not included in a fresh checkout.
 Their provenance hashes are retained in `source/references.json`.

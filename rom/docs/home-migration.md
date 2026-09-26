@@ -109,7 +109,8 @@ keep their earlier wording and offsets.
 
 Release gates: App Hub installs into a staging root and publishes the verified
 bundle by renaming, keeping the previous bundle until the new one is in place
-(`home/apps/app-hub/src/catalog.rs`). This settles the non-atomic replacement
+(`home/apps/app-hub/src/catalog.rs` then; now OctoSense-App-Hub
+`crates/app-hub-app/src/catalog.rs`). This settles the non-atomic replacement
 gate. Android runtime containment remains open. Installed Hub apps cannot yet be
 placed on the Android home page (`HUB-01` in `home/BACKLOG.md`).
 

@@ -106,8 +106,9 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
     }
     #[cfg(any(feature = "app-hub", native_mobile))]
     wear(&mut assets, "apphub", octosense_app_hub_app::APP_ICON_SVG.into());
+    // Without App Hub linked: the same store icon, kept beside the other app art.
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
-    wear(&mut assets, "apphub", include_str!("../../apps/app-hub/assets/icon.svg").into());
+    wear(&mut assets, "apphub", include_str!("../../resources/icons/apps/apphub.svg").into());
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }

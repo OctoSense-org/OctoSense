@@ -15,8 +15,13 @@ Requires Python 3.9+, Git and Rust stable. The setup script prepares exact
 revisions in ignored `.sources/`; it preserves unrelated local modifications.
 `home/native-runtime.lock.json` selects the framework release and
 `home/native-apps.lock.json` selects the OctoSense-System-Apps source that holds the system script apps (`apps/<name>/bundle/`, chosen by `home/system-apps.json`) and the Mail host service. App Hub
-is the in-tree `home/apps/app-hub` crate; its OctoSense-App-Hub backend crates
-are pinned in `home/apps/app-hub/Cargo.toml` and `home/Cargo.lock`.
+is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
+`crates/app-hub-app`), a git dependency pinned in `home/Cargo.toml` and
+`home/Cargo.lock` at the same revision as its backend crates. Its build packs
+the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `home/.cargo/config.toml`
+sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
+from the same pinned OctoSense-System-Apps checkout
+(`.sources/system-apps/apps/appcard/app/app`).
 
 The runtime's Makepad (main `1d3d383e`) already has the isolate controls App
 Hub requires, so `home/runtime-patches.lock.json` names no patch. When one is
@@ -104,7 +109,7 @@ verification. Signer inputs must still be the established ROM identity.
 ## App Hub behavior and remaining device validation
 
 Both delivery modes link the same App Hub and card-host modules from the
-in-tree `home/apps/app-hub` crate (`octosense-app-hub-app`, enabled by the
+shared `octosense-app-hub-app` crate (OctoSense-App-Hub `crates/app-hub-app`, enabled by the
 default `app-hub` feature, which `mobile-apps` includes), built on the pinned
 OctoSense-App-Hub backend. Bundle installation requires neither root nor
 Android package installation permission.

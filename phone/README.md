@@ -148,7 +148,7 @@ including `cargo run --release --features mobile-only`.
 
 The **Preview catalog** switch opens a separate collection of built-in
 OctoSense apps for browsing while the live catalog is empty. See
-[App Hub usage and local install fixtures](apps/app-hub/README.md) and
+[App Hub usage and local install fixtures](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/4605128d46fb982828d8198e0d71d62a39c7d6d6/crates/app-hub-app/README.md) and
 [native design evidence](docs/design/app-hub/README.md).
 
 For app authors, start with
