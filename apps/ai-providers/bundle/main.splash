@@ -197,7 +197,8 @@ SolidView{width: Fill height: Fill flow: Overlay draw_bg.color: #xffffff
         }}
         View{width: Fill height: Fit flow: Down spacing: 8 padding: Inset{left: 16 right: 16 top: 4 bottom: 16}
             Big{text: "Add provider" on_click: || add_provider()}
-            View{width: Fill height: Fit flow: Right spacing: 8
+            // Stacked: side by side, a phone's width clips both labels.
+            View{width: Fill height: Fit flow: Down spacing: 8
                 BigPlain{text: "Show QR for phone" on_click: || show_qr()}
                 scan := BigPlain{visible: false text: "Scan QR from desktop" on_click: || import_code()}
                 paste := BigPlain{text: "Paste code" on_click: || import_code()}
