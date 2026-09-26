@@ -39,7 +39,7 @@
 | Item | Disposition |
 | --- | --- |
 | Open PR #10 `ohos/mate70-air` (4 commits) | `ca9f563` (native_mobile cfg) and `0e41bf1` (perf traces) are already in `home/`. `8326864` (AppCard transport pin) is superseded by the AppCard 9e8e4898 pin. **`78e192c` (tick reason in `mobile_app.rs`) is missing and applies cleanly → Task 10.** |
-| Open PR #11 `feat/calendar-module` (8 commits) | Mail, Camera, OHOS and store wiring already landed by other routes. **Calendar module hosting is the only missing piece.** Its source exists in the pinned AppCard (`.sources/appcards/apps/calendar/native`). → Separate follow-up (Task 14). |
+| Open PR #11 `feat/calendar-module` (8 commits) | Mail, Camera, OHOS and store wiring already landed by other routes. **Calendar module hosting is the only missing piece.** Its source exists in OctoScript-App-Design-Flow (formerly Octoscript-AppCard), `apps/calendar/native` at `cbbda4da`. → Separate follow-up (Task 14). |
 | Unreferenced mobile commit `45dbbfb` (“Host standalone Mail”, named in `docs/home-migration.md`) | Superseded: `allowBackup="false"`, `phone_client_texture` and Mail hosting are all in `home/`. No action. |
 | Branches `docs/adr-*`, `feat/appstore-module` | Fully contained in mobile `main` or in PR #11. |
 | Uncommitted notes in the mobile checkout (`findings.md`, `progress.md`, `task_plan.md`, +32 lines) | Session notes. Ask the owner whether to keep them before archiving. |
@@ -551,4 +551,4 @@ gh pr create --title "Sync OctoSense-mobile main into Home" --body-file <(…sum
 
 ### Task 14 (follow-up, separate plan): Calendar module
 
-Port mobile PR #11's Calendar hosting (`3b33910`, `09a134a`): an `app-calendar` feature pointing at `../.sources/appcards/apps/calendar/native`, catalog and host wiring, and device validation. Track it as its own issue and plan.
+Port mobile PR #11's Calendar hosting (`3b33910`, `09a134a`): an `app-calendar` feature pointing at a pinned checkout of OctoScript-App-Design-Flow's `apps/calendar/native`, catalog and host wiring, and device validation. Track it as its own issue and plan.

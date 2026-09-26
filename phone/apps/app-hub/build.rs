@@ -3,10 +3,10 @@
 //! requires the complete Hub listing and manifest, validated by the Hub gate.
 //!
 //! Also pack the system apps the shell includes (ADR 0004). Their bundles live
-//! with their apps in Octoscript-AppCard, `apps/<name>/script/`, pinned by
+//! with their apps in OctoSense-System-Apps, `apps/<name>/bundle/`, pinned by
 //! `native-apps.lock.json`; the shell's `system-apps.json` names which to
 //! include and mounts artwork the shell owns:
-//! `{"source": "../.sources/appcards/apps", "apps": ["news"],
+//! `{"source": "../.sources/system-apps/apps", "apps": ["news"],
 //!   "assets": {"photos": {"photos": "apps/photos/resources/photos"}}}`.
 //! Each bundle becomes a pack with its digest stamped; each asset directory is
 //! compiled in as static artwork served at `<prefix>/<file>`.
@@ -47,7 +47,7 @@ fn system_apps() {
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let names: Vec<String> = selection["apps"].as_array().map(|a| a.iter().filter_map(|n| n.as_str().map(str::to_string)).collect()).unwrap_or_default();
     let dirs: Vec<(String, PathBuf)> = names.into_iter().map(|name| {
-        let dir = source.join(&name).join("script");
+        let dir = source.join(&name).join("bundle");
         assert!(dir.join("manifest.json").is_file(), "system app {name}: no bundle at {} (run scripts/setup-home.py)", dir.display());
         (name, dir)
     }).collect();

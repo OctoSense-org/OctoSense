@@ -676,8 +676,8 @@ Found in the review of the second sync from mobile on 2026-09-25
 - [ ] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
 
   Everything else in PR #11 (`feat/calendar-module`) is present; Calendar
-  module hosting is not. Its source is in the pinned AppCard at
-  `.sources/appcards/apps/calendar/native`. Planned separately (Task 14 of
+  module hosting is not. Its source is in OctoScript-App-Design-Flow
+  (formerly Octoscript-AppCard) at [`apps/calendar/native`](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/cbbda4da0a9d0fbf13497335dd3342b71f35e71f/apps/calendar/native). Planned separately (Task 14 of
   `docs/plans/2026-09-25-sync-mobile-into-home.md`).
 
 - [ ] **RUNTIME-01 — P2: `init_cx_os()` traps off the main thread on macOS 14.**

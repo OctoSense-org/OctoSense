@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "repositories": {
-    "appcards": {
-      "url": "https://github.com/OctoSense-org/Octoscript-AppCard.git",
-      "revision": "cbbda4da0a9d0fbf13497335dd3342b71f35e71f"
+    "system-apps": {
+      "url": "https://github.com/OctoSense-org/OctoSense-System-Apps.git",
+      "revision": "62a573eae058b7e7608500869b879583b94546ae"
     }
   }
 }

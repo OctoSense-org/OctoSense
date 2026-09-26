@@ -102,7 +102,7 @@ Search opens only by pulling down on Home; the App Library has no search bar. Se
 ## System apps: News, Photos, Maps, Camera, Mail
 
 These five are contained script apps (ADR 0004). Their bundles live with their
-apps in Octoscript-AppCard (`apps/<name>/script/`, pinned by
+apps in OctoSense-System-Apps (`apps/<name>/bundle/`, pinned by
 `native-apps.lock.json`); `system-apps.json` names which this Home includes and
 mounts the artwork it owns. App Hub's Card runner runs each in its own isolate
 under its manifest's policy, in the standalone Home and in the ROM alike.
@@ -198,5 +198,5 @@ shell add `--features mobile-apps,mobile-only` before `--`.
 The AppCards checkout and its `octos` submodule are required. The accompanying
 AppCard/octos rusqlite 0.37 update unifies SQLite with the Matrix SDK. Both
 launchers patch the legacy AppCard Git dependencies to that canonical checkout.
-See the [Robrix app](../.sources/appcards/apps/robrix/README.md) for
+See `apps/robrix/README.md` in that AppCards checkout for
 Android build instructions, the message AppCard format and validation scope.
