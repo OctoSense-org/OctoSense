@@ -299,6 +299,15 @@ impl WmDesk {
         let style=state.style.target;
         let dark=state.style.dark;
         let app=mobile::app_rect(screen);
+        if self.phone_ui.set_theme(phone.theme.map(|choice| choice.palette(dark))) {
+            // Recolor existing app/tile instances, including captures otherwise
+            // keyed only by size and light/dark. Keep their navigation state.
+            for frames in self.phone_frames.values_mut() {
+                if let Some(capture) = frames.full.as_mut() { capture.dirty = true; }
+                if let Some(capture) = frames.tile.as_mut() { capture.dirty = true; }
+            }
+            if let Some(cache) = self.phone_scene_backdrop.as_mut() { cache.key = None; }
+        }
         crate::mobile_perf::trace_phone_frame(&phone);
         // What this frame needs (mobile.rs): the compositor only when a
         // frosted surface samples the scene, the wallpaper and the home

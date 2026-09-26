@@ -252,6 +252,9 @@ impl PagesState {
     /// Drive the pager one frame from the shell gesture (None when there is
     /// none, or the home page is not the screen). True while animating.
     pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>) -> bool {
+        self.step_with_motion(dt, gesture, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, gesture: Option<ShellGesture>, reduced: bool) -> bool {
         let lib = self.library_index() as f64;
         let mut dragging = false;
         match gesture {
@@ -281,10 +284,11 @@ impl PagesState {
             _ => {}
         }
         if dragging { self.velocity = 0.0; return true; }
-        let t = 1.0 - (-dt * 16.0).exp();
+        let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         self.drag += (0.0 - self.drag) * t;
         if self.drag.abs() < 0.001 { self.drag = 0.0; }
         let target = self.target as f64;
+        if reduced { self.index = target; self.velocity = 0.0; self.drag = 0.0; return false; }
         // Damping ratio 0.8: about a third of a page per second of overshoot
         // at most, gone within a quarter second.
         let k: f64 = 420.0;
@@ -396,8 +400,8 @@ impl PhoneSurface {
     pub fn draw_glance(&mut self, cx: &mut Cx2d, phone: &PhoneState, screen: Rect, style: DesktopStyle, dark: bool, opacity: f32, dx: f64) {
         self.use_fonts(style == DesktopStyle::Ios);
         let page = rect(screen.pos.x + dx, screen.pos.y, screen.size.x, screen.size.y);
-        self.rounded(cx, page, 0.0, alpha(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }, 0.86 * opacity));
-        let ink = alpha(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }, opacity);
+        self.rounded(cx, page, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
+        let ink = alpha(self.theme_ink(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }), opacity);
         let landscape = screen.size.x > screen.size.y;
         let top = page.pos.y + if landscape { 30.0 } else { 52.0 };
         let left = page.pos.x + 20.0;
@@ -417,11 +421,11 @@ impl PhoneSurface {
     }
 
     fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
-        self.rounded(cx, r, 18.0, alpha(rgb(255, 255, 255), if dark { 0.10 } else { 0.55 } * opacity));
+        self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
         let pad = 16.0;
         let inner = rect(r.pos.x + pad, r.pos.y + pad, r.size.x - pad * 2.0, r.size.y - pad * 2.0);
         let dim = alpha(ink, 0.65 * opacity);
-        let accent = if style == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) };
+        let accent = self.theme_accent(if style == DesktopStyle::Ios { rgb(0, 122, 255) } else { rgb(103, 80, 164) });
         match item {
             GlanceItem::Weather { place, temp, hi, lo, cond } => {
                 self.d.label_elided(cx, rect(inner.pos.x, inner.pos.y, inner.size.x * 0.6, 20.0), true, 15.0, ink, HAlign::Left, place);
@@ -458,7 +462,7 @@ impl PhoneSurface {
     /// last position opens the real App Library / drawer screen.
     pub fn draw_library_preview(&mut self, cx: &mut Cx2d, screen: Rect, dark: bool, ink: Vec4f, opacity: f32, dx: f64) {
         let page = rect(screen.pos.x + dx, screen.pos.y, screen.size.x, screen.size.y);
-        self.rounded(cx, page, 0.0, alpha(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }, 0.86 * opacity));
+        self.rounded(cx, page, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
         let glyph = rect(page.pos.x + (page.size.x - 48.0) * 0.5, page.pos.y + page.size.y * 0.42, 48.0, 48.0);
         self.rounded(cx, glyph, 12.0, alpha(ink, 0.35 * opacity));
         for (gx, gy) in [(10.0, 10.0), (26.0, 10.0), (10.0, 26.0), (26.0, 26.0)] {

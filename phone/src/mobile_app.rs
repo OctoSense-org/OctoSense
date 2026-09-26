@@ -461,11 +461,30 @@ impl App {
     /// Light <-> Dark for the phone shell and every hosted app, keeping the
     /// App Library's search field focused if it was.
     pub(crate) fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
+        if cfg!(target_os = "android") && self.state_mut().phone.theme.is_some() {
+            let dark = !self.state_mut().style.dark;
+            self.android_command(cx, "launcher", "theme_appearance", vec![("dark", makepad_strict_json::Value::Bool(dark))]);
+            return;
+        }
         let focused=self.state_mut().phone.search_focused;
         self.toggle_desktop_appearance(cx);
         if focused {
             if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
         }
+    }
+    pub(crate) fn apply_phone_theme(&mut self, cx: &mut Cx, choice: crate::mobile_theme::Selection, system_dark: bool) {
+        let style = self.state_mut().style.target;
+        if !style.mobile() { return; }
+        let dark = choice.dark(system_dark);
+        if self.state_mut().phone.theme == Some(choice) && self.state_mut().style.dark == dark { return; }
+        let focused = self.state_mut().phone.search_focused;
+        self.state_mut().phone.theme = Some(choice);
+        self.state_mut().style.dark = dark;
+        self.set_desktop_style(cx, style);
+        if focused {
+            if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() { desk.focus_phone_search(cx, &mut self.state_mut().phone); }
+        }
+        log!("[phone.theme] applied preset={} dark={} wallpaper={:?}", choice.preset.id(), dark, choice.wallpaper);
     }
     pub(crate) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {

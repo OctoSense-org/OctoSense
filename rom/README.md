@@ -39,7 +39,7 @@ The organisation overview is at
 | `home/docs/` | Home ADRs, Android and performance records, design notes |
 | `home/*.lock.json`, `home/system-apps.json` | Source pins and the system-app selection (see [Pins and updates](#pins-and-updates)) |
 | `vendor/octosense/` | ROM product layer: makefiles, permissions, overlays, sepolicy, the privileged agent |
-| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (none today) |
+| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (currently the Settings integration) |
 | `scripts/` | Home builds, ROM staging, build, flash, release and phone checks |
 | `web-installer/` | WebUSB installer for the OnePlus 6 (local developer preview) |
 | `docs/` | ROM ADRs, build, flashing, update and validation records |
@@ -72,7 +72,7 @@ python3 scripts/setup-home.py --check --cargo
 
 Setup checks out OctoSense-System-Apps, OctoScript-Makepad, Makepad and
 OctoScript at their locked revisions (applying any reviewed Makepad patch
-`home/runtime-patches.lock.json` names; none today), and refuses to touch a checkout with local changes. `--update` moves clean
+`home/runtime-patches.lock.json` names, currently the Settings overlay), and refuses to touch a checkout with local changes. `--update` moves clean
 checkouts to new pins; `--check` changes nothing and fails unless every
 checkout matches its lock; `--cargo` also rejects a second copy of any core
 Makepad crate in the dependency graph.
@@ -276,7 +276,7 @@ to its WebSocket transport and login screen.
 | `home/native-apps.lock.json` | OctoSense-System-Apps revision (`.sources/system-apps`) |
 | `home/system-apps.json` | Which system apps ship, and the assets Home mounts for them |
 | `home/native-runtime.lock.json` | OctoScript-Makepad revision; its `runtime.json` names Makepad and OctoScript |
-| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, source commit, SHA-256, resulting tree); empty today |
+| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, SHA-256, resulting tree); currently the Settings overlay |
 | `home/Cargo.toml`, `home/Cargo.lock` | Makepad `rev` (must equal the runtime's), App Hub `rev`, the octos `rev` used for `nix` |
 | `home/upstream/makepad.json` | Provenance of the window-manager sources imported from Makepad |
 
@@ -297,9 +297,11 @@ name the same App Hub revision, so the graph has one App Hub source.
   or drop any runtime patch. `setup-home.py --check --cargo` fails on any
   mismatch. The full procedure is in
   [home/docs/makepad-fork.md](home/docs/makepad-fork.md#adopting-a-fork-revision).
-- **Runtime patch.** None today: the runtime's Makepad (main `cd812acd`)
+- **Runtime patch.** The runtime's Makepad (main `cd812acd`)
   includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
-  (contained script apps). When a fix must ship ahead of a runtime release,
+  (contained script apps). `patches/runtime/makepad-settings.patch` adds the
+  Settings input, accessibility and renderer fixes on top. When a fix must ship
+  ahead of a runtime release,
   put the patch in `patches/runtime/` and record it as a `makepad` entry in
   `home/runtime-patches.lock.json`; setup applies it and leaves it staged, and
   `--check` accepts only the exact recorded tree.

@@ -45,6 +45,9 @@ path = "src/main.rs"
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
+# Data-only observations for the Octoscript Settings controller.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", features = ["appcard", "maps"] }
@@ -59,6 +62,7 @@ makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908" }
 makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", default-features = false, optional = true }
+octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "463e3da8ac170a987e34552a1f96551d2a2cc6ea" }
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service", optional = true }

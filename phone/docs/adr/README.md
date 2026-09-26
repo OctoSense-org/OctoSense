@@ -8,3 +8,5 @@ English | [简体中文](README.zh-CN.md)
 | [0002: Agentic app security model](0002-agentic-app-security-model.md) | 2026-09-19 | Proposed |
 | [0003: The app hub, its signatures, and the store app](0003-app-hub-and-store.md) | 2026-09-19 | Proposed |
 | [0004: First-party system apps ship as contained script apps](0004-system-apps-are-contained-script-apps.md) | 2026-09-25 | Proposed |
+| [0005: Settings application logic in Octoscript](0005-settings-octoscript-controller.md) | 2026-09-25 | Implemented in source; ROM acceptance pending |
+| [0006: Built-in OctoSense Settings](0006-builtin-settings.md) | 2026-09-24 | Accepted; full replacement in progress |

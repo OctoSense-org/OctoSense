@@ -62,6 +62,7 @@ fn icon_for(id: &str) -> Option<Ico> {
         "vj" => Ico::Headphone,
         "photos" => Ico::Photo,
         "clock" => Ico::Calendar,
+        "settings" => Ico::Monitor,
         "weather" => Ico::Brightness,
         "fabric" => Ico::Shirt,
         "fab" => Ico::Refresh,

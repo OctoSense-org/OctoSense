@@ -82,7 +82,9 @@ impl App {
         cx.stop_timer(self.snap_hover_timer);
         let area = self.desk_area(cx);
         let dark = self.state_mut().style.dark;
-        let sheet = octosense::style::load_sheet(style, dark);
+        let phone_theme = self.state_mut().phone.theme.filter(|_| style.mobile());
+        let sheet = phone_theme.map(|choice| choice.sheet(style, dark))
+            .unwrap_or_else(|| octosense::style::load_sheet(style, dark));
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {desk.set_startup_style(cx, &sheet);}
         let sheet_name = if style == DesktopStyle::OctoSense {
             if dark { "octosense-dark" } else { "octosense" }.to_string()
@@ -111,7 +113,8 @@ impl App {
                 send_to_app(sender, vec![StudioToApp::Custom(json.clone())]);
             }
         }
-        let palette = (style == DesktopStyle::OctoSense).then(|| theme::scan_shell_palette(&sheet.theme));
+        let palette = phone_theme.map(|choice| choice.palette(dark).shell())
+            .or_else(|| (style == DesktopStyle::OctoSense).then(|| theme::scan_shell_palette(&sheet.theme)));
         self.apply_material_to_chrome(cx, material, palette);
         self.module_host.apply_style(cx, &sheet);
         self.stylesheet = Some(sheet);

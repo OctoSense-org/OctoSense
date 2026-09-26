@@ -54,6 +54,7 @@ impl WmScene {
         self.view.redraw(cx);
     }
     pub fn transition(&mut self, cx: &mut Cx) {
+        if cx.accessibility_preferences().reduce_motion() { self.cut(cx); return; }
         if let Some(frame) = self.view.take_texture_snapshot(cx) {
             let t = smooth(self.progress);
             for (_, weight) in &mut self.frozen {
@@ -94,7 +95,7 @@ impl Widget for WmScene {
                 (ne.time - self.last).min(0.05)
             };
             self.last = ne.time;
-            self.progress = (self.progress + dt / 0.65).min(1.0);
+            self.progress = if cx.accessibility_preferences().reduce_motion() {1.0} else {(self.progress + dt / 0.65).min(1.0)};
             if self.progress < 1.0 {
                 self.next = cx.new_next_frame();
             } else {

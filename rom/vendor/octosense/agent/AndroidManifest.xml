@@ -7,6 +7,8 @@
     <!-- Only OctoSense's own platform-signed apps may bind. -->
     <permission android:name="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM"
         android:protectionLevel="signature" />
+    <!-- The role-owned SystemUI sensor adapter uses the same signature boundary. -->
+    <uses-permission android:name="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
 
     <!-- tasks -->
     <uses-permission android:name="android.permission.REAL_GET_TASKS" />
@@ -22,10 +24,20 @@
     <!-- input -->
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <!-- settings -->
+    <uses-permission android:name="android.permission.MANAGE_TIME_AND_ZONE_DETECTION" />
+    <uses-permission android:name="android.permission.SUGGEST_MANUAL_TIME_AND_ZONE" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.CONTROL_DISPLAY_COLOR_TRANSFORMS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
+    <uses-permission android:name="android.permission.MANAGE_NETWORK_POLICY" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE" />
     <uses-permission android:name="android.permission.DEVICE_POWER" />
     <!-- notifications -->
     <uses-permission android:name="android.permission.MANAGE_NOTIFICATIONS" />
@@ -44,6 +56,7 @@
     <uses-permission android:name="android.permission.REBOOT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <queries><package android:name="com.android.systemui" /></queries>
     <application
         android:name=".AgentApplication"
         android:label="OctoSense Agent"

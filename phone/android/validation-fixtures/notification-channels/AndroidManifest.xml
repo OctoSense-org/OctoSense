@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.notificationfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application android:label="OctoSense notification validation" android:allowBackup="false"/>
+    <instrumentation android:name=".NotificationFixture" android:targetPackage="dev.makepad.octosense.notificationfixture" android:label="Synthetic notification state"/>
+</manifest>

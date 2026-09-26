@@ -1,0 +1,256 @@
+// Appearance drafts and basic device controls are application logic, not host callbacks.
+fn settings_bridge_permits(o,capability) { return o["android"]==true && o["connected"]==true && settings_has(o["capabilities"],capability) }
+fn settings_device_permits(o,key,value) {
+    if o["android"]!=true || o["device"]==nil || !settings_has(o["device"].capabilities,key) || o["device"][key]==nil { return false }
+    if key=="screen_timeout_ms" {
+        let maximum=o["device"].max_screen_timeout_ms
+        return maximum!=nil && (maximum==0 || value<=maximum)
+    }
+    return true
+}
+fn settings_bool_label(title,value) {
+    if value==nil { return title+": Unavailable" }
+    if value { return title+": On" }
+    return title+": Off"
+}
+fn settings_value_label(title,value) {
+    if value==nil { return title+": Unavailable" }
+    return title+": "+value
+}
+fn settings_fixed(value,places) {
+    let factor=10
+    if places==2 { factor=100 }
+    let negative=value<0
+    if negative { value=0-value }
+    let rounded=settings_round(value*factor)
+    let whole=mod.math.floor(rounded/factor)
+    let fraction=rounded-whole*factor
+    let prefix=""
+    if negative { prefix="-" }
+    let padding=""
+    if places==2 && fraction<10 { padding="0" }
+    return prefix+whole+"."+padding+fraction
+}
+fn settings_bytes(value) {
+    if value==nil { return "Unavailable" }
+    return settings_fixed(value/1073741824,2)+" GiB"
+}
+fn settings_device_choices(o) {
+    let rows=[]
+    let d=o["device"]
+    if d==nil { return rows }
+    if d["screen_timeout_ms"]!=nil {
+        let lower=nil; let higher=nil
+        for value in [15000,30000,60000,120000,300000,600000] {
+            if value<d["screen_timeout_ms"] { lower=value }
+            if value>d["screen_timeout_ms"] && higher==nil { higher=value }
+        }
+        if lower!=nil { rows.push({id:"timeout_less",setting:"screen_timeout_ms",value:lower,page:"Display"}) }
+        if higher!=nil { rows.push({id:"timeout_more",setting:"screen_timeout_ms",value:higher,page:"Display"}) }
+    }
+    if d["font_scale"]!=nil {
+        let lower=nil; let higher=nil
+        for value in [0.85,1.0,1.15,1.3,1.5] {
+            if value<d["font_scale"]-0.0001 { lower=value }
+            if value>d["font_scale"]+0.0001 && higher==nil { higher=value }
+        }
+        if lower!=nil { rows.push({id:"font_less",setting:"font_scale",value:lower,page:"Display"}) }
+        if higher!=nil { rows.push({id:"font_more",setting:"font_scale",value:higher,page:"Display"}) }
+    }
+    for pair in [["touch_sounds","Sound"],["haptic_feedback","Display"],["hour_format","DateTime"]] {
+        if d[pair[0]]!=nil { rows.push({id:pair[0],setting:pair[0],value:!d[pair[0]],page:pair[1]}) }
+    }
+    for row in [
+        {less:"volume_less",more:"volume_more",key:"volume_media"},
+        {less:"alarm_less",more:"alarm_more",key:"volume_alarm"},
+        {less:"ring_less",more:"ring_more",key:"volume_ring"},
+        {less:"notification_less",more:"notification_more",key:"volume_notification"}
+    ] {
+        let current=d[row.key]
+        if current!=nil {
+            if current>0 { rows.push({id:row.less,setting:row.key,value:settings_max(0,current-0.1),page:"Sound"}) }
+            if current<1 { rows.push({id:row.more,setting:row.key,value:settings_min(1,current+0.1),page:"Sound"}) }
+        }
+    }
+    return rows
+}
+fn settings_native_links() {
+    return [
+        ["wifi_native","wifi"],["wifi_network_native","wifi"],["bt_native","bluetooth"],["bt_device_native","bluetooth"],
+        ["mobile","mobile"],["hotspot","hotspot"],["vpn","vpn"],["display_access","brightness"],
+        ["display_advanced","display"],["sound_advanced","sound"],["system_advanced","system"],
+        ["apps_native","apps"],["security","security"],["accounts_native","accounts"],
+        ["storage_advanced","storage"],["battery_advanced","battery"],["accessibility","accessibility"],
+        ["about_advanced","about"],["time_advanced","system"],["android_settings","all"]
+    ]
+}
+fn settings_basics_candidate(s,id,o) {
+    if s.pending { return nil }
+    if s.page=="Appearance" && id=="apply_theme" && !settings_theme_equal(s.theme_draft,s.theme_seen) {
+        return {kind:"theme",theme:settings_theme_copy(s.theme_draft)}
+    }
+    if o["android"]!=true { return nil }
+    if s.page=="Display" {
+        if (id=="brightness_less" || id=="brightness_more") && settings_bridge_permits(o,"brightness") {
+            let delta=0.1
+            if id=="brightness_less" { delta=0-delta }
+            return {kind:"brightness",value:settings_max(0.05,settings_min(1,o["brightness"]+delta)),automatic:false}
+        }
+        if id=="automatic" && settings_bridge_permits(o,"brightness") { return {kind:"brightness",value:o["brightness"],automatic:!o["automatic"]} }
+        if id=="rotation" && settings_bridge_permits(o,"rotation") { return {kind:"rotation",value:!o["rotation"]} }
+    }
+    for row in settings_device_choices(o) {
+        if row.id==id && row.page==s.page && settings_device_permits(o,row.setting,row.value) {
+            return {kind:"device",setting:row.setting,value:row.value}
+        }
+    }
+    for link in settings_native_links() { if link[0]==id { return {kind:"open",destination:link[1]} } }
+    if settings_has(["display_device_access","sound_device_access","time_device_access"],id) { return {kind:"device_access"} }
+    return nil
+}
+fn settings_basics_event(s,e,o,out) {
+    if e.kind=="press" {
+        let request=settings_basics_candidate(s,e.id,o)
+        if request!=nil { s.pressed["basic"]={id:e.id,signature:request.to_json()}; return true }
+        return false
+    }
+    if e.kind=="release" { s.pressed["basic"]=nil; return false }
+    if e.kind!="click" { return false }
+    if s.page=="Appearance" && !s.pending {
+        if settings_has(["octosense","minimal","paper","vivid"],e.id) { s.theme_draft.preset=e.id; return true }
+        for pair in [["mode_system","system"],["mode_light","light"],["mode_dark","dark"]] {
+            if e.id==pair[0] { s.theme_draft.appearance=pair[1]; return true }
+        }
+        if e.id=="gradient" || e.id=="solid" { s.theme_draft.wallpaper=e.id; return true }
+        if e.id=="default_theme" { s.theme_draft=settings_theme_default(); return true }
+        if e.id=="cancel_theme" { s.theme_draft=settings_theme_copy(s.theme_seen); return true }
+    }
+    if s.page=="Sound" && e.id=="dnd" && o["android"]==true && !s.pending {
+        settings_open_route(s,"Notifications",false,false,o,out); return true
+    }
+    let request=settings_basics_candidate(s,e.id,o)
+    if request==nil { return false }
+    let previous=s.pressed["basic"]
+    s.pressed["basic"]=nil
+    if previous!=nil && (previous.id!=e.id || previous.signature!=request.to_json()) { return true }
+    settings_request(out,request)
+    return true
+}
+fn settings_basics_refresh(s,o,out) {
+    let choice=s.theme_draft
+    let appearance="System"
+    if choice.appearance=="light" { appearance="Light" }
+    if choice.appearance=="dark" { appearance="Dark" }
+    let wallpaper="Gradient"
+    if choice.wallpaper=="solid" { wallpaper="Solid" }
+    let suffix=""
+    if !settings_theme_equal(choice,s.theme_seen) { suffix=" (unsaved)" }
+    settings_text(out,"theme_summary",choice.preset+" · "+appearance+" · "+wallpaper+suffix)
+    for row in [
+        {id:"octosense",label:"OctoSense",field:"preset",value:"octosense"},
+        {id:"minimal",label:"Minimal",field:"preset",value:"minimal"},
+        {id:"paper",label:"Paper",field:"preset",value:"paper"},
+        {id:"vivid",label:"Vivid",field:"preset",value:"vivid"},
+        {id:"mode_system",label:"System",field:"appearance",value:"system"},
+        {id:"mode_light",label:"Light",field:"appearance",value:"light"},
+        {id:"mode_dark",label:"Dark",field:"appearance",value:"dark"},
+        {id:"gradient",label:"Gradient",field:"wallpaper",value:"gradient"},
+        {id:"solid",label:"Solid",field:"wallpaper",value:"solid"}
+    ] {
+        let prefix=""
+        if choice[row.field]==row.value { prefix="✓ " }
+        settings_text(out,row.id,prefix+row.label)
+        settings_enabled(out,row.id,!s.pending)
+    }
+    let changed=!settings_theme_equal(choice,s.theme_seen)
+    settings_enabled(out,"apply_theme",!s.pending && changed)
+    settings_enabled(out,"cancel_theme",!s.pending && changed)
+    settings_enabled(out,"default_theme",!s.pending)
+    let brightness="Brightness unavailable — connect system service"
+    let automatic="Automatic brightness unavailable"
+    let rotation="Rotation lock unavailable"
+    if o["connected"]==true {
+        brightness="Brightness: "+settings_round(o["brightness"]*100)+"%"
+        automatic=settings_bool_label("Automatic brightness",o["automatic"])
+        rotation=settings_bool_label("Rotation lock",o["rotation"])
+    }
+    settings_text(out,"brightness_value",brightness)
+    settings_text(out,"automatic",automatic)
+    settings_text(out,"rotation",rotation)
+    settings_text(out,"dnd","Do Not Disturb")
+    let network=settings_or(o["network"],"")
+    if network=="" { network="Manage connections in Android settings." }
+    settings_text(out,"network_summary",network)
+    for id in ["brightness_less","brightness_more","automatic"] { settings_enabled(out,id,!s.pending && settings_bridge_permits(o,"brightness")) }
+    settings_enabled(out,"rotation",!s.pending && settings_bridge_permits(o,"rotation"))
+    settings_enabled(out,"dnd",!s.pending && o["android"]==true)
+    settings_visible(out,"display_access",!settings_bridge_permits(o,"brightness") || !settings_bridge_permits(o,"rotation"))
+    for link in settings_native_links() { settings_enabled(out,link[0],!s.pending && o["android"]==true) }
+    for id in ["timeout_less","timeout_more","font_less","font_more","touch_sounds","haptic_feedback","hour_format","auto_time","auto_time_zone","volume_less","volume_more","alarm_less","alarm_more","ring_less","ring_more","notification_less","notification_more"] {
+        let enabled=false
+        for row in settings_device_choices(o) { if row.id==id && settings_device_permits(o,row.setting,row.value) { enabled=!s.pending } }
+        settings_enabled(out,id,enabled)
+    }
+    settings_device_labels(s,o,out)
+}
+fn settings_device_labels(s,o,out) {
+    let d=settings_or(o["device"],{})
+    let timeout="Screen timeout unavailable"
+    if d["screen_timeout_ms"]!=nil { timeout="Screen timeout: "+mod.math.floor(d["screen_timeout_ms"]/1000)+" seconds" }
+    settings_text(out,"timeout_value",timeout)
+    let policy=""
+    if d["max_screen_timeout_ms"]!=nil && d["max_screen_timeout_ms"]>0 { policy="Administrator maximum: "+mod.math.floor(d["max_screen_timeout_ms"]/1000)+" seconds" }
+    settings_text(out,"timeout_policy",policy)
+    let font="Font size unavailable"
+    if d["font_scale"]!=nil { font="Font size: "+settings_round(d["font_scale"]*100)+"%" }
+    settings_text(out,"font_value",font)
+    for pair in [["touch_sounds","Touch sounds"],["haptic_feedback","Touch vibration"],["auto_time","Automatic time"],["auto_time_zone","Automatic time zone"]] {
+        settings_text(out,pair[0],settings_bool_label(pair[1],d[pair[0]]))
+    }
+    let hour="Time format: Unavailable"
+    if d["hour_format"]==true { hour="Time format: 24-hour" }
+    if d["hour_format"]==false { hour="Time format: 12-hour" }
+    settings_text(out,"hour_format",hour)
+    for row in [
+        {id:"volume_value",title:"Media",key:"volume_media"},
+        {id:"alarm_value",title:"Alarm",key:"volume_alarm"},
+        {id:"ring_value",title:"Ring",key:"volume_ring"},
+        {id:"notification_value",title:"Notification",key:"volume_notification"}
+    ] {
+        let value=row.title+" volume unavailable"
+        if d[row.key]!=nil { value=row.title+" volume: "+settings_round(d[row.key]*100)+"%" }
+        settings_text(out,row.id,value)
+    }
+    let about=""
+    for row in [["Manufacturer","manufacturer"],["Model","model"],["Android","android_version"],["API level","api_level"],["Security update","security_patch"],["Build","build"],["Kernel","kernel"]] {
+        if about!="" { about=about+"\n" }
+        about=about+settings_value_label(row[0],d[row[1]])
+    }
+    about=about+"\nMemory: "+settings_bytes(d["memory_total"])+" total · "+settings_bytes(d["memory_available"])+" available"
+    settings_text(out,"about_summary",about)
+    let used=nil
+    if d["storage_total"]!=nil && d["storage_available"]!=nil && d["storage_total"]>=d["storage_available"] { used=d["storage_total"]-d["storage_available"] }
+    settings_text(out,"storage_summary","Phone data storage\nTotal: "+settings_bytes(d["storage_total"])+"\nAvailable: "+settings_bytes(d["storage_available"])+"\nUsed: "+settings_bytes(used))
+    let level=nil; let temperature=nil; let status=nil; let plugged=nil
+    if d["battery_level"]!=nil { level=""+settings_round(d["battery_level"])+"%" }
+    if d["battery_temperature"]!=nil { temperature=settings_fixed(d["battery_temperature"],1)+" °C" }
+    if d["battery_status"]!=nil { status="Unknown" }
+    for pair in [["charging","Charging"],["discharging","Discharging"],["full","Full"],["not_charging","Not charging"]] { if d["battery_status"]==pair[0] { status=pair[1] } }
+    if d["battery_plugged"]!=nil { plugged="Unknown" }
+    for pair in [["ac","AC charger"],["usb","USB"],["wireless","Wireless"],["dock","Dock"],["battery","Battery"]] { if d["battery_plugged"]==pair[0] { plugged=pair[1] } }
+    settings_text(out,"battery_summary",settings_value_label("Battery",level)+"\n"+settings_value_label("Status",status)+"\n"+settings_value_label("Power source",plugged)+"\n"+settings_value_label("Temperature",temperature))
+    settings_text(out,"time_summary",settings_value_label("Local time",d["local_time"])+"\n"+settings_value_label("Time zone",d["time_zone"])+"\n"+settings_value_label("Locale",d["locale"]))
+    let time_policy="Automatic time controls are unavailable or restricted by your administrator."
+    if settings_has(d["capabilities"],"auto_time") && settings_has(d["capabilities"],"auto_time_zone") { time_policy="" }
+    settings_text(out,"time_policy",time_policy)
+    for row in [
+        {id:"display_device_access",keys:["screen_timeout_ms","font_scale","haptic_feedback"]},
+        {id:"sound_device_access",keys:["touch_sounds"]},
+        {id:"time_device_access",keys:["hour_format"]}
+    ] {
+        let missing=false
+        for key in row.keys { if !settings_has(d["capabilities"],key) { missing=true } }
+        settings_visible(out,row.id,o["android"]==true && d["can_request_write_settings"]==true && missing)
+        settings_enabled(out,row.id,!s.pending && o["android"]==true)
+    }
+}

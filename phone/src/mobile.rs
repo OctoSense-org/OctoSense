@@ -65,6 +65,7 @@ pub struct PhoneGesture {
 
 #[derive(Clone)]
 pub struct PhoneState {
+    pub theme: Option<crate::mobile_theme::Selection>,
     pub navigation: crate::mobile_navigation::FloatingNavigation,
     pub android: crate::android_integration::AndroidState,
     /// Which hidden gestures the person has found (mobile_hints.rs): the
@@ -152,7 +153,7 @@ pub struct PhoneState {
 impl Default for PhoneState {
     fn default() -> Self {
         Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
-            navigation: Default::default(),
+            navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
@@ -235,11 +236,12 @@ impl PhoneState {
         self.search_stretch = 0.0;
     }
     pub fn step(&mut self, dt: f64) -> bool {
-        let t = 1.0 - (-dt * 19.0).exp();
+        let reduced = self.android.reduce_motion;
+        let t = if reduced {1.0} else {1.0 - (-dt * 19.0).exp()};
         let open = if matches!(self.screen, PhoneScreen::App | PhoneScreen::Recents) && self.client.is_some() { 1.0 } else { 0.0 };
         let overview = if self.screen == PhoneScreen::Recents { 1.0 } else { 0.0 };
         let mut active = false;
-        active |= self.navigation.step(dt);
+        active |= self.navigation.step_with_motion(dt, reduced);
         // A finger driving the home swipe or the back preview holds the
         // window where it is; a lifted finger lets it settle.
         let dragging = self.gesture.is_some()
@@ -254,8 +256,8 @@ impl PhoneState {
         self.keyboard += (self.keyboard_target - self.keyboard) * t;
         if (self.keyboard_target - self.keyboard).abs() < 0.25 { self.keyboard = self.keyboard_target; }
         active |= self.keyboard != self.keyboard_target;
-        active |= self.island.step(dt, crate::host::now(), self.gesture_out);
-        active |= self.groups.step(dt);
+        active |= self.island.step_with_motion(dt, crate::host::now(), self.gesture_out, reduced);
+        active |= self.groups.step_with_motion(dt, reduced);
         if self.gesture.is_none() {
             let target = self.page.round().clamp(0.0, self.order.len().saturating_sub(1) as f64);
             self.page += (target - self.page) * t;
@@ -263,7 +265,7 @@ impl PhoneState {
             active |= self.page != target;
         }
         if let Some(launch) = self.launch.as_mut() {
-            launch.t += dt / 0.26;
+            launch.t += if reduced {1.0} else {dt / 0.26};
             if launch.t >= 1.0 { self.launch = None; } else { active = true; }
         }
         // A flicked drawer coasts and slows (about a second from a fast
@@ -282,12 +284,12 @@ impl PhoneState {
                 active = true;
             } else { self.search_velocity = 0.0; }
         }
-        active |= self.shade.step(dt, self.gesture_out, self.wallpaper_time);
+        active |= self.shade.step_with_motion(dt, self.gesture_out, self.wallpaper_time, reduced);
         self.absorb_docked(crate::mobile_island::take_docked());
         // The island stays hidden while the sheet is (or is about to be)
         // open and comes back as it closes.
         self.island.set_shade_open(self.shade.wants_open());
-        active |= self.pages.step(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None });
+        active |= self.pages.step_with_motion(dt, if self.screen == PhoneScreen::Home { self.gesture_out } else { None }, reduced);
         if self.pages.take_library_request() { self.navigate(PhoneScreen::Drawer); }
         active
     }
@@ -369,6 +371,36 @@ pub fn mix_rect(a: Rect, b: Rect, t: f64) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reduced_motion_settles_transitions_but_preserves_touch_and_scroll_physics() {
+        use crate::mobile_gestures::{Dir, GestureKind, ShellGesture};
+        let mut phone = PhoneState::default();
+        phone.android.reduce_motion = true;
+        phone.activate(10);
+        phone.step(1.0 / 60.0);
+        assert!(phone.accepts_app_input());
+        phone.navigate(PhoneScreen::Recents);
+        phone.step(1.0 / 60.0);
+        assert_eq!(phone.overview, 1.0);
+        phone.navigate(PhoneScreen::Home);
+        phone.navigation.open = true;
+        phone.step(1.0 / 60.0);
+        assert_eq!(phone.openness, 0.0);assert_eq!(phone.overview, 0.0);assert_eq!(phone.navigation.reveal, 1.0);
+        phone.pages.sync(&["reference".into(), "news".into(), "mail".into()], 1, 1);
+        phone.gesture_out = Some(ShellGesture::PageSwipe {dir:Dir::Left,progress:0.4});
+        phone.step(1.0/60.0);
+        assert!((phone.pages.position()-0.4).abs()<0.001, "page follows the finger before release");
+        phone.gesture_out = Some(ShellGesture::Commit(GestureKind::Page(Dir::Left)));
+        phone.step(1.0/60.0);
+        assert_eq!(phone.pages.position(),1.0);
+        phone.gesture_out = None;
+        phone.navigate(PhoneScreen::Drawer);
+        phone.search_scroll=500.0;phone.search_scroll_limit=2000.0;phone.search_velocity=-600.0;
+        phone.step(1.0/60.0);
+        assert_eq!(phone.search_scroll,510.0,"reduced motion cannot advance the physics clock");
+        assert!(phone.search_velocity < -500.0);
+    }
 
     #[test]
     fn search_is_separate_from_the_catalog_even_after_a_previous_query() {

@@ -60,7 +60,7 @@ final class Updater {
 
     private final Context context;
     private final Handler handler;
-    private final UpdateEngine engine = new UpdateEngine();
+    private volatile UpdateEngine engine;
     private Listener listener = s -> { };
 
     private volatile JSONObject manifest;
@@ -68,29 +68,48 @@ final class Updater {
     private volatile float progress;
     private volatile String error = "";
     private volatile String homeState = "";
+    private volatile boolean romBusy,homeBusy;
+    private volatile boolean engineObserved;
+    private volatile String homeError="";
+    private final Object phaseLock=new Object();
+    private long phaseGeneration;
+    private void setPhase(String next) {
+        synchronized(phaseLock) {if(!next.equals(phase)) {phase=next;phaseGeneration++;}}
+    }
 
     Updater(Context context) {
         this.context = context;
         HandlerThread thread = new HandlerThread("octosense-updater");
         thread.start();
         handler = new Handler(thread.getLooper());
-        engine.bind(new UpdateEngineCallback() {
+        bindEngineIfPresent();
+    }
+
+    /** Non-A/B devices and early boot must not prevent the Settings service starting. */
+    private synchronized void bindEngineIfPresent() {
+        if(engine!=null||android.os.ServiceManager.checkService("android.os.UpdateEngineService")==null) return;
+        try {
+        UpdateEngine candidate=new UpdateEngine();engine=candidate;
+        if(!candidate.bind(new UpdateEngineCallback() {
             @Override public void onStatusUpdate(int status, float percent) {
-                phase = status >= 0 && status < STATUS.length ? STATUS[status] : "status_" + status;
+                engineObserved=true;
+                setPhase(status >= 0 && status < STATUS.length ? STATUS[status] : "status_" + status);
                 progress = percent;
                 listener.changed(status());
             }
             @Override public void onPayloadApplicationComplete(int errorCode) {
+                romBusy=false;
                 if (errorCode == 0) {
-                    phase = "updated_need_reboot";
+                    setPhase("updated_need_reboot");
                     error = "";
                 } else {
-                    phase = "failed";
+                    setPhase("failed");
                     error = "update_engine error " + errorCode;
                 }
                 listener.changed(status());
             }
-        }, handler);
+        }, handler)) engine=null;
+        } catch(RuntimeException unavailable) {engine=null;Log.w(TAG,"update engine unavailable");}
     }
 
     void setListener(Listener l) { listener = l == null ? s -> { } : l; }
@@ -103,33 +122,47 @@ final class Updater {
     // ---- check ------------------------------------------------------------
 
     /** Fetches update.json and says what is newer than what runs now. Blocking; call off the main thread. */
-    Bundle check() throws Exception {
-        JSONObject m = new JSONObject(new String(fetch(source(), 1 << 20), "UTF-8"));
+    static final class CheckedRelease {
+        final String source;
+        final JSONObject manifest;
+        final Bundle versions;
+        CheckedRelease(String source,JSONObject manifest,Bundle versions) {
+            this.source=source;this.manifest=manifest;this.versions=versions;
+        }
+    }
+
+    Bundle check() throws Exception {return checkRelease().versions;}
+
+    CheckedRelease checkRelease() throws Exception {
+        String source=source();
+        JSONObject m = new JSONObject(new String(fetch(source, 1 << 20), "UTF-8"));
+        validateManifest(m);
         manifest = m;
         Bundle b = new Bundle();
         b.putBoolean("ok", true);
-        b.putString("source", source());
+        b.putString("source", source);
         b.putString("release", m.optString("name"));
+        b.putLong("home_current",homeVersion());
         JSONObject rom = m.optJSONObject("rom");
         if (rom != null) {
             long current = Build.TIME / 1000;
             long offered = rom.optLong("timestamp");
             b.putString("rom_current", Build.VERSION.INCREMENTAL);
             b.putString("rom_offered", rom.optString("incremental"));
-            b.putBoolean("rom_newer", offered > current
+            b.putBoolean("rom_newer", compatibleDevice(rom.getString("device")) && offered > current
                     && !rom.optString("incremental").equals(Build.VERSION.INCREMENTAL));
         }
         JSONObject home = m.optJSONObject("home");
         if (home != null) {
-            long installed = homeVersion();
+            long installed = b.getLong("home_current");
             b.putLong("home_current", installed);
             b.putLong("home_offered", home.optLong("version_code"));
             b.putBoolean("home_newer", home.optLong("version_code") > installed);
         }
-        return b;
+        return new CheckedRelease(source,m,b);
     }
 
-    private long homeVersion() {
+    long homeVersion() {
         try {
             PackageInfo info = context.getPackageManager().getPackageInfo(HOME_PACKAGE, 0);
             return info.getLongVersionCode();
@@ -143,8 +176,21 @@ final class Updater {
     /** Starts streaming the ROM into the inactive slot. Returns at once; progress arrives in status(). */
     Bundle applyRom() throws Exception {
         if (manifest == null) check();
-        JSONObject rom = manifest.optJSONObject("rom");
+        return applyRom(manifest);
+    }
+
+    private Bundle applyRom(JSONObject checked) throws Exception {
+        bindEngineIfPresent();
+        UpdateEngine currentEngine=engine;
+        synchronized(this) {
+            if(currentEngine==null||romBusy||!engineObserved||!romIdle()) return fail("ROM update already active or unavailable");
+            romBusy=true;
+        }
+        try {
+        JSONObject rom = checked.optJSONObject("rom");
         if (rom == null) return fail("no ROM in the release");
+        if(!compatibleDevice(rom.getString("device"))||rom.getLong("timestamp")<=Build.TIME/1000
+                ||rom.getString("incremental").equals(Build.VERSION.INCREMENTAL)) return fail("ROM target changed");
         JSONArray props = rom.getJSONArray("payload_properties");
         String[] headers = new String[props.length()];
         for (int i = 0; i < headers.length; i++) headers[i] = props.getString(i);
@@ -152,17 +198,20 @@ final class Updater {
         // release link redirects to, since that is what serves byte ranges.
         String url = resolve(rom.getString("url"));
         error = "";
-        phase = "starting";
+        setPhase("starting");
         progress = 0;
-        engine.applyPayload(url, rom.getLong("payload_offset"), rom.getLong("payload_size"), headers);
+        currentEngine.applyPayload(url, rom.getLong("payload_offset"), rom.getLong("payload_size"), headers);
         Log.i(TAG, "applying " + rom.optString("incremental"));
         return ok();
+        } catch(Exception e) {romBusy=false;failed("rom");throw e;}
+        finally {if(!"starting".equals(phase)&&romIdle()) romBusy=false;}
     }
 
     /** Stops a running ROM update; the inactive slot is left unbootable until the next apply. */
     Bundle cancel() {
-        engine.cancel();
-        phase = "cancelled";
+        UpdateEngine currentEngine=engine;if(currentEngine==null) return fail("ROM update unavailable");
+        currentEngine.cancel();
+        setPhase("cancelled");romBusy=false;
         return ok();
     }
 
@@ -171,16 +220,29 @@ final class Updater {
     /** Downloads the Home APK, checks its sha256, installs it. Blocking; call off the main thread. */
     Bundle applyHome() throws Exception {
         if (manifest == null) check();
-        JSONObject home = manifest.optJSONObject("home");
+        return applyHome(manifest);
+    }
+
+    private Bundle applyHome(JSONObject checked) throws Exception {
+        synchronized(this) {if(homeBusy) return fail("Home update already active");homeBusy=true;}
+        try {
+        JSONObject home = checked.optJSONObject("home");
         if (home == null) return fail("no Home app in the release");
+        if(home.getLong("version_code")<=homeVersion()) return fail("Home target changed");
+        homeError="";
         homeState = "downloading";
         File apk = new File(context.getCacheDir(), "home-update.apk");
         download(home.getString("url"), apk);
+        homeState="verifying";
         String sum = sha256(apk);
         if (!sum.equalsIgnoreCase(home.getString("sha256"))) {
             apk.delete();
-            homeState = "checksum mismatch";
+            homeState = "failed";homeError="The Home download did not pass verification.";homeBusy=false;
             return fail("home APK checksum mismatch");
+        }
+        PackageInfo archive=context.getPackageManager().getPackageArchiveInfo(apk.getAbsolutePath(),0);
+        if(archive==null||!HOME_PACKAGE.equals(archive.packageName)||archive.getLongVersionCode()!=home.getLong("version_code")) {
+            apk.delete();throw new IllegalArgumentException("Downloaded APK does not match reviewed version");
         }
         homeState = "installing";
         PackageInstaller installer = context.getPackageManager().getPackageInstaller();
@@ -201,6 +263,8 @@ final class Updater {
                     int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999);
                     String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
                     homeState = status == PackageInstaller.STATUS_SUCCESS ? "installed" : "failed: " + message;
+                    homeBusy=false;
+                    homeError=status==PackageInstaller.STATUS_SUCCESS?"":"Android could not install the Home update.";
                     Log.i(TAG, "home install " + homeState);
                     c.unregisterReceiver(this);
                     listener.changed(status());
@@ -213,6 +277,24 @@ final class Updater {
         }
         apk.delete();
         return ok();
+        } catch(Exception e) {homeBusy=false;failed("home");throw e;}
+        finally {if(!"installing".equals(homeState)&&!"downloading".equals(homeState)&&!"verifying".equals(homeState)) homeBusy=false;}
+    }
+
+    /** Apply the immutable manifest the user reviewed; never fetch a different release here. */
+    Bundle applyReviewed(String part,CheckedRelease release) throws Exception {
+        dev.makepad.octosense.updates.UpdatesSettingsContract.part(part);
+        if(!source().equals(release.source)) return fail("Update source changed");
+        return "rom".equals(part)?applyRom(release.manifest):applyHome(release.manifest);
+    }
+
+    boolean engineObserved() {return engineObserved;}
+    private boolean romIdle() {return "idle".equals(phase)||"failed".equals(phase)||"cancelled".equals(phase);}
+    boolean busy() {return romBusy||homeBusy||!romIdle();}
+    void failed(String part) {
+        if("home".equals(part)) {homeBusy=false;homeState="failed";homeError="The Home update could not be installed.";}
+        else {romBusy=false;setPhase("failed");error="The system update could not be installed.";}
+        listener.changed(status());
     }
 
     // ---- reboot and status ------------------------------------------------
@@ -224,19 +306,55 @@ final class Updater {
     }
 
     Bundle status() {
+        bindEngineIfPresent();
         Bundle b = ok();
-        b.putString("rom_phase", phase);
+        synchronized(phaseLock) {b.putString("rom_phase",phase);b.putLong("phase_generation",phaseGeneration);}
         b.putFloat("rom_progress", progress);
         if (!error.isEmpty()) b.putString("rom_error", error);
         if (!homeState.isEmpty()) b.putString("home_state", homeState);
+        if (!homeError.isEmpty()) b.putString("home_error", homeError);
         b.putString("running", Build.VERSION.INCREMENTAL);
         b.putString("slot", android.os.SystemProperties.get("ro.boot.slot_suffix"));
         return b;
     }
 
+    private static boolean compatibleDevice(String devices) {
+        for(String device:devices.split("\\|")) if(Build.DEVICE.equals(device)) return true;
+        return false;
+    }
+    private static void https(String value) throws Exception {
+        URL url=new URL(value);
+        if(!"https".equals(url.getProtocol())||url.getHost().isEmpty()||url.getUserInfo()!=null)
+            throw new IllegalArgumentException("Update downloads require HTTPS");
+    }
+    private static void validateManifest(JSONObject manifest) throws Exception {
+        if(manifest.getInt("schema")!=1||manifest.getString("name").length()>256) throw new IllegalArgumentException("Invalid release");
+        JSONObject rom=manifest.optJSONObject("rom"),home=manifest.optJSONObject("home");
+        if(rom==null&&home==null) throw new IllegalArgumentException("Empty release");
+        if(rom!=null) {
+            if(rom.getString("device").length()>256||rom.getString("incremental").length()>256
+                    ||rom.getLong("timestamp")<=0||rom.getLong("payload_offset")<0||rom.getLong("payload_size")<=0)
+                throw new IllegalArgumentException("Invalid ROM offer");
+            https(rom.getString("url"));
+            JSONArray properties=rom.getJSONArray("payload_properties");
+            if(properties.length()==0||properties.length()>64) throw new IllegalArgumentException("Invalid payload properties");
+            for(int i=0;i<properties.length();i++) {
+                String p=properties.getString(i);
+                if(p.length()>4096||p.indexOf('=')<=0||p.indexOf('\n')>=0||p.indexOf('\r')>=0)
+                    throw new IllegalArgumentException("Invalid payload property");
+            }
+        }
+        if(home!=null) {
+            if(!HOME_PACKAGE.equals(home.getString("package"))||home.getLong("version_code")<=0
+                    ||!home.getString("sha256").matches("[0-9a-fA-F]{64}")) throw new IllegalArgumentException("Invalid Home offer");
+            https(home.getString("url"));
+        }
+    }
+
     // ---- HTTP -------------------------------------------------------------
 
     private static HttpURLConnection open(String url) throws Exception {
+        https(url);
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(20000);
         c.setReadTimeout(60000);

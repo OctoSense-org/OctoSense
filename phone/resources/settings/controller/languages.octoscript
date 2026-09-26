@@ -1,0 +1,250 @@
+// App and caption language catalogs: filters and hierarchy are script state;
+// opaque native catalog keys are the only write targets.
+fn settings_language_ui(s,domain) {
+    if s[domain]==nil { s[domain]={key:nil,parent:nil,query:"",draft:"",offset:0,stack:[],waiting:false,last:nil,pressed:nil} }
+    return s[domain]
+}
+fn settings_language_domain(s) {
+    if s.page=="AppLanguage" { return "app_language_ui" }
+    if s.page=="CaptionLanguage" { return "caption_language_ui" }
+    return ""
+}
+fn settings_language_meta(domain) {
+    if domain=="app_language_ui" { return {observation:"app_language",domain:"app_language",prefix:"app_language",page:"AppLanguage",scroll:"app_language_page",size:20} }
+    return {observation:"caption_language",domain:"caption_language",prefix:"caption_language",page:"CaptionLanguage",scroll:"caption_language_page",size:24}
+}
+fn settings_language_query(value,domain) {
+    let length=0
+    for codepoint in value.to_chars() {
+        if codepoint<32 || (codepoint>=127 && codepoint<=159) { return false }
+        length=length+1
+        if domain=="caption_language_ui" && codepoint>65535 { length=length+1 }
+    }
+    if domain=="app_language_ui" { return length<=128 }
+    return length<=80
+}
+fn settings_language_read(s,domain) {
+    let ui=settings_language_ui(s,domain); let meta=settings_language_meta(domain)
+    if domain=="app_language_ui" { return {kind:"read",domain:meta.domain,target:s.context["app_target"],key:ui.key,parent:ui.parent,query:ui.query,offset:ui.offset} }
+    return {kind:"read",domain:meta.domain,key:ui.key,query:ui.query,offset:ui.offset}
+}
+fn settings_language_load(s,o,out,domain) {
+    let ui=settings_language_ui(s,domain); let meta=settings_language_meta(domain)
+    ui.waiting=true; ui.pressed=nil
+    settings_request(out,settings_language_read(s,domain)); settings_scroll(out,meta.scroll)
+}
+fn settings_language_reset(s,o,domain) {
+    let previous=o[settings_language_meta(domain).observation]; let last=nil
+    if previous!=nil { last=previous.request_id }
+    s[domain]={key:nil,parent:nil,query:"",draft:"",offset:0,stack:[],waiting:true,last:last,pressed:nil}
+}
+fn settings_language_enter(s,o,out,domain) {
+    settings_language_reset(s,o,domain)
+    let meta=settings_language_meta(domain)
+    s.page=meta.page
+    settings_patch(out,"input",meta.prefix+"_query","")
+    settings_language_load(s,o,out,domain)
+}
+fn settings_language_matches(s,domain,row) {
+    if row==nil { return false }
+    let ui=settings_language_ui(s,domain)
+    if row.query!=ui.query { return false }
+    if domain=="app_language_ui" {
+        if row.target!=s.context["app_target"] { return false }
+        return row.availability!="Available" || (row.parent==ui.parent && (ui.key==nil || row.key==ui.key) && (row.offset==ui.offset || (row.offset==0 && ui.offset>=row.total)))
+    }
+    return row.offset==ui.offset && (row.status!="Ready" || ui.key==nil || row.key==ui.key)
+}
+fn settings_language_observed(s,o,domain) {
+    let ui=settings_language_ui(s,domain); let row=o[settings_language_meta(domain).observation]
+    if ui.waiting || !settings_language_matches(s,domain,row) { return nil }
+    return row
+}
+fn settings_language_observe(s,o,domain) {
+    let ui=settings_language_ui(s,domain); let row=o[settings_language_meta(domain).observation]
+    if !settings_language_matches(s,domain,row) || row.request_id==ui.last { return }
+    ui.last=row.request_id; ui.waiting=false
+    let ready=false
+    if domain=="app_language_ui" { ready=row.availability=="Available" } else { ready=row.status=="Ready" }
+    if ready { ui.key=row.key; ui.offset=row.offset }
+}
+fn settings_language_candidate(s,o,domain,index) {
+    let row=settings_language_observed(s,o,domain)
+    if o.android!=true || s.pending || row==nil || !row.can_set || row.key==nil || index>=row.rows.len() { return nil }
+    let choice=row.rows[index]
+    if domain=="app_language_ui" {
+        if choice.kind=="Open" { return {kind:"read",domain:"app_language",target:row.target,key:row.key,parent:choice.key,query:"",offset:0} }
+        return {kind:"app_language",target:row.target,key:row.key,choice:choice.key}
+    }
+    return {kind:"caption_language",key:row.key,choice:choice.choice}
+}
+fn settings_language_event(s,e,o,out) {
+    settings_language_ui(s,"app_language_ui"); settings_language_ui(s,"caption_language_ui")
+    for domain in ["app_language_ui","caption_language_ui"] {
+        let ui=settings_language_ui(s,domain)
+        if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" { ui.pressed=nil }
+    }
+    let domain=settings_language_domain(s)
+    if domain!="" { settings_language_observe(s,o,domain) }
+    if s.page=="AppDetails" && e.kind=="click" && e.id=="app_language_open" {
+        let details=settings_selected_details(s,o)
+        if o.android==true && !s.pending && details!=nil && details.exists { settings_language_enter(s,o,out,"app_language_ui") }
+        return true
+    }
+    if s.page=="Controls" && s.controls_section=="AccessibilityHearing" && e.kind=="click" && e.id=="caption_language_open" {
+        if o.android==true && !s.pending { settings_language_enter(s,o,out,"caption_language_ui") }
+        return true
+    }
+    if domain=="" { return false }
+    let ui=settings_language_ui(s,domain); let meta=settings_language_meta(domain)
+    if e.kind=="result" && e.value["domain"]==meta.domain && e.value["phase"]=="submitted" {
+        if domain=="app_language_ui" { settings_language_reset(s,o,domain); settings_patch(out,"input",meta.prefix+"_query","") }
+        else { ui.key=nil; ui.offset=0; ui.waiting=true; ui.pressed=nil; let previous=o[meta.observation]; if previous!=nil { ui.last=previous.request_id } }
+        return false
+    }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") {
+        settings_blur(out); ui.pressed=nil
+        if domain=="app_language_ui" && ui.stack.len()>0 {
+            let previous=ui.stack.pop()
+            ui.key=previous.read.key; ui.parent=previous.read.parent; ui.query=previous.read.query; ui.offset=previous.read.offset; ui.draft=previous.draft
+            settings_patch(out,"input",meta.prefix+"_query",ui.draft)
+            settings_language_load(s,o,out,domain)
+            out.patch.push({op:"scroll",id:meta.scroll,x:0,y:previous.scroll})
+            return true
+        }
+        if domain=="caption_language_ui" && s.search_destination!="CaptionLanguage" {
+            settings_language_reset(s,o,domain)
+            s.controls_section="AccessibilityHearing"; s.controls_parent="System"; s.page="Controls"
+            if o.android==true { settings_request(out,{kind:"read",domain:"controls",page:"accessibility_hearing"}) }; settings_scroll(out,"controls_page")
+            return true
+        }
+        settings_language_reset(s,o,domain); return false
+    }
+    if e.kind=="input" && e.id==meta.prefix+"_query" { ui.draft=e.value; return true }
+    let ready=o.android==true && !s.pending
+    if e.kind=="click" || e.kind=="return" {
+        if e.id==meta.prefix+"_search" || e.id==meta.prefix+"_clear" || (e.kind=="return" && e.id==meta.prefix+"_query") {
+            if ready {
+                let draft=ui.draft
+                if e.id==meta.prefix+"_clear" { draft=""; settings_patch(out,"input",meta.prefix+"_query","") }
+                let query=draft.trim()
+                if settings_language_query(query,domain) { ui.draft=draft; ui.query=query; ui.offset=0; settings_language_load(s,o,out,domain) }
+            }
+            return true
+        }
+        if e.id==meta.prefix+"_refresh" { if ready { settings_language_enter(s,o,out,domain) }; return true }
+        if e.id==meta.prefix+"_native" {
+            if ready {
+                if domain=="app_language_ui" { let details=settings_selected_details(s,o); if details!=nil && details.exists && settings_has(details.actions,"Language") { settings_request(out,{kind:"app_action",target:details.target,action:"Language"}) } }
+                else { settings_request(out,{kind:"open",destination:"captions"}) }
+            }
+            return true
+        }
+        if e.id==meta.prefix+"_previous" || e.id==meta.prefix+"_next" {
+            let row=settings_language_observed(s,o,domain)
+            if ready && row!=nil {
+                let offset=settings_max(0,row.offset-meta.size)
+                if e.id==meta.prefix+"_next" { offset=row.offset+meta.size }
+                if offset<row.total { ui.offset=offset; settings_language_load(s,o,out,domain) }
+            }
+            return true
+        }
+    }
+    let i=0
+    while i<meta.size {
+        if e.id==meta.prefix+"_row_"+i {
+            let request=settings_language_candidate(s,o,domain,i)
+            if settings_consent_held(ui,e,request) {
+                if request.kind=="read" {
+                    ui.stack.push({read:settings_language_read(s,domain),draft:ui.draft,scroll:settings_or(s.context["scroll_y"],0)})
+                    ui.key=request.key; ui.parent=request.parent; ui.query=""; ui.draft=""; ui.offset=0; ui.waiting=true
+                    settings_patch(out,"input",meta.prefix+"_query","")
+                }
+                settings_request(out,request); settings_scroll(out,meta.scroll)
+            }
+            return true
+        }
+        i=i+1
+    }
+    return false
+}
+fn settings_language_level(level) { if level=="Region" { return "Regions" }; if level=="Numbering" { return "Numbering systems" }; return "Languages" }
+fn settings_language_reason(domain,row) {
+    if row==nil { if domain=="app_language_ui" { return "Waiting for Android language choices…" }; return "Waiting for Android caption languages…" }
+    if domain=="app_language_ui" {
+        for pair in [
+            ["None",""],["Locked","Unlock the device to change app language."],["AppMissing","This app is no longer installed."],
+            ["NotSupported","Android does not offer app language choices for this app."],
+            ["ServiceUnavailable","App language controls are unavailable on this installation. Android language settings remain available below."],
+            ["CatalogExpired","These language choices expired. Refresh to review the current choices."],
+            ["TargetChanged","This app or its language configuration changed. Refresh to review the current choices."],
+            ["CatalogLimit","Android’s language catalogue exceeds the supported size. Open Android language settings to continue."],
+            ["InvalidConfig","This app’s language configuration could not be read. Open Android language settings to continue."]
+        ] { if row.reason==pair[0] { return pair[1] } }
+    } else {
+        for pair in [["Ready",""],["Restricted","Unlock the device to change caption language."],["Unavailable","Caption language controls are unavailable on this installation."],["Changed","Caption language or its available choices changed. Refresh to review them."],["PageChanged","These language results changed. Refresh to return to the first page."]] { if row.status==pair[0] { return pair[1] } }
+    }
+    return "Unavailable"
+}
+fn settings_language_refresh(s,o,out) {
+    let ready=o.android==true && !s.pending
+    let details=settings_selected_details(s,o)
+    settings_enabled(out,"app_language_open",ready && details!=nil && details.exists)
+    settings_visible(out,"caption_language_open",s.page=="Controls" && s.controls_section=="AccessibilityHearing")
+    settings_enabled(out,"caption_language_open",ready)
+    let domain=settings_language_domain(s)
+    if domain=="" { return }
+    let ui=settings_language_ui(s,domain); let meta=settings_language_meta(domain); let row=settings_language_observed(s,o,domain)
+    let current="Current caption language: Unavailable"
+    if domain=="app_language_ui" {
+        current="Current language: Unavailable"
+        let label="App"
+        if s.context["app_target"]!=nil { label=s.context["app_target"] }
+        if details!=nil && details.label!=nil { label=details.label }
+        if row!=nil && row.label!=nil { label=row.label }
+        settings_text(out,"app_language_identity",label+"\n"+settings_or(s.context["app_target"],""))
+        if row!=nil && row.current!=nil {
+            current="Current language: System default"
+            if row.current.len()>0 { current="Current languages"; for language in row.current { current=current+"\n"+language.label+" ("+language.tag+")" }; nil }
+        }
+    } else if row!=nil && row.current!=nil {
+        current="Current caption language: System default"
+        if row.current!="" { current="Current caption language: "+row.current; if row.custom { current=current+" · Custom" } }
+    }
+    settings_text(out,meta.prefix+"_current",current); settings_text(out,meta.prefix+"_availability",settings_language_reason(domain,row))
+    let available=false; let kind="Languages"; let branch=""
+    if row!=nil {
+        if domain=="app_language_ui" { available=row.availability=="Available"; kind=settings_language_level(row.level); if row.parent_label!=nil { branch=" · "+row.parent_label } }
+        else { available=row.status=="Ready" }
+    }
+    let summary=""
+    if available { summary="No matching "+kind+branch; if row.total>0 { summary=kind+" "+(row.offset+1)+"–"+(row.offset+row.rows.len())+" of "+row.total+branch } }
+    settings_text(out,meta.prefix+"_summary",summary)
+    let hint=""; if ui.draft.trim()!=ui.query { hint="Search to apply filter edits." }
+    settings_text(out,meta.prefix+"_filter_hint",hint)
+    for suffix in ["search","clear","refresh"] { settings_enabled(out,meta.prefix+"_"+suffix,ready) }
+    let native=ready
+    if domain=="app_language_ui" { native=ready && details!=nil && details.exists && settings_has(details.actions,"Language") }
+    settings_enabled(out,meta.prefix+"_native",native)
+    settings_enabled(out,meta.prefix+"_previous",ready && available && row.offset>0)
+    settings_enabled(out,meta.prefix+"_next",ready && available && row.offset+row.rows.len()<row.total)
+    let i=0
+    while i<meta.size {
+        let id=meta.prefix+"_row_"+i; let choice=nil
+        if row!=nil && i<row.rows.len() { choice=row.rows[i] }
+        settings_visible(out,id,choice!=nil)
+        let request=settings_language_candidate(s,o,domain,i)
+        settings_enabled(out,id,request!=nil)
+        if choice!=nil {
+            let label=choice.label
+            if domain=="app_language_ui" {
+                if choice.secondary!=nil && choice.secondary!=label { label=label+"\n"+choice.secondary }
+                if choice.selected { label=label+" · Selected" }
+                if choice.kind=="Open" { label=label+" · Choose region or numbering" }
+            } else { if choice.locale!="" { label=label+"\n"+choice.locale }; if choice.selected { label=label+" · Selected" } }
+            settings_text(out,id,label)
+            if request!=nil { settings_patch(out,"semantic",id,meta.domain+":"+request.to_json()) }
+        }
+        i=i+1
+    }
+}

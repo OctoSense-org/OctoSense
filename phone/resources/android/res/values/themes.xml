@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keep Home's renderer and in-flight Settings drafts alive on locale or layout-direction
+         changes. MakepadActivity forwards configuration changes to registered app callbacks.
+         Existing mask also covers assets, font scale/weight, UI mode and display/input changes.
+         API 33 aapt lacks the assetsPaths flag name. -->
+    <integer name="octosense_home_config_changes">0xd0003fa4</integer>
+    <integer name="octosense_theme_config_changes">0xd0000680</integer>
+    <string name="octosense_wallpaper_style">Wallpaper &amp; style</string>
+    <string name="octosense_settings">OctoSense Settings</string>
+    <string name="octosense_wallpaper_style_summary">OctoSense themes, colors and appearance</string>
+</resources>

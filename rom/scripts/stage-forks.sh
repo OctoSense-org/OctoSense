@@ -1,6 +1,6 @@
 #!/bin/bash
-# On the host: put the OctoSense layer and the Quickstep and SystemUI forks into the
-# tree for a ROM build. Run only while no build is active.
+# On the host: put the OctoSense layer and the Quickstep, SystemUI and
+# PermissionController integrations into the tree. Run only while no build is active.
 #   stage-forks.sh <tree> [octosense-rom checkout]
 # The stagers refuse a tree whose fork files are neither pristine nor the expected
 # bytes, so an earlier staging (another palette, say) is reset to HEAD first.
@@ -24,9 +24,19 @@ reset_fork() { # <repo> <paths...>: drop earlier staged edits under the given pa
 }
 reset_fork "$TREE/frameworks/base" packages/SystemUI
 reset_fork "$TREE/packages/apps/Trebuchet" Android.bp octosense
+# Replace older staged Settings adapters before checking the new source bytes.
+# Keep unrelated Permission sources outside these integration-owned paths intact.
+reset_fork "$TREE/packages/modules/Permission" \
+    PermissionController/Android.bp \
+    PermissionController/AndroidManifest.xml \
+    PermissionController/src/com/android/permissioncontroller/octosense \
+    PermissionController/src/dev/makepad/octosense/roles \
+    PermissionController/src/dev/makepad/octosense/permissions
 bash "$ROM/scripts/apply-to-tree.sh" "$TREE"
 python3 "$HOME_SOURCE/android/platform-build/stage-quickstep.py" --tree "$TREE" --baseline-result "$BASELINE"
 python3 "$HOME_SOURCE/android/platform-build/stage-systemui.py" --tree "$TREE" --report "$TREE/out/octosense-rom/systemui-stage.json"
+python3 "$HOME_SOURCE/android/platform-build/stage-permissioncontroller.py" --tree "$TREE" --report "$TREE/out/octosense-rom/permissioncontroller-stage.json"
 python3 "$HOME_SOURCE/android/platform-build/stage-quickstep.py" --tree "$TREE" --baseline-result "$BASELINE" --verify
 python3 "$HOME_SOURCE/android/platform-build/stage-systemui.py" --tree "$TREE" --report "$TREE/out/octosense-rom/systemui-stage.json" --verify
+python3 "$HOME_SOURCE/android/platform-build/stage-permissioncontroller.py" --tree "$TREE" --report "$TREE/out/octosense-rom/permissioncontroller-stage.json" --verify
 echo "staged"
