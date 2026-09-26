@@ -23,15 +23,13 @@ sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
 from the same pinned OctoSense-System-Apps checkout
 (`.sources/system-apps/apps/appcard/app/app`).
 
-The runtime's Makepad (main `1d3d383e`) has the isolate controls App Hub
-requires, but not yet the contained script apps of makepad#30, so
-`home/runtime-patches.lock.json` names one patch,
-`patches/runtime/makepad-contained-apps.patch`. The lock records the exact
-patch, its originating Makepad commit, SHA-256 and resulting Git tree. The same
-patch also carries Settings accessibility, IME and input-protection fixes; setup
-applies it to the pinned checkout and leaves it staged, and `--check` accepts
-only that exact tree. `--check` always rejects
-staged, unstaged or untracked source changes.
+The runtime's Makepad (main `cd812acd`) includes the contained-app and isolate
+controls from makepad#30. `home/runtime-patches.lock.json` now records only the
+Settings overlay, `patches/runtime/makepad-settings.patch`, for Android input,
+accessibility and renderer integration. The old contained-app patch is removed.
+The lock records the pinned base, patch SHA-256 and resulting Git tree; setup
+applies it to the pinned checkout and leaves it staged. `--check` accepts only
+that exact tree and rejects additional staged, unstaged or untracked source changes.
 The separate Makepad/Octoscript repositories are dependencies, not vendored
 copies of the launcher. No mobile repository or sibling-worktree name is used.
 
