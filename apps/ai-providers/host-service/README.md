@@ -34,7 +34,11 @@ octosense_llm_service::register_with(
   thread: post to the UI thread).
 
 The bundle's manifest asks for `llm`; the shell packs `apps/ai-providers/bundle`
-like any system app (`system-apps.json`).
+like any system app (`system-apps.json`). App Hub's admission knows only the
+capabilities in `octosense_app_policy::KNOWN_CAPABILITIES` and refuses any
+other, so `llm` has to be added there (beside `mail`, OctoSense-App-Hub
+`crates/app-policy/src/manifest.rs`) before the app opens in a shell. The
+service serves `os.` apps only.
 
 ### A scanner over Makepad
 
