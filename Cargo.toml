@@ -56,6 +56,9 @@ makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 octosense-reference = { path = "apps/reference", optional = true }
 # The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
 # the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
+# Not shipped for now: strictly opt-in with `--features app-appcard`, on
+# every target (it is in neither `default`, `mobile-apps`, nor the native
+# mobile dependencies below).
 octosense-appcard = { path = "apps/appcard", optional = true }
 # App Hub, as every OctoSense shell links it (OctoSense-App-Hub
 # crates/app-hub-app): the native store module (`apphub`), the Card runner
@@ -83,7 +86,6 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-appcard = { path = "apps/appcard" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", default-features = false }
 
 [features]
@@ -93,7 +95,8 @@ default = ["app-hub"]
 # Also usable on desktop for testing the same embedded apps with --module.
 # Photos is the system app here; `app-photos` links Makepad's native Photos
 # module instead, for comparison (a linked module of the same id wins).
-mobile-apps = ["app-reference", "app-sheets", "app-appcard", "app-hub"]
+# AppCard is not among them: it ships only with `--features app-appcard`.
+mobile-apps = ["app-reference", "app-sheets", "app-hub"]
 # App Hub and the host services its system apps call.
 app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
 app-reference = ["dep:octosense-reference"]
@@ -101,7 +104,9 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
-# The AppCard module (one L0 weather card in a tile) linked in.
+# The AppCard module (the assistant in a tile, with the octos kernel) linked
+# in. Opt-in only, on desktop and native mobile alike: AppCard is not shipped
+# by default for now (it interfered with the other apps).
 app-appcard = ["dep:octosense-appcard"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
