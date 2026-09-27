@@ -51,6 +51,9 @@ in the bundled layout. An explicit input patch is distinct from a label update;
 observations cannot casually replace the active editor's text. Each request is
 decoded into a finite native operation and checked against current authority.
 No generic Android key/value, component, intent, Binder or shell API is added.
+The one Home-local request, `{kind:"open_app", app:"ai_providers"}`, names a
+member of a closed system-app set the host observed as present; the host opens
+it through the shell launcher, never through Android.
 
 The host imports fresh copies of the last committed state and event data for
 each transition. It validates the entire returned state, patch and request batch

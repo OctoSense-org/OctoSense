@@ -313,6 +313,14 @@ extra authentication remains native. No credentials or authenticator results
 are transported to the Octoscript module. Master/per-authority settings are
 confirmed by readback, while sync requests are explicitly asynchronous.
 
+AI providers, the first row on System → Accounts, opens Home's AI providers
+system app, where assistant providers, models and keys are managed. It is
+navigation only, identical in standalone Home and the ROM: the shell opens the
+app as its launcher icon does (a running instance comes forward), no Android
+page, permission or ROM service is involved, and Settings receives no provider
+data. The row is shown only when the build ships the app and links App Hub's
+Card runner (desktop builds included); otherwise it is hidden, never dead.
+
 Back preserves account/service pagination and list scroll. Theme changes and
 150% fonts preserve widget identity and selection. Returned lists cannot retarget
 a held button; the scoped Settings scroll handoff covers account and authority
