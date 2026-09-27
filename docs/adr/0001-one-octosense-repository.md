@@ -22,7 +22,7 @@ Measured on 2026-09-27 (ROM `main` 5498e5b, Desktop `main` 19514f1):
 - **Every internal change is a chain of pin PRs.** The shells pin System-Apps by commit (`native-apps.lock.json`), and System-Apps' host services and the shells must agree on one App Hub revision. Since 2026-09-26, 17 of the 54 PRs merged into these three repositories only moved pins. A kernel change took four PRs and up to three 40-minute ROM CI runs to reach both shells.
 - **One-App-Hub is kept by hand.** When the Mail service and the shells pinned different App Hub revisions, the build linked two copies and needed a `www.github.com` `[patch]` workaround.
 - **Infrastructure lives in the wrong place.** System-Apps is presented to app builders (including hackathon contestants) as "the first-party apps", yet holds the kernel service and the broker.
-- **Commit metadata leaked** personal names and addresses into the history of these and three more public repositories. A history rewrite of six public repositories is planned but deferred.
+- **Commit metadata leaked** a work email address into public history, from repository-local git identities on the development machine (removed on 2026-09-27). A scan of every OctoSense-org repository, octos and Rinx on 2026-09-27 found it only in OctoSense-ROM (5 fields, 2026-09-20), the org profile `.github` (3 commits, rewritten and force-pushed on 2026-09-27), five stale octos branches (deleted on 2026-09-27) and the private, archived OctoSense-mobile. App Hub, OctoScript-Makepad, makepad and System-Apps are clean.
 
 ## Decision
 
@@ -83,9 +83,7 @@ The external pin chain becomes: makepad → OctoScript-Makepad (runtime) → App
 
 The new layout is built by importing the three repositories with history, rewritten once so every commit carries the project's public identity (`ymote <151983+ymote@users.noreply.github.com>` or the author's own public address), using a mailmap. OctoSense-Desktop's own history is rewritten the same way during the import (it becomes OctoSense). This replaces the deferred force-push rewrite for these three repositories: after the import, **OctoSense-ROM and OctoSense-System-Apps are archived with a pointer and made private** (decided 2026-09-27).
 
-The rewrite exists only to remove personal names and addresses that leaked into commit metadata between about 2026-09-19 and 2026-09-26 (an empty global git identity; fixed). For the repositories that stay separate:
-- **makepad (fork): no rewrite.** It tracks upstream Makepad; rewriting would break upstream syncs and pull requests.
-- **OctoScript-Makepad and OctoSense-App-Hub: optional**, decided separately. If done, both together after the contest, with every runtime/App Hub pin redone and a GitHub Support request to purge cached pull-request refs (a rewrite alone does not remove commits from GitHub's pull-request history, existing clones or forks).
+The rewrite exists only to keep the work address out of public history (see Context). It is needed only for OctoSense-ROM, which this import covers; the repositories that stay separate (makepad, App Hub, OctoScript-Makepad) are clean and are **not rewritten**. A rewrite does not remove commits reachable from GitHub's pull-request refs, existing clones or forks; a GitHub Support request purges the cached pull-request refs of OctoSense-ROM and `.github` after the import.
 
 ### 6. System apps ship only inside the shells
 
@@ -139,4 +137,4 @@ Estimated effort: phases 0–2 about one week, phase 3 one to two weeks (the sha
 
 ## Open questions
 
-1. OctoScript-Makepad and OctoSense-App-Hub history rewrite: needed at all (only if the leaked work address must be removed), and if so after 2026-10-12?
+None.
