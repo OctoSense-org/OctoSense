@@ -7,15 +7,28 @@ Rules, looking at the request's messages and offered tools:
     result carries the system agent's answer, else "OK");
   - a user text "TELL_PEER:<slug>" with peer_send_input offered: send the peer
     "QUESTION_ME" ("TELL_PEER_HOLD:<slug>": "QUESTION_HOLD", never answered);
+  - "TELL_PEER_AGAIN:<slug>": send the peer "SECOND_INPUT";
+  - "TELL_PEER_SUDO:<slug>": send the peer "RUN_SUDO", on which the peer runs
+    a shell command that needs the person's approval;
+  - "APPROVE_PEER:<slug>": try to approve the peer's pending tool approval
+    with peer_respond (the kernel must refuse it for a host-owned peer);
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
 Prints its port, then serves until killed. Logs each decision to stderr.
 """
+import itertools
 import json
+import os
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# MOCK_CALL_IDS=unique gives every tool call a distinct id, as most providers
+# do. The default, "fixed", reuses "call_1" on every response, as scripted and
+# some OpenAI-compatible servers do; the kernel must not lose inputs to it.
+UNIQUE_IDS = os.environ.get("MOCK_CALL_IDS", "fixed") == "unique"
+CALL_SEQ = itertools.count(1)
 
 
 def text_of(message):
@@ -40,6 +53,17 @@ def decide(body):
         if m.get("role") == "user":
             last_user = text_of(m)
             break
+    again = re.search(r"TELL_PEER_AGAIN:([a-z0-9-]+)", last_user)
+    if again and "peer_send_input" in tools:
+        return {"tool": "peer_send_input", "args": {"slug": again.group(1), "message": "SECOND_INPUT"}}
+    sudo = re.search(r"TELL_PEER_SUDO:([a-z0-9-]+)", last_user)
+    if sudo and "peer_send_input" in tools:
+        return {"tool": "peer_send_input", "args": {"slug": sudo.group(1), "message": "RUN_SUDO"}}
+    if "RUN_SUDO" in last_user and "shell" in tools:
+        return {"tool": "shell", "args": {"command": "rm -rf ./approval-probe && echo APPROVED_RAN"}}
+    approve = re.search(r"APPROVE_PEER:([a-z0-9-]+)", last_user)
+    if approve and "peer_respond" in tools:
+        return {"tool": "peer_respond", "args": {"slug": approve.group(1), "decision": "approve"}}
     match = re.search(r"TELL_PEER(_HOLD)?:([a-z0-9-]+)", last_user)
     if match and "peer_send_input" in tools:
         message = "QUESTION_HOLD" if match.group(1) else "QUESTION_ME"
@@ -65,7 +89,8 @@ class Handler(BaseHTTPRequestHandler):
         last = (body.get("messages") or [{}])[-1]
         print("decision:", json.dumps(decision), "after:", text_of(last)[:300].replace("\n", " "), file=sys.stderr, flush=True)
         if "tool" in decision:
-            call = {"id": "call_1", "type": "function",
+            call_id = f"call_{next(CALL_SEQ)}" if UNIQUE_IDS else "call_1"
+            call = {"id": call_id, "type": "function",
                     "function": {"name": decision["tool"], "arguments": json.dumps(decision["args"])}}
             message = {"role": "assistant", "content": None, "tool_calls": [call]}
             finish = "tool_calls"

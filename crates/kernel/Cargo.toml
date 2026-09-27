@@ -35,7 +35,7 @@ octosense-llm-config = { path = "../../apps/ai-providers/config" }
 # source and rev as AppCard (apps/appcard/app/Cargo.toml); move them together.
 # A consumer workspace must also carry the `nix` patch AppCard documents.
 [target.'cfg(target_env = "ohos")'.dependencies]
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "552767dd50e16e08c6225a0cb252fe884e794084", default-features = false, features = ["api", "git", "ast"] }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "a6ea8505170735f191a12bb47629a6728415d417", default-features = false, features = ["api", "git", "ast"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
