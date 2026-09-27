@@ -80,7 +80,7 @@ octosense-news = { path = "apps/news", optional = true }
 # OCTOSENSE_SYSTEM_APPS (.cargo/config.toml -> system-apps.json).
 # Same rev as the Mail host service's octosense-appstore (OctoSense-System-Apps):
 # one App Hub source, so one host-service registry.
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "0d36f50b9f0fdfbd8247b5deb8da8baa53c83066", optional = true }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5", optional = true }
 # OctosMap: a map under a search bar, places, directions by car, on foot and
 # by bike, and turn-by-turn navigation.
 octosense-maps = { path = "apps/maps", optional = true }
@@ -93,7 +93,7 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "0d36f50b9f0fdfbd8247b5deb8da8baa53c83066" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5" }
 # Mail, News, Photos, Maps and Camera ship as contained script apps
 # (OctoSense-System-Apps apps/<name>/bundle/, chosen by system-apps.json,
 # ADR 0004); the `mail` host service keeps Mail's accounts and passwords.
