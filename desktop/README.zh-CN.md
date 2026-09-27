@@ -82,6 +82,7 @@ cargo run --release -p octosense
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
+| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell，默认在进程内运行（在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Process` 可改为独立进程）。助手只获得读取工具（`read_screen`、`read_scrollback`），不提供 `run`。在 macOS 上，Shell 的 PTY 辅助程序就是 `octosense` 本身，因此无需在旁边附带第二个二进制文件。 |
 | `app-photos` | 关 | 链接 Makepad 的原生 Photos 模块；它会替换同 id 的相册系统应用（用于对比）。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
@@ -187,7 +188,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 
 ### 开发者程序与目录
 
-`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
+`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Terminal 同时以链接方式提供（`app-terminal`，默认开启），在进程内打开；它在 `config/apps.json` 中的条目是可以切换成的独立进程形式。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
 
 目录查找顺序：给了 `--apps <file>` 就用它；否则若存在 `~/.octosense/apps.json` 就用它；否则用 `config/apps.json`。目录是一个 JSON 数组，每个条目选择一种启动目标：
 

@@ -60,6 +60,11 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
+    // Terminal is a system app on the desktop: a login shell in a tile. Its
+    // PTY helper on macOS is this executable (`--exec-pty`, handled in
+    // `Cx::pre_start`), so it needs no second binary shipped beside it.
+    #[cfg(feature = "app-terminal")]
+    out.push(&makepad_terminal::TERMINAL_MODULE);
     // The native Photos library, albums and Memories. Without it Photos is
     // the system app (`os.photos`); a linked module of the same id wins.
     #[cfg(feature = "app-photos")]
@@ -391,7 +396,7 @@ impl AppRegistry {
         // the person switched them.
         // (Rinx is Robrix renamed: under the old id the desktop fell through
         // to a process launch and failed with "binary not found: rinx".)
-        if matches!(id, "rinx" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+        if matches!(id, "rinx" | "finance" | "terminal") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
         // A system or installed app has no process form anywhere: the `card`
@@ -596,7 +601,8 @@ mod tests {
         let registry = AppRegistry::load(Path::new("/nonexistent/apps.splash"), &["--module".to_string(), "sheets".to_string(), "--module".to_string(), "files".to_string()]);
         // files has no linked module: the flag cannot make it one.
         assert_eq!(registry.hosting("files"), Hosting::Process);
-        assert_eq!(registry.hosting("terminal"), Hosting::Process);
+        #[cfg(not(feature = "app-terminal"))]
+        assert_eq!(registry.hosting("terminal"), Hosting::Process, "no linked terminal: a process");
         #[cfg(feature = "app-sheets")]
         {
             assert_eq!(registry.hosting("sheets"), Hosting::Module);
@@ -604,6 +610,23 @@ mod tests {
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
         }
+    }
+
+    /// Terminal is a system app: linked, it is in-process by default on every
+    /// target, and a person who switched it to a process keeps that.
+    #[cfg(feature = "app-terminal")]
+    #[test]
+    fn the_linked_terminal_is_a_module_unless_switched() {
+        let plain = AppRegistry::default();
+        assert!(plain.linked_ids().contains(&"terminal"));
+        assert_eq!(plain.hosting("terminal"), Hosting::Module, "a system app: in-process by default");
+        let mut switched = AppRegistry::default();
+        switched.overrides.insert("terminal".into(), Hosting::Process);
+        if crate::host::processes_available() {
+            assert_eq!(switched.hosting("terminal"), Hosting::Process, "the person's switch wins");
+        }
+        let term: &'static dyn AppModule = &makepad_terminal::TERMINAL_MODULE;
+        assert!(module_open(term, &card_row("terminal".into(), "Terminal".into(), Vec::new())).is_ok());
     }
 
     #[test]
