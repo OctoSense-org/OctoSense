@@ -1,0 +1,590 @@
+//! The `glance` host service (ADR 0002 §7–8, issue #63): apps publish
+//! cards to the glance screen; the shell stores them; the glance page (phone)
+//! and the glance panel (desktop) show them.
+//!
+//! | method | args | answer |
+//! |---|---|---|
+//! | `glance.publish` | `{card_id, source, data?, title, priority?, expires?, open?: {app, route?}}` | `{card_id, replaced, expires_at}` |
+//! | `glance.withdraw` | `{card_id}` | `{withdrawn}` |
+//! | `glance.list` | – | `[{card_id, title, priority, published_at, expires_at}]`, the caller's own cards |
+//!
+//! **Identity.** The publishing app is the CALLER: the Card runner's app id
+//! for a contained app (`ServiceCall::app_id`), the module id the shell
+//! hosts for a native one ([`request`]). It is never read from the
+//! arguments: an `app` argument that names anyone else is refused, and
+//! `open.app` must be the caller's own app (a card opens the app that
+//! published it). Cards are keyed by `(app, card_id)`: publishing the same
+//! id again replaces the card, and one app can neither see, replace nor
+//! withdraw another's.
+//!
+//! **Admission.** `source` is an L0 card (`octoscript_ui_l0::check_ui_l0`:
+//! valid at L0, or at L1 when the header declares it; L2 refused), realized
+//! against `data` (a map from the card's source names to their values —
+//! L0's no-facts rule: the card states nothing it did not get from `data`)
+//! and lowered through the Card runner's pipeline (glance_card.rs) before
+//! it is stored. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
+//! characters, `source` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route` ≤ 256.
+//! `priority` 0–100 (default 50). `expires` is seconds from now, 60 s to 7
+//! days (default 24 h); an expired card is dropped. Each app may publish
+//! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
+//! does a card the L0 check refuses) and keep [`PER_APP_CARDS`] cards; the
+//! store keeps at most [`STORE_CARDS`], dropping the least important.
+//!
+//! **Who may call.** Contained apps reach a service only through a granted
+//! capability family, and App Hub's pinned revision has no `glance`
+//! capability (`octosense_app_policy::KNOWN_CAPABILITIES`), so a manifest
+//! cannot ask for it yet and the isolate refuses `glance.*` before it gets
+//! here. Until App Hub publishes the capability, the service also admits
+//! only system apps (`os.*`) among contained callers.
+//! TODO(app-hub): add `glance` to App Hub's KNOWN_CAPABILITIES (with its
+//! store words), then lift the `os.*` restriction here.
+//!
+//! **The feed.** The system agent will rank and trim; until then the shell
+//! shows cards by priority, then recency, at most [`SHOWN_CARDS`]
+//! ([`shown`]).
+use serde_json::{json, Value};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+pub const CARD_ID_MAX: usize = 64;
+pub const TITLE_MAX: usize = 80;
+pub const SOURCE_MAX: usize = 16 * 1024;
+pub const DATA_MAX: usize = 32 * 1024;
+pub const ROUTE_MAX: usize = 256;
+pub const PRIORITY_DEFAULT: i64 = 50;
+pub const EXPIRES_DEFAULT_S: u64 = 24 * 3600;
+pub const EXPIRES_MIN_S: u64 = 60;
+pub const EXPIRES_MAX_S: u64 = 7 * 24 * 3600;
+/// Publishes per app per window.
+pub const RATE_LIMIT: usize = 6;
+pub const RATE_WINDOW_MS: u64 = 60_000;
+pub const PER_APP_CARDS: usize = 4;
+pub const STORE_CARDS: usize = 32;
+/// Cards the glance screen shows at once.
+pub const SHOWN_CARDS: usize = 6;
+
+/// Who is calling: the host decides, never the arguments.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Caller {
+    /// A contained app, by the manifest id the Card runner runs it under.
+    Contained(String),
+    /// A native module or the shell itself, by the id the shell hosts it as.
+    Native(String),
+}
+
+impl Caller {
+    pub fn app(&self) -> &str {
+        match self {
+            Caller::Contained(id) | Caller::Native(id) => id,
+        }
+    }
+    /// The launcher id that opens this app: a system app's short id
+    /// (`news` for `os.news`), anyone else's own.
+    pub fn launch_id(&self) -> &str {
+        let app = self.app();
+        app.strip_prefix("os.").unwrap_or(app)
+    }
+}
+
+/// One published card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlanceCard {
+    pub app: String,
+    pub card_id: String,
+    pub title: String,
+    pub priority: i64,
+    pub published_ms: u64,
+    pub expires_ms: u64,
+    /// The launcher id the tile opens, and the route inside it.
+    pub open_app: String,
+    pub route: Option<String>,
+    /// The lowered Splash body the tile draws (glance_card.rs).
+    pub body: Arc<str>,
+}
+
+impl GlanceCard {
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.app, self.card_id)
+    }
+}
+
+/// The published cards and the per-app publish history.
+#[derive(Default)]
+pub struct GlanceStore {
+    cards: Vec<GlanceCard>,
+    publishes: Vec<(String, VecDeque<u64>)>,
+}
+
+fn text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args.get(key).and_then(Value::as_str)
+}
+
+fn valid_card_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= CARD_ID_MAX && id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+/// The L0 admission: the checker's verdict at L0 (or a declared L1), never L2.
+pub fn check_level(source: &str) -> Result<(), String> {
+    let report = octoscript_ui_l0::check_ui_l0(source);
+    if report.level == octoscript_ui_l0::Level::L2 || !report.valid {
+        let why: Vec<String> = report.diagnostics.iter().take(3).map(|d| format!("{}:{}: {}", d.line, d.column, d.message)).collect();
+        let level = format!("{:?}", report.level);
+        return Err(format!("the card is not admissible at L0 (derived level {level}): {}", if why.is_empty() { "refused".into() } else { why.join("; ") }));
+    }
+    Ok(())
+}
+
+impl GlanceStore {
+    /// `glance.publish`, for `caller`, at `now_ms`.
+    pub fn publish(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
+        self.expire(now_ms);
+        let app = caller.app().to_string();
+        if let Caller::Contained(id) = caller {
+            if !id.starts_with("os.") {
+                return Err("glance is open to system apps only until App Hub grants a glance capability".into());
+            }
+        }
+        if let Some(claimed) = args.get("app") {
+            if claimed.as_str() != Some(app.as_str()) && claimed.as_str() != Some(caller.launch_id()) {
+                return Err("the publishing app is the caller; `app` cannot name another".into());
+            }
+        }
+        let card_id = text(args, "card_id").ok_or("card_id is required")?;
+        if !valid_card_id(card_id) {
+            return Err(format!("card_id must be 1-{CARD_ID_MAX} of [A-Za-z0-9._-]"));
+        }
+        let title = text(args, "title").ok_or("title is required")?.trim();
+        if title.is_empty() || title.chars().count() > TITLE_MAX {
+            return Err(format!("title must be 1-{TITLE_MAX} characters"));
+        }
+        let source = text(args, "source").ok_or("source (an L0 card) is required")?;
+        if source.len() > SOURCE_MAX {
+            return Err(format!("source is {} bytes, over the {SOURCE_MAX}-byte cap", source.len()));
+        }
+        let data = args.get("data").cloned().unwrap_or_else(|| json!({}));
+        if !data.is_object() {
+            return Err("data must be an object of source values".into());
+        }
+        let data_len = data.to_string().len();
+        if data_len > DATA_MAX {
+            return Err(format!("data is {data_len} bytes, over the {DATA_MAX}-byte cap"));
+        }
+        let priority = match args.get("priority") {
+            None | Some(Value::Null) => PRIORITY_DEFAULT,
+            Some(p) => p.as_i64().filter(|p| (0..=100).contains(p)).ok_or("priority must be an integer 0-100")?,
+        };
+        let expires_s = match args.get("expires") {
+            None | Some(Value::Null) => EXPIRES_DEFAULT_S,
+            Some(e) => e.as_u64().filter(|e| (EXPIRES_MIN_S..=EXPIRES_MAX_S).contains(e)).ok_or_else(|| format!("expires must be {EXPIRES_MIN_S}-{EXPIRES_MAX_S} seconds from now"))?,
+        };
+        let open = args.get("open").cloned().unwrap_or(Value::Null);
+        if let Some(target) = open.get("app") {
+            if target.as_str() != Some(app.as_str()) && target.as_str() != Some(caller.launch_id()) {
+                return Err("a card opens the app that published it".into());
+            }
+        }
+        let route = match open.get("route") {
+            None | Some(Value::Null) => None,
+            Some(r) => Some(r.as_str().filter(|r| r.len() <= ROUTE_MAX).ok_or_else(|| format!("open.route must be a string of at most {ROUTE_MAX} bytes"))?.to_string()),
+        };
+        let replacing = self.cards.iter().position(|c| c.app == app && c.card_id == card_id);
+        if replacing.is_none() && self.cards.iter().filter(|c| c.app == app).count() >= PER_APP_CARDS {
+            return Err(format!("{app} already has {PER_APP_CARDS} cards on the glance screen; withdraw or replace one"));
+        }
+        // Charged before the costly part (check, realize, lower), so a
+        // stream of refused cards is bounded too.
+        self.charge(&app, now_ms)?;
+        check_level(source)?;
+        let body: Arc<str> = crate::glance_card::lower(source, &data)?.into();
+        let card = GlanceCard {
+            app: app.clone(),
+            card_id: card_id.to_string(),
+            title: title.to_string(),
+            priority,
+            published_ms: now_ms,
+            expires_ms: now_ms + expires_s * 1000,
+            open_app: caller.launch_id().to_string(),
+            route,
+            body,
+        };
+        let expires_at = card.expires_ms;
+        if let Some(i) = replacing {
+            self.cards.remove(i);
+        }
+        self.cards.push(card);
+        if self.cards.len() > STORE_CARDS {
+            // The store is full: the least important, oldest card goes.
+            if let Some(i) = (0..self.cards.len()).min_by_key(|&i| (self.cards[i].priority, self.cards[i].published_ms)) {
+                self.cards.remove(i);
+            }
+        }
+        Ok(json!({"card_id": card_id, "replaced": replacing.is_some(), "expires_at": expires_at}))
+    }
+
+    /// Count one publish against `app`'s window, or refuse it.
+    fn charge(&mut self, app: &str, now_ms: u64) -> Result<(), String> {
+        let at = match self.publishes.iter().position(|(a, _)| a == app) {
+            Some(i) => i,
+            None => {
+                self.publishes.push((app.to_string(), VecDeque::new()));
+                self.publishes.len() - 1
+            }
+        };
+        let window = &mut self.publishes[at].1;
+        while window.front().is_some_and(|&t| now_ms.saturating_sub(t) >= RATE_WINDOW_MS) {
+            window.pop_front();
+        }
+        if window.len() >= RATE_LIMIT {
+            return Err(format!("rate limited: at most {RATE_LIMIT} publishes per {} s", RATE_WINDOW_MS / 1000));
+        }
+        window.push_back(now_ms);
+        Ok(())
+    }
+
+    /// `glance.withdraw`: the caller's own card only.
+    pub fn withdraw(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
+        self.expire(now_ms);
+        let card_id = text(args, "card_id").ok_or("card_id is required")?;
+        let before = self.cards.len();
+        self.cards.retain(|c| !(c.app == caller.app() && c.card_id == card_id));
+        Ok(json!({"withdrawn": self.cards.len() != before}))
+    }
+
+    /// `glance.list`: the caller's own cards.
+    pub fn list(&mut self, caller: &Caller, now_ms: u64) -> Value {
+        self.expire(now_ms);
+        Value::Array(
+            self.cards
+                .iter()
+                .filter(|c| c.app == caller.app())
+                .map(|c| json!({"card_id": c.card_id, "title": c.title, "priority": c.priority, "published_at": c.published_ms, "expires_at": c.expires_ms}))
+                .collect(),
+        )
+    }
+
+    /// Drop expired cards; true when any went.
+    pub fn expire(&mut self, now_ms: u64) -> bool {
+        let before = self.cards.len();
+        self.cards.retain(|c| c.expires_ms > now_ms);
+        self.cards.len() != before
+    }
+
+    /// What the glance screen shows: by priority, then recency, capped.
+    pub fn shown(&self, now_ms: u64, max: usize) -> Vec<GlanceCard> {
+        let mut cards: Vec<GlanceCard> = self.cards.iter().filter(|c| c.expires_ms > now_ms).cloned().collect();
+        order(&mut cards);
+        cards.truncate(max);
+        cards
+    }
+
+    pub fn len(&self) -> usize {
+        self.cards.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.cards.is_empty()
+    }
+}
+
+/// The glance order until the system agent ranks the feed: higher priority
+/// first, then the most recently published.
+pub fn order(cards: &mut [GlanceCard]) {
+    cards.sort_by(|a, b| b.priority.cmp(&a.priority).then(b.published_ms.cmp(&a.published_ms)));
+}
+
+// ------------------------------------------------------------- the service
+
+static STORE: Mutex<Option<GlanceStore>> = Mutex::new(None);
+/// Bumped whenever the published set changes, so a surface re-reads it only then.
+static GENERATION: AtomicU64 = AtomicU64::new(1);
+
+pub fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+fn with_store<R>(f: impl FnOnce(&mut GlanceStore) -> R) -> R {
+    let mut guard = STORE.lock().unwrap();
+    f(guard.get_or_insert_with(GlanceStore::default))
+}
+
+fn changed() {
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+    makepad_widgets::makepad_platform::SignalToUI::set_ui_signal();
+}
+
+/// The published set's generation: changes whenever a card is published,
+/// replaced, withdrawn or expires (expiry is noticed by [`shown`]).
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Relaxed)
+}
+
+/// Serve one `glance.*` call for `caller`: the same API for a contained app
+/// (through the Card runner's host service) and a native one.
+pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, String> {
+    let now = now_ms();
+    let method = service.strip_prefix("glance.").unwrap_or(service);
+    let result = with_store(|store| match method {
+        "publish" => store.publish(caller, args, now),
+        "withdraw" => store.withdraw(caller, args, now),
+        "list" => Ok(store.list(caller, now)),
+        other => Err(format!("glance has no method {other:?}")),
+    });
+    if result.is_ok() && method != "list" {
+        changed();
+    }
+    match &result {
+        Ok(_) if method == "publish" => makepad_widgets::log!("glance: {} published {}", caller.app(), args.get("card_id").and_then(Value::as_str).unwrap_or("?")),
+        Err(e) => makepad_widgets::log!("glance: {} {} refused: {e}", caller.app(), service),
+        _ => {}
+    }
+    result
+}
+
+/// Drop expired cards, bumping the generation when any went. Cheap: a
+/// surface calls it every frame it draws the glance screen.
+pub fn expire_now() {
+    if with_store(|store| store.expire(now_ms())) {
+        changed();
+    }
+}
+
+/// What the glance screen shows now (priority, then recency, capped).
+pub fn shown() -> Vec<GlanceCard> {
+    expire_now();
+    with_store(|store| store.shown(now_ms(), SHOWN_CARDS))
+}
+
+/// The `glance` family for the Card runner (App Hub's host services).
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub struct GlanceService;
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+impl octosense_appstore::services::HostService for GlanceService {
+    fn family(&self) -> &'static str {
+        "glance"
+    }
+    fn call(&mut self, call: octosense_appstore::services::ServiceCall, reply: octosense_appstore::services::Replier, _host: &mut dyn octosense_appstore::services::ServiceHost) {
+        // The identity is the runner's, never the app's arguments.
+        reply.send(request(&Caller::Contained(call.app_id.clone()), &call.service, &call.args));
+    }
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn register() {
+    octosense_appstore::services::register_host_service(Box::new(GlanceService));
+}
+
+// ---------------------------------------------------------------- the demo
+
+/// The sample News digest card (L0) and fake data, for trying the glance
+/// screen without the News agent (M3).
+pub fn demo_digest() -> (String, Value) {
+    const CARD: &str = include_str!("../resources/glance/news-digest.card");
+    let data = json!({
+        "status": {"message": "3 stories since this morning", "count": 3},
+        "stories": [
+            {"id": "s1", "title": "Open-source phone OS ships event-driven app agents", "publisher": "Techmeme"},
+            {"id": "s2", "title": "Rust 1.95 stabilises async closures in traits", "publisher": "HN"},
+            {"id": "s3", "title": "Makepad adds contained script isolates", "publisher": "Google News"}
+        ]
+    });
+    (CARD.to_string(), data)
+}
+
+/// `OCTOSENSE_GLANCE_DEMO=1`: publish the sample digest as `os.news`, once,
+/// at startup (a test path; nothing publishes it otherwise).
+pub fn publish_demo_if_asked() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if std::env::var("OCTOSENSE_GLANCE_DEMO").map(|v| v.is_empty() || v == "0").unwrap_or(true) {
+            return;
+        }
+        let (source, data) = demo_digest();
+        let args = json!({
+            "card_id": "digest", "title": "News digest", "source": source, "data": data,
+            "priority": 70, "open": {"app": "news"}
+        });
+        if let Err(e) = request(&Caller::Contained("os.news".into()), "glance.publish", &args) {
+            makepad_widgets::log!("glance: demo digest refused: {e}");
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn news() -> Caller {
+        Caller::Contained("os.news".into())
+    }
+    fn args(card_id: &str) -> Value {
+        let (source, data) = demo_digest();
+        json!({"card_id": card_id, "title": "News digest", "source": source, "data": data, "open": {"app": "news"}})
+    }
+
+    #[test]
+    fn the_caller_is_the_publisher_never_the_arguments() {
+        let mut store = GlanceStore::default();
+        let mut a = args("digest");
+        a["app"] = json!("os.mail");
+        assert!(store.publish(&news(), &a, 1_000).unwrap_err().contains("caller"));
+        let mut a = args("digest");
+        a["open"] = json!({"app": "mail"});
+        assert!(store.publish(&news(), &a, 1_000).unwrap_err().contains("opens the app that published it"));
+        let ok = store.publish(&news(), &args("digest"), 1_000).unwrap();
+        assert_eq!(ok["replaced"], false);
+        let shown = store.shown(1_000, SHOWN_CARDS);
+        assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.news", "news"));
+        // Another app sees, replaces and withdraws only its own cards.
+        let maps = Caller::Contained("os.maps".into());
+        assert_eq!(store.list(&maps, 1_000), json!([]));
+        assert_eq!(store.withdraw(&maps, &json!({"card_id": "digest"}), 1_000).unwrap()["withdrawn"], false);
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn contained_apps_outside_os_are_refused_until_the_capability_exists() {
+        let mut store = GlanceStore::default();
+        let err = store.publish(&Caller::Contained("com.example.news".into()), &args("d"), 0).unwrap_err();
+        assert!(err.contains("system apps only"), "{err}");
+        // A native module publishes through the same API.
+        assert!(store.publish(&Caller::Native("news".into()), &args("d"), 0).is_ok());
+    }
+
+    #[test]
+    fn l2_and_invalid_cards_are_refused() {
+        let mut store = GlanceStore::default();
+        let mut a = args("digest");
+        a["source"] = json!("# level: L2\nview root Col { TextBody(text: \"hi\") }\nui.label(\"x\").set_text(\"y\")\n");
+        let err = store.publish(&news(), &a, 0).unwrap_err();
+        assert!(err.contains("not admissible at L0"), "{err}");
+        a["source"] = json!("let x = 1 + 2\n");
+        assert!(store.publish(&news(), &a, 0).is_err());
+        assert!(check_level(&demo_digest().0).is_ok());
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn size_caps_hold() {
+        let mut store = GlanceStore::default();
+        let mut a = args("x".repeat(CARD_ID_MAX + 1).as_str());
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("card_id"));
+        a = args("bad id");
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("card_id"));
+        a = args("digest");
+        a["title"] = json!("t".repeat(TITLE_MAX + 1));
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("title"));
+        a = args("digest");
+        a["source"] = json!(format!("{}\n# {}", demo_digest().0, "x".repeat(SOURCE_MAX)));
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("source is"));
+        a = args("digest");
+        a["data"]["pad"] = json!("x".repeat(DATA_MAX));
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("data is"));
+        a = args("digest");
+        a["priority"] = json!(101);
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("priority"));
+        a = args("digest");
+        a["expires"] = json!(5);
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("expires"));
+        a = args("digest");
+        a["open"]["route"] = json!("r".repeat(ROUTE_MAX + 1));
+        assert!(store.publish(&news(), &a, 0).unwrap_err().contains("route"));
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn publishing_is_rate_limited_per_app() {
+        let mut store = GlanceStore::default();
+        for i in 0..RATE_LIMIT {
+            store.publish(&news(), &args("digest"), 1_000 + i as u64).unwrap();
+        }
+        assert!(store.publish(&news(), &args("digest"), 2_000).unwrap_err().contains("rate limited"));
+        // Another app has its own window.
+        let mut maps = args("digest");
+        maps["open"] = json!({"app": "maps"});
+        assert!(store.publish(&Caller::Contained("os.maps".into()), &maps, 2_000).is_ok());
+        // The window slides.
+        assert!(store.publish(&news(), &args("digest"), 1_000 + RATE_WINDOW_MS).is_ok());
+    }
+
+    #[test]
+    fn the_same_card_id_replaces_and_each_app_is_capped() {
+        let mut store = GlanceStore::default();
+        store.publish(&news(), &args("digest"), 0).unwrap();
+        let mut a = args("digest");
+        a["title"] = json!("Evening digest");
+        assert_eq!(store.publish(&news(), &a, 10).unwrap()["replaced"], true);
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.shown(10, 9)[0].title, "Evening digest");
+        for i in 1..PER_APP_CARDS {
+            store.publish(&news(), &args(&format!("c{i}")), 100_000 * i as u64).unwrap();
+        }
+        assert!(store.publish(&news(), &args("one-more"), 900_000).unwrap_err().contains("already has"));
+        // Replacing is still allowed at the cap.
+        assert!(store.publish(&news(), &args("digest"), 900_000).is_ok());
+    }
+
+    #[test]
+    fn cards_expire_and_withdraw() {
+        let mut store = GlanceStore::default();
+        let mut a = args("digest");
+        a["expires"] = json!(60);
+        let ok = store.publish(&news(), &a, 1_000).unwrap();
+        assert_eq!(ok["expires_at"], 61_000);
+        assert_eq!(store.list(&news(), 60_999).as_array().unwrap().len(), 1);
+        assert!(store.shown(61_000, 9).is_empty());
+        assert_eq!(store.list(&news(), 61_000), json!([]));
+        store.publish(&news(), &args("digest"), 70_000).unwrap();
+        assert_eq!(store.withdraw(&news(), &json!({"card_id": "digest"}), 70_001).unwrap()["withdrawn"], true);
+        assert!(store.is_empty());
+    }
+
+    #[test]
+    fn the_feed_orders_by_priority_then_recency_and_caps() {
+        let mut store = GlanceStore::default();
+        let apps = ["os.a", "os.b", "os.c", "os.d"];
+        let mut t = 0;
+        for app in apps {
+            for (i, p) in [10, 90].iter().enumerate() {
+                t += 1;
+                let mut a = args(&format!("c{i}"));
+                a["priority"] = json!(p);
+                a["open"] = Value::Null;
+                store.publish(&Caller::Contained(app.into()), &a, t).unwrap();
+            }
+        }
+        let shown = store.shown(t, SHOWN_CARDS);
+        assert_eq!(shown.len(), SHOWN_CARDS);
+        let keys: Vec<String> = shown.iter().map(GlanceCard::key).collect();
+        assert_eq!(&keys[..4], ["os.d/c1", "os.c/c1", "os.b/c1", "os.a/c1"]);
+        assert_eq!(&keys[4..], ["os.d/c0", "os.c/c0"]);
+    }
+
+    /// Through App Hub's host-service dispatch, as the Card runner calls it:
+    /// the identity is the runner's `app_id`, whatever the arguments say.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn the_card_runner_dispatch_carries_the_callers_identity() {
+        use octosense_appstore::services::{dispatch, take_replies_for, ServiceCall, ServiceHost};
+        struct NoSheets;
+        impl ServiceHost for NoSheets {
+            fn open_sheet(&mut self, _: String) {}
+            fn close_sheet(&mut self) {}
+        }
+        register();
+        let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, host_dir: std::env::temp_dir() };
+        let mut spoof = args("dispatch-test");
+        spoof["app"] = json!("os.mail");
+        dispatch(call("os.news", "glance.publish", spoof), 9101, 1, &mut NoSheets);
+        let refused = take_replies_for(&[9101]);
+        assert!(refused[0].2.as_ref().unwrap_err().contains("caller"), "{refused:?}");
+        dispatch(call("com.example.x", "glance.publish", args("dispatch-test")), 9102, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9102])[0].2.as_ref().unwrap_err().contains("system apps only"));
+        dispatch(call("os.news", "glance.publish", args("dispatch-test")), 9103, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9103])[0].2.is_ok());
+        assert!(shown().iter().any(|c| c.key() == "os.news/dispatch-test" && c.open_app == "news"));
+        dispatch(call("os.news", "glance.withdraw", json!({"card_id": "dispatch-test"})), 9104, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9104])[0].2.as_ref().unwrap().contains("true"));
+        assert!(!shown().iter().any(|c| c.key() == "os.news/dispatch-test"));
+    }
+}

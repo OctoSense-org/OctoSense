@@ -3,6 +3,7 @@ use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
 use crate::desktop::DrawDesktopChrome;
 use crate::mobile_shade::ShadeContentCache;
+use crate::glance_card::GlanceTiles;
 use crate::octosense::style::AppIconDraw;
 mod search;
 
@@ -355,6 +356,8 @@ pub struct PhoneSurface {
     #[live] android_icon: DrawImage,
     #[rust] pub icons: AppIconDraw,
     #[rust] pub hits: Vec<(Rect, PhoneHit)>,
+    /// The glance page's published cards, each a contained Splash tile (glance_card.rs).
+    #[rust] pub glance_tiles: GlanceTiles,
     /// The hits published as accessibility nodes this frame, in node order
     /// (an activation from the platform names a node by its index).
     #[rust] pub a11y_hits: Vec<PhoneHit>,
@@ -398,6 +401,7 @@ impl PhoneSurface {
         };
         Some(match hit {
             PhoneHit::App(id)|PhoneHit::TileApp(id)|PhoneHit::GroupApp(_,id)=>app_label(id),
+            PhoneHit::Glance(id)=>format!("{}, card at a glance",app_label(id)),
             PhoneHit::Card(client)=>format!("{}, recent app",state.clients.get(client).map(|c|c.display_title().to_string()).unwrap_or_default()),
             PhoneHit::Home=>"Home".into(),
             PhoneHit::Recents=>"Recents".into(),

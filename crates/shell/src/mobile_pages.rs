@@ -49,6 +49,37 @@ pub enum GlanceItem {
     Event { title: String, when: String },
     Fetch { title: String, progress: f64 },
     Note { title: String, body: String },
+    /// A card an app published through `glance.publish` (glance.rs), drawn
+    /// by the Card runner's pipeline at the tile size (glance_card.rs).
+    Card(GlanceCardItem),
+}
+
+/// A published card as the feed holds it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlanceCardItem {
+    /// The publishing app (the caller's id) and its card id: the dedupe key.
+    pub app: String,
+    pub card_id: String,
+    pub title: String,
+    pub priority: i64,
+    pub published_ms: u64,
+    /// The launcher id a tap opens, and the route inside it.
+    pub open_app: String,
+    pub route: Option<String>,
+    /// The lowered Splash body.
+    pub body: std::sync::Arc<str>,
+}
+
+impl GlanceCardItem {
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.app, self.card_id)
+    }
+}
+
+impl From<crate::glance::GlanceCard> for GlanceCardItem {
+    fn from(c: crate::glance::GlanceCard) -> Self {
+        GlanceCardItem { app: c.app, card_id: c.card_id, title: c.title, priority: c.priority, published_ms: c.published_ms, open_app: c.open_app, route: c.route, body: c.body }
+    }
 }
 
 impl GlanceItem {
@@ -60,40 +91,89 @@ impl GlanceItem {
             GlanceItem::Event { .. } => 78.0,
             GlanceItem::Fetch { .. } => 88.0,
             GlanceItem::Note { .. } => 104.0,
+            GlanceItem::Card(card) => crate::glance_card::tile_height(&card.key()),
         }
     }
     pub fn title(&self) -> &str {
         match self {
             GlanceItem::Weather { place, .. } => place,
             GlanceItem::Event { title, .. } | GlanceItem::Fetch { title, .. } | GlanceItem::Note { title, .. } => title,
+            GlanceItem::Card(card) => &card.title,
         }
     }
 }
 
-/// The glance page's data: what the shell itself knows (refreshed by
-/// `sync`) under whatever apps posted (newest first).
+/// The glance page's data: the cards apps published (`glance.publish`,
+/// glance.rs; by priority then recency, at most `glance::SHOWN_CARDS`),
+/// then other posted items (newest first), then what the shell itself
+/// knows (refreshed by `sync`). Ranking is the system agent's job later
+/// (ADR 0002 §8); until then this order holds.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GlanceFeed {
+    /// Only `GlanceItem::Card`s, in glance order.
+    cards: Vec<GlanceItem>,
     posted: Vec<GlanceItem>,
     shell: Vec<GlanceItem>,
+    /// The glance service's generation `cards` was read at.
+    generation: u64,
 }
 
 impl GlanceFeed {
-    /// An app posted a card: it goes on top, above everything older.
-    /// TODO(ai_bus): the AppCard module's ServiceExecutor delivers its cards
-    /// here (`glance.push` on the os service); nothing is wired yet.
+    /// Something was posted. A published card replaces the card with the
+    /// same `(app, card_id)`; anything else goes on top of the other posts.
     pub fn push(&mut self, item: GlanceItem) {
-        self.posted.insert(0, item);
+        match item {
+            GlanceItem::Card(card) => {
+                self.withdraw(&card.app, &card.card_id);
+                self.cards.push(GlanceItem::Card(card));
+                self.order_cards();
+            }
+            other => self.posted.insert(0, other),
+        }
+    }
+    /// A published card went away (withdrawn or expired).
+    pub fn withdraw(&mut self, app: &str, card_id: &str) {
+        self.cards.retain(|c| !matches!(c, GlanceItem::Card(c) if c.app == app && c.card_id == card_id));
+    }
+    /// Take the glance service's published set, when it changed.
+    pub fn sync_published(&mut self) {
+        crate::glance::expire_now();
+        let generation = crate::glance::generation();
+        if generation == self.generation {
+            return;
+        }
+        self.generation = generation;
+        self.replace_cards(crate::glance::shown().into_iter().map(GlanceCardItem::from).collect());
+    }
+    /// Replace every published card.
+    pub fn replace_cards(&mut self, cards: Vec<GlanceCardItem>) {
+        self.cards = cards.into_iter().map(GlanceItem::Card).collect();
+        self.order_cards();
+    }
+    fn order_cards(&mut self) {
+        let rank = |i: &GlanceItem| match i {
+            GlanceItem::Card(c) => (c.priority, c.published_ms),
+            _ => (i64::MIN, 0),
+        };
+        self.cards.sort_by(|a, b| rank(b).cmp(&rank(a)));
+        self.cards.truncate(crate::glance::SHOWN_CARDS);
+    }
+    /// The published cards shown, in glance order.
+    pub fn cards(&self) -> impl Iterator<Item = &GlanceCardItem> {
+        self.cards.iter().filter_map(|i| match i {
+            GlanceItem::Card(c) => Some(c),
+            _ => None,
+        })
     }
     /// Replace the shell's own cards, leaving posted ones alone.
     pub fn seed(&mut self, items: Vec<GlanceItem>) {
         self.shell = items;
     }
     pub fn items(&self) -> impl Iterator<Item = &GlanceItem> {
-        self.posted.iter().chain(self.shell.iter())
+        self.cards.iter().chain(self.posted.iter()).chain(self.shell.iter())
     }
     pub fn len(&self) -> usize {
-        self.posted.len() + self.shell.len()
+        self.cards.len() + self.posted.len() + self.shell.len()
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -367,6 +447,8 @@ pub fn sync(phone: &mut PhoneState, style: DesktopStyle, screen: Rect) {
     let date = if weekday.is_empty() { date } else { format!("{weekday}, {date}") };
     if phone.pages.date != date { phone.pages.date = date; }
     phone.pages.feed.seed(shell_cards(&ids, &phone.tiles));
+    // What apps published (glance.rs): re-read only when it changed.
+    phone.pages.feed.sync_published();
 }
 
 /// The cards the shell can fill in by itself. The weather tile's data lives
@@ -418,9 +500,23 @@ impl PhoneSurface {
             }
             y += h + GLANCE_GAP;
         }
+        let live: Vec<String> = phone.pages.feed.cards().map(GlanceCardItem::key).collect();
+        self.glance_tiles.sweep(cx, &live);
     }
 
     fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
+        if let GlanceItem::Card(card) = item {
+            // A published card draws itself (its own surface, lowered by the
+            // Card runner's pipeline) at the tile rect; the whole tile opens
+            // its app. Without App Hub's vocabulary a frosted title stands in.
+            if !crate::glance_card::CAN_RENDER {
+                self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
+                self.d.label_elided(cx, rect(r.pos.x + 16.0, r.pos.y + 16.0, r.size.x - 32.0, 22.0), true, 15.0, ink, HAlign::Left, &card.title);
+            }
+            self.glance_tiles.draw(cx, &card.key(), &card.body, r);
+            self.hits.push((r, PhoneHit::Glance(card.open_app.clone())));
+            return;
+        }
         self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
         let pad = 16.0;
         let inner = rect(r.pos.x + pad, r.pos.y + pad, r.size.x - pad * 2.0, r.size.y - pad * 2.0);
@@ -448,6 +544,8 @@ impl PhoneSurface {
                     self.rounded(cx, rect(track.pos.x, track.pos.y, (track.size.x * progress).max(8.0), 8.0), 4.0, alpha(accent, opacity));
                 }
             }
+            // Drawn above, before the frosted frame.
+            GlanceItem::Card(_) => {}
             GlanceItem::Note { title, body } => {
                 self.d.label_elided(cx, rect(inner.pos.x, inner.pos.y, inner.size.x, 22.0), true, 15.0, ink, HAlign::Left, title);
                 let lines = self.d.wrap(cx, false, 13.0, body, inner.size.x, 3);
@@ -718,5 +816,43 @@ mod tests {
         assert_eq!(p.glance_scroll, 0.0);
         p.scroll_glance(50.0, 5000.0);
         assert_eq!(p.glance_scroll, 0.0, "a tall screen shows everything");
+    }
+
+    fn card(app: &str, id: &str, priority: i64, published_ms: u64) -> GlanceItem {
+        GlanceItem::Card(GlanceCardItem {
+            app: app.into(), card_id: id.into(), title: format!("{app}/{id}"), priority, published_ms,
+            open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(),
+        })
+    }
+
+    #[test]
+    fn published_cards_lead_the_feed_by_priority_then_recency() {
+        let mut feed = GlanceFeed::default();
+        feed.seed(vec![GlanceItem::Note { title: "Apps".into(), body: "a".into() }]);
+        feed.push(GlanceItem::Event { title: "Standup".into(), when: "10:00".into() });
+        feed.push(card("os.news", "digest", 50, 10));
+        feed.push(card("os.maps", "commute", 50, 20));
+        feed.push(card("os.mail", "inbox", 80, 5));
+        let titles: Vec<&str> = feed.items().map(GlanceItem::title).collect();
+        assert_eq!(titles, ["os.mail/inbox", "os.maps/commute", "os.news/digest", "Standup", "Apps"]);
+        // The same (app, card_id) replaces: a newer digest moves up.
+        feed.push(card("os.news", "digest", 50, 30));
+        let titles: Vec<&str> = feed.items().map(GlanceItem::title).collect();
+        assert_eq!(&titles[..3], ["os.mail/inbox", "os.news/digest", "os.maps/commute"]);
+        assert_eq!(feed.cards().count(), 3);
+        // Another app's card of the same id is a different card.
+        feed.push(card("os.maps", "digest", 10, 40));
+        assert_eq!(feed.cards().count(), 4);
+        feed.withdraw("os.news", "digest");
+        assert!(feed.cards().all(|c| c.key() != "os.news/digest"));
+        assert_eq!(feed.cards().count(), 3);
+        // At most SHOWN_CARDS, the least important dropped.
+        for i in 0..10 {
+            feed.push(card("os.x", &format!("c{i}"), 60, 100 + i));
+        }
+        assert_eq!(feed.cards().count(), crate::glance::SHOWN_CARDS);
+        assert!(feed.cards().all(|c| c.priority >= 60));
+        // A card's height is its tile's (glance_card.rs), before it has drawn.
+        assert_eq!(card("os.y", "new", 1, 1).height(), crate::glance_card::TILE_DEFAULT_HEIGHT);
     }
 }

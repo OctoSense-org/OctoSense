@@ -144,7 +144,8 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 
 /// The services contained apps call through `host.request` (ADR 0004)
 /// that are not the assistant's, registered once, before the first system
-/// app can open: `mail` keeps accounts and passwords for the Mail app.
+/// app can open: `mail` keeps accounts and passwords for the Mail app;
+/// `glance` takes the cards apps publish to the glance screen (glance.rs).
 /// `mail_demo` in MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault
 /// instead (no keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
 /// `news` fetches News's feeds on a timer, with no model (ADR 0002), into
@@ -157,6 +158,7 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        crate::glance::register();
         let demo = std::env::var("MAKEPAD_APP_CONFIG")
             .ok()
             .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
