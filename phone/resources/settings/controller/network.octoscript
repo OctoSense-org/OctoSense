@@ -1,0 +1,114 @@
+// Network and Private DNS drafts. These never carry arbitrary Android setting keys.
+fn settings_network_init(s) { if s["network_ui"]==nil { s.network_ui={draft:nil,pressed:nil} } }
+fn settings_hostname_valid(input) {
+    let chars=input.to_chars(); if chars.len()==0 { return false }
+    let units=0; let labels=[]; let label=[]
+    for c in chars {
+        units=units+1; if c>65535 { units=units+1 }
+        if c==46 || c==12290 || c==65294 || c==65377 { labels.push(label); label=[] } else { label.push(c) }
+    }
+    if units>253 { return false }
+    if label.len()>0 { labels.push(label) }
+    if labels.len()==0 { return false }
+    for part in labels {
+        if part.len()==0 || part[0]==45 || part[part.len()-1]==45 { return false }
+        let ascii=true
+        for c in part { if c>127 { ascii=false }; if c!=45 && !text.is_alphanumeric(c) { return false } }
+        if ascii && part.len()>63 { return false }
+    }
+    let first=labels[labels.len()-1][0]
+    return first<48 || first>57
+}
+fn settings_network_permits(row,r) {
+    if row==nil || r==nil || row.key!=r.key { return false }
+    if r.operation=="Airplane" { return row.airplane.can_set && row.airplane.enabled!=nil }
+    if r.operation=="DataSaver" { return row.data_saver.can_set && row.data_saver.enabled!=nil }
+    if r.operation=="PrivateDns" {
+        if !row.dns.can_set || !settings_has(["Off","Automatic","Hostname"],r.mode) { return false }
+        if r.mode=="Hostname" { return r.hostname!=nil && settings_hostname_valid(r.hostname) }
+        return r.hostname==nil
+    }
+    return false
+}
+fn settings_network_candidate(s,o,id) {
+    let row=o.advanced_network; if row==nil { return nil }
+    let r=nil
+    if id=="network_airplane" && row.airplane.enabled!=nil { r={kind:"network",operation:"Airplane",key:row.key,enabled:!row.airplane.enabled} }
+    if id=="network_data_saver" && row.data_saver.enabled!=nil { r={kind:"network",operation:"DataSaver",key:row.key,enabled:!row.data_saver.enabled} }
+    if id=="network_dns_save" && s.network_ui.draft!=nil {
+        let d=s.network_ui.draft; let hostname=nil
+        if d.mode=="Hostname" { hostname=d.hostname }
+        r={kind:"network",operation:"PrivateDns",key:d.key,mode:d.mode,hostname:hostname}
+    }
+    if settings_network_permits(row,r) { return r }
+    return nil
+}
+fn settings_network_event(s,e,o,out) {
+    settings_network_init(s); let ui=s.network_ui
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; if e.kind!="pause" { ui.draft=nil }; return false }
+    if s.page!="AdvancedNetwork" { return false }
+    let row=o.advanced_network; let ready=o.android && !s.pending
+    if e.kind=="input" && e.id=="network_dns_hostname" { if ui.draft!=nil { ui.draft.hostname=e.value }; return true }
+    let candidate=settings_network_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; return candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" { return false }
+    if e.id=="network_dns_cancel" && !s.pending { ui.draft=nil; ui.pressed=nil; settings_blur(out); return true }
+    if !ready { return false }
+    if e.id=="network_refresh" { settings_request(out,{kind:"read",domain:"network"}); return true }
+    if e.id=="network_dns_edit" {
+        if row!=nil && row.dns.can_set { ui.draft={key:row.key,mode:row.dns.mode,hostname:settings_or(row.dns.hostname,"")}; settings_patch(out,"input","network_dns_hostname",ui.draft.hostname) }
+        return true
+    }
+    for pair in [["off","Off"],["automatic","Automatic"],["hostname","Hostname"]] {
+        if e.id=="network_dns_mode_"+pair[0] {
+            if ui.draft!=nil && row!=nil && row.key==ui.draft.key && row.dns.can_set { ui.draft.mode=pair[1] }
+            return true
+        }
+    }
+    if candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+        settings_request(out,candidate)
+        if e.id=="network_dns_save" { ui.draft=nil; settings_blur(out) }
+        return true
+    }
+    return false
+}
+fn settings_named(value,rows,fallback) { for row in rows { if row[0]==value { return row[1] } }; return fallback }
+fn settings_network_refresh(s,o,out) {
+    settings_network_init(s); if s.page!="AdvancedNetwork" { return }
+    let row=o.advanced_network; let draft=s.network_ui.draft; let ready=o.android && !s.pending
+    let connection="Waiting for network information…"; let dns="Private DNS information unavailable"; let unavailable="Waiting for Android…"
+    let airplane=nil; let saver=nil
+    if row!=nil {
+        airplane=row.airplane.enabled; saver=row.data_saver.enabled
+        let transport=settings_named(row.transport,[["Wifi","Wi-Fi"],["Mobile","Mobile"],["Ethernet","Ethernet"],["Vpn","VPN"],["Other","Other"]],"Unavailable")
+        let internet=settings_named(row.internet,[["Validated","Internet validated"],["CaptivePortal","Network sign-in required"],["LocalOnly","Internet not validated"]],"Internet state unavailable")
+        connection="Connection: "+settings_or(settings_apps_flag(row.connected,"Connected","Disconnected"),"Unavailable")+"\nTransport: "+transport+"\n"+internet
+        let mode=settings_named(row.dns.mode,[["Off","Off"],["Automatic","Automatic"],["Hostname","Provider hostname"]],"Unavailable")
+        let validation=settings_named(row.dns.validation,[["Validated","Validated"],["Unvalidated","Not validated"],["Offline","Offline"]],"Unavailable")
+        dns="Saved Private DNS mode: "+mode+"\nProvider hostname: "+settings_or(row.dns.hostname,"Not reported")+"\nEncrypted DNS active: "+settings_or(settings_apps_flag(row.dns.active,"On","Off"),"Unavailable")+"\nEncrypted DNS validation: "+validation
+        unavailable="Some controls are unavailable or restricted on this device."
+        if row.airplane.can_set && row.data_saver.can_set && row.dns.can_set { unavailable="" }
+    }
+    settings_text(out,"network_connection",connection); settings_text(out,"network_airplane",settings_bool_label("Airplane mode",airplane)); settings_text(out,"network_data_saver",settings_bool_label("Data Saver",saver))
+    settings_text(out,"network_availability",unavailable); settings_text(out,"network_dns_observed",dns); settings_enabled(out,"network_refresh",ready)
+    for id in ["network_airplane","network_data_saver","network_dns_save"] { settings_enabled(out,id,ready && settings_network_candidate(s,o,id)!=nil) }
+    settings_enabled(out,"network_dns_edit",ready && draft==nil && row!=nil && row.dns.can_set); settings_visible(out,"network_dns_editor",draft!=nil)
+    let current=draft!=nil && row!=nil && row.key==draft.key && row.dns.can_set
+    for pair in [["off","Off","Off"],["automatic","Automatic","Automatic"],["hostname","Hostname","Provider hostname"]] {
+        let label=pair[2]; if draft!=nil && draft.mode==pair[1] { label="✓ "+label }
+        settings_text(out,"network_dns_mode_"+pair[0],label); settings_enabled(out,"network_dns_mode_"+pair[0],ready && current)
+    }
+    settings_enabled(out,"network_dns_hostname",ready && current && draft.mode=="Hostname"); settings_enabled(out,"network_dns_cancel",!s.pending)
+    let note=""
+    if draft!=nil {
+        note="Unsaved Private DNS configuration."
+        if row!=nil && row.key!=draft.key { note="Network settings changed. Your draft is kept. Cancel and edit again to review the current values." }
+        else if !current { note="Editing is unavailable or restricted. Your draft is kept." }
+        else if draft.mode==nil { note="Choose a Private DNS mode." }
+        else if draft.mode=="Hostname" && !settings_hostname_valid(draft.hostname) { note="Enter a provider hostname without a URL, port, spaces or IP address." }
+    }
+    settings_text(out,"network_dns_note",note)
+}

@@ -1,0 +1,127 @@
+// Notification history and system sound catalog; all display content stays plain text.
+fn settings_media_init(s) { if s["sound_ui"]==nil { s.sound_ui={kind:"Ringtone",draft:nil,pressed:nil} } }
+fn settings_sound_observed(s,o) { if o.sounds!=nil && o.sounds.kind==s.sound_ui.kind { return o.sounds }; return nil }
+fn settings_sound_read(s,out,key,offset) { settings_request(out,{kind:"read",domain:"sounds",sound_type:text.lower(s.sound_ui.kind),key:key,offset:offset}) }
+fn settings_sound_candidate(s,o,save) {
+    let state=settings_sound_observed(s,o); let draft=s.sound_ui.draft
+    if state==nil || draft==nil || state.status!="Ready" || state.key!=draft.catalog || state.kind!=draft.kind || (save && !state.can_save) || (!save && !state.can_preview) { return nil }
+    let offered=false; for row in state.rows { if row.key==draft.row.key { offered=true } }
+    if !offered { return nil }
+    let operation="Preview"; if save { operation="Save" }
+    return {kind:"sounds",operation:operation,sound_type:text.lower(state.kind),key:state.key,target:draft.row.key}
+}
+fn settings_media_event(s,e,o,out) {
+    settings_media_init(s); let ui=s.sound_ui
+    if e.kind=="pause" { ui.pressed=nil; if s.page=="Sounds" && o.android { settings_request(out,{kind:"sound_stop"}) }; return false }
+    if e.kind=="entry" || e.kind=="navigate" || e.kind=="back" { ui.pressed=nil; ui.draft=nil; return false }
+    if s.page=="NotificationHistory" {
+        if e.kind!="click" || !o.android || s.pending || o.history_loading { return false }
+        if e.id=="history_refresh" { settings_request(out,{kind:"read",domain:"notification_history",key:nil,offset:0}); return true }
+        if e.id=="history_previous" || e.id=="history_next" {
+            let state=o.notification_history
+            if state!=nil && state.status=="Ready" {
+                let offset=state.offset
+                if e.id=="history_previous" { offset=offset-20 } else { offset=offset+20 }
+                if offset>=0 && offset<state.total { settings_request(out,{kind:"read",domain:"notification_history",key:state.key,offset:offset}); settings_scroll(out,"notification_history_page") }
+            }
+            return true
+        }
+        return false
+    }
+    if s.page!="Sounds" { return false }
+    let state=settings_sound_observed(s,o); let available=o.android && !o.sounds_loading
+    if e.kind=="click" {
+        for pair in [["sounds_ringtone","Ringtone"],["sounds_notification","Notification"],["sounds_alarm","Alarm"]] {
+            if e.id==pair[0] && o.android { settings_request(out,{kind:"sound_stop"}); ui.kind=pair[1]; ui.draft=nil; ui.pressed=nil; settings_sound_read(s,out,nil,0); return true }
+        }
+        if e.id=="sounds_cancel" || e.id=="sounds_stop" { if e.id=="sounds_cancel" { ui.draft=nil }; if o.android { settings_request(out,{kind:"sound_stop"}) }; return true }
+    }
+    if !available { return false }
+    let i=0
+    while i<20 {
+        if e.id=="sound_row_"+i {
+            let row=nil; if state!=nil && i<state.rows.len() { row=state.rows[i] }
+            if e.kind=="press" { ui.pressed=nil; if row!=nil { ui.pressed={id:e.id,catalog:state.key,target:row.key} }; return true }
+            if e.kind=="release" { ui.pressed=nil; return true }
+            if e.kind=="click" {
+                let held=ui.pressed; ui.pressed=nil
+                if row!=nil && state.key!=nil && held!=nil && held.id==e.id && held.catalog==state.key && held.target==row.key { ui.draft={kind:state.kind,catalog:state.key,row:row}; settings_scroll(out,"sounds_page") }
+                return true
+            }
+        }
+        i=i+1
+    }
+    if e.kind!="click" { return false }
+    if e.id=="sounds_preview" || e.id=="sounds_save" {
+        let save=e.id=="sounds_save"; let request=settings_sound_candidate(s,o,save)
+        if request!=nil { settings_request(out,request); if save { ui.draft=nil } }
+        return true
+    }
+    if e.id=="sounds_access" { if state!=nil && state.can_request_access { settings_request(out,{kind:"sounds",operation:"Access"}) }; return true }
+    if e.id=="sounds_refresh" { ui.draft=nil; settings_sound_read(s,out,nil,0); return true }
+    if e.id=="sounds_previous" || e.id=="sounds_next" {
+        if state!=nil && state.status=="Ready" {
+            let offset=state.offset; if e.id=="sounds_previous" { offset=offset-20 } else { offset=offset+20 }
+            if offset>=0 && offset<state.total { ui.draft=nil; settings_request(out,{kind:"sound_stop"}); settings_sound_read(s,out,state.key,offset); settings_scroll(out,"sounds_page") }
+        }
+        return true
+    }
+    return false
+}
+fn settings_history_refresh(s,o,out) {
+    let state=o.notification_history; let ready=o.android && !s.pending && !o.history_loading
+    let status="Notification history requires the OctoSense ROM service and notification access."; let count=""
+    if state!=nil {
+        status=settings_named(state.status,[["Ready","Saved notification previews. Refresh to load newer entries."],["Disabled","History is off. Turn it on in Notifications to start saving future notifications."],["Restricted","Unlock the owner account to view notification history."],["Expired","This history snapshot expired or was cleared. Refresh to load the current records."]],status)
+        if state.status=="Ready" {
+            count="No saved notifications."
+            if state.total>0 { count=""+(state.offset+1)+"–"+(state.offset+state.rows.len())+" of "+state.total; if state.truncated { count=count+" · older entries omitted" } }
+        }
+    }
+    if o.history_error!="" { status=o.history_error } else if o.history_loading && state==nil { status="Loading notification history…" }
+    settings_text(out,"history_status",status); settings_text(out,"history_count",count); settings_enabled(out,"history_refresh",ready)
+    settings_enabled(out,"history_previous",ready && state!=nil && state.status=="Ready" && state.offset>=20)
+    settings_enabled(out,"history_next",ready && state!=nil && state.status=="Ready" && state.offset+20<state.total)
+    let i=0
+    while i<20 {
+        let row=nil; let prefix="history_row_"+i; if state!=nil && i<state.rows.len() { row=state.rows[i] }
+        settings_visible(out,prefix,row!=nil); let source=""; let title=""; let body=""
+        if row!=nil {
+            source=row.package; if row.label!="" && row.label!=row.package { source=row.label+"\n"+row.package }
+            source=source+"\n"+row.when; if row.channel!="" { source=source+" · "+row.channel }
+            title=row.title; if title=="" { title="(No title)" }; body=row.text
+        }
+        settings_text(out,prefix+"_source",source); settings_text(out,prefix+"_title",title); settings_text(out,prefix+"_text",body); i=i+1
+    }
+}
+fn settings_sounds_refresh(s,o,out) {
+    let state=settings_sound_observed(s,o); let ui=s.sound_ui; let available=o.android && !o.sounds_loading
+    settings_text(out,"sounds_type",settings_named(ui.kind,[["Ringtone","Phone ringtone"],["Notification","Notification sound"],["Alarm","Default alarm sound"]],""))
+    let current="Current sound unavailable"; let status="Sounds are unavailable. Refresh to try again."; let count=""
+    if state!=nil {
+        if state.current=="Silent" { current="Current: Silent" }
+        if state.current=="Sound" { current="Current sound title unavailable"; if state.title!=nil { current="Current: "+state.title } }
+        status=settings_named(state.status,[["Ready","Select a sound, then Preview or Save. Preview uses the current volume and Do Not Disturb settings."],["Restricted","Sound controls are restricted or the owner account is locked."],["Expired","Sounds or their current selection changed. Refresh and select again."]],status)
+        if state.status=="Ready" { count=""+(state.offset+1)+"–"+(state.offset+state.rows.len())+" of "+state.total; if state.truncated { count=count+" · more sounds available in Android" } }
+    }
+    if o.sounds_error!="" { status=o.sounds_error } else if o.sounds_loading && state==nil { status="Loading sounds…" }
+    let draft="Select a row to review a sound."
+    if ui.draft!=nil { draft="Selected: "+ui.draft.row.title; if state==nil || state.key!=ui.draft.catalog || state.kind!=ui.draft.kind { draft=draft+" · review again after Refresh" } }
+    settings_text(out,"sounds_current",current); settings_text(out,"sounds_status",status); settings_text(out,"sounds_draft",draft); settings_text(out,"sounds_count",count)
+    settings_enabled(out,"sounds_refresh",available); settings_enabled(out,"sounds_previous",available && state!=nil && state.status=="Ready" && state.offset>=20); settings_enabled(out,"sounds_next",available && state!=nil && state.status=="Ready" && state.offset+20<state.total)
+    settings_enabled(out,"sounds_preview",available && settings_sound_candidate(s,o,false)!=nil); settings_enabled(out,"sounds_save",available && settings_sound_candidate(s,o,true)!=nil)
+    settings_enabled(out,"sounds_cancel",ui.draft!=nil); settings_enabled(out,"sounds_stop",o.android)
+    settings_visible(out,"sounds_access",state!=nil && state.can_request_access); settings_enabled(out,"sounds_access",available && state!=nil && state.can_request_access)
+    let i=0
+    while i<20 {
+        let row=nil; let id="sound_row_"+i; if state!=nil && i<state.rows.len() { row=state.rows[i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,available && row!=nil); let label=""
+        if row!=nil { label=row.title; if row.selected { label=label+" · Current" }; settings_patch(out,"semantic",id,"sound:"+state.key+":"+row.key) }
+        settings_text(out,id,label); i=i+1
+    }
+}
+fn settings_media_refresh(s,o,out) {
+    settings_media_init(s)
+    if s.page=="NotificationHistory" { settings_history_refresh(s,o,out) }
+    if s.page=="Sounds" { settings_sounds_refresh(s,o,out) }
+}

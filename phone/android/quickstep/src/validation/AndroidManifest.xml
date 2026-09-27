@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries><package android:name="com.android.deskclock" /></queries>
+    <instrumentation android:name="dev.makepad.octosense.quickstep.TransitionInstrumentation"
+        android:targetPackage="dev.makepad.octosense.quickstep" android:functionalTest="true" />
+</manifest>

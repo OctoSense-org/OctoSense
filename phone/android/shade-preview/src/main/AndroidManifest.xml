@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Fixture content and app-owned View.draw captures only; no bridge access. -->
+    <application android:label="OctoSense design validation" android:allowBackup="false" android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name="dev.makepad.octosense.quickstep.ShadeDesignActivity"
+            android:exported="false" />
+        <activity android:name="dev.makepad.octosense.quickstep.GlobalShadeSettingsActivity"
+            android:exported="false" />
+    </application>
+    <instrumentation android:name="dev.makepad.octosense.quickstep.ShadeDesignInstrumentation"
+        android:targetPackage="dev.makepad.octosense.shadepreview" />
+</manifest>

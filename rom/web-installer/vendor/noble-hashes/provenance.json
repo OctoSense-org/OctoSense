@@ -1,0 +1,14 @@
+{
+  "package": "@noble/hashes",
+  "version": "2.4.0",
+  "source": "https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz",
+  "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==",
+  "files": {
+    "_md.js": "60cf3010fda89e3e4d3f0e7ff1ce249e9c467f34b4fd41b6fd6101d9f69be763",
+    "_u64.js": "b09da8c07fe8187c07649494cdb7cd0bcf13df90b506a9473d19e4d5f8c2e102",
+    "sha2.js": "471746bba6ec4c6238ca41358d1d3b40b6ff31cf3363f0b4d550c649c1a8e83b",
+    "utils.js": "037ad49adb78168b6b699598fd33f85f7877456b1d28b4d032e2a1a16807947c"
+  },
+  "license": "MIT",
+  "purpose": "Incremental full-image SHA-256 in the download worker; files copied without changes."
+}

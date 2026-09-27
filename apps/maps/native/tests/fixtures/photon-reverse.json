@@ -1,0 +1,36 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "osm_type": "W",
+    "osm_id": 416901142,
+    "osm_key": "highway",
+    "osm_value": "primary",
+    "type": "street",
+    "name": "East Santa Clara Street",
+    "district": "Horace Mann",
+    "city": "San Jose",
+    "county": "Santa Clara",
+    "state": "California",
+    "country": "United States",
+    "postcode": "95172",
+    "countrycode": "US",
+    "extent": [
+     -121.8865836,
+     37.3381981,
+     -121.8863155,
+     37.3380697
+    ]
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.8864495,
+     37.3381339
+    ]
+   }
+  }
+ ]
+}

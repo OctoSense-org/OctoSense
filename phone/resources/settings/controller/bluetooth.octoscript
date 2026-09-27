@@ -1,0 +1,134 @@
+// Bluetooth adapter name drafts, discovery, pairing and reviewed forget/sharing.
+fn settings_bt_init(s) { if s["bt_ui"]==nil { s.bt_ui={nearby:false,offset:0,selected:nil,forget:nil,pressed:nil,name:"",name_seen:nil,dirty:false} } }
+fn settings_bt_valid_name(name) {
+    if name.trim()=="" || name.len()>248 { return false }
+    for c in name.to_chars() { if c<32 || (c>=127 && c<=159) { return false } }
+    return true
+}
+fn settings_bt_rows(s,o) {
+    let rows=[]
+    if o.bluetooth!=nil { for row in o.bluetooth.devices { if (s.bt_ui.nearby && row.nearby) || (!s.bt_ui.nearby && settings_has(["Bonded","Bonding"],row.bond)) { rows.push(row) } } }
+    return rows
+}
+fn settings_bt_selected(s,o) { if o.bluetooth!=nil { for row in o.bluetooth.devices { if row.target==s.bt_ui.selected { return row } } }; return nil }
+fn settings_bt_name(row) { if row.name!=nil && row.name!="" { return row.name }; return settings_or(row.address,"Unnamed Bluetooth device") }
+fn settings_bt_bond(value) { return settings_named(value,[["None","Not paired"],["Bonding","Pairing…"],["Bonded","Paired"]],"Pairing state unavailable") }
+fn settings_bt_connection(value) { return settings_named(value,[["Connected","Connected"],["Connecting","Connecting…"],["Disconnecting","Disconnecting…"],["Disconnected","Disconnected"]],"Connection unavailable") }
+fn settings_bt_candidate(s,o,id) {
+    let state=o.bluetooth; let ui=s.bt_ui; if state==nil { return nil }
+    if id=="bt_enabled" && settings_has(["On","Off"],state.adapter.state) && settings_has(state.capabilities,"Toggle") { return {kind:"bluetooth",operation:"Enabled",enabled:state.adapter.state=="Off"} }
+    if id=="bt_scan" && state.adapter.state=="On" && settings_has(state.capabilities,"Scan") { return {kind:"bluetooth",operation:"Scan",enabled:true} }
+    if id=="bt_stop_scan" && state.adapter.discovering==true && settings_has(state.capabilities,"StopScan") { return {kind:"bluetooth",operation:"Scan",enabled:false} }
+    if id=="bt_access" && settings_has(state.capabilities,"RequestAccess") { return {kind:"bluetooth",operation:"Access"} }
+    if id=="bt_name_save" && ui.dirty && state.adapter.name!=nil && settings_has(state.capabilities,"Rename") && settings_bt_valid_name(ui.name) { return {kind:"bluetooth",operation:"Name",name:ui.name} }
+    let row=settings_bt_selected(s,o)
+    if row!=nil && s.page=="BluetoothDevice" {
+        for pair in [["bt_pair","Pair"],["bt_cancel_pair","CancelPair"],["bt_connect","Connect"],["bt_disconnect","Disconnect"],["bt_forget","Forget"],["bt_forget_confirm","Forget"]] {
+            if id==pair[0] && settings_has(row.actions,pair[1]) {
+                if id=="bt_forget_confirm" && ui.forget!=row.target { return nil }
+                return {kind:"bluetooth",operation:"Device",target:row.target,action:pair[1]}
+            }
+        }
+        for pair in [["phonebook","Phonebook"],["messages","Messages"]] {
+            let sharing=row[pair[0]]
+            for value in ["Ask","Allow","Deny"] {
+                if id=="bt_"+pair[0]+"_"+text.lower(value) && sharing.value!=value && settings_has(sharing.options,value) { return {kind:"bluetooth",operation:"Sharing",target:row.target,sharing:pair[1],value:value} }
+            }
+        }
+    }
+    return nil
+}
+fn settings_bt_row(s,o,id) { let rows=settings_bt_rows(s,o); let i=0; while i<20 { if id=="bt_row_"+i && s.bt_ui.offset+i<rows.len() { return rows[s.bt_ui.offset+i] }; i=i+1 }; return nil }
+fn settings_bt_event(s,e,o,out) {
+    settings_bt_init(s); let ui=s.bt_ui; let state=o.bluetooth
+    let rows=settings_bt_rows(s,o); if ui.offset>0 && ui.offset>=rows.len() { ui.offset=0; settings_scroll(out,"bt_page") }
+    let selected=settings_bt_selected(s,o); if selected==nil || !settings_has(selected.actions,"Forget") { ui.forget=nil }
+    if state!=nil && state.adapter.name!=nil {
+        let name=state.adapter.name
+        if !ui.dirty && ui.name_seen!=name { ui.name=name; settings_patch(out,"input","bt_name",name) }
+        else if ui.name==name { ui.dirty=false }
+        ui.name_seen=name
+    }
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; if e.kind!="pause" { ui.forget=nil }; return false }
+    if s.page!="Bluetooth" && s.page!="BluetoothDevice" { return false }
+    if e.kind=="input" && e.id=="bt_name" { ui.name=e.value; ui.dirty=ui.name!=ui.name_seen; return true }
+    let row=settings_bt_row(s,o,e.id); let candidate=settings_bt_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,target:nil,request:candidate}; if row!=nil { ui.pressed.target=row.target }; return row!=nil || candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" || s.pending { return false }
+    if e.id=="bt_forget_cancel" { ui.forget=nil; return true }
+    if s.page=="Bluetooth" {
+        if e.id=="bt_name_cancel" {
+            if state!=nil && state.adapter.name!=nil { ui.name=state.adapter.name; ui.name_seen=ui.name; ui.dirty=false; settings_patch(out,"input","bt_name",ui.name) }
+            return true
+        }
+        if e.id=="bt_paired_tab" || e.id=="bt_nearby_tab" { ui.nearby=e.id=="bt_nearby_tab"; ui.offset=0; ui.pressed=nil; settings_scroll(out,"bt_page"); return true }
+        if e.id=="bt_previous" || e.id=="bt_next" {
+            if e.id=="bt_previous" { ui.offset=settings_max(0,ui.offset-20) } else if ui.offset+20<rows.len() { ui.offset=ui.offset+20 }
+            ui.pressed=nil; settings_scroll(out,"bt_page"); return true
+        }
+        if row!=nil && o.android {
+            let held=ui.pressed; ui.pressed=nil
+            if held!=nil && (held.id!=e.id || held.target!=row.target) { return true }
+            ui.selected=row.target; ui.forget=nil; s.page="BluetoothDevice"; settings_scroll(out,"bt_device_page"); return true
+        }
+    }
+    if !o.android { return false }
+    if e.id=="bt_refresh" || e.id=="bt_device_refresh" { settings_request(out,{kind:"read",domain:"bluetooth"}); return true }
+    if candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+        if e.id=="bt_forget" { ui.forget=candidate.target } else { settings_request(out,candidate); ui.forget=nil }
+        return true
+    }
+    return false
+}
+fn settings_bt_refresh(s,o,out) {
+    settings_bt_init(s); if s.page!="Bluetooth" && s.page!="BluetoothDevice" { return }
+    let state=o.bluetooth; let ui=s.bt_ui; let ready=o.android && !s.pending
+    let adapter="Unavailable"; let discovery="Discovery state unavailable"; let name="Unavailable"; let unavailable=""
+    if state!=nil {
+        adapter=settings_named(state.adapter.state,[["On","On"],["Off","Off"],["TurningOn","Turning on…"],["TurningOff","Turning off…"],["Unsupported","Not supported"]],"Unavailable")
+        if state.adapter.discovering==true { discovery="Discovering devices…" }; if state.adapter.discovering==false { discovery="Discovery stopped. Scan to look for nearby devices." }
+        name=settings_or(state.adapter.name,"Unavailable")
+        if !state.paired_available { unavailable="Paired device information is unavailable. Turn Bluetooth on and check Nearby devices permission.\n" }
+        if !state.scan_available { unavailable=unavailable+"Nearby device information is unavailable. Android may require Nearby devices or Location access." }
+    }
+    settings_text(out,"bt_enabled","Bluetooth: "+adapter); settings_text(out,"bt_scan_state",discovery); settings_text(out,"bt_name_observed","Current name: "+name)
+    settings_text(out,"bt_availability",unavailable.trim())
+    let note=""; if ui.dirty { note="Unsaved name"; if !settings_bt_valid_name(ui.name) { note="Enter a shorter, nonblank name without line breaks." } }
+    settings_text(out,"bt_name_note",note)
+    for id in ["bt_enabled","bt_scan","bt_stop_scan","bt_access","bt_name_save"] { settings_enabled(out,id,ready && settings_bt_candidate(s,o,id)!=nil) }
+    for id in ["bt_refresh","bt_device_refresh"] { settings_enabled(out,id,ready) }
+    settings_visible(out,"bt_access",state!=nil && settings_has(state.capabilities,"RequestAccess")); settings_enabled(out,"bt_name_cancel",!s.pending && ui.dirty && state!=nil && state.adapter.name!=nil)
+    let paired="✓ Paired"; let nearby="Nearby"; if ui.nearby { paired="Paired"; nearby="✓ Nearby" }
+    settings_text(out,"bt_paired_tab",paired); settings_text(out,"bt_nearby_tab",nearby)
+    for id in ["bt_paired_tab","bt_nearby_tab"] { settings_enabled(out,id,!s.pending) }
+    let rows=settings_bt_rows(s,o); let summary="Device list unavailable."
+    if state!=nil && ((ui.nearby && state.scan_available) || (!ui.nearby && state.paired_available)) { summary="No paired devices reported."; if ui.nearby { summary="No nearby devices reported." } }
+    if rows.len()>0 { summary="Devices "+(ui.offset+1)+"–"+settings_min(ui.offset+20,rows.len())+" of "+rows.len(); if state.truncated { summary=summary+" (limited inventory)" } }
+    settings_text(out,"bt_list_summary",summary); settings_enabled(out,"bt_previous",!s.pending && ui.offset>0); settings_enabled(out,"bt_next",!s.pending && ui.offset+20<rows.len())
+    let i=0
+    while i<20 {
+        let row=nil; let id="bt_row_"+i; if ui.offset+i<rows.len() { row=rows[ui.offset+i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,ready && row!=nil)
+        if row!=nil { settings_text(out,id,settings_bt_name(row)+"\n"+settings_bt_bond(row.bond)+" · "+settings_bt_connection(row.connection)); settings_patch(out,"semantic",id,"bluetooth:"+row.target) }
+        i=i+1
+    }
+    let row=settings_bt_selected(s,o); let identity="This device is no longer in the current observation."; let details=""
+    if row!=nil {
+        identity=settings_bt_name(row)
+        let kind=settings_named(row.kind,[["Audio","Audio"],["Computer","Computer"],["Phone","Phone"],["Input","Input device"],["Wearable","Wearable"],["Imaging","Imaging"],["Other","Other"]],"Unknown device type")
+        let transport=settings_named(row.transport,[["Classic","Classic"],["Le","Low Energy"],["Dual","Classic / Low Energy"]],"Unknown transport")
+        let age="Unavailable"; if row.last_seen_age_ms!=nil { let n=row.last_seen_age_ms; if n.is_string() { n=n.to_f64() }; age=""+mod.math.floor(n/1000)+" seconds ago" }
+        details=settings_bt_bond(row.bond)+"\nConnection: "+settings_bt_connection(row.connection)+"\nType: "+kind+"\nTransport: "+transport+"\nAddress: "+settings_or(row.address,"Unavailable")+"\nNearby: "+settings_apps_flag(row.nearby,"Yes","Not recently observed")+"\nLast seen: "+age
+    }
+    settings_text(out,"bt_device_identity",identity); settings_text(out,"bt_device_details",details)
+    for id in ["bt_pair","bt_cancel_pair","bt_connect","bt_disconnect","bt_forget","bt_forget_confirm"] { settings_enabled(out,id,ready && settings_bt_candidate(s,o,id)!=nil) }
+    settings_visible(out,"bt_forget_confirmation",ui.forget!=nil && row!=nil); settings_enabled(out,"bt_forget_cancel",!s.pending)
+    for pair in [["phonebook","Contact sharing"],["messages","Message sharing"]] {
+        let value="Unavailable"; if row!=nil { value=settings_or(row[pair[0]].value,"Unavailable") }
+        settings_text(out,"bt_"+pair[0]+"_value",pair[1]+": "+value)
+        for option in ["ask","allow","deny"] { let id="bt_"+pair[0]+"_"+option; settings_enabled(out,id,ready && settings_bt_candidate(s,o,id)!=nil) }
+    }
+}

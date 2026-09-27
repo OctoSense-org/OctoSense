@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.settingsa11yfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35"/>
+    <queries><package android:name="dev.makepad.octosense"/><package android:name="android"/><package android:name="com.android.settings"/></queries>
+    <application android:label="Settings accessibility validation">
+        <activity android:name=".SettingsRouteProbeActivity" android:exported="true" android:excludeFromRecents="true"/>
+    </application>
+    <instrumentation android:name=".SettingsAccessibilityProbe" android:targetPackage="dev.makepad.octosense.settingsa11yfixture" android:label="Settings accessibility validation"/>
+</manifest>
