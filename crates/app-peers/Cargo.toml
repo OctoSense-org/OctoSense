@@ -1,0 +1,50 @@
+# octosense-app-peers — host-owned octos app peers (Rinx ADR 0007).
+#
+# An OctoSense shell knows from a native module's declared capabilities that
+# it needs the assistant. For each authorized app it creates or resumes ONE
+# octos peer owned by the shell's system agent, and injects a scoped service
+# handle into the module at creation. The app gets request contexts bound to
+# its peer (one per client instance, e.g. a Rinx mini app), never raw kernel
+# protocol, a kernel of its own or provider credentials.
+#
+# - default (`contract`): the service contract an app consumes and the
+#   creation-time injection handoff. serde_json only, so a hosted app links no
+#   runtime.
+# - `broker`: the implementation over UI Protocol frames (peer/prepare with a
+#   host binding, peer/context/open|close, lease checks on every request,
+#   event routing, stale-reply dropping).
+# - `octos-core`: the broker over the shell's kernel (`octosense-octos-core`),
+#   for shells and for a standalone app that owns its local runtime.
+# - `ws`: the broker over an explicit remote octos server (WebSocket).
+[package]
+name        = "octosense-app-peers"
+version     = "0.1.0"
+edition     = "2021"
+license     = "Apache-2.0"
+authors     = ["octos-app contributors"]
+description = "Host-owned octos app peers: the scoped assistant service an OctoSense shell injects into native apps, and its broker"
+publish     = false
+
+[workspace]
+
+[features]
+default = []
+broker = ["dep:tokio", "dep:log", "dep:uuid"]
+octos-core = ["broker", "dep:octosense-octos-core"]
+ws = ["broker", "dep:tokio-tungstenite", "dep:futures-util", "dep:url"]
+
+[dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
+log = { version = "0.4", optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+octosense-octos-core = { path = "../octos-core", optional = true }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
+url = { version = "2", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[lints.clippy]
+result_large_err = "allow"

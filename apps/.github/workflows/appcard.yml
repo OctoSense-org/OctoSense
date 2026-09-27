@@ -1,0 +1,93 @@
+name: AppCard
+
+# The AppCard assistant runtime (apps/appcard/): prepare the locked
+# Octoscript-Makepad runtime beside the repository, run the runtime-lock
+# tests, clippy the app crates, and check the Cargo graph has one Makepad.
+# Script apps under apps/<name>/bundle/ are not built here; AppCard links
+# apps/ai-providers/config and the shell's octos kernel (crates/octos-core),
+# so a change there runs this too.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/appcard/**'
+      - 'apps/ai-providers/config/**'
+      - 'crates/octos-core/**'
+      - '.github/workflows/appcard.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/appcard/**'
+      - 'apps/ai-providers/config/**'
+      - 'crates/octos-core/**'
+      - '.github/workflows/appcard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appcard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    # macOS, not ubuntu: clippy runs makepad's build scripts, and the host
+    # system-dependency set is only verified on macOS (what the dev machines
+    # run). Ubuntu would need an untested apt package list for makepad's
+    # Linux backend.
+    runs-on: macos-14
+    steps:
+      # The sibling runtime (makepad, octoscript, octoscript-makepad) is
+      # prepared next to the repository, in octosense-org/, which is three
+      # levels above apps/appcard.
+      - uses: actions/checkout@v6
+        with:
+          path: octosense-org/OctoSense-System-Apps
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Prepare the shared Octoscript-Makepad runtime
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard
+        run: python tools/setup-native.py --root ../../../
+
+      - name: Runtime setup safeguards
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard
+        run: PYTHONPATH=tools python -m unittest core.test_native_runtime
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # The cargo workspace root (Cargo.toml) lives in apps/appcard/app;
+      # without this the cache save fails with "could not find Cargo.toml"
+      # and every run would compile cold.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: octos-one-app
+          workspaces: octosense-org/OctoSense-System-Apps/apps/appcard/app
+
+      # -p + --no-deps scopes the lint gate to AppCard's own crates:
+      # Makepad is the source locked by Octoscript-Makepad; its warnings are not
+      # ours to gate, but they are still fully compiled here — so this step is
+      # also the compile check for the whole app.
+      - name: Clippy (own crates; shared runtime compiles)
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard/app
+        run: cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+
+      # The transport over the shell's octos kernel (octosense-octos-core),
+      # including a kernel restart against the core's stand-in kernel.
+      - name: Test the transport and the store
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard/app
+        run: cargo test --locked -p octos-app-transport -p octos-app-store
+
+      # `cargo tree -i` fails when the graph holds more than one octos-core.
+      - name: Verify one octos source in the app dependency graph
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard/app
+        run: cargo tree --locked -i octos-core --target all --depth 0
+
+      - name: Verify one Makepad source in the app dependency graph
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard
+        run: python tools/setup-native.py --check --root ../../../ --cargo-manifest app/Cargo.toml

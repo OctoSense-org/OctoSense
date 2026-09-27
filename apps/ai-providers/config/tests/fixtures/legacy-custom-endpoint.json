@@ -1,0 +1,1 @@
+{"llm_family":"openai","llm_model":"qwen3.8-27b","llm_key":"local-test","llm_base_url":"http://127.0.0.1:30880/v1","llm_api_type":"openai"}

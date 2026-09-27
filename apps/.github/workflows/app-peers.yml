@@ -1,0 +1,43 @@
+name: app peers
+
+# crates/app-peers (octosense-app-peers): the scoped assistant service a
+# shell injects into native apps, and its broker. Unit tests and the broker
+# against a scripted kernel. The real-kernel test needs an `octos` binary
+# with UPCR-2026-034 (OCTOS_APP_PEERS_TEST_KERNEL) and passes without one.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/app-peers/**'
+      - 'crates/octos-core/**'
+      - '.github/workflows/app-peers.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/app-peers/**'
+      - 'crates/octos-core/**'
+      - '.github/workflows/app-peers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Test (contract only)
+        working-directory: crates/app-peers
+        run: cargo test --locked
+      - name: Test (broker, octos-core, ws)
+        working-directory: crates/app-peers
+        run: cargo test --locked --features octos-core,ws
+      - name: Clippy
+        working-directory: crates/app-peers
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features octos-core,ws -- -D warnings

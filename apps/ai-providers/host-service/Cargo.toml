@@ -1,0 +1,42 @@
+# octosense-llm-service — the `llm` host service (ADR 0004).
+#
+# The assistant's LLM providers as a service the shell offers to the AI
+# providers app: the provider list with masked key statuses, add and edit on a
+# host-owned sheet (the only place a key is typed), tests, and the phone QR
+# (OCTOS1E) shown or scanned on a sheet. The app never sees a key, a PIN or a
+# QR. Keys go where octos reads them: the `octos` keychain service behind a
+# `keychain:` marker on macOS, the kernel's secrets directory on Linux, and
+# the app-private profile itself elsewhere (src/vault.rs).
+[package]
+name = "octosense-llm-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev the Mail service pins: one appstore, one registry.
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
+octosense-llm-config = { path = "../config" }
+serde_json = "1"
+# The provider test: one small HTTPS request on a worker thread.
+ureq = { version = "2", default-features = false, features = ["tls"] }
+# A provider QR read out of a picked or dropped image (src/image_qr.rs): PNG
+# and JPEG only, decoded to grey and searched with rqrr, the decoder the
+# phone's scanner is tested against.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rqrr = { version = "0.10", default-features = false }
+
+# The shell's octos kernel (crates/octos-core), with the `octos-core`
+# feature: the service then writes the profile under the kernel's core dir by
+# default and restarts the kernel after every change.
+octosense-octos-core = { path = "../../../crates/octos-core", optional = true }
+
+[features]
+default = []
+octos-core = ["dep:octosense-octos-core"]
+
+[dev-dependencies]
+png = "0.17"
+# A non-OctoSense QR for the image tests.
+qrcode = { version = "0.14", default-features = false }
