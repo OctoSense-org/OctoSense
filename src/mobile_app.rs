@@ -340,7 +340,7 @@ impl App {
         self.state_mut().phone.keyboard_target=0.0;
         self.animate_phone(cx);
     }
-    fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
+    pub(super) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
             PhoneHit::App(app)=>{
                 // A running window of the app, a home tile's own client
