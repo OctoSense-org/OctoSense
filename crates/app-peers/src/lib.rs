@@ -30,3 +30,7 @@ pub mod connectors;
 pub mod hosted;
 
 pub use contract::*;
+
+/// The kernel service, for a standalone app that owns its local runtime.
+#[cfg(feature = "octos-core")]
+pub use octosense_octos_core as octos_core;
