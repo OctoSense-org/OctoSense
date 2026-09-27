@@ -3,7 +3,7 @@
 - **Date:** 2026-09-27
 - **Status:** Proposed
 - **Scope:** How the assistant works in OctoSense when no person is typing, for any app: which agent runs, what starts it, which tools and data it may use, how it gathers information, how it produces and checks a card, and where the card and what it learned go.
-- **Relates to:** [ADR 0001](0001-one-octosense-repository.md) (one repository; [`crates/kernel`](../../crates/kernel), [`crates/app-peers`](../../crates/app-peers), the planned `crates/ai-host`); the phone shell's earlier ADRs, moving to `docs/adr/home/`: 0002 (agentic app security model), 0003 (App Hub), 0004 (system apps are contained script apps); [Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) (host-owned octos app peers); octos ADR "personal memory tiers" (octos-org/octos#2365); OctoScript [`docs/ui-profile-l0.md`](https://github.com/OctoSense-org/OctoScript/blob/main/docs/ui-profile-l0.md) (the L0/L1/L2 card levels).
+- **Relates to:** [ADR 0001](0001-one-octosense-repository.md) (one repository; [`crates/kernel`](../../crates/kernel), [`crates/app-peers`](../../crates/app-peers), [`crates/ai-host`](../../crates/ai-host), [`crates/shell`](../../crates/shell)); [Home ADR 0002](home/0002-agentic-app-security-model.md) (agentic app security model), [Home ADR 0003](home/0003-app-hub-and-store.md) (App Hub), [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (system apps are contained script apps); [Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) (host-owned octos app peers); octos ADR "personal memory tiers" (octos-org/octos#2365); OctoScript [`docs/ui-profile-l0.md`](https://github.com/OctoSense-org/OctoScript/blob/main/docs/ui-profile-l0.md) (the L0/L1/L2 card levels).
 
 ## Context
 
@@ -11,7 +11,7 @@ OctoSense's premise is that the assistant is driven by time, events and changing
 
 What exists (2026-09-27):
 
-- **One octos kernel per shell** ([`crates/kernel`](../../crates/kernel); crate `octosense-octos-core`, to be renamed `octosense-kernel`). It starts lazily, is restarted when the AI providers change, and speaks the UI Protocol over stdio.
+- **One octos kernel per shell** ([`crates/kernel`](../../crates/kernel), crate `octosense-kernel`, reached through [`crates/ai-host`](../../crates/ai-host)). It starts lazily, is restarted when the AI providers change, and speaks the UI Protocol over stdio.
 - **App peers** ([`crates/app-peers`](../../crates/app-peers), Rinx ADR 0007). The shell's system agent session `_main:api:octosense#system` owns one octos peer per granted app. Each peer has its own workspace, contexts and history, and its own memory namespace `app/<app>/acct-<hash>`, and it never sees provider keys. Today only a **running native module** can open contexts on its peer. Nothing wakes an app's agent while the app is closed, and contained script apps cannot reach their peer at all.
 - **App Hub manifests** already declare an app's `agent`: its tools and a permission profile (`ReadOnly`, `WorkspaceWrite`, `WorkspaceWriteNeverAsk`; full access cannot be named). The kernel does not yet enforce that list per peer.
 - **Host services** (`mail`, `llm`) run native code on an app's behalf and keep secrets out of apps.
