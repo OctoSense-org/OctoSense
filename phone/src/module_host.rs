@@ -40,7 +40,7 @@ pub struct AppInstance {
     upstream: Receiver<ModuleUpstream>,
     /// The instance's scoped assistant service (Rinx ADR 0007), when the
     /// module declares and is granted `octos.*` services.
-    assistant: Option<crate::app_peers_host::Assistant>,
+    assistant: Option<octosense_ai_host::Assistant>,
 }
 
 impl AppInstance {
@@ -125,7 +125,7 @@ impl ModuleHost {
         let vm_id = cx.alloc_splash_vm_with_network(false);
         // The assistant is offered to THIS instance for the duration of its
         // create only; the module takes it there or never gets it.
-        let assistant = crate::app_peers_host::offer(module, &scope);
+        let offer = octosense_ai_host::offer(module, &scope);
         let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
             // The isolate came up with the stock theme; the WM's palette
             // retints it exactly as it retints a child process's.
@@ -136,7 +136,7 @@ impl ModuleHost {
             module.register(vm);
             module.create(vm, open, handles)
         });
-        crate::app_peers_host::withdraw(module, &scope);
+        let assistant = offer.finish();
         log!(
             "wm: module instance {}.{} for client {} in isolate {:?} (scope {})",
             module.id(),
@@ -180,7 +180,7 @@ impl ModuleHost {
     }
 
     /// The assistant service Home gave this instance, if any.
-    pub fn assistant_of(&self, client: ClientId) -> Option<&crate::app_peers_host::Assistant> {
+    pub fn assistant_of(&self, client: ClientId) -> Option<&octosense_ai_host::Assistant> {
         self.instances.get(&client)?.assistant.as_ref()
     }
 
@@ -433,6 +433,103 @@ mod channel_tests {
         cx.with_script_vm_id_trusted(host.get(7).unwrap().vm_id, |vm| assert!(vm.take_errors().is_empty()));
         // The last refs into the isolate's heap go before the heap does.
         drop(root);
+        assert!(host.teardown(&mut cx, 7));
+    }
+}
+
+// The shell side of apps' assistant access (Rinx ADR 0007) is
+// octosense-ai-host (`offer` above); these check it through a real create.
+/// Rinx runs one instance per process: tests that create it take turns.
+#[cfg(test)]
+pub(crate) static RINX_INSTANCE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(all(test, any(feature = "octos-core", native_mobile)))]
+mod assistant_tests {
+    use makepad_app_module::*;
+    use makepad_widgets::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static CLAIMED: AtomicBool = AtomicBool::new(false);
+
+    /// A module that declares the assistant and records whether it got one.
+    struct Probe(&'static str, &'static [&'static str]);
+    impl AppModule for Probe {
+        fn id(&self) -> &'static str {
+            self.0
+        }
+        fn label(&self) -> &'static str {
+            "Probe"
+        }
+        fn capabilities(&self) -> &'static [&'static str] {
+            self.1
+        }
+        fn open_schema(&self) -> OpenSchema {
+            OpenSchema::new(1)
+        }
+        fn register(&self, _vm: &mut ScriptVm) {}
+        fn create(&self, vm: &mut ScriptVm, _open: ValidatedOpen, handles: InstanceHandles) -> InstanceParts {
+            let service = octosense_ai_host::app_peers::injection::claim(self.0, &handles.scope.to_string());
+            CLAIMED.store(service.is_some(), Ordering::SeqCst);
+            let value = script_eval!(vm, { use mod.prelude.widgets.* View {} });
+            InstanceParts {
+                root: WidgetRef::script_from_value(vm, value),
+                executor: Box::new(NoExecutor),
+                shutdown: Box::new(|_| {}),
+            }
+        }
+    }
+    struct NoExecutor;
+    impl ServiceExecutor for NoExecutor {
+        fn manifest(&self) -> makepad_ai_services::wire::ServiceManifest {
+            makepad_ai_services::wire::ServiceManifest::new("probe", "Probe", "test")
+        }
+        fn execute(&mut self, _cx: &mut Cx, call: &makepad_ai_services::wire::ServiceCall) -> ExecOutcome {
+            ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, "test"))
+        }
+    }
+
+    static AI_PROBE: Probe = Probe("assistant-probe", &["storage", "octos.session.open", "octos.turn.start"]);
+    static PLAIN_PROBE: Probe = Probe("plain-probe", &["storage", "net"]);
+    static UNGRANTED_PROBE: Probe = Probe("ungranted-probe", &["octos.turn.start"]);
+
+    #[test]
+    fn a_granted_module_gets_its_service_at_creation_and_others_get_none() {
+        octosense_ai_host::grant("assistant-probe", ["octos.session.open", "octos.turn.start"]);
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        host.create(&mut cx, 1, &AI_PROBE, AI_PROBE.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        assert!(CLAIMED.load(Ordering::SeqCst), "the granted module got a scoped service");
+        assert!(host.assistant_of(1).is_some());
+        host.create(&mut cx, 2, &PLAIN_PROBE, PLAIN_PROBE.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        assert!(!CLAIMED.load(Ordering::SeqCst), "a module without assistant services gets none");
+        assert!(host.assistant_of(2).is_none(), "no peer is allocated for it");
+        host.create(&mut cx, 3, &UNGRANTED_PROBE, UNGRANTED_PROBE.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        assert!(!CLAIMED.load(Ordering::SeqCst), "declaring is not being granted");
+        assert!(host.assistant_of(3).is_none());
+        // An offer never outlives its create: nothing is left to claim.
+        assert!(octosense_ai_host::app_peers::injection::claim("assistant-probe", "i1g1").is_none());
+        assert!(host.teardown(&mut cx, 1));
+    }
+
+    /// The real Rinx module: hosted from creation, with the shell's service,
+    /// and no kernel started by creating it (ADR 0007 criterion 7).
+    #[cfg(feature = "app-rinx")]
+    #[test]
+    fn rinx_is_hosted_with_the_shells_service_and_starts_no_kernel() {
+        let _one_rinx = super::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        let module = &rinx::module::RINX_MODULE;
+        assert!(module.capabilities().contains(&"octos.turn.start"), "Rinx declares its assistant needs");
+        host.create(&mut cx, 7, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        assert!(host.assistant_of(7).is_some(), "Home gave Rinx a scoped service");
+        assert!(rinx::octos_service::is_hosted(), "hosted mode comes from module creation");
+        let service = rinx::octos_service::service().expect("Rinx took the injected service");
+        assert_eq!(service.deployment(), octosense_ai_host::app_peers::Deployment::Hosted);
+        assert_eq!(service.settings_entry(), octosense_ai_host::app_peers::SettingsEntry::Host);
+        assert!(!octosense_ai_host::kernel_running(), "creating Rinx starts no kernel");
         assert!(host.teardown(&mut cx, 7));
     }
 }

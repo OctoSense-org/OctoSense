@@ -30,11 +30,11 @@ rqrr = { version = "0.10", default-features = false }
 # The shell's octos kernel (crates/octos-core), with the `octos-core`
 # feature: the service then writes the profile under the kernel's core dir by
 # default and restarts the kernel after every change.
-octosense-octos-core = { workspace = true, optional = true }
+octosense-kernel = { workspace = true, optional = true }
 
 [features]
 default = []
-octos-core = ["dep:octosense-octos-core"]
+octos-core = ["dep:octosense-kernel"]
 
 [dev-dependencies]
 png = "0.17"

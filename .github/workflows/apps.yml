@@ -1,7 +1,7 @@
 name: Apps and services
 
 # The system apps' host services, the AppCard assistant (apps/appcard) and
-# the shell services (crates/kernel, crates/app-peers).
+# the shell services (crates/kernel, crates/app-peers, crates/ai-host).
 
 on:
   push:
@@ -38,7 +38,7 @@ concurrency:
 
 jobs:
   services:
-    # crates/kernel (octosense-octos-core): the shell's octos kernel, tested
+    # crates/kernel (octosense-kernel): the shell's octos kernel, tested
     # against a stand-in kernel (a python3 script speaking NDJSON JSON-RPC);
     # crates/app-peers: the scoped assistant service and its broker against a
     # scripted kernel. The real-kernel tests need an `octos` binary
@@ -60,8 +60,8 @@ jobs:
           shared-key: services
       - name: Kernel service
         run: |
-          cargo test --locked -p octosense-octos-core
-          cargo clippy --locked -p octosense-octos-core --all-targets --no-deps -- -D warnings
+          cargo test --locked -p octosense-kernel
+          cargo clippy --locked -p octosense-kernel --all-targets --no-deps -- -D warnings
       - name: App peers
         run: |
           cargo test --locked -p octosense-app-peers
@@ -89,6 +89,11 @@ jobs:
           shared-key: apps
       - name: Host services (Mail, AI providers)
         run: cargo test --locked -p octosense-mail-service -p octosense-llm-service
+      - name: Shell AI services (crates/ai-host)
+        run: |
+          cargo test --locked -p octosense-ai-host
+          cargo test --locked -p octosense-ai-host --features octos-core,llm
+          cargo clippy --locked -p octosense-ai-host --all-targets --features octos-core,llm --no-deps -- -D warnings
       - name: AppCard runtime setup safeguards
         working-directory: apps/appcard
         run: PYTHONPATH=tools python3 -m unittest core.test_native_runtime

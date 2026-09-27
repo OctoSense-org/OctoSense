@@ -128,20 +128,12 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 }
 
 /// The services contained apps call through `host.request` (ADR 0004),
-/// registered once, before the first system app can open:
-///
-/// - `mail` keeps accounts and passwords for the Mail app. `mail_demo` in
-///   MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
-///   keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
-/// - `llm` keeps the octos kernel's LLM providers for AI providers
-///   (`os.ai-providers`), written to the kernel's profile under the shell's
-///   octos core dir (`octosense_octos_core::core_dir()`: `OCTOS_APP_CORE_DIR`,
-///   else `~/octos-home/.octos`), keys in the keychain entry octos reads
-///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No
-///   camera scanner: a phone's profile QR is imported from a picture of it
-///   (the open panel, or an image dropped on the import sheet: `llm_image`),
-///   or by pasting its text. With `octos-core` (default) the service restarts
-///   the kernel after a change; its consumers (AppCard) reconnect.
+/// registered once, before the first system app can open. `mail` keeps
+/// accounts and passwords for the Mail app. `mail_demo` in
+/// MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
+/// keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`. The
+/// `llm` service AI providers calls is octosense-ai-host's, registered by
+/// `octosense_ai_host::start` at startup.
 #[cfg(feature = "app-hub")]
 pub fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -156,38 +148,7 @@ pub fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
-        let mut llm = octosense_llm_service::Options::default();
-        #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
-        let core_dir = octosense_octos_core::core_dir();
-        #[cfg(not(any(feature = "octos-core", target_os = "android", target_os = "ios")))]
-        let core_dir = octosense_llm_config::profile::default_core_dir();
-        if let Some(dir) = core_dir {
-            llm = llm.core_dir(dir);
-        }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            llm = llm.image_picker(crate::llm_image::picker()).image_drops(true);
-        }
-        octosense_llm_service::register_with(llm);
     });
-}
-
-/// Configure the shell's octos kernel (`octosense_octos_core`) once, at
-/// startup, before anything connects to it. Nothing runs until a consumer
-/// (AppCard, Rinx) connects; then one kernel per process: on a desktop the
-/// binary `OCTOS_APP_CORE_BIN` names (none otherwise), on Android the APK's
-/// `liboctos.so`. Its diagnostics go to the shell's log.
-#[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
-pub fn configure_octos_kernel(data_dir: Option<String>) {
-    let mut options = octosense_octos_core::Options::default().log(|line| makepad_widgets::log!("{line}"));
-    if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
-        options = options.app_data_dir(dir);
-    }
-    octosense_octos_core::configure(options);
-    match octosense_octos_core::launch() {
-        Ok(_) => makepad_widgets::log!("octos: kernel service ready (starts on first use), core dir {:?}", octosense_octos_core::core_dir()),
-        Err(why) => makepad_widgets::log!("octos: {why}; the providers are still saved under {:?}", octosense_octos_core::core_dir()),
-    }
 }
 
 /// Apps App Hub installed: each is an app of its own in the launcher, hosted
@@ -383,7 +344,7 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
-        let _one_rinx = crate::app_peers_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {

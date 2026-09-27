@@ -13,7 +13,7 @@
 # - `broker`: the implementation over UI Protocol frames (peer/prepare with a
 #   host binding, peer/context/open|close, lease checks on every request,
 #   event routing, stale-reply dropping).
-# - `octos-core`: the broker over the shell's kernel (`octosense-octos-core`),
+# - `octos-core`: the broker over the shell's kernel (`octosense-kernel`),
 #   for shells and for a standalone app that owns its local runtime.
 # - `ws`: the broker over an explicit remote octos server (WebSocket).
 [package]
@@ -29,7 +29,7 @@ publish     = false
 [features]
 default = []
 broker = ["dep:tokio", "dep:log", "dep:uuid"]
-octos-core = ["broker", "dep:octosense-octos-core"]
+octos-core = ["broker", "dep:octosense-kernel"]
 ws = ["broker", "dep:tokio-tungstenite", "dep:futures-util", "dep:url"]
 
 [dependencies]
@@ -37,7 +37,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
 log = { version = "0.4", optional = true }
 uuid = { version = "1", features = ["v4"], optional = true }
-octosense-octos-core = { workspace = true, optional = true }
+octosense-kernel = { workspace = true, optional = true }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-native-roots"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
 url = { version = "2", optional = true }

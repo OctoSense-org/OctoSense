@@ -1,5 +1,5 @@
 //! The broker against a REAL octos kernel (UPCR-2026-034) started by
-//! `octosense-octos-core` in a temp core dir, with a scripted local model
+//! `octosense-kernel` in a temp core dir, with a scripted local model
 //! (`tests/fixtures/mock_llm.py`, standard-library Python, no keys).
 //!
 //! Runs when `OCTOS_APP_PEERS_TEST_KERNEL` names an `octos` binary with the
@@ -22,7 +22,7 @@ use std::time::Duration;
 use octosense_app_peers::broker::{Broker, BrokerConfig};
 use octosense_app_peers::connectors::CoreConnector;
 use octosense_app_peers::*;
-use octosense_octos_core::{Core, Options};
+use octosense_kernel::{Core, Options};
 use serde_json::{json, Value};
 
 struct Model(std::process::Child, u16);

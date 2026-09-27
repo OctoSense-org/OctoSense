@@ -87,7 +87,7 @@ pub fn launch<'a>(
     );
     // The shell keeps each app peer's host token beside its kernel's core
     // dir, outside every app's reach.
-    cfg.state_dir = octosense_octos_core::core_dir().map(|dir| host_state_dir(&dir));
+    cfg.state_dir = octosense_kernel::core_dir().map(|dir| host_state_dir(&dir));
     Some(Broker::new(cfg, Arc::new(CoreConnector::shell())))
 }
 

@@ -1,0 +1,58 @@
+# octosense-ai-host — the shell's AI services, one entry point.
+#
+# Every OctoSense shell (desktop, phone) hosts the same AI stack:
+#
+# - the octos kernel as a shell service (octosense-octos-core, to be renamed
+#   octosense-kernel): configured once at startup, started on first use,
+#   stopped at shutdown;
+# - the `llm` host service the AI providers system app (`os.ai-providers`)
+#   calls, with the platform's QR import (Android camera + image picker, a
+#   desktop open panel and image drops, elsewhere a pasted code);
+# - apps' assistant access (Rinx ADR 0007): a scoped octos app-peers service
+#   offered to each granted native module instance at creation.
+#
+# Before this crate both shells carried their own copy of that glue
+# (ROM home/src/llm_host.rs + app_peers_host.rs; Desktop src/apps.rs,
+# app_peers_host.rs, llm_image.rs).
+#
+# Features:
+# - `octos-core`: the kernel, the app-peers broker, and the llm service's
+#   restart-after-change. Android, iOS and OpenHarmony always have it (target
+#   dependencies below): `cfg(kernel)` in the source, set by build.rs.
+# - `llm`: register the `llm` host service (a shell's `app-hub` feature turns
+#   it on; phones always).
+#
+# The kernel is crates/kernel, the app-peers contract and broker
+# crates/app-peers, the `llm` service and its config apps/ai-providers/*;
+# Makepad comes from the root workspace's single pin.
+[package]
+name = "octosense-ai-host"
+description = "The OctoSense shell's AI services: octos kernel, llm host service, app peers — one entry point"
+publish = false
+build = "build.rs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+octos-core = ["dep:octosense-kernel", "octosense-app-peers/octos-core", "octosense-llm-service?/octos-core"]
+llm = ["dep:octosense-llm-service"]
+
+[dependencies]
+makepad-widgets = { workspace = true }
+makepad-app-module = { workspace = true }
+# The kernel's home rule without a kernel (and the profile path).
+octosense-llm-config = { workspace = true }
+# The contract (OCTOS_SERVICES, injection) always; the broker with `octos-core`.
+octosense-app-peers = { workspace = true }
+octosense-kernel = { workspace = true, optional = true }
+octosense-llm-service = { workspace = true, optional = true }
+
+# Native mobile builds always carry the kernel (Android bundles liboctos.so,
+# OpenHarmony links the core in-process, iOS runs none) and, when the `llm`
+# service is linked, its restart-after-change.
+[target.'cfg(any(target_os = "android", target_os = "ios", target_env = "ohos"))'.dependencies]
+octosense-kernel = { workspace = true }
+octosense-app-peers = { workspace = true, features = ["octos-core"] }
+octosense-llm-service = { workspace = true, optional = true, features = ["octos-core"] }

@@ -457,11 +457,10 @@ impl App {
             return true;
         };
         match channel.as_str() {
-            // AI providers' "Choose image" (llm_host.rs).
-            #[cfg(any(feature = "app-hub", native_mobile))]
+            // AI providers' "Choose image" (octosense-ai-host).
             "qr.image.result" => {
                 let id = value.get("id").and_then(Value::as_u64).unwrap_or(0);
-                self.llm_image_packet(id, &string(&value, "status"), &string(&value, "detail"));
+                octosense_ai_host::qr_image_result(id, &string(&value, "status"), &string(&value, "detail"));
             }
             "home.layout.request" => {
                 if let Some(generation) = value
