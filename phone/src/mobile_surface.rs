@@ -1152,7 +1152,7 @@ impl PhoneSurface {
             crate::mobile_perf::span(cx.cx,ch.shade,clock);
             // Above the shade, inside the navigation band's top edge.
             let pane=rect(screen.pos.x,screen.pos.y,screen.size.x,screen.size.y-24.0);
-            let _=self.perf_graph.draw_walk(cx,&mut Scope::empty(),Walk::abs_rect(pane));
+            if crate::mobile_perf::graph() {let _=self.perf_graph.draw_walk(cx,&mut Scope::empty(),Walk::abs_rect(pane));}
         }
     }
     /// Under the hosted apps' cards, the Android apps used lately (usage
