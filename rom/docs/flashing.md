@@ -5,6 +5,10 @@ It covers the local developer preview, which requires a verified device and
 erases data for a fresh install. Public web flashing and automatic recovery
 are not available yet.
 
+The last published image is the release
+[`rom-v20260919-j`](https://github.com/OctoSense-org/OctoSense/releases/tag/rom-v20260919-j) of the OctoSense repository (OTA zip and Home APK);
+newer images are `rom-v*` releases there ([updates.md](updates.md)).
+
 ## Manual recovery and sideload workflow
 
 The first flash from LineageOS wipes user data: the two builds are signed with

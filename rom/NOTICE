@@ -1,9 +1,10 @@
-octosense-rom
+OctoSense ROM (the rom/ directory of the OctoSense repository; formerly the
+OctoSense-ROM repository, retired and merged into the OctoSense repository)
 Copyright 2026 The OctoSense Authors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 The license covers the build scripts, patches, configuration and sources in
-this repository that were written for OctoSense.
+this directory that were written for OctoSense.
 
 Third-party components
 ----------------------

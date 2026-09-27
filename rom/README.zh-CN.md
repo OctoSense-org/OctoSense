@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-OctoSense ROM 是面向 OnePlus 6（一加 6，`enchilada`）的 LineageOS 22.2（Android 15），预装 OctoSense Home 应用以及具有系统权限的 agent、Quickstep 和 SystemUI，让 Agent 进入系统层。本目录只包含镜像本身：产品层、补丁、构建/签名/刷写/更新镜像的脚本，以及网页安装器。它原是 OctoSense-ROM 仓库（其中的 `home/` 现为 [`../phone/`](../phone/README.zh-CN.md)）；见 [ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)。
+OctoSense ROM 是面向 OnePlus 6（一加 6，`enchilada`）的 LineageOS 22.2（Android 15），预装 OctoSense Home 应用以及具有系统权限的 agent、Quickstep 和 SystemUI，让 Agent 进入系统层。本目录只包含镜像本身：产品层、补丁、构建/签名/刷写/更新镜像的脚本，以及网页安装器。它原是 OctoSense-ROM 仓库（已停用，并入本仓库；其中的 `home/` 现为 [`../phone/`](../phone/README.zh-CN.md)）；见 [ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)。
 
 Home 应用本身（也可作为普通 Home 应用安装在任意 Android 手机上）从 [`../phone/`](../phone/README.zh-CN.md) 构建。镜像使用这个以平台密钥签名的 APK，并加上具有系统权限的系统侧组件。
 
@@ -46,11 +46,13 @@ rom/scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and s
 
 刷写方式：
 
+- **镜像**：按上文自行构建，或下载最近发布的构建 [`rom-v20260919-j`](https://github.com/OctoSense-org/OctoSense/releases/tag/rom-v20260919-j)。
+
 - **浏览器**：[网页安装器](web-installer/README.zh-CN.md#在浏览器中刷入-rom)，目前是本地开发预览版。全新安装会清除手机数据。在 [ROM ADR 0001（英文）](docs/adr/0001-public-web-installer.md) 完成前，公开网站上的网页刷写保持关闭。
 - **命令行**：`scripts/flash.sh <build dir> [serial]`，或 [docs/flashing.md（英文）](docs/flashing.md) 中的 recovery sideload 方式，其中也记录了首次刷写的经验。
 - **刷写之后**：`scripts/verify-phone.sh <build-tag> [serial]` 等待开机，并运行 `scripts/checklist.sh` 和 `scripts/agent-test.sh`。
 
-已刷写的手机通过 GitHub Releases 进行 OTA 更新（[docs/updates.md（英文）](docs/updates.md)）；`scripts/ota-push.sh` 可从 Mac 推送一次更新。目前已构建镜像中的更新器读取的是 OctoSense-ROM 仓库（`OctoSense-org/octosense-rom`）的 releases，该仓库现已归档并设为私有，因此这些镜像收不到更新；改为读取本仓库的 `rom-v*` releases 还需修改代码：`vendor/octosense/agent/.../Updater.java`、`scripts/publish-release.sh` 和 `scripts/ota-push.sh`。
+已刷写的手机通过本仓库的 GitHub Releases 进行 OTA 更新：每个构建发布为 `rom-v<build-tag>` release，手机从固定移动的 `rom-latest` release 读取 `update.json`（[docs/updates.md（英文）](docs/updates.md)）；`scripts/ota-push.sh` 可从 Mac 推送一次更新。`20260919-j` 及更早的镜像读取的是 OctoSense-ROM 仓库（已停用，并入本仓库）的 releases，该仓库已不存在，因此刷了这些镜像的手机需要重新刷写一次才能收到更新。
 
 ## 镜像在 Home 之外增加的内容
 

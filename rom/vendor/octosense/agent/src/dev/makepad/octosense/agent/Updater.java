@@ -45,9 +45,13 @@ import java.security.MessageDigest;
  */
 final class Updater {
     static final String TAG = "OctoSenseUpdater";
-    /** Where update.json lives. GitHub's "latest/download" redirect needs no API or token for a public repo. */
+    /**
+     * Where update.json lives: the moving rom-latest release of the OctoSense repository, which
+     * scripts/publish-release.sh repoints at each versioned rom-v* release. Not "latest/download":
+     * the repository also publishes desktop-v* and home-v* releases. No API or token needed.
+     */
     static final String DEFAULT_SOURCE =
-            "https://github.com/OctoSense-org/octosense-rom/releases/latest/download/update.json";
+            "https://github.com/OctoSense-org/OctoSense/releases/download/rom-latest/update.json";
     static final String SETTING_SOURCE = "octosense_update_source";
     static final String HOME_PACKAGE = "dev.makepad.octosense";
 
