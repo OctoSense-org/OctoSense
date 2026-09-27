@@ -6,6 +6,7 @@ use makepad_strict_json::s;
 use crate::mobile_theme::Preset;
 
 fn setup()->(Cx,ModuleHost){
+    crate::install_ext();
     let mut cx=Cx::new(Box::new(|_,_|{}));cx.with_vm(makepad_widgets::script_mod);
     let mut host=ModuleHost::default();host.apply_style(&mut cx,&Selection::default().sheet(DesktopStyle::Android,false));
     host.create(&mut cx,1,&SETTINGS_MODULE,SETTINGS_MODULE.open_schema().empty_open().unwrap(),dvec2(400.,700.)).unwrap();
