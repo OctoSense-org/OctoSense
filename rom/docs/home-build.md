@@ -19,11 +19,13 @@ is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
 `crates/app-hub-app`), a git dependency pinned in `home/Cargo.toml` and
 `home/Cargo.lock` at the same revision as its backend crates. Its build packs
 the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `home/.cargo/config.toml`
-sets to `home/system-apps.json`. The AppCard assistant (`octos-app`) is built
-from the same pinned OctoSense-System-Apps checkout
-(`.sources/system-apps/apps/appcard/app/app`), but only with
-`--features app-appcard`: it is not shipped for now, so default,
-`mobile-apps` and native mobile builds leave it and octos out.
+sets to `home/system-apps.json`. The octos kernel service
+(`octosense-octos-core`, `.sources/system-apps/crates/octos-core`) comes from
+the same checkout and is in every standard build (feature `octos-core`, on by
+default and always on for Android, iOS and OpenHarmony). The AppCard
+assistant (`octos-app`, `.sources/system-apps/apps/appcard/app/app`) is built
+only with `--features app-appcard`: it is not shipped for now, so default,
+`mobile-apps` and native mobile builds leave its UI out.
 
 The runtime's Makepad (main `cd812acd`) includes the contained-app and isolate
 controls from makepad#30. `home/runtime-patches.lock.json` now records only the
@@ -99,6 +101,20 @@ together and their certificate digests must match. The receipt records source
 revision/dirty state, runtime/patch/native-app inputs, APK hashes and certificate
 digests. Existing application IDs, signature guards and platform imports are
 unchanged. The build does not create or migrate signing keys.
+
+**The octos kernel.** Every APK carries Home's octos kernel as
+`lib/arm64-v8a/liboctos.so` (an Android app may exec only from its native
+lib dir). By default the script cross-builds it: it checks out
+`https://github.com/octos-org/octos.git` at the revision `home/Cargo.lock`
+pins for `octos-cli` into `.sources/octos`, builds `cargo build --locked
+--release --target aarch64-linux-android -p octos-cli --bin octos
+--no-default-features --features api,git,ast` with the NDK clang from
+`--sdk` (API 33), and hands it to the packager as
+`MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`. `--octos-kernel <path>`
+bundles a prebuilt aarch64-linux-android `octos` instead; `--no-octos-kernel`
+builds an APK without one (the phone then runs no kernel; the AI providers
+are still saved). The receipt records the kernel's source and SHA-256
+(`octos_kernel`). The kernel adds about 137 MB (unstripped) to the APK.
 
 Options: `--dry-run` prints the plan; `--offline` uses cached dependencies;
 `--version-code` overrides the automatic code; `--output` selects an artifact

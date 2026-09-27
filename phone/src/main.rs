@@ -4381,7 +4381,11 @@ impl MatchEvent for App {
         #[cfg(any(feature = "app-hub", native_mobile))]
         octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
             .unwrap_or_else(octosense::paths::home).join("apps"));
-        // AI providers' `llm` service writes the AppCard kernel's profile.
+        // The octos kernel is a shell service: configured here, started when
+        // a consumer (AppCard, Rinx) connects. AI providers' `llm` service
+        // writes its profile and restarts it after a change.
+        #[cfg(any(feature = "octos-core", native_mobile))]
+        llm_host::configure_kernel(cx.get_data_dir());
         #[cfg(any(feature = "app-hub", native_mobile))]
         llm_host::register(llm_host::core_dir(cx.get_data_dir()));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
@@ -5057,6 +5061,9 @@ impl AppMain for App {
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
+            // Stop the octos kernel, if one runs, and let it release its data dir.
+            #[cfg(any(feature = "octos-core", native_mobile))]
+            octosense_octos_core::shutdown();
         }
         if let Event::Timer(te) = event {
             self.fire_test_timers(cx, te);

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、Reference 和 Sheets。（AppCard 目前不随产品发布，只有使用 `--features app-appcard` 时才会链接。）
+OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、Reference 和 Sheets，另外还有作为服务的 octos Agent 内核。（AppCard 目前不随产品发布，只有使用 `--features app-appcard` 时才会链接。）
 
 环境准备、各目标平台的构建、版本固定和 CI 见 [根目录 README](../README.zh-CN.md)。本页深入介绍 Home 专属的内容。
 
@@ -69,6 +69,18 @@ adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo
 
 `app-news`、`app-photos` 和 `app-maps` 会链接早期的原生模块来替代对应的脚本应用，用于在脚本应用完成真机测量之前进行对比；相关说明见 [docs/photos.md（英文）](docs/photos.md) 和 [docs/maps.md（英文）](docs/maps.md)。Mail 和 Camera 已不再有原生模块。
 
+### octos 内核
+
+octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosense-octos-core`（OctoSense-System-Apps 的 `crates/octos-core`），feature `octos-core`（默认开启，Android、iOS、OpenHarmony 构建总是开启）。Home 在启动时用自己的数据目录配置它（[src/llm_host.rs](src/llm_host.rs)），在有使用方连接之前不运行任何东西。之后每个进程只有一个内核：Android 上从 APK 原生库目录运行 `liboctos.so serve --stdio`（`scripts/build-home.sh` 构建的每个 APK 都带有它），OpenHarmony 上在进程内运行，桌面上运行 `OCTOS_APP_CORE_BIN` 指定的二进制（未指定则没有），iOS 上没有。它的 core 目录在手机上是 `<数据目录>/octos-home/.octos`，在桌面上是 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`。AI 提供商应用配置它：`llm` 宿主服务把服务商写入 `<core 目录>/profiles/_main.json`，每次更改后重启正在运行的内核，已连接的使用方会重新连接到读取新配置的内核（AppCard 保留窗口和会话；正在进行的请求会失败并提示“the octos kernel restarted”）。AppCard（需显式开启）以及之后的 Rinx 连接并共享它；最后一个使用方离开或 Home 关闭时内核停止。不带内核服务构建（仅桌面）：`--no-default-features` 加上需要的 feature，例如 `--features app-hub`。
+
+### AI 提供商
+
+AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（`apps/ai-providers/host-service`）编辑 octos 内核的 LLM 提供商，Home 在启动时注册该服务（[src/llm_host.rs](src/llm_host.rs)）：
+
+- 它写入的是内核的 profile，`<core 目录>/profiles/_main.json`（手机上是 `<数据目录>/octos-home/.octos`；`OCTOS_APP_CORE_DIR` 可以覆盖）；在 Android 上密钥就保存在这个应用私有的 profile 中，因为 octos 从这里读取；
+- 在 Android 上，导入面板可以用相机**扫描**提供商二维码（Makepad 的 `cx.show_qr_scanner()`，在运行时包含 makepad#31 之前以叠加的运行时补丁提供），也可以从**选择的图片**中读取（`QrImagePickActivity`：系统图片选择器，字节通过 `qr.image.result` 数据包中的私有缓存文件交付）；其他平台上粘贴代码；
+- 每次更改后，服务会重启正在运行的内核：使用方会重新连接到读取新 profile 的内核（AppCard 保留窗口和会话；正在进行的请求会失败并提示“the octos kernel restarted”）。
+
 ## App Hub
 
 App Hub（`apphub`）用于浏览已签名的 OctoSense 应用目录、搜索、查看应用详情、安装经过验证的应用包，并维护已安装应用的应用库。已安装的应用在隔离的 Card 实例（`card`）中打开，并在启动器和最近任务中单独显示。两者都来自 App Hub 的共享 Shell crate `octosense-app-hub-app`（OctoSense-App-Hub 中的 `crates/app-hub-app`），由默认的 `app-hub` feature 链接，且包含在所有移动端构建中。**预览目录**开关会在线上目录为空时显示内置应用。
@@ -105,7 +117,7 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 - `src/desk/phone.rs`：desk 的手机端合成：托管应用的截取、保留的桌面场景及其模糊金字塔，以及合成器路径。
 - `resources/android/AndroidManifest.xml.template`：activity 定义（Home 角色、分享和深度链接 intent）。
 - `resources/icons/apps/<style>/`：本 Shell 为 News 和 OctosMap 自带的图标，每种框架风格一个 64x64 的 SVG，由 `python3 tools/build_app_icons.py` 生成（`--sheet <path>` 还会用 `rsvg-convert` 渲染一张审阅图）。渲染器不支持裁剪路径、蒙版、滤镜或文字，因此图形在设计上就不会超出磁贴；有一项测试负责确保文件满足这一点。
-- `apps/appcard`：托管 AppCard 助手（`octos-app`，一个指向 `../.sources/system-apps/apps/appcard/app/app` 的路径依赖）。在所有目标平台上都需显式启用：`--features app-appcard`。默认构建、`mobile-apps` 和原生移动端构建都不包含它（也不包含 octos）。
+- `apps/appcard`：托管 AppCard 助手（`octos-app`，一个指向 `../.sources/system-apps/apps/appcard/app/app` 的路径依赖）。在所有目标平台上都需显式启用：`--features app-appcard`（它隐含 `octos-core`；助手连接 Home 的内核）。默认构建、`mobile-apps` 和原生移动端构建不包含 AppCard 界面，但包含内核服务。
 - `apps/reference`：参考模块。
 - `apps/news`、`apps/photos`、`apps/maps`：用于对比的原生模块（feature 分别为 `app-news`、`app-photos`、`app-maps`）。它们的设计说明位于 `docs/plans/`。
 - `android/`：System Bridge、契约、Quickstep 和 SystemUI 项目（[android/README.md](android/README.zh-CN.md)）。
@@ -115,8 +127,8 @@ cargo run --release --features mobile-only -- --test-action island:demo --test-a
 
 - 框架：由 `native-runtime.lock.json` 选定的 Octoscript-Makepad 发布版本；其 `runtime.json` 固定了 Makepad 和 OctoScript 的版本。Cargo 的 `[patch]` 段把所有 Makepad crate 都解析到 `../.sources/makepad`，因此依赖图中只有一套 widgets/platform/script。不要换成会变动的分支。该分支与上游 Makepad 的关系以及如何更新固定版本，见 [docs/makepad-fork.md（英文）](docs/makepad-fork.md)。
 - App Hub：`octosense-app-hub-app` 及其后端 crate，固定在同一个修订版本，与 Mail 宿主服务引用的版本相同，因此无需 `[patch]` 即只有一个 App Hub 来源。
-- OctoSense-System-Apps（`native-apps.lock.json`）：系统应用包、Mail 宿主服务以及 `octos-app`，后者从 `octos-org/octos` 的某个固定修订版本引入 octos（仅用于 `app-appcard` 构建）。
-- AppCard 内核（仅 `app-appcard` 构建需要）不是 Cargo 依赖：`liboctos.so` 在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（[docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)；其中的固定版本早于当前版本）。没有它时，AppCard 磁贴会回退到 WebSocket 传输和登录界面。
+- OctoSense-System-Apps（`native-apps.lock.json`）：系统应用包、Mail 与 `llm` 宿主服务、octos 内核服务（`crates/octos-core`）以及 `octos-app`。octos 来自 `octos-org/octos` 的一个固定修订版本：只有 OpenHarmony（进程内内核）和 `app-appcard` 构建（协议类型）把它作为 Cargo 依赖。
+- Android 上的内核二进制不是 Cargo 依赖：`scripts/build-home.sh` 按该版本交叉编译 `liboctos.so`，并在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（`--octos-kernel` 使用预先编译好的内核，`--no-octos-kernel` 不打包；见 [docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)）。没有它时手机上不运行内核；服务商设置仍会保存，已链接的 AppCard 会回退到 WebSocket 传输和登录界面。
 
 ## 测试与状态
 

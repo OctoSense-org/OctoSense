@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
-"""Build the Home/Bridge APK pair for ordinary Android or OctoSense ROM."""
+"""Build the Home/Bridge APK pair for ordinary Android or OctoSense ROM.
+
+Home's octos kernel is a shell service (feature `octos-core`, on in every
+phone build): the APK bundles it as `liboctos.so`, the only place an Android
+app may exec a binary from. By default the kernel is cross-built from the one
+octos revision Home's Cargo.lock pins; `--octos-kernel` bundles a prebuilt
+one, `--no-octos-kernel` leaves it out (Home then runs no kernel; the AI
+providers are still saved).
+"""
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -10,6 +19,45 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+OCTOS_URL = "https://github.com/octos-org/octos.git"
+# The kernel as the shells' phones run it: the stdio server, no llama.cpp
+# embedder (needs cmake and is not used on a phone).
+OCTOS_KERNEL_BUILD = ["-p", "octos-cli", "--bin", "octos", "--no-default-features", "--features", "api,git,ast"]
+ANDROID_TARGET = "aarch64-linux-android"
+ANDROID_API = "33"
+
+
+def octos_revision(lock=None):
+    """The one octos revision Home links (home/Cargo.lock)."""
+    text = (lock or ROOT / "home/Cargo.lock").read_text()
+    match = re.search(r'name = "octos-cli"\nversion = "[^"]+"\nsource = "git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#', text)
+    if not match:
+        raise RuntimeError("home/Cargo.lock names no octos-cli from octos-org/octos: cannot tell which kernel to build")
+    return match[1]
+
+
+def ndk_bin(sdk):
+    """The NDK's LLVM bin dir inside the cargo-makepad SDK directory (newest NDK)."""
+    found = sorted(glob.glob(str(sdk / "ndk/*/toolchains/llvm/prebuilt/*/bin")),
+                   key=lambda p: [int(x) if x.isdigit() else x for x in re.split(r"[./]", p)])
+    return Path(found[-1]) if found else sdk / "ndk/<version>/toolchains/llvm/prebuilt/<host>/bin"
+
+
+def kernel_build_command(sdk, offline):
+    """Cross-build the kernel with the NDK's clang, as AppCard's build-android.sh does."""
+    bin_dir = ndk_bin(sdk)
+    clang = bin_dir / f"{ANDROID_TARGET}{ANDROID_API}-clang"
+    env = {"CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER": clang,
+           "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR": bin_dir / "llvm-ar",
+           "CC_aarch64_linux_android": clang,
+           "CXX_aarch64_linux_android": bin_dir / f"{ANDROID_TARGET}{ANDROID_API}-clang++",
+           "AR_aarch64_linux_android": bin_dir / "llvm-ar",
+           "RANLIB_aarch64_linux_android": bin_dir / "llvm-ranlib"}
+    command = ["env", *(f"{k}={v}" for k, v in env.items()),
+               "cargo", "build", "--locked", "--release", "--target", ANDROID_TARGET, *OCTOS_KERNEL_BUILD]
+    if offline:
+        command.append("--offline")
+    return command
 
 
 def arguments(argv=None):
@@ -26,6 +74,9 @@ def arguments(argv=None):
     p.add_argument("--version-code", default="auto")
     p.add_argument("--output", type=Path)
     p.add_argument("--offline", action="store_true")
+    kernel = p.add_mutually_exclusive_group()
+    kernel.add_argument("--octos-kernel", type=Path, help="Bundle this prebuilt aarch64-linux-android `octos` as liboctos.so instead of building it")
+    kernel.add_argument("--no-octos-kernel", action="store_true", help="Bundle no octos kernel (Home then runs none)")
     p.add_argument("--dry-run", action="store_true", help="Print the build plan without executing or signing")
     args = p.parse_args(argv)
     if bool(args.sign_key) != bool(args.sign_cert):
@@ -36,12 +87,33 @@ def arguments(argv=None):
         p.error("Supply the existing signer with --sign-key/--sign-cert, or use --development for standalone testing")
     if args.version_code != "auto" and (not args.version_code.isdigit() or not 0 < int(args.version_code) < 2100000000):
         p.error("--version-code must be auto or a positive Android version code")
-    for name in ("sdk", "android_sdk", "gradle_home", "java_home", "packager", "sign_key", "sign_cert", "output"):
+    for name in ("sdk", "android_sdk", "gradle_home", "java_home", "packager", "sign_key", "sign_cert", "output", "octos_kernel"):
         if getattr(args, name):
             setattr(args, name, Path(getattr(args, name)).resolve())
     args.java_home = args.java_home or args.sdk / "openjdk"
     args.output = args.output or ROOT / "out/home" / args.variant
     return args
+
+
+def kernel_plan(args):
+    """(steps, kernel path or None) for the octos kernel the APK bundles."""
+    if args.no_octos_kernel:
+        return [], None
+    if args.octos_kernel:
+        return [], args.octos_kernel
+    source = ROOT / ".sources/octos"
+    revision = octos_revision()
+    steps = [(ROOT, ["git", "init", "--quiet", str(source)])]
+    if not args.offline:
+        steps.append((source, ["git", "fetch", "--quiet", "--no-tags", "--depth=1", OCTOS_URL, revision]))
+    steps += [(source, ["git", "checkout", "--quiet", "--detach", revision]),
+              (source, kernel_build_command(args.sdk, args.offline))]
+    return steps, source / "target" / ANDROID_TARGET / "release/octos"
+
+
+def extra_libs(kernel):
+    """cargo-makepad's MAKEPAD_ANDROID_EXTRA_LIBS for the kernel."""
+    return f"liboctos.so={kernel}" if kernel else None
 
 
 def build_plan(args):
@@ -57,6 +129,7 @@ def build_plan(args):
     plan = [(ROOT, [sys.executable, str(ROOT / "scripts/setup-home.py"), "--check"])]
     if not args.packager:
         plan.append((sources / "makepad", cargo))
+    plan += kernel_plan(args)[0]
     return plan + [(ROOT / "home/android", gradle), (ROOT / "home", android)]
 
 
@@ -71,9 +144,13 @@ def certificate_digest(apksigner, apk, env):
 def main(argv=None):
     args = arguments(argv)
     plan = build_plan(args)
+    kernel = kernel_plan(args)[1]
     if args.dry_run:
         print(json.dumps({"variant": args.variant, "development": args.development,
-                          "output": str(args.output), "steps": [
+                          "output": str(args.output),
+                          "octos_kernel": str(kernel) if kernel else None,
+                          "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
+                          "steps": [
                               {"cwd": str(cwd), "argv": command} for cwd, command in plan],
                           "artifacts": ["OctoSenseHome.apk", "OctoSenseBridge.apk", "build.json"],
                           "installs_or_flashes": False}, indent=2))
@@ -83,6 +160,10 @@ def main(argv=None):
                  args.android_sdk / "build-tools/35.0.0/apksigner"):
         if not path.is_file():
             raise RuntimeError(f"Required Android tool missing: {path}")
+    if args.octos_kernel and not args.octos_kernel.is_file():
+        raise RuntimeError(f"The octos kernel to bundle does not exist: {args.octos_kernel}")
+    if kernel and not args.octos_kernel and not (ndk_bin(args.sdk) / f"{ANDROID_TARGET}{ANDROID_API}-clang").is_file():
+        raise RuntimeError(f"No NDK clang to build the octos kernel with under {args.sdk}/ndk (or pass --octos-kernel / --no-octos-kernel)")
     if args.sign_key:
         for path in (args.sign_key, args.sign_cert):
             if not path.is_file():
@@ -99,7 +180,12 @@ def main(argv=None):
     if args.gradle_home:
         env["OCTOSENSE_GRADLE_HOME"] = str(args.gradle_home)
     env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + f" --remap-path-prefix={ROOT}=/octosense-rom --remap-path-prefix={Path.home()}=/build").strip()
+    env.pop("MAKEPAD_ANDROID_EXTRA_LIBS", None)
+    if kernel:
+        env["MAKEPAD_ANDROID_EXTRA_LIBS"] = extra_libs(kernel)
     for cwd, command in plan:
+        if kernel and command[0] == str(args.packager or sources / "makepad/target/release/cargo-makepad") and not kernel.is_file():
+            raise RuntimeError(f"The octos kernel was not built: {kernel}")
         subprocess.run(command, cwd=cwd, env=env, check=True)
     inputs = {
         "OctoSenseHome.apk": ROOT / "home/target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
@@ -134,6 +220,9 @@ def main(argv=None):
                "runtime_patches": json.loads((ROOT / "home/runtime-patches.lock.json").read_text()),
                "packager": str(args.packager) if args.packager else "pinned source",
                "native_apps": json.loads((ROOT / "home/native-apps.lock.json").read_text()),
+               "octos_kernel": None if not kernel else {
+                   "source": "prebuilt" if args.octos_kernel else f"{OCTOS_URL}@{octos_revision()}",
+                   "sha256": hashlib.sha256(kernel.read_bytes()).hexdigest()},
                "artifacts": artifacts}
     (args.output / "build.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"Built {args.variant} Home {version} and Bridge in {args.output}")

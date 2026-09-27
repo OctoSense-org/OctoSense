@@ -1,21 +1,21 @@
 //! The `llm` host service on Home (ADR 0004): the AI providers system app
-//! (`os.ai-providers`) edits the LLM providers the hosted AppCard assistant
-//! runs on through `octosense_llm_service`, which Home registers at startup
-//! with three things only a shell has:
+//! (`os.ai-providers`) edits the LLM providers of the shell's octos kernel
+//! through `octosense_llm_service`, which Home registers at startup with the
+//! things only a shell has:
 //!
-//! - the AppCard kernel's octos home (`core_dir`), where the service writes
-//!   `profiles/_main.json`;
+//! - the kernel's octos home (`core_dir`), where the service writes
+//!   `profiles/_main.json`. The kernel is a shell service
+//!   (`octosense_octos_core`, feature `octos-core`, on by default and in every
+//!   native mobile build): Home configures it here with the app's data dir,
+//!   AppCard and other consumers connect to it, and the service restarts it
+//!   after every change (its `octos-core` feature), so the new provider set
+//!   takes effect; connected consumers reconnect to the fresh kernel;
 //! - on Android, a camera QR scanner (Makepad's `cx.show_qr_scanner()`, whose
 //!   answer is one `NativeQrScanned` or `NativeQrCancelled` action) and an
 //!   image picker (`QrImagePickActivity`: the system picker, its bytes in a
-//!   private cache file named on the `qr.image.result` packet);
-//! - with AppCard linked (`app-appcard`, opt-in), a change hook that restarts
-//!   the AppCard core, so the new provider set takes effect: the AppCard
-//!   module instances end (their shutdown drops the agent and its
-//!   `kill_on_drop` kernel child) and the home tile relaunches a fresh one,
-//!   whose kernel reads the new profile. Without AppCard there is no hook.
+//!   private cache file named on the `qr.image.result` packet).
 //!
-//! The service calls the scanner, the picker and the hook from any thread.
+//! The service calls the scanner and the picker from any thread.
 //! Each request parks its completion in a [`Bridge`] and wakes the UI thread,
 //! which opens the platform surface on its next event and completes the
 //! request from the platform's answer. One request of a kind is outstanding
@@ -92,8 +92,6 @@ impl<R> Bridge<R> {
 
 static SCAN: Bridge<Result<String, String>> = Bridge::new();
 static PICK: Bridge<Result<Vec<u8>, PickError>> = Bridge::new();
-#[cfg(feature = "app-appcard")]
-static RESTART_CORE: AtomicBool = AtomicBool::new(false);
 
 /// The camera scanner the service asks for a provider QR.
 struct CameraScanner;
@@ -113,11 +111,35 @@ impl octosense_llm_service::QrImagePicker for ImagePicker {
     }
 }
 
-/// The AppCard kernel's octos home: `OCTOS_APP_CORE_DIR`, else on a phone
-/// `<data dir>/octos-home/.octos` (octos-app makes `$HOME` the data dir and
-/// gives its kernel `HOME=<data dir>/octos-home`; Home registers before the
-/// app has started, when `$HOME` is not that yet), else the shared default
-/// (`$HOME/octos-home/.octos`).
+/// Configure the shell's octos kernel (`octosense_octos_core`), once, before
+/// anything connects to it: on a phone its core dir is
+/// `<data dir>/octos-home/.octos`. Nothing starts until a consumer connects.
+#[cfg(any(feature = "octos-core", native_mobile))]
+pub fn configure_kernel(data_dir: Option<String>) {
+    // The kernel's stderr and the core's starts and stops go to Home's log
+    // (logcat on Android), not the `log` facade no logger listens to here.
+    let mut options = octosense_octos_core::Options::default().log(|line| log!("{line}"));
+    if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
+        options = options.app_data_dir(dir);
+    }
+    octosense_octos_core::configure(options);
+    match octosense_octos_core::launch() {
+        Ok(_) => log!("octos: kernel service ready (starts on first use), core dir {:?}", octosense_octos_core::core_dir()),
+        Err(why) => log!("octos: {why}; the providers are still saved under {:?}", octosense_octos_core::core_dir()),
+    }
+}
+
+/// The kernel's octos home, where the `llm` service writes: the shell's
+/// octos kernel's core dir (`OCTOS_APP_CORE_DIR`, else on a phone
+/// `<data dir>/octos-home/.octos`, else `$HOME/octos-home/.octos`).
+#[cfg(any(feature = "octos-core", native_mobile))]
+pub fn core_dir(_data_dir: Option<String>) -> Option<PathBuf> {
+    octosense_octos_core::core_dir()
+}
+
+/// Without the kernel service (a desktop build without `octos-core`): the
+/// same rule, for the profile alone.
+#[cfg(not(any(feature = "octos-core", native_mobile)))]
 pub fn core_dir(data_dir: Option<String>) -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("OCTOS_APP_CORE_DIR").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(dir));
@@ -150,13 +172,8 @@ pub fn register(core_dir: Option<PathBuf>) {
                 .scanner(std::sync::Arc::new(CameraScanner))
                 .image_picker(std::sync::Arc::new(ImagePicker));
         }
-        #[cfg(feature = "app-appcard")]
-        {
-            options = options.on_changed(|| {
-                RESTART_CORE.store(true, Ordering::Release);
-                SignalToUI::set_ui_signal();
-            });
-        }
+        // With `octos-core` the service itself restarts the kernel after a
+        // change: no hook needed here.
         octosense_llm_service::register_with(options);
     });
 }
@@ -181,9 +198,8 @@ fn picked(status: &str, detail: &str) -> Result<Vec<u8>, PickError> {
 }
 
 impl App {
-    /// Every event, on the UI thread: open what the service asked for,
-    /// restart the AppCard core after a change, and complete a scan from the
-    /// scanner's answer.
+    /// Every event, on the UI thread: open what the service asked for, and
+    /// complete a scan from the scanner's answer.
     pub(crate) fn llm_host_event(&mut self, cx: &mut Cx, event: &Event) {
         if SCAN.take_open().is_some() {
             log!("llm: opening the QR scanner");
@@ -195,10 +211,6 @@ impl App {
             cx.android_integration("qr.image", &format!("{{\"id\":{id}}}"));
             #[cfg(not(target_os = "android"))]
             PICK.finish(Some(id), Err(PickError::Failed("This device has no image picker.".into())));
-        }
-        #[cfg(feature = "app-appcard")]
-        if RESTART_CORE.swap(false, Ordering::AcqRel) {
-            self.restart_appcard_core(cx);
         }
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -225,26 +237,6 @@ impl App {
         if !PICK.finish(Some(id), result) {
             log!("llm: image pick {id} answered after it was superseded");
         }
-    }
-
-    /// The provider set changed: end every AppCard module instance, so its
-    /// kernel stops; the home tile relaunches one whose kernel reads the new
-    /// profile (an open AppCard window is simply reopened by the person).
-    #[cfg(feature = "app-appcard")]
-    fn restart_appcard_core(&mut self, cx: &mut Cx) {
-        let mut restarted = 0;
-        while let Some(client) = self.module_host.client_of_module("appcard") {
-            log!("llm: providers changed: restarting the AppCard core (client {client})");
-            self.request_close(cx, client);
-            restarted += 1;
-            if restarted >= 8 || self.module_host.client_of_module("appcard") == Some(client) {
-                break;
-            }
-        }
-        if restarted == 0 {
-            log!("llm: providers changed; no AppCard core is running, the next one reads them");
-        }
-        self.redraw_all(cx);
     }
 }
 

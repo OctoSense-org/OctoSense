@@ -67,9 +67,14 @@ octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service", optional = true }
 # `llm` keeps the assistant's LLM providers for the AI providers app
-# (`os.ai-providers`); the config crate names the AppCard kernel's octos home.
+# (`os.ai-providers`); the config crate names the kernel's octos home.
 octosense-llm-service = { path = "../.sources/system-apps/apps/ai-providers/host-service", optional = true }
 octosense-llm-config = { path = "../.sources/system-apps/apps/ai-providers/config", optional = true }
+# The octos agent kernel as a shell service (OctoSense-System-Apps
+# crates/octos-core): one kernel per process, started when a consumer (AppCard,
+# Rinx) connects, configured by the AI providers app, restarted when the
+# providers change. Feature `octos-core`, on by default.
+octosense-octos-core = { path = "../.sources/system-apps/crates/octos-core", optional = true }
 # The whole AppCard assistant (OctoSense-System-Apps apps/appcard) hosted in
 # a tile, in-process (Phase B of the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 # Not shipped for now: strictly opt-in with `--features app-appcard`, on
@@ -104,14 +109,19 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # `app-news`, `app-photos` and `app-maps` link the native modules instead,
 # for comparison; Mail and Camera have no native module any more.
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service" }
-# `llm`: the AI providers app's providers, camera QR and image import.
-octosense-llm-service = { path = "../.sources/system-apps/apps/ai-providers/host-service" }
+# `llm`: the AI providers app's providers, camera QR and image import; it
+# restarts the octos kernel (the shell's, below) after a change.
+octosense-llm-service = { path = "../.sources/system-apps/apps/ai-providers/host-service", features = ["octos-core"] }
 octosense-llm-config = { path = "../.sources/system-apps/apps/ai-providers/config" }
+# The octos kernel service: native mobile builds always carry it (Android
+# bundles liboctos.so, OpenHarmony links the core in-process).
+octosense-octos-core = { path = "../.sources/system-apps/crates/octos-core" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", default-features = false }
 
 [features]
-# App Hub is part of the standard launcher, including local desktop runs.
-default = ["app-hub"]
+# App Hub is part of the standard launcher, including local desktop runs;
+# the octos kernel is a shell service in every standard build.
+default = ["app-hub", "octos-core"]
 # The standalone mobile shell: the Android phone shell fills the window, no
 # desk bar, no style switcher, no desktop styles. Android builds get it
 # without the flag (build.rs turns the same `mobile_only` cfg on for
@@ -119,7 +129,12 @@ default = ["app-hub"]
 mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
 # AppCard is not among them: it ships only with `--features app-appcard`.
-mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-news", "app-maps", "app-hub"]
+mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-news", "app-maps", "app-hub", "octos-core"]
+# The octos kernel as a shell service (octosense-octos-core): Home configures
+# it at startup, the `llm` service writes its profile and restarts it, AppCard
+# and other consumers connect to it. Opt out with `--no-default-features`
+# plus the features you still want; native mobile builds always link it.
+octos-core = ["dep:octosense-octos-core", "octosense-llm-service?/octos-core"]
 app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
@@ -127,10 +142,11 @@ app-sheets = ["dep:makepad-sheets"]
 # The native Photos library, albums, and Memories app. Without it, Photos is
 # the system script app (`os.photos`, ADR 0004).
 app-photos = ["dep:octosense-photos"]
-# The AppCard module (the assistant in a tile, with the octos kernel) linked
-# in. Opt-in only, on desktop and native mobile alike: AppCard is not shipped
-# by default for now (it interfered with the other apps).
-app-appcard = ["dep:octosense-appcard"]
+# The AppCard module (the assistant in a tile) linked in; it connects to the
+# shell's octos kernel, so it implies `octos-core`. Opt-in only, on desktop
+# and native mobile alike: AppCard is not shipped by default for now (it
+# interfered with the other apps).
+app-appcard = ["dep:octosense-appcard", "octos-core"]
 # The native News module (headlines in a tile) linked in. Without it, News
 # is the system script app App Hub ships (`os.news`, ADR 0004).
 app-news = ["dep:octosense-news"]

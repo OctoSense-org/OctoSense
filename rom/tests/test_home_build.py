@@ -46,15 +46,53 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(steps[-1][0], ROOT / "home")
         self.assertIn("--sdk-path=/sdk with spaces", commands[-1])
         self.assertIn("--no-sign", commands[-1])
-        self.assertTrue(all("--offline" in c for c in commands[1:]))
+        self.assertTrue(all("--offline" in c for c in commands[1:] if c[0] != "git"))
+        self.assertFalse(any(c[:2] == ["git", "fetch"] for c in commands), "offline builds fetch nothing")
         self.assertFalse(any("adb" in c or "fastboot" in c for c in commands))
         self.assertFalse(any("OctoSense-mobile" in arg for c in commands for arg in c))
 
     def test_existing_packager_skips_tool_compilation(self):
-        args = self.args("--variant", "standalone", "--development", "--packager", "/tools/cargo-makepad")
+        args = self.args("--variant", "standalone", "--development", "--packager", "/tools/cargo-makepad", "--no-octos-kernel")
         plan = build.build_plan(args)
         self.assertEqual(len(plan), 3)
         self.assertEqual(plan[-1][1][0], "/tools/cargo-makepad")
+
+    def test_the_default_phone_build_bundles_the_pinned_octos_kernel(self):
+        args = self.args("--variant", "standalone", "--development")
+        steps, kernel = build.kernel_plan(args)
+        revision = build.octos_revision()
+        commands = [command for _, command in steps]
+        self.assertIn(["git", "fetch", "--quiet", "--no-tags", "--depth=1", build.OCTOS_URL, revision], commands)
+        self.assertIn(["git", "checkout", "--quiet", "--detach", revision], commands)
+        cargo = commands[-1]
+        self.assertEqual(cargo[0], "env")
+        self.assertTrue(any(arg.startswith("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/sdk with spaces/ndk/") for arg in cargo))
+        self.assertEqual(cargo[cargo.index("cargo"):], ["cargo", "build", "--locked", "--release", "--target",
+                                                        "aarch64-linux-android", *build.OCTOS_KERNEL_BUILD])
+        self.assertEqual(kernel, build.ROOT / ".sources/octos/target/aarch64-linux-android/release/octos")
+        self.assertEqual(build.extra_libs(kernel), f"liboctos.so={kernel}")
+        # The kernel is built before the APK that bundles it.
+        plan = [command for _, command in build.build_plan(args)]
+        self.assertLess(plan.index(cargo), len(plan) - 1)
+
+    def test_a_prebuilt_kernel_or_none(self):
+        steps, kernel = build.kernel_plan(self.args("--variant", "standalone", "--development", "--octos-kernel", "/k/octos"))
+        self.assertEqual((steps, kernel), ([], Path("/k/octos")))
+        steps, kernel = build.kernel_plan(self.args("--variant", "standalone", "--development", "--no-octos-kernel"))
+        self.assertEqual((steps, kernel), ([], None))
+        self.assertIsNone(build.extra_libs(None))
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.args("--variant", "standalone", "--development", "--octos-kernel", "/k/octos", "--no-octos-kernel")
+
+    def test_the_octos_revision_is_the_one_cargo_lock_pins(self):
+        with tempfile.TemporaryDirectory() as temp:
+            lock = Path(temp) / "Cargo.lock"
+            rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f"
+            lock.write_text(f'[[package]]\nname = "octos-cli"\nversion = "2.0.3"\nsource = "git+https://github.com/octos-org/octos.git?rev={rev}#{rev}"\n')
+            self.assertEqual(build.octos_revision(lock), rev)
+            lock.write_text("[[package]]\nname = \"serde\"\n")
+            with self.assertRaises(RuntimeError):
+                build.octos_revision(lock)
 
 
 class StagingTests(unittest.TestCase):
