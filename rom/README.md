@@ -18,12 +18,13 @@ development, and builds for OpenHarmony and the iOS simulator.
 | --- | --- | --- |
 | **OctoSense-ROM** (this one) | Phone shell, ROM image, installer | |
 | [OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) | The desktop shell | Home was split from it on 15 September 2026; the two still share much of their source (see [home/README.md](home/README.md)). |
-| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | News, Photos, Maps, Camera, Mail and AI providers as contained script apps, the Mail and `llm` host services, the octos kernel service (`crates/octos-core`), and the AppCard assistant (opt-in, not shipped by default) | Pinned in `home/native-apps.lock.json`, checked out to `.sources/system-apps`. |
+| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | News, Photos, Maps, Camera, Mail and AI providers as contained script apps, the Mail and `llm` host services, the octos kernel service (`crates/octos-core`), apps' assistant access (`crates/app-peers`), and the AppCard assistant (opt-in, not shipped by default) | Pinned in `home/native-apps.lock.json`, checked out to `.sources/system-apps`. |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | Signed catalog, admission gate, `hub` CLI, `card-host`, and the shared shell crate `octosense-app-hub-app` | Git dependency pinned in `home/Cargo.toml`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | How to build and publish an OctoSense app | Not a build input. Start there to write an app for Home. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | Runtime release: names the Makepad and OctoScript revisions | Pinned in `home/native-runtime.lock.json`. |
 | [makepad](https://github.com/OctoSense-org/makepad) (OctoSense fork) | UI framework and the `cargo-makepad` packager | Checked out to `.sources/makepad` at the runtime's revision. |
-| [octos](https://github.com/octos-org/octos) | The agent kernel, a Home service (`octos-core`, on by default): AI providers configures it, AppCard and other consumers connect to it | One revision, the one OctoSense-System-Apps pins (`crates/octos-core`, `octos-app`); the APK bundles it as `liboctos.so`. |
+| [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, linked as a native module (`app-rinx`, on by default) | Git dependency pinned in `home/Cargo.toml` (`octosense-module` only). Its assistant is Home's: an octos peer owned by the system agent, injected at creation ([Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)). |
+| [octos](https://github.com/octos-org/octos) | The agent kernel, a Home service (`octos-core`, on by default): AI providers configures it, AppCard, Rinx and other consumers connect to it | One revision, the one OctoSense-System-Apps pins (`crates/octos-core`, `octos-app`); the APK bundles it as `liboctos.so`. |
 
 The organisation overview is at
 [github.com/OctoSense-org](https://github.com/OctoSense-org).
@@ -336,8 +337,8 @@ services name the same App Hub revision, so the graph has one App Hub source.
   or drop any runtime patch. `setup-home.py --check --cargo` fails on any
   mismatch. The full procedure is in
   [home/docs/makepad-fork.md](home/docs/makepad-fork.md#adopting-a-fork-revision).
-- **Runtime patch.** The runtime's Makepad (main `d0a9def5`, OctoScript-Makepad
-  `99c1e5ee`) includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
+- **Runtime patch.** The runtime's Makepad (main `db4691d0`, OctoScript-Makepad
+  `c3d53ba8`) includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
   (contained script apps) and [makepad#31](https://github.com/OctoSense-org/makepad/pull/31)
   (the camera QR scanner API AI providers uses). `patches/runtime/makepad-settings.patch`
   adds the Settings input, accessibility and renderer fixes on top; it is the

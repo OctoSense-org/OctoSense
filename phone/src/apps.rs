@@ -43,6 +43,10 @@ pub fn is_linked(id: &str) -> bool {
 fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
+    // Rinx: Matrix chats and mini apps. Its assistant is the shell's, given
+    // at creation (app_peers_host); it never starts a kernel of its own.
+    #[cfg(feature = "app-rinx")]
+    out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
@@ -326,9 +330,9 @@ mod tests {
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {
-            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
+            &["rinx", "reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
         } else {
-            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
+            &["rinx", "reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
         };
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
@@ -340,7 +344,10 @@ mod tests {
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
         }
         let catalog: Vec<_> = catalog.into_iter().filter(|app| app.bin != "card").collect();
-        assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
+        assert_eq!(catalog.iter().find(|app| app.id == "reference").unwrap().policy,
+                   crate::clients::LaunchPolicy::AlwaysNew);
+        assert_eq!(catalog.iter().find(|app| app.id == "rinx").unwrap().policy,
+                   crate::clients::LaunchPolicy::OrFocus);
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);

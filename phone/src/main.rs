@@ -12,6 +12,7 @@ use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
 mod ai_bus;
+mod app_peers_host;
 mod apps;
 mod binds;
 mod clients;

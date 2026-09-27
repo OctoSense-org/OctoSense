@@ -27,9 +27,19 @@ assistant (`octos-app`, `.sources/system-apps/apps/appcard/app/app`) is built
 only with `--features app-appcard`: it is not shipped for now, so default,
 `mobile-apps` and native mobile builds leave its UI out.
 
-The runtime's Makepad (main `d0a9def5`, OctoScript-Makepad `99c1e5ee`)
-includes the contained-app and isolate controls from makepad#30 and the camera
-QR scanner AI providers uses (makepad#31). `home/runtime-patches.lock.json`
+The runtime's Makepad (main `db4691d0`, OctoScript-Makepad `c3d53ba8`)
+includes the contained-app and isolate controls from makepad#30, the camera
+QR scanner AI providers uses (makepad#31), and Splash `reapply_text`
+(makepad#35) with stateful mini-app inputs (OctoScript-Makepad#46) for Rinx.
+
+Rinx (`app-rinx`, in the default and `mobile-apps` builds) is linked as a
+native module with `octosense-module` only; CI checks that its standalone
+entry and local kernel stay out of every graph. Its assistant is Home's:
+`src/app_peers_host.rs` gives each module whose declared `octos.*` services
+host policy grants a scoped service from `octosense-app-peers`
+(`.sources/system-apps/crates/app-peers`): one octos peer per app and
+account, owned by the system agent `_main:api:octosense#system`, on the
+shell's kernel. A module without granted assistant services gets no peer. `home/runtime-patches.lock.json`
 records only the Settings overlay, `patches/runtime/makepad-settings.patch`,
 for Android input, accessibility and renderer integration.
 The lock records the pinned base, patch SHA-256 and resulting Git tree; setup

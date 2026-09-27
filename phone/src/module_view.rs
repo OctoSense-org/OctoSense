@@ -235,7 +235,12 @@ impl Widget for MpModuleView {
         self.draw_bg.draw_abs(cx, rect);
         if let Some(root) = self.root.clone() {
             let entry = enter_isolate(cx, self.vm_id);
+            // Keep app overlays (Rinx's mini-app and editor modals) in this
+            // viewport, including its origin when the phone shell draws the
+            // module into a shifted capture.
+            let outer = std::mem::replace(&mut cx.global::<ModalBounds>().0, Some(rect));
             root.draw_walk_all(cx, scope, Walk::fill());
+            cx.global::<ModalBounds>().0 = outer;
             leave_isolate(cx, entry);
             self.drawn = true;
         }

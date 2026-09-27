@@ -6,7 +6,7 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d0a9def5fc554a52955db21a2a5a196daccc8e3d", features = ["appcard"] }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "d0a9def5fc554a52955db21a2a5a196daccc8e3d" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "db4691d0e07dc9d1e498f0430ecfaadc4ae15f8f", features = ["appcard"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "db4691d0e07dc9d1e498f0430ecfaadc4ae15f8f" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
