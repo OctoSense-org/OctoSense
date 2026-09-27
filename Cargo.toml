@@ -65,8 +65,8 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 # module (`card`) that runs contained script apps, the system apps packed at
 # build time from the selection `OCTOSENSE_SYSTEM_APPS` names
 # (system-apps.json, .cargo/config.toml), installed apps and their icons.
-# Same rev as the Mail host service's octosense-appstore (OctoSense-System-Apps):
-# one App Hub source, so one host-service registry.
+# Same rev as the Mail and llm host services' octosense-appstore
+# (OctoSense-System-Apps): one App Hub source, so one host-service registry.
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5", optional = true }
 # The `mail` host service the Mail system app calls through `host.request`:
 # accounts, message lists and send run here, with the passwords the host
@@ -74,6 +74,11 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # OctoSense-System-Apps checkout beside this repository
 # (native-apps.lock.json, tools/setup-native.py).
 octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
+# The `llm` host service the AI providers system app calls: the assistant's
+# LLM providers, their keys (macOS keychain) and the phone QR, on host-owned
+# sheets. The config crate names the AppCard kernel's octos home it writes.
+octosense-llm-service = { path = "../OctoSense-System-Apps/apps/ai-providers/host-service", optional = true }
+octosense-llm-config = { path = "../OctoSense-System-Apps/apps/ai-providers/config", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
 rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "5ad2c1739e5b4776588518ab76440a5367c9968e", default-features = false, features = ["octosense-module"], optional = true }
@@ -90,7 +95,7 @@ makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 
 [features]
 # App Hub is part of the standard launcher: the store, the Card runner and
-# the system apps (News, Photos, Maps, Camera, Mail) it runs.
+# the system apps (News, Photos, Maps, Camera, Mail, AI providers) it runs.
 default = ["app-hub"]
 # Also usable on desktop for testing the same embedded apps with --module.
 # Photos is the system app here; `app-photos` links Makepad's native Photos
@@ -98,7 +103,7 @@ default = ["app-hub"]
 # AppCard is not among them: it ships only with `--features app-appcard`.
 mobile-apps = ["app-reference", "app-sheets", "app-hub"]
 # App Hub and the host services its system apps call.
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
