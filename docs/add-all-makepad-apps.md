@@ -41,18 +41,19 @@
 
 | 文件 | 内容 |
 |---|---|
-| `config/apps.json`(默认) | 只有 `reference`(本项目自带的示例) |
-| `config/apps.makepad.json` | Reference + Makepad 全家桶(20+ 个应用) |
+| `config/apps.json`(默认) | Reference + Makepad 全家桶(20+ 个应用),桌面默认就读它 |
+| `config/apps.makepad.json` | 与 `config/apps.json` 相同的副本,供 `--apps` 显式指定 |
 
-`config/apps.makepad.json` 已经包含所有 Makepad 应用,你**不需要手写**。
-启动时指定它:
+默认目录已经包含所有 Makepad 应用,你**不需要手写**,直接 `cargo run --release` 即可。
+也可以显式指定副本:
 
 ```sh
 cargo run --release -- --apps config/apps.makepad.json
 ```
 
-如果想把它变成默认,改 `config/apps.json` 的内容(或建
-`~/.octosense/apps.json` 个人目录覆盖),重启即可。
+想换成自己的目录,建 `~/.octosense/apps.json` 个人目录覆盖默认目录,重启即可。
+
+> 注意：Makepad 自带的 Photos 和 Mail 已从目录中移除，由 OctoSense 的系统应用（News、Photos、Maps、Camera、Mail、AI providers，经 App Hub 打包进 Shell）取代，它们不在开发者程序目录里。
 
 ---
 
@@ -69,11 +70,9 @@ cargo run --release -- --apps config/apps.makepad.json
 | `mixer` | Mixer | makepad-mixer | makepad-mixer | focus |
 | `task` | Task Manager | makepad-task | task | focus |
 | `sheets` | Sheets | makepad-sheets | sheets | focus |
-| `photos` | Photos | makepad-photos | photos | focus |
 | `clock` | Clock | makepad-clock | clock | focus |
 | **`weather`** | **Weather** | **makepad-weather** | **weather** | **focus** |
 | `finance` | Finance | makepad-finance | finance | focus |
-| `mail` | Mail | makepad-mail | mail | focus |
 | `notes` | Notes | makepad-notes | notes | focus |
 | `calendar` | Calendar | makepad-calendar | calendar | focus |
 | `reminders` | Reminders | makepad-reminders | reminders | focus |

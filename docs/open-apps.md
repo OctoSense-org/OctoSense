@@ -1,6 +1,6 @@
 # 在 OctoSense 中打开托管应用(操作记录 + 参考)
 
-这份文档记录 2026-09-26 实际跑通的流程,并整理成可复用的参考。
+这份文档整理了在 OctoSense 桌面中打开托管应用的步骤(2026-09-26 实测)。
 
 OctoSense 桌面能把 Makepad 应用作为独立子进程托管在自己的窗口(tile)里。
 下面先按时间顺序记录当时怎么做的,再给可照抄的命令。
@@ -10,7 +10,7 @@ OctoSense 桌面能把 Makepad 应用作为独立子进程托管在自己的窗�
 1. **准备同级框架仓库**:`python3 tools/setup-native.py --update`
    —— 把 `../makepad`、`../octoscript`、`../octoscript-makepad` 检出到锁定版本。
 2. **编译宿主**:`cargo build`(debug 或 release),产物在 `CARGO_TARGET_DIR`
-   指定的 target 目录下(本机是 `/Volumes/PSSD/dev/rust-target`)。
+   指定的 target 目录下(默认 `target/`)。
 3. **启动桌面**:跑编译出的 `octosense` 可执行文件。
    第一次用 `--test-action launch-weather` 打 weather,日志报
    `no app 'weather' in the registry` —— 应用目录里查不到 weather。
@@ -19,7 +19,7 @@ OctoSense 桌面能把 Makepad 应用作为独立子进程托管在自己的窗�
    而离线 metadata 因为缓存缺依赖(`agent-client-protocol` 1.3.0)而失败,
    导致所有 makepad 应用行被静默跳过。
 5. **修复**:联网跑一次 `cargo metadata` 把缺的依赖补进缓存;
-   之后离线 metadata 正常,目录解析出 `/Volumes/PSSD/CodeProjects/makepad`。
+   之后离线 metadata 正常,目录解析出同级的 `../makepad` checkout。
 6. **再开 weather**:桌面把 weather 作为 **client 1** 托管,现场
    `cargo run` 编译;首次冷构建 91 秒出首帧(`first frame in 91473 ms (cold)`),
    天气应用成功渲染进桌面 tile。
@@ -61,8 +61,8 @@ wm: weather client 1 first frame in NNN ms (cold)   ← 应用已出画面
 
 | 文件 | 内容 | 何时用 |
 |---|---|---|
-| `config/apps.json`(默认) | 只有 `reference` | 默认桌面 |
-| `config/apps.makepad.json` | Reference + Makepad 全家桶(Browser、Files、Terminal、Weather、Finance、Mail、Notes、Calendar、Reminders、Calculator、Fabric、Score、Video、Route、VJ、Fab、Director、Image、PDF、AI 等) | 想开满应用时用 |
+| `config/apps.json`(默认) | Reference + Makepad 全家桶(Browser、Files、Terminal、Weather、Finance、Notes、Calendar、Reminders、Calculator、Fabric、Score、Video、Route、VJ、Fab、Director、Image、PDF、AI 等) | 默认桌面 |
+| `config/apps.makepad.json` | 与默认目录相同的副本 | 用 `--apps` 显式指定时 |
 
 用 `--apps` 选目录:
 
@@ -98,7 +98,7 @@ cd OctoSense
 cargo metadata --format-version 1 --manifest-path Cargo.toml > /dev/null
 ```
 
-之后离线 metadata 正常,目录解析出 `/Volumes/PSSD/CodeProjects/makepad`。
+之后离线 metadata 正常,目录解析出同级的 `../makepad` checkout。
 (前提:同级框架仓库已经用 `python3 tools/setup-native.py` 准备好。)
 
 ## 五、往目录里加一个新应用
