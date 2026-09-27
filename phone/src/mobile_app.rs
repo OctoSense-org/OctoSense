@@ -591,18 +591,25 @@ impl App {
         self.sync_home_tiles(cx);
         self.animate_phone(cx);
     }
+    /// Back with nothing of the shell's own to close (mobile_back.rs): off
+    /// an app it goes Home; in an app, the app is offered it first, and if
+    /// it does not take it the phone leaves the app, to the app it was
+    /// opened from while that still runs, else Home.
     fn phone_back(&mut self,cx:&mut Cx) {
         if self.state_mut().phone.screen != PhoneScreen::App {
             self.state_mut().phone.navigate(PhoneScreen::Home);
             return;
         }
         let Some(client)=self.state_mut().phone.client else{return};
-        if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
-            let event=Event::BackPressed{handled:std::cell::Cell::new(false)};
-            let entry=enter_isolate(cx,vm_id);
-            root.handle_event(cx,&event,&mut Scope::empty());
-            leave_isolate(cx,entry);
-            if matches!(event,Event::BackPressed{handled} if !handled.get()) {self.state_mut().phone.navigate(PhoneScreen::Home);}
+        if let Some((module,root,vm_id))=self.module_host.get(client).map(|i|(i.module.id(),i.root.clone(),i.vm_id)) {
+            if crate::mobile_back::offer_back_to_module(cx,module,&root,vm_id) {return;}
+            let return_to=self.state_mut().phone.return_to;
+            let clients=&self.state_mut().clients;
+            let origin=crate::mobile_back::leave_target(return_to,client,|c|clients.get(&c).is_some_and(|s|s.closing.is_none()));
+            match origin {
+                Some(origin)=>self.activate_client(cx,origin),
+                None=>self.state_mut().phone.navigate(PhoneScreen::Home),
+            }
         }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
             send_to_app(sender,vec![StudioToApp::Custom(makepad_platform::ime::HostedBack::default().to_json())]);
         }

@@ -80,6 +80,9 @@ pub struct PhoneState {
     pub wallpaper_phase: f64,
     pub screen: PhoneScreen,
     pub client: Option<ClientId>,
+    /// The app in front was opened from another app, which Back returns to
+    /// (mobile_back.rs). Any other navigation forgets it.
+    pub return_to: Option<crate::mobile_back::ReturnTo>,
     pub order: Vec<ClientId>,
     pub openness: f64,
     pub overview: f64,
@@ -152,7 +155,7 @@ pub struct PhoneState {
 }
 impl Default for PhoneState {
     fn default() -> Self {
-        Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, order: Vec::new(),
+        Self { clock: "9:41".into(), wallpaper_time: 0.0, wallpaper_phase: 0.0, screen: PhoneScreen::Home, client: None, return_to: None, order: Vec::new(),
             navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
@@ -211,6 +214,7 @@ impl PhoneState {
         self.search_open = false;
         self.search_focused = false;
         if self.client != Some(client) { self.keyboard_target = 0.0; }
+        if self.return_to.is_some_and(|r| r.app != client) { self.return_to = None; }
         self.client = Some(client);
         self.order.retain(|c| *c != client);
         self.order.insert(0, client);
@@ -223,6 +227,7 @@ impl PhoneState {
         self.search_open = false;
         self.search_focused = false;
         self.screen = screen;
+        self.return_to = None;
         self.keyboard_target = 0.0;
         self.gesture = None;
         self.dismiss_y = 0.0;
