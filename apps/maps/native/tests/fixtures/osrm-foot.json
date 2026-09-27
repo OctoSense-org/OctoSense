@@ -1,0 +1,729 @@
+{
+ "code": "Ok",
+ "routes": [
+  {
+   "geometry": "wr{bFj||fV?BUNDJBHRb@`AjCBFDJHP@BDLFRTj@DNb@jABD?@FPBHBDpAhD@BBFBHBF@B@@lAdDBD@D??BFDJBH@BBFfAxCj@zA@BHRHT@@HTn@fBBB?@BD@F@B@B@BhAzC@@DJDL@Bn@bBDR@@DLHP@Dz@~B@BFRFN@@P^jA~CnAhDPd@Pd@Vr@Pb@Xv@^`AL\\@FNj@@H@JB`B?\\AHB`@AX@`@FvB@h@?`@BrA@VAF@@@R@P?D@FB`ABJ@hABn@EH@f@ATCFBL@T@d@@dA@b@@^DpCBjB@RBbA?N@PBhAA??P?JB?BhBDfB?DA??D?L?L?DJpDB|@ABAD?H@H?F?N@h@DhBF~C?^?B?FCHAJIREDk@t@]d@A?BDA@GJKLGA?DADA@GFiAxAoB`C?DKNILI?u@`AyAlBGF??EFEFCBDDw@|@CDEDs@`AQTUZc@j@MPQREAIJIH?B?Bw@z@UViAvAADGDKNk@r@yAjBA@CBILA@oA~ACD?DWXILAAABA@e@h@KLKL]b@eC`D?BKHIFCBaDbE?BOPOPAAc@h@mB`CIHEFOPUVCDEH]b@qBbCBBKJON_AlAQTSZ_@bAIJ?B@D@F@FIh@GZc@lBCHCLILSRBH@D@B?DMh@ADELEDEDA?@HAZMn@Q|@EHCFEP?JELQx@CJED@BEVETEFeAbFIPERETATm@xCSlAYxAALCJ??_@fBOt@G\\ELILs@p@KFSJOFIB?@DNF^DT?@DBFB?@BDBH@P?r@Ef@q@lDOr@KVOb@GJIL[n@cAjBEJU^c@v@Wb@s@pAILONQHk@XIJCJ?J?J}At@w@`@@NEf@EFDLq@\\KTCXSf@OTGDC@UDCb@SZKZCDADIHPj@QF{@`@MFDRMF\\vANp@CXDLBCf@tBc@RgClA?DDLFT@Di@TgAh@E@GBm@XGHABAH?J@JRt@`@bBA@KFOFA@@BBLDN?BeAf@uAn@dAdE@BDNBL@BC@GDOFC@}CxAdAbEKFOFDPDR}CxAMHQJE?C@oB|@ABAD?D?Bx@`DDFQHWLSHAD??FXHZG?i@VSJm@VA@IDEDABAB?BQFUFDBBBn@dC~@pDH^FX@HFf@Db@BZ?P?^?T?PCd@ALE\\EVCNEDKH}Ap@",
+   "distance": 7789.5,
+   "duration": 6233.7,
+   "legs": [
+    {
+     "steps": [
+      {
+       "name": "East Santa Clara Street",
+       "distance": 1.3,
+       "duration": 3,
+       "maneuver": {
+        "type": "depart",
+        "location": [
+         -121.886303,
+         37.338204
+        ],
+        "bearing_after": 240
+       }
+      },
+      {
+       "name": "North 5th Street",
+       "distance": 14.8,
+       "duration": 11.8,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.886316,
+         37.338198
+        ],
+        "bearing_after": 327
+       }
+      },
+      {
+       "name": "",
+       "distance": 1634.9,
+       "duration": 1307.7,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.886402,
+         37.338312
+        ],
+        "bearing_after": 237
+       }
+      },
+      {
+       "name": "",
+       "distance": 96.9,
+       "duration": 77.7,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight left",
+        "location": [
+         -121.902723,
+         37.332034
+        ],
+        "bearing_after": 253
+       }
+      },
+      {
+       "name": "",
+       "distance": 408.2,
+       "duration": 326.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.903792,
+         37.332027
+        ],
+        "bearing_after": 253
+       }
+      },
+      {
+       "name": "",
+       "distance": 388.7,
+       "duration": 311.2,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight left",
+        "location": [
+         -121.908326,
+         37.331804
+        ],
+        "bearing_after": 267
+       }
+      },
+      {
+       "name": "",
+       "distance": 3.2,
+       "duration": 2.6,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "left",
+        "location": [
+         -121.912459,
+         37.332135
+        ],
+        "bearing_after": 237
+       }
+      },
+      {
+       "name": "",
+       "distance": 22.1,
+       "duration": 17.7,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.91249,
+         37.33212
+        ],
+        "bearing_after": 313
+       }
+      },
+      {
+       "name": "",
+       "distance": 4.6,
+       "duration": 3.7,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "left",
+        "location": [
+         -121.912624,
+         37.332273
+        ],
+        "bearing_after": 278
+       }
+      },
+      {
+       "name": "",
+       "distance": 151.9,
+       "duration": 121.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight right",
+        "location": [
+         -121.912675,
+         37.33228
+        ],
+        "bearing_after": 315
+       }
+      },
+      {
+       "name": "",
+       "distance": 23,
+       "duration": 18.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight right",
+        "location": [
+         -121.91386,
+         37.333261
+        ],
+        "bearing_after": 312
+       }
+      },
+      {
+       "name": "",
+       "distance": 645,
+       "duration": 516,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.914012,
+         37.333418
+        ],
+        "bearing_after": 315
+       }
+      },
+      {
+       "name": "",
+       "distance": 204.1,
+       "duration": 163.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.919014,
+         37.337543
+        ],
+        "bearing_after": 317
+       }
+      },
+      {
+       "name": "",
+       "distance": 168.3,
+       "duration": 134.6,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "right",
+        "location": [
+         -121.920589,
+         37.338869
+        ],
+        "bearing_after": 326
+       }
+      },
+      {
+       "name": "",
+       "distance": 271.5,
+       "duration": 217.2,
+       "maneuver": {
+        "type": "new name",
+        "modifier": "straight",
+        "location": [
+         -121.921884,
+         37.33997
+        ],
+        "bearing_after": 46
+       }
+      },
+      {
+       "name": "",
+       "distance": 144.7,
+       "duration": 115.8,
+       "maneuver": {
+        "type": "new name",
+        "modifier": "straight",
+        "location": [
+         -121.923949,
+         37.341745
+        ],
+        "bearing_after": 240
+       }
+      },
+      {
+       "name": "",
+       "distance": 183.1,
+       "duration": 146.5,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "left",
+        "location": [
+         -121.925153,
+         37.342588
+        ],
+        "bearing_after": 253
+       }
+      },
+      {
+       "name": "",
+       "distance": 136.2,
+       "duration": 109,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.926974,
+         37.343162
+        ],
+        "bearing_after": 267
+       }
+      },
+      {
+       "name": "",
+       "distance": 2.1,
+       "duration": 1.7,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "left",
+        "location": [
+         -121.928398,
+         37.343567
+        ],
+        "bearing_after": 251
+       }
+      },
+      {
+       "name": "",
+       "distance": 514.1,
+       "duration": 411.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight right",
+        "location": [
+         -121.928421,
+         37.343561
+        ],
+        "bearing_after": 289
+       }
+      },
+      {
+       "name": "",
+       "distance": 547.3,
+       "duration": 437.8,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.933468,
+         37.345519
+        ],
+        "bearing_after": 250
+       }
+      },
+      {
+       "name": "The Alameda",
+       "distance": 91.5,
+       "duration": 73.2,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.938523,
+         37.347584
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 7,
+       "duration": 5.6,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.938961,
+         37.34833
+        ],
+        "bearing_after": 258
+       }
+      },
+      {
+       "name": "",
+       "distance": 29.6,
+       "duration": 23.7,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.939038,
+         37.348318
+        ],
+        "bearing_after": 281
+       }
+      },
+      {
+       "name": "",
+       "distance": 54.4,
+       "duration": 43.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.939353,
+         37.348352
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 54,
+       "duration": 43.2,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.939744,
+         37.348679
+        ],
+        "bearing_after": 300
+       }
+      },
+      {
+       "name": "",
+       "distance": 15.9,
+       "duration": 12.7,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.94012,
+         37.34903
+        ],
+        "bearing_after": 275
+       }
+      },
+      {
+       "name": "",
+       "distance": 44.2,
+       "duration": 35.3,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.940298,
+         37.349046
+        ],
+        "bearing_after": 310
+       }
+      },
+      {
+       "name": "",
+       "distance": 22,
+       "duration": 17.6,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.940685,
+         37.349291
+        ],
+        "bearing_after": 243
+       }
+      },
+      {
+       "name": "",
+       "distance": 55.7,
+       "duration": 44.6,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.940908,
+         37.349203
+        ],
+        "bearing_after": 336
+       }
+      },
+      {
+       "name": "",
+       "distance": 9.3,
+       "duration": 7.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.941162,
+         37.349662
+        ],
+        "bearing_after": 248
+       }
+      },
+      {
+       "name": "Alviso Mall",
+       "distance": 8,
+       "duration": 6.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.94126,
+         37.349633
+        ],
+        "bearing_after": 336
+       }
+      },
+      {
+       "name": "",
+       "distance": 66.7,
+       "duration": 53.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.941295,
+         37.349699
+        ],
+        "bearing_after": 246
+       }
+      },
+      {
+       "name": "",
+       "distance": 11.8,
+       "duration": 9.4,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.941988,
+         37.349465
+        ],
+        "bearing_after": 281
+       }
+      },
+      {
+       "name": "",
+       "distance": 66.5,
+       "duration": 53.2,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.942118,
+         37.349488
+        ],
+        "bearing_after": 223
+       }
+      },
+      {
+       "name": "",
+       "distance": 104.8,
+       "duration": 83.8,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.942759,
+         37.349244
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 23,
+       "duration": 18.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.943249,
+         37.350103
+        ],
+        "bearing_after": 246
+       }
+      },
+      {
+       "name": "",
+       "distance": 114,
+       "duration": 91.2,
+       "maneuver": {
+        "type": "end of road",
+        "modifier": "right",
+        "location": [
+         -121.943486,
+         37.350018
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 90.5,
+       "duration": 72.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.944035,
+         37.350941
+        ],
+        "bearing_after": 277
+       }
+      },
+      {
+       "name": "",
+       "distance": 38.3,
+       "duration": 30.7,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.94498,
+         37.350666
+        ],
+        "bearing_after": 333
+       }
+      },
+      {
+       "name": "",
+       "distance": 95.4,
+       "duration": 76.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.945268,
+         37.350767
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 114.1,
+       "duration": 91.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.945714,
+         37.351549
+        ],
+        "bearing_after": 244
+       }
+      },
+      {
+       "name": "",
+       "distance": 115.1,
+       "duration": 92,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.946891,
+         37.351132
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 95.2,
+       "duration": 76.1,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.947432,
+         37.352075
+        ],
+        "bearing_after": 244
+       }
+      },
+      {
+       "name": "",
+       "distance": 17.7,
+       "duration": 14.1,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.948414,
+         37.351727
+        ],
+        "bearing_after": 336
+       }
+      },
+      {
+       "name": "",
+       "distance": 301.2,
+       "duration": 241.2,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.948494,
+         37.351873
+        ],
+        "bearing_after": 246
+       }
+      },
+      {
+       "name": "",
+       "distance": 40.5,
+       "duration": 32.3,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.950508,
+         37.35307
+        ],
+        "bearing_after": 334
+       }
+      },
+      {
+       "name": "",
+       "distance": 114,
+       "duration": 91.1,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.950712,
+         37.353388
+        ],
+        "bearing_after": 246
+       }
+      },
+      {
+       "name": "",
+       "distance": 358.8,
+       "duration": 287,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.951414,
+         37.353991
+        ],
+        "bearing_after": 341
+       }
+      },
+      {
+       "name": "",
+       "distance": 64.4,
+       "duration": 51.5,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.955039,
+         37.353528
+        ],
+        "bearing_after": 326
+       }
+      },
+      {
+       "name": "",
+       "distance": 0,
+       "duration": 0,
+       "maneuver": {
+        "type": "arrive",
+        "modifier": "right",
+        "location": [
+         -121.955335,
+         37.354056
+        ],
+        "bearing_after": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

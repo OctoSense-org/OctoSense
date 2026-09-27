@@ -1,0 +1,178 @@
+// Per-app channels/groups: the chosen item and proposed change are reviewed together.
+fn settings_notifications_init(s) { if s["notifications_ui"]==nil { s.notifications_ui={offset:0,generation:nil,selected:nil,draft:nil,pressed:nil,row_pressed:nil,seen:nil,notice:"",entry:nil} } }
+fn settings_notifications_observed(s,o) {
+    let n=o.app_notifications
+    if n!=nil && s.notifications_ui.entry==nil && n.target==s.context["app_target"] && (n.availability!="Available" || n.offset==s.notifications_ui.offset) { return n }
+    return nil
+}
+fn settings_notification_row(s,o) { let n=settings_notifications_observed(s,o); if n!=nil { for row in n.rows { if row.key==s.notifications_ui.selected { return row } } }; return nil }
+fn settings_notifications_read(s,o,out) {
+    if !o.android { return }; let ui=s.notifications_ui
+    if ui.entry!=nil { settings_request(out,{kind:"read",domain:"app_entry",entry_id:ui.entry.entry_id,package:ui.entry.package}) }
+    else if s.context["app_target"]!=nil { settings_request(out,{kind:"read",domain:"app_notifications",target:s.context["app_target"],offset:ui.offset,generation:ui.generation}) }
+}
+fn settings_notifications_permits(n,r) {
+    if n==nil || r==nil || n.availability!="Available" || n.target!=r.target || n.key==nil || n.key!=r.key { return false }
+    if r.change=="App" { return n.app!=nil && n.app.can_set && n.app.key==r.item }
+    for row in n.rows {
+        if row.key==r.item && row.can_set {
+            if r.change=="Group" { return row.kind=="Group" }
+            if r.change=="Channel" { return row.kind=="Channel" }
+            if r.change=="Importance" { return row.kind=="Channel" && settings_has(row.options,r.value) }
+        }
+    }
+    return false
+}
+fn settings_notifications_candidate(s,o,id) {
+    let n=settings_notifications_observed(s,o); if n==nil || n.key==nil { return nil }
+    let r=nil
+    if id=="an_save" || id=="nc_save" { r=s.notifications_ui.draft }
+    if id=="an_toggle" && n.app!=nil { r={kind:"app_notifications",target:n.target,key:n.key,item:n.app.key,change:"App",value:!n.app.enabled} }
+    let row=settings_notification_row(s,o)
+    if row!=nil {
+        if id=="nc_toggle" { r={kind:"app_notifications",target:n.target,key:n.key,item:row.key,change:row.kind,value:!row.enabled} }
+        for value in ["Min","Low","Default","High"] { if id=="nc_importance_"+text.lower(value) { r={kind:"app_notifications",target:n.target,key:n.key,item:row.key,change:"Importance",value:value} } }
+    }
+    if settings_notifications_permits(n,r) { return r }; return nil
+}
+fn settings_notifications_event(s,e,o,out) {
+    settings_notifications_init(s); let ui=s.notifications_ui
+    let ready=o.android && !s.pending
+    if e.kind=="entry" && e.id=="app_notifications" {
+        ui.offset=0; ui.generation=nil; ui.selected=nil; ui.draft=nil; ui.pressed=nil; ui.row_pressed=nil; ui.notice=""; ui.entry={entry_id:e.value.entry_id,package:e.value.package}
+        s.context.app_target=nil; s.apps.permission_offset=0; s.page="AppNotifications"; s.search_destination=nil
+        settings_blur(out); settings_scroll(out,"app_notifications_page"); settings_notifications_read(s,o,out); return true
+    }
+    if e.kind=="entry_resolved" && e.id=="app_notifications" {
+        let details=o.app_details
+        if s.page=="AppNotifications" && ui.entry!=nil && ui.entry.entry_id==e.value.entry_id && ui.entry.package==e.value.package && details!=nil && details.target==ui.entry.package {
+            ui.entry=nil; s.context.app_target=details.target; s.apps.permission_offset=0
+            if !details.exists { s.page="AppDetails" } else { settings_notifications_read(s,o,out) }
+            return true
+        }
+        return false
+    }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") {
+        ui.draft=nil; ui.pressed=nil; ui.row_pressed=nil
+        if s.page=="AppNotifications" && ui.entry!=nil { ui.entry=nil; s.page="Apps"; return true }
+        return false
+    }
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" { ui.pressed=nil; ui.row_pressed=nil; if e.kind!="pause" { ui.draft=nil; ui.entry=nil }; return false }
+    let raw=o.app_notifications
+    if raw!=nil && raw.target==s.context["app_target"] && raw.request_id!=ui.seen {
+        ui.seen=raw.request_id
+        if raw.stale && raw.offset==0 { ui.offset=0; ui.notice="Notification channels changed. Showing the first page."; settings_scroll(out,"app_notifications_page") }
+        if raw.offset==ui.offset && raw.availability=="Available" { ui.generation=raw.generation }
+    }
+    if s.page=="AppDetails" && e.kind=="click" && e.id=="app_notifications" {
+        let details=settings_selected_details(s,o)
+        if ready && details!=nil && details.exists { ui.offset=0; ui.generation=nil; ui.selected=nil; ui.draft=nil; ui.pressed=nil; ui.row_pressed=nil; ui.notice=""; ui.entry=nil; s.page="AppNotifications"; settings_scroll(out,"app_notifications_page"); settings_notifications_read(s,o,out) }
+        return true
+    }
+    if s.page!="AppNotifications" && s.page!="NotificationChannel" { return false }
+    let n=settings_notifications_observed(s,o); let prefix="an"; if s.page=="NotificationChannel" { prefix="nc" }
+    if e.kind=="click" && e.id==prefix+"_cancel" { if !s.pending { ui.draft=nil; ui.pressed=nil }; return true }
+    if e.kind=="click" && e.id==prefix+"_refresh" { if ready { settings_notifications_read(s,o,out) }; return true }
+    if e.kind=="click" && e.id==prefix+"_native" {
+        let details=settings_selected_details(s,o)
+        if ready && ui.entry==nil && details!=nil && settings_has(details.actions,"Notifications") { settings_request(out,{kind:"app_action",target:details.target,action:"Notifications"}) }
+        return true
+    }
+    if s.page=="AppNotifications" {
+        if e.kind=="click" && settings_has(["an_previous","an_previous_bottom","an_next","an_next_bottom"],e.id) {
+            if ready && n!=nil {
+                let next=n.offset-20; if e.id=="an_next" || e.id=="an_next_bottom" { next=n.offset+20 }
+                if next>=0 && next<n.total { ui.offset=next; ui.generation=n.generation; ui.draft=nil; settings_notifications_read(s,o,out); settings_scroll(out,"app_notifications_page") }
+            }
+            return true
+        }
+        let i=0
+        while i<20 {
+            if e.id=="an_row_"+i {
+                let row=nil; if n!=nil && i<n.rows.len() { row=n.rows[i] }
+                if e.kind=="press" { ui.row_pressed={id:e.id,key:nil}; if row!=nil { ui.row_pressed.key=row.key }; return true }
+                if e.kind=="release" { ui.row_pressed=nil; return true }
+                if e.kind=="click" {
+                    let held=ui.row_pressed; ui.row_pressed=nil
+                    if ready && row!=nil && (held==nil || (held.id==e.id && held.key==row.key)) { ui.selected=row.key; ui.draft=nil; s.page="NotificationChannel"; settings_scroll(out,"notification_channel_page") }
+                    return true
+                }
+            }
+            i=i+1
+        }
+    }
+    let candidate=settings_notifications_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; return candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind=="click" && candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if !ready || (held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json())) { return true }
+        if e.id=="an_save" || e.id=="nc_save" { ui.draft=nil; settings_request(out,candidate) } else { ui.draft=candidate; settings_scroll(out,settings_active_scroll(s.page)) }
+        return true
+    }
+    return false
+}
+fn settings_notification_importance(value) { return settings_named(value,[["None","Off"],["Min","Silent, minimized"],["Low","Silent"],["Default","Alerting"],["High","Alerting, allow pop-up"],["Unspecified","App default"]],"Unavailable") }
+fn settings_notifications_refresh(s,o,out) {
+    settings_notifications_init(s); let ui=s.notifications_ui; let ready=o.android && !s.pending; let details=settings_selected_details(s,o)
+    settings_enabled(out,"app_notifications",ready && details!=nil && details.exists)
+    if s.page!="AppNotifications" && s.page!="NotificationChannel" { return }
+    let n=settings_notifications_observed(s,o); let app=nil; if n!=nil { app=n.app }
+    let identity=settings_or(s.context["app_target"],""); if ui.entry!=nil { identity=ui.entry.package }
+    if app!=nil { identity=app.label+"\n"+n.target+"\n"+settings_bool_label("App notifications",app.enabled) }
+    let availability="Waiting for notification information…"; let page=""
+    if n!=nil {
+        availability=settings_named(n.availability,[["Available",""],["Unavailable","App notification controls are unavailable on this installation. Android notification settings remain available below."],["Restricted","Notification settings are unavailable while locked or restricted."]],"")
+        if n.exists==false { availability="This app is no longer installed." }
+        else if app!=nil && (app.permission_fixed || app.importance_locked || app.suspended) { availability="Some notification choices are fixed by Android or your administrator." }
+        if n.availability=="Available" {
+            page="No notification channels or groups are currently registered."
+            if n.total>0 { page=""+(n.offset+1)+"–"+(n.offset+n.rows.len())+" of "+n.total+" channels and groups"; if n.truncated { page=page+" (first 6,000 shown)" } }
+        }
+    }
+    settings_text(out,"an_identity",identity); settings_text(out,"an_availability",availability); settings_text(out,"an_page",page); settings_text(out,"an_notice",ui.notice)
+    let toggle="Turn app notifications on"; if app!=nil && app.enabled { toggle="Turn app notifications off" }; settings_text(out,"an_toggle",toggle); settings_enabled(out,"an_toggle",ready && settings_notifications_candidate(s,o,"an_toggle")!=nil)
+    let i=0
+    while i<20 {
+        let row=nil; let id="an_row_"+i; if n!=nil && i<n.rows.len() { row=n.rows[i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,ready && row!=nil)
+        if row!=nil {
+            let value=settings_apps_flag(row.enabled,"On","Off"); if row.importance!=nil { value=settings_notification_importance(row.importance) }
+            let label=row.kind+": "+row.name+"\n"+value; if row.enabled && !row.effective_enabled { label=label+" · Blocked by app or group" }
+            settings_text(out,id,label); settings_patch(out,"semantic",id,"notification:"+n.target+":"+row.key)
+        }
+        i=i+1
+    }
+    for id in ["an_previous","an_previous_bottom"] { settings_enabled(out,id,ready && n!=nil && n.offset>0) }
+    for id in ["an_next","an_next_bottom"] { settings_enabled(out,id,ready && n!=nil && n.offset+20<n.total && n.generation!=nil) }
+    for id in ["an_refresh","nc_refresh"] { settings_enabled(out,id,ready) }
+    for id in ["an_native","nc_native"] { settings_enabled(out,id,ready && ui.entry==nil && details!=nil && settings_has(details.actions,"Notifications")) }
+    let row=settings_notification_row(s,o); let channel="This notification channel or group is no longer on the observed page. Go back and refresh."; let observed=""; let policy=""; let toggle="Turn channel notifications on"
+    if row!=nil {
+        channel=row.kind+": "+row.name
+        observed=settings_bool_label("Enabled",row.enabled)+"\n"+settings_bool_label("Allowed by app and group",row.effective_enabled)
+        if row.group_name!=nil { observed=observed+"\nGroup: "+row.group_name }
+        if row.importance!=nil { observed=observed+"\nImportance: "+settings_notification_importance(row.importance)+"\nSound: "+settings_or(row.sound,"Unavailable"); if row.user_locked_importance { observed=observed+"\nImportance was explicitly chosen by the user." } }
+        if row.linked_app { policy="This is the app’s only legacy channel. Changing it also changes permission for all notifications from this app." } else if !row.can_set { policy="This notification choice is unavailable or restricted by Android." }
+        toggle="Turn "+text.lower(row.kind)+" notifications "+settings_apps_flag(row.enabled,"off","on")
+    }
+    settings_text(out,"nc_identity",channel); settings_text(out,"nc_observed",observed); settings_text(out,"nc_policy",policy); settings_text(out,"nc_toggle",toggle); settings_enabled(out,"nc_toggle",ready && settings_notifications_candidate(s,o,"nc_toggle")!=nil)
+    settings_visible(out,"nc_importance",row!=nil && row.kind=="Channel")
+    for value in ["Min","Low","Default","High"] {
+        let id="nc_importance_"+text.lower(value); let label=settings_notification_importance(value); if row!=nil && row.importance==value { label=label+" · Selected" }
+        settings_text(out,id,label); settings_enabled(out,id,ready && settings_notifications_candidate(s,o,id)!=nil)
+    }
+    let description=""; let r=ui.draft
+    if r!=nil {
+        if r.change=="App" { description=settings_bool_label("Review app notifications",r.value)+". This changes Android’s notification permission for this app." }
+        if r.change=="Group" { description=settings_bool_label("Review group notifications",r.value)+". This affects all channels in this group." }
+        if r.change=="Channel" { description=settings_bool_label("Review channel notifications",r.value)+"."; if row!=nil && row.linked_app { description=description+" This also changes the app’s notification permission." } }
+        if r.change=="Importance" { description="Review importance: "+settings_notification_importance(r.value)+"."; if row!=nil && settings_has(row.sound_changes,r.value) { description=description+" This also restores the default notification sound." } else { description=description+" The current channel sound is preserved." } }
+    }
+    let valid=settings_notifications_permits(n,r); let note="Notification settings changed or access was revoked. Cancel and review the current values."
+    if valid { note="Save applies this choice. Do Not Disturb and device policies can still suppress delivery." }
+    for prefix in ["an","nc"] {
+        settings_visible(out,prefix+"_review",r!=nil); settings_text(out,prefix+"_review_value",description); settings_text(out,prefix+"_review_note",note)
+        settings_enabled(out,prefix+"_save",ready && valid); settings_enabled(out,prefix+"_cancel",!s.pending)
+    }
+}

@@ -1,6 +1,0 @@
-{
-  "schema": 1,
-  "source": "../OctoSense-System-Apps/apps",
-  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
-  "assets": {}
-}

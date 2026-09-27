@@ -1,0 +1,8 @@
+# The OctoSense agent (platform-signed, platform_app domain) drives A/B updates
+# the way LineageOS's own updater_app does (device/lineage/sepolicy/common/
+# private/updater_app.te): find and call update_engine, and let update_engine
+# call back with progress. update_engine streams the payload itself, from the
+# HTTPS URL, so no OTA file is written by the app.
+allow platform_app update_engine_service:service_manager find;
+binder_call(platform_app, update_engine)
+binder_call(update_engine, platform_app)

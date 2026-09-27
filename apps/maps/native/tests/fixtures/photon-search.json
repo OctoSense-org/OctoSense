@@ -1,0 +1,95 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "osm_type": "R",
+    "osm_id": 4648353,
+    "osm_key": "amenity",
+    "osm_value": "university",
+    "type": "house",
+    "housenumber": "500",
+    "name": "Santa Clara University",
+    "street": "El Camino Real",
+    "city": "Santa Clara",
+    "county": "Santa Clara",
+    "state": "California",
+    "country": "United States",
+    "postcode": "95053",
+    "countrycode": "US",
+    "extent": [
+     -121.9433198,
+     37.35229,
+     -121.9299239,
+     37.3449346
+    ]
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.936544,
+     37.3486243
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "osm_type": "W",
+    "osm_id": 129357613,
+    "osm_key": "amenity",
+    "osm_value": "library",
+    "type": "house",
+    "housenumber": "500",
+    "name": "Santa Clara University Library",
+    "street": "El Camino Real",
+    "city": "Santa Clara",
+    "county": "Santa Clara",
+    "state": "California",
+    "country": "United States",
+    "postcode": "95053",
+    "countrycode": "US",
+    "extent": [
+     -121.9386594,
+     37.3487529,
+     -121.9372416,
+     37.347977
+    ]
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.9380341,
+     37.348349
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "osm_type": "N",
+    "osm_id": 8738747973,
+    "osm_key": "office",
+    "osm_value": "marketing",
+    "type": "house",
+    "housenumber": "500",
+    "name": "Santa Clara University Relations",
+    "street": "El Camino Real",
+    "city": "Santa Clara",
+    "county": "Santa Clara",
+    "state": "California",
+    "country": "United States",
+    "postcode": "95053",
+    "countrycode": "US"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -121.933151,
+     37.3457663
+    ]
+   }
+  }
+ ]
+}

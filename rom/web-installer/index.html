@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; worker-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>OctoSense Installer</title>
+  <link rel="stylesheet" href="./src/installer.css">
+  <script type="module" src="./src/app.mjs"></script>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">OCTOSENSE · DEVICE TOOLS</p>
+    <h1>Install OctoSense</h1>
+    <p class="intro">A guided installation for OnePlus 6.</p>
+    <p class="notice" id="preview">Developer preview. Public installation is not available yet. This preview supports fresh installations; use the phone’s updater for a supported update.</p>
+  </header>
+  <ol class="steps" aria-label="Installation steps">
+    <li>Connect</li><li>Verify release</li><li>Install</li><li>Check boot</li>
+  </ol>
+  <p id="unsupported" class="notice" hidden>Use desktop Chrome or Edge with USB access, local storage and Web Locks. Open this page over HTTPS or localhost.</p>
+  <section aria-labelledby="connect-title">
+    <h2 id="connect-title">1. Connect your phone</h2>
+    <p>Enter bootloader mode on the phone, then connect it directly to a USB port on this computer.</p>
+    <details><summary>Help entering bootloader mode</summary><p>For OnePlus 6: turn the phone off, then hold Volume Up + Power. Close other tools that are using this phone’s USB connection.</p></details>
+    <button id="connect" disabled>Connect phone</button>
+    <dl id="info" hidden>
+      <dt>Phone</dt><dd id="product"></dd>
+      <dt>Bootloader</dt><dd id="unlocked"></dd>
+    </dl>
+    <p id="compatibility" role="status"></p>
+    <div id="unlock-panel" hidden>
+      <p>Unlocking the bootloader erases all apps, accounts and files on the phone. Back up what you need before continuing.</p>
+      <label><input type="checkbox" id="unlock-confirm"> I understand that unlocking erases all phone data.</label>
+      <button id="unlock" class="secondary" disabled>Unlock bootloader</button>
+    </div>
+  </section>
+  <section aria-labelledby="release-title">
+    <h2 id="release-title">2. Download and verify</h2>
+    <dl id="release"></dl>
+    <p>All required images are downloaded and verified before installation begins. Keep this tab open while verification runs.</p>
+    <button id="prepare" disabled>Download and verify release</button>
+  </section>
+  <section aria-labelledby="install-title">
+    <h2 id="install-title">3. Review and install</h2>
+    <p>This fresh installation replaces Android and erases all apps, accounts and files on the phone.</p>
+    <label><input type="checkbox" id="wipe" disabled> I have backed up what I need and agree to erase all phone data.</label>
+    <button id="install" disabled>Erase data and install OctoSense</button>
+    <p id="stage" role="status" aria-live="polite">Load a release and connect a phone to begin.</p>
+    <progress id="bar" value="0" max="1" aria-label="Current operation progress" hidden></progress>
+    <p id="error" role="alert" hidden></p>
+    <div id="recovery" class="notice" hidden>
+      <strong>Recovery review required</strong>
+      <p>A previous write may be incomplete. This preview will not replay it or start another ordinary installation. Keep the phone in bootloader mode and review the saved report.</p>
+      <a href="https://github.com/OctoSense-org/OctoSense-ROM/blob/main/docs/flashing.md" target="_blank" rel="noopener noreferrer">Open recovery instructions</a>
+    </div>
+  </section>
+  <section aria-labelledby="boot-title">
+    <h2 id="boot-title">4. Check the phone starts</h2>
+    <p>After all images are written, restart the phone. The first boot can take several minutes.</p>
+    <button id="reboot" disabled>Restart phone</button>
+    <button id="confirm-boot" class="secondary" hidden>I can see OctoSense Home</button>
+    <p id="boot-result"></p>
+  </section>
+  <details class="technical">
+    <summary>Technical details and support report</summary>
+    <dl><dt>Device identifier</dt><dd id="serial">Not connected</dd><dt>Boot slot</dt><dd id="slot">Unknown</dd></dl>
+    <pre id="log" aria-label="Operation log"></pre>
+    <button id="report" class="secondary">Download support report</button>
+    <p>The report includes operation stages and error codes. It excludes your phone’s serial number and personal app data.</p>
+  </details>
+</main>
+</body>
+</html>

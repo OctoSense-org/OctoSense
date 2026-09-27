@@ -1,0 +1,15 @@
+use mod.prelude.widgets.*
+let Label = mod.widgets.Label { flow: Flow.Right { wrap: true } max_lines: 0 }
+let TextInput = mod.widgets.TextInput { height: Fit { min: FitBound.Abs(48) } }
+let Button = mod.widgets.Button {
+    height: Fit { min: FitBound.Abs(48) }
+    flow: Flow.Right { wrap: true }
+    label_walk: Walk { width: Fill height: Fit }
+}
+mod.widgets.SettingsView = set_type_default() do mod.widgets.SettingsViewBase {
+    ..mod.widgets.RectView
+    width: Fill height: Fill flow: Down padding: 16 show_bg: true
+    draw_bg.color: theme.color_bg_app
+    __SETTINGS_BODY__
+}
+true

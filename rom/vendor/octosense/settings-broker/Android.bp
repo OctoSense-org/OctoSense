@@ -1,0 +1,27 @@
+// Full account visibility and manual notification modes need system authority. Keep this
+// authority in a small, on-demand process instead of the general agent service.
+android_app {
+    name: "OctoSenseSettingsBroker",
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.aidl",
+        ":octosense-accounts-settings-sources",
+        ":octosense-dnd-settings-contract",
+        ":octosense-app-notifications-contract",
+        ":octosense-app-battery-contract",
+        ":octosense-app-network-contract",
+        ":octosense-app-storage-contract",
+        ":octosense-app-language-contract",
+        ":octosense-system-language-contract",
+        ":octosense-keyboard-contract",
+    ],
+    aidl: { local_include_dirs: ["src"] },
+    manifest: "AndroidManifest.xml",
+    static_libs: ["SettingsLib", "androidx.fragment_fragment", "androidx.preference_preference"],
+    resource_dirs: ["res"],
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+    optimize: { enabled: false },
+}

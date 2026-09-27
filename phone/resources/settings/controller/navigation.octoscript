@@ -1,0 +1,608 @@
+// Script-owned page metadata and local search inventory.
+// Ordered entries preserve the established stable relevance tiebreak.
+fn settings_pages() { return [
+  {
+    "page": "Keyboards",
+    "id": "keyboards_page",
+    "title": "Keyboards"
+  },
+  {
+    "page": "KeyboardDetails",
+    "id": "keyboard_detail_page",
+    "title": "Keyboard details"
+  },
+  {
+    "page": "SystemLanguages",
+    "id": "system_language_page",
+    "title": "System languages"
+  },
+  {
+    "page": "ControlChoices",
+    "id": "control_picker_page",
+    "title": "Control choices"
+  },
+  {
+    "page": "CaptionLanguage",
+    "id": "caption_language_page",
+    "title": "Caption language"
+  },
+  {
+    "page": "CaptionChoice",
+    "id": "caption_choice_page",
+    "title": "Caption choices"
+  },
+  {
+    "page": "AppLanguage",
+    "id": "app_language_page",
+    "title": "App language"
+  },
+  {
+    "page": "AppStorage",
+    "id": "app_storage_page",
+    "title": "App storage & cache"
+  },
+  {
+    "page": "AppBattery",
+    "id": "app_battery_page",
+    "title": "App battery usage"
+  },
+  {
+    "page": "AppNetwork",
+    "id": "app_network_page",
+    "title": "App network access"
+  },
+  {
+    "page": "Dnd",
+    "id": "dnd_page",
+    "title": "Do Not Disturb"
+  },
+  {
+    "page": "DndPolicy",
+    "id": "dnd_policy_page",
+    "title": "Allowed interruptions"
+  },
+  {
+    "page": "DndRules",
+    "id": "dnd_rules_page",
+    "title": "Schedules and rules"
+  },
+  {
+    "page": "DndRule",
+    "id": "dnd_rule_page",
+    "title": "Schedule"
+  },
+  {
+    "page": "DndEditor",
+    "id": "dnd_editor_page",
+    "title": "Edit schedule"
+  },
+  {
+    "page": "Overview",
+    "id": "overview",
+    "title": "OctoSense Settings"
+  },
+  {
+    "page": "Appearance",
+    "id": "appearance",
+    "title": "Appearance"
+  },
+  {
+    "page": "Display",
+    "id": "display",
+    "title": "Display"
+  },
+  {
+    "page": "Sound",
+    "id": "sound",
+    "title": "Sound"
+  },
+  {
+    "page": "Network",
+    "id": "network",
+    "title": "Connections"
+  },
+  {
+    "page": "System",
+    "id": "system",
+    "title": "System"
+  },
+  {
+    "page": "About",
+    "id": "about_page",
+    "title": "About phone"
+  },
+  {
+    "page": "Storage",
+    "id": "storage_page",
+    "title": "Storage"
+  },
+  {
+    "page": "Battery",
+    "id": "battery_page",
+    "title": "Battery"
+  },
+  {
+    "page": "DateTime",
+    "id": "date_time_page",
+    "title": "Date and time"
+  },
+  {
+    "page": "Apps",
+    "id": "apps_list",
+    "title": "Apps"
+  },
+  {
+    "page": "AppDetails",
+    "id": "app_detail",
+    "title": "App details"
+  },
+  {
+    "page": "Wifi",
+    "id": "wifi_page",
+    "title": "Wi-Fi"
+  },
+  {
+    "page": "WifiNetwork",
+    "id": "wifi_network_page",
+    "title": "Wi-Fi network"
+  },
+  {
+    "page": "Controls",
+    "id": "controls_page",
+    "title": "Settings"
+  },
+  {
+    "page": "Bluetooth",
+    "id": "bt_page",
+    "title": "Bluetooth"
+  },
+  {
+    "page": "BluetoothDevice",
+    "id": "bt_device_page",
+    "title": "Bluetooth device"
+  },
+  {
+    "page": "Accounts",
+    "id": "accounts_page",
+    "title": "Accounts"
+  },
+  {
+    "page": "AccountProviders",
+    "id": "account_providers_page",
+    "title": "Add account"
+  },
+  {
+    "page": "AccountDetails",
+    "id": "account_details_page",
+    "title": "Account"
+  },
+  {
+    "page": "AccountSync",
+    "id": "account_sync_page",
+    "title": "Account sync"
+  },
+  {
+    "page": "Search",
+    "id": "settings_search_page",
+    "title": "Search settings"
+  },
+  {
+    "page": "Updates",
+    "id": "updates_page",
+    "title": "System updates"
+  },
+  {
+    "page": "AdvancedNetwork",
+    "id": "advanced_network_page",
+    "title": "Advanced connections"
+  },
+  {
+    "page": "TimeZones",
+    "id": "time_zones_page",
+    "title": "Time zone"
+  },
+  {
+    "page": "NotificationHistory",
+    "id": "notification_history_page",
+    "title": "Notification history"
+  },
+  {
+    "page": "Sounds",
+    "id": "sounds_page",
+    "title": "Sounds"
+  },
+  {
+    "page": "DisplayOptions",
+    "id": "display_options_page",
+    "title": "Display size and Night Light"
+  },
+  {
+    "page": "AppNotifications",
+    "id": "app_notifications_page",
+    "title": "App notifications"
+  },
+  {
+    "page": "NotificationChannel",
+    "id": "notification_channel_page",
+    "title": "Notification channel"
+  },
+  {
+    "page": "DefaultApps",
+    "id": "default_apps_page",
+    "title": "Default apps"
+  },
+  {
+    "page": "RoleChoices",
+    "id": "role_choices_page",
+    "title": "Choose default app"
+  },
+  {
+    "page": "AppPermissions",
+    "id": "app_permissions_page",
+    "title": "App permissions"
+  },
+  {
+    "page": "PermissionChoices",
+    "id": "permission_choices_page",
+    "title": "Permission choices"
+  }
+] }
+
+fn settings_search_entries() { return [
+    {"route":"Keyboards","title":"Keyboards","location":"System / Keyboards","keywords":"keyboard input method default enable disable subtype languages IME 键盘 输入法 默认键盘 启用 停用","normalized_title":"keyboards","normalized_keywords":"keyboard input method default enable disable subtype languages ime 键盘 输入法 默认键盘 启用 停用","normalized_location":"system keyboards"},
+    {"route":"Dnd","title":"Do Not Disturb schedules and rules","location":"Notifications / Do Not Disturb","keywords":"dnd schedule rules interruption exceptions zen 勿扰 免打扰 规则 日程 例外","normalized_title":"do not disturb schedules and rules","normalized_keywords":"dnd schedule rules interruption exceptions zen 勿扰 免打扰 规则 日程 例外","normalized_location":"notifications do not disturb"},
+    {"route":"Dnd","title":"Allowed interruptions","location":"Notifications / Do Not Disturb","keywords":"calls messages conversations alarms repeat callers 来电 信息 重复来电 允许打扰","normalized_title":"allowed interruptions","normalized_keywords":"calls messages conversations alarms repeat callers 来电 信息 重复来电 允许打扰","normalized_location":"notifications do not disturb"},
+    {"route":"Appearance","title":"Themes and colors","location":"Appearance","keywords":"theme palette accent style 主题 外观 配色 颜色","normalized_title":"themes and colors","normalized_keywords":"theme palette accent style 主题 外观 配色 颜色","normalized_location":"appearance"},
+    {"route":"Appearance","title":"Light and dark appearance","location":"Appearance","keywords":"light dark automatic system mode 明亮 深色 浅色 暗色 自动 夜间模式","normalized_title":"light and dark appearance","normalized_keywords":"light dark automatic system mode 明亮 深色 浅色 暗色 自动 夜间模式","normalized_location":"appearance"},
+    {"route":"Appearance","title":"Wallpaper","location":"Appearance","keywords":"wallpaper gradient solid background 壁纸 背景 渐变","normalized_title":"wallpaper","normalized_keywords":"wallpaper gradient solid background 壁纸 背景 渐变","normalized_location":"appearance"},
+    {"route":"Display","title":"Brightness","location":"Display","keywords":"display screen brightness dim 亮度 屏幕 显示 明暗","normalized_title":"brightness","normalized_keywords":"display screen brightness dim 亮度 屏幕 显示 明暗","normalized_location":"display"},
+    {"route":"Display","title":"Automatic brightness","location":"Display","keywords":"adaptive auto brightness sensor 自动亮度 亮度 传感器","normalized_title":"automatic brightness","normalized_keywords":"adaptive auto brightness sensor 自动亮度 亮度 传感器","normalized_location":"display"},
+    {"route":"Display","title":"Screen timeout","location":"Display","keywords":"sleep timeout turn off screen 锁屏 熄屏 休眠 屏幕超时","normalized_title":"screen timeout","normalized_keywords":"sleep timeout turn off screen 锁屏 熄屏 休眠 屏幕超时","normalized_location":"display"},
+    {"route":"Display","title":"Font size","location":"Display","keywords":"font text size scale accessibility 字体 字号 文字大小 字体大小 显示大小","normalized_title":"font size","normalized_keywords":"font text size scale accessibility 字体 字号 文字大小 字体大小 显示大小","normalized_location":"display"},
+    {"route":"DisplayOptions","title":"Display size","location":"Display / Display size and Night Light","keywords":"display size density dpi zoom 显示大小 屏幕缩放 密度","normalized_title":"display size","normalized_keywords":"display size density dpi zoom 显示大小 屏幕缩放 密度","normalized_location":"display display size and night light"},
+    {"route":"DisplayOptions","title":"Night Light","location":"Display / Display size and Night Light","keywords":"night light warmth blue filter sunset schedule 护眼 夜览 夜间 护眼模式 色温 蓝光 日落","normalized_title":"night light","normalized_keywords":"night light warmth blue filter sunset schedule 护眼 夜览 夜间 护眼模式 色温 蓝光 日落","normalized_location":"display display size and night light"},
+    {"route":"Display","title":"Screen rotation","location":"Display","keywords":"rotation rotate portrait landscape lock 自动旋转 旋转 横屏 竖屏","normalized_title":"screen rotation","normalized_keywords":"rotation rotate portrait landscape lock 自动旋转 旋转 横屏 竖屏","normalized_location":"display"},
+    {"route":"Sounds","title":"Ringtones and notification sounds","location":"Sound / Sounds","keywords":"ringtone notification sound alarm silent preview 铃声 来电铃声 通知声音 默认闹钟 静音 试听","normalized_title":"ringtones and notification sounds","normalized_keywords":"ringtone notification sound alarm silent preview 铃声 来电铃声 通知声音 默认闹钟 静音 试听","normalized_location":"sound sounds"},
+    {"route":"SoundFeedback","title":"Sound feedback and haptics","location":"Sound","keywords":"charging lock dial pad tones vibration haptics intensity keyboard 充电声音 锁屏声音 拨号音 振动 震动 触觉 强度 键盘振动","normalized_title":"sound feedback and haptics","normalized_keywords":"charging lock dial pad tones vibration haptics intensity keyboard 充电声音 锁屏声音 拨号音 振动 震动 触觉 强度 键盘振动","normalized_location":"sound"},
+    {"route":"Sound","title":"Media volume","location":"Sound","keywords":"volume media music audio 音量 声音 媒体 音乐","normalized_title":"media volume","normalized_keywords":"volume media music audio 音量 声音 媒体 音乐","normalized_location":"sound"},
+    {"route":"Sound","title":"Ring volume","location":"Sound","keywords":"volume ring phone calls ringtone 铃声音量 铃声 来电 声音","normalized_title":"ring volume","normalized_keywords":"volume ring phone calls ringtone 铃声音量 铃声 来电 声音","normalized_location":"sound"},
+    {"route":"Sound","title":"Alarm volume","location":"Sound","keywords":"volume alarm clock 闹钟 音量","normalized_title":"alarm volume","normalized_keywords":"volume alarm clock 闹钟 音量","normalized_location":"sound"},
+    {"route":"Sound","title":"Notification volume","location":"Sound","keywords":"volume notification alert 通知音量 通知 提示音","normalized_title":"notification volume","normalized_keywords":"volume notification alert 通知音量 通知 提示音","normalized_location":"sound"},
+    {"route":"Sound","title":"Touch sounds","location":"Sound","keywords":"touch sounds click tap 触摸声音 触摸音效 点击音效","normalized_title":"touch sounds","normalized_keywords":"touch sounds click tap 触摸声音 触摸音效 点击音效","normalized_location":"sound"},
+    {"route":"Sound","title":"Touch vibration","location":"Sound","keywords":"vibrate vibration haptic feedback touch 触摸振动 震动 振动 触觉反馈","normalized_title":"touch vibration","normalized_keywords":"vibrate vibration haptic feedback touch 触摸振动 震动 振动 触觉反馈","normalized_location":"sound"},
+    {"route":"Wifi","title":"Wi-Fi networks","location":"Connections / Wi-Fi","keywords":"wifi wi fi wireless internet network wlan 无线 网络 无线网络 无线局域网","normalized_title":"wi fi networks","normalized_keywords":"wifi wi fi wireless internet network wlan 无线 网络 无线网络 无线局域网","normalized_location":"connections wi fi"},
+    {"route":"Wifi","title":"Saved Wi-Fi networks","location":"Connections / Wi-Fi","keywords":"saved wifi wi fi connect forget 已保存网络 保存 无线网络 忘记网络","normalized_title":"saved wi fi networks","normalized_keywords":"saved wifi wi fi connect forget 已保存网络 保存 无线网络 忘记网络","normalized_location":"connections wi fi"},
+    {"route":"Wifi","title":"Wi-Fi connection details","location":"Connections / Wi-Fi","keywords":"wifi wi fi ip address signal frequency link speed ip地址 信号 频率 网速 连接详情","normalized_title":"wi fi connection details","normalized_keywords":"wifi wi fi ip address signal frequency link speed ip地址 信号 频率 网速 连接详情","normalized_location":"connections wi fi"},
+    {"route":"Bluetooth","title":"Bluetooth devices","location":"Connections / Bluetooth","keywords":"bluetooth nearby pair paired headset headphones speaker 蓝牙 附近设备 配对 耳机 音箱","normalized_title":"bluetooth devices","normalized_keywords":"bluetooth nearby pair paired headset headphones speaker 蓝牙 附近设备 配对 耳机 音箱","normalized_location":"connections bluetooth"},
+    {"route":"Bluetooth","title":"Bluetooth device name","location":"Connections / Bluetooth","keywords":"bluetooth name rename 蓝牙名称 设备名称 重命名","normalized_title":"bluetooth device name","normalized_keywords":"bluetooth name rename 蓝牙名称 设备名称 重命名","normalized_location":"connections bluetooth"},
+    {"route":"Bluetooth","title":"Bluetooth sharing","location":"Connections / Bluetooth","keywords":"bluetooth contacts messages phonebook sharing 蓝牙共享 联系人 电话簿 短信 信息","normalized_title":"bluetooth sharing","normalized_keywords":"bluetooth contacts messages phonebook sharing 蓝牙共享 联系人 电话簿 短信 信息","normalized_location":"connections bluetooth"},
+    {"route":"AdvancedNetwork","title":"Airplane mode","location":"Connections / Advanced connections","keywords":"airplane flight radio 飞行模式 飞行 航空 无线电","normalized_title":"airplane mode","normalized_keywords":"airplane flight radio 飞行模式 飞行 航空 无线电","normalized_location":"connections advanced connections"},
+    {"route":"AdvancedNetwork","title":"Data Saver","location":"Connections / Advanced connections","keywords":"data saver metered background internet 流量节省 节省流量 数据流量 后台流量","normalized_title":"data saver","normalized_keywords":"data saver metered background internet 流量节省 节省流量 数据流量 后台流量","normalized_location":"connections advanced connections"},
+    {"route":"AdvancedNetwork","title":"Private DNS","location":"Connections / Advanced connections","keywords":"private dns encrypted hostname domain name server 私人DNS 私人dns 私有dns 加密DNS 加密 域名解析","normalized_title":"private dns","normalized_keywords":"private dns encrypted hostname domain name server 私人dns 私人dns 私有dns 加密dns 加密 域名解析","normalized_location":"connections advanced connections"},
+    {"route":"DefaultApps","title":"Default apps","location":"Apps / Default apps","keywords":"default browser home launcher assistant phone sms wallet 默认应用 默认浏览器 桌面 启动器 数字助理 电话 短信 钱包","normalized_title":"default apps","normalized_keywords":"default browser home launcher assistant phone sms wallet 默认应用 默认浏览器 桌面 启动器 数字助理 电话 短信 钱包","normalized_location":"apps default apps"},
+    {"route":"Apps","title":"Installed apps","location":"Apps","keywords":"apps applications installed search uninstall 应用 程序 已安装应用 卸载 应用管理","normalized_title":"installed apps","normalized_keywords":"apps applications installed search uninstall 应用 程序 已安装应用 卸载 应用管理","normalized_location":"apps"},
+    {"route":"Apps","title":"App permissions","location":"Apps / App details","keywords":"app permission granted denied camera microphone 应用权限 权限 相机 麦克风","normalized_title":"app permissions","normalized_keywords":"app permission granted denied camera microphone 应用权限 权限 相机 麦克风","normalized_location":"apps app details"},
+    {"route":"Apps","title":"App battery usage","location":"Apps / App details / Battery usage","keywords":"battery optimization restricted optimized unrestricted background 应用电池 电池优化 后台限制 不受限制","normalized_title":"app battery usage","normalized_keywords":"battery optimization restricted optimized unrestricted background 应用电池 电池优化 后台限制 不受限制","normalized_location":"apps app details battery usage"},
+    {"route":"Apps","title":"App network access","location":"Apps / App details / Network access","keywords":"data saver background unrestricted wifi mobile vpn 应用网络 联网控制 后台数据 不限流量","normalized_title":"app network access","normalized_keywords":"data saver background unrestricted wifi mobile vpn 应用网络 联网控制 后台数据 不限流量","normalized_location":"apps app details network access"},
+    {"route":"Apps","title":"App language","location":"Apps / App details / Language","keywords":"app language locale regional numbering system default 应用语言 语言 地区 数字格式 系统默认","normalized_title":"app language","normalized_keywords":"app language locale regional numbering system default 应用语言 语言 地区 数字格式 系统默认","normalized_location":"apps app details language"},
+    {"route":"Apps","title":"App storage","location":"Apps / App details","keywords":"app storage cache data usage 应用存储 存储 缓存 数据 用量","normalized_title":"app storage","normalized_keywords":"app storage cache data usage 应用存储 存储 缓存 数据 用量","normalized_location":"apps app details"},
+    {"route":"Accounts","title":"Accounts","location":"Accounts","keywords":"account login provider google gmail 帐号 账号 帐户 账户 登录 谷歌 邮箱","normalized_title":"accounts","normalized_keywords":"account login provider google gmail 帐号 账号 帐户 账户 登录 谷歌 邮箱","normalized_location":"accounts"},
+    {"route":"Accounts","title":"Add account","location":"Accounts","keywords":"account add sign in provider 添加帐号 添加账号 添加账户 登录","normalized_title":"add account","normalized_keywords":"account add sign in provider 添加帐号 添加账号 添加账户 登录","normalized_location":"accounts"},
+    {"route":"Accounts","title":"Automatic sync","location":"Accounts","keywords":"account automatic sync synchronization 同步 自动同步 帐号同步 账户同步","normalized_title":"automatic sync","normalized_keywords":"account automatic sync synchronization 同步 自动同步 帐号同步 账户同步","normalized_location":"accounts"},
+    {"route":"Accounts","title":"Account sync status","location":"Accounts / Account details","keywords":"sync pending active cancel data 同步状态 正在同步 等待同步 取消同步","normalized_title":"account sync status","normalized_keywords":"sync pending active cancel data 同步状态 正在同步 等待同步 取消同步","normalized_location":"accounts account details"},
+    {"route":"Dnd","title":"Do Not Disturb","location":"Notifications","keywords":"dnd do not disturb priority alarms silence interruptions 勿扰 免打扰 优先通知 仅闹钟 完全静音","normalized_title":"do not disturb","normalized_keywords":"dnd do not disturb priority alarms silence interruptions 勿扰 免打扰 优先通知 仅闹钟 完全静音","normalized_location":"notifications"},
+    {"route":"Notifications","title":"Lock screen notifications","location":"Notifications","keywords":"notification lockscreen show hidden 锁屏通知 通知 显示 隐藏","normalized_title":"lock screen notifications","normalized_keywords":"notification lockscreen show hidden 锁屏通知 通知 显示 隐藏","normalized_location":"notifications"},
+    {"route":"Notifications","title":"Sensitive notification content","location":"Notifications","keywords":"notification sensitive private content preview 隐私通知 敏感通知 通知内容 通知预览","normalized_title":"sensitive notification content","normalized_keywords":"notification sensitive private content preview 隐私通知 敏感通知 通知内容 通知预览","normalized_location":"notifications"},
+    {"route":"NotificationHistory","title":"Notification history","location":"Notifications","keywords":"notification history previous 通知历史 历史通知","normalized_title":"notification history","normalized_keywords":"notification history previous 通知历史 历史通知","normalized_location":"notifications"},
+    {"route":"Notifications","title":"Notification bubbles","location":"Notifications","keywords":"notification bubbles chat floating 通知气泡 气泡 聊天气泡","normalized_title":"notification bubbles","normalized_keywords":"notification bubbles chat floating 通知气泡 气泡 聊天气泡","normalized_location":"notifications"},
+    {"route":"Privacy","title":"Camera access","location":"Privacy","keywords":"camera access sensor privacy 相机 摄像头 相机访问 隐私","normalized_title":"camera access","normalized_keywords":"camera access sensor privacy 相机 摄像头 相机访问 隐私","normalized_location":"privacy"},
+    {"route":"Privacy","title":"Microphone access","location":"Privacy","keywords":"microphone mic audio access sensor privacy 麦克风 录音 麦克风访问 隐私","normalized_title":"microphone access","normalized_keywords":"microphone mic audio access sensor privacy 麦克风 录音 麦克风访问 隐私","normalized_location":"privacy"},
+    {"route":"Location","title":"Location","location":"Location","keywords":"location gps positioning 定位 位置 位置信息","normalized_title":"location","normalized_keywords":"location gps positioning 定位 位置 位置信息","normalized_location":"location"},
+    {"route":"Location","title":"Wi-Fi scanning","location":"Location","keywords":"wifi wi fi scanning location 无线扫描 网络扫描 无线网络扫描","normalized_title":"wi fi scanning","normalized_keywords":"wifi wi fi scanning location 无线扫描 网络扫描 无线网络扫描","normalized_location":"location"},
+    {"route":"Location","title":"Bluetooth scanning","location":"Location","keywords":"bluetooth scanning location 蓝牙扫描","normalized_title":"bluetooth scanning","normalized_keywords":"bluetooth scanning location 蓝牙扫描","normalized_location":"location"},
+    {"route":"Battery","title":"Battery status","location":"Battery","keywords":"battery level charging temperature power 电池 电量 充电 温度","normalized_title":"battery status","normalized_keywords":"battery level charging temperature power 电池 电量 充电 温度","normalized_location":"battery"},
+    {"route":"BatteryPolicy","title":"Battery Saver","location":"Battery / Battery saver and policy","keywords":"battery saver power save low power 节电 省电 节电模式 省电模式 低电量","normalized_title":"battery saver","normalized_keywords":"battery saver power save low power 节电 省电 节电模式 省电模式 低电量","normalized_location":"battery battery saver and policy"},
+    {"route":"BatteryPolicy","title":"Battery Saver schedule","location":"Battery / Battery saver and policy","keywords":"battery saver threshold automatic percent percentage 自动省电 省电阈值 电量百分比","normalized_title":"battery saver schedule","normalized_keywords":"battery saver threshold automatic percent percentage 自动省电 省电阈值 电量百分比","normalized_location":"battery battery saver and policy"},
+    {"route":"BatteryPolicy","title":"Adaptive Battery","location":"Battery / Battery saver and policy","keywords":"adaptive battery background management 智能电池 自适应电池 后台管理","normalized_title":"adaptive battery","normalized_keywords":"adaptive battery background management 智能电池 自适应电池 后台管理","normalized_location":"battery battery saver and policy"},
+    {"route":"Storage","title":"Storage capacity","location":"Storage","keywords":"storage capacity available free used disk space 存储 存储空间 容量 剩余空间 可用空间","normalized_title":"storage capacity","normalized_keywords":"storage capacity available free used disk space 存储 存储空间 容量 剩余空间 可用空间","normalized_location":"storage"},
+    {"route":"SystemLanguages","title":"System languages","location":"System","keywords":"language order add remove reorder preferred display regional languages English French Chinese Arabic 系统语言 语言顺序 添加语言","normalized_title":"system languages","normalized_keywords":"language order add remove reorder preferred display regional languages english french chinese arabic 系统语言 语言顺序 添加语言","normalized_location":"system"},
+    {"route":"CaptionLanguage","title":"Caption language","location":"System / Accessibility: hearing","keywords":"captions subtitles language locale 字幕 语言","normalized_title":"caption language","normalized_keywords":"captions subtitles language locale 字幕 语言","normalized_location":"system accessibility hearing"},
+    {"route":"CaptionCustom","title":"Custom caption appearance","location":"System / Accessibility: hearing","keywords":"captions subtitles colors opacity typeface font edge 字幕 颜色 透明度 字体","normalized_title":"custom caption appearance","normalized_keywords":"captions subtitles colors opacity typeface font edge 字幕 颜色 透明度 字体","normalized_location":"system accessibility hearing"},
+    {"route":"AccessibilityTextInteraction","title":"Text and interaction","location":"System / Accessibility: text and interaction","keywords":"high contrast bold text animation long press hold time timeout autoclick automatic click large mouse pointer 高对比度 粗体 文字 动画 长按 操作时间 自动点击 鼠标 指针","normalized_title":"text and interaction","normalized_keywords":"high contrast bold text animation long press hold time timeout autoclick automatic click large mouse pointer 高对比度 粗体 文字 动画 长按 操作时间 自动点击 鼠标 指针","normalized_location":"system accessibility text and interaction"},
+    {"route":"AccessibilityHearing","title":"Mono audio and audio balance","location":"System / Accessibility: hearing","keywords":"mono audio balance left right hearing 单声道 音频 平衡 左右 声道 听觉 无障碍","normalized_title":"mono audio and audio balance","normalized_keywords":"mono audio balance left right hearing 单声道 音频 平衡 左右 声道 听觉 无障碍","normalized_location":"system accessibility hearing"},
+    {"route":"AccessibilityHearing","title":"Captions","location":"System / Accessibility: hearing","keywords":"captions subtitles text size style 字幕 听觉 字幕大小 字幕样式","normalized_title":"captions","normalized_keywords":"captions subtitles text size style 字幕 听觉 字幕大小 字幕样式","normalized_location":"system accessibility hearing"},
+    {"route":"AccessibilityVision","title":"Color inversion and correction","location":"System / Accessibility: colors","keywords":"accessibility vision color inversion correction grayscale colour 色彩 反转 颜色 校正 无障碍 灰度 色盲","normalized_title":"color inversion and correction","normalized_keywords":"accessibility vision color inversion correction grayscale colour 色彩 反转 颜色 校正 无障碍 灰度 色盲","normalized_location":"system accessibility colors"},
+    {"route":"DateTime","title":"Date and time","location":"System / Date and time","keywords":"date time timezone clock 日期 时间 时区 时钟","normalized_title":"date and time","normalized_keywords":"date time timezone clock 日期 时间 时区 时钟","normalized_location":"system date and time"},
+    {"route":"DateTime","title":"Set date and time","location":"System / Date and time","keywords":"manual date time calendar leap daylight saving 手动时间 设置日期 夏令时 日历","normalized_title":"set date and time","normalized_keywords":"manual date time calendar leap daylight saving 手动时间 设置日期 夏令时 日历","normalized_location":"system date and time"},
+    {"route":"DateTime","title":"Choose time zone","location":"System / Date and time","keywords":"time zone region city utc timezone 时区 城市 地区","normalized_title":"choose time zone","normalized_keywords":"time zone region city utc timezone 时区 城市 地区","normalized_location":"system date and time"},
+    {"route":"DateTime","title":"24-hour clock","location":"System / Date and time","keywords":"12 24 hour clock format 24小时 12小时 时间格式 小时制","normalized_title":"24 hour clock","normalized_keywords":"12 24 hour clock format 24小时 12小时 时间格式 小时制","normalized_location":"system date and time"},
+    {"route":"DateTime","title":"Automatic time and time zone","location":"System / Date and time","keywords":"automatic network time zone 自动时间 自动时区 网络时间","normalized_title":"automatic time and time zone","normalized_keywords":"automatic network time zone 自动时间 自动时区 网络时间","normalized_location":"system date and time"},
+    {"route":"About","title":"About phone","location":"About","keywords":"about phone device model manufacturer 关于手机 关于设备 型号 厂商","normalized_title":"about phone","normalized_keywords":"about phone device model manufacturer 关于手机 关于设备 型号 厂商","normalized_location":"about"},
+    {"route":"About","title":"Android and build version","location":"About","keywords":"android build version security patch kernel rom 版本 系统版本 安全补丁 内核","normalized_title":"android and build version","normalized_keywords":"android build version security patch kernel rom 版本 系统版本 安全补丁 内核","normalized_location":"about"},
+    {"route":"About","title":"Memory","location":"About","keywords":"memory ram available total 内存 运行内存 可用内存","normalized_title":"memory","normalized_keywords":"memory ram available total 内存 运行内存 可用内存","normalized_location":"about"},
+    {"route":"Updates","title":"System updates","location":"System / System updates","keywords":"update updates ota rom upgrade download install restart reboot 系统更新 软件更新 升级 下载 重启","normalized_title":"system updates","normalized_keywords":"update updates ota rom upgrade download install restart reboot 系统更新 软件更新 升级 下载 重启","normalized_location":"system system updates"},
+    {"route":"System","title":"System","location":"System","keywords":"system settings preferences 系统 设置 系统设置","normalized_title":"system","normalized_keywords":"system settings preferences 系统 设置 系统设置","normalized_location":"system"}
+] }
+
+fn settings_routes() { return [
+    {"route":"Overview","wire":"overview","page":"Overview","section":"","parent":"Overview","title":""},
+    {"route":"Search","wire":"search","page":"Search","section":"","parent":"Overview","title":""},
+    {"route":"Appearance","wire":"appearance","page":"Appearance","section":"","parent":"Overview","title":""},
+    {"route":"Display","wire":"display","page":"Display","section":"","parent":"Overview","title":""},
+    {"route":"Sound","wire":"sound","page":"Sound","section":"","parent":"Overview","title":""},
+    {"route":"Network","wire":"network","page":"Network","section":"","parent":"Overview","title":""},
+    {"route":"System","wire":"system","page":"System","section":"","parent":"Overview","title":""},
+    {"route":"About","wire":"about","page":"About","section":"","parent":"Overview","title":""},
+    {"route":"Storage","wire":"storage","page":"Storage","section":"","parent":"Overview","title":""},
+    {"route":"Battery","wire":"battery","page":"Battery","section":"","parent":"Overview","title":""},
+    {"route":"DateTime","wire":"date_time","page":"DateTime","section":"","parent":"Overview","title":""},
+    {"route":"Apps","wire":"apps","page":"Apps","section":"","parent":"Overview","title":""},
+    {"route":"Wifi","wire":"wifi","page":"Wifi","section":"","parent":"Overview","title":""},
+    {"route":"Bluetooth","wire":"bluetooth","page":"Bluetooth","section":"","parent":"Overview","title":""},
+    {"route":"Accounts","wire":"accounts","page":"Accounts","section":"","parent":"Overview","title":""},
+    {"route":"Updates","wire":"updates","page":"Updates","section":"","parent":"Overview","title":""},
+    {"route":"AdvancedNetwork","wire":"advanced_network","page":"AdvancedNetwork","section":"","parent":"Overview","title":""},
+    {"route":"TimeZones","wire":"time_zones","page":"TimeZones","section":"","parent":"Overview","title":""},
+    {"route":"NotificationHistory","wire":"notification_history","page":"NotificationHistory","section":"","parent":"Overview","title":""},
+    {"route":"Sounds","wire":"sounds","page":"Sounds","section":"","parent":"Overview","title":""},
+    {"route":"DisplayOptions","wire":"display_options","page":"DisplayOptions","section":"","parent":"Overview","title":""},
+    {"route":"DefaultApps","wire":"default_apps","page":"DefaultApps","section":"","parent":"Overview","title":""},
+    {"route":"Dnd","wire":"dnd","page":"Dnd","section":"","parent":"Overview","title":""},
+    {"route":"SystemLanguages","wire":"system_languages","page":"SystemLanguages","section":"","parent":"Overview","title":""},
+    {"route":"CaptionLanguage","wire":"caption_language","page":"CaptionLanguage","section":"","parent":"Overview","title":""},
+    {"route":"Keyboards","wire":"keyboards","page":"Keyboards","section":"","parent":"Overview","title":""},
+    {"route":"Notifications","wire":"notifications","page":"Controls","section":"Notifications","parent":"Overview","title":"Notifications"},
+    {"route":"Privacy","wire":"privacy","page":"Controls","section":"Privacy","parent":"Overview","title":"Privacy"},
+    {"route":"Location","wire":"location","page":"Controls","section":"Location","parent":"Overview","title":"Location"},
+    {"route":"BatteryPolicy","wire":"battery_policy","page":"Controls","section":"BatteryPolicy","parent":"Battery","title":"Battery policy"},
+    {"route":"SoundFeedback","wire":"sound_feedback","page":"Controls","section":"SoundFeedback","parent":"Sound","title":"Sound feedback and haptics"},
+    {"route":"AccessibilityVision","wire":"accessibility_vision","page":"Controls","section":"AccessibilityVision","parent":"System","title":"Accessibility: colors"},
+    {"route":"AccessibilityHearing","wire":"accessibility_hearing","page":"Controls","section":"AccessibilityHearing","parent":"System","title":"Accessibility: hearing"},
+    {"route":"AccessibilityTextInteraction","wire":"accessibility_text_interaction","page":"Controls","section":"AccessibilityTextInteraction","parent":"System","title":"Accessibility: text and interaction"},
+    {"route":"CaptionCustom","wire":"caption_custom","page":"Controls","section":"CaptionCustom","parent":"Controls","title":"Caption appearance"}
+] }
+
+fn settings_route(value) {
+    for route in settings_routes() { if value==route.route || value==route.wire { return route } }
+    return nil
+}
+fn settings_active_scroll(page) {
+    let shared=["Overview","Appearance","Display","Sound","Network","System","About","Storage","Battery","DateTime"]
+    if settings_has(shared,page) { return "scroll" }
+    if page=="Search" { return "settings_results" }
+    for item in settings_pages() { if item.page==page { return item.id } }
+    return "scroll"
+}
+fn settings_page_title(s) {
+    if s.page=="Controls" {
+        for route in settings_routes() { if route.section==s.controls_section { return route.title } }
+    }
+    for page in settings_pages() { if page.page==s.page { return page.title } }
+    return "OctoSense Settings"
+}
+fn settings_clear_reviews(s) { s.drafts={}; s.pressed={}; s.search_pressed=nil }
+fn settings_route_read(s,o,out) {
+    if o.android!=true { return }
+    if s.page=="Controls" && s.controls_section!="CaptionCustom" {
+        let route=settings_route(s.controls_section)
+        if route!=nil { settings_request(out,{kind:"read",domain:"controls",page:route.wire}) }
+    }
+    if s.page=="Apps" { settings_apps_read(s,o,out) }
+    if s.page=="Wifi" { settings_request(out,{kind:"read",domain:"wifi"}) }
+    if s.page=="Bluetooth" { settings_request(out,{kind:"read",domain:"bluetooth"}) }
+    if s.page=="Accounts" { settings_request(out,{kind:"read",domain:"accounts"}) }
+    if s.page=="Updates" { settings_request(out,{kind:"read",domain:"updates"}) }
+    if s.page=="AdvancedNetwork" { settings_request(out,{kind:"read",domain:"network"}) }
+    if s.page=="DisplayOptions" { settings_request(out,{kind:"read",domain:"display"}) }
+    if s.page=="DefaultApps" { let ui=settings_consent_ui(s,"roles_ui"); ui.selected=nil; ui.offset=0; ui.generation=nil; ui.notice=""; ui.pressed=nil; settings_consent_read(s,out,"roles_ui") }
+    if s.page=="Dnd" { settings_request(out,{kind:"read",domain:"dnd",offset:0,key:nil}) }
+    if s.page=="Sounds" { settings_request(out,{kind:"read",domain:"sounds",sound_type:"ringtone",key:nil,offset:0}) }
+    if s.page=="NotificationHistory" { settings_request(out,{kind:"read",domain:"notification_history",key:nil,offset:0}) }
+    if s.page=="CaptionLanguage" { settings_language_enter(s,o,out,"caption_language_ui") }
+    if s.page=="SystemLanguages" { settings_system_enter(s,o,out) }
+    if s.page=="Keyboards" { settings_keyboard_enter(s,o,out) }
+}
+fn settings_open_route(s,value,from_search,external,o,out) {
+    let route=settings_route(value)
+    if route==nil { return false }
+    if s.page=="Sounds" { settings_request(out,{kind:"sound_stop"}) }
+    if external {
+        settings_clear_reviews(s)
+        s.context={}
+        s.theme_draft=settings_theme_copy(s.theme_seen)
+        s.message=""
+        s.search_destination=nil
+        s.controls_parent="Overview"
+    }
+    let previous=s.page
+    s.page=route.page
+    if route.section!="" {
+        s.controls_section=route.section
+        if external || from_search { s.controls_parent=route.parent }
+        else if previous!="Controls" { s.controls_parent=previous }
+        let ui=settings_control_ui(s); ui.pressed=nil; ui.history_review=false
+        if route.section=="CaptionCustom" { s.controls_parent="Controls"; settings_caption_enter(s,o,out,from_search) }
+    }
+    if from_search { s.search_destination=s.page }
+    if external { s.search_destination=nil }
+    if s.page=="Dnd" || s.page=="NotificationHistory" { s.controls_section="Notifications" }
+    settings_blur(out)
+    settings_scroll(out,settings_active_scroll(s.page))
+    settings_route_read(s,o,out)
+    return true
+}
+fn settings_parent(s) {
+    let pairs=[
+        ["Keyboards","System"],["KeyboardDetails","Keyboards"],["SystemLanguages","System"],
+        ["CaptionLanguage","Controls"],["CaptionChoice","Controls"],["ControlChoices","Controls"],
+        ["AppLanguage","AppDetails"],["AppStorage","AppDetails"],["AppBattery","AppDetails"],["AppNetwork","AppDetails"],
+        ["Dnd","Controls"],["DndPolicy","Dnd"],["DndRules","Dnd"],["DndRule","DndRules"],["DndEditor","DndRules"],
+        ["AppPermissions","AppDetails"],["PermissionChoices","AppPermissions"],["DefaultApps","Apps"],["RoleChoices","DefaultApps"],
+        ["AppNotifications","AppDetails"],["NotificationChannel","AppNotifications"],["DisplayOptions","Display"],
+        ["Sounds","Sound"],["NotificationHistory","Controls"],["TimeZones","DateTime"],["Updates","System"],
+        ["Accounts","System"],["AccountSync","AccountDetails"],["AccountDetails","Accounts"],["AccountProviders","Accounts"],
+        ["BluetoothDevice","Bluetooth"],["Bluetooth","Network"],["AdvancedNetwork","Network"],["DateTime","System"],
+        ["AppDetails","Apps"],["WifiNetwork","Wifi"],["Wifi","Network"]
+    ]
+    if s.page=="Controls" { return s.controls_parent }
+    for pair in pairs { if pair[0]==s.page { return pair[1] } }
+    return "Overview"
+}
+fn settings_back(s,o,out) {
+    if s.page=="Overview" { settings_request(out,{kind:"back"}); return true }
+    if s.page=="Sounds" { settings_request(out,{kind:"sound_stop"}) }
+    if s.page=="Appearance" && !s.pending { s.theme_draft=settings_theme_copy(s.theme_seen) }
+    let parent=settings_parent(s)
+    if s.search_destination==s.page { parent="Search"; s.search_destination=nil }
+    s.page=parent
+    settings_clear_reviews(s)
+    settings_blur(out)
+    // Dedicated mounted list pages retain their actual native scroll on Back.
+    // The shared overview/basic-page scroller begins at its own top.
+    if settings_active_scroll(s.page)=="scroll" { settings_scroll(out,"scroll") }
+    if settings_has(["Apps","DefaultApps","Wifi","Bluetooth","Accounts"],s.page) { settings_route_read(s,o,out) }
+    if s.page=="AppDetails" { settings_apps_read(s,o,out) }
+    return true
+}
+fn settings_search_valid(value) {
+    let chars=value.to_chars()
+    if chars.len()>128 { return false }
+    for c in chars { if c<32 || (c>=127 && c<=159) { return false } }
+    return true
+}
+fn settings_normalize(value) {
+    let result=""
+    let separated=true
+    for c in text.lower(value).to_chars() {
+        if text.is_alphanumeric(c) {
+            result=result+text.from_codepoint(c)
+            separated=false
+        } else if !separated { result=result+" "; separated=true }
+    }
+    return result.trim()
+}
+fn settings_search_matches(query) {
+    let result=[]
+    if !settings_search_valid(query) { return result }
+    let normalized=settings_normalize(query)
+    if normalized=="" { return result }
+    let terms=normalized.split(" ")
+    let buckets=[[],[],[],[],[]]
+    for entry in settings_search_entries() {
+        let haystack=entry.normalized_title+" "+entry.normalized_keywords+" "+entry.normalized_location
+        let all=true
+        for term in terms { if haystack.search(term)<0 { all=false } }
+        if all {
+            let rank=4
+            if entry.normalized_title==normalized { rank=0 }
+            else if entry.normalized_title.search(normalized)==0 { rank=1 }
+            else if entry.normalized_title.search(normalized)>=0 { rank=2 }
+            else if settings_has(entry.normalized_keywords.split(" "),normalized) { rank=3 }
+            buckets[rank].push(entry)
+        }
+    }
+    for bucket in buckets { for entry in bucket { result.push(entry) } }
+    return result
+}
+fn settings_search_refresh(s,out) {
+    let matches=settings_search_matches(s.search_query)
+    let rows=[]
+    let index=0
+    for entry in matches {
+        if index>=s.search_offset && rows.len()<20 { rows.push(entry) }
+        index=index+1
+    }
+    s.search_rows=rows
+    let summary=""
+    if !settings_search_valid(s.search_query) { summary="Use up to 128 characters without line breaks." }
+    else if s.search_query.trim()=="" { summary="Search the settings available in OctoSense. English and Chinese keywords are supported." }
+    else if matches.len()==0 { summary="No matching OctoSense settings." }
+    else { summary=""+(s.search_offset+1)+"–"+(s.search_offset+rows.len())+" of "+matches.len()+" results" }
+    settings_text(out,"settings_search_summary",summary)
+    settings_enabled(out,"settings_search_clear",s.search_query!="")
+    settings_enabled(out,"settings_search_previous",s.search_offset>0)
+    settings_enabled(out,"settings_search_next",s.search_offset+20<matches.len())
+    let i=0
+    while i<20 {
+        let id="settings_result_"+i
+        let shown=i<rows.len()
+        settings_visible(out,id,shown)
+        settings_enabled(out,id,shown)
+        if shown {
+            let row=rows[i]
+            settings_text(out,id,row.title+"\n"+row.location)
+            settings_patch(out,"semantic",id,"search:"+row.route+":"+row.title)
+        }
+        i=i+1
+    }
+}
+fn settings_navigation_event(s,e,o,out) {
+    if e.kind=="navigate" || (e.kind=="entry" && e.id!="app_notifications") {
+        let route=e.id
+        if route=="" { route=e.value }
+        return settings_open_route(s,route,false,true,o,out)
+    }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") { return settings_back(s,o,out) }
+    if e.kind=="input" && e.id=="settings_query" {
+        s.search_query=e.value; s.search_offset=0
+        settings_scroll(out,"settings_results")
+        return true
+    }
+    if s.page=="Search" {
+        let i=0
+        while i<20 {
+            if e.id=="settings_result_"+i {
+                let matches=settings_search_matches(s.search_query)
+                let row=nil
+                if s.search_offset+i<matches.len() { row=matches[s.search_offset+i] }
+                if e.kind=="press" {
+                    s.search_pressed=nil
+                    if row!=nil { s.search_pressed={index:i,route:row.route,title:row.title} }
+                    return true
+                }
+                if e.kind=="release" { s.search_pressed=nil; return true }
+                if e.kind=="click" {
+                    let previous=s.search_pressed; s.search_pressed=nil
+                    if row==nil { return true }
+                    if previous!=nil && (previous.index!=i || previous.route!=row.route || previous.title!=row.title) { return true }
+                    settings_open_route(s,row.route,true,false,o,out)
+                    return true
+                }
+            }
+            i=i+1
+        }
+        if e.kind=="click" && e.id=="settings_search_clear" {
+            s.search_query=""; s.search_offset=0
+            settings_patch(out,"input","settings_query","")
+            settings_scroll(out,"settings_results")
+            out.patch.push({op:"focus",id:"settings_query"})
+            return true
+        }
+        if e.kind=="click" && e.id=="settings_search_next" {
+            if s.search_offset+20<settings_search_matches(s.search_query).len() { s.search_offset=s.search_offset+20; settings_scroll(out,"settings_results") }
+            return true
+        }
+        if e.kind=="click" && e.id=="settings_search_previous" {
+            s.search_offset=settings_max(0,s.search_offset-20); settings_scroll(out,"settings_results")
+            return true
+        }
+    }
+    if e.kind!="click" { return false }
+    if e.id=="search_settings" { s.page="Search"; s.search_destination=nil; return true }
+    let links=[
+        ["appearance_page","Appearance"],["display_page","Display"],["sound_page","Sound"],
+        ["network_page","Network"],["system_page","System"],["about","About"],["storage","Storage"],
+        ["battery","Battery"],["date_time","DateTime"],["apps","Apps"],["wifi","Wifi"],
+        ["bluetooth","Bluetooth"],["accounts","Accounts"],["location","Location"],["privacy","Privacy"],
+        ["notifications","Notifications"],["notifications_overview","Notifications"],["battery_policy","BatteryPolicy"],
+        ["sound_feedback","SoundFeedback"],["accessibility_vision","AccessibilityVision"],
+        ["accessibility_hearing","AccessibilityHearing"],["accessibility_text_interaction","AccessibilityTextInteraction"],
+        ["keyboards_open","Keyboards"],["system_languages_open","SystemLanguages"],
+        ["caption_language_open","CaptionLanguage"],["sounds_open","Sounds"],
+        ["advanced_connections","AdvancedNetwork"],["system_updates","Updates"],
+        ["display_options_open","DisplayOptions"],["apps_defaults","DefaultApps"],
+        ["history_open","NotificationHistory"],["dnd_open","Dnd"]
+    ]
+    for link in links { if e.id==link[0] { return settings_open_route(s,link[1],false,false,o,out) } }
+    return false
+}
