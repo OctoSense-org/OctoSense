@@ -16,7 +16,7 @@ publish = false
 
 [dependencies]
 # The same App Hub rev the Mail service pins: one appstore, one registry.
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
 octosense-llm-config = { path = "../config" }
 serde_json = "1"
 # The provider test: one small HTTPS request on a worker thread.
