@@ -41,7 +41,7 @@ The organisation overview is at
 | `home/docs/` | Home ADRs, Android and performance records, design notes |
 | `home/*.lock.json`, `home/system-apps.json` | Source pins and the system-app selection (see [Pins and updates](#pins-and-updates)) |
 | `vendor/octosense/` | ROM product layer: makefiles, permissions, overlays, sepolicy, the privileged agent |
-| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (currently the Settings integration) |
+| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (currently the Settings integration, with the makepad#31 QR-scanner patch stacked on it) |
 | `scripts/` | Home builds, ROM staging, build, flash, release and phone checks |
 | `web-installer/` | WebUSB installer for the OnePlus 6 (local developer preview) |
 | `docs/` | ROM ADRs, build, flashing, update and validation records |
@@ -74,7 +74,7 @@ python3 scripts/setup-home.py --check --cargo
 
 Setup checks out OctoSense-System-Apps, OctoScript-Makepad, Makepad and
 OctoScript at their locked revisions (applying any reviewed Makepad patch
-`home/runtime-patches.lock.json` names, currently the Settings overlay), and refuses to touch a checkout with local changes. `--update` moves clean
+`home/runtime-patches.lock.json` names, currently the Settings overlay with the QR-scanner patch stacked on it), and refuses to touch a checkout with local changes. `--update` moves clean
 checkouts to new pins; `--check` changes nothing and fails unless every
 checkout matches its lock; `--cargo` also rejects a second copy of any core
 Makepad crate in the dependency graph.
@@ -220,6 +220,7 @@ one from a Mac.
 | --- | --- | --- |
 | System apps: News, Photos, Maps, Camera, Mail, AI providers | OctoSense-System-Apps `apps/<name>/bundle/`, selected by `home/system-apps.json` | Contained script apps, packed into the build |
 | Store apps | The App Hub catalog, installed at run time | Contained script or card apps |
+| Built-in Settings (**OctoSense Settings**) | `home/src/settings_app.rs`, `home/resources/settings/` | Trusted native module, always linked; not a script app and not replaceable from the store ([home/README.md](home/README.md#built-in-settings)) |
 | AppCard assistant | OctoSense-System-Apps `apps/appcard/app/app` (`octos-app`) | Native module, opt-in (`app-appcard`); not shipped by default |
 | Native modules | `home/apps/*`, Sheets from Makepad | Linked modules, behind features |
 
@@ -292,7 +293,7 @@ to its WebSocket transport and login screen.
 | `home/native-apps.lock.json` | OctoSense-System-Apps revision (`.sources/system-apps`) |
 | `home/system-apps.json` | Which system apps ship, and the assets Home mounts for them |
 | `home/native-runtime.lock.json` | OctoScript-Makepad revision; its `runtime.json` names Makepad and OctoScript |
-| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, SHA-256, resulting tree); currently the Settings overlay |
+| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, SHA-256, resulting tree); currently the Settings overlay and the stacked QR-scanner patch |
 | `home/Cargo.toml`, `home/Cargo.lock` | Makepad `rev` (must equal the runtime's), App Hub `rev`, the octos `rev` used for `nix` |
 | `home/upstream/makepad.json` | Provenance of the window-manager sources imported from Makepad |
 

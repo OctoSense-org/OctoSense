@@ -160,6 +160,7 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 | --- | --- | --- |
 | 系统应用：新闻、相册、地图、相机、邮件、AI 提供商 | OctoSense-System-Apps 的 `apps/<name>/bundle/`，由 `home/system-apps.json` 选择 | 隔离运行的脚本应用，打包进构建产物 |
 | 商店应用 | App Hub 目录，运行时安装 | 隔离运行的脚本应用或卡片应用 |
+| 内置设置（**OctoSense Settings**） | `home/src/settings_app.rs`、`home/resources/settings/` | 受信任的原生模块，始终链接；不是脚本应用，也不能从商店替换（[home/README.zh-CN.md](home/README.zh-CN.md#内置设置)） |
 | AppCard 助手 | OctoSense-System-Apps 的 `apps/appcard/app/app`（`octos-app`） | 原生模块，需显式启用（`app-appcard`）；默认不发布 |
 | 原生模块 | `home/apps/*`，以及来自 Makepad 的 Sheets | 链接的模块，由 feature 控制 |
 
