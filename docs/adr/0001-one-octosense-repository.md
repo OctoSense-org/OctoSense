@@ -1,7 +1,7 @@
 # ADR 0001: One OctoSense repository for the shell, its services, the system apps and both packagings
 
 - **Date:** 2026-09-27
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-27)
 - **Scope:** Where OctoSense's own code lives: the shell (desktop and phone), the shell services (octos kernel service, app-agent broker, AI-providers glue), the first-party system apps and their host services, and the desktop and ROM packagings. It does not move makepad, octos, OctoScript, its runtimes, App Hub, the app-building harness or the websites.
 - **Supersedes:** the split into OctoSense-Desktop, OctoSense-ROM and OctoSense-System-Apps, and the interim idea of a separate OctoSense-Core repository.
 - **Relates to:** ROM `home/docs/adr/0003` (App Hub), `0004` (system apps are contained script apps), Rinx ADR 0007 (host-owned octos app peers).
