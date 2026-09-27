@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=c85e6b4b0056d8cb2cedbc8269b952786c61e4c7#c85e6b4b0056d8cb2cedbc8269b952786c61e4c7"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=c85e6b4b0056d8cb2cedbc8269b952786c61e4c7#c85e6b4b0056d8cb2cedbc8269b952786c61e4c7"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
 dependencies = [
  "article-core",
  "libc",
@@ -1277,6 +1277,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
 dependencies = [
  "clap",
+ "clap_lex",
+ "is_executable",
+ "shlex 2.0.1",
 ]
 
 [[package]]
@@ -4046,7 +4049,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -4408,6 +4411,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "is_executable"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82cb6a9f675da968c63b6208c641b9dca58fc0133ae53375736b1767b0cab8bd"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4739,7 +4751,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "url",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -6633,8 +6645,8 @@ dependencies = [
 
 [[package]]
 name = "octos-agent"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6709,6 +6721,8 @@ dependencies = [
  "octos-core",
  "octoscript-node",
  "octoscript-ui-l0",
+ "octosense-llm-config",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "robius-open",
  "serde",
@@ -6746,22 +6760,21 @@ dependencies = [
  "chrono",
  "futures-util",
  "log",
- "octos-cli",
  "octos-core",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.24.0",
- "tracing-subscriber",
  "url",
  "uuid",
 ]
 
 [[package]]
 name = "octos-bus"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -6789,8 +6802,8 @@ dependencies = [
 
 [[package]]
 name = "octos-cli"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "agent-client-protocol",
  "argon2",
@@ -6869,8 +6882,8 @@ dependencies = [
 
 [[package]]
 name = "octos-core"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "chrono",
  "eyre",
@@ -6883,8 +6896,8 @@ dependencies = [
 
 [[package]]
 name = "octos-diagnostics"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6895,8 +6908,8 @@ dependencies = [
 
 [[package]]
 name = "octos-fleet"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6911,8 +6924,8 @@ dependencies = [
 
 [[package]]
 name = "octos-fleet-worker"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "async-trait",
  "eyre",
@@ -6928,8 +6941,8 @@ dependencies = [
 
 [[package]]
 name = "octos-llm"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6952,8 +6965,8 @@ dependencies = [
 
 [[package]]
 name = "octos-memory"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "bincode",
  "chrono",
@@ -6971,8 +6984,8 @@ dependencies = [
 
 [[package]]
 name = "octos-pipeline"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6993,8 +7006,8 @@ dependencies = [
 
 [[package]]
 name = "octos-plugin"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "eyre",
  "metrics",
@@ -7008,7 +7021,7 @@ dependencies = [
 [[package]]
 name = "octos-sandbox"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "clap",
  "eyre",
@@ -7022,8 +7035,8 @@ dependencies = [
 
 [[package]]
 name = "octos-services"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "chrono",
  "dirs",
@@ -7043,8 +7056,8 @@ dependencies = [
 
 [[package]]
 name = "octos-store"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7063,8 +7076,8 @@ dependencies = [
 
 [[package]]
 name = "octos-swarm"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7082,8 +7095,8 @@ dependencies = [
 
 [[package]]
 name = "octos-workflows"
-version = "2.0.3-rc.12"
-source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=552767dd50e16e08c6225a0cb252fe884e794084#552767dd50e16e08c6225a0cb252fe884e794084"
 dependencies = [
  "chrono",
  "eyre",
@@ -7150,8 +7163,12 @@ dependencies = [
  "makepad-wm-api",
  "makepad-wm-theme",
  "octosense-app-hub-app",
+ "octosense-app-peers",
  "octosense-appcard",
+ "octosense-llm-config",
+ "octosense-llm-service",
  "octosense-mail-service",
+ "octosense-octos-core",
  "octosense-reference",
  "rinx",
 ]
@@ -7159,7 +7176,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=b0591e2caa0dc5c62927f7b85dbf826a50618a03#b0591e2caa0dc5c62927f7b85dbf826a50618a03"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7169,13 +7186,13 @@ dependencies = [
  "rand_core 0.9.5",
  "serde",
  "serde_json",
- "ureq",
+ "ureq 3.4.2",
 ]
 
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=b0591e2caa0dc5c62927f7b85dbf826a50618a03#b0591e2caa0dc5c62927f7b85dbf826a50618a03"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7187,9 +7204,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-app-peers"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "octosense-octos-core",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=b0591e2caa0dc5c62927f7b85dbf826a50618a03#b0591e2caa0dc5c62927f7b85dbf826a50618a03"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7210,7 +7238,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=b0591e2caa0dc5c62927f7b85dbf826a50618a03#b0591e2caa0dc5c62927f7b85dbf826a50618a03"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7219,6 +7247,34 @@ dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-llm-config"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305 0.10.1",
+ "chrono",
+ "flate2",
+ "qrcode",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "url",
+]
+
+[[package]]
+name = "octosense-llm-service"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "octosense-appstore",
+ "octosense-llm-config",
+ "octosense-octos-core",
+ "rqrr",
+ "serde_json",
+ "ureq 2.12.1",
 ]
 
 [[package]]
@@ -7237,7 +7293,19 @@ dependencies = [
  "scraper",
  "serde_json",
  "sha2 0.10.9",
- "webpki-roots",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "octosense-octos-core"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "octos-cli",
+ "octosense-llm-config",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -8258,7 +8326,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -8369,7 +8437,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=c85e6b4b0056d8cb2cedbc8269b952786c61e4c7#c85e6b4b0056d8cb2cedbc8269b952786c61e4c7"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8405,10 +8473,10 @@ dependencies = [
  "mime",
  "mime_guess",
  "num_cpus",
- "octos-app-transport",
  "octoscript-makepad",
  "octoscript-ui-l0",
  "octoscript-widgets",
+ "octosense-app-peers",
  "octosense-app-policy",
  "pulldown-cmark 0.13.4",
  "rand 0.8.8",
@@ -8441,7 +8509,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=c85e6b4b0056d8cb2cedbc8269b952786c61e4c7#c85e6b4b0056d8cb2cedbc8269b952786c61e4c7"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
 dependencies = [
  "serde",
  "serde_json",
@@ -10944,6 +11012,21 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
+version = "2.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
+dependencies = [
+ "base64 0.22.1",
+ "log",
+ "once_cell 1.21.4",
+ "rustls",
+ "rustls-pki-types",
+ "url",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "ureq"
 version = "3.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a7ac20be9b7726e0bbdbf974c059676d9acb1cd414961f570a4e8231cacd7fc"
@@ -10956,7 +11039,7 @@ dependencies = [
  "rustls-pki-types",
  "ureq-proto",
  "utf8-zero",
- "webpki-roots",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
@@ -11347,6 +11430,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
