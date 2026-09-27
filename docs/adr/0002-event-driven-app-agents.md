@@ -58,7 +58,7 @@ Every app publishes a **tool manifest**: the operations that make sense for that
 
 - **Declared in `tools.json`**, next to `AGENT.md`: for each tool a name in the app's namespace (`<app>.<tool>`), a description, a JSON Schema for its input and output, a **risk level** (Read, Act or Destructive), a **confirmation owner** (`confirm`: `host` or `app`, section 12), whether it may run in the background, and whether it is shareable. It is the one source for every kind of app (section 12); App Hub, or the shell build for native modules, checks the declarations and pins them with the app.
 - **Implemented where the capability lives.** Tools that need data, devices, network or secrets are implemented by the app's **host service** (native code; for example Mail's `list`, `read`, `draft_reply`, `send`), so a secret never reaches the model or the script. Tools that only reshape the app's own data may be implemented by the app itself.
-- **Registered with the kernel for the app's peer.** The kernel offers the model exactly these tools (plus the few generic ones the manifest names, such as research or `glance.publish`) and routes each call to its implementation, with the calling peer's identity. Results are structured, size-capped and recorded in the run's audit log.
+- **Registered with the kernel for the app's peer.** The kernel offers the model exactly these tools plus the **system toolbox tools the app was granted** (section 6), and routes each call to its implementation, with the calling peer's identity. Results are structured, size-capped and recorded in the run's audit log.
 - **Callers.** The app's own agent always. The **system agent** and **other apps' agents** only where the host grants it, and only the tools the app marks as shareable (for example a Calendar `free_busy` Read tool for a travel app). The person's "Ask anything" assistant calls them the same way, so a request and a background run use one surface.
 - **Risk decides supervision.** Read and in-app Act run unattended. An outward or destructive tool (send, post, share, buy, delete) called without a person present does not run: it becomes an **approval request** in the app's conversation (section 10), with the exact arguments, and runs only when the person approves there.
 
@@ -69,18 +69,34 @@ Mechanical collection is **code, not a model**. Judgement is the model's.
 - **Data services** (host services, native code, no model) collect the app's data on their own schedule or on the source's notifications into the app's folder, and keep a **ledger** of what was already seen. Examples: mail and calendar sync, feeds, a device's sensors or health store, files the person shared with the app. They keep working when the model, its provider or its quota is unavailable, and emit an event when something changed.
 - **The app agent** (LLM) wakes on that event or on its schedule. It decides what is new and important, gathers more where needed, writes the result, produces the card, and **proposes changes to what the data service collects** (sources, topics, filters), stored as data for the next run.
 
-### 6. External information: free sources first, APIs by choice, a browser for reading, no disguised search
+### 6. The system toolbox: research and crawling are granted system services
 
-When an agent needs information beyond its app's data, it uses legitimate channels, cheapest and most stable first:
+Gathering information beyond an app's own data (searching, deep research, crawling a site, reading a page) is done by a **system toolbox** that the host and the system agent own and run. An app agent does not search, crawl or drive a browser itself; it is **granted** toolbox tools and calls them, and the host executes them outside the app and its peer.
 
-1. Structured sources for the app's domain: feeds, public APIs and open datasets (for example RSS/Atom, RSSHub, Google News RSS or GDELT for news; official weather or transit APIs). These are free, predictable and often multi-language.
-2. A self-hosted SearXNG, if configured, at personal volume.
-3. A search API key the person chooses to add (free tier or paid). None is required.
-4. A **real browser for reading, not searching.** Pages the agent will cite are rendered (the existing octos `browser` tool, or Playwright/CDP), then reduced to their main text, at a polite rate that respects robots.txt.
+**The toolbox:**
 
-OctoSense does **not** make automated search pass as a person to get around a search engine's bot detection: no stealth fingerprinting, human-behaviour imitation or CAPTCHA solving, and no scraping of search results pages. The existing "hide automation" code in octos `deep-crawl` is reviewed against this rule.
+| Tool | What it does | Capability |
+|---|---|---|
+| `search` | one query through the provider chain (below); structured results | `research` |
+| `deep_research` | a planned, multi-source, multi-language investigation of a topic: sub-queries, reading, cross-checking, synthesis with citations | `research` |
+| `web_read` | render one page with a real browser and return its main text | `research` |
+| `deep_crawl` | crawl one site within limits (same site, depth, page count, path prefix) | `crawl` |
+| `card_render`, `card_critique_payload` | render and measure a card (card-studio) | granted to every app with an agent |
+| `glance.publish` | publish a card to the glance screen | `glance` |
+| memory search and recall | the app's own memory namespace | granted to every app with an agent |
 
-Research tools return **structured items** (title, URL, source, language, date, summary, citations) written into the app's folder, not only a Markdown report.
+**Granted per app, scoped.** An app asks for `research` and/or `crawl` in its manifest, with a scope: languages, regions, allowed or denied domains, maximum depth and pages, recency. App Hub checks and pins the request; the person or the store grants it, possibly narrower. The kernel offers the app's peer only the granted toolbox tools (the peer's registered tool set), and the host checks every call against the app's scope before running it.
+
+**Executed by the host, charged to the app.** Toolbox calls are host-routed tools: the kernel sends the call to the host, which runs the engine with the app's scope and budget and writes the results as **structured items** (title, URL, source, language, date, summary, citations) into the **calling app's folder**, returning a summary and item references to the agent. The system agent charges the work to the app's budget, runs heavy jobs when it is cheap (charging, Wi-Fi), and can queue or batch jobs across apps.
+
+**One policy, enforced once.** Because every app goes through the toolbox, the rules below are implemented in one place and cannot be bypassed by an app:
+
+1. **Provider chain, free first:** structured sources for the domain (feeds, public APIs and open datasets, for example RSS/Atom, RSSHub, Google News RSS or GDELT for news; official weather or transit APIs); then a SearXNG instance if configured; then a search API key the person chose to add. None is required.
+2. **A real browser for reading, not searching.** Pages to be cited are rendered and reduced to their main text, at a polite rate, respecting robots.txt, with an honest user agent.
+3. **No disguised search.** OctoSense does not make automated search pass as a person to get around a search engine's bot detection: no stealth fingerprinting, human-behaviour imitation, spoofed browser user agents or CAPTCHA solving, and no scraping of search results pages by default. Results-page scrapers exist only behind an explicit, off-by-default operator flag.
+4. **Provider keys and configuration live in the host** (like the AI providers' keys), never in apps or agents.
+
+Improving the toolbox (a better provider, better extraction, a new language) improves every app at once, and the outer loop (section 11) can tune how each app uses it.
 
 ### 7. Cards: L0, grounded, rendered and critiqued before publishing
 
@@ -163,7 +179,7 @@ Least privilege, declared by the app, checked by App Hub, granted by the host, e
 | Layer | Restriction | Enforced by |
 |---|---|---|
 | **Tools** | only the app's own `tools.json` plus the generic tools its manifest names (`agent.tools`); tools of other apps only where granted and marked shareable; nothing else is visible to the model | kernel, per peer context (script apps and native modules alike) |
-| **Network** | only the manifest's declared hosts, plus external-information providers the host grants | host network policy on every fetch |
+| **Network** | only the manifest's declared hosts; wider information only through granted system toolbox tools (`research`, `crawl`), within the app's declared scope | host network policy on every fetch; the toolbox checks every call against the scope |
 | **Files** | only the app's folder | app jail and the kernel's per-app workspace |
 | **Memory** | only `app/<app>/…`; promotion by rule or approval | kernel memory namespaces |
 | **Secrets** | none; keys and passwords stay in host services | host services |
@@ -225,7 +241,7 @@ In order; each step usable on its own.
 2. **Shell (`crates/ai-host`, `crates/app-peers`):** the built-in per-app conversation (threads per run; approvals with approve, edit and decline; questions; expiry; deep links from cards and notifications); installing each app's `AGENT.md` and skills into its peer workspace; selecting each peer's model from the person's providers under policy (`peer/model/set`), with per-app override in Settings; background peer handles for host services under host policy; `events` from data services to peers; registering each app's tools with its peer and routing calls to the host service or the app; budgets, kill switch and audit log in Settings.
 3. **App Hub:** the bundle gains `AGENT.md`, the app's skills, its model requirements and `tools.json` (schemas, risk, `confirm`, background and shareable flags), and the manifest a background permission; admission checks and pins them. The same parser and checks are a library the app-peers broker uses for native modules' `tools.json`.
 4. **Data services:** a common shape (collect, ledger, emit events) and the first services for the system apps that need them.
-5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
+5. **System toolbox:** the research engine in octos (structured items, `lang`, `since`, per-domain limits, free providers and SearXNG, browser reading, robots.txt, no disguised scraping; octos#2568) exposed as host-executed toolbox tools (`search`, `deep_research`, `web_read`, `deep_crawl`); App Hub `research` and `crawl` capabilities with a scope; per-app budgets and queueing by the system agent.
 6. **Outer loop:** per-app overlays for `AGENT.md` and skills (versioned, applied on top of the pinned base), run metrics and feedback signals, offline evaluation by replay or split trials, adoption and rollback, and the overlay history in Settings.
 7. **Cards:** a `card-studio` skill (render in `card-host --remote`, measured checks, vision critique, revise within budget); `glance.publish` and the glance screen's curation.
 8. **A first app end to end** through steps 1–7 (News; see *First slice: News*), then the other system apps.
@@ -240,7 +256,7 @@ News drives the implementation because it needs no approvals, has free and stabl
 | **M2: Tools and a peer for a contained app** | The bundle's tool manifest (schemas, risk, background, shareable), `AGENT.md` and model requirements. `os.news` gets an app peer; its `news.*` tools are registered with the kernel and routed to the host service. | App Hub, `crates/app-peers`, `crates/ai-host`, octos |
 | **M3: Trigger and run** | Feed events ("N new items") and digest times wake the News peer. It clusters, ranks and writes a structured digest (`news.digest.write`) using only its tools, within budget, with an audit entry. | octos, `crates/ai-host`, News `AGENT.md` |
 | **M4: Digest card on the glance screen** | A `sys.digest(app: news)` source; an L0 digest card spec; `glance.publish` wired to the glance feed (today `GlanceFeed::push`, marked "nothing is wired yet"), with a new glance item that renders an L0 card through the Card runner; a glance panel on the desktop. | `phone/`, `desktop/`, `crates/shell`, App Hub |
-| **M5: Research** | For the agent's top topics: structured research output with `lang` and `since`, free providers first, and pages read with a browser, stored as items; the digest gains citations. | octos research tools |
+| **M5: System toolbox** | The research engine as host-executed toolbox tools (`search`, `deep_research`, `web_read`, `deep_crawl`) granted to News by the `research` capability with a scope; structured items with citations in News's folder; free providers first, SearXNG if configured, pages read with a browser; the digest gains citations. | octos research engine, `crates/ai-host`, App Hub |
 | **M6: Render and critique** | A `card-studio` skill: render in `card-host --remote`, measured checks, vision critique, two styles, revise within budget, then publish. | octos skill, App Hub `card-host` |
 | **M7: Conversation and memory** | News's in-app conversation ("why this story?", "less of this topic" → topics); digest items recorded in the app's memory namespace. | `crates/shell`, octos memory |
 | **M8: Outer loop, first version** | Run metrics (critique score, cards opened or dismissed, topic corrections); a News `AGENT.md` overlay proposed by the system agent, evaluated by replay, shown in Settings. | `crates/ai-host`, Settings |
