@@ -45,6 +45,13 @@ and use the bundles here only as read-only examples.
   `crates/octos-core` (and `OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test
   real_kernel` with a real kernel); AppCard and the `llm` service link it, so
   run their checks too. Consumers never spawn a kernel of their own.
+- Native apps reach the assistant through `crates/app-peers`
+  (`octosense-app-peers`): the shell gives each app whose declared `octos.*`
+  services host policy grants ONE peer owned by the system agent and injects
+  a scoped service at module creation; apps never get raw kernel protocol.
+  Test with `cargo test --features octos-core,ws` in `crates/app-peers` (and
+  `OCTOS_APP_PEERS_TEST_KERNEL=<octos> cargo test --features octos-core --test
+  real_kernel`); see its README.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
 
