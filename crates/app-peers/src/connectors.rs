@@ -88,7 +88,7 @@ impl Link for CoreLink {
 }
 
 /// An explicitly configured remote octos server (`<base>/api/ui-protocol/ws`,
-/// bearer authenticated, one profile). The server owns its runtime and model
+/// authenticated by its bearer token only, one profile named in requests). The server owns its runtime and model
 /// credentials; disconnecting never stops it.
 #[cfg(feature = "ws")]
 pub struct WsConnector {
@@ -156,7 +156,11 @@ impl Connector for WsConnector {
                     .parse()
                     .map_err(|_| "bad token")?,
             );
-            headers.insert("x-profile-id", profile.parse().map_err(|_| "bad profile")?);
+            // Authenticate by the token alone. `x-profile-id` is the server's
+            // trusted-proxy header (honored from loopback without a token), so
+            // sending it would let a wrong token through on a local server.
+            // The profile travels in every request's params instead.
+            let _ = &profile;
             // Bound sessions reopen in the workspace the server gave them.
             headers.insert(
                 "x-octos-ui-features",
