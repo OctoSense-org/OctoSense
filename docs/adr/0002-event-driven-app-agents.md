@@ -200,7 +200,24 @@ In order; each step usable on its own.
 5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
 6. **Outer loop:** per-app overlays for `AGENT.md` and skills (versioned, applied on top of the pinned base), run metrics and feedback signals, offline evaluation by replay or split trials, adoption and rollback, and the overlay history in Settings.
 7. **Cards:** a `card-studio` skill (render in `card-host --remote`, measured checks, vision critique, revise within budget); `glance.publish` and the glance screen's curation.
-8. **A first app end to end** through steps 1–7, then the other system apps.
+8. **A first app end to end** through steps 1–7 (News; see *First slice: News*), then the other system apps.
+
+## First slice: News
+
+News drives the implementation because it needs no approvals, has free and stable data, and shows every other piece. Each milestone is usable on its own and testable on the desktop with `--remote` and on the phone.
+
+| Milestone | What | Where |
+|---|---|---|
+| **M1: News data service** | A `news` host service fetches on a timer, with no model: the current feeds (HN, TechMeme, Google News), curated RSS/Atom lists, Google News RSS topic feeds and GDELT, per language. Normalized items are written to the app's folder with a seen-items ledger. Tools: `news.list`, `news.read`, `news.topics.get`, `news.topics.set`. The News bundle reads from the service instead of fetching in its script, so it opens from cache. | `apps/news/host-service`, News bundle |
+| **M2: Tools and a peer for a contained app** | The bundle's tool manifest (schemas, risk, background, shareable), `AGENT.md` and model requirements. `os.news` gets an app peer; its `news.*` tools are registered with the kernel and routed to the host service. | App Hub, `crates/app-peers`, `crates/ai-host`, octos |
+| **M3: Trigger and run** | Feed events ("N new items") and digest times wake the News peer. It clusters, ranks and writes a structured digest (`news.digest.write`) using only its tools, within budget, with an audit entry. | octos, `crates/ai-host`, News `AGENT.md` |
+| **M4: Digest card on the glance screen** | A `sys.digest(app: news)` source; an L0 digest card spec; `glance.publish` wired to the glance feed (today `GlanceFeed::push`, marked "nothing is wired yet"), with a new glance item that renders an L0 card through the Card runner; a glance panel on the desktop. | `phone/`, `desktop/`, `crates/shell`, App Hub |
+| **M5: Research** | For the agent's top topics: structured research output with `lang` and `since`, free providers first, and pages read with a browser, stored as items; the digest gains citations. | octos research tools |
+| **M6: Render and critique** | A `card-studio` skill: render in `card-host --remote`, measured checks, vision critique, two styles, revise within budget, then publish. | octos skill, App Hub `card-host` |
+| **M7: Conversation and memory** | News's in-app conversation ("why this story?", "less of this topic" → topics); digest items recorded in the app's memory namespace. | `crates/shell`, octos memory |
+| **M8: Outer loop, first version** | Run metrics (critique score, cards opened or dismissed, topic corrections); a News `AGENT.md` overlay proposed by the system agent, evaluated by replay, shown in Settings. | `crates/ai-host`, Settings |
+
+Mail follows as the first app with approvals (`mail.send`), reusing M2–M7.
 
 ## Open questions
 
