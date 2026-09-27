@@ -76,14 +76,22 @@ The external pin chain becomes: makepad → OctoScript-Makepad (runtime) → App
 ### 4. CI and releases
 
 - **Path-filtered workflows:** the 40-minute ROM `home` job runs when `rom/`, `crates/` or `apps/` change, not for desktop-only or docs changes. Desktop checks run for `desktop/`, `crates/`, `apps/`.
-- **Products keep their own releases,** tagged per product: `desktop-v*`, `home-v*` (APK), `rom-v*` (image), `apps-v*` (system-app bundles, if published separately). Build receipts record the repository commit.
+- **Products keep their own releases,** tagged per product: `desktop-v*`, `home-v*` (APK), `rom-v*` (image). System apps ship inside the shells (section 6). Build receipts record the repository commit.
 - **Contributors** keep one PR per change; required checks are the union of the affected paths.
 
 ### 5. History and identity
 
-The new layout is built by importing the three repositories with history, rewritten once so every commit carries the project's public identity (`ymote <151983+ymote@users.noreply.github.com>` or the author's own public address), using a mailmap. This replaces the deferred force-push rewrite of six public repositories for these three: the old ROM and System-Apps repositories are archived with a pointer and, if the leaked metadata must disappear, made private. The remaining repositories in the planned rewrite (makepad, App Hub, OctoScript-Makepad) are decided separately.
+The new layout is built by importing the three repositories with history, rewritten once so every commit carries the project's public identity (`ymote <151983+ymote@users.noreply.github.com>` or the author's own public address), using a mailmap. OctoSense-Desktop's own history is rewritten the same way during the import (it becomes OctoSense). This replaces the deferred force-push rewrite for these three repositories: after the import, **OctoSense-ROM and OctoSense-System-Apps are archived with a pointer and made private** (decided 2026-09-27).
 
-### 6. Contestant and link stability
+The rewrite exists only to remove personal names and addresses that leaked into commit metadata between about 2026-09-19 and 2026-09-26 (an empty global git identity; fixed). For the repositories that stay separate:
+- **makepad (fork): no rewrite.** It tracks upstream Makepad; rewriting would break upstream syncs and pull requests.
+- **OctoScript-Makepad and OctoSense-App-Hub: optional**, decided separately. If done, both together after the contest, with every runtime/App Hub pin redone and a GitHub Support request to purge cached pull-request refs (a rewrite alone does not remove commits from GitHub's pull-request history, existing clones or forks).
+
+### 6. System apps ship only inside the shells
+
+System apps (`os.*` ids) are packed into the shell build, admitted by digest and run under system limits; App Hub refuses `os.*` ids from any store by design. They are not released separately (decided 2026-09-27). Updating system apps through App Hub would need a signed, rollback-safe system-app channel and is future work.
+
+### 7. Contestant and link stability
 
 The hackathon is running (preliminary deadline 2026-10-04, finals 2026-10-12). Contestant-facing entry points do not move: App-Design-Flow and App Hub stay where they are. Every moved path keeps a pointer: archived repositories' READMEs and descriptions, redirects via GitHub's rename for OctoSense-Desktop → OctoSense, and updated links in the org profile, READMEs, AGENTS.md and the websites (English and Chinese). No contestant-visible move happens before 2026-10-12 unless the links are verified the same day.
 
@@ -123,9 +131,12 @@ Estimated effort: phases 0–2 about one week, phase 3 one to two weeks (the sha
 - **Other sessions and contributors in flight.** Phase 0 lands or retargets their work first.
 - **Large CI cost.** Path filters and cached builds.
 
+## Decisions (2026-09-27)
+
+1. **Rename OctoSense-Desktop to `OctoSense`** (keeps its issues, stars and redirects).
+2. **Make OctoSense-ROM and OctoSense-System-Apps private** after archiving them.
+3. **System apps ship only inside the shells** (section 6).
+
 ## Open questions
 
-1. Name: rename OctoSense-Desktop to `OctoSense` (keeps its issues, stars and redirects), or start a fresh repository?
-2. After archiving, should OctoSense-ROM and OctoSense-System-Apps be made private to hide the leaked commit metadata, or stay public and archived?
-3. Should system-app bundles be released separately (`apps-v*`) for App Hub, or only ship inside the shells?
-4. Do makepad, App Hub and OctoScript-Makepad still get the history rewrite, and when?
+1. OctoScript-Makepad and OctoSense-App-Hub history rewrite: needed at all (only if the leaked work address must be removed), and if so after 2026-10-12?
