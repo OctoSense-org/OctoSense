@@ -7,9 +7,9 @@
 //! the per-domain app agents and the L0 corpus), the card store / transport
 //! crates and the `OctosUiAgent` with its tokio runtime, the L0 pipeline
 //! (octoscript-ui-l0 check/realize → kit lower → eval → `to_dsl` → a
-//! `Splash` per card), sessions, the composer, and the kernel agent
-//! (`liboctos.so serve --stdio` from this APK's nativeLibraryDir when it is
-//! bundled, else the WebSocket transport / the login screen).
+//! `Splash` per card), sessions, the composer, and the kernel agent (a
+//! connection to the shell's octos kernel when one can run, else the
+//! WebSocket transport / the login screen).
 //!
 //! `register` runs the app's script_mods in the instance isolate and
 //! registers the framework's `sys`/`agent` engine as a Splash isolate mod
@@ -19,12 +19,14 @@
 //! kernel transport come up, exactly as in the APK) and draws the app's root
 //! body without its `Window{}`. The host's tile is the window.
 //!
-//! The kernel is the app's own affair: `octos_app`'s `stdio_spawn` finds
-//! `liboctos.so` in this APK's nativeLibraryDir (bundled with
-//! `MAKEPAD_ANDROID_EXTRA_LIBS`, see docs/android-appcard-build.md), gives it
-//! `HOME=<files>/octos-home` and the memory budget, and runs `serve --stdio`
-//! as a `kill_on_drop` child of the agent's runtime — so this module spawns
-//! no kernel of its own (the Phase-A probe would have been a second child).
+//! The kernel is the shell's, not the app's: `octosense_octos_core` (Home's
+//! `octos-core` feature, which `app-appcard` implies) finds `liboctos.so` in
+//! this APK's nativeLibraryDir (bundled by the build, see
+//! docs/android-appcard-build.md), gives it `HOME=<files>/octos-home` and the
+//! memory budget, and runs `serve --stdio` once per process when the first
+//! consumer connects. The app's agent is one connection to it; this module
+//! spawns no kernel of its own. When the AI providers change, the `llm`
+//! service restarts the kernel and the agent's transport reconnects.
 //!
 //! What stays host-owned: the OS window and keyboard insets, and the
 //! notifications / share / WebView overlay of the standalone APK's Java
@@ -165,7 +167,7 @@ impl AppModule for AppCardModule {
     }
     fn open_schema(&self) -> OpenSchema { OpenSchema::new(1) }
     /// Cards fetch live values over HTTP; the store keeps sessions and
-    /// cursors on disk; the agent talks to the kernel (a child, or a socket).
+    /// cursors on disk; the agent talks to the kernel (the shell's, or a socket).
     fn capabilities(&self) -> &'static [&'static str] { &["storage", "net"] }
     fn create(&self, vm: &mut ScriptVm, _open: ValidatedOpen, _handles: InstanceHandles) -> InstanceParts {
         let root = AppShell::create(vm);
@@ -174,8 +176,9 @@ impl AppModule for AppCardModule {
             root: root.clone(),
             executor: Box::new(AppCardExecutor { root }),
             // The host runs this before it drops the root: stop the agent —
-            // its tokio runtime and the kernel child (kill_on_drop) go with
-            // it — so nothing outlives the isolate.
+            // its tokio runtime and its kernel connection go with it (the
+            // kernel stops when its last consumer leaves) — so nothing
+            // outlives the isolate.
             shutdown: Box::new(move |_vm| {
                 if let Some(mut inner) = shell.borrow_mut::<AppShell>() {
                     inner.shutdown();

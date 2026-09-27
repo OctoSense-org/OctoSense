@@ -6,8 +6,9 @@ The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade
 (notifications left, controls right), Recents, a live island for ongoing
 activities, and hosted apps drawn in-process inside its tiles: App Hub and
-the apps it runs, the system apps, Reference and Sheets. (AppCard is not
-shipped for now; it links only with `--features app-appcard`.)
+the apps it runs, the system apps, Reference and Sheets, and the octos agent
+kernel as a service. (AppCard is not shipped for now; it links only with
+`--features app-appcard`.)
 
 Setup, builds for every target, pins and CI are in the
 [root README](../README.md). This page is the Home-specific deep dive.
@@ -105,29 +106,49 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release --features mobile-on
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-AI providers (`os.ai-providers`) edits the LLM providers the hosted AppCard
-assistant runs on, through the `llm` host service
-(`apps/ai-providers/host-service`), which Home registers at startup
-([src/llm_host.rs](src/llm_host.rs)):
+`app-news`, `app-photos` and `app-maps` link the earlier native modules in
+place of their script apps, for comparison until the script apps are measured
+on a device; their notes are [docs/photos.md](docs/photos.md) and
+[docs/maps.md](docs/maps.md). Mail and Camera have no native module any more.
 
-- the profile it writes is the AppCard kernel's, `<data dir>/octos-home/.octos/profiles/_main.json`
-  on a phone (`OCTOS_APP_CORE_DIR` overrides it); on Android the keys are in
-  that app-private profile, since octos reads them there;
+### The octos kernel
+
+The octos agent kernel is a Home service, independent of any app:
+`octosense-octos-core` (OctoSense-System-Apps `crates/octos-core`), feature
+`octos-core` (default, and always on in Android, iOS and OpenHarmony
+builds). Home configures it at startup with its data dir
+([src/llm_host.rs](src/llm_host.rs)); nothing runs until a consumer
+connects. Then there is one kernel per process: `liboctos.so serve --stdio`
+from the APK's native lib dir on Android (every APK `scripts/build-home.sh`
+builds carries it), the core in-process on OpenHarmony, the binary named by
+`OCTOS_APP_CORE_BIN` on a desktop (none otherwise), none on iOS. Its core
+dir is `<data dir>/octos-home/.octos` on a phone and `OCTOS_APP_CORE_DIR`,
+else `~/octos-home/.octos`, on a desktop. The AI providers app configures it
+(below); AppCard (opt-in) and, next, Rinx connect to it and share it; it
+stops when the last one leaves and on Home's shutdown. To build without it
+(desktop only): `--no-default-features` plus the features you want, e.g.
+`--features app-hub`.
+
+### AI providers
+
+AI providers (`os.ai-providers`) edits the octos kernel's LLM providers
+through the `llm` host service (`apps/ai-providers/host-service`), which Home
+registers at startup ([src/llm_host.rs](src/llm_host.rs)):
+
+- the profile it writes is the kernel's, `<core dir>/profiles/_main.json`
+  (`<data dir>/octos-home/.octos` on a phone; `OCTOS_APP_CORE_DIR` overrides
+  it); on Android the keys are in that app-private profile, since octos
+  reads them there;
 - on Android the import sheet can **scan** a provider QR with the camera
   (Makepad's `cx.show_qr_scanner()`, carried as a stacked runtime patch until
   the runtime includes makepad#31) or read one from a **chosen image**
   (`QrImagePickActivity`: the system picker, the bytes handed over in a
   private cache file on the `qr.image.result` packet); elsewhere it takes a
   pasted code;
-- with AppCard linked (`--features app-appcard`, opt-in), after any change
-  Home restarts the AppCard core: the AppCard instances
-  end, their kernel with them, and the home tile opens a fresh one that
-  reads the new profile.
-
-`app-news`, `app-photos` and `app-maps` link the earlier native modules in
-place of their script apps, for comparison until the script apps are measured
-on a device; their notes are [docs/photos.md](docs/photos.md) and
-[docs/maps.md](docs/maps.md). Mail and Camera have no native module any more.
+- after any change the service restarts the kernel (if one runs): its
+  consumers reconnect to a fresh kernel that reads the new profile (AppCard
+  keeps its window and sessions; a request in flight fails with "the octos
+  kernel restarted").
 
 ## App Hub
 
@@ -195,8 +216,9 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   files to that.
 - `apps/appcard`: hosts the AppCard assistant (`octos-app`, a path dependency
   into `../.sources/system-apps/apps/appcard/app/app`). Opt-in only, on every
-  target: `--features app-appcard`. Default, `mobile-apps` and native mobile
-  builds leave it (and octos) out.
+  target: `--features app-appcard` (it implies `octos-core`; the assistant
+  connects to Home's kernel). Default, `mobile-apps` and native mobile
+  builds leave the AppCard UI out, not the kernel service.
 - `apps/reference`: the reference module.
 - `apps/news`, `apps/photos`, `apps/maps`: the native comparison modules
   (features `app-news`, `app-photos`, `app-maps`). Their design notes are in
@@ -218,13 +240,17 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   revision, the same one the Mail host service names, so no `[patch]` is
   needed for one App Hub source.
 - OctoSense-System-Apps (`native-apps.lock.json`): the system-app bundles,
-  the Mail host service and `octos-app`, which brings octos from
-  `octos-org/octos` at one revision — only into `app-appcard` builds.
-- The AppCard kernel (needed only with `app-appcard`) is not a Cargo dependency: `liboctos.so` is bundled at
-  APK build time with `MAKEPAD_ANDROID_EXTRA_LIBS`
-  ([docs/android-appcard-build.md](docs/android-appcard-build.md); its pins
-  predate the current ones). Without it, the AppCard tile falls back to its
-  WebSocket transport and login screen.
+  the Mail and `llm` host services, the octos kernel service
+  (`crates/octos-core`) and `octos-app`. octos comes from `octos-org/octos`
+  at one revision: as a Cargo dependency only on OpenHarmony (the in-process
+  core) and in `app-appcard` builds (protocol types).
+- The kernel binary is not a Cargo dependency on Android: `liboctos.so` is
+  cross-built from that revision and bundled at APK build time with
+  `MAKEPAD_ANDROID_EXTRA_LIBS` by `scripts/build-home.sh` (`--octos-kernel`
+  for a prebuilt one, `--no-octos-kernel` for none;
+  [docs/android-appcard-build.md](docs/android-appcard-build.md)). Without
+  it the phone runs no kernel; the providers are still saved, and AppCard
+  (if linked) falls back to its WebSocket transport and login screen.
 
 ## Tests and state
 

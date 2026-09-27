@@ -5211,6 +5211,7 @@ dependencies = [
  "octoscript-node",
  "octoscript-ui-l0",
  "octosense-llm-config",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "robius-open",
  "serde",
@@ -5248,14 +5249,13 @@ dependencies = [
  "chrono",
  "futures-util",
  "log",
- "octos-cli",
  "octos-core",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.24.0",
- "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -5659,6 +5659,7 @@ dependencies = [
  "octosense-mail-service",
  "octosense-maps",
  "octosense-news",
+ "octosense-octos-core",
  "octosense-photos",
  "octosense-reference",
  "serde",
@@ -5752,6 +5753,7 @@ dependencies = [
  "image",
  "octosense-appstore",
  "octosense-llm-config",
+ "octosense-octos-core",
  "rqrr",
  "serde_json",
  "ureq 2.12.1",
@@ -5801,6 +5803,18 @@ dependencies = [
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
+]
+
+[[package]]
+name = "octosense-octos-core"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "octos-cli",
+ "octosense-llm-config",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
