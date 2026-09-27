@@ -11,7 +11,7 @@ OctoSense-Desktop 是 [OctoSense](https://github.com/OctoSense-org)（运行在�
 | 仓库 | 与本仓库的关系 |
 | --- | --- |
 | [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM/blob/main/README.zh-CN.md) | 手机 Shell（`home/`）。相同的应用模型、相同的运行时、相同的系统应用。 |
-| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | 新闻、相册、地图、相机、邮件的应用包，邮件宿主服务，以及 AppCard 助手（`octos-app`）。以固定版本的同级目录检出。 |
+| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | 新闻、相册、地图、相机、邮件、AI 提供商的应用包，邮件与 `llm` 宿主服务，以及 AppCard 助手（`octos-app`）。以固定版本的同级目录检出。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店和 Card 运行器。以 Git crate `octosense-app-hub-app` 链接。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 固定 Makepad 与 OctoScript 版本的运行时发行版。以固定版本的同级目录检出。 |
@@ -33,7 +33,7 @@ OctoSense-Desktop 是 [OctoSense](https://github.com/OctoSense-org)（运行在�
 | `native-apps.lock.json` | OctoSense-System-Apps 的版本。 |
 | `runtime-patches.lock.json` | 固定 Makepad 之上经过评审的补丁及其期望的源码树。目前为空：固定的 Makepad 已包含 Shell 所需的一切。 |
 | `tools/setup-native.py` | 准备并检查固定版本的同级目录。 |
-| `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）、它们的 Python 测试，以及 `provision-appcard-llm.sh`（Android）。 |
+| `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）、它们的 Python 测试、`system_apps_remote.sh` 和 `ai_providers_remote.sh`（以隐藏窗口 `--remote` 运行的系统应用与 AI 提供商端到端测试），以及 `provision-appcard-llm.sh`（Android）。 |
 | `upstream/makepad.json` | 每个从 Makepad `apps/wm` 引入的文件的来源记录。 |
 | `resources/` | 主题、壁纸、图标、Android manifest 模板、启动脚本。 |
 | `docs/` | [验证记录](docs/validation.md)、[上游同步](docs/upstream.md)、[本地 AI](docs/local-ai.md)、[Android AppCard 构建](docs/android-appcard-build.md)、按日期的计划文档。 |
@@ -105,7 +105,7 @@ cargo build --release --workspace
 
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
-| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及邮件宿主服务 `octosense-mail-service`。关闭后构建中没有 App Hub，也没有系统应用。 |
+| `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及宿主服务 `octosense-mail-service`（邮件）和 `octosense-llm-service`（AI 提供商）。关闭后构建中没有 App Hub，也没有系统应用。 |
 | `app-reference` | 关 | 把 Reference 作为模块链接。 |
 | `app-sheets` | 关 | 把 Makepad 的 Sheets 作为模块链接。 |
 | `app-photos` | 关 | 链接 Makepad 的原生 Photos 模块；它会替换同 id 的相册系统应用（用于对比）。 |
@@ -138,6 +138,7 @@ App Hub 的模块是例外：它们没有进程形态，总是在进程内打开
 | `OCTOSENSE_SYSTEM_APPS` | 系统应用选择文件；`.cargo/config.toml` 将其设为 `system-apps.json`。 |
 | `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | 提供邮件的演示邮箱（见[演示](#演示)）。 |
 | `OCTOSENSE_MAIL_VAULT=file` | 把邮件密码保存在权限为 0600 的文件中，而不是 macOS 钥匙串。 |
+| `OCTOSENSE_LLM_VAULT=file` | 把 AI 提供商的密钥保存在仅所有者可读的 octos 配置文件中，而不是 macOS 钥匙串。 |
 | `OCTOS_APP_CORE_BIN`、`OCTOS_APP_CORE_DIR` | 让 AppCard 助手使用本地的 octos 内核。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
@@ -147,7 +148,7 @@ launcher 把四类应用列在一起：
 
 | 类别 | 来源 | 运行方式 | Launcher id |
 | --- | --- | --- | --- |
-| **系统应用**：新闻、相册、地图、相机、邮件 | OctoSense-System-Apps 的 `apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
+| **系统应用**：新闻、相册、地图、相机、邮件、AI 提供商 | OctoSense-System-Apps 的 `apps/<name>/bundle`，由 `system-apps.json` 选择，打包进构建 | App Hub 的 Card 运行器中隔离运行的 Splash 程序，每个应用一个 isolate，只拥有其清单申请的能力 | `<name>`（清单 id `os.<name>`） |
 | **商店应用** | 签名的 App Hub 目录，从商店（`apphub`）安装 | 同一个 Card 运行器。每次打开都会对照目录检查；更新会关闭旧实例。 | `hub:<manifest-id>` |
 | **原生模块** | 链接进本二进制的 Rust crate | 进程内的 `AppModule`。只允许受信任的代码：App Hub、AppCard、Reference 以及各 `app-*` feature。 | 模块 id |
 | **开发者程序** | `config/apps.json` | tile 中的独立进程，通过 Makepad 的 `--stdin-loop` 托管协议运行，首次启动时构建 | 目录 `id` |
@@ -167,6 +168,8 @@ launcher 把四类应用列在一起：
 - `mail.add_account` 弹出宿主的**登录面板**，这是覆盖在应用之上的独立 isolate。只有这个面板的调用（`mail.sheet.submit`、`mail.sheet.cancel`）可以携带密码。
 - 服务先测试账户，再把密码存入平台的密钥存储（macOS 钥匙串），并且只把账户授予添加它的应用。
 - 邮件状态保存在宿主自己的目录中，位于所有应用的沙箱之外。
+
+AI 提供商（`os.ai-providers`）通过 `llm` 服务（`octosense-llm-service`，来自 `../OctoSense-System-Apps/apps/ai-providers/host-service`）编辑 AppCard 助手使用的 LLM 提供商。密钥只在宿主面板上输入，保存到 octos 读取的 macOS 钥匙串条目；提供商写入 AppCard 内核的 octos 配置（`OCTOS_APP_CORE_DIR`，否则为 `~/octos-home/.octos`）。手机上的提供商二维码可从图片导入：**Choose image** 打开文件面板，或把截图拖到导入面板上。**开始 → 设置 → AI providers** 可打开它。使用 `--features app-appcard` 时，更改会重启正在运行的 AppCard，使其内核读取新的提供商。
 
 需要密码、PIN 或令牌的新功能，应放在宿主服务和宿主自有面板中，绝不放在应用自己的界面里。
 
@@ -194,7 +197,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 {
   "schema": 1,
   "source": "../OctoSense-System-Apps/apps",
-  "apps": ["news", "photos", "maps", "camera", "mail"],
+  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
   "assets": {}
 }
 ```

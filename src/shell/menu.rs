@@ -482,6 +482,18 @@ impl MenuModel {
             ] {items.push(MenuItem::new(id,label,kind).icon(icon));}
         }
         let available = launcher::apps();
+        // Settings gains a submenu once the build ships the AI providers
+        // system app (`os.ai-providers`): Appearance, then AI providers.
+        if path.starts_with("start") && available.iter().any(|app| app.id == AI_PROVIDERS) {
+            items.push(
+                MenuItem::new("start.settings.style", "Appearance", MenuKind::Menu)
+                    .icon(Ico::Monitor),
+            );
+            items.push(
+                MenuItem::new("start.settings.ai-providers", "AI providers", MenuKind::App)
+                    .icon(Ico::Cpu),
+            );
+        }
         items.retain(|item| {
             let app = match item.id.as_str() {
                 "workspace.files" | "start.documents" => "apps.files",
@@ -727,7 +739,8 @@ impl MenuModel {
             MenuKind::Menu => {
                 let target=match row.target.as_str() {
                     "start.programs"|"start.search"|"start.run"|"workspace.apps"=>"apps",
-                    "start.settings"=>"style",
+                    "start.settings" if !self.items.iter().any(|item| item.id=="start.settings.ai-providers")=>"style",
+                    "start.settings.style"=>"style",
                     "workspace.desktop"=>"desktop",
                     other=>other,
                 };
@@ -739,11 +752,15 @@ impl MenuModel {
                 "workspace.files" => "apps.files".into(),
                 "workspace.tools.terminal" => "apps.terminal".into(),
                 "workspace.tools.task" => "apps.task".into(),
+                "start.settings.ai-providers" => AI_PROVIDERS.into(),
                 _ => row.target,
             }),
         }
     }
 }
+
+/// The launcher row of the AI providers system app (`os.ai-providers`).
+const AI_PROVIDERS: &str = "apps.ai-providers";
 
 /// `MenuModel.js` `matchesQuery` + `searchScore`, lower is better.
 ///
@@ -1586,6 +1603,29 @@ mod tests {
         assert_eq!(centered_card_top(screen, 600.0, 8.0, Some(300.0)), 292.0);
         let smaller = rect(0.0, 26.0, 800.0, 400.0);
         assert_eq!(centered_card_top(smaller, 280.0, 8.0, Some(300.0)), 138.0);
+    }
+
+    /// Start > Settings is Appearance alone until the build ships the AI
+    /// providers system app; then it is a submenu that also opens it.
+    #[test]
+    fn start_settings_offers_ai_providers_once_it_ships() {
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.descend("start");
+        let ships = launcher::apps().iter().any(|app| app.id == AI_PROVIDERS);
+        model.sel = model.rows.iter().position(|r| r.target == "start.settings").unwrap();
+        assert_eq!(model.activate(), None);
+        if ships {
+            assert_eq!(model.path, "start.settings");
+            model.sel = model
+                .rows
+                .iter()
+                .position(|r| r.target == "start.settings.ai-providers")
+                .unwrap();
+            assert_eq!(model.activate().as_deref(), Some(AI_PROVIDERS));
+        } else {
+            assert_eq!(model.path, "style");
+        }
     }
 
     #[test]

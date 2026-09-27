@@ -30,6 +30,8 @@ mod dock_warp;
 mod host;
 mod hub;
 mod layout;
+#[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
+mod llm_image;
 mod octosense;
 mod module_host;
 mod module_view;
@@ -1393,6 +1395,28 @@ impl App {
             self.request_close(cx, client);
         }
         octosense_app_hub_app::icons::invalidate();
+        self.redraw_all(cx);
+    }
+
+    /// The provider set changed (AI providers): end every AppCard module
+    /// instance, so its agent and its kernel child stop, and open AppCard
+    /// again when one was running: its new kernel reads the new profile.
+    #[cfg(all(feature = "app-hub", feature = "app-appcard"))]
+    fn restart_appcard_core(&mut self, cx: &mut Cx) {
+        let mut ended = 0;
+        while let Some(client) = self.module_host.client_of_module("appcard") {
+            log!("llm: providers changed: restarting the AppCard core (client {client})");
+            self.request_close(cx, client);
+            ended += 1;
+            if ended >= 8 || self.module_host.client_of_module("appcard") == Some(client) {
+                break;
+            }
+        }
+        if ended == 0 {
+            log!("llm: providers changed; no AppCard core is running, the next one reads them");
+        } else {
+            self.launch_app(cx, "appcard");
+        }
         self.redraw_all(cx);
     }
 
@@ -4147,6 +4171,8 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        #[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
+        llm_image::handle_actions(actions);
         if self.gallery {
             let gallery = self.ui.widget(cx, ids!(shell_gallery));
             {
@@ -4460,6 +4486,29 @@ impl AppMain for App {
             && (self.shell_menu_pointer(cx, event) || self.shell_panel_pointer(cx, event))
         {
             return;
+        }
+        // AI providers' QR import: the open panel a pick asked for, and an
+        // image dropped on its window while the import sheet waits.
+        #[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
+        if self.state.is_some() {
+            llm_image::open_requested(cx);
+            if matches!(event, Event::Drag(_) | Event::Drop(_)) {
+                let desk = self.desk(cx);
+                let desk = desk.borrow::<WmDesk>();
+                let state = self.state.as_ref();
+                let app_at = |p: Vec2d| {
+                    let client = desk.as_ref()?.window_at(p)?;
+                    state?.clients.get(&client).map(|slot| slot.app.clone())
+                };
+                if llm_image::handle_drop(event, app_at) {
+                    return;
+                }
+            }
+        }
+        // AI providers changed the saved providers: restart the AppCard core.
+        #[cfg(all(feature = "app-hub", feature = "app-appcard"))]
+        if apps::take_appcard_restart() {
+            self.restart_appcard_core(cx);
         }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}

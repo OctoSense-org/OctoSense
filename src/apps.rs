@@ -127,10 +127,21 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
     Vec::new()
 }
 
-/// The services contained apps call through `host.request` (ADR 0004): `mail`
-/// keeps accounts and passwords for the Mail app. `mail_demo` in
-/// MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
-/// keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// The services contained apps call through `host.request` (ADR 0004),
+/// registered once, before the first system app can open:
+///
+/// - `mail` keeps accounts and passwords for the Mail app. `mail_demo` in
+///   MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
+///   keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// - `llm` keeps the assistant's LLM providers for AI providers
+///   (`os.ai-providers`), written to the AppCard kernel's octos profile
+///   (`OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`), keys in the keychain
+///   entry octos reads (`OCTOSENSE_LLM_VAULT=file` keeps them in the
+///   owner-only profile). No camera scanner: a phone's profile QR is imported
+///   from a picture of it (the open panel, or an image dropped on the import
+///   sheet: `llm_image`), or by pasting its text. With AppCard linked
+///   (`app-appcard`), a change restarts its core so the kernel reads the new
+///   providers; without it there is nothing to restart.
 #[cfg(feature = "app-hub")]
 pub fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -145,7 +156,34 @@ pub fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        let mut llm = octosense_llm_service::Options::default();
+        if let Some(dir) = octosense_llm_config::profile::default_core_dir() {
+            llm = llm.core_dir(dir);
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            llm = llm.image_picker(crate::llm_image::picker()).image_drops(true);
+        }
+        #[cfg(feature = "app-appcard")]
+        {
+            llm = llm.on_changed(|| {
+                RESTART_APPCARD.store(true, std::sync::atomic::Ordering::Release);
+                makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
+            });
+        }
+        octosense_llm_service::register_with(llm);
     });
+}
+
+/// Set (any thread) when AI providers changed the saved provider set.
+#[cfg(all(feature = "app-hub", feature = "app-appcard"))]
+static RESTART_APPCARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// UI thread: whether the AppCard core should restart to read a changed
+/// provider set (once per change).
+#[cfg(all(feature = "app-hub", feature = "app-appcard"))]
+pub fn take_appcard_restart() -> bool {
+    RESTART_APPCARD.swap(false, std::sync::atomic::Ordering::AcqRel)
 }
 
 /// Apps App Hub installed: each is an app of its own in the launcher, hosted
@@ -344,16 +382,16 @@ mod tests {
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {
-            &["reference", "sheets", "appcard", "apphub", "news", "photos", "maps", "camera", "mail"]
+            &["reference", "sheets", "appcard", "apphub", "news", "photos", "maps", "camera", "mail", "ai-providers"]
         } else {
-            &["reference", "sheets", "apphub", "news", "photos", "maps", "camera", "mail"]
+            &["reference", "sheets", "apphub", "news", "photos", "maps", "camera", "mail", "ai-providers"]
         };
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         // The system apps have no native module: the Card runner hosts them,
         // launched by their manifest id (ADR 0004).
         let registry = AppRegistry::default();
-        for id in ["news", "photos", "maps", "camera", "mail"] {
+        for id in ["news", "photos", "maps", "camera", "mail", "ai-providers"] {
             let app = catalog.iter().find(|app| app.id == id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
             assert_eq!(registry.module(id).map(|m| m.id()), Some("card"));
@@ -405,7 +443,7 @@ mod tests {
     #[test]
     fn the_system_apps_ship_as_card_apps() {
         let ids: Vec<String> = system_card_apps().into_iter().map(|app| app.id).collect();
-        assert_eq!(ids, ["news", "photos", "maps", "camera", "mail"]);
+        assert_eq!(ids, ["news", "photos", "maps", "camera", "mail", "ai-providers"]);
         let registry = AppRegistry::default();
         for id in &ids {
             assert_eq!(registry.hosting(id), Hosting::Module);
