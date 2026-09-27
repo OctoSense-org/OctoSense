@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/upstreamlabs/Rinx?rev=5ad2c1739e5b4776588518ab76440a5367c9968e#5ad2c1739e5b4776588518ab76440a5367c9968e"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=82391adf228692222462fc8696a04906a7aaf3eb#82391adf228692222462fc8696a04906a7aaf3eb"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/upstreamlabs/Rinx?rev=5ad2c1739e5b4776588518ab76440a5367c9968e#5ad2c1739e5b4776588518ab76440a5367c9968e"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=82391adf228692222462fc8696a04906a7aaf3eb#82391adf228692222462fc8696a04906a7aaf3eb"
 dependencies = [
  "article-core",
  "libc",
@@ -5718,7 +5718,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "anymap2",
  "as_variant",
@@ -5776,7 +5776,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -5803,7 +5803,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "eyeball-im",
  "futures-core",
@@ -5826,7 +5826,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "aes 0.9.3",
  "as_variant",
@@ -5865,7 +5865,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -5897,7 +5897,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -5924,7 +5924,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -5946,7 +5946,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.18.0"
-source = "git+https://github.com/matrix-org/matrix-rust-sdk#6892cb217ae4a886571e928c8efcccfbec5490a6"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk?rev=6892cb217ae4a886571e928c8efcccfbec5490a6#6892cb217ae4a886571e928c8efcccfbec5490a6"
 dependencies = [
  "as_variant",
  "async-rx",
@@ -7163,6 +7163,7 @@ dependencies = [
  "makepad-wm-api",
  "makepad-wm-theme",
  "octosense-app-hub-app",
+ "octosense-app-peers",
  "octosense-appcard",
  "octosense-llm-config",
  "octosense-llm-service",
@@ -7200,6 +7201,17 @@ dependencies = [
  "octosense-app-policy",
  "octosense-appstore",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-app-peers"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "octosense-octos-core",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -8425,7 +8437,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
-source = "git+https://github.com/upstreamlabs/Rinx?rev=5ad2c1739e5b4776588518ab76440a5367c9968e#5ad2c1739e5b4776588518ab76440a5367c9968e"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=82391adf228692222462fc8696a04906a7aaf3eb#82391adf228692222462fc8696a04906a7aaf3eb"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8461,10 +8473,16 @@ dependencies = [
  "mime",
  "mime_guess",
  "num_cpus",
+ "octoscript-makepad",
+ "octoscript-ui-l0",
+ "octoscript-widgets",
+ "octosense-app-peers",
+ "octosense-app-policy",
  "pulldown-cmark 0.13.4",
  "rand 0.8.8",
  "rangemap",
  "rfd",
+ "rinx-miniapp-core",
  "robius-directories",
  "robius-file-picker",
  "robius-location",
@@ -8483,8 +8501,18 @@ dependencies = [
  "tracing-subscriber",
  "unicode-segmentation 1.13.3",
  "url",
+ "uuid",
  "webpki-root-certs",
  "winresource",
+]
+
+[[package]]
+name = "rinx-miniapp-core"
+version = "0.1.0"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=82391adf228692222462fc8696a04906a7aaf3eb#82391adf228692222462fc8696a04906a7aaf3eb"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

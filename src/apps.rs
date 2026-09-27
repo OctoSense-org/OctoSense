@@ -383,6 +383,7 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
+        let _one_rinx = crate::app_peers_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {
@@ -390,6 +391,12 @@ mod tests {
         } else {
             &["reference", "sheets", "apphub", "news", "photos", "maps", "camera", "mail", "ai-providers"]
         };
+        // Rinx (app-rinx, in `default`) is linked before App Hub.
+        let mut expected: Vec<&str> = expected.to_vec();
+        if cfg!(feature = "app-rinx") {
+            let at = expected.iter().position(|id| *id == "apphub").unwrap();
+            expected.insert(at, "rinx");
+        }
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         // The system apps have no native module: the Card runner hosts them,
