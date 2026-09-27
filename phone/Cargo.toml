@@ -83,7 +83,7 @@ octosense-app-peers = { path = "../.sources/system-apps/crates/app-peers", featu
 # Rinx (Matrix chats and mini apps) as a native module (`app-rinx`). It gets
 # the assistant only through the injected service: no kernel, no credentials,
 # no AppCard.
-rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "82391adf228692222462fc8696a04906a7aaf3eb", default-features = false, features = ["octosense-module"], optional = true }
+rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "5cf70a822aadb0da626123affa67c814f6848b58", default-features = false, features = ["octosense-module"], optional = true }
 # The whole AppCard assistant (OctoSense-System-Apps apps/appcard) hosted in
 # a tile, in-process (Phase B of the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 # Not shipped for now: strictly opt-in with `--features app-appcard`, on
