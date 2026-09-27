@@ -72,7 +72,7 @@ Each JSON sidecar preserves the instrument's capture receipt. Reviewed:
 
 `live-fixture`, `install-consent`, `installed-detail` and `library` use the
 optional local signed catalog described in the
-[App Hub README](../../../apps/app-hub/README.md). Those are development
+[App Hub crate README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md). Those are development
 fixtures, not production store listings. The production store remained empty.
 The fixtures deliberately use a fixed 360×640 artboard, visible inside the
 larger phone content area in their running-app captures.

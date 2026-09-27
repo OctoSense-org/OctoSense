@@ -1,0 +1,4 @@
+<input-method xmlns:android="http://schemas.android.com/apk/res/android" android:settingsActivity="dev.makepad.octosense.keyboardprovider.KeyboardSettingsActivity" android:supportsSwitchingToNextInputMethod="true">
+    <subtype android:label="@string/english" android:imeSubtypeLocale="en_US" android:languageTag="en-US" android:imeSubtypeMode="keyboard" android:isAsciiCapable="true" />
+    <subtype android:label="@string/chinese" android:imeSubtypeLocale="zh_CN" android:languageTag="zh-Hans-CN" android:imeSubtypeMode="keyboard" />
+</input-method>

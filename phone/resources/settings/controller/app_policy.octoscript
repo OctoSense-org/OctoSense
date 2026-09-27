@@ -1,0 +1,246 @@
+// Per-app battery/network/storage behavior. Android remains the observed authority.
+fn settings_app_policy_init(s) {
+    if s["app_policy"]==nil { s.app_policy={battery_review:nil,storage_review:nil,pressed:nil} }
+}
+fn settings_selected_details(s,o) {
+    if o.app_details!=nil && o.app_details.target==s.context["app_target"] { return o.app_details }
+    return nil
+}
+fn settings_app_policy_observed(s,o,domain) {
+    let row=o[domain]
+    if row==nil { return nil }
+    let target=row["target"]
+    if domain=="app_network" { target=row.package }
+    if target==s.context["app_target"] { return row }
+    return nil
+}
+fn settings_app_policy_signature(request) {
+    if request==nil { return "" }
+    return request.kind+"|"+request.target+"|"+request.key+"|"+request.choice
+}
+fn settings_app_policy_permits(row,request) {
+    if row==nil || request==nil || row.key==nil || row.key!=request.key { return false }
+    if request.kind=="app_battery" {
+        return row.availability=="Available" && row.target==request.target && settings_has(row.choices,request.choice) && row.mode!=request.choice
+    }
+    if request.kind=="app_storage" {
+        return row.availability=="Available" && row.target==request.target && settings_has(row.actions,request.choice)
+    }
+    if request.kind=="app_network" && row.availability=="available" && row.package==request.target {
+        for control in row.controls { if control.field==request.choice { return control.can_set && control.value!=nil && control.value!=request.enabled } }
+    }
+    return false
+}
+fn settings_app_policy_candidate(s,id,o) {
+    let domain=""
+    if s.page=="AppBattery" { domain="app_battery" }
+    if s.page=="AppStorage" { domain="app_storage" }
+    if s.page=="AppNetwork" { domain="app_network" }
+    if domain=="" { return nil }
+    let row=settings_app_policy_observed(s,o,domain)
+    if row==nil || row.key==nil { return nil }
+    let request=nil
+    if id=="app_battery_confirm" { request=s.app_policy.battery_review }
+    if id=="app_storage_confirm" { request=s.app_policy.storage_review }
+    for pair in [["restricted","Restricted"],["optimized","Optimized"],["unrestricted","Unrestricted"]] {
+        if domain=="app_battery" && id=="app_battery_"+pair[0] { request={kind:domain,target:row.target,key:row.key,choice:pair[1]} }
+    }
+    for pair in [["clear_cache","ClearCache"],["clear_data","ClearData"],["manage_space","ManageSpace"]] {
+        if domain=="app_storage" && id=="app_storage_"+pair[0] { request={kind:domain,target:row.target,key:row.key,choice:pair[1]} }
+    }
+    if domain=="app_network" {
+        for control in row.controls {
+            if id=="app_network_"+text.lower(control.field) && control.value!=nil {
+                request={kind:domain,target:row.package,key:row.key,choice:control.field,enabled:!control.value}
+            }
+        }
+    }
+    if settings_app_policy_permits(row,request) { return request }
+    return nil
+}
+fn settings_app_policy_event(s,e,o,out) {
+    settings_app_policy_init(s)
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" || e.kind=="back" {
+        s.app_policy.pressed=nil
+        if e.kind!="pause" { s.app_policy.battery_review=nil; s.app_policy.storage_review=nil }
+        return false
+    }
+    let details=settings_selected_details(s,o)
+    let ready=o.android==true && !s.pending
+    if s.page=="AppDetails" && e.kind=="click" {
+        for item in [["app_battery_open","AppBattery","app_battery"],["app_storage_open","AppStorage","app_storage"],["app_network_settings","AppNetwork","app_network"]] {
+            if e.id==item[0] {
+                if ready && details!=nil && details.exists {
+                    s.page=item[1]; s.app_policy={battery_review:nil,storage_review:nil,pressed:nil}
+                    settings_request(out,{kind:"read",domain:item[2],target:details.target})
+                    settings_scroll(out,settings_active_scroll(s.page))
+                }
+                return true
+            }
+        }
+    }
+    let domain=""
+    if s.page=="AppBattery" { domain="app_battery" }
+    if s.page=="AppStorage" { domain="app_storage" }
+    if s.page=="AppNetwork" { domain="app_network" }
+    if domain=="" { return false }
+    if e.kind=="click" && e.id==domain+"_refresh" {
+        if ready && s.context["app_target"]!=nil { settings_request(out,{kind:"read",domain:domain,target:s.context["app_target"]}) }
+        return true
+    }
+    if e.kind=="click" && e.id==domain+"_native" {
+        if ready && details!=nil && details.exists && settings_has(details.actions,"AppInfo") { settings_request(out,{kind:"app_action",target:details.target,action:"AppInfo"}) }
+        return true
+    }
+    if e.kind=="click" && e.id==domain+"_cancel" {
+        if !s.pending { s.app_policy.battery_review=nil; s.app_policy.storage_review=nil; s.app_policy.pressed=nil }
+        return true
+    }
+    let candidate=settings_app_policy_candidate(s,e.id,o)
+    if e.kind=="press" {
+        s.app_policy.pressed=nil
+        if candidate!=nil { s.app_policy.pressed={id:e.id,signature:settings_app_policy_signature(candidate),enabled:candidate["enabled"]} }
+        return candidate!=nil
+    }
+    if e.kind=="release" { s.app_policy.pressed=nil; return false }
+    if e.kind!="click" || candidate==nil { return false }
+    let held=s.app_policy.pressed; s.app_policy.pressed=nil
+    if !ready { return true }
+    if held!=nil && (held.id!=e.id || held.signature!=settings_app_policy_signature(candidate) || held.enabled!=candidate["enabled"]) { return true }
+    if e.id=="app_battery_restricted" { s.app_policy.battery_review=candidate; settings_scroll(out,settings_active_scroll(s.page)); return true }
+    if e.id=="app_storage_clear_cache" || e.id=="app_storage_clear_data" { s.app_policy.storage_review=candidate; settings_scroll(out,settings_active_scroll(s.page)); return true }
+    settings_request(out,candidate)
+    s.app_policy.battery_review=nil; s.app_policy.storage_review=nil
+    return true
+}
+fn settings_app_policy_reason(reason,storage) {
+    if reason=="None" { return "" }
+    if reason=="AppMissing" { return "This app is no longer installed." }
+    if storage {
+        for pair in [
+            ["DevicePolicy","Your administrator restricts storage changes for this app."],
+            ["ProtectedApp","Android protects storage for this essential app."],
+            ["SharedUid","This app shares an Android identity. Clearing storage here could affect other apps, so these controls are unavailable."],
+            ["ServiceUnavailable","Storage controls are unavailable on this installation. Android app settings remain available below."],
+            ["StatsUnavailable","Android has not provided current storage sizes. Clearing is unavailable until storage can be read."],
+            ["Locked","Unlock the device to review this app’s storage."],
+            ["OperationPending","Another storage operation is still waiting for Android to confirm completion."]
+        ] { if pair[0]==reason { return pair[1] } }
+    } else {
+        for pair in [
+            ["DevicePolicy","Your administrator restricts changes to this app."],
+            ["ProtectedApp","Android manages the battery policy for this protected or essential app."],
+            ["SharedUid","This app shares an Android identity. Battery policy changes are unavailable here because they can affect other apps."],
+            ["ServiceUnavailable","App battery controls are unavailable on this installation. Android app settings remain available below."],
+            ["Locked","Unlock the device to review this app’s battery policy."]
+        ] { if pair[0]==reason { return pair[1] } }
+    }
+    return "Unavailable"
+}
+fn settings_app_battery_refresh(s,o,out) {
+    let row=settings_app_policy_observed(s,o,"app_battery")
+    let ready=o.android==true && !s.pending
+    let name=settings_or(s.context["app_target"],"App")
+    let mode="Unavailable"; let reason="Waiting for Android…"
+    if row!=nil {
+        name=settings_or(row.label,name); mode=settings_or(row.mode,"Unavailable")
+        if row.custom { mode="Custom Android state" }
+        reason=settings_app_policy_reason(row.reason,false)
+    }
+    settings_text(out,"app_battery_identity",name)
+    settings_text(out,"app_battery_mode","Observed policy: "+mode)
+    settings_text(out,"app_battery_availability",reason)
+    for pair in [["restricted","Restricted"],["optimized","Optimized"],["unrestricted","Unrestricted"]] {
+        let id="app_battery_"+pair[0]; let label=pair[1]
+        if row!=nil && row.mode==pair[1] { label=label+" · Selected" }
+        settings_text(out,id,label); settings_enabled(out,id,ready && settings_app_policy_candidate(s,id,o)!=nil)
+    }
+    settings_visible(out,"app_battery_review",s.app_policy.battery_review!=nil)
+    let review="Restrict background activity for this app? Notifications and scheduled work may be delayed or stop until you open the app."
+    if s.app_policy.battery_review!=nil && !settings_app_policy_permits(row,s.app_policy.battery_review) { review="App policy or access changed. Cancel this review and check the current state." }
+    settings_text(out,"app_battery_review_copy",review)
+    settings_enabled(out,"app_battery_confirm",ready && settings_app_policy_candidate(s,"app_battery_confirm",o)!=nil)
+    settings_enabled(out,"app_battery_cancel",!s.pending)
+}
+fn settings_storage_bytes(n) {
+    if n==nil { return "Unavailable" }
+    if n.is_string() { return n+" bytes" }
+    return ""+n+" bytes ("+settings_fixed(n/1048576,2)+" MiB)"
+}
+fn settings_app_storage_refresh(s,o,out) {
+    let row=settings_app_policy_observed(s,o,"app_storage")
+    let details=settings_selected_details(s,o)
+    let ready=o.android==true && !s.pending
+    let name=settings_or(s.context["app_target"],"App")
+    if details!=nil { name=settings_or(details.label,name) }
+    let sizes=nil; let reason="Waiting for Android storage information…"; let operation=""; let shared=false
+    if row!=nil { name=settings_or(row.label,name); sizes=row.stats; reason=settings_app_policy_reason(row.reason,true); shared=row.shared_uid }
+    if sizes==nil && details!=nil && details.exists {
+        let raw=details.storage
+        if raw.app_bytes!=nil && raw.data_bytes!=nil && raw.cache_bytes!=nil && raw.data_bytes>=raw.cache_bytes && raw.app_bytes>=0 && raw.cache_bytes>=0 { sizes=raw }
+    }
+    if sizes==nil { sizes={app_bytes:nil,data_bytes:nil,cache_bytes:nil} }
+    if row!=nil && row.operation!=nil {
+        let op=row.operation
+        if op.state=="Pending" { operation="Android is clearing app storage…"; if op.action=="ClearCache" { operation="Android is clearing cache…" } }
+        if op.state=="Succeeded" { operation="Android completed the storage clear. Sizes below are the latest observation."; if op.action=="ClearCache" { operation="Android completed the cache clear. The app may create new cache while it runs." } }
+        if op.state=="Failed" { operation="Android could not complete the storage operation. Check the current state before choosing again." }
+        if op.state=="Uncertain" { operation="Completion has not been confirmed. Refresh to check Android’s response; the operation is not retried automatically." }
+    }
+    settings_text(out,"app_storage_identity",name+"\n"+settings_or(s.context["app_target"],""))
+    settings_text(out,"app_storage_sizes","App: "+settings_storage_bytes(sizes.app_bytes)+"\nData (includes cache): "+settings_storage_bytes(sizes.data_bytes)+"\nCache: "+settings_storage_bytes(sizes.cache_bytes))
+    settings_text(out,"app_storage_availability",reason); settings_text(out,"app_storage_operation",operation)
+    let note=""
+    if shared || (details!=nil && details.storage.shared_uid) { note="These storage figures may include other apps sharing this Android identity." }
+    if s.context["app_target"]=="dev.makepad.octosense" { note="Mail and other built-in OctoSense modules share Home’s data. Storage clearing is protected for this package." }
+    settings_text(out,"app_storage_shared",note)
+    for pair in [["clear_cache","Clear cache…"],["clear_data","Clear storage…"],["manage_space","Manage space…"]] {
+        let id="app_storage_"+pair[0]; settings_text(out,id,pair[1]); settings_enabled(out,id,ready && settings_app_policy_candidate(s,id,o)!=nil)
+    }
+    let review=s.app_policy.storage_review
+    settings_visible(out,"app_storage_review",review!=nil)
+    let copy="Clear temporary cache for "+name+"? Saved app data remains. The app may create new cache when it runs."
+    let confirm="Confirm storage change"
+    if review!=nil {
+        confirm="Confirm clear cache"
+        if review.choice=="ClearData" { confirm="Confirm clear storage"; copy="Clear all local data for "+name+"? This permanently deletes the app’s files, saved accounts and settings on this device. Android also resets its permissions and notification settings and cancels scheduled work. This cannot be undone." }
+        if !settings_app_policy_permits(row,review) { copy="This app, its storage or access changed. Cancel this review and check the latest information." }
+    }
+    settings_text(out,"app_storage_review_copy",copy); settings_text(out,"app_storage_confirm",confirm)
+    settings_enabled(out,"app_storage_confirm",ready && settings_app_policy_candidate(s,"app_storage_confirm",o)!=nil)
+    settings_enabled(out,"app_storage_cancel",!s.pending)
+}
+fn settings_app_network_refresh(s,o,out) {
+    let row=settings_app_policy_observed(s,o,"app_network")
+    let ready=o.android==true && !s.pending
+    let identity=""; let shared=""; let saver=""; let message="Waiting for Android network settings…"
+    if row!=nil {
+        identity=row.label+"\n"+row.package
+        message="App network controls require the OctoSense system service."
+        if row.availability=="available" { message="Background data applies to metered networks. Data Saver exceptions do not override enterprise, VPN, or other network restrictions." }
+        if row.availability=="restricted" { message="Network controls are restricted for this user or while the device is locked." }
+        if row.availability=="missing" { message="This app is no longer installed." }
+        if row.packages.len()>1 { shared="These apps share an Android UID. Changes affect all of them:"; for package in row.packages { shared=shared+"\n"+package } }
+        if row.data_saver!=nil { saver=settings_bool_label("Data Saver",row.data_saver) }
+    }
+    settings_text(out,"app_network_identity",identity); settings_text(out,"app_network_availability",message)
+    settings_text(out,"app_network_shared",shared); settings_text(out,"app_network_saver",saver)
+    for field in [["Background","Background data"],["Unrestricted","Unrestricted data with Data Saver"],["Network","Network access"],["Wifi","Wi-Fi access"],["Mobile","Mobile data access"],["Vpn","VPN access"]] {
+        let value=nil
+        if row!=nil { for control in row.controls { if control.field==field[0] { value=control.value } } }
+        let id="app_network_"+text.lower(field[0])
+        settings_text(out,id,settings_bool_label(field[1],value)); settings_enabled(out,id,ready && settings_app_policy_candidate(s,id,o)!=nil)
+    }
+}
+fn settings_app_policy_refresh(s,o,out) {
+    settings_app_policy_init(s)
+    let details=settings_selected_details(s,o); let ready=o.android==true && !s.pending
+    for id in ["app_battery_open","app_storage_open","app_network_settings"] { settings_enabled(out,id,ready && details!=nil && details.exists) }
+    if s.page=="AppBattery" { settings_app_battery_refresh(s,o,out) }
+    if s.page=="AppStorage" { settings_app_storage_refresh(s,o,out) }
+    if s.page=="AppNetwork" { settings_app_network_refresh(s,o,out) }
+    for domain in ["app_battery","app_storage","app_network"] {
+        settings_enabled(out,domain+"_refresh",ready)
+        settings_enabled(out,domain+"_native",ready && details!=nil && details.exists && settings_has(details.actions,"AppInfo"))
+    }
+}

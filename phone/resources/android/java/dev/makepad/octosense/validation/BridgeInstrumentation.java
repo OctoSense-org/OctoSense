@@ -596,6 +596,9 @@ public final class BridgeInstrumentation extends Instrumentation {
             Context context=getTargetContext();
             check(Protocol.HOME_PACKAGE.equals(context.getPackageName()),"wrong_target_package");
             report.putInt("caller_uid",android.os.Process.myUid());
+            if("settings_input_safety".equals(arguments.getString("mode"))) {
+                SettingsInputSafetyFixture.run(this,report);report.putString("result","pass");return;
+            }
             if("notification_flow".equals(arguments.getString("mode"))) {
                 NotificationFlowFixture.run(this,report);report.putString("result","pass");return;
             }

@@ -331,9 +331,12 @@ impl ShadeState {
     /// Per frame: apply this frame's shell gesture and animate. Returns
     /// true while anything is still moving.
     pub fn step(&mut self, dt: f64, gesture: Option<ShellGesture>, now: f64) -> bool {
+        self.step_with_motion(dt, gesture, now, false)
+    }
+    pub fn step_with_motion(&mut self, dt: f64, gesture: Option<ShellGesture>, now: f64, reduced: bool) -> bool {
         if now > 0.0 { self.now = now; }
         self.apply_gesture(gesture);
-        let t = 1.0 - (-dt * 16.0).exp();
+        let t = if reduced {1.0} else {1.0 - (-dt * 16.0).exp()};
         let mut active = false;
         if !self.pulling {
             self.open += (self.open_target - self.open) * t;

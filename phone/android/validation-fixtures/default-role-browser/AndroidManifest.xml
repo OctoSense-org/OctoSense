@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.rolebrowserfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application android:label="OctoSense role validation browser A" android:allowBackup="false">
+        <activity android:name=".BrowserActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="http"/>
+                <data android:scheme="https"/>
+            </intent-filter>
+        </activity>
+    </application>
+    <instrumentation android:name=".RoleBrowserProbe" android:targetPackage="dev.makepad.octosense.rolebrowserfixture" android:label="Synthetic browser role state"/>
+</manifest>

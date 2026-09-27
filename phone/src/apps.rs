@@ -43,15 +43,14 @@ pub fn is_linked(id: &str) -> bool {
 fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
-    #[cfg(feature = "app-rinx")]
-    out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
     out.push(&octosense_reference::REFERENCE_MODULE);
     #[cfg(any(feature = "app-sheets", native_mobile))]
     out.push(&makepad_sheets::SHEETS_MODULE);
     #[cfg(feature = "app-photos")]
     out.push(&octosense_photos::PHOTOS_MODULE);
-    #[cfg(any(feature = "app-appcard", native_mobile))]
+    // AppCard is opt-in on every target (not shipped by default for now).
+    #[cfg(feature = "app-appcard")]
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-news")]
     out.push(&octosense_news::NEWS_MODULE);
@@ -62,6 +61,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
         out.push(&octosense_app_hub_app::APP_HUB_MODULE);
         out.push(&octosense_app_hub_app::CARD_MODULE);
     }
+    out.push(&crate::settings_app::SETTINGS_MODULE);
     out
 }
 
@@ -132,32 +132,56 @@ pub fn matches_running_app(app: &crate::clients::AppDef, running_id: &str, title
 
 /// Card apps App Hub installed: each is an app of its own in the launcher,
 /// hosted by the linked `card` module under its `hub:<manifest-id>` identity.
-/// Read fresh each time, so an install shows up without a restart.
+/// Listed once per data root and App Hub generation: an install or update
+/// bumps the generation (`App::installed_app_changed`), so it shows at once
+/// without the install directory being read on every frame.
 pub fn installed_card_apps() -> Vec<crate::clients::AppDef> {
     #[cfg(any(feature = "app-hub", native_mobile))]
     if let Some(root) = octosense_app_hub_app::data_root_if_set() {
-        return octosense_app_hub_app::installed_apps(&root).into_iter()
+        let key = (root.clone(), octosense_app_hub_app::icons::generation());
+        return cached_installed_apps(key, || octosense_app_hub_app::installed_apps(&root).into_iter()
             .map(|app| crate::clients::AppDef {
                 id: installed_launch_id(&app.id), label: app.name, bin: "card".into(),
                 package: String::new(), dir: String::new(), manifest: None,
                 args: Vec::new(), policy: crate::clients::LaunchPolicy::OrFocus,
-            }).collect();
+            }).collect());
     }
     Vec::new()
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+thread_local! {
+    static INSTALLED: std::cell::RefCell<Option<((std::path::PathBuf, u64), Vec<crate::clients::AppDef>)>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn cached_installed_apps(key: (std::path::PathBuf, u64), load: impl FnOnce() -> Vec<crate::clients::AppDef>) -> Vec<crate::clients::AppDef> {
+    INSTALLED.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        match slot.as_ref() {
+            Some((cached, apps)) if *cached == key => apps.clone(),
+            _ => { let apps = load(); *slot = Some((key, apps.clone())); apps }
+        }
+    })
 }
 
 /// An installed host has no checkout catalog. Its linked modules carry all
 /// the information needed to populate the launcher without filesystem paths.
 pub fn bundled_catalog() -> Vec<crate::clients::AppDef> {
     let mut catalog = bundled_modules_catalog();
-    // The `card` host module is not an app a person opens; the apps it runs are.
-    catalog.retain(|app| app.id != "card");
     catalog.extend(card_apps());
+    catalog.retain(|app| catalog_visible(&app.id));
     catalog
 }
 
+pub(crate) fn catalog_visible(id: &str) -> bool {
+    // Keep the card host internal and the retired empty store out of the
+    // launcher. The current apphub module and installed cards remain visible.
+    !matches!(id, "card" | "appstore")
+}
+
 pub fn bundled_modules_catalog() -> Vec<crate::clients::AppDef> {
-    linked_modules().iter().filter(|module| module.id() != "card").map(|module| crate::clients::AppDef {
+    linked_modules().iter().filter(|module| catalog_visible(module.id())).map(|module| crate::clients::AppDef {
         id: module.id().into(),
         label: module.label().into(),
         bin: module.id().into(),
@@ -224,6 +248,7 @@ impl AppRegistry {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
         }
+        if id == "settings" && self.module(id).is_some() { return Hosting::Module; }
         if matches!(id, "robrix" | "finance" | "apphub") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
@@ -299,20 +324,23 @@ mod tests {
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
         let catalog = bundled_catalog();
-        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["rinx", "reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "camera", "mail"]);
+        // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
+        let expected: &[&str] = if cfg!(feature = "app-appcard") {
+            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
+        } else {
+            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
+        };
+        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
-        // Camera and Mail have no native module: they are system script apps
-        // (ADR 0004) the Card runner hosts, launched by their manifest id.
-        for id in ["camera", "mail"] {
+        // Camera, Mail and AI providers have no native module: they are
+        // system script apps (ADR 0004) the Card runner hosts, launched by
+        // their manifest id.
+        for id in ["camera", "mail", "ai-providers"] {
             let app = catalog.iter().find(|app| app.id == id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
         }
         let catalog: Vec<_> = catalog.into_iter().filter(|app| app.bin != "card").collect();
-        assert_eq!(catalog.iter().find(|app| app.id == "reference").unwrap().policy,
-                   crate::clients::LaunchPolicy::AlwaysNew);
-        assert_eq!(catalog.iter().find(|app| app.id == "rinx").unwrap().policy,
-                   crate::clients::LaunchPolicy::OrFocus);
+        assert_eq!(catalog[0].policy, crate::clients::LaunchPolicy::AlwaysNew);
         let registry = AppRegistry::default();
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
@@ -331,6 +359,43 @@ mod tests {
                 assert!(vm.take_errors().is_empty(), "{} must initialize without script errors", app.id);
             });
             assert!(host.teardown(&mut cx, client));
+        }
+    }
+
+    #[test]
+    fn bundled_apps_receive_same_base_theme_without_recreation() {
+        use makepad_widgets::*;
+        use crate::mobile_theme::{Preset,Selection};
+        let registry=AppRegistry::default();
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host=crate::module_host::ModuleHost::default();
+        for (index,app) in bundled_catalog().iter().enumerate() {
+            let module=registry.module(&app.id).unwrap();
+            let client=index as u64+1;
+            let schema = module.open_schema();
+            let open = if let Some(manifest_id) = card_manifest_id(app) {
+                schema.validate(&format!("{{\"app\":{}}}", makepad_strict_json::Value::Str(manifest_id.into()).to_json()), &[])
+            } else {
+                schema.empty_open()
+            }.unwrap();
+            host.create(&mut cx,client,module,open,dvec2(400.0,700.0)).unwrap();
+            let uid=host.get(client).unwrap().root.widget_uid();
+            for (preset,dark) in [(Preset::Paper,true),(Preset::Vivid,false)] {
+                let choice=Selection {preset,..Default::default()};
+                host.apply_style(&mut cx,&choice.sheet(crate::desktop::DesktopStyle::Android,dark));
+                let instance=host.get(client).unwrap();
+                assert_eq!(instance.root.widget_uid(),uid,"{} must retain its instance",app.id);
+                cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
+                    let theme=vm.module(id!(theme));let p=choice.palette(dark);
+                    for (role,color) in [("color_bg_app",p.background),("color_text",p.text),("color_focus",p.accent)] {
+                        let rgba=(((color.x*255.0).round() as u32)<<24)|(((color.y*255.0).round() as u32)<<16)|(((color.z*255.0).round() as u32)<<8)|255;
+                        assert_eq!(vm.bx.heap.value(theme,LiveId::from_str(role).into(),NoTrap).as_color(),Some(rgba),"{} {role}",app.id);
+                    }
+                    assert!(vm.take_errors().is_empty(),"{} must accept a shared theme",app.id);
+                });
+            }
+            assert!(host.teardown(&mut cx,client));
         }
     }
 
@@ -357,9 +422,26 @@ mod tests {
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
         }
     }
+
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn installed_apps_are_read_once_per_data_root_and_hub_generation() {
+        let reads = std::cell::Cell::new(0);
+        let timer = crate::clients::AppDef {id: installed_launch_id("org.example.timer"),label:"Timer".into(),bin:"card".into(),
+            package:String::new(),dir:String::new(),manifest:None,args:Vec::new(),policy:crate::clients::LaunchPolicy::OrFocus};
+        let load = || { reads.set(reads.get() + 1); vec![timer.clone()] };
+        let root = std::path::PathBuf::from("hub-root-a");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(cached_installed_apps((root.clone(), 7), &load)[0].id, "hub:org.example.timer");
+        assert_eq!(reads.get(), 1, "the same data root and generation reuse the list");
+        cached_installed_apps((root, 8), &load);
+        assert_eq!(reads.get(), 2, "an install or update bumps the generation and is read at once");
+        cached_installed_apps(("hub-root-b".into(), 8), &load);
+        assert_eq!(reads.get(), 3, "another data root is read");
+    }
 }
 
-#[cfg(all(test, feature = "mobile-apps"))]
+#[cfg(all(test, feature = "app-appcard"))]
 mod appcard_isolate_tests {
     /// The app's cards are Splash widgets, each in an ISOLATE that is minted
     /// without the framework's `sys`/`agent` engine; the AppCard module must

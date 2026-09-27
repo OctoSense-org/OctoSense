@@ -1,5 +1,6 @@
 # Unified-diff context lines contain a required single space when empty.
 patches/runtime/*.patch whitespace=-blank-at-eol
+home/runtime-patches/*.patch whitespace=-blank-at-eol
 # Kernel patch context also has a required prefix space before tab indentation.
 patches/kernel/*.patch whitespace=-blank-at-eol,-space-before-tab
 

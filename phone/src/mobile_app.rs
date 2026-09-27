@@ -13,11 +13,12 @@ impl App {
     /// admitted them; on the phone every new APK is a deployment, so the
     /// host archives the store once per build id (its explicit action, see
     /// `octosense_appcard::reapprove_cards_for_host_build`). Desktop builds
-    /// leave the developer's own store alone.
+    /// leave the developer's own store alone, and builds without
+    /// `app-appcard` have no AppCard store to archive.
     pub(super) fn reapprove_hosted_cards(&self, cx: &Cx) {
-        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+        #[cfg(not(all(feature = "app-appcard", any(target_os = "android", target_env = "ohos"))))]
         let _ = cx;
-        #[cfg(any(target_os = "android", target_env = "ohos"))]
+        #[cfg(all(feature = "app-appcard", any(target_os = "android", target_env = "ohos")))]
         {
             let Some(config) = octosense_appcard::octos_app_config_dir(cx.get_data_dir()) else {
                 log!("wm: card approvals not archived: no data dir to find the store in");
@@ -461,11 +462,30 @@ impl App {
     /// Light <-> Dark for the phone shell and every hosted app, keeping the
     /// App Library's search field focused if it was.
     pub(crate) fn toggle_phone_appearance(&mut self,cx:&mut Cx) {
+        if cfg!(target_os = "android") && self.state_mut().phone.theme.is_some() {
+            let dark = !self.state_mut().style.dark;
+            self.android_command(cx, "launcher", "theme_appearance", vec![("dark", makepad_strict_json::Value::Bool(dark))]);
+            return;
+        }
         let focused=self.state_mut().phone.search_focused;
         self.toggle_desktop_appearance(cx);
         if focused {
             if let Some(mut desk)=self.desk(cx).borrow_mut::<WmDesk>() {desk.focus_phone_search(cx,&mut self.state_mut().phone);}
         }
+    }
+    pub(crate) fn apply_phone_theme(&mut self, cx: &mut Cx, choice: crate::mobile_theme::Selection, system_dark: bool) {
+        let style = self.state_mut().style.target;
+        if !style.mobile() { return; }
+        let dark = choice.dark(system_dark);
+        if self.state_mut().phone.theme == Some(choice) && self.state_mut().style.dark == dark { return; }
+        let focused = self.state_mut().phone.search_focused;
+        self.state_mut().phone.theme = Some(choice);
+        self.state_mut().style.dark = dark;
+        self.set_desktop_style(cx, style);
+        if focused {
+            if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() { desk.focus_phone_search(cx, &mut self.state_mut().phone); }
+        }
+        log!("[phone.theme] applied preset={} dark={} wallpaper={:?}", choice.preset.id(), dark, choice.wallpaper);
     }
     pub(crate) fn phone_action(&mut self,cx:&mut Cx,hit:PhoneHit) {
         match hit {
@@ -480,11 +500,7 @@ impl App {
             }
             PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
                 if self.android_launch(cx, &app) { self.animate_phone(cx); return; }
-                // A running window of the app, a home tile's own client
-                // included: the same client opens, never a second one.
-                let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
-                if let Some(client)=existing {self.activate_client(cx,client);}
-                else {self.launch_app(cx,&app);}
+                self.open_home_app(cx,&app);
             },
             PhoneHit::Card(client)=>{
                 match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
@@ -575,18 +591,25 @@ impl App {
         self.sync_home_tiles(cx);
         self.animate_phone(cx);
     }
+    /// Back with nothing of the shell's own to close (mobile_back.rs): off
+    /// an app it goes Home; in an app, the app is offered it first, and if
+    /// it does not take it the phone leaves the app, to the app it was
+    /// opened from while that still runs, else Home.
     fn phone_back(&mut self,cx:&mut Cx) {
         if self.state_mut().phone.screen != PhoneScreen::App {
             self.state_mut().phone.navigate(PhoneScreen::Home);
             return;
         }
         let Some(client)=self.state_mut().phone.client else{return};
-        if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
-            let event=Event::BackPressed{handled:std::cell::Cell::new(false)};
-            let entry=enter_isolate(cx,vm_id);
-            root.handle_event(cx,&event,&mut Scope::empty());
-            leave_isolate(cx,entry);
-            if matches!(event,Event::BackPressed{handled} if !handled.get()) {self.state_mut().phone.navigate(PhoneScreen::Home);}
+        if let Some((module,root,vm_id))=self.module_host.get(client).map(|i|(i.module.id(),i.root.clone(),i.vm_id)) {
+            if crate::mobile_back::offer_back_to_module(cx,module,&root,vm_id) {return;}
+            let return_to=self.state_mut().phone.return_to;
+            let clients=&self.state_mut().clients;
+            let origin=crate::mobile_back::leave_target(return_to,client,|c|clients.get(&c).is_some_and(|s|s.closing.is_none()));
+            match origin {
+                Some(origin)=>self.activate_client(cx,origin),
+                None=>self.state_mut().phone.navigate(PhoneScreen::Home),
+            }
         }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
             send_to_app(sender,vec![StudioToApp::Custom(makepad_platform::ime::HostedBack::default().to_json())]);
         }
@@ -845,6 +868,15 @@ impl App {
             }
             _ => {}
         }
+    }
+    /// Open a Home launcher row: a running window of the app, a home tile's
+    /// own client included, comes forward (never a second one); otherwise
+    /// the app launches. The launcher icon and Settings' system-app rows
+    /// share this path.
+    pub(crate) fn open_home_app(&mut self,cx:&mut Cx,app:&str) {
+        let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
+        if let Some(client)=existing {self.activate_client(cx,client);}
+        else {self.launch_app(cx,app);}
     }
     /// The native placement menu for an icon (Add/Remove from Home, the
     /// dock, App info, Uninstall), in the shell's appearance.

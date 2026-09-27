@@ -24,10 +24,12 @@ mod snap;
 mod mobile;
 mod mobile_navigation;
 mod android_integration;
+mod android_accessibility;
 mod mobile_surface;
 mod mobile_gestures;
 mod mobile_hints;
 mod mobile_app;
+mod mobile_back;
 mod mobile_tiles;
 mod mobile_shade;
 mod mobile_pages;
@@ -35,6 +37,74 @@ mod mobile_island;
 mod mobile_octopus;
 mod mobile_groups;
 mod mobile_perf;
+mod mobile_theme;
+mod settings_app;
+mod settings_script;
+mod settings_script_bridge;
+mod settings_script_host_facade;
+#[cfg(test)] mod settings_script_caption_tests;
+#[cfg(test)] mod settings_script_domain_tests;
+mod settings_script_consent_bridge;
+#[cfg(test)] mod settings_script_controls_tests;
+#[cfg(test)] mod settings_script_core_tests;
+#[cfg(test)] mod settings_script_apps_tests;
+#[cfg(test)] mod settings_script_editors_tests;
+#[cfg(test)] mod settings_script_wireless_tests;
+#[cfg(test)] mod settings_script_media_tests;
+#[cfg(test)] mod settings_script_consent_tests;
+mod settings_entry;
+mod settings_accessibility;
+mod settings_accessibility_host;
+mod settings_apps;
+mod settings_apps_host;
+mod settings_wifi;
+mod settings_wifi_host;
+mod settings_hearing;
+mod settings_caption_custom;
+mod settings_caption_custom_host;
+mod settings_keyboards;
+mod settings_keyboards_host;
+mod settings_system_language;
+mod settings_system_language_host;
+mod settings_caption_language;
+mod settings_caption_language_host;
+mod settings_controls;
+mod settings_text_interaction;
+mod settings_controls_host;
+mod settings_bluetooth;
+mod settings_bluetooth_host;
+mod settings_accounts;
+mod settings_accounts_host;
+// Retained only as a migration oracle for script search ranking.
+#[cfg(test)] mod settings_search;
+mod settings_updates;
+mod settings_updates_host;
+mod settings_network;
+mod settings_app_notifications;
+mod settings_app_notifications_host;
+mod settings_app_language;
+mod settings_app_language_host;
+mod settings_app_storage;
+mod settings_app_storage_host;
+mod settings_app_battery;
+mod settings_app_battery_host;
+mod settings_app_network;
+mod settings_app_network_host;
+mod settings_dnd;
+mod settings_dnd_host;
+mod settings_permissions;
+mod settings_permissions_host;
+mod settings_roles;
+mod settings_roles_host;
+mod settings_display;
+mod settings_display_host;
+mod settings_datetime;
+mod settings_notifications;
+mod settings_notifications_host;
+mod settings_sounds;
+mod settings_sounds_host;
+mod settings_network_host;
+mod settings_host;
 mod scene;
 mod dock_warp;
 mod host;
@@ -42,6 +112,8 @@ mod hub;
 mod layout;
 mod octosense;
 mod module_host;
+#[cfg(any(feature = "app-hub", native_mobile))]
+mod llm_host;
 mod module_view;
 mod pane_links;
 mod preview;
@@ -79,6 +151,7 @@ use shell::panels::ShellPanelAction;
 use ai_bus::{AiBus, Route};
 use apps::{AppRegistry, Hosting};
 use android_integration::AndroidRuntime;
+use settings_host::SettingsRuntime;
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
 use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream};
 use module_host::ModuleHost;
@@ -313,6 +386,8 @@ pub struct App {
     state: Option<WmState>,
     #[rust]
     android_runtime: AndroidRuntime,
+    #[rust]
+    settings_runtime: SettingsRuntime,
     #[rust]
     snap_hover_timer: Timer,
     /// A keyboard focus that could not land yet (the tile hadn't drawn);
@@ -2090,6 +2165,7 @@ impl App {
             log!("wm: module {} failed to start: {}", module.id(), e);
             return;
         }
+        self.refresh_settings_app(cx);
         let (manifest, root, vm_id) = match self.module_host.get(id) {
             Some(instance) => (instance.manifest(), instance.root.clone(), instance.vm_id),
             None => return,
@@ -4287,6 +4363,13 @@ impl MatchEvent for App {
         #[cfg(any(feature = "app-hub", native_mobile))]
         octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
             .unwrap_or_else(octosense::paths::home).join("apps"));
+        // The octos kernel is a shell service: configured here, started when
+        // a consumer (AppCard, Rinx) connects. AI providers' `llm` service
+        // writes its profile and restarts it after a change.
+        #[cfg(any(feature = "octos-core", native_mobile))]
+        llm_host::configure_kernel(cx.get_data_dir());
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        llm_host::register(llm_host::core_dir(cx.get_data_dir()));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4607,6 +4690,10 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+            if let Some(request) = wa.action.downcast_ref::<settings_app::SettingsRequest>() {
+                self.settings_request(cx, wa.widget_uid, request.clone());
+                continue;
+            }
             // A module root asking the window manager: the request is a
             // widget action posted from inside its isolate, attributed by
             // the root's uid and handled exactly as a process's would be.
@@ -4752,11 +4839,18 @@ impl AppMain for App {
             }
         }
         mobile_perf::saw_event(event);
+        self.settings_tick(cx, event);
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        self.llm_host_event(cx, event);
         if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
-        if matches!(event, Event::HomeIntent) { self.phone_home_intent(cx); return; }
+        if matches!(event, Event::HomeIntent) { self.settings_runtime.entries.cancel(); self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);
-        if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) && event.back_pressed() {
+        // Android's Back key (and a platform Back of any kind) is the phone's
+        // Back: the foreground app is offered it first (mobile_back.rs), so it
+        // is not also broadcast through the widget tree.
+        if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
+            log!("[phone] back");
             self.phone_action(cx, mobile::PhoneHit::Back);
             return;
         }
@@ -4931,6 +5025,9 @@ impl AppMain for App {
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
+            // Stop the octos kernel, if one runs, and let it release its data dir.
+            #[cfg(any(feature = "octos-core", native_mobile))]
+            octosense_octos_core::shutdown();
         }
         if let Event::Timer(te) = event {
             self.fire_test_timers(cx, te);
@@ -4976,7 +5073,10 @@ impl AppMain for App {
         } else {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
+        if matches!(event,Event::Startup|Event::Resume) {self.settings_entry_ready(cx);}
+        self.settings_entry_tick(cx);
         self.sync_phone_keyboard(cx);
+        self.settings_accessibility_publish(cx,event);
         // Style reloads and phone capture teardown may retire draw lists during
         // this event. Remove their pass roots before upstream scans GPU demand.
         octosense::retired_passes::clear_retired_roots(cx);

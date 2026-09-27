@@ -1,0 +1,132 @@
+// Display size and Night Light choices, reviewed against exact observations.
+fn settings_display_init(s) { if s["display_ui"]==nil { s.display_ui={draft:nil,pressed:nil} } }
+fn settings_two(n) { if n<10 { return "0"+n }; return ""+n }
+fn settings_time_format(seconds) {
+    if seconds==nil { return "Unavailable" }
+    let value=settings_two(mod.math.floor(seconds/3600))+":"+settings_two(mod.math.floor(seconds/60)%60)
+    if seconds%60!=0 { value=value+":"+settings_two(seconds%60) }
+    return value
+}
+fn settings_time_parse(value) {
+    let chars=value.to_chars(); if chars.len()!=5 && chars.len()!=8 { return nil }
+    if chars[2]!=58 || (chars.len()==8 && chars[5]!=58) { return nil }
+    let i=0
+    for c in chars { if i!=2 && i!=5 && (c<48 || c>57) { return nil }; i=i+1 }
+    let h=(chars[0]-48)*10+chars[1]-48; let m=(chars[3]-48)*10+chars[4]-48; let second=0
+    if chars.len()==8 { second=(chars[6]-48)*10+chars[7]-48 }
+    if h>=24 || m>=60 || second>=60 { return nil }
+    return h*3600+m*60+second
+}
+fn settings_display_permits(row,r) {
+    if row==nil || r==nil || r.value==nil || row.key!=r.key { return false }
+    if r.field=="Density" {
+        if !row.density.can_set { return false }
+        for choice in row.density.options { if choice.key==r.value { return true } }
+        return false
+    }
+    if !settings_has(row.night.caps,r.field) { return false }
+    if r.field=="Temperature" { return row.night.min!=nil && row.night.max!=nil && r.value>=row.night.min && r.value<=row.night.max }
+    if r.field=="Mode" { return settings_has(["Disabled","Custom","Sunset"],r.value) && (r.value!="Sunset" || row.night.location==true) }
+    if r.field=="Start" || r.field=="End" { return r.value>=0 && r.value<86400 }
+    return r.field=="Activated"
+}
+fn settings_display_candidate(s,o,id) {
+    let row=o.display_options; if row==nil { return nil }
+    let r=nil; let field=""; let value=nil; let i=0
+    for choice in row.density.options { if id=="density_choice_"+i { field="Density"; value=choice.key }; i=i+1 }
+    if id=="night_toggle" && row.night.activated!=nil { field="Activated"; value=!row.night.activated }
+    if id=="night_warmer" && row.night.temperature!=nil && row.night.min!=nil { field="Temperature"; value=settings_max(row.night.temperature-100,row.night.min) }
+    if id=="night_cooler" && row.night.temperature!=nil && row.night.max!=nil { field="Temperature"; value=settings_min(row.night.temperature+100,row.night.max) }
+    for pair in [["night_disabled","Disabled"],["night_custom","Custom"],["night_sunset","Sunset"]] { if id==pair[0] { field="Mode"; value=pair[1] } }
+    if id=="night_start" { field="Start"; value=row.night.start }; if id=="night_end" { field="End"; value=row.night.end }
+    if field!="" { r={kind:"display",key:row.key,field:field,value:value} }
+    if id=="display_save" && s.display_ui.draft!=nil {
+        let draft=s.display_ui.draft; let value=draft.request.value
+        if draft.request.field=="Start" || draft.request.field=="End" { value=settings_time_parse(draft.text) }
+        r={kind:"display",key:draft.request.key,field:draft.request.field,value:value}
+    }
+    if settings_display_permits(row,r) { return r }
+    return nil
+}
+fn settings_display_event(s,e,o,out) {
+    settings_display_init(s); let ui=s.display_ui
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; if e.kind!="pause" { ui.draft=nil }; return false }
+    if s.page!="DisplayOptions" { return false }
+    if e.kind=="input" && e.id=="night_time_input" { if ui.draft!=nil { ui.draft.text=e.value }; return true }
+    let candidate=settings_display_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; return candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" { return false }
+    if e.id=="display_cancel" && !s.pending { ui.draft=nil; ui.pressed=nil; settings_blur(out); return true }
+    if !o.android || s.pending { return false }
+    if e.id=="display_refresh" { settings_request(out,{kind:"read",domain:"display"}); return true }
+    if candidate==nil { return false }
+    let held=ui.pressed; ui.pressed=nil
+    if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+    settings_blur(out)
+    if e.id=="display_save" { settings_request(out,candidate); ui.draft=nil }
+    else {
+        let value=""; if candidate.field=="Start" || candidate.field=="End" { value=settings_time_format(candidate.value) }
+        ui.draft={request:candidate,text:value}; settings_patch(out,"input","night_time_input",value); settings_scroll(out,"display_options_page")
+    }
+    return true
+}
+fn settings_display_availability(value) { return settings_named(value,[["Available",""],["Unsupported","Not supported on this device."],["Unavailable","Unavailable on this installation."],["Restricted","Unavailable while locked or restricted."]],"") }
+fn settings_night_mode(mode) { return settings_named(mode,[["Disabled","No schedule"],["Custom","Custom times"],["Sunset","Sunset to sunrise"]],"Unavailable") }
+fn settings_display_refresh(s,o,out) {
+    settings_display_init(s); if s.page!="DisplayOptions" { return }
+    let row=o.display_options; let draft=s.display_ui.draft; let ready=o.android && !s.pending
+    let density="Waiting for display information…"; let night="Night Light information unavailable"; let density_availability=""; let night_availability=""; let location=""; let toggle="Turn Night Light on"
+    if row!=nil {
+        let d=row.density; let value="Unavailable"
+        if d.current!=nil && d.default!=nil {
+            value="Default"
+            if d.current!=d.default {
+                let size="Larger"; if d.current<d.default { size="Smaller" }
+                value=size+" ("+settings_round(100*d.current/d.default)+"%)"
+                let offered=false; for choice in d.options { if choice.dpi==d.current { offered=true } }; if !offered { value=value+" · Custom" }
+            }
+        }
+        density="Display size: "+value; density_availability=settings_display_availability(d.availability)
+        let n=row.night; let temp="Unavailable"; if n.temperature!=nil { temp=""+n.temperature+" K" }
+        night=settings_bool_label("Night Light",n.activated)+"\nColor temperature: "+temp+"\nSchedule: "+settings_night_mode(n.mode)+"\nStart: "+settings_time_format(n.start)+"\nEnd: "+settings_time_format(n.end)
+        night_availability=settings_display_availability(n.availability)
+        if n.activated==true { toggle="Turn Night Light off" }
+        if settings_has(n.caps,"Mode") && n.location!=true { location="Sunset to sunrise requires Location to be enabled in Location settings." }
+    }
+    settings_text(out,"density_observed",density); settings_text(out,"density_availability",density_availability)
+    let i=0
+    while i<8 {
+        let id="density_choice_"+i; let choice=nil
+        if row!=nil && i<row.density.options.len() { choice=row.density.options[i] }
+        settings_visible(out,id,choice!=nil); settings_enabled(out,id,ready && settings_display_candidate(s,o,id)!=nil)
+        if choice!=nil {
+            let label=choice.label; if row.density.current==choice.dpi { label=label+" · Current" }
+            settings_text(out,id,label); settings_patch(out,"semantic",id,"density:"+row.key+":"+choice.key)
+        }
+        i=i+1
+    }
+    settings_text(out,"night_observed",night); settings_text(out,"night_availability",night_availability); settings_text(out,"night_location",location); settings_text(out,"night_toggle",toggle)
+    for id in ["night_toggle","night_warmer","night_cooler","night_disabled","night_custom","night_sunset","night_start","night_end"] { settings_enabled(out,id,ready && settings_display_candidate(s,o,id)!=nil) }
+    let current=settings_display_candidate(s,o,"display_save")!=nil
+    settings_visible(out,"display_review",draft!=nil); settings_visible(out,"night_time_editor",draft!=nil && (draft.request.field=="Start" || draft.request.field=="End"))
+    settings_enabled(out,"night_time_input",ready && draft!=nil && settings_display_permits(row,draft.request))
+    let review=""; let note=""
+    if draft!=nil {
+        let r=draft.request
+        if r.field=="Density" {
+            let label="Previous choice"; if row!=nil { for choice in row.density.options { if choice.key==r.value { label=choice.label } } }
+            review="Review display size: "+label
+        }
+        if r.field=="Activated" { review=settings_bool_label("Review Night Light",r.value) }
+        if r.field=="Temperature" { review="Review color temperature: "+r.value+" K" }
+        if r.field=="Mode" { review="Review schedule: "+settings_night_mode(r.value) }
+        if r.field=="Start" { review="Review start time (HH:MM or HH:MM:SS)" }
+        if r.field=="End" { review="Review end time (HH:MM or HH:MM:SS)" }
+        note="Save applies this choice. Cancel keeps the current setting."
+        if (r.field=="Start" || r.field=="End") && settings_time_parse(draft.text)==nil { note="Enter a valid 24-hour time, such as 22:00." }
+        else if !current { note="Display settings changed or access was revoked. Cancel and review the current values." }
+    }
+    settings_text(out,"display_review_value",review); settings_text(out,"display_review_note",note)
+    settings_enabled(out,"display_save",ready && current); settings_enabled(out,"display_cancel",!s.pending); settings_enabled(out,"display_refresh",ready)
+}

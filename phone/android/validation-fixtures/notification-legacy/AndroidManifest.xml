@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.notificationlegacyfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="25" android:targetSdkVersion="25"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application android:label="OctoSense legacy notification validation" android:allowBackup="false"/>
+    <instrumentation android:name="dev.makepad.octosense.notificationfixture.NotificationFixture" android:targetPackage="dev.makepad.octosense.notificationlegacyfixture" android:label="Legacy synthetic notification state"/>
+</manifest>

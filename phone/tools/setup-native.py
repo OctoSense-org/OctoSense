@@ -37,10 +37,17 @@ def prepare_source(root, name, spec, args, overlay=None):
         raise RuntimeError(f"Preserving local changes: {path}")
     tree = git(path, "write-tree").stdout.strip()
     base_tree = git(path, "rev-parse", "HEAD^{tree}", check=False).stdout.strip()
+    patches = []
     if overlay:
-        patch = (PRODUCT / overlay["patch"]).resolve()
-        if not patch.is_relative_to(PRODUCT) or hashlib.sha256(patch.read_bytes()).hexdigest() != overlay["sha256"] or overlay["base_revision"] != spec["revision"]:
+        if overlay["base_revision"] != spec["revision"]:
             raise RuntimeError("Runtime patch does not match its source lock")
+        # The patch, then any stacked on it (each a reviewed PR not yet merged
+        # into the runtime), in order; `tree` is the tree after the last one.
+        for entry in [overlay, *overlay.get("stacked", [])]:
+            patch = (PRODUCT / entry["patch"]).resolve()
+            if not patch.is_relative_to(PRODUCT) or hashlib.sha256(patch.read_bytes()).hexdigest() != entry["sha256"]:
+                raise RuntimeError(f"Runtime patch does not match its source lock: {entry['patch']}")
+            patches.append(patch)
     if current == spec["revision"] and overlay and tree == overlay["tree"]:
         return
     if current and tree != base_tree:
@@ -59,8 +66,9 @@ def prepare_source(root, name, spec, args, overlay=None):
     if overlay:
         if args.check:
             raise RuntimeError(f"Reviewed runtime patch is not applied in {path}; run setup without --check")
-        git(path, "apply", "--check", str(patch))
-        git(path, "apply", "--index", str(patch))
+        for patch in patches:
+            git(path, "apply", "--check", str(patch))
+            git(path, "apply", "--index", str(patch))
         if git(path, "write-tree").stdout.strip() != overlay["tree"]:
             raise RuntimeError(f"Runtime patch produced an unexpected tree: {path}")
 

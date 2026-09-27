@@ -227,6 +227,9 @@ script_mod! {
             }
         }
         wallpaper +: {
+            themed: instance(0.0)
+            theme_top: instance(vec4(0.0))
+            theme_bottom: instance(vec4(0.0))
             android: instance(0.0)
             dark: instance(0.0)
             phase: instance(0.0)
@@ -240,6 +243,7 @@ script_mod! {
             win_aspect: instance(1.0)
             pixel: fn() {
                 let p=self.pos*vec2(self.win_sx,self.win_sy)+vec2(self.win_ox,self.win_oy)
+                if self.themed > 0.5 { return mix(self.theme_top,self.theme_bottom,clamp(p.y,0.0,1.0)); }
                 let t=self.phase
                 let aspect=self.win_aspect
                 let q=(p-0.5)*vec2(aspect,1.0)
@@ -365,6 +369,7 @@ pub struct PhoneSurface {
     #[rust] home_layout_packet: String,
     #[find] #[live] search: WidgetRef,
     #[rust] search_style: Option<(bool, bool)>,
+    #[rust] palette: Option<crate::mobile_theme::Palette>,
     #[rust] search_focus_pending: bool,
     #[rust] search_rect: Rect,
     #[rust] search_pointer: bool,
@@ -373,6 +378,13 @@ pub struct PhoneSurface {
     #[redraw] #[rust] area: Area,
 }
 impl PhoneSurface {
+    pub(crate) fn set_theme(&mut self, palette: Option<crate::mobile_theme::Palette>) -> bool {
+        if self.palette == palette { return false; }
+        self.palette = palette;
+        self.search_style = None;
+        self.d.set_palette(palette.map(|p| p.shell()));
+        true
+    }
     /// What a screen reader calls a hit region, or None for regions that are
     /// not controls (the shade's backdrop, the split divider, the bench tap).
     fn accessibility_label(state:&WmState,hit:&PhoneHit)->Option<String> {
@@ -552,6 +564,11 @@ impl PhoneSurface {
         let size=dvec2(full.size.x.max(1.0),full.size.y.max(1.0));
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(android), &[if style==DesktopStyle::Android {1.0}else{0.0}]);
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(dark), &[if dark {1.0}else{0.0}]);
+        self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(themed), &[if self.palette.is_some() {1.0}else{0.0}]);
+        if let Some(p)=self.palette {
+            self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(theme_top), &[p.wallpaper_top.x,p.wallpaper_top.y,p.wallpaper_top.z,p.wallpaper_top.w]);
+            self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(theme_bottom), &[p.wallpaper_bottom.x,p.wallpaper_bottom.y,p.wallpaper_bottom.z,p.wallpaper_bottom.w]);
+        }
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(phase), &[phase as f32]);
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_ox), &[((band.pos.x-full.pos.x)/size.x) as f32]);
         self.wallpaper.draw_vars.set_dyn_instance(cx, live_id!(win_oy), &[((band.pos.y-full.pos.y)/size.y) as f32]);
@@ -593,17 +610,21 @@ impl PhoneSurface {
     fn app_label(id: &str) -> String {
         crate::clients::find_app(id).map(|a| a.label).unwrap_or_else(|| id.to_string())
     }
-    fn card_colors(style: DesktopStyle, dark: bool) -> (Vec4f, Vec4f) {
+    pub(crate) fn theme_ink(&self, fallback: Vec4f) -> Vec4f { self.palette.map_or(fallback, |p|p.text) }
+    pub(crate) fn theme_face(&self, fallback: Vec4f) -> Vec4f { self.palette.map_or(fallback, |p|p.surface) }
+    pub(crate) fn theme_ground(&self, fallback: Vec4f) -> Vec4f { self.palette.map_or(fallback, |p|p.background) }
+    pub(crate) fn theme_accent(&self, fallback: Vec4f) -> Vec4f { self.palette.map_or(fallback, |p|p.accent) }
+    fn card_colors(&self, style: DesktopStyle, dark: bool) -> (Vec4f, Vec4f) {
         let ios=style==DesktopStyle::Ios;
-        let face=if dark {rgb(30,32,46)} else if ios {rgb(246,247,252)} else {rgb(255,251,255)};
-        let ink=if dark {rgb(240,240,248)} else {rgb(28,27,36)};
+        let face=self.theme_face(if dark {rgb(30,32,46)} else if ios {rgb(246,247,252)} else {rgb(255,251,255)});
+        let ink=self.theme_ink(if dark {rgb(240,240,248)} else {rgb(28,27,36)});
         (face, ink)
     }
     /// A home tile without a live capture yet: the app's identity and what
     /// the launcher is doing for it (compiling, starting, could not start).
     pub fn draw_tile_placeholder(&mut self, cx: &mut Cx2d, slot: TileSlot, style: DesktopStyle, dark: bool, opacity: f32, headline: &str, detail: &str) {
         self.use_fonts(style==DesktopStyle::Ios);
-        let (face, ink)=Self::card_colors(style, dark);
+        let (face, ink)=self.card_colors(style, dark);
         let r=slot.rect;
         self.rounded(cx, r, TILE_RADIUS as f32, alpha(face, 0.82*opacity));
         let wide=slot.kind==mobile_tiles::TileKind::Wide;
@@ -632,7 +653,7 @@ impl PhoneSurface {
     /// A window opened straight from its tile, before its first full-size
     /// frame: the launch card the zoom-in plays over.
     pub fn draw_launch_card(&mut self, cx: &mut Cx2d, r: Rect, app: &str, style: DesktopStyle, dark: bool, opacity: f32, radius: f32) {
-        let (face, ink)=Self::card_colors(style, dark);
+        let (face, ink)=self.card_colors(style, dark);
         self.rounded(cx, r, radius, alpha(face, opacity));
         let size=(r.size.x.min(r.size.y)*0.3).clamp(24.0,72.0);
         self.icons.draw(cx,app,style,rect(r.pos.x+(r.size.x-size)*0.5,r.pos.y+(r.size.y-size)*0.5,size,size),opacity,alpha(ink,opacity));
@@ -659,7 +680,7 @@ impl PhoneSurface {
             return;
         }
         let dark=state.style.dark;
-        let ink=if !ios && !dark {rgb(31,27,38)}else{rgb(255,255,255)};
+        let ink=self.theme_ink(if !ios && !dark {rgb(31,27,38)}else{rgb(255,255,255)});
         let layout=Self::home_layout(style,screen);
         let home=phone.screen==PhoneScreen::Home;
         let width=screen.size.x;
@@ -767,9 +788,9 @@ impl PhoneSurface {
             self.rounded(cx,screen,0.0,alpha(rgb(0,0,0),0.28*eased*opacity));
             let y=screen.pos.y+8.0+(eased as f64)*52.0;
             let pill=rect(x,y,pill_w,48.0);
-            let face=if dark {rgb(44,46,60)} else {rgb(255,255,255)};
+            let face=self.theme_face(if dark {rgb(44,46,60)} else {rgb(255,255,255)});
             self.rounded(cx,pill,24.0,alpha(face,(0.35+0.65*eased)*opacity));
-            let text_ink=if dark {rgb(255,255,255)} else {rgb(60,60,70)};
+            let text_ink=self.theme_ink(if dark {rgb(255,255,255)} else {rgb(60,60,70)});
             self.d.icon_centered(cx,Ico::Search,rect(pill.pos.x+14.0,pill.pos.y,28.0,48.0),18.0,alpha(text_ink,eased*opacity));
             self.d.label(cx,rect(pill.pos.x+48.0,pill.pos.y,pill_w-60.0,48.0),false,15.0,alpha(text_ink,eased*opacity),HAlign::Left,if progress>=0.4 {"Release for your apps"} else {"Pull for your apps"});
             return;
@@ -789,8 +810,8 @@ impl PhoneSurface {
         let landscape=screen.size.x>screen.size.y;
         // A flat fill, not the SDF chrome quad: the sheet is a full-screen
         // opaque rect, and under Recents' glass every full-screen layer counts.
-        self.d.solid(cx,screen,if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)});
-        let ink=if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)};
+        self.d.solid(cx,screen,self.theme_ground(if state.style.dark {rgb(24,22,31)}else{rgb(249,245,255)}));
+        let ink=self.theme_ink(if state.style.dark {rgb(255,255,255)}else{rgb(31,27,38)});
         if state.phone.searching() {
             let pill=self.draw_search(cx,state,screen,ink);
             self.draw_search_results(cx,state,screen,pill,ids,ink);
@@ -896,8 +917,8 @@ impl PhoneSurface {
         let dark=state.style.dark;
         let landscape=screen.size.x>screen.size.y;
         // The library sits on a dimmed wallpaper; the cards are frosted.
-        self.rounded(cx,screen,0.0,alpha(if dark {rgb(8,9,16)}else{rgb(228,231,242)},0.86));
-        let ink=if dark {rgb(255,255,255)}else{rgb(26,26,32)};
+        self.rounded(cx,screen,0.0,alpha(self.theme_ground(if dark {rgb(8,9,16)}else{rgb(228,231,242)}),0.86));
+        let ink=self.theme_ink(if dark {rgb(255,255,255)}else{rgb(26,26,32)});
         if state.phone.searching() {
             let pill=self.draw_search(cx,state,screen,ink);
             self.draw_search_results(cx,state,screen,pill,ids,ink);
@@ -928,7 +949,7 @@ impl PhoneSurface {
             let x=left+(index%columns)as f64*(cw+gap);
             let y=top+(index/columns)as f64*(ch+24.0);
             let card=rect(x,y,cw,ch);
-            self.rounded(cx,card,18.0,alpha(rgb(255,255,255),if dark {0.10}else{0.55}));
+            self.rounded(cx,card,18.0,alpha(self.theme_face(rgb(255,255,255)),if self.palette.is_some() {0.95}else if dark {0.10}else{0.55}));
             let pad=12.0;
             let cell=((cw-pad*2.0)/2.0).min((ch-pad*2.0)/2.0);
             let ox=card.pos.x+(cw-cell*2.0)*0.5;
@@ -966,9 +987,9 @@ impl PhoneSurface {
         let nav=&state.phone.navigation;
         let layout=nav.layout(state.phone.navigation_rect());
         let dark=state.style.dark;
-        let face=if dark {rgb(39,37,47)} else {rgb(252,251,255)};
-        let ink=if dark {rgb(239,234,250)} else {rgb(46,38,62)};
-        let accent=if dark {rgb(211,191,251)} else {rgb(103,77,152)};
+        let face=self.theme_face(if dark {rgb(39,37,47)} else {rgb(252,251,255)});
+        let ink=self.theme_ink(if dark {rgb(239,234,250)} else {rgb(46,38,62)});
+        let accent=self.theme_accent(if dark {rgb(211,191,251)} else {rgb(103,77,152)});
         let amount=nav.reveal as f32;
         if amount>0.001 {
             let previous_font=self.d.text_bold.text_style.clone();
@@ -1023,7 +1044,7 @@ impl PhoneSurface {
         self.d.set_text_scale(phone.android.font_scale);
         self.pressed=phone.gesture.as_ref().and_then(|g|g.hit.clone());
         let ios=state.style.target==DesktopStyle::Ios;
-        let ink=if (phone.screen==PhoneScreen::App || phone.screen==PhoneScreen::Drawer || !ios) && !state.style.dark {rgb(25,25,30)}else{rgb(255,255,255)};
+        let ink=self.theme_ink(if (phone.screen==PhoneScreen::App || phone.screen==PhoneScreen::Drawer || !ios) && !state.style.dark {rgb(25,25,30)}else{rgb(255,255,255)});
         let status_h=if screen.size.x>screen.size.y {24.0}else{42.0};
         // On Android the system's own status bar sits in the top inset, over
         // the wallpaper: the shell draws no second clock, signal or battery
@@ -1141,7 +1162,7 @@ impl PhoneSurface {
         if !cfg!(target_os="android") {return;}
         let phone=&state.phone;
         let a=phone.overview as f32;
-        let white=rgb(255,255,255);
+        let white=self.theme_ink(rgb(255,255,255));
         // A compact row leaves both the swipe cue below and split-selection
         // instructions above unobstructed. Short screens use smaller icons.
         let icon=if screen.size.y<600.0 {24.0}else{32.0};
@@ -1185,7 +1206,7 @@ impl PhoneSurface {
         let height=r.size.y;
         if ios && !dark {self.keyboard_glass.draw_surface_with_backdrop(cx,r,backdrop,1.0);}
         else {self.rounded(cx,r,0.0,if dark {rgb(34,32,40)}else{rgb(232,225,242)});}
-        let ink=if dark {rgb(250,248,255)}else{rgb(30,28,36)};
+        let ink=self.theme_ink(if dark {rgb(250,248,255)}else{rgb(30,28,36)});
         let hide=rect(r.pos.x+r.size.x-48.0,r.pos.y,44.0,30.0);
         self.d.icon_centered(cx,Ico::ChevronDown,hide,18.0,ink);self.hits.push((hide,PhoneHit::HideKeyboard));
         self.label(cx,rect(r.pos.x+48.0,r.pos.y,r.size.x-96.0,30.0),if phone.symbols {"Numbers & symbols"}else{"English"},12.0,false,alpha(ink,0.6));
@@ -1220,10 +1241,11 @@ impl PhoneSurface {
     fn key(&mut self, cx: &mut Cx2d, r: Rect, label: &str, hit: PhoneHit, ios: bool, dark: bool, accent: bool) {
         let mut face=if accent {if ios {rgb(0,122,255)}else{rgb(103,80,164)}}else if dark {rgb(75,72,83)}else{rgb(255,255,255)};
         if self.pressed.as_ref()==Some(&hit) {face=if ios {rgb(180,185,196)}else{rgb(190,165,235)};}
+        if let Some(p)=self.palette {face=if accent {p.accent}else if self.pressed.as_ref()==Some(&hit) {p.surface_variant}else {p.surface};}
         let inside=rect(r.pos.x+3.0,r.pos.y+3.0,(r.size.x-6.0).max(1.0),(r.size.y-8.0).max(1.0));
         self.rounded(cx,rect(inside.pos.x,inside.pos.y+1.0,inside.size.x,inside.size.y),if ios {6.0}else{12.0},alpha(rgb(0,0,0),0.22));
         self.rounded(cx,inside,if ios {6.0}else{12.0},face);
-        let ink=if dark || accent {rgb(255,255,255)}else{rgb(22,20,28)};
+        let ink=self.palette.map(|p|if accent {p.on_accent}else{p.text}).unwrap_or(if dark || accent {rgb(255,255,255)}else{rgb(22,20,28)});
         // Control keys are icons: mobile text fonts need not contain the
         // desktop keyboard's Unicode shift/delete symbols.
         let icon=match &hit {

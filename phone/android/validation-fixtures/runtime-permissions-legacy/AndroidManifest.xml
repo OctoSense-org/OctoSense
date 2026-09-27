@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.permissionlegacyfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="22" android:targetSdkVersion="22"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <application android:label="OctoSense legacy permission validation" android:allowBackup="false">
+        <activity android:name="dev.makepad.octosense.permissionfixture.PermissionFixtureActivity" android:exported="true"/>
+    </application>
+    <instrumentation android:name="dev.makepad.octosense.permissionfixture.PermissionFixture" android:targetPackage="dev.makepad.octosense.permissionlegacyfixture" android:label="Read disposable legacy app permissions"/>
+</manifest>

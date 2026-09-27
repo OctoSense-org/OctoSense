@@ -179,11 +179,11 @@ impl PhoneSurface {
             self.search_style = Some((ios, state.style.dark));
             crate::mobile_perf::work_end("search.style", timing);
         }
-        let accent = if ios {
+        let accent = self.theme_accent(if ios {
             rgb(0, 122, 255)
         } else {
             rgb(126, 94, 190)
-        };
+        });
         if state.phone.search_focused {
             self.rounded(cx, pill, 14.0, alpha(accent, 0.65));
             self.rounded(
@@ -195,11 +195,11 @@ impl PhoneSurface {
                     pill.size.y - 3.0,
                 ),
                 12.5,
-                if state.style.dark {
+                self.theme_face(if state.style.dark {
                     rgb(40, 40, 48)
                 } else {
                     rgb(238, 238, 245)
-                },
+                }),
             );
         } else {
             self.rounded(cx, pill, 14.0, alpha(ink, 0.10));
