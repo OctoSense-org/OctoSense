@@ -73,6 +73,10 @@ pub fn withdraw(module: &dyn AppModule, scope: &InstanceScope) {
     let _ = (module, scope);
 }
 
+/// Rinx runs one instance per process: tests that create it take turns.
+#[cfg(test)]
+pub(crate) static RINX_INSTANCE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(all(test, any(feature = "octos-core", native_mobile)))]
 mod tests {
     use super::*;
@@ -141,5 +145,26 @@ mod tests {
         // An offer never outlives its create: nothing is left to claim.
         assert!(octosense_app_peers::injection::claim("assistant-probe", "i1g1").is_none());
         assert!(host.teardown(&mut cx, 1));
+    }
+
+    /// The real Rinx module: hosted from creation, with the shell's service,
+    /// and no kernel started by creating it (ADR 0007 criterion 7).
+    #[cfg(feature = "app-rinx")]
+    #[test]
+    fn rinx_is_hosted_with_the_shells_service_and_starts_no_kernel() {
+        let _one_rinx = super::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        let module = &rinx::module::RINX_MODULE;
+        assert!(module.capabilities().contains(&"octos.turn.start"), "Rinx declares its assistant needs");
+        host.create(&mut cx, 7, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        assert!(host.assistant_of(7).is_some(), "Home gave Rinx a scoped service");
+        assert!(rinx::octos_service::is_hosted(), "hosted mode comes from module creation");
+        let service = rinx::octos_service::service().expect("Rinx took the injected service");
+        assert_eq!(service.deployment(), octosense_app_peers::Deployment::Hosted);
+        assert_eq!(service.settings_entry(), octosense_app_peers::SettingsEntry::Host);
+        assert!(!octosense_octos_core::status().running, "creating Rinx starts no kernel");
+        assert!(host.teardown(&mut cx, 7));
     }
 }
