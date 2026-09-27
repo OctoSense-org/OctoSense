@@ -93,7 +93,7 @@ octosense-app-peers = { path = "../OctoSense-System-Apps/crates/app-peers", feat
 # module, built without its standalone entry point or local kernel. Its
 # assistant is the shell's, injected at creation: no kernel, no credentials,
 # no AppCard.
-rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "82391adf228692222462fc8696a04906a7aaf3eb", default-features = false, features = ["octosense-module"], optional = true }
+rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "5cf70a822aadb0da626123affa67c814f6848b58", default-features = false, features = ["octosense-module"], optional = true }
 # The assistant as a module, seated in the pane in-process: the web build's
 # only chat, a desktop option. Without the engine feature: no model runtime,
 # NoModel and the tool console (the child process keeps the real models).
