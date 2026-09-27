@@ -1398,28 +1398,6 @@ impl App {
         self.redraw_all(cx);
     }
 
-    /// The provider set changed (AI providers): end every AppCard module
-    /// instance, so its agent and its kernel child stop, and open AppCard
-    /// again when one was running: its new kernel reads the new profile.
-    #[cfg(all(feature = "app-hub", feature = "app-appcard"))]
-    fn restart_appcard_core(&mut self, cx: &mut Cx) {
-        let mut ended = 0;
-        while let Some(client) = self.module_host.client_of_module("appcard") {
-            log!("llm: providers changed: restarting the AppCard core (client {client})");
-            self.request_close(cx, client);
-            ended += 1;
-            if ended >= 8 || self.module_host.client_of_module("appcard") == Some(client) {
-                break;
-            }
-        }
-        if ended == 0 {
-            log!("llm: providers changed; no AppCard core is running, the next one reads them");
-        } else {
-            self.launch_app(cx, "appcard");
-        }
-        self.redraw_all(cx);
-    }
-
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
@@ -3974,6 +3952,11 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
+        // The octos kernel is a shell service: configured here, started when
+        // a consumer (AppCard, Rinx) connects. AI providers' `llm` service
+        // writes its profile and restarts it after a change.
+        #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+        apps::configure_octos_kernel(cx.get_data_dir());
         // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
         // `apps/` in the platform data directory or OctoSense's own state.
         #[cfg(feature = "app-hub")]
@@ -4505,11 +4488,6 @@ impl AppMain for App {
                 }
             }
         }
-        // AI providers changed the saved providers: restart the AppCard core.
-        #[cfg(all(feature = "app-hub", feature = "app-appcard"))]
-        if apps::take_appcard_restart() {
-            self.restart_appcard_core(cx);
-        }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
         if self.state.is_some() && self.snap_event(cx,event) {return;}
@@ -4622,6 +4600,9 @@ impl AppMain for App {
             if let Some(state) = &mut self.state {
                 clients::shutdown_clients(&mut state.clients);
             }
+            // Stop the octos kernel, if one runs, and let it release its data dir.
+            #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+            octosense_octos_core::shutdown();
         }
         if let Event::Timer(te) = event {
             self.fire_test_timers(cx, te);

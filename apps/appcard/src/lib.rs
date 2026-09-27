@@ -19,12 +19,14 @@
 //! kernel transport come up, exactly as in the APK) and draws the app's root
 //! body without its `Window{}`. The host's tile is the window.
 //!
-//! The kernel is the app's own affair: `octos_app`'s `stdio_spawn` finds
-//! `liboctos.so` in this APK's nativeLibraryDir (bundled with
-//! `MAKEPAD_ANDROID_EXTRA_LIBS`, see docs/android-appcard-build.md), gives it
-//! `HOME=<files>/octos-home` and the memory budget, and runs `serve --stdio`
-//! as a `kill_on_drop` child of the agent's runtime — so this module spawns
-//! no kernel of its own (the Phase-A probe would have been a second child).
+//! The kernel is the shell's, not the app's: `octosense_octos_core` (feature
+//! `octos-core`, which `app-appcard` implies) finds `liboctos.so` in this
+//! APK's nativeLibraryDir (bundled by `tools/android-kernel.py`, see
+//! docs/android-appcard-build.md), gives it `HOME=<files>/octos-home` and the
+//! memory budget, and runs `serve --stdio` once per process when the first
+//! consumer connects. The app's agent is one connection to it; this module
+//! spawns no kernel of its own. When the AI providers change, the `llm`
+//! service restarts the kernel and the agent's transport reconnects.
 //!
 //! What stays host-owned: the OS window and keyboard insets, and the
 //! notifications / share / WebView overlay of the standalone APK's Java
@@ -75,8 +77,9 @@ impl AppModule for AppCardModule {
             root: root.clone(),
             executor: Box::new(AppCardExecutor { root }),
             // The host runs this before it drops the root: stop the agent —
-            // its tokio runtime and the kernel child (kill_on_drop) go with
-            // it — so nothing outlives the isolate.
+            // its tokio runtime and its kernel connection go with it (the
+            // kernel stops when its last consumer leaves) — so nothing
+            // outlives the isolate.
             shutdown: Box::new(move |_vm| {
                 if let Some(mut inner) = shell.borrow_mut::<AppShell>() {
                     inner.shutdown();
