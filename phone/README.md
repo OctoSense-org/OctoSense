@@ -18,7 +18,7 @@ preinstalls it with the privileged system side is [`rom/`](../rom/README.md).
 
 Home was split from the desktop shell on 15 September 2026, at the tip of its
 mobile shell chain, and the two copies lived in OctoSense-Desktop and
-OctoSense-ROM (`home/`) until both repositories merged into this one on
+OctoSense-ROM (retired; merged into this repository), under `home/`, until both repositories merged into this one on
 27 September 2026 ([ADR 0001](../docs/adr/0001-one-octosense-repository.md)).
 Since then the shell exists once, in [`crates/shell`](../crates/shell)
 (package `octosense-shell`), which both packages link; this package adds

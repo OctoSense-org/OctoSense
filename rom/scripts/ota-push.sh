@@ -2,14 +2,16 @@
 # Option 2: update a running OctoSense phone from this Mac, over the phone's own
 # network. update_engine on the phone streams the ROM from the GitHub release
 # into the inactive slot; nothing big crosses the USB cable.
-#   ota-push.sh [tag|latest] [serial]
+#   ota-push.sh [build-tag|latest] [serial]     build-tag e.g. 20260919-j (release rom-v20260919-j)
 # Needs "Rooted debugging" on in Developer options (adb root), and Wi-Fi.
 set -euo pipefail
 TAG=${1:-latest}; D=${2:-cfb7c9e3}
-REPO=OctoSense-org/octosense-rom
+REPO=OctoSense-org/OctoSense
 ADB=${ADB:-$HOME/.local/share/octosense/android-tools/sdk/platform-tools/adb}
-if [ "$TAG" = latest ]; then JSON_URL="https://github.com/$REPO/releases/latest/download/update.json"
-else JSON_URL="https://github.com/$REPO/releases/download/$TAG/update.json"; fi
+# rom-latest is the moving release the phones read (docs/updates.md); not
+# releases/latest, which may be a desktop-v* or home-v* release.
+if [ "$TAG" = latest ]; then JSON_URL="https://github.com/$REPO/releases/download/rom-latest/update.json"
+else JSON_URL="https://github.com/$REPO/releases/download/rom-v${TAG#rom-v}/update.json"; fi
 JSON=$(curl -fsSL "$JSON_URL")
 read -r URL OFFSET SIZE INC < <(python3 -c 'import json,sys; r=json.loads(sys.argv[1])["rom"]; print(r["url"], r["payload_offset"], r["payload_size"], r["incremental"])' "$JSON")
 HEADERS=$(python3 -c 'import json,sys; print("\n".join(json.loads(sys.argv[1])["rom"]["payload_properties"]))' "$JSON")
