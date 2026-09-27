@@ -67,6 +67,14 @@ jobs:
           # UI opt-in only; hosted Rinx the library module only (Rinx ADR
           # 0007); one makepad, one App Hub, one octos.
           bash ../tools/check-shell-graph.sh -p octosense
+      - name: One copy of every shell source
+        run: |
+          # The shell is crates/shell; the packages keep only their entry
+          # point and product code (phone: Settings). No .rs path may exist
+          # in two of them.
+          dup=$(find crates/shell/src desktop/src phone/src -name '*.rs' ! -name main.rs ! -name lib.rs -type f \
+            | sed -E 's#^(crates/shell|desktop|phone)/src/##' | sort | uniq -d)
+          [ -z "$dup" ] || { echo "::error::source files in two crates: $dup"; exit 1; }
       - name: Desktop tools and scripts
         run: |
           python3 -m unittest discover -s tools -p 'test_*.py'
