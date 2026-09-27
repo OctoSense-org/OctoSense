@@ -166,6 +166,8 @@ def main(argv=None):
     for cwd, command in plan:
         if kernel and command[0] == str(args.packager or sources / "makepad/target/release/cargo-makepad") and not kernel.is_file():
             raise RuntimeError(f"The octos kernel was not built: {kernel}")
+        # The kernel's work dir (.sources/octos-kernel) starts empty.
+        Path(cwd).mkdir(parents=True, exist_ok=True)
         subprocess.run(command, cwd=cwd, env=env, check=True)
     inputs = {
         "OctoSenseHome.apk": HOME / "target/android/makepad-android-apk/octosense_home/apk/octo_sense.apk",
