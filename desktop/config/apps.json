@@ -2,7 +2,7 @@
   {
     "id": "reference",
     "label": "Reference",
-    "manifest": "../apps/reference/Cargo.toml",
+    "manifest": "../../apps/reference/Cargo.toml",
     "package": "octosense-reference",
     "bin": "octosense-reference",
     "policy": "new"

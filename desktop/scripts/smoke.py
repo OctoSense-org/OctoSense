@@ -179,7 +179,7 @@ def main():
         artifacts = Path(tempfile.mkdtemp(prefix="octosense-smoke-"))
     state = artifacts / "state"
     state.mkdir()
-    manifest = str(root / "apps/reference/Cargo.toml")
+    manifest = str(root.parent / "apps/reference/Cargo.toml")  # the workspace's apps/
     slow = artifacts / "slow"
     (slow / "src").mkdir(parents=True)
     (slow / "Cargo.toml").write_text('[package]\nname="octosense-smoke-slow"\nversion="0.1.0"\nedition="2021"\n[workspace]\n')

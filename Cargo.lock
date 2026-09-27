@@ -5220,16 +5220,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "makepad-image-tiles"
-version = "0.1.0"
-dependencies = [
- "makepad-network",
- "makepad-platform-video",
- "makepad-sqlite",
- "makepad-widgets",
-]
-
-[[package]]
 name = "makepad-jni-sys"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5357,18 +5347,6 @@ name = "makepad-pdf-parse"
 version = "1.0.0"
 dependencies = [
  "makepad-zune-inflate",
-]
-
-[[package]]
-name = "makepad-photos"
-version = "0.1.0"
-dependencies = [
- "makepad-ai-services",
- "makepad-app-module",
- "makepad-image-tiles",
- "makepad-strict-json",
- "makepad-widgets",
- "makepad-wm-theme",
 ]
 
 [[package]]
@@ -7143,23 +7121,7 @@ dependencies = [
 name = "octosense"
 version = "0.1.0"
 dependencies = [
- "makepad-ai-services",
- "makepad-aichat",
- "makepad-app-module",
- "makepad-network",
- "makepad-photos",
- "makepad-sheets",
- "makepad-strict-json",
- "makepad-studio-protocol",
- "makepad-widgets",
- "makepad-wm-api",
- "makepad-wm-theme",
- "octosense-ai-host",
- "octosense-app-hub-app",
- "octosense-appcard",
- "octosense-mail-service",
- "octosense-reference",
- "rinx",
+ "octosense-shell",
 ]
 
 [[package]]
@@ -7257,27 +7219,18 @@ dependencies = [
 name = "octosense-home"
 version = "0.1.0"
 dependencies = [
- "libc",
  "makepad-ai-services",
  "makepad-aichat",
  "makepad-app-module",
- "makepad-network",
- "makepad-sheets",
  "makepad-strict-json",
  "makepad-studio-protocol",
  "makepad-widgets",
  "makepad-wm-api",
- "makepad-wm-theme",
  "octoscript-makepad",
  "octosense-ai-host",
  "octosense-app-hub-app",
- "octosense-appcard",
- "octosense-mail-service",
- "octosense-maps",
- "octosense-news",
- "octosense-photos",
  "octosense-reference",
- "rinx",
+ "octosense-shell",
  "serde",
  "serde_json",
 ]
@@ -7388,6 +7341,35 @@ version = "0.1.0"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
+]
+
+[[package]]
+name = "octosense-shell"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "makepad-ai-services",
+ "makepad-aichat",
+ "makepad-app-module",
+ "makepad-network",
+ "makepad-sheets",
+ "makepad-strict-json",
+ "makepad-studio-protocol",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+ "octoscript-makepad",
+ "octosense-ai-host",
+ "octosense-app-hub-app",
+ "octosense-appcard",
+ "octosense-mail-service",
+ "octosense-maps",
+ "octosense-news",
+ "octosense-photos",
+ "octosense-reference",
+ "rinx",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

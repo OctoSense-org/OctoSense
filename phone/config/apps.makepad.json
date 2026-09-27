@@ -2,7 +2,7 @@
   {
     "id": "reference",
     "label": "Reference",
-    "manifest": "../apps/reference/Cargo.toml",
+    "manifest": "../../apps/reference/Cargo.toml",
     "package": "octosense-reference",
     "bin": "octosense-reference",
     "policy": "new"
@@ -10,7 +10,7 @@
   {
     "id": "news",
     "label": "News",
-    "manifest": "../apps/news/Cargo.toml",
+    "manifest": "../../apps/news/native/Cargo.toml",
     "package": "octosense-news",
     "bin": "octosense-news",
     "policy": "focus"
@@ -18,7 +18,7 @@
   {
     "id": "maps",
     "label": "OctosMap",
-    "manifest": "../apps/maps/Cargo.toml",
+    "manifest": "../../apps/maps/native/Cargo.toml",
     "package": "octosense-maps",
     "bin": "octosense-maps",
     "policy": "focus"
