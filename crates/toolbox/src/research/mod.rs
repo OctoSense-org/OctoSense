@@ -111,7 +111,11 @@ pub struct ModelRequest {
     pub task: ModelTask,
     pub system: String,
     pub user: String,
-    pub max_output_tokens: u32,
+    /// A cap on the reply's tokens, or `None` for the provider's default.
+    /// The host sets none: a reasoning model spends part of any cap on
+    /// thinking, and the output schema already bounds the reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
     /// The JSON shape the reply must have.
     pub output_schema: Value,
 }
@@ -186,7 +190,7 @@ impl ResearchHost {
                  {{\"query\": \"...\"}} only. Do not add URLs."
             ),
             user: json!({"query": query, "language": language}).to_string(),
-            max_output_tokens: 128,
+            max_output_tokens: None,
             output_schema: json!({"type": "object", "required": ["query"],
                 "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 160}}}),
         };
@@ -404,7 +408,7 @@ impl ResearchHost {
             system: digest_prompt(&task, &language),
             user: json!({"task": task, "language": language, "focus": focus, "articles": articles})
                 .to_string(),
-            max_output_tokens: 1024,
+            max_output_tokens: None,
             output_schema: json!({"type": "object", "required": ["summary", "points"],
             "properties": {
                 "summary": {"type": "string", "minLength": 1, "maxLength": 1200},
