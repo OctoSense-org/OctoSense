@@ -80,6 +80,11 @@ pub struct BrokerConfig {
     pub settings_entry: SettingsEntry,
     /// How long one turn may run.
     pub turn_timeout: Duration,
+    /// Where the host keeps each peer's host token (one file per app and
+    /// account, mode 0600): the kernel's credential for controlling the peer
+    /// it created. `None` keeps tokens in memory, so a peer created by this
+    /// process cannot be resumed after a restart.
+    pub state_dir: Option<std::path::PathBuf>,
 }
 
 impl BrokerConfig {
@@ -112,6 +117,7 @@ impl BrokerConfig {
                 Deployment::StandaloneRemote => SettingsEntry::AppRemote,
             },
             turn_timeout: Duration::from_secs(180),
+            state_dir: None,
         }
     }
 }
@@ -238,6 +244,8 @@ struct Route {
 struct PeerInfo {
     slug: String,
     session: String,
+    /// The host token that controls this peer (UPCR-2026-034).
+    token: Option<String>,
 }
 
 /// `session/open` params for a bound session: the kernel's own workspace
@@ -261,6 +269,8 @@ struct State {
     routes: HashMap<String, Route>,
     peer: Option<(u64, PeerInfo)>,
     peer_turn: Option<String>,
+    /// Host tokens by memory namespace, when no state dir persists them.
+    tokens: HashMap<String, String>,
     contexts: Vec<Weak<ContextInner>>,
     model: Option<ModelInfo>,
     last_error: Option<String>,
@@ -304,6 +314,7 @@ impl Broker {
                 routes: HashMap::new(),
                 peer: None,
                 peer_turn: None,
+                tokens: HashMap::new(),
                 contexts: Vec::new(),
                 model: None,
                 last_error: None,
@@ -386,6 +397,41 @@ impl Inner {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn token_path(&self, namespace: &str) -> Option<std::path::PathBuf> {
+        let dir = self.cfg.state_dir.as_ref()?;
+        Some(dir.join(format!("{}.token", namespace.replace('/', "_"))))
+    }
+
+    fn load_token(&self, namespace: &str) -> Option<String> {
+        if let Some(token) = self.lock().tokens.get(namespace) {
+            return Some(token.clone());
+        }
+        let text = std::fs::read_to_string(self.token_path(namespace)?).ok()?;
+        let token = text.trim().to_owned();
+        (!token.is_empty()).then_some(token)
+    }
+
+    fn save_token(&self, namespace: &str, token: &str) -> Result<(), String> {
+        self.lock()
+            .tokens
+            .insert(namespace.to_owned(), token.to_owned());
+        let Some(path) = self.token_path(namespace) else {
+            return Ok(());
+        };
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        let tmp = path.with_extension("token.tmp");
+        std::fs::write(&tmp, token).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
     fn fail(&self, error: &str) {
@@ -627,6 +673,10 @@ impl Inner {
             "memory_namespace": namespace,
             "resume": true,
         });
+        let known_token = self.load_token(&namespace);
+        if let Some(token) = &known_token {
+            params["host_token"] = json!(token);
+        }
         if let Some(lane) = &self.cfg.model_lane {
             params["model"] = json!(lane);
         }
@@ -650,6 +700,18 @@ impl Inner {
             .as_str()
             .ok_or("peer/prepare returned no slug")?
             .to_owned();
+        // A new peer's credential arrives once; keep it before anything else.
+        let token = match result["host_token"].as_str() {
+            Some(token) => {
+                if let Err(err) = self.save_token(&namespace, token) {
+                    let err = format!("could not keep the assistant's peer credential: {err}");
+                    self.fail(&err);
+                    return Err(err);
+                }
+                Some(token.to_owned())
+            }
+            None => known_token,
+        };
         let session = format!(
             "{}#peer-{slug}",
             self.cfg
@@ -668,6 +730,7 @@ impl Inner {
         let peer = PeerInfo {
             slug,
             session: session.clone(),
+            token,
         };
         let mut st = self.lock();
         if st.generation != generation || st.released {
@@ -684,6 +747,7 @@ impl Inner {
         context_id: String,
         turn: Option<String>,
         session: String,
+        token: Option<String>,
     ) {
         let inner = self.clone();
         self.rt().spawn(async move {
@@ -703,6 +767,7 @@ impl Inner {
                         "session_id": inner.cfg.originator,
                         "peer": peer,
                         "context_id": context_id,
+                        "host_token": token,
                     }),
                 )
                 .await;
@@ -753,6 +818,7 @@ struct Bound {
     session: String,
     peer_slug: String,
     context_id: String,
+    token: Option<String>,
 }
 
 struct ContextInner {
@@ -870,7 +936,13 @@ impl ContextInner {
         self.sink.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(bound) = self.bound.lock().unwrap_or_else(|e| e.into_inner()).take() {
             inner.lock().routes.remove(&bound.session);
-            inner.close_context_on_kernel(bound.peer_slug, bound.context_id, turn, bound.session);
+            inner.close_context_on_kernel(
+                bound.peer_slug,
+                bound.context_id,
+                turn,
+                bound.session,
+                bound.token,
+            );
         }
     }
 
@@ -895,6 +967,7 @@ impl ContextInner {
                     "session_id": inner.cfg.originator,
                     "peer": peer.slug,
                     "context_id": self.context_id,
+                    "host_token": peer.token,
                 }),
             )
             .await?;
@@ -920,6 +993,7 @@ impl ContextInner {
             session: session.clone(),
             peer_slug: peer.slug,
             context_id: self.context_id.clone(),
+            token: peer.token,
         });
         Ok(session)
     }
@@ -1266,6 +1340,21 @@ mod tests {
         assert!(long
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'));
+    }
+
+    #[test]
+    fn a_saved_answer_wins_over_late_deltas_of_its_segment() {
+        let (tx, mut rx) = oneshot::channel();
+        let mut waiter = TurnWaiter::new("t".into(), tx);
+        let env = |kind: &str, segment: &str, text: &str| json!({"type": kind, "data": {"assistant_segment_id": segment, "text": text}});
+        waiter.envelope(&env("assistant_delta", "a", "Hel"));
+        waiter.envelope(&env("assistant_persisted", "a", "Hello there"));
+        assert!(!waiter.envelope(&env("assistant_delta", "a", "lo there")));
+        assert_eq!(waiter.text, "Hello there");
+        waiter.envelope(&env("assistant_delta", "b", "Next"));
+        assert_eq!(waiter.text, "Next");
+        waiter.envelope(&json!({"type": "turn_terminal", "data": {"outcome": "completed"}}));
+        assert_eq!(rx.try_recv().unwrap().unwrap(), "Next");
     }
 
     #[test]

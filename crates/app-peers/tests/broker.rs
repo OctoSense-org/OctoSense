@@ -76,9 +76,20 @@ impl Connector for FakeConnector {
                             let mut result = json!({"slug": name, "cwd": "/kernel/ws", "model": {"lane": "primary"}});
                             if !legacy {
                                 result["memory_namespace"] = params["memory_namespace"].clone();
-                                result["resumed"] = json!(false);
+                                result["resumed"] = json!(params.get("host_token").is_some());
+                                if params.get("host_token").is_none() {
+                                    result["host_token"] = json!("fixture-host-token");
+                                }
                             }
                             let _ = kernel_out.send(reply(result));
+                        }
+                        "peer/context/open" | "peer/context/close"
+                            if params["host_token"] != "fixture-host-token" =>
+                        {
+                            let _ = kernel_out.send(
+                                json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32001, "message": "bad token", "data": {"kind": "peer_host_token_mismatch"}}})
+                                    .to_string(),
+                            );
                         }
                         "peer/context/open" => {
                             let session = format!(

@@ -41,7 +41,11 @@ octosense_app_peers::injection::withdraw(module.id(), &scope);
 ```
 
 The owner of every app peer is the system agent session
-`_main:api:octosense#system`. Apps get the kernel's own provisioned workspace
+`_main:api:octosense#system`. The kernel mints a host token when it creates a
+peer (octos UPCR-2026-034); every later control call on the peer needs it. The
+shell keeps the tokens beside its kernel's core dir (`<core_dir>/../app-peers`,
+mode 0600), outside every app's reach. A standalone app sets
+`BrokerConfig::state_dir` to its own data dir. Apps get the kernel's own provisioned workspace
 per app and account; their memory namespace is `app/<app>/acct-<hash>`.
 
 ## An app
