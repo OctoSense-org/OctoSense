@@ -337,8 +337,8 @@ services name the same App Hub revision, so the graph has one App Hub source.
   or drop any runtime patch. `setup-home.py --check --cargo` fails on any
   mismatch. The full procedure is in
   [home/docs/makepad-fork.md](home/docs/makepad-fork.md#adopting-a-fork-revision).
-- **Runtime patch.** The runtime's Makepad (main `db4691d0`, OctoScript-Makepad
-  `c3d53ba8`) includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
+- **Runtime patch.** The runtime's Makepad (main `6cf03859`, OctoScript-Makepad
+  `6881fb6c`) includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
   (contained script apps) and [makepad#31](https://github.com/OctoSense-org/makepad/pull/31)
   (the camera QR scanner API AI providers uses). `patches/runtime/makepad-settings.patch`
   adds the Settings input, accessibility and renderer fixes on top; it is the
