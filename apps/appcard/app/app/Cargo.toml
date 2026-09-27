@@ -53,6 +53,9 @@ octos-app-render    = { workspace = true }
 # LLM provider sets: the provisioning QR (OCTOS1/OCTOS1E + legacy JSON), the
 # octos provider registry, and the `_main.json` merge (`app::login`).
 octosense-llm-config = { workspace = true }
+# The shell's octos kernel: one per process, shared, restarted after a
+# provider change. It starts the kernel; the app only connects to it.
+octosense-octos-core = { workspace = true }
 
 # Protocol types.
 octos-core = { workspace = true }

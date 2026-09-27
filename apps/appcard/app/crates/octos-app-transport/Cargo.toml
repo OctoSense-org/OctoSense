@@ -7,9 +7,7 @@ authors.workspace = true
 description = "WebSocket + REST snapshot transport for octos-app — speaks the UI Protocol v1"
 
 [dependencies]
-# `process` + `io-util` (atop the workspace's rt/macros/net/time/sync) back the
-# stdio transport: spawning `octos serve --stdio` and NDJSON pipe framing.
-tokio             = { workspace = true, features = ["process", "io-util"] }
+tokio             = { workspace = true, features = ["io-util"] }
 tokio-tungstenite = { workspace = true }
 futures-util      = { workspace = true }
 serde             = { workspace = true }
@@ -20,6 +18,9 @@ url               = { workspace = true }
 reqwest           = { workspace = true }
 log               = { workspace = true }
 octos-core        = { workspace = true }
+# The shell's octos kernel: started, shared and restarted by the core; this
+# crate only speaks UI Protocol frames over a connection to it.
+octosense-octos-core = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
@@ -32,9 +33,3 @@ workspace = true
 # device (the app shell's `log::` macros are makepad's shim, not this facade).
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
-
-# HarmonyOS denies exec from HAP native libraries. Link the canonical core
-# into the app and carry exactly the same OUP frames through an in-memory pipe.
-[target.'cfg(target_env = "ohos")'.dependencies]
-octos-cli = { workspace = true, features = ["api", "git", "ast"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

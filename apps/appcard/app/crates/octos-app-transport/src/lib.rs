@@ -10,12 +10,12 @@
 pub mod capability;
 pub mod cursor;
 pub mod jsonrpc;
-/// Transport-agnostic JSON-RPC core shared by `ws` and `stdio`.
+/// The shell's octos kernel (`octosense-octos-core`): stdio child or
+/// in-process core, shared with the shell's other consumers.
+pub mod kernel;
+/// Transport-agnostic JSON-RPC core shared by `ws` and `kernel`.
 mod proto;
 pub mod rest;
-pub mod stdio;
-#[cfg(target_env = "ohos")]
-pub mod embedded;
 pub mod ws;
 
 /// Install a logcat backend for the real `log` facade on Android. The app
@@ -107,28 +107,15 @@ pub struct TransportConfig {
     pub requested_capabilities: Capabilities,
     /// Per-session workspace cwd to request during `session/open`.
     pub workspace_cwd: Option<String>,
-    /// When set, the agent uses the **stdio** transport — it spawns this
-    /// `octos` binary as `<program> <args…>` (typically `serve --stdio`) and
-    /// speaks NDJSON JSON-RPC over the child's stdin/stdout instead of dialing
-    /// a WebSocket. `base_url` / `bearer` are then unused; the child is a
-    /// trusted local process and capabilities default to `stdio_defaults`
-    /// server-side. `None` selects the WebSocket transport.
-    pub stdio: Option<StdioSpawn>,
-}
-
-/// How to launch the local `octos` process for the stdio transport.
-#[derive(Debug, Clone)]
-pub struct StdioSpawn {
-    /// Path to the `octos` executable (on Android, the bundled native lib —
-    /// the only location `untrusted_app` may exec from).
-    pub program: std::path::PathBuf,
-    /// Arguments, e.g. `["serve", "--stdio"]`.
-    pub args: Vec<String>,
-    /// Extra environment for the child (e.g. `HOME` pointing at a config/auth
-    /// dir that resolves the LLM key — so the app never holds the secret).
-    pub env: Vec<(String, String)>,
-    /// Working directory for the child, if any.
-    pub cwd: Option<std::path::PathBuf>,
+    /// When set, the agent talks to the shell's octos kernel
+    /// (`octosense_octos_core::connect()`, see [`kernel`]) instead of dialing
+    /// a WebSocket: `octos serve --stdio` as a child on desktop and Android,
+    /// the canonical core in-process on OpenHarmony, one per process and
+    /// shared with the shell's other consumers. `base_url` / `bearer` are
+    /// then unused; the kernel is a trusted local process and capabilities
+    /// default to `stdio_defaults` server-side. The kernel's launch (binary,
+    /// HOME, environment) is the core's, not the app's.
+    pub local_kernel: bool,
 }
 
 /// Commands the rest of the app sends to the transport.

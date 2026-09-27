@@ -370,7 +370,11 @@ pub fn apply_provision_config_json(payload: &str) -> Result<String, String> {
 /// With a PIN this runs Argon2id over 64 MiB: call it off the UI thread.
 pub fn apply_provision_payload(payload: &str, pin: Option<&str>) -> Result<String, String> {
     let path = octos_profile_config_path()?;
-    apply_provision_payload_at_path(&path, payload, pin)
+    let what = apply_provision_payload_at_path(&path, payload, pin)?;
+    // The kernel is the shell's and may already run (for another consumer):
+    // restart it so it reads the new profile. A no-op when none runs.
+    octosense_octos_core::restart();
+    Ok(what)
 }
 
 /// Path-injected implementation so persistence can be tested without touching
@@ -403,12 +407,11 @@ fn apply_provision_payload_at_path(path: &Path, payload: &str, pin: Option<&str>
     })
 }
 
-/// The embedded kernel's `_main.json` profile config (same HOME the kernel is
-/// spawned with: `$HOME/octos-home/.octos/profiles/_main.json`).
+/// The kernel's `_main.json` profile, under the core dir the shell's octos
+/// core resolves (the shell's choice, else `$OCTOS_APP_CORE_DIR`, else
+/// `$HOME/octos-home/.octos`): the file the AI providers app edits too.
 fn octos_profile_config_path() -> Result<PathBuf, String> {
-    octosense_llm_config::profile::default_core_dir()
-        .map(|dir| octosense_llm_config::profile::profile_path(&dir))
-        .ok_or_else(|| "no HOME set".to_string())
+    octosense_octos_core::profile().ok_or_else(|| "no HOME set".to_string())
 }
 
 // Test adapters: the provisioning tests below predate the shared crate and

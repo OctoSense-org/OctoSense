@@ -42,6 +42,10 @@ pub(crate) enum PendingReply {
     /// `session/hydrate` — result re-emitted as
     /// `TransportEvent::SessionHydrated` tagged with the session key.
     SessionHydrate { session_id: String },
+    /// A `session/open` the transport re-sent itself after the shell's kernel
+    /// restarted (see `kernel`): it brings the connection back to `Live`,
+    /// and the app, which already holds the session, hears nothing else.
+    Reopen,
 }
 
 /// Per-connection mutable state: the replay cursor, in-flight requests keyed
@@ -55,6 +59,9 @@ pub(crate) struct SharedState {
     pub(crate) pending_initial: Option<UiCursor>,
     pub(crate) pending: HashMap<JsonRpcId, PendingRequest>,
     pub(crate) registry: std::sync::Arc<RpcRegistry>,
+    /// The sessions opened on this connection, as last opened: the kernel
+    /// transport opens them again (from their cursors) on a new kernel.
+    pub(crate) opened: HashMap<SessionKey, octos_core::app_ui::AppUiOpenSession>,
 }
 
 impl SharedState {
@@ -70,6 +77,7 @@ impl SharedState {
             pending_initial: cursor,
             pending: HashMap::new(),
             registry: std::sync::Arc::new(RpcRegistry::new()),
+            opened: HashMap::new(),
         }
     }
 }
@@ -111,12 +119,14 @@ pub(crate) fn build_outbound(cmd: OutboundCommand, shared: &mut SharedState) -> 
                     .cloned()
                     .or_else(|| shared.pending_initial.take());
             }
+            shared.opened.insert(params.session_id.clone(), params.clone());
             (methods::SESSION_OPEN, to_value(&params), Some(PendingReply::Lifecycle))
         }
         OutboundCommand::OpenSessionFresh(params) => {
             // Open WITHOUT a replay bracket (`params.after` stays None). With
             // per-session cursors (W08) there is no shared cursor to reset —
             // every other session keeps its own replay position.
+            shared.opened.insert(params.session_id.clone(), params.clone());
             (methods::SESSION_OPEN, to_value(&params), Some(PendingReply::Lifecycle))
         }
         OutboundCommand::StartTurn(p) => {
@@ -163,6 +173,37 @@ pub(crate) fn build_outbound(cmd: OutboundCommand, shared: &mut SharedState) -> 
         Err(e) => {
             log::warn!("transport: serialize {method}: {e}");
             Outbound::Skip
+        }
+    }
+}
+
+/// `session/open` frames for every session opened on this connection, each
+/// from its own replay cursor, for a new kernel after a restart. The caller
+/// sends them and records each `pending` under its `id`.
+pub(crate) fn build_reopens(shared: &mut SharedState) -> Vec<(JsonRpcId, String, PendingRequest)> {
+    let opened: Vec<_> = shared.opened.values().cloned().collect();
+    let mut out = Vec::new();
+    for mut params in opened {
+        params.after = shared.cursors.get(&params.session_id).cloned();
+        let id = shared.registry.next_id();
+        match serialize_request(&id, methods::SESSION_OPEN, &to_value(&params)) {
+            Ok(frame) => out.push((id, frame, PendingRequest { method: methods::SESSION_OPEN, reply: PendingReply::Reopen })),
+            Err(e) => log::warn!("transport: serialize session/open (reopen): {e}"),
+        }
+    }
+    out
+}
+
+/// Fail every request still waiting for a reply: the kernel that would have
+/// answered is gone. Lifecycle requests surface as `TransportEvent::RpcError`
+/// (the app shows a turn that could not start), the rest through their reply.
+pub(crate) fn fail_all_pending(shared: &mut SharedState, events: &mpsc::Sender<TransportEvent>, error: RpcError) {
+    for (id, pending) in shared.pending.drain() {
+        let method = pending.method.to_owned();
+        let surface = matches!(pending.reply, PendingReply::Lifecycle);
+        fail_pending(pending, error.clone());
+        if surface {
+            try_emit(events, TransportEvent::RpcError { request_id: id, method, error: error.clone() });
         }
     }
 }
@@ -230,15 +271,18 @@ pub(crate) async fn handle_inbound_text(
             if let Some(id) = er.id.clone() {
                 if let Some(pending) = shared.pending.remove(&id) {
                     let method = pending.method.to_owned();
+                    let reopen = matches!(pending.reply, PendingReply::Reopen);
                     fail_pending(pending, er.error.clone());
-                    try_emit(
-                        events,
-                        TransportEvent::RpcError {
-                            request_id: id,
-                            method,
-                            error: er.error,
-                        },
-                    );
+                    if !reopen {
+                        try_emit(
+                            events,
+                            TransportEvent::RpcError {
+                                request_id: id,
+                                method,
+                                error: er.error,
+                            },
+                        );
+                    }
                 }
             } else {
                 log::warn!("transport: error response missing id: {:?}", er.error);
@@ -260,6 +304,13 @@ fn handle_response(
 ) -> Option<ConnectionState> {
     let method = pending.method;
     match pending.reply {
+        PendingReply::Reopen => {
+            if !matches!(state, ConnectionState::Live) {
+                *state = ConnectionState::Live;
+                return Some(ConnectionState::Live);
+            }
+            None
+        }
         PendingReply::Lifecycle => {
             match UiRpcResult::from_method_and_result(method, result_value.clone()) {
                 Ok(UiRpcResult::SessionOpen(open)) => {
@@ -347,6 +398,9 @@ fn fail_pending(pending: PendingRequest, err: RpcError) {
         // session row; the error already surfaced as a warn.
         PendingReply::SessionHydrate { session_id } => {
             log::warn!("transport: session/hydrate failed for {session_id}: {err:?}");
+        }
+        PendingReply::Reopen => {
+            log::warn!("transport: re-opening a session on the restarted kernel failed: {err:?}");
         }
     }
 }

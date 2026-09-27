@@ -40,8 +40,12 @@ cargo run -p octos-app
 
 独立运行的应用按以下顺序连接 octos：
 
-1. 同时设置了 `OCTOS_APP_CORE_BIN` 和 `OCTOS_APP_CORE_DIR` 时，使用本地内核
-   二进制（`../tools/octos-macos.py` 会设置它们；见 `../tools/OCTOS-MACOS.md`）；
+1. Shell 的 octos 内核（`octosense-octos-core`，仓库中的 `crates/octos-core`），
+   只要能运行：Android 上是 APK 内置的 `liboctos.so`，OpenHarmony 上总是可用
+   （链接进应用），桌面上需由 Shell 或 `OCTOS_APP_CORE_BIN` 指定内核二进制（数据
+   目录为 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`；
+   `../tools/octos-macos.py` 会设置两者，见 `../tools/OCTOS-MACOS.md`）。内核与
+   Shell 的其他使用方共享，AI 服务商变化时重启；传输层随后重连并重新打开会话；
 2. `~/.config/octos-app/server.json`（服务器 URL 和 profile），bearer 来自
    `OCTOS_APP_TOKEN` 或系统钥匙串；
 3. 否则使用 `OCTOS_BASE_URL`、`OCTOS_BEARER` 和 `OCTOS_PROFILE_ID`

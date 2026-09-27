@@ -16,7 +16,7 @@ use makepad_widgets::*;
 use octos_app_store::state::{reduce as store_reduce, ConnectionEvent, Event as StoreEvent};
 use octos_app_store::toasts::{Toast, ToastKind};
 use octos_app_transport::{
-    stdio, ws, Capabilities, ConnectionState, LifecycleResult, OutboundCommand, TransportConfig,
+    kernel, ws, Capabilities, ConnectionState, LifecycleResult, OutboundCommand, TransportConfig,
     TransportEvent,
 };
 use octos_core::app_ui::{
@@ -163,14 +163,12 @@ impl OctosUiAgent {
         };
         let workspace_cwd = config.workspace_cwd.clone();
         let fallback_profile = config.profile_id.0.clone();
-        let stdio_transport = config.stdio.is_some() || cfg!(target_env = "ohos");
-        // 8 MiB worker stacks: on OpenHarmony this runtime also runs the
-        // embedded octos server (`octos_cli::embedded::serve_io`), whose
-        // dispatcher overflows Tokio's default 2 MiB stack. Every octos entry
-        // point (chat, ACP, gateway, MCP) builds its runtime the same way.
+        let stdio_transport = config.local_kernel || cfg!(target_env = "ohos");
+        // The agent's own runtime drives the transport task; the kernel
+        // itself (a child, or on OpenHarmony the in-process core with its
+        // 8 MiB worker stacks) runs on octosense-octos-core's runtime.
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
-            .thread_stack_size(8 * 1024 * 1024)
             .enable_all()
             .build()
             .expect("octos-ui-agent: tokio runtime build");
@@ -182,15 +180,9 @@ impl OctosUiAgent {
             let waker = Some(std::sync::Arc::new(|| {
                 makepad_widgets::SignalToUI::set_ui_signal();
             }) as std::sync::Arc<dyn Fn() + Send + Sync>);
-            #[cfg(target_env = "ohos")]
-            {
-                octos_app_transport::embedded::spawn_with_waker(config, waker,
-                    std::sync::Arc::new(|message| log::info!("{message}")))
-            }
-            #[cfg(not(target_env = "ohos"))]
-            // stdio spawns `octos serve --stdio` as a child; ws dials a socket.
+            // The shell's kernel (shared, restartable); ws dials a socket.
             if stdio_transport {
-                stdio::spawn_with_waker(config, waker)
+                kernel::spawn_with_waker(config, waker)
             } else {
                 ws::spawn_with_waker(config, waker)
             }

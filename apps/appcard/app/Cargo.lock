@@ -5026,6 +5026,7 @@ dependencies = [
  "octoscript-node",
  "octoscript-ui-l0",
  "octosense-llm-config",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "robius-open",
  "serde",
@@ -5063,14 +5064,13 @@ dependencies = [
  "chrono",
  "futures-util",
  "log",
- "octos-cli",
  "octos-core",
+ "octosense-octos-core",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.24.0",
- "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -5438,6 +5438,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18 (registry+https://github.com/rust-lang/crates.io-index)",
  "url",
+]
+
+[[package]]
+name = "octosense-octos-core"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "octos-cli",
+ "octosense-llm-config",
+ "serde_json",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

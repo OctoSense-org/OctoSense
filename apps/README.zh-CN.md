@@ -13,9 +13,13 @@
 - **邮件的宿主服务**（`apps/mail/host-service`）是 Mail 的 Rust 部分：
   IMAP/POP3/SMTP、账户存储和登录面板，由 Shell 运行。应用拿到的是邮件，
   永远拿不到密码或 socket。
+- **octos 内核服务**（`crates/octos-core`，crate `octosense-octos-core`）：
+  把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务。
+  Shell 每个进程按需启动一个内核；AI 服务商应用（通过 `llm` 服务）配置它；
+  AppCard 等使用方连接到它。见 [octos 内核](#octos-内核)。
 - **AppCard**（`apps/appcard`）是唯一的原生应用：“Ask anything”助手，
-  一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在
-  [octos](https://github.com/octos-org/octos) Agent 内核之上。
+  一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
+  octos 内核之上。
 
 在本仓库工作的 Agent 规则见 [AGENTS.md](AGENTS.md) 和
 [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md)。
@@ -95,8 +99,12 @@ Shell 会：
 3. 链接 `octosense-mail-service`（对固定检出的 path 依赖）并在启动时注册：
    真实账户用 `register()`，Shell 的应用配置中 `mail_demo: true` 时用
    `register_demo()`。Shell 链接的 App Hub 版本与该服务为 `octosense-appstore` 引用的版本相同，因此只有一个宿主服务注册表。
-4. 以 `default-features = false` 链接 AppCard 的 `octos-app`，并通过其
-   `AppShell` 控件挂载（见 [AppCard 助手](#appcard-助手)）。
+4. 链接 `octosense-octos-core`（两个 Shell 的 feature `octos-core`，默认开启），
+   在启动时配置内核；以内核的 core 目录注册 `llm` 服务（开启其 `octos-core`
+   feature），这样修改服务商会重启内核。见 [octos 内核](#octos-内核)。
+5. 可选（需显式开启 `app-appcard`）以 `default-features = false` 链接 AppCard
+   的 `octos-app`，并通过其 `AppShell` 控件挂载（见 [AppCard 助手](#appcard-助手)）；
+   它连接的是同一个内核。
 
 本仓库的改动只有在 Shell 升级固定版本（在该 Shell 仓库中提 PR）之后才会到达设备。
 
@@ -105,6 +113,7 @@ Shell 会：
 ```
 apps/<name>/bundle/          隔离运行的脚本应用：manifest.json、main.splash、图片资源
 apps/mail/host-service/      octosense-mail-service，`mail` 宿主服务（Rust）
+crates/octos-core/            octosense-octos-core：Shell 的 octos 内核（每进程一个，共享）
 apps/appcard/                原生 AppCard 助手
   app/                       Cargo workspace：octos-app 及 store/transport/render crate
   a2app/                     Splash 卡片记忆（需求规格、控件模式、lint 规则），编译进应用
@@ -115,6 +124,7 @@ apps/appcard/                原生 AppCard 助手
   docs/                      架构、构建和评审笔记
   native-runtime.lock.json   AppCard 构建所用的 Octoscript-Makepad 版本
 .github/workflows/appcard.yml   apps/appcard 的 CI
+.github/workflows/octos-core.yml   crates/octos-core 的 CI
 ```
 
 ## 系统应用的 bundle
@@ -220,6 +230,33 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
 
+## octos 内核
+
+octos Agent 内核是 **Shell 服务**，不属于任何应用。
+[`crates/octos-core`](crates/octos-core)（`octosense-octos-core`）就是这个服务；
+Shell 默认链接它（cargo feature `octos-core`，在 `mobile-apps` 和原生移动构建中
+同样开启）：
+
+- **每进程一个，按需启动。** 第一个使用方调用 `connect()` 时启动：桌面和
+  Android 上以子进程运行 `octos serve --stdio`（Android 上是 APK 内置的
+  `liboctos.so`），OpenHarmony 上在进程内运行标准内核。之后的使用方共享它；
+  每个使用方只收到自己请求的回复和自己会话的通知。最后一个使用方离开时内核停止。
+- **由 AI 服务商配置。** `llm` 宿主服务写入内核的 profile
+  `<core_dir>/profiles/_main.json` 以及密钥（macOS 钥匙串 `octos` 服务配合
+  `keychain:` 标记，Linux 上是 `<core_dir>/secrets/`，其他平台写在 profile 中），
+  然后调用 `restart()`：正在运行的内核停止，使用方重新连接，新内核读取新的服务商。
+- **使用方。** AppCard（需显式开启）通过其传输层的 `kernel` 模块连接；Rinx 的
+  原生小程序宿主可以用同样方式拿到自己的连接，而不是共用 AppCard 的连接。
+- **core 目录。** Shell 指定的目录，否则 `$OCTOS_APP_CORE_DIR`，否则手机上是
+  `<应用数据目录>/octos-home/.octos`，否则 `$HOME/octos-home/.octos`。桌面上只有
+  配置了内核二进制（Shell 指定，或 `$OCTOS_APP_CORE_BIN`）时才运行内核；没有时
+  服务商设置照样保存。
+
+测试：`cd crates/octos-core && cargo test`；有编译好的 `octos` 时，
+`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel` 会用
+`octosense-llm-config` 写入的 profile 启动真实内核，并在修改服务商后重启它。
+详见 [crates/octos-core/README.md](crates/octos-core/README.md)。
+
 ## AppCard 助手
 
 即“Ask anything”磁贴。你输入一个请求；路由大脑（AMA）选择或组合一个应用 Agent；
@@ -229,12 +266,13 @@ octos UI Protocol v1 与 octos 通信。
 - **代码**：`apps/appcard/app`，一个 Cargo workspace，包括 `octos-app`（路由、
   组合、多 Agent 调度、Splash 渲染与校验、L0 卡片生成、WebView 浮层）、
   `octos-app-store`（状态 reducer，不依赖 Makepad）、`octos-app-transport`
-  （octos UI Protocol 的 WebSocket 和 REST 客户端）和 `octos-app-render`
-  （流式 markdown 渲染）。
+  （经由 Shell 内核、WebSocket 或 REST 的 octos UI Protocol 客户端）和
+  `octos-app-render`（流式 markdown 渲染）。
 - **octos**：所有 octos crate 都来自 git `octos-org/octos`，版本为
-  `apps/appcard/app/Cargo.toml` 中唯一的 rev（目前是 `18fcd3f1`，在合入 octos
-  `main` 之前位于 `appcard/mate70-on-main` 分支）。同样依赖 octos 的 Shell 必须
-  使用同一 rev。
+  `apps/appcard/app/Cargo.toml` 中唯一的 rev（目前是 octos `main` 上的
+  `6ad76e5c`）；`crates/octos-core` 在 OpenHarmony 上引用同一 rev。同样依赖 octos
+  的 Shell 必须使用同一 rev。AppCard 不再自己启动内核，而是连接 Shell 的内核
+  （见 [octos 内核](#octos-内核)）。
 - **Makepad**：不内置。Makepad、Octoscript 和 Octoscript-Makepad 是与本仓库
   *同级*的检出，版本由 `apps/appcard/native-runtime.lock.json` 选定。
 
@@ -291,6 +329,8 @@ Shell 的 `system-apps.json` 中加入它。
 | 对象 | 方法 |
 | --- | --- |
 | Mail 服务 | 在链接了它的 Shell workspace 中：`cargo test -p octosense-mail-service`（ROM：在 `home/` 中）。钥匙串测试默认忽略：`cargo test -p octosense-mail-service -- --ignored keychain` |
+| octos 内核服务 | `cd crates/octos-core && cargo test`（替身内核）；`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel`（真实内核）；CI 见 `octos-core.yml` |
+| `llm` 服务 | 在 `apps/ai-providers` 中：`cargo test --workspace --features octosense-llm-service/octos-core` |
 | AppCard | 上文的命令；CI 见 `appcard.yml` |
 | 脚本 bundle | 在 `card-host` 和 Shell 中手动测试，通过 `MAKEPAD_REMOTE` 操控。本仓库暂无自动化 UI 测试 |
 

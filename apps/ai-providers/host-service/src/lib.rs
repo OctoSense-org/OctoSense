@@ -61,8 +61,10 @@
 //!
 //! State is the kernel's profile, `<core_dir>/profiles/_main.json`: its
 //! `config.llm` (primary and fallbacks) and the key env vars in
-//! `config.env_vars`. Keys go to the [`vault`]; every change calls the
-//! shell's `on_changed` hook so it can restart the AppCard kernel.
+//! `config.env_vars`. Keys go to the [`vault`]; every change restarts the
+//! shell's octos kernel (with the `octos-core` feature:
+//! `octosense_octos_core::restart()`, a no-op when none runs) and then calls
+//! the shell's `on_changed` hook.
 use octosense_appstore::services::{close_sheet_later, HostService, Replier, ServiceCall, ServiceHost};
 use octosense_llm_config::{catalog, profile, qr, registry, Provider};
 use serde_json::{json, Value};
@@ -132,16 +134,17 @@ pub trait QrImagePicker: Send + Sync {
 }
 
 /// Called after the provider set changed on disk (a save, a removal, an
-/// import): the shell restarts the AppCard kernel so it reads the new
-/// profile. Runs on whichever thread made the change.
+/// import), after the service restarted the shell's octos kernel (feature
+/// `octos-core`). Runs on whichever thread made the change.
 pub type OnChanged = Arc<dyn Fn() + Send + Sync>;
 
 /// What a shell hands the service. `Options::default()` is what
 /// [`register`] uses.
 #[derive(Clone, Default)]
 pub struct Options {
-    /// The kernel's octos home, holding `profiles/_main.json`. `None`:
-    /// `octosense_llm_config::profile::default_core_dir()`.
+    /// The kernel's octos home, holding `profiles/_main.json`. `None`: the
+    /// shell's octos kernel's (`octosense_octos_core::core_dir()`, feature
+    /// `octos-core`), else `octosense_llm_config::profile::default_core_dir()`.
     pub core_dir: Option<PathBuf>,
     /// Where keys go. `None`: [`vault::platform`] for the core dir.
     pub vault: Option<Arc<dyn Vault>>,
@@ -203,11 +206,7 @@ pub fn register() {
 
 /// Offer the service as `options` say. A second call replaces the first.
 pub fn register_with(options: Options) {
-    let core_dir = options
-        .core_dir
-        .clone()
-        .or_else(profile::default_core_dir)
-        .unwrap_or_else(|| std::env::temp_dir().join("octos-home/.octos"));
+    let core_dir = resolved_core_dir(&options);
     let vault = options.vault.clone().unwrap_or_else(|| vault::platform(&core_dir));
     *IMAGE_WAITER.lock().unwrap() = None;
     octosense_appstore::services::register_host_service(Box::new(LlmService {
@@ -220,6 +219,37 @@ pub fn register_with(options: Options) {
         generation: 0,
         qr_lifetime: qr_lifetime(options.qr_lifetime_secs),
     }));
+}
+
+/// Where the profile lives: the shell's choice, else the octos kernel's core
+/// dir, else the default.
+fn resolved_core_dir(options: &Options) -> PathBuf {
+    let kernel: Option<PathBuf> = {
+        #[cfg(feature = "octos-core")]
+        {
+            octosense_octos_core::core_dir()
+        }
+        #[cfg(not(feature = "octos-core"))]
+        {
+            None
+        }
+    };
+    options
+        .core_dir
+        .clone()
+        .or(kernel)
+        .or_else(profile::default_core_dir)
+        .unwrap_or_else(|| std::env::temp_dir().join("octos-home/.octos"))
+}
+
+/// The provider set changed on disk: the kernel reads it only when it
+/// starts, so restart it (if it runs), then tell the shell.
+fn changed(on_changed: &Option<OnChanged>) {
+    #[cfg(feature = "octos-core")]
+    octosense_octos_core::restart();
+    if let Some(changed) = on_changed {
+        changed();
+    }
 }
 
 /// What workers need: the profile, its vault, and one lock so two changes
@@ -252,9 +282,7 @@ impl Shared {
             return Ok(answer);
         }
         store.save(list, &keys)?;
-        if let Some(changed) = &self.on_changed {
-            changed();
-        }
+        changed(&self.on_changed);
         Ok(answer)
     }
 }
@@ -988,5 +1016,29 @@ mod tests {
         assert_eq!(qr_lifetime(Some(10)), 10);
         assert_eq!(qr_lifetime(Some(0)), 3);
         assert_eq!(qr_lifetime(Some(86_400)), QR_LIFETIME_SECS);
+    }
+}
+
+#[cfg(all(test, feature = "octos-core"))]
+mod octos_core_tests {
+    use super::*;
+
+    /// The service and the kernel agree on the profile: without a shell
+    /// choice the service writes under the kernel's core dir, and a shell's
+    /// explicit dir still wins.
+    #[test]
+    fn the_profile_is_the_kernels_unless_the_shell_says_otherwise() {
+        if let Some(kernel) = octosense_octos_core::core_dir() {
+            assert_eq!(resolved_core_dir(&Options::default()), kernel);
+        }
+        let explicit = std::env::temp_dir().join("llm-explicit-core");
+        assert_eq!(resolved_core_dir(&Options::default().core_dir(&explicit)), explicit);
+        // A change with no kernel running restarts nothing and still calls
+        // the shell's hook.
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = called.clone();
+        changed(&Some(Arc::new(move || flag.store(true, std::sync::atomic::Ordering::SeqCst))));
+        assert!(called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!octosense_octos_core::status().running);
     }
 }

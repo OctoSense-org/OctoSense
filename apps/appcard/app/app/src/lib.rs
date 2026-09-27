@@ -19,7 +19,7 @@ use makepad_widgets::makepad_draw::svg::{
 use makepad_widgets::*;
 use octos_app_store::auth::ProfileId;
 use octos_app_transport::{
-    Capabilities, ProfileId as TransportProfileId, SecretString, StdioSpawn, TransportConfig,
+    Capabilities, ProfileId as TransportProfileId, SecretString, TransportConfig,
 };
 use streaming_markdown_kit::{
     streaming_display_with_latex_autowrap_remend, wrap_bare_latex, SanitizeOptions,
@@ -802,24 +802,17 @@ fn youtube_reference_card() -> String {
     html
 }
 
-/// The embedded kernel's HOME on Android: `<app files dir>/octos-home`.
-/// Derived from the HOME env var (set at startup from `cx.get_data_dir()`),
-/// NOT a hard-coded package path: the same sources build several package ids
-/// (`dev.makepad.octos_app`, `dev.makepad.octos_one`, …), and a hard-coded
-/// path that names a DIFFERENT installed package points at that app's
-/// private dir, which per-app SELinux isolation makes inaccessible —
-/// `create_dir_all` fails and `Command::spawn`'s chdir then dies with
-/// EACCES ("Permission denied"), so the embedded kernel never starts even
-/// though the binary is fine. The literal below is only a fallback for an
-/// unset/empty HOME (i.e. startup never ran — already broken).
+/// The kernel's HOME on Android: `<app files dir>/octos-home`, as the
+/// shell's octos core resolves it (`octosense_octos_core::home()`: the
+/// shell's data dir, else `$HOME`, set at startup from `cx.get_data_dir()`).
+/// Never a hard-coded package path: the same sources build several package
+/// ids, and another package's private dir is inaccessible (per-app SELinux
+/// isolation), so the kernel would never start. The literal below is only a
+/// fallback for an unset/empty HOME (i.e. startup never ran — already broken).
 #[cfg(target_os = "android")]
 fn kernel_home() -> std::path::PathBuf {
-    if let Ok(h) = std::env::var("HOME") {
-        if !h.is_empty() {
-            return std::path::PathBuf::from(h).join("octos-home");
-        }
-    }
-    std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home")
+    octosense_octos_core::home()
+        .unwrap_or_else(|| std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home"))
 }
 
 /// Root of the deployed app-cards tree on device. The current octos main this
@@ -6209,11 +6202,11 @@ impl App {
         // (see `OctosUiAgent`'s `CapabilityNegotiated` arm). Only the public
         // version probe stays on REST.
         #[cfg(not(target_env = "ohos"))]
-        if transport_config.stdio.is_none() {
+        if !transport_config.local_kernel {
             Self::probe_version(Self::build_rest_client(&transport_config));
         }
         #[cfg(target_env = "ohos")]
-        log::info!("native core version={}", octos_app_transport::embedded::CORE_VERSION);
+        log::info!("native core version={}", octosense_octos_core::EMBEDDED_VERSION);
         // Reflect the signed-in identity in the top bar: the Profile pill
         // previously shipped its "(no profile)" stub forever.
         let pid_str = transport_config.profile_id.0.clone();
@@ -6317,7 +6310,7 @@ impl App {
         // Desktop mobile testing uses the same local-core OUP connection as
         // Android. It needs neither an HTTP server nor a desktop bearer.
         #[cfg(not(mobile))]
-        if let Some(stdio) = Self::stdio_spawn() {
+        if Self::local_kernel() {
             return TransportConfig {
                 base_url: url::Url::parse("http://127.0.0.1").unwrap(),
                 bearer: SecretString::new(String::new()),
@@ -6326,7 +6319,7 @@ impl App {
                 cursor_file: Self::cursor_file_path(),
                 requested_capabilities: Capabilities::requested(),
                 workspace_cwd: None,
-                stdio: Some(stdio),
+                local_kernel: true,
             };
         }
         // An in-process core needs no HTTP bearer. In particular, Linux
@@ -6341,7 +6334,7 @@ impl App {
             cursor_file: Self::cursor_file_path(),
             requested_capabilities: Capabilities::requested(),
             workspace_cwd: None,
-            stdio: None,
+            local_kernel: true,
         };
 
         // 1. server.json — happy path on a configured machine.
@@ -6357,7 +6350,7 @@ impl App {
                     cursor_file: Self::cursor_file_path(),
                     requested_capabilities: Capabilities::requested(),
                     workspace_cwd: Self::current_workspace_cwd(),
-                    stdio: Self::stdio_spawn(),
+                    local_kernel: Self::local_kernel(),
                 };
             } else {
                 log::warn!(
@@ -6374,14 +6367,14 @@ impl App {
                 url::Url::parse("https://localhost:8080").expect("static URL is valid")
             });
         let bearer = SecretString::new(std::env::var("OCTOS_BEARER").unwrap_or_default());
-        let stdio = Self::stdio_spawn();
+        let local_kernel = Self::local_kernel();
         // The embedded kernel's local profile is `_main` (its on-disk profile
         // id, where the LLM provider config lives) — `session/open` naming
         // anything else (the old `default` fallback) is rejected with
         // "profile 'default' is not configured for this AppUI session".
         let profile_id = TransportProfileId::new(
             std::env::var("OCTOS_PROFILE_ID").unwrap_or_else(|_| {
-                if stdio.is_some() {
+                if local_kernel {
                     "_main".to_string()
                 } else {
                     "default".to_string()
@@ -6396,7 +6389,7 @@ impl App {
             cursor_file: Self::cursor_file_path(),
             requested_capabilities: Capabilities::requested(),
             workspace_cwd: Self::current_workspace_cwd(),
-            stdio,
+            local_kernel,
         }
     }
 
@@ -6412,221 +6405,22 @@ impl App {
             .map(|h| std::path::PathBuf::from(h).join("a2app-cursors.json"))
     }
 
-    /// Build the stdio-transport spawn spec. On Android the app runs the
-    /// bundled `octos` binary as `serve --stdio` instead of dialing a
-    /// WebSocket: no `octos serve` daemon, no TCP port. `untrusted_app` can
-    /// only exec from its nativeLibraryDir, so the binary must ship there as a
-    /// `lib*.so`; we locate that dir from our own mapped `libmakepad.so`.
-    /// `HOME` points at an app-private octos home whose
-    /// `.config/octos/config.json` carries the provider + inline key — so the
-    /// app process never holds the LLM secret. Returns `None` (⇒ WebSocket) on
-    /// desktop, or on Android when the bundled binary is absent (safe
-    /// fallback: the app still boots against a remote `octos serve`).
-    /// Locate the embedded octos kernel binary: (1) the APK-bundled lib in our
-    /// nativeLibraryDir, (2) a staged copy in the app's private files dir. (2)
-    /// exists for /system/priv-app installs: PackageManager does NOT extract
-    /// native libs for system apps, and the system partition (or the emulator's
-    /// overlayfs scratch) is too small for the 80MB+ kernel — so a priv-app
-    /// deployment ships libmakepad/libstd beside the APK and stages
-    /// liboctos.so into the app's data dir out-of-band (see
-    /// docs/SYSTEM-APP.md). The app itself is a full SYSTEM+PERSISTENT
-    /// component either way.
-    #[cfg(target_os = "android")]
-    fn find_embedded_kernel(
-        lib_dir: &std::path::Path,
-        _home: &std::path::Path,
-    ) -> Option<std::path::PathBuf> {
-        // The APK's native-lib dir, and ONLY that. A copy under the app's own
-        // octos-home cannot be exec'd on Android 10+: W^X forbids executing
-        // from app-writable storage, so the spawn dies with
-        // `avc: denied { execute_no_trans }` — measured on a OnePlus 6T, where
-        // stdio found the file, spawned it, and SELinux killed it. Keeping that
-        // candidate read as a supported side-load and was not one. (The ohos
-        // arm below still lists it: untested there, so left alone.)
-        [lib_dir.join("liboctos.so")]
-            .into_iter()
-            .find(|p| p.exists())
-    }
-
-    /// True when an embedded kernel is available — the app then talks to a
-    /// trusted local process over stdio and needs NO HTTP auth (see the boot
-    /// decision in `handle_startup`).
-    #[cfg(target_os = "android")]
-    fn has_embedded_kernel() -> bool {
-        let home = kernel_home();
-        Self::native_lib_dir()
-            .map(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home).is_some())
-            .unwrap_or(false)
-    }
-
-    #[cfg(target_os = "android")]
-    fn stdio_spawn() -> Option<StdioSpawn> {
-        let lib_dir = Self::native_lib_dir()?;
-        let home = kernel_home();
-        let Some(program) = Self::find_embedded_kernel(&lib_dir, &home) else {
-            log::warn!(
-                "stdio: bundled octos not found under {}; using WebSocket transport",
-                lib_dir.display()
-            );
-            return None;
-        };
-        // Ensure HOME exists BEFORE spawning: `Command::spawn` chdir's into
-        // `cwd` before exec, so a missing octos-home makes the spawn fail with
-        // ENOENT ("No such file or directory") even though the binary is fine —
-        // and since the server never starts, it never creates octos-home, so the
-        // failure is permanent once the dir is absent (e.g. after `pm clear`).
-        // Creating it here makes the spawn robust regardless of data state.
-        if let Err(e) = std::fs::create_dir_all(&home) {
-            log::warn!("stdio: could not create HOME {}: {e}", home.display());
-        }
-        Self::ensure_kernel_memory_budget(&home);
-        log::info!("stdio: octos={} HOME={}", program.display(), home.display());
-        // OCTOS_SKILLS_PATH adds the a2app memory dir as a skill READ-ZONE
-        // (config.rs plugin_dirs_from_project → skill_read_zones), so the
-        // splash-gen sub-agent's read_file can reach it by absolute path even
-        // though file tools are otherwise fenced to the per-session workspace.
-        let a2app = home.join("a2app").to_string_lossy().into_owned();
-        let mut env = vec![
-            ("HOME".to_owned(), home.to_string_lossy().into_owned()),
-            ("OCTOS_SKILLS_PATH".to_owned(), a2app),
-            // TEMP diagnostics: surface the embedded server's INFO trace
-            // (subagent token counts, stop_reason) to logcat via the
-            // stderr→log::info bridge, to pin the serve-relay truncation.
-            ("RUST_LOG".to_owned(), "info".to_owned()),
-            // Byte-stable system prompts across sessions: the per-session
-            // workspace-path hint is the ONLY volatile byte in the card
-            // agents' prompts and it kills server-side KV-cache prefix reuse
-            // (wire-measured: 35% shared prefix with it, ~99% without). Card
-            // agents never do file work, so the phone drops the hint.
-            ("OCTOS_OMIT_WORKSPACE_HINT".to_owned(), "1".to_owned()),
-        ];
-        // Route octos's LLM HTTPS through a proxy when the device itself has no
-        // internet route — e.g. an `adb reverse` tunnel to the dev host, which
-        // reaches api.z.ai. Set via launch intent extra `makepad.OCTOS_PROXY`
-        // (→ env MAKEPAD_OCTOS_PROXY, e.g. "http://127.0.0.1:8899"). reqwest
-        // honours HTTP(S)_PROXY and CONNECT-tunnels HTTPS through it.
-        if let Ok(proxy) = std::env::var("MAKEPAD_OCTOS_PROXY") {
-            let proxy = proxy.trim().to_owned();
-            if !proxy.is_empty() {
-                log::info!("stdio: octos LLM proxy = {proxy}");
-                for k in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY"] {
-                    env.push((k.to_owned(), proxy.clone()));
-                }
+    /// Whether the agent talks to the shell's octos kernel
+    /// (`octosense_octos_core`) rather than dialing a WebSocket: on Android
+    /// when the APK bundles `liboctos.so`, on OpenHarmony always (the core is
+    /// linked in), on a desktop when a kernel binary is configured (the
+    /// shell's, or `$OCTOS_APP_CORE_BIN`; `$OCTOS_APP_CORE_DIR` names its
+    /// data dir). The kernel is the shell's: one per process, shared with its
+    /// other consumers; its launch (HOME, environment, the kernel config's
+    /// memory budget) is the core's. Otherwise the app boots against a remote
+    /// `octos serve`.
+    fn local_kernel() -> bool {
+        match octosense_octos_core::launch() {
+            Ok(_) => true,
+            Err(why) => {
+                log::info!("kernel: {why}; using the WebSocket transport");
+                false
             }
-        }
-        Some(StdioSpawn {
-            program,
-            args: vec!["serve".to_owned(), "--stdio".to_owned()],
-            env,
-            cwd: Some(home),
-        })
-    }
-
-    /// Ensure the KERNEL config (`octos-home/.config/octos/config.json`)
-    /// carries a `memory.max_inject_tokens` big enough for the a2app card
-    /// memory. octos's built-in default is 2500 tokens; the assembled
-    /// `app-cards/` tree is ~23k and grows with every drop-in app, and an
-    /// over-budget tree is truncated SILENTLY at inject time — the app agent
-    /// then never sees the framework manual/exemplars, improvises binding
-    /// syntax, and cards render with empty values. The knob moved out of the
-    /// profile JSON (the old BUILDING-ANDROID.md sed targeted a `_main.json`
-    /// key the current profile schema no longer has), so the app maintains it
-    /// in the one place the current kernel reads it from: the kernel config
-    /// file. Config file rather than spawn env on purpose — env propagation
-    /// on Android is not reliable across process restarts/re-exec.
-    /// Merge-only: every other key is preserved, an EXPLICIT existing value
-    /// wins (operators can tune it), and an unparseable file is left alone
-    /// (the kernel surfaces the parse error itself).
-    #[cfg(target_os = "android")]
-    fn ensure_kernel_memory_budget(home: &std::path::Path) {
-        const INJECT_BUDGET_TOKENS: u64 = 40_000;
-        let path = home.join(".config/octos/config.json");
-        let mut root = match std::fs::read(&path) {
-            Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
-                Ok(v) if v.is_object() => v,
-                _ => {
-                    log::warn!(
-                        "stdio: {} is not a JSON object; memory budget NOT ensured",
-                        path.display()
-                    );
-                    return;
-                }
-            },
-            Err(_) => serde_json::json!({}),
-        };
-        let mut changed = false;
-        {
-            let memory = root
-                .as_object_mut()
-                .unwrap()
-                .entry("memory")
-                .or_insert_with(|| serde_json::json!({}));
-            match memory.as_object_mut() {
-                // Upgrade an ABSENT or too-LOW budget. A device provisioned
-                // under the old flow can carry an explicit `2500` (octos's
-                // pre-app-cards default) — that silently truncates the ~23k
-                // tree, so treat any numeric value below our floor the same as
-                // absent. A value >= the floor (an operator's deliberate tune)
-                // is respected; a non-numeric value is left alone.
-                Some(memory)
-                    if memory
-                        .get("max_inject_tokens")
-                        // as_f64 accepts both ints and JSON floats (2500.0) — a
-                        // previously-provisioned float default was otherwise
-                        // read as "unparseable, present" and left un-upgraded.
-                        .and_then(|v| v.as_f64())
-                        .map(|n| n < INJECT_BUDGET_TOKENS as f64)
-                        .unwrap_or(!memory.contains_key("max_inject_tokens")) =>
-                {
-                    memory.insert(
-                        "max_inject_tokens".into(),
-                        serde_json::json!(INJECT_BUDGET_TOKENS),
-                    );
-                    changed = true;
-                }
-                Some(_) => {}
-                None => log::warn!(
-                    "stdio: kernel config `memory` is not an object; leaving it alone"
-                ),
-            }
-        }
-        // The AMA composer session is cwd-hinted into the app-cards memory
-        // tree; without this knob the kernel relocates that session's
-        // transcripts into the card tree (`appui.sessions_in_cwd` defaults
-        // true). Same merge contract as the memory budget: absent-only, an
-        // explicit operator value wins.
-        {
-            let appui = root
-                .as_object_mut()
-                .unwrap()
-                .entry("appui")
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(appui) = appui.as_object_mut() {
-                if !appui.contains_key("sessions_in_cwd") {
-                    appui.insert("sessions_in_cwd".into(), serde_json::json!(false));
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            return;
-        }
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let bytes = match serde_json::to_vec_pretty(&root) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                log::warn!("stdio: serialize kernel config: {e}");
-                return;
-            }
-        };
-        match std::fs::write(&path, bytes) {
-            Ok(()) => log::info!(
-                "stdio: set memory.max_inject_tokens={INJECT_BUDGET_TOKENS} in {}",
-                path.display()
-            ),
-            Err(e) => log::warn!("stdio: write {}: {e}", path.display()),
         }
     }
 
@@ -6646,41 +6440,6 @@ impl App {
             }
         }
         None
-    }
-
-    /// HarmonyOS links the core into libmakepad; exec from HAP libs is denied.
-    #[cfg(target_env = "ohos")]
-    fn has_embedded_kernel() -> bool { true }
-
-    #[cfg(target_env = "ohos")]
-    fn stdio_spawn() -> Option<StdioSpawn> { None }
-
-    #[cfg(not(mobile))]
-    fn stdio_spawn() -> Option<StdioSpawn> {
-        // Explicit opt-in leaves the normal desktop server connection intact.
-        let program = std::path::PathBuf::from(std::env::var_os("OCTOS_APP_CORE_BIN")?);
-        let data = std::path::PathBuf::from(std::env::var_os("OCTOS_APP_CORE_DIR")?);
-        if !program.is_file() {
-            log::error!("Configured local Octos core binary is missing");
-            return None;
-        }
-        let workspace = data.join("workspace");
-        if let Err(error) = std::fs::create_dir_all(&workspace) {
-            log::error!("Cannot create local Octos workspace: {error}");
-            return None;
-        }
-        Some(StdioSpawn {
-            program,
-            args: vec!["serve".into(), "--stdio".into(), "--data-dir".into(),
-                data.to_string_lossy().into_owned(), "--config".into(),
-                data.join("config.json").to_string_lossy().into_owned()],
-            env: vec![
-                ("OCTOS_HOME".into(), data.to_string_lossy().into_owned()),
-                ("OCTOS_OMIT_WORKSPACE_HINT".into(), "1".into()),
-                ("RUST_LOG".into(), "info".into()),
-            ],
-            cwd: Some(workspace),
-        })
     }
 
     /// Locate the app's nativeLibraryDir by scanning `/proc/self/maps` for our
@@ -6752,7 +6511,7 @@ impl App {
 
     fn current_workspace_cwd() -> Option<String> {
         // Android: leave the per-session workspace default. a2app memory is made
-        // reachable via OCTOS_SKILLS_PATH (a skill read-zone) in stdio_spawn(),
+        // reachable via OCTOS_SKILLS_PATH (a skill read-zone) in the core's launch,
         // which is honored regardless of the workspace (the `session.workspace_cwd`
         // path was not applied by the embedded serve).
         #[cfg(target_os = "android")]
@@ -8642,7 +8401,9 @@ impl MatchEvent for App {
                 let (kind, message) = match crate::app::login::apply_provision_config_json(&json) {
                     Ok(what) => {
                         log::info!("QR provisioned LLM: {what}");
-                        self.connect_transport(cx); // respawn kernel → reads new _main.json
+                        // Provisioning restarted the shared kernel so it
+                        // reads the new _main.json; a fresh agent, as before.
+                        self.connect_transport(cx);
                         self.clear_chat(cx);
                         (
                             octos_app_store::toasts::ToastKind::ReconnectSuccess,
@@ -9307,10 +9068,7 @@ impl MatchEvent for App {
         // listens on in stdio mode — so sign-in always failed, `clear_chat`
         // never ran, no sessions were created, and every composer submit was
         // silently dropped (dead app on a fresh embedded-kernel install).
-        #[cfg(mobile)]
-        let authed = Self::has_embedded_kernel() || self.boot_is_authed();
-        #[cfg(not(mobile))]
-        let authed = Self::stdio_spawn().is_some() || self.boot_is_authed();
+        let authed = Self::local_kernel() || self.boot_is_authed();
         self.show_login(cx, false);
         // W04 / M2 — make sure the chat_screen / content_screen pair
         // matches the boot navigation state (defaults to Home → Chat).

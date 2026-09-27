@@ -27,6 +27,15 @@ ureq = { version = "2", default-features = false, features = ["tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 rqrr = { version = "0.10", default-features = false }
 
+# The shell's octos kernel (crates/octos-core), with the `octos-core`
+# feature: the service then writes the profile under the kernel's core dir by
+# default and restarts the kernel after every change.
+octosense-octos-core = { path = "../../../crates/octos-core", optional = true }
+
+[features]
+default = []
+octos-core = ["dep:octosense-octos-core"]
+
 [dev-dependencies]
 png = "0.17"
 # A non-OctoSense QR for the image tests.
