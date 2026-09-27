@@ -5114,6 +5114,23 @@ impl App {
         } else {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
+        // A focus that couldn't land at launch (tile not yet drawn) is
+        // re-asserted for a process tile when its first frame arrives
+        // (PresentableDraw). A module tile sends no frame, so retry after the
+        // draw that may have created it; nothing forces a redraw, so a tile
+        // that still cannot take it just tries again on the next draw.
+        if let (Event::Draw(_), Some(client)) = (event, self.pending_focus) {
+            if self.module_host.is_module(client) {
+                let focused = self
+                    .desk(cx)
+                    .borrow_mut::<WmDesk>()
+                    .and_then(|mut d| d.with_tile(cx, client, |cx, v| v.focus_keyboard(cx)))
+                    .unwrap_or(false);
+                if focused {
+                    self.pending_focus = None;
+                }
+            }
+        }
         self.sync_phone_keyboard(cx);
         // Style reloads and phone capture teardown may retire draw lists during
         // this event. Remove their pass roots before upstream scans GPU demand.
