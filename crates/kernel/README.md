@@ -111,7 +111,7 @@ CI: `.github/workflows/octos-core.yml` (this crate) and
 ## One octos
 
 On OpenHarmony this crate links `octos-cli` from git octos-org/octos at the
-one rev AppCard pins (`6ad76e5c`). Move the two together. A workspace that
+one rev AppCard pins (`552767dd`). Move the two together. A workspace that
 builds it for OpenHarmony also needs AppCard's `nix` patch (octos rev
 `18fcd3f1`, see `apps/appcard/app/Cargo.toml`). On every other target it
 links no octos crate at all: the kernel is a separate binary.

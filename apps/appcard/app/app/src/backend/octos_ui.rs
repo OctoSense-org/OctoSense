@@ -975,6 +975,8 @@ impl Agent for OctosUiAgent {
             cwd: config.cwd.or_else(|| self.workspace_cwd.clone()),
             sandbox: None,
             after: None,
+            // AppCard declares no client slash commands (octos#2529).
+            client_commands: None,
         }));
         session_id
     }
@@ -1009,6 +1011,8 @@ impl Agent for OctosUiAgent {
             cwd: self.workspace_cwd.clone(),
             sandbox: None,
             after: None,
+            // AppCard declares no client slash commands (octos#2529).
+            client_commands: None,
         }));
         self.post(OutboundCommand::HydrateSession { session_id: key.0 });
         Some(session_id)

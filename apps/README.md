@@ -327,7 +327,7 @@ octos UI Protocol v1.
   kernel, a WebSocket or REST) and `octos-app-render` (streaming-markdown
   renderer).
 - **octos**: every octos crate comes from git `octos-org/octos` at the one
-  rev in `apps/appcard/app/Cargo.toml` (today `6ad76e5c`, octos `main`);
+  rev in `apps/appcard/app/Cargo.toml` (today `552767dd`, octos `main`);
   `crates/octos-core` names the same rev for OpenHarmony. A shell that also
   depends on octos must use the same rev. AppCard starts no kernel of its
   own: it connects to the shell's ([The octos kernel](#the-octos-kernel)).
@@ -411,7 +411,7 @@ plus an entry in each shell's `system-apps.json`.
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
-| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/octos-core`, configured by AI providers, used by AppCard and other consumers (one rev, `6ad76e5c`) |
+| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/octos-core`, configured by AI providers, used by AppCard and other consumers (one rev, `552767dd`) |
 
 ## Contributing
 

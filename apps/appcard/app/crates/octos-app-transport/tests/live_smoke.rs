@@ -71,6 +71,7 @@ async fn live_smoke_session_open_and_turn() {
         cwd: None,
         sandbox: None,
         after: None,
+        client_commands: None,
     };
     cmd_tx
         .send(OutboundCommand::OpenSession(open))
