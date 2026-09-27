@@ -73,7 +73,7 @@ def main():
 
     try:
         with tempfile.TemporaryDirectory(prefix="octosense-dnd-observer-") as tmp:
-            apk = builder.build_fixture(ROOT / "home/android/validation-fixtures/dnd-observer",
+            apk = builder.build_fixture(ROOT / "phone/android/validation-fixtures/dnd-observer",
                                         Path(tmp), run, args.java_home, args.sdk)
             adb("install", str(apk)); installed = True
             before = observe()["state"]
@@ -90,8 +90,8 @@ def main():
             if before != after["state"]:
                 raise RuntimeError("DND policy/rules changed during read-only synthetic ranking probe")
             if ui_scenario:
-                fixture = ROOT / "home/android/validation-fixtures/settings-accessibility"
-                contract = ROOT / "home/android/contracts/src/main/java/dev/makepad/octosense/contracts"
+                fixture = ROOT / "phone/android/validation-fixtures/settings-accessibility"
+                contract = ROOT / "phone/android/contracts/src/main/java/dev/makepad/octosense/contracts"
                 ui_apk = builder.build_fixture(fixture, Path(tmp) / "ui", run, args.java_home, args.sdk,
                                               (contract / "SystemSettings.java", contract / "Protocol.java",
                                                fixture.parent / "dnd-observer/DndNativeSnapshot.java"))

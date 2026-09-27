@@ -10,7 +10,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path('vendor/octosense/agent/src/dev/makepad/octosense/agent/IAgentPlatform.aidl')
-TARGET = ROOT / 'home/resources/android/java/dev/makepad/octosense/agent/IAgentPlatform.java'
+TARGET = ROOT / '../phone/resources/android/java/dev/makepad/octosense/agent/IAgentPlatform.java'
 
 
 def generate(sdk):

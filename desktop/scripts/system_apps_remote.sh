@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BIN=${OCTOSENSE_BIN:-$ROOT/target/release/octosense}
+BIN=${OCTOSENSE_BIN:-$ROOT/../target/release/octosense}
 WORK=${1:-$(mktemp -d -t octosense-system-apps)}
 mkdir -p "$WORK/home" "$WORK/octos" "$WORK/grabs"
 LOG=$WORK/host.log

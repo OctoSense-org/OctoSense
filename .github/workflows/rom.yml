@@ -1,0 +1,69 @@
+name: ROM
+
+# The OnePlus 6 ROM image side (rom/): product checks and the web installer.
+# The image itself is a LineageOS build outside CI. The product tests read
+# Home's Android sources, so phone/ changes run them too.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rom/**'
+      - 'phone/android/**'
+      - 'phone/resources/android/**'
+      - 'phone/tests/**'
+      - '.github/workflows/rom.yml'
+  pull_request:
+    paths:
+      - 'rom/**'
+      - 'phone/android/**'
+      - 'phone/resources/android/**'
+      - 'phone/tests/**'
+      - '.github/workflows/rom.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  product:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - working-directory: rom
+        run: python3 -m unittest discover -s tests -v
+      - name: Check generated Agent Binder client
+        working-directory: rom
+        run: python3 scripts/generate-agent-aidl.py --check --sdk "$ANDROID_HOME"
+      - working-directory: rom
+        run: bash -n scripts/stage-forks.sh scripts/publish-release.sh scripts/apply-to-tree.sh scripts/build-rom.sh
+
+  web-installer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: rom
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: rom/web-installer/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: rom/web-installer
+      - run: npm test
+        working-directory: rom/web-installer
+      - run: npx playwright install --with-deps chromium
+        working-directory: rom/web-installer
+      - run: npm run test:browser
+        working-directory: rom/web-installer
+      - run: python3 -m unittest discover -s tests -p test_installer_manifest.py -v
+      - run: bash -n scripts/release.sh

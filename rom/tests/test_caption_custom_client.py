@@ -22,6 +22,6 @@ public class AgentPlatformClient{public JSONObject state;public int writes,reads
             sources=[]
             for name,source in stubs.items():
                 path=Path(tmp)/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source);sources.append(path)
-            sources += [ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/controls/CaptionCustomSettings.java',ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/controls/CaptionCustomContract.java',ROOT/'home/resources/android/java/dev/makepad/octosense/CaptionCustomSettingsClient.java',ROOT/'tests/java/CaptionCustomClientTest.java']
+            sources += [ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/controls/CaptionCustomSettings.java',ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/controls/CaptionCustomContract.java',ROOT/'../phone/resources/android/java/dev/makepad/octosense/CaptionCustomSettingsClient.java',ROOT/'tests/java/CaptionCustomClientTest.java']
             for cmd in ([javac,'-d',tmp,*map(str,sources)],[java,'-cp',tmp,'dev.makepad.octosense.CaptionCustomClientTest']):
                 result=subprocess.run(cmd,capture_output=True,text=True,timeout=30);self.assertEqual(result.returncode,0,result.stdout+result.stderr)

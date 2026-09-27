@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-JAVA = ROOT / ".sources/makepad/tools/cargo_makepad/src/android/java/dev/makepad/android"
+JAVA = ROOT / "../.sources/makepad/tools/cargo_makepad/src/android/java/dev/makepad/android"
 
 def method(source, signature):
     start = source.index(signature)
@@ -49,7 +49,7 @@ class AndroidImeHandoffTest(unittest.TestCase):
             subprocess.run([java, "-cp", temporary, "AndroidImeHandoffTest"], check=True, capture_output=True, text=True)
 
     def test_real_android_batch_flushes_editor_updates_before_next_input(self):
-        source = ROOT / ".sources/makepad/platform/src/os/linux/android/android.rs"
+        source = ROOT / "../.sources/makepad/platform/src/os/linux/android/android.rs"
         rustc = shutil.which("rustc")
         if not source.exists() or not rustc:
             self.skipTest("installed runtime and Rust compiler required")
@@ -66,7 +66,7 @@ class AndroidImeHandoffTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True, capture_output=True, text=True)
 
     def test_real_editor_setters_sync_once_before_later_input(self):
-        source = ROOT / ".sources/makepad/widgets/src/text_input.rs"
+        source = ROOT / "../.sources/makepad/widgets/src/text_input.rs"
         rustc = shutil.which("rustc")
         if not source.exists() or not rustc:
             self.skipTest("installed runtime and Rust compiler required")
@@ -86,7 +86,7 @@ class AndroidImeHandoffTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True, capture_output=True, text=True)
 
     def test_real_editor_operations_order_against_programmatic_changes(self):
-        runtime = ROOT / ".sources/makepad/platform/src/os/linux/android"
+        runtime = ROOT / "../.sources/makepad/platform/src/os/linux/android"
         rustc = shutil.which("rustc")
         if not runtime.exists() or not rustc:
             self.skipTest("installed runtime and Rust compiler required")
@@ -104,7 +104,7 @@ class AndroidImeHandoffTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True, capture_output=True, text=True)
 
     def test_real_android_lifecycle_survives_bootstrap(self):
-        runtime = ROOT / ".sources/makepad/platform/src/os/linux/android"
+        runtime = ROOT / "../.sources/makepad/platform/src/os/linux/android"
         rustc = shutil.which("rustc")
         if not runtime.exists() or not rustc:
             self.skipTest("installed runtime and Rust compiler required")
@@ -127,7 +127,7 @@ class AndroidImeHandoffTest(unittest.TestCase):
             subprocess.run([str(binary)], check=True, capture_output=True, text=True)
 
     def test_real_android_dispatch_revalidates_keyboard_dismissal(self):
-        runtime = ROOT / ".sources/makepad/platform/src/os/linux/android"
+        runtime = ROOT / "../.sources/makepad/platform/src/os/linux/android"
         rustc = shutil.which("rustc")
         if not runtime.exists() or not rustc:
             self.skipTest("installed runtime and Rust compiler required")

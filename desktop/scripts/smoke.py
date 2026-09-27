@@ -202,7 +202,7 @@ def main():
                OCTOSENSE_SMOKE_BUILD_MARKER=str(marker))
     for key in ["MAKEPAD_HOME", "MAKEPAD_WM_ROOT", "MAKEPAD_WM_TEST_APP", "MAKEPAD_WM_THEME"]:
         env.pop(key, None)
-    command = ["cargo", "run"] if args.cargo_run else [str(root / "target/release/octosense")]
+    command = ["cargo", "run"] if args.cargo_run else [str(root.parent / "target/release/octosense")]
     log = artifacts / "host.log"
     port = None
     child_pids = []

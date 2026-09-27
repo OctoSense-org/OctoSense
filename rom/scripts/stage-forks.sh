@@ -1,15 +1,15 @@
 #!/bin/bash
 # On the host: put the OctoSense layer and the Quickstep, SystemUI and
 # PermissionController integrations into the tree. Run only while no build is active.
-#   stage-forks.sh <tree> [octosense-rom checkout]
+#   stage-forks.sh <tree> [rom/ of an OctoSense checkout]
 # The stagers refuse a tree whose fork files are neither pristine nor the expected
 # bytes, so an earlier staging (another palette, say) is reset to HEAD first.
 set -euo pipefail
 TREE=${1:?tree}
 ROM=${2:-$(cd "$(dirname "$0")/.." && pwd)}
-HOME_SOURCE="$ROM/home"
-if [ "$#" -gt 2 ]; then echo "usage: stage-forks.sh <tree> [octosense-rom checkout]" >&2; exit 2; fi
-test -f "$HOME_SOURCE/android/platform-build/stage-quickstep.py" || { echo "Home sources missing from $ROM/home" >&2; exit 1; }
+HOME_SOURCE="$ROM/../phone"
+if [ "$#" -gt 2 ]; then echo "usage: stage-forks.sh <tree> [rom/ of an OctoSense checkout]" >&2; exit 2; fi
+test -f "$HOME_SOURCE/android/platform-build/stage-quickstep.py" || { echo "Home sources missing from $ROM/../phone" >&2; exit 1; }
 # The Quickstep stager insists on the record of the upstream Quickstep build it
 # was reviewed against (quickstep-result.json beside upstream-TrebuchetQuickStep.apk).
 BASELINE=${QUICKSTEP_BASELINE:-${OCTOSENSE_BUILD_ROOT:-$HOME/octosense-adr0001}/exports/upstream-build/quickstep-result.json}

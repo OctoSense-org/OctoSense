@@ -58,7 +58,7 @@ class SettingsBrokerBoundaryTest(unittest.TestCase):
         broker = ROOT / "vendor/octosense/settings-broker" / path
         helper = ROOT / "vendor/octosense/agent" / path
         self.assertEqual(broker.read_bytes(), helper.read_bytes())
-        obsolete = ROOT / "home/android/platform-build/systemui/files/src/com/android/systemui/octosense"
+        obsolete = ROOT / "../phone/android/platform-build/systemui/files/src/com/android/systemui/octosense"
         self.assertFalse((obsolete / "IAccountSettings.aidl").exists())
         self.assertFalse((obsolete / "OctoSenseAccountSettingsService.java").exists())
         self.assertFalse((obsolete / "OctoSenseRemoveAccountActivity.java").exists())

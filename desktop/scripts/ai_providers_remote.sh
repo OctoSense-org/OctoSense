@@ -59,8 +59,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BIN=${OCTOSENSE_BIN:-$ROOT/target/release/octosense}
-READ_QR=${READ_QR_IMAGE:-$ROOT/target/release/examples/read_qr_image}
+BIN=${OCTOSENSE_BIN:-$ROOT/../target/release/octosense}
+READ_QR=${READ_QR_IMAGE:-$ROOT/../target/release/examples/read_qr_image}
 SRC=$(cd "$ROOT" && python3 -c 'import json; print(json.load(open("system-apps.json"))["source"])')
 FIXTURE=$(cd "$ROOT/$SRC/ai-providers/config/tests/fixtures" && pwd)/qr-a.png
 FIXTURE_PIN=7K3M-9QX2

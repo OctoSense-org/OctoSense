@@ -37,11 +37,11 @@ class StageForksTest(unittest.TestCase):
         shutil.copy2(ROOT / 'scripts/stage-forks.sh', scripts)
         # Only PermissionController is under test; isolate the other integrations.
         (scripts / 'apply-to-tree.sh').write_text('#!/bin/bash\nexit 0\n')
-        platform = self.rom / 'home/android/platform-build'
+        platform = self.rom.parent / 'phone/android/platform-build'
         platform.mkdir(parents=True)
         for script in ('stage-quickstep.py', 'stage-systemui.py'):
             (platform / script).write_text('# Unrelated stager fixture.\n')
-        source = (ROOT / 'home/android/platform-build/stage-permissioncontroller.py').read_text()
+        source = (ROOT / '../phone/android/platform-build/stage-permissioncontroller.py').read_text()
         pin = "REVISION = '" + STAGE.REVISION + "'"
         self.assertEqual(source.count(pin), 1)
         (platform / 'stage-permissioncontroller.py').write_text(

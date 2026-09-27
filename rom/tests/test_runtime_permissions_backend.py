@@ -8,7 +8,7 @@ import unittest
 from test_default_roles_backend import STUBS as ROLE_STUBS
 
 ROOT=Path(__file__).resolve().parents[1]
-NATIVE=ROOT/'home/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense'
+NATIVE=ROOT/'../phone/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense'
 STUBS=dict(ROLE_STUBS)
 STUBS['com/android/permissioncontroller/octosense/OctoSensePermissionOperationActivity.java']='package com.android.permissioncontroller.octosense; public final class OctoSensePermissionOperationActivity {}'
 STUBS['com/android/permissioncontroller/octosense/NativePermissionModel.java']='''package com.android.permissioncontroller.octosense;

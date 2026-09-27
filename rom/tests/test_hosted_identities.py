@@ -5,8 +5,8 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-JAVA = ROOT / "home/resources/android/java/dev/makepad/octosense/LauncherPlacements.java"
-TABLE = ROOT / "home/tests/fixtures/hosted_identities.json"
+JAVA = ROOT / "../phone/resources/android/java/dev/makepad/octosense/LauncherPlacements.java"
+TABLE = ROOT / "../phone/tests/fixtures/hosted_identities.json"
 
 
 def java_hosted_pattern():

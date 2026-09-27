@@ -25,7 +25,7 @@ class KeyboardSettingsTest(unittest.TestCase):
             for name,source in stubs.items():
                 path=Path(tmp)/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source);sources.append(path)
             sources+=list((ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/keyboards').glob('*.java'))
-            sources+=[ROOT/'home/resources/android/java/dev/makepad/octosense/KeyboardSettingsClient.java',ROOT/'tests/java/KeyboardPolicyTest.java',ROOT/'tests/java/KeyboardSettingsClientTest.java']
+            sources+=[ROOT/'../phone/resources/android/java/dev/makepad/octosense/KeyboardSettingsClient.java',ROOT/'tests/java/KeyboardPolicyTest.java',ROOT/'tests/java/KeyboardSettingsClientTest.java']
             commands=[[javac,'-d',tmp,*map(str,sources)],[java,'-cp',tmp,'dev.makepad.octosense.keyboards.KeyboardPolicyTest'],[java,'-cp',tmp,'dev.makepad.octosense.KeyboardSettingsClientTest']]
             for command in commands:
                 result=subprocess.run(command,capture_output=True,text=True)

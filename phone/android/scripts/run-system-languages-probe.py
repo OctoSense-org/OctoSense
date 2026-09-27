@@ -36,13 +36,13 @@ def main():
     def shell(*command):
         return adb("shell", shlex.join(str(part) for part in command))
 
-    builder_path = ROOT / "home/android/scripts/run-settings-accessibility-probe.py"
+    builder_path = ROOT / "phone/android/scripts/run-settings-accessibility-probe.py"
     spec = importlib.util.spec_from_file_location("settings_fixture_builder", builder_path)
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
     receipt = {"serial": args.serial, "scenario": args.scenario, "passed": False}
     with tempfile.TemporaryDirectory(prefix="octosense-system-languages-") as temp:
-        apk = builder.build_fixture(ROOT / "home/android/validation-fixtures/system-languages",
+        apk = builder.build_fixture(ROOT / "phone/android/validation-fixtures/system-languages",
                                     Path(temp), run, args.java_home, args.sdk)
         if args.build_only:
             receipt.update(build_passed=True)

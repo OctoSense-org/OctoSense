@@ -112,7 +112,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
     record = stage(args.tree.resolve(), Path(__file__).resolve().parent / 'permissioncontroller',
-                   root / 'vendor/octosense/settings/src/dev/makepad/octosense/roles/RolesSettingsContract.java',
+                   root / 'rom/vendor/octosense/settings/src/dev/makepad/octosense/roles/RolesSettingsContract.java',
                    args.report, args.check, args.verify)
     print(json.dumps({'status': record['status'], 'mode': record['mode'], 'files': len(record['files']), 'target': record['target']}))
 

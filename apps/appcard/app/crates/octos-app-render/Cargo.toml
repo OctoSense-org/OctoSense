@@ -7,7 +7,7 @@ authors.workspace = true
 description = "Streaming-markdown renderer wrappers used by octos-app — keeps Makepad widgets out of octos-app-store"
 
 [dependencies]
-streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main", features = ["mermaid"] }
+streaming-markdown-kit = { workspace = true, features = ["mermaid"] }
 
 [lints]
 workspace = true

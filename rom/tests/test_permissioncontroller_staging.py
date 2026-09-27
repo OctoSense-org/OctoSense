@@ -8,10 +8,10 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location('stage_roles', ROOT / 'home/android/platform-build/stage-permissioncontroller.py')
+SPEC = importlib.util.spec_from_file_location('stage_roles', ROOT / '../phone/android/platform-build/stage-permissioncontroller.py')
 STAGE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STAGE)
-INPUTS = ROOT / 'home/android/platform-build/permissioncontroller'
+INPUTS = ROOT / '../phone/android/platform-build/permissioncontroller'
 CONTRACT = ROOT / 'vendor/octosense/settings/src/dev/makepad/octosense/roles/RolesSettingsContract.java'
 A = '{http://schemas.android.com/apk/res/android}'
 MANIFEST = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.android.permissioncontroller">

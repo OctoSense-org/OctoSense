@@ -241,10 +241,10 @@ def main():
             raise SystemExit("Existing hearing fixture; refusing replacement")
     if args.scenario in ("hearing_unavailable", "caption_language_unavailable", "caption_custom_unavailable") and args.serial != "emulator-5556":
         raise SystemExit("Ordinary hearing acceptance belongs to emulator5556")
-    fixture = ROOT / "home/android/validation-fixtures/settings-accessibility"
+    fixture = ROOT / "phone/android/validation-fixtures/settings-accessibility"
     with tempfile.TemporaryDirectory(prefix="octosense-settings-a11y-") as temporary:
         output = Path(temporary)
-        contract = ROOT / "home/android/contracts/src/main/java/dev/makepad/octosense/contracts"
+        contract = ROOT / "phone/android/contracts/src/main/java/dev/makepad/octosense/contracts"
         apk = build_fixture(fixture, output, run, args.java_home, args.sdk,
                             (contract / "SystemSettings.java", contract / "Protocol.java",
                              fixture.parent / "dnd-observer/DndNativeSnapshot.java"))

@@ -67,7 +67,7 @@ class SettingsServiceLifecycleTest(unittest.TestCase):
                 path.write_text(source)
                 sources.append(path)
             sources += [ROOT / 'vendor/octosense/agent/src/dev/makepad/octosense/agent/SettingsServiceConnection.java',
-                        ROOT / 'home/resources/android/java/dev/makepad/octosense/ObscuredTouchGuard.java',
+                        ROOT / '../phone/resources/android/java/dev/makepad/octosense/ObscuredTouchGuard.java',
                         ROOT / 'tests/java/SettingsServiceLifecycleTest.java']
             for command in ([javac, '-d', directory, *map(str, sources)],
                             [java, '-cp', directory, 'dev.makepad.octosense.agent.SettingsServiceLifecycleTest']):

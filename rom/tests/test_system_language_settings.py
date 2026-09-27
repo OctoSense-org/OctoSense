@@ -29,7 +29,7 @@ class SystemLanguageSettingsTest(unittest.TestCase):
                 path.write_text(source)
                 sources.append(path)
             sources += list((ROOT / 'vendor/octosense/settings/src/dev/makepad/octosense/systemlanguage').glob('*.java'))
-            sources += [ROOT / 'home/resources/android/java/dev/makepad/octosense/SystemLanguageSettingsClient.java', ROOT / 'tests/java/SystemLanguageSettingsTest.java']
+            sources += [ROOT / '../phone/resources/android/java/dev/makepad/octosense/SystemLanguageSettingsClient.java', ROOT / 'tests/java/SystemLanguageSettingsTest.java']
             for command in ([javac, '-d', tmp, *map(str, sources)], [java, '-cp', tmp, 'dev.makepad.octosense.SystemLanguageSettingsTest']):
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

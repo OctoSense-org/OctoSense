@@ -1,4 +1,4 @@
-/target/
+target/
 /.worktrees/
 /.octosense/
 # Retain the legacy state exclusion during the project rename.
@@ -9,3 +9,6 @@ __pycache__/
 # Local model weights and partial downloads belong outside the repository.
 *.gguf
 *.gguf.part
+
+# Framework checkouts prepared by tools/setup.py.
+/.sources/
