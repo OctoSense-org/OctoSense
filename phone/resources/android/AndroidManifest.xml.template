@@ -33,6 +33,7 @@
         android:label="{label}"
         android:theme="@style/MakepadAppTheme"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:debuggable="{debuggable}"
@@ -40,6 +41,8 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="{target_sdk_version}">
         <meta-data android:name="android.max_aspect" android:value="2.1" />
+        <meta-data android:name="dev.makepad.android.APPLICATION_EXTENSION"
+            android:value="dev.makepad.octosense.MakepadAppExtension" />
         <!-- CONFIG_ASSETS_PATHS (0x80000000) prevents Monet overlay changes
              from recreating the renderer and losing hosted app state. Numeric
              resource masks support Makepad's API 33 resource compiler, which predates

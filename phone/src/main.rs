@@ -12,6 +12,7 @@ use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
 mod ai_bus;
+mod app_peers_host;
 mod apps;
 mod binds;
 mod clients;
@@ -189,29 +190,7 @@ app_main!(
 );
     };
 }
-#[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
-macro_rules! octosense_main_with_finance {
-    ($($extra:literal),* $(,)?) => { octosense_main!("octosense_finance/resources/ux/Inter-400.ttf", "octosense_finance/resources/ux/Inter-600.ttf", "octosense_finance/resources/ux/Inter-700.ttf", "octosense_finance/resources/ux/NotoSansSC-Regular.ttf", $($extra),*); };
-}
-#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-finance")))]
-macro_rules! octosense_main_with_finance {
-    ($($extra:literal),* $(,)?) => { octosense_main!($($extra),*); };
-}
-#[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
-macro_rules! octosense_main_with_robrix {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!(
-        "octosense_robrix/resources/fonts/system_latin.ttf",
-        "octosense_robrix/resources/fonts/system_cjk.ttc",
-        "octosense_robrix/resources/fonts/NotoColorEmoji.ttf",
-        "octosense_robrix/resources/fonts/LiberationMono-Regular.ttf",
-        $($extra),*
-    ); };
-}
-#[cfg(not(all(not(target_arch = "wasm32"), feature = "app-robrix")))]
-macro_rules! octosense_main_with_robrix {
-    ($($extra:literal),* $(,)?) => { octosense_main_with_finance!($($extra),*); };
-}
-octosense_main_with_robrix!();
+octosense_main!();
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -243,6 +222,9 @@ script_mod! {
                 show_caption_bar: false
                 body +: {
                     flow: Down
+                    // Keep hosted editors and their navigation visible above
+                    // the native IME instead of panning the whole shell.
+                    keyboard_resize: #(crate::mobile_navigation::ENABLED)
                     // The wallpaper layer: the theme's image (crop-to-fill)
                     // over the theme's deep background.
                         // The desk bar: the shell bar on a desktop style, the
@@ -4845,32 +4827,6 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "app-robrix"))]
-        if let Some(client) = self.module_host.client_of_module("robrix") {
-            let foreground = self.state.as_ref().map(|state| {
-                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
-            }).unwrap_or(false);
-            if let Some(instance) = self.module_host.get(client) {
-                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
-                if let Some(mut robrix) = instance.root.borrow_mut::<octosense_robrix::module::RobrixModuleView>() {
-                    robrix.set_foreground(cx, foreground);
-                }
-                makepad_widgets::widget_async::leave_isolate(cx, entry);
-            }
-        }
-        #[cfg(all(not(target_arch = "wasm32"), feature = "app-finance"))]
-        if let Some(client) = self.module_host.client_of_module("finance") {
-            let foreground = self.state.as_ref().map(|state| {
-                !state.style.target.mobile() || (state.phone.foreground() == Some(client) && state.phone.openness >= 0.999 && state.phone.overview <= 0.001)
-            }).unwrap_or(false);
-            if let Some(instance) = self.module_host.get(client) {
-                let entry = makepad_widgets::widget_async::enter_isolate(cx, instance.vm_id);
-                if let Some(mut finance) = instance.root.borrow_mut::<octosense_finance::FinanceView>() {
-                    finance.set_foreground(cx, foreground);
-                }
-                makepad_widgets::widget_async::leave_isolate(cx, entry);
-            }
-        }
         // Recording belongs to the WM, including on Home and in an OS menu.
         // Forwarding this chord also starts a recorder in the focused child.
         if let Event::KeyDown(e) | Event::KeyUp(e) = event {

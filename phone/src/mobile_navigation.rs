@@ -214,11 +214,16 @@ mod tests {
         phone.viewport = screen();
         let before = phone.navigation.layout(phone.navigation_rect()).bubble;
         phone.native_keyboard_event(&VirtualKeyboardEvent::DidShow { time: 1.0, height: 330.0 });
+        // KeyboardView reflows the shell above the native IME. Navigation
+        // must follow that viewport without subtracting its height twice.
+        phone.viewport.size.y -= 330.0;
+        assert_eq!(phone.navigation_rect(), phone.viewport);
         let shown = phone.navigation.layout(phone.navigation_rect());
         assert!(shown.bubble.pos.y < before.pos.y);
         assert!(shown.bubble.pos.y + shown.bubble.size.y <= screen().size.y - 330.0 - VERTICAL);
         assert!(shown.panel.pos.y + shown.panel.size.y <= screen().size.y - 330.0 - VERTICAL);
         phone.native_keyboard_event(&VirtualKeyboardEvent::DidHide { time: 2.0 });
+        phone.viewport = screen();
         assert_eq!(phone.navigation.layout(phone.navigation_rect()).bubble, before);
     }
 
