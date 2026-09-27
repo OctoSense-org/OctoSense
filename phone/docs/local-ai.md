@@ -18,7 +18,7 @@ If that checkout does not exist, prepare the pinned sources from the repository 
 python3 scripts/setup-home.py
 ```
 
-For an existing checkout, `python3 scripts/setup-home.py --check` confirms it matches the pin. A personal app catalog must also contain an `aichat` entry; see [app registration](../README.md#add-an-app). Opening the assistant builds it through Cargo on first launch. It does not require enabling the host's optional `app-aichat` feature.
+For an existing checkout, `python3 scripts/setup-home.py --check` confirms it matches the pin. A personal app catalog must also contain an `aichat` entry; see [developer programs and the catalog](https://github.com/OctoSense-org/OctoSense-Desktop#developer-programs-and-the-catalog) in the OctoSense-Desktop README. Opening the assistant builds it through Cargo on first launch. It does not require enabling the host's optional `app-aichat` feature.
 
 ## Install the tested model
 

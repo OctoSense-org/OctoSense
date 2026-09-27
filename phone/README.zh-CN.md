@@ -50,6 +50,10 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 搜索只能通过在桌面上下拉打开；应用库没有搜索栏。搜索结果中，名称以输入内容开头的应用排在前面，按回车即可打开最佳匹配。在应用库中，右侧的字母栏可快速跳转网格；获得使用情况访问权限后，顶部会显示一行“建议”，列出最近使用的应用。应用在通知面板中有通知时，其图标会带一个圆点。最近任务以卡片形式列出托管应用；在 Android 设置中授予使用情况访问权限后（最近任务中的卡片可打开该设置），还会显示一行最近使用过的 Android 应用。每个可点按区域都是带有语音标签的无障碍节点，因此 TalkBack 和 UI 自动化都能读取并操作 Shell（已在安装 TalkBack 的情况下以及通过 UiAutomation 探针验证：无障碍焦点能落到节点上，其点击操作可以打开应用、通知面板或应用抽屉；注意 `adb shell input` 的点按会绕过 TalkBack 的触摸浏览，因此无法用脚本模拟真实的读屏触摸）。标签会跟随 Android 的字体大小设置。Shell 跟随 Android 的深色主题，并绘制在透明的系统栏之下；通知面板中的深色模式磁贴会覆盖外观设置，直到系统设置下一次变更。桥接层的失败原因会以通俗的句子呈现给用户（见 `src/android_integration.rs` 中的 `result_copy`），而不是原因代码。
 
+## 内置设置
+
+在应用目录中打开 **OctoSense Settings**，可使用共享主题、受支持的显示与声音控制以及设备信息。它的 Octoscript–Makepad 界面会跟随实时的主题和字体大小变化，同时保留当前页面。导航、搜索、草稿、审阅和应用事件处理都在 [Octoscript 控制器](resources/settings/controller) 中执行；原生代码负责渲染、文本输入和有类型的 Android 绑定。参见 [移植设计与验证状态（英文）](docs/adr/0005-settings-octoscript-controller.md)。完整替代系统设置的工作仍在进行中，部分区域仍会打开 Android 设置。参见 [当前控制项与验证（英文）](docs/android/settings.md)、[功能对齐清单（英文）](docs/android/settings-parity.md) 和 [架构决策（英文）](docs/adr/0006-builtin-settings.md)。
+
 ## 系统应用
 
 News、Photos、Maps、Camera 和 Mail 都是隔离运行的脚本应用（[ADR 0004（英文）](docs/adr/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 OctoSense-System-Apps（`apps/<name>/bundle/`，由 `native-apps.lock.json` 固定版本）；`system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
