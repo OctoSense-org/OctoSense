@@ -459,3 +459,227 @@ fn closing_the_app_interrupts_its_peers_running_work() {
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// After a full question/answer exchange the system agent sends the SAME peer
+/// a second input, which must run as the peer's next turn. The scripted model
+/// reuses the tool-call id `call_1` by default (MOCK_CALL_IDS=unique gives
+/// distinct ids), as some providers do: the kernel once deduped the second
+/// `peer_send_input` against the first and dropped it while reporting
+/// success. SECOND_DELAY_SECS waits before the second send.
+#[test]
+fn a_second_input_to_an_answered_peer_runs() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("second");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound without inference");
+    let (slug, peer_session) = rinx.peer().unwrap();
+    let hydrate = |rinx: &Broker| {
+        rinx.host_request(
+            "session/hydrate",
+            json!({"session_id": peer_session, "include": ["messages", "turns"]}),
+        )
+        .unwrap_or(Value::Null)
+        .to_string()
+    };
+    let t0 = std::time::Instant::now();
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+               "input": [{"kind": "text", "text": format!("TELL_PEER:{slug}")}]}),
+    )
+    .expect("system turn");
+    let mut first = false;
+    for _ in 0..120 {
+        if hydrate(&rinx).contains("PEER GOT 42") {
+            first = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(first, "first exchange completed");
+    eprintln!("[second] first exchange done after {:?}", t0.elapsed());
+    let delay: u64 = std::env::var("SECOND_DELAY_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    std::thread::sleep(Duration::from_secs(delay));
+    // The system agent's wake continuation may still be finishing.
+    let mut started = Err(String::new());
+    for _ in 0..80 {
+        started = rinx.host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": format!("TELL_PEER_AGAIN:{slug}")}]}),
+        );
+        if started.is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    started.expect("second system turn");
+    eprintln!(
+        "[second] second system turn started after {:?}",
+        t0.elapsed()
+    );
+    let mut second = false;
+    for _ in 0..180 {
+        if hydrate(&rinx).contains("ECHO: SECOND_INPUT") {
+            second = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    eprintln!("[second] input ran: {second} after {:?}", t0.elapsed());
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    assert!(second, "the peer ran the second input as its next turn");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ADR 0007: a host-owned app peer's tool approval is the person's, answered
+/// in the app. The system agent hands the peer work that needs an approval;
+/// the kernel must not wake the system agent for it, and when the system
+/// agent tries to approve it anyway with `peer_respond` the kernel refuses.
+/// The approval stays pending until the person answers it through the host.
+#[test]
+fn the_system_agent_cannot_approve_an_app_peers_tool() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("approval");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound without inference");
+    let (slug, peer_session) = rinx.peer().unwrap();
+    let system = "_main:api:octosense#system";
+    let hydrate = |session: &str, include: &[&str]| {
+        rinx.host_request(
+            "session/hydrate",
+            json!({"session_id": session, "include": include}),
+        )
+        .unwrap_or(Value::Null)
+    };
+    let pending_approvals = || {
+        hydrate(&peer_session, &["pending_approvals"])["pending_approvals"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let start_system_turn = |text: String| {
+        let mut started = Err(String::new());
+        for _ in 0..80 {
+            started = rinx.host_request(
+                "turn/start",
+                json!({"session_id": system, "turn_id": uuid_like(),
+                       "input": [{"kind": "text", "text": text}]}),
+            );
+            if started.is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        started.expect("system turn");
+    };
+
+    start_system_turn(format!("TELL_PEER_SUDO:{slug}"));
+    let mut approvals = Vec::new();
+    for _ in 0..120 {
+        approvals = pending_approvals();
+        if !approvals.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert_eq!(approvals.len(), 1, "the peer parked on one tool approval");
+    // Room for a wake to fire, were the kernel to send one.
+    std::thread::sleep(Duration::from_secs(3));
+    // A woken system agent acts on the wake (the scripted one reaches for
+    // peer_respond), which leaves a tool result beyond the peer_send_input one.
+    let system_text = hydrate(system, &["messages"]).to_string();
+    assert_eq!(
+        system_text.matches("\"role\":\"tool\"").count(),
+        1,
+        "the system agent was not woken for the app peer's approval: {system_text}"
+    );
+
+    start_system_turn(format!("APPROVE_PEER:{slug}"));
+    let mut system_text = String::new();
+    for _ in 0..60 {
+        system_text = hydrate(system, &["messages"]).to_string();
+        if system_text.contains("host-owned app peer") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(
+        system_text.contains("host-owned app peer"),
+        "peer_respond refused the system agent's approval: {system_text}"
+    );
+    assert_eq!(
+        pending_approvals().len(),
+        1,
+        "the approval is still the person's to answer"
+    );
+    assert!(
+        !hydrate(&peer_session, &["messages"])
+            .to_string()
+            .contains("APPROVED_RAN"),
+        "the command did not run on the system agent's say-so"
+    );
+
+    // The person approves in the app; the peer's command then runs.
+    let approval_id = approvals[0]["approval_id"].as_str().unwrap().to_owned();
+    rinx.host_request(
+        "approval/respond",
+        json!({"session_id": peer_session, "approval_id": approval_id, "decision": "approve"}),
+    )
+    .expect("the person's approval");
+    let mut ran = false;
+    for _ in 0..60 {
+        if pending_approvals().is_empty()
+            && hydrate(&peer_session, &["messages"])
+                .to_string()
+                .contains("APPROVED_RAN")
+        {
+            ran = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    assert!(ran, "the peer ran the command once the person approved it");
+    let _ = std::fs::remove_dir_all(&dir);
+}
