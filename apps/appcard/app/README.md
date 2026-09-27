@@ -1,12 +1,13 @@
-# octos-app workspace
+# octos-app crates
 
 English | [简体中文](README.zh-CN.md)
 
-The Cargo workspace of the AppCard assistant: a native Makepad and Splash
+The crates of the AppCard assistant (members of the OctoSense repository's
+root workspace): a native Makepad and Splash
 client for the [octos](https://github.com/octos-org/octos) agent kernel. The
 OctoSense shells mount it as a widget; it also builds as a standalone app.
-How it fits into this repository, and the sibling runtime it needs, is in
-[../README.md](../README.md).
+How it fits into the repository, and the framework sources it needs
+(`.sources/` at the repository root), is in [../README.md](../README.md).
 
 ## Crates
 
@@ -26,25 +27,26 @@ entry points and the dev monitor. A host that mounts `AppShell` builds with
 
 ## Build, test, run
 
-Prepare the sibling runtime first (from `apps/appcard`:
-`python3 tools/setup-native.py`). Then, here:
+Prepare the framework sources first (`python3 tools/setup.py` from the
+repository root). Then, from the repository root:
 
 ```sh
-cargo check
-cargo test --workspace
-cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+cargo check --locked -p octos-app
+cargo test --locked -p octos-app-transport -p octos-app-store
+cargo clippy --locked -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
 cargo run -p octos-app
 ```
 
-The `Makefile` wraps the same commands (`make check`, `test`, `run`,
+The `Makefile` predates the move: it runs `cargo … --workspace` here, which
+now means the whole root workspace (**unverified** since the move). It wraps (`make check`, `test`, `run`,
 `clippy`, `fmt`) and adds `make smoke-live`, the ignored live transport test
 against `OCTOS_LIVE_URL` (default `http://127.0.0.1:56831`). It reads a local
 `.env` if present.
 
 How the standalone app reaches octos, in order:
 
-1. the shell's octos kernel (`octosense-octos-core`, repository
-   `crates/octos-core`), when one can run: on Android the APK's bundled
+1. the shell's octos kernel (`octosense-octos-core`, the repository's
+   `crates/kernel`), when one can run: on Android the APK's bundled
    `liboctos.so`, on OpenHarmony always (linked in), on a desktop when a
    kernel binary is configured by the shell or `OCTOS_APP_CORE_BIN` (its data
    dir: `OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`;
@@ -61,7 +63,7 @@ Never commit tokens or a `.env` file.
 
 ## CI
 
-CI is the repository's
-[.github/workflows/appcard.yml](../../../.github/workflows/appcard.yml). The
-`.github/workflows/` directory inside this workspace came with the code from
-its earlier repository; GitHub does not run it here.
+CI is the `apps` job of the repository's
+[.github/workflows/apps.yml](../../../.github/workflows/apps.yml). The
+`.github/workflows/` directory in this folder came with the code from its
+earlier repository; GitHub does not run it here.

@@ -51,7 +51,7 @@ shader is a fixed gradient with no image download, blur pass or animation.
 
 ## Boundaries
 
-All OctoSense apps adopt the [shared app theme contract](../../home/docs/android/app-theme-contract.md).
+All OctoSense apps adopt the [shared app theme contract](../../../phone/docs/android/app-theme-contract.md).
 Existing custom app surfaces require migration where they override the shared
 base theme; the contract records the audit and distinguishes these gaps from
 the host's completed propagation support.
@@ -67,7 +67,7 @@ background. A future wallpaper service can handle that independently.
 The theme tests validate records, normal-text contrast, stylesheet roles and
 light/dark switching for every preset. A hosted Sheets test checks that all eight
 palettes evaluate without errors and retain the same widget and isolate.
-Device validation is recorded in [the theme guide](../../home/docs/android/themes.md).
+Device validation is recorded in [the theme guide](../../../phone/docs/android/themes.md).
 
 ## References
 

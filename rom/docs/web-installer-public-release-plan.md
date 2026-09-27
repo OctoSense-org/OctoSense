@@ -70,7 +70,7 @@ the invalid attempt and explain the required next step.
 
 Read-only public checks on the review date found:
 
-- The [ROM repository](https://github.com/OctoSense-org/OctoSense-ROM) is public;
+- The [ROM repository](https://github.com/OctoSense-org/OctoSense/tree/main/rom) is public;
   its GitHub API reports `has_pages=false`.
 - The [OctoSense website](https://octosense-org.github.io/) responds, but
   `https://octosense-org.github.io/install/` returns HTTP 404.

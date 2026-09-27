@@ -35,7 +35,7 @@ access, both enabled and verified after reboot. Thirteen rendered settings route
 and the setup hub's live permission status pass on the phone. Pixel capture of
 the combined flow remains unverified because of USB read failures.
 No milestone exit evidence or native-launcher parity claim is complete.
-The [accepted ADR](../adr/0001-hybrid-android-launcher-and-system-bridge.md)
+The [accepted ADR](../../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md)
 defines the remaining acceptance gates.
 
 ## Implemented prototype source

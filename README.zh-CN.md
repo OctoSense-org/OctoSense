@@ -2,58 +2,106 @@
 
 [English](README.md) | 简体中文
 
-[OctoSense](https://github.com/OctoSense-org) 是运行在操作系统之上的 Agent 交互 Shell。本仓库集中存放它的全部内容（[ADR 0001](docs/adr/0001-one-octosense-repository.md)）：桌面端和手机端的 Shell、Shell 服务、系统应用以及 ROM 镜像。本仓库原名 OctoSense-Desktop；OctoSense-ROM 和 OctoSense-System-Apps 已连同历史一起导入。
+[OctoSense](https://github.com/OctoSense-org) 是运行在操作系统之上的 Agent 交互 Shell：启动器和应用看起来与你熟悉的一样，背后是同一个 Agent。本仓库集中存放 OctoSense 自己的全部代码（[ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md)）：Shell、Shell 服务、第一方系统应用，以及由它们构建的三个产品。
 
-**要开发 OctoSense 应用？** 不需要本仓库：请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始（先读 OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`）。
+| 产品 | 是什么 | 位置 |
+| --- | --- | --- |
+| **OctoSense 桌面端** | 在 macOS 上作为一个 Makepad 窗口运行的 Shell（Windows 和 Linux 未经测试）：启动器、dock、平铺窗口、托管应用 | [`desktop/`](desktop/README.zh-CN.md) |
+| **OctoSense Home** | 手机 Shell，可作为普通 Home 应用安装在任意 Android 手机上（也支持 OpenHarmony 和 iOS 模拟器） | [`phone/`](phone/README.zh-CN.md) |
+| **OctoSense ROM** | 面向 OnePlus 6 的 LineageOS 22.2，预装 Home、具有系统权限的系统桥、Quickstep 和 SystemUI | [`rom/`](rom/README.zh-CN.md) |
+
+本仓库原名 OctoSense-Desktop；OctoSense-ROM 和 OctoSense-System-Apps 已于 2026-09-27 连同历史一起导入本仓库，原仓库已归档。
+
+> **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。[`apps/`](apps/README.zh-CN.md) 中的系统应用是同样应用结构的完整示例（`apps/<name>/bundle/`）。只有想在发布前先在 Shell 里看到自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
 
 ## 目录结构
 
 | 路径 | 内容 |
 | --- | --- |
-| `desktop/` | 桌面端打包，包名 `octosense`：桌面 Shell（在共享 Shell crate 落地前仍为 `src/`）、应用目录、主题、上游窗口管理器同步。[README](desktop/README.zh-CN.md) |
-| `phone/` | Home 应用，包名 `octosense-home`（APK id `dev.makepad.octosense`）：Android、OpenHarmony 和 iOS 打包，手机 Shell（`src/`），设置应用，系统桥的手机端。[README](phone/README.zh-CN.md) |
-| `rom/` | 仅 OnePlus 6 ROM 镜像：`vendor/`、`patches/`、镜像/刷机/OTA 脚本、`web-installer/`、产品测试。[README](rom/README.zh-CN.md) |
-| `crates/kernel/` | octos 内核服务（`octosense-octos-core`）。 |
-| `crates/app-peers/` | 应用与 Agent 之间的代理（`octosense-app-peers`，Rinx ADR 0007）。 |
-| `apps/` | 系统应用（新闻、照片、地图、相机、邮件、AI 服务商）的脚本包、它们的宿主服务、原生模块版本（`apps/*/native`）、`apps/reference`，以及可选的 AppCard 助手（`apps/appcard`，模块在 `apps/appcard/module`）。[README](apps/README.zh-CN.md) |
-| `tools/` | `setup.py`（框架源码准备）、经审查的 Makepad 运行时补丁（`runtime-patches/`）。 |
-| `docs/adr/` | 仓库的架构决策记录。 |
-| `Cargo.toml`、`Cargo.lock` | 单一 workspace。所有外部依赖（Makepad、OctoScript、App Hub、octos、Rinx）只在 `[workspace.dependencies]` 中固定一次。 |
-| `native-runtime.lock.json`、`runtime-patches.lock.json` | OctoScript-Makepad 发布版本（并由它固定 Makepad 和 OctoScript），以及 Makepad 之上的已审查补丁。 |
+| [`desktop/`](desktop/README.zh-CN.md) | 桌面端打包，package `octosense`：桌面端 Shell 源码（`src/`，在共享 Shell crate 落地之前）、应用目录（`config/apps.json`）、主题与壁纸、从上游 Makepad 同步窗口管理器（`upstream/`、`scripts/upstream.py`），以及桌面端的系统应用选择。 |
+| [`phone/`](phone/README.zh-CN.md) | Home 应用，package `octosense-home`（APK id `dev.makepad.octosense`）：手机 Shell 源码（`src/`）、Android、OpenHarmony 和 iOS 打包、内置设置应用、系统桥的手机端（`android/`），以及手机端的系统应用选择。 |
+| [`rom/`](rom/README.zh-CN.md) | 仅 OnePlus 6 ROM 镜像：`vendor/`（产品定义、特权权限、overlay、设置后端、特权 agent）、`patches/`、镜像/刷机/OTA 脚本、Home APK 构建脚本、`web-installer/`、产品测试。 |
+| `crates/kernel/` | octos 内核服务：把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务，每个进程一个，由 AI 服务商配置，供所有使用方共享。 |
+| `crates/app-peers/` | 应用与 Agent 之间的代理：应用访问助手的通道（[Rinx ADR 0007（英文）](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)）。 |
+| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、AI 服务商），均为受隔离约束的脚本应用；它们的宿主服务（`mail`、`llm`）；用于对比的原生模块（`apps/*/native`）；`apps/reference`；以及需显式启用的 AppCard 助手（`apps/appcard`）。 |
+| `tools/` | `setup.py`（锁定版本的框架源码）、经审查的 Makepad 运行时补丁（`runtime-patches/`）。 |
+| [`docs/adr/`](docs/adr/README.zh-CN.md) | 架构决策记录：本仓库的决策，以及作为历史保留的 Home 决策 0001–0006。 |
+| `Cargo.toml`、`Cargo.lock` | 一个工作区。所有外部依赖都只在 `[workspace.dependencies]` 中锁定一次。 |
+| `native-runtime.lock.json`、`runtime-patches.lock.json` | OctoScript-Makepad 发行版（并通过它确定 Makepad 和 OctoScript），以及 Makepad 之上经审查的补丁。 |
+
+目前每种打包形态各有一份 Shell（`desktop/src`、`phone/src`）；把它们合并成一个 Shell crate、以目标平台和 feature 区分桌面与手机，是 [ADR 0001（英文）](docs/adr/0001-one-octosense-repository.md) 的下一阶段。
+
+## 依赖
+
+只在根目录 `Cargo.toml` 和运行时锁文件中锁定一次：
+
+| 仓库 | 作用 |
+| --- | --- |
+| [makepad（OctoSense fork）](https://github.com/OctoSense-org/makepad) | UI 框架和 `cargo-makepad` 打包工具。检出到 `.sources/makepad`，并应用经审查的运行时补丁。 |
+| [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[OctoScript](https://github.com/OctoSense-org/OctoScript) | 指定 Makepad 和 OctoScript 版本的运行时发行版（`native-runtime.lock.json`）。 |
+| [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店，以及隔离运行每个应用的 Card runner（`octosense-app-hub-app`）。 |
+| [octos](https://github.com/octos-org/octos) | Agent 内核。在 Android 上 APK 以 `liboctos.so` 形式内置它；在桌面上内核服务运行 `OCTOS_APP_CORE_BIN` 指定的程序。 |
+| [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，作为原生模块托管。 |
+
+相关但不参与构建：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（如何构建和发布应用）、[OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) 和 [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH)（其他渲染后端）、[OctoSense 网站](https://github.com/OctoSense-org/octosense-org.github.io)。
 
 ## 环境准备
 
-需要稳定版 Rust（`cargo` 位于 `~/.cargo/bin`）、Git 和 Python 3.9+。Makepad 和 OctoScript 解析到 `.sources/`（已被 git 忽略）中的检出，由准备脚本按固定版本创建：
+需要稳定版 Rust（`cargo` 位于 `~/.cargo/bin`）、Git、Python 3.9+（`desktop/scripts/upstream.py` 需要 3.11），macOS 上还需要 Xcode Command Line Tools。Makepad 和 OctoScript 解析到 `.sources/`（已被 git 忽略）中的检出，由环境准备脚本按锁定版本准备好：
 
 ```sh
 git clone https://github.com/OctoSense-org/OctoSense.git
 cd OctoSense
-python3 tools/setup.py                  # 准备 .sources/（makepad、octoscript、octoscript-makepad）
-python3 tools/setup.py --check --cargo  # 校验：依赖图中只有一个 Makepad、App Hub、octos 和 Rinx
+python3 tools/setup.py                  # prepare .sources/ (makepad, octoscript, octoscript-makepad)
+python3 tools/setup.py --check --cargo  # verify: one Makepad, App Hub, octos and Rinx in the graph
 ```
 
-锁文件变化后用 `--update` 移动干净的检出；`--cache DIR` 复用本地 Git 对象缓存。`.sources/` 中的本地修改会被保留。
+锁文件变化后，`--update` 会把没有本地修改的检出移到新版本；`--cache DIR` 从已有克隆（`DIR/makepad`、`DIR/octoscript`、`DIR/octoscript-makepad`）借用 Git 对象。`.sources/` 中的本地修改会被保留。
 
 ## 构建
 
-桌面端（在根目录或 `desktop/` 下运行）：
+**桌面端**（在根目录或 `desktop/` 中运行；详见 [desktop/README.zh-CN.md](desktop/README.zh-CN.md)）：
 
 ```sh
 cargo run --release -p octosense
-cargo check --locked -p octosense --features mobile-apps           # 内嵌应用集合
+cargo check --locked -p octosense --features mobile-apps                        # the set phones link
 cargo check --locked -p octosense -p octosense-appcard --features mobile-apps,app-appcard
 ```
 
-手机端（在 `phone/` 下运行，以选用手机端的系统应用）：
+**手机端**（在 `phone/` 中运行，它会选择手机端的系统应用；详见 [phone/README.zh-CN.md](phone/README.zh-CN.md)）：
 
 ```sh
 cd phone
+cargo run --release -p octosense-home --features mobile-only    # Home in a phone-sized window
 cargo check --locked -p octosense-home --features mobile-apps
-python3 ../rom/scripts/build-home.py --help   # Home/Bridge APK 对，内含 liboctos.so
+python3 ../rom/scripts/build-home.py --help                     # the Home and Bridge APK pair, liboctos.so bundled
 ```
 
-CI 按路径过滤：`Desktop`（desktop、crates、apps）、`Phone`（phone、crates、apps）、`Apps and services`（apps、crates）和 `ROM`（rom、phone 的 Android 源码）。
+**ROM 镜像**（Linux 构建主机，外部 LineageOS 源码树；不在 CI 中）：[rom/README.zh-CN.md](rom/README.zh-CN.md)。
+
+托管应用和 UI 测试使用隐藏窗口和本地控制接口运行：`MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>`（路由见 `/help`）。
+
+## CI
+
+`.github/workflows/` 中的工作流按路径过滤，每次改动只运行其路径需要的任务：
+
+| 工作流 | 触发路径 | 检查内容 |
+| --- | --- | --- |
+| `desktop.yml` | `desktop/`、`crates/`、`apps/`、工作区文件、`tools/` | 编译桌面端（默认、`mobile-apps`、`mobile-apps,app-appcard`），桌面端和环境准备工具的测试 |
+| `phone.yml` | `phone/`、`crates/`、`apps/`、工作区文件、`tools/` | 在 macOS 上编译 Home 及其内置模块并运行测试；耗时最长的任务 |
+| `apps.yml` | `apps/`、`crates/`、工作区文件 | 内核服务、app peers、AI 服务商配置、邮件与 `llm` 宿主服务、AppCard |
+| `rom.yml` | `rom/`、`phone/android/`、手机端的 Android 资源与测试 | 产品测试、生成的 Agent Binder 客户端、网页安装器 |
+
+每个工作流的依赖图检查（`tools/setup.py --check --cargo`）确保锁定的依赖图中只有一个 Makepad、一个 App Hub、一个 octos 和一个 Rinx。
+
+## 发布
+
+按 ADR 0001，每个产品单独打标签：`desktop-v*`、`home-v*`（APK）、`rom-v*`（镜像），构建回执记录仓库提交。系统应用只随 Shell 一起发布、按摘要准入，不单独发布。目前已发布的 ROM 版本（例如已刷机手机从中更新的 `20260919-j`）位于已归档的 OctoSense-ROM 仓库。
+
+## 参与贡献
+
+`main` 受保护：每个改动都要通过 pull request，禁止强制推送。一个改动就是一个 pull request，按需同时修改 `desktop/`、`phone/`、`crates/` 和 `apps/`；没有内部版本锁需要移动。面向人和编码 Agent 的规则见 [AGENTS.md（英文）](AGENTS.md)。
 
 ## 许可证
 
-Apache-2.0（见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)）；第三方声明见 `LICENSES/`。
+Apache License 2.0（[LICENSE](LICENSE)、[NOTICE](NOTICE)）。从 Makepad 复制的源码保留其 MIT 声明（[LICENSES/](LICENSES)）。依赖项保留各自的许可证。

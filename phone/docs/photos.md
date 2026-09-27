@@ -38,7 +38,7 @@ and woodland trail. The new scenes are included in People, search, Memories,
 and album selection. The Pexels set adds animals, architecture, city streets,
 transport, food, flowers, waterfalls, hiking, sports, books and music, with eight
 sample dates in each month from June through September 2026. Photographer credits
-and licenses are recorded in [SOURCES.md](../apps/photos/resources/SOURCES.md).
+and licenses are recorded in [SOURCES.md](../../apps/photos/native/resources/SOURCES.md).
 Saved user albums are preserved. Camera/MediaStore import, cloud sync,
 image editing, music, and video export are outside this version. People are
 explicit catalog tags, not facial recognition. Memory groups come from catalog
@@ -65,7 +65,7 @@ generation service or network connection is required for browsing.
    ```
 
 3. Record image provenance in
-   [SOURCES.md](../apps/photos/resources/SOURCES.md), then rebuild. `build.rs`
+   [SOURCES.md](../../apps/photos/native/resources/SOURCES.md), then rebuild. `build.rs`
    embeds the directory automatically; no Rust asset list needs editing.
 
 The library, search, People, and Memories include new catalog entries on the
@@ -191,7 +191,7 @@ references. All selected images were visually reviewed; three group compositions
 were widened to keep complete heads and shoes in frame.
 
 Prompts, reference mappings, refinement instructions and final hashes are in
-[generated-scenes.json](../apps/photos/resources/generated-scenes.json). The
+[generated-scenes.json](../../apps/photos/native/resources/generated-scenes.json). The
 24 new PNGs total 64.92 MiB; solo images are 1024×1536 and groups 1536×1024.
 All 43 catalog images decode, all 19 original image files and catalog entries are
 unchanged, and the six portraits still match the supplied originals exactly.

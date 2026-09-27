@@ -9,7 +9,7 @@ service. The separate platform build now compiles native Quickstep controllers
 and Recents. Its ROM-specific module is now active on the OnePlus 6 following
 the user's [Trebuchet removal request](../docs/android/trebuchet-removal-record.md).
 Basic native navigation and task resume/dismissal pass after reboot; broader
-transition validation remains incomplete. See the [ADR](../docs/adr/0001-hybrid-android-launcher-and-system-bridge.md)
+transition validation remains incomplete. See the [ADR](../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md)
 and [implementation record](../docs/android/adr-0001-implementation-record.md).
 
 For the current launcher controls and permission flows, see

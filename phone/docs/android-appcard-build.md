@@ -4,7 +4,7 @@
 > `octos-core`, always on in Android builds), not AppCard's: **every** APK
 > bundles `liboctos.so`, and `scripts/build-home.sh` does it for you (it
 > cross-builds the kernel at the revision `home/Cargo.lock` pins; see
-> [docs/home-build.md](../../docs/home-build.md#android-builds)). AppCard
+> [docs/home-build.md](../../rom/docs/home-build.md#android-builds)). AppCard
 > itself is not shipped for now and links only with
 > `--features app-appcard`. The manual steps below still describe what the
 > script does; their pins are older than the current ones (the kernel is
