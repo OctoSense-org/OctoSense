@@ -37,6 +37,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// The on-screen `PerfGraph`. Off in log-only mode (`phone.perflog`): the
+/// graph re-tessellates its bars on every frame it is drawn, over a third of
+/// the process's CPU during a transition on a OnePlus 6T, so a bench run that
+/// only needs the `[perf]` lines measures the shell without it.
+static GRAPH: AtomicBool = AtomicBool::new(true);
+
+pub fn graph() -> bool { GRAPH.load(Ordering::Relaxed) }
 
 /// Why the shell asked for the frame that was drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,9 +216,21 @@ pub fn set_enabled(cx: &mut Cx, on: bool) {
     }
 }
 
-/// `OCTOSENSE_PERF=1` in the environment switches the monitor on at start.
+/// `OCTOSENSE_PERF=1` in the environment switches the monitor on at start;
+/// on a device, where an app has no shell env and the floating navigation
+/// hides the battery icon, the `phone.perf` trace topic does
+/// (`am start --es makepad.TRACE phone.perf`), or `phone.perflog` for the
+/// `[perf]` lines without the on-screen graph.
 pub fn init_from_env(cx: &mut Cx) {
-    if std::env::var("OCTOSENSE_PERF").is_ok_and(|v| !v.is_empty() && v != "0") { set_enabled(cx, true); }
+    let env = std::env::var("OCTOSENSE_PERF").is_ok_and(|v| !v.is_empty() && v != "0");
+    #[cfg(native_mobile)]
+    let env = env || makepad_platform::makepad_error_log::trace_enabled("phone.perf");
+    #[cfg(native_mobile)]
+    let log_only = makepad_platform::makepad_error_log::trace_enabled("phone.perflog");
+    #[cfg(not(native_mobile))]
+    let log_only = false;
+    if log_only { GRAPH.store(false, Ordering::Relaxed); }
+    if env || log_only { set_enabled(cx, true); }
 }
 
 /// A tap on the battery icon at `now` (seconds): three within

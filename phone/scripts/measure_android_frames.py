@@ -187,7 +187,10 @@ def main():
             selected = max(candidates, key=lambda name: int(name.rsplit('#', 1)[-1]))
         layers_seen.add(selected)
         latency = adb("shell", "dumpsys SurfaceFlinger --latency " + shlex.quote(selected))
-        first = latency.splitlines()[0] if latency.splitlines() else ""
+        # OxygenOS prints a "ScreenShot start dump" banner before the period.
+        first = next((line.strip() for line in latency.splitlines() if line.strip()), "")
+        if not first.isdigit():
+            first = next((line.strip() for line in latency.splitlines() if line.strip().isdigit()), "")
         if first.isdigit() and int(first) > 0:
             refresh_periods.add(int(first))
         return parse_latency(latency)
