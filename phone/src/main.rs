@@ -12,7 +12,6 @@ use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
 mod ai_bus;
-mod app_peers_host;
 mod apps;
 mod binds;
 mod clients;
@@ -114,7 +113,6 @@ mod layout;
 mod octosense;
 mod module_host;
 #[cfg(any(feature = "app-hub", native_mobile))]
-mod llm_host;
 mod module_view;
 mod pane_links;
 mod preview;
@@ -4364,13 +4362,12 @@ impl MatchEvent for App {
         #[cfg(any(feature = "app-hub", native_mobile))]
         octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
             .unwrap_or_else(octosense::paths::home).join("apps"));
-        // The octos kernel is a shell service: configured here, started when
-        // a consumer (AppCard, Rinx) connects. AI providers' `llm` service
-        // writes its profile and restarts it after a change.
-        #[cfg(any(feature = "octos-core", native_mobile))]
-        llm_host::configure_kernel(cx.get_data_dir());
-        #[cfg(any(feature = "app-hub", native_mobile))]
-        llm_host::register(llm_host::core_dir(cx.get_data_dir()));
+        // The shell's AI services (octosense-ai-host): the octos kernel,
+        // configured here and started when a consumer (AppCard, Rinx)
+        // connects; AI providers' `llm` service, which writes its profile and
+        // restarts it after a change, with the camera QR scanner and the
+        // image picker on Android; the host policy for apps' assistant.
+        octosense_ai_host::start(octosense_ai_host::Host::platform(cx.get_data_dir()));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4841,8 +4838,7 @@ impl AppMain for App {
         }
         mobile_perf::saw_event(event);
         self.settings_tick(cx, event);
-        #[cfg(any(feature = "app-hub", native_mobile))]
-        self.llm_host_event(cx, event);
+        octosense_ai_host::handle_event(cx, event);
         if self.android_event(cx, event) { return; }
         // Android's Home button or gesture, with OctoSense as the Home app.
         if matches!(event, Event::HomeIntent) { self.settings_runtime.entries.cancel(); self.phone_home_intent(cx); return; }
@@ -5027,8 +5023,7 @@ impl AppMain for App {
                 clients::shutdown_clients(&mut state.clients);
             }
             // Stop the octos kernel, if one runs, and let it release its data dir.
-            #[cfg(any(feature = "octos-core", native_mobile))]
-            octosense_octos_core::shutdown();
+            octosense_ai_host::shutdown();
         }
         if let Event::Timer(te) = event {
             self.fire_test_timers(cx, te);

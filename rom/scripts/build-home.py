@@ -9,8 +9,8 @@ one, `--no-octos-kernel` leaves it out (Home then runs no kernel; the AI
 providers are still saved).
 """
 import argparse
-import glob
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -23,45 +23,28 @@ ROOT = Path(__file__).resolve().parents[1]
 # framework checkouts (.sources/, tools/setup.py) are at its root.
 REPO = ROOT.parent
 HOME = REPO / "phone"
-OCTOS_URL = "https://github.com/octos-org/octos.git"
-# The kernel as the shells' phones run it: the stdio server, no llama.cpp
-# embedder (needs cmake and is not used on a phone).
-OCTOS_KERNEL_BUILD = ["-p", "octos-cli", "--bin", "octos", "--no-default-features", "--features", "api,git,ast"]
-ANDROID_TARGET = "aarch64-linux-android"
-ANDROID_API = "33"
+
+
+def _load_kernel_tool():
+    """The shared octos kernel tool (tools/kernel-artifact.py): one kernel
+    recipe for every shell's APK."""
+    spec = importlib.util.spec_from_file_location("kernel_artifact", REPO / "tools/kernel-artifact.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+kernel_tool = _load_kernel_tool()
+OCTOS_URL = kernel_tool.OCTOS_URL
+OCTOS_KERNEL_BUILD = kernel_tool.KERNEL_BUILD
+ANDROID_TARGET = kernel_tool.TARGET
+ANDROID_API = kernel_tool.API
+extra_libs = kernel_tool.extra_libs
 
 
 def octos_revision(lock=None):
     """The one octos revision Home links (the workspace Cargo.lock)."""
-    text = (lock or REPO / "Cargo.lock").read_text()
-    match = re.search(r'name = "octos-cli"\nversion = "[^"]+"\nsource = "git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#', text)
-    if not match:
-        raise RuntimeError("Cargo.lock names no octos-cli from octos-org/octos: cannot tell which kernel to build")
-    return match[1]
-
-
-def ndk_bin(sdk):
-    """The NDK's LLVM bin dir inside the cargo-makepad SDK directory (newest NDK)."""
-    found = sorted(glob.glob(str(sdk / "ndk/*/toolchains/llvm/prebuilt/*/bin")),
-                   key=lambda p: [int(x) if x.isdigit() else x for x in re.split(r"[./]", p)])
-    return Path(found[-1]) if found else sdk / "ndk/<version>/toolchains/llvm/prebuilt/<host>/bin"
-
-
-def kernel_build_command(sdk, offline):
-    """Cross-build the kernel with the NDK's clang, as AppCard's build-android.sh does."""
-    bin_dir = ndk_bin(sdk)
-    clang = bin_dir / f"{ANDROID_TARGET}{ANDROID_API}-clang"
-    env = {"CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER": clang,
-           "CARGO_TARGET_AARCH64_LINUX_ANDROID_AR": bin_dir / "llvm-ar",
-           "CC_aarch64_linux_android": clang,
-           "CXX_aarch64_linux_android": bin_dir / f"{ANDROID_TARGET}{ANDROID_API}-clang++",
-           "AR_aarch64_linux_android": bin_dir / "llvm-ar",
-           "RANLIB_aarch64_linux_android": bin_dir / "llvm-ranlib"}
-    command = ["env", *(f"{k}={v}" for k, v in env.items()),
-               "cargo", "build", "--locked", "--release", "--target", ANDROID_TARGET, *OCTOS_KERNEL_BUILD]
-    if offline:
-        command.append("--offline")
-    return command
+    return kernel_tool.octos_revision(lock or REPO / "Cargo.lock")
 
 
 def arguments(argv=None):
@@ -99,25 +82,18 @@ def arguments(argv=None):
     return args
 
 
+def kernel_source(args):
+    """(steps, kernel path or None, source) for the octos kernel the APK
+    bundles: built from the locked revision under .sources/octos-kernel, a
+    prebuilt one, or none."""
+    return kernel_tool.kernel_plan(lock=REPO / "Cargo.lock", work=REPO / ".sources/octos-kernel", sdk=args.sdk,
+                                   kernel=args.octos_kernel, no_kernel=args.no_octos_kernel,
+                                   offline=args.offline, required=False)
+
+
 def kernel_plan(args):
     """(steps, kernel path or None) for the octos kernel the APK bundles."""
-    if args.no_octos_kernel:
-        return [], None
-    if args.octos_kernel:
-        return [], args.octos_kernel
-    source = REPO / ".sources/octos"
-    revision = octos_revision()
-    steps = [(ROOT, ["git", "init", "--quiet", str(source)])]
-    if not args.offline:
-        steps.append((source, ["git", "fetch", "--quiet", "--no-tags", "--depth=1", OCTOS_URL, revision]))
-    steps += [(source, ["git", "checkout", "--quiet", "--detach", revision]),
-              (source, kernel_build_command(args.sdk, args.offline))]
-    return steps, source / "target" / ANDROID_TARGET / "release/octos"
-
-
-def extra_libs(kernel):
-    """cargo-makepad's MAKEPAD_ANDROID_EXTRA_LIBS for the kernel."""
-    return f"liboctos.so={kernel}" if kernel else None
+    return kernel_source(args)[:2]
 
 
 def build_plan(args):
@@ -166,7 +142,7 @@ def main(argv=None):
             raise RuntimeError(f"Required Android tool missing: {path}")
     if args.octos_kernel and not args.octos_kernel.is_file():
         raise RuntimeError(f"The octos kernel to bundle does not exist: {args.octos_kernel}")
-    if kernel and not args.octos_kernel and not (ndk_bin(args.sdk) / f"{ANDROID_TARGET}{ANDROID_API}-clang").is_file():
+    if kernel and not args.octos_kernel and not (kernel_tool.ndk_bin(args.sdk, required=False) / f"{ANDROID_TARGET}{ANDROID_API}-clang").is_file():
         raise RuntimeError(f"No NDK clang to build the octos kernel with under {args.sdk}/ndk (or pass --octos-kernel / --no-octos-kernel)")
     if args.sign_key:
         for path in (args.sign_key, args.sign_cert):
@@ -223,9 +199,7 @@ def main(argv=None):
                "runtime": json.loads((REPO / "native-runtime.lock.json").read_text()),
                "runtime_patches": json.loads((REPO / "runtime-patches.lock.json").read_text()),
                "packager": str(args.packager) if args.packager else "pinned source",
-               "octos_kernel": None if not kernel else {
-                   "source": "prebuilt" if args.octos_kernel else f"{OCTOS_URL}@{octos_revision()}",
-                   "sha256": hashlib.sha256(kernel.read_bytes()).hexdigest()},
+               "octos_kernel": kernel_tool.receipt(kernel, kernel_source(args)[2]),
                "artifacts": artifacts}
     (args.output / "build.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(f"Built {args.variant} Home {version} and Bridge in {args.output}")

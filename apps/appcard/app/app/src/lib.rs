@@ -803,7 +803,7 @@ fn youtube_reference_card() -> String {
 }
 
 /// The kernel's HOME on Android: `<app files dir>/octos-home`, as the
-/// shell's octos core resolves it (`octosense_octos_core::home()`: the
+/// shell's octos core resolves it (`octosense_kernel::home()`: the
 /// shell's data dir, else `$HOME`, set at startup from `cx.get_data_dir()`).
 /// Never a hard-coded package path: the same sources build several package
 /// ids, and another package's private dir is inaccessible (per-app SELinux
@@ -811,7 +811,7 @@ fn youtube_reference_card() -> String {
 /// fallback for an unset/empty HOME (i.e. startup never ran — already broken).
 #[cfg(target_os = "android")]
 fn kernel_home() -> std::path::PathBuf {
-    octosense_octos_core::home()
+    octosense_kernel::home()
         .unwrap_or_else(|| std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home"))
 }
 
@@ -6206,7 +6206,7 @@ impl App {
             Self::probe_version(Self::build_rest_client(&transport_config));
         }
         #[cfg(target_env = "ohos")]
-        log::info!("native core version={}", octosense_octos_core::EMBEDDED_VERSION);
+        log::info!("native core version={}", octosense_kernel::EMBEDDED_VERSION);
         // Reflect the signed-in identity in the top bar: the Profile pill
         // previously shipped its "(no profile)" stub forever.
         let pid_str = transport_config.profile_id.0.clone();
@@ -6406,7 +6406,7 @@ impl App {
     }
 
     /// Whether the agent talks to the shell's octos kernel
-    /// (`octosense_octos_core`) rather than dialing a WebSocket: on Android
+    /// (`octosense_kernel`) rather than dialing a WebSocket: on Android
     /// when the APK bundles `liboctos.so`, on OpenHarmony always (the core is
     /// linked in), on a desktop when a kernel binary is configured (the
     /// shell's, or `$OCTOS_APP_CORE_BIN`; `$OCTOS_APP_CORE_DIR` names its
@@ -6415,7 +6415,7 @@ impl App {
     /// memory budget) is the core's. Otherwise the app boots against a remote
     /// `octos serve`.
     fn local_kernel() -> bool {
-        match octosense_octos_core::launch() {
+        match octosense_kernel::launch() {
             Ok(_) => true,
             Err(why) => {
                 log::info!("kernel: {why}; using the WebSocket transport");

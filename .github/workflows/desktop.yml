@@ -60,33 +60,15 @@ jobs:
           # default and mobile-apps builds link it, on desktop and Android.
           cargo check --locked -p octosense
           cargo check --locked -p octosense --features mobile-apps
-          for features in "" "--features mobile-apps"; do
-            for target in "" "--target aarch64-linux-android"; do
-              cargo tree --locked -p octosense $features $target -i octosense-octos-core --depth 0 >/dev/null || { echo "::error::octosense-octos-core is missing ($features $target)"; exit 1; }
-            done
-          done
-          # AppCard's UI (the octosense-appcard module) stays opt-in: the
-          # default and mobile-apps builds must not link it, and the opt-in
-          # must still build.
-          for target in "" "--target aarch64-linux-android"; do
-            out=$(cargo tree --locked -p octosense --features mobile-apps $target -i octosense-appcard 2>&1 || true)
-            grep -q "did not match any packages" <<<"$out" || { echo "::error::octosense-appcard is linked without app-appcard ($target)"; echo "$out"; exit 1; }
-          done
           cargo check --locked -p octosense -p octosense-reference -p octosense-appcard --features mobile-apps,app-appcard
-          # Hosted Rinx (app-rinx, in default) is the library module only:
-          # never its standalone entry or its own local kernel (Rinx ADR
-          # 0007). Its assistant is the shell's app-peers service.
-          for target in "" "--target aarch64-linux-android"; do
-            tree=$(cargo tree --locked -p octosense $target -e features -i rinx)
-            grep -q 'rinx feature "octosense-module"' <<<"$tree" || { echo "::error::rinx is not linked as a module ($target)"; exit 1; }
-            if grep -qE 'rinx feature "(standalone|octos-local|octos-remote)"' <<<"$tree"; then
-              echo "::error::hosted rinx pulls a standalone runtime ($target)"; exit 1
-            fi
-            cargo tree --locked -p octosense $target -i octosense-app-peers --depth 0 >/dev/null || { echo "::error::octosense-app-peers is missing ($target)"; exit 1; }
-          done
+          # The graph guards every shell passes (tools/check-shell-graph.sh):
+          # the AI services (octosense-ai-host, the octos kernel, app-peers)
+          # in the default and mobile-apps graphs, host and Android; AppCard's
+          # UI opt-in only; hosted Rinx the library module only (Rinx ADR
+          # 0007); one makepad, one App Hub, one octos.
+          bash ../tools/check-shell-graph.sh -p octosense
       - name: Desktop tools and scripts
         run: |
-          python3 -m unittest discover -s desktop/tools -p 'test_*.py'
           python3 -m unittest discover -s tools -p 'test_*.py'
       - name: One Makepad, App Hub, octos and Rinx in the locked graph
         run: python3 tools/setup.py --check --cargo

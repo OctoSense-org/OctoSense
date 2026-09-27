@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use octosense_llm_config::{profile, Provider, ProviderSet};
-use octosense_octos_core::{CloseReason, Connection, Core, Options};
+use octosense_kernel::{CloseReason, Connection, Core, Options};
 use serde_json::{json, Value};
 
 async fn call(conn: &mut Connection, id: &str, method: &str, params: Value) -> Value {

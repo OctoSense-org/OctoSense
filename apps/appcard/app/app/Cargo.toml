@@ -55,7 +55,7 @@ octos-app-render    = { workspace = true }
 octosense-llm-config = { workspace = true }
 # The shell's octos kernel: one per process, shared, restarted after a
 # provider change. It starts the kernel; the app only connects to it.
-octosense-octos-core = { workspace = true }
+octosense-kernel = { workspace = true }
 
 # Protocol types.
 octos-core = { workspace = true }
