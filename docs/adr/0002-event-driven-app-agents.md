@@ -42,14 +42,24 @@ An app agent wakes on the app's own triggers, never waiting for a system-agent p
 
 What the agent does when woken comes from the app's **agent spec**, shipped in the bundle next to `manifest.json` and pinned by App Hub's approval like the rest of the app. It is not a prompt composed at run time by another agent.
 
-### 3. Deterministic collection, LLM thinking
+### 3. Apps expose their own tools
+
+Every app publishes a **tool manifest**: the operations that make sense for that app, typed and described so a model can use them well, much like the service manifests in upstream makepad's aichat. An app's agent works through **its app's tools**, not through raw files, sockets or generic scraping, and the same tools serve every caller.
+
+- **Declared in the bundle**, next to `manifest.json` and the agent spec: for each tool a name in the app's namespace (`<app>.<tool>`), a description, a JSON Schema for its input and output, a **risk level** (Read, Act or Destructive), and whether it may run in the background. App Hub checks the declarations at admission and pins them with the app.
+- **Implemented where the capability lives.** Tools that need data, devices, network or secrets are implemented by the app's **host service** (native code; for example Mail's `list`, `read`, `draft_reply`, `send`), so a secret never reaches the model or the script. Tools that only reshape the app's own data may be implemented by the app itself.
+- **Registered with the kernel for the app's peer.** The kernel offers the model exactly these tools (plus the few generic ones the manifest names, such as research or `glance.publish`) and routes each call to its implementation, with the calling peer's identity. Results are structured, size-capped and recorded in the run's audit log.
+- **Callers.** The app's own agent always. The **system agent** and **other apps' agents** only where the host grants it, and only the tools the app marks as shareable (for example a Calendar `free_busy` Read tool for a travel app). The person's "Ask anything" assistant calls them the same way, so a request and a background run use one surface.
+- **Risk decides supervision.** Read and in-app Act run unattended. An outward or destructive tool (send, post, share, buy, delete) called without a person present does not run: it becomes a **confirmation card** with the exact arguments, and runs when the person approves.
+
+### 4. Deterministic collection, LLM thinking
 
 Mechanical collection is **code, not a model**. Judgement is the model's.
 
 - **Data services** (host services, native code, no model) collect the app's data on their own schedule or on the source's notifications into the app's folder, and keep a **ledger** of what was already seen. Examples: mail and calendar sync, feeds, a device's sensors or health store, files the person shared with the app. They keep working when the model, its provider or its quota is unavailable, and emit an event when something changed.
 - **The app agent** (LLM) wakes on that event or on its schedule. It decides what is new and important, gathers more where needed, writes the result, produces the card, and **proposes changes to what the data service collects** (sources, topics, filters), stored as data for the next run.
 
-### 4. External information: free sources first, APIs by choice, a browser for reading, no disguised search
+### 5. External information: free sources first, APIs by choice, a browser for reading, no disguised search
 
 When an agent needs information beyond its app's data, it uses legitimate channels, cheapest and most stable first:
 
@@ -62,7 +72,7 @@ OctoSense does **not** make automated search pass as a person to get around a se
 
 Research tools return **structured items** (title, URL, source, language, date, summary, citations) written into the app's folder, not only a Markdown report.
 
-### 5. Cards: L0, grounded, rendered and critiqued before publishing
+### 6. Cards: L0, grounded, rendered and critiqued before publishing
 
 Because no person is waiting, an app agent spends its time on quality:
 
@@ -74,21 +84,21 @@ Because no person is waiting, an app agent spends its time on quality:
 
 Heavy evaluation runs where it is cheap: on the desktop or a server, or on the phone only while charging. The phone always keeps the measured checks.
 
-### 6. The glance screen is curated
+### 7. The glance screen is curated
 
 App agents publish; the shell stores; the **system agent ranks and trims**. It sees published cards and shared facts, not app-private memory. It can merge related cards and defers low-value ones. Publishing is rate-limited and deduplicated per app.
 
-### 7. Memory: private by default, promoted by rule
+### 8. Memory: private by default, promoted by rule
 
 Each run records what it distilled into the **app's memory namespace** (octos Recall tier) through a memory ingestion call. Promotion into shared user memory (for example, an appointment other apps should know about) happens by an explicit rule in the app's agent spec, or with the person's approval.
 
-### 8. What an autonomous app agent may do
+### 9. What an autonomous app agent may do
 
 Least privilege, declared by the app, checked by App Hub, granted by the host, enforced by the kernel on every call:
 
 | Layer | Restriction | Enforced by |
 |---|---|---|
-| **Tools** | only the manifest's `agent.tools`; nothing else is visible to the model | kernel, per peer context |
+| **Tools** | only the app's own tool manifest plus the generic tools its manifest names (`agent.tools`); tools of other apps only where granted and marked shareable; nothing else is visible to the model | kernel, per peer context |
 | **Network** | only the manifest's declared hosts, plus external-information providers the host grants | host network policy on every fetch |
 | **Files** | only the app's folder | app jail and the kernel's per-app workspace |
 | **Memory** | only `app/<app>/…`; promotion by rule or approval | kernel memory namespaces |
@@ -100,22 +110,22 @@ Least privilege, declared by the app, checked by App Hub, granted by the host, e
 
 ### Examples
 
-The same loop serves every app; only the data service, the agent spec and the tools differ.
+The same loop serves every app; only the data service, the agent spec and the app's tools differ.
 
-| App | Data service (no model) | Agent (on event or schedule) | Card | Needs confirmation |
-|---|---|---|---|---|
-| **News** | feeds, RSSHub, topic feeds, with a seen-items ledger | clusters new stories, researches the top topics across languages, writes a cited digest, proposes topics | morning/evening digest | none |
-| **Mail** | mail sync | spots what needs a reply or a decision, drafts replies, extracts dates and tasks | "3 need you today" with drafts | sending a reply |
-| **Calendar / travel** | calendar sync; flight or transit status | sees a delay or conflict, works out consequences | "Your 9:00 is at risk: flight +40 min" with options | changing or declining an event |
-| **Weather** | forecast and warnings feed | relates warnings to the person's plans and places | "Storm at 17:00 near your commute" | none |
-| **Health** | the device's health store | notices a trend against the person's baseline | weekly summary; a gentle flag | sharing with anyone |
+| App | Data service (no model) | App tools (examples) | Agent (on event or schedule) | Card | Needs confirmation |
+|---|---|---|---|---|---|
+| **News** | feeds, RSSHub, topic feeds, with a seen-items ledger | `news.list`, `news.read`, `news.topics.set`, `news.digest.write` | clusters new stories, researches the top topics across languages, writes a cited digest, proposes topics | morning/evening digest | none |
+| **Mail** | mail sync | `mail.list`, `mail.read`, `mail.draft_reply`, `mail.send` (Destructive) | spots what needs a reply or a decision, drafts replies, extracts dates and tasks | "3 need you today" with drafts | sending a reply |
+| **Calendar / travel** | calendar sync; flight or transit status | `calendar.list`, `calendar.free_busy` (shareable), `calendar.move` (Act, confirm) | sees a delay or conflict, works out consequences | "Your 9:00 is at risk: flight +40 min" with options | changing or declining an event |
+| **Weather** | forecast and warnings feed | `weather.forecast`, `weather.alerts` | relates warnings to the person's plans and places | "Storm at 17:00 near your commute" | none |
+| **Health** | the device's health store | `health.summary`, `health.trend` (Read, never shareable) | notices a trend against the person's baseline | weekly summary; a gentle flag | sharing with anyone |
 
 ```
 data service (timer or notification, no model) ──▶ app folder + ledger
       │ event: something changed
       ▼
 app agent (app peer)
-  ├─ decide what matters; gather more from allowed sources
+  ├─ decide what matters, using the app's own tools; gather more from allowed sources
   ├─ write findings → sys.digest source; record in app memory
   ├─ L0 card, more than one style → render in card-host --remote → critique → revise
   ├─ admit → glance.publish (outward actions become confirmation cards)
@@ -144,9 +154,9 @@ system agent: policy and budgets; rank the glance screen; cross-app insights
 
 In order; each step usable on its own.
 
-1. **Kernel (octos):** enforce a peer's tool list and tool risk levels; peers own schedules; a host-authorised "wake peer with event" call; memory ingestion from runs.
-2. **Shell (`crates/ai-host`, `crates/app-peers`):** background peer handles for host services under host policy; `events` from data services to peers; budgets, kill switch and audit log in Settings.
-3. **App Hub:** the manifest's `agent` section gains the agent spec, tool risk levels and background permission; admission checks them.
+1. **Kernel (octos):** host-registered tools per peer (schema, risk, routing to the host); enforce a peer's tool list and tool risk levels; peers own schedules; a host-authorised "wake peer with event" call; memory ingestion from runs.
+2. **Shell (`crates/ai-host`, `crates/app-peers`):** background peer handles for host services under host policy; `events` from data services to peers; registering each app's tools with its peer and routing calls to the host service or the app; budgets, kill switch and audit log in Settings.
+3. **App Hub:** the bundle gains the app's tool manifest (schemas, risk, background and shareable flags) and agent spec, and the manifest a background permission; admission checks and pins them.
 4. **Data services:** a common shape (collect, ledger, emit events) and the first services for the system apps that need them.
 5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
 6. **Cards:** a `card-studio` skill (render in `card-host --remote`, measured checks, vision critique, revise within budget); `glance.publish` and the glance screen's curation.
