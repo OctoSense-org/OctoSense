@@ -7,6 +7,7 @@ Decisions for the OctoSense repository: the shell, its services, the system apps
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md) | One OctoSense repository for the shell, its services, the system apps and both packagings | Accepted |
+| [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 
