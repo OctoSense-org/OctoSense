@@ -66,6 +66,10 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octosense-photos = { path = "apps/photos", optional = true }
 octosense-reference = { path = "apps/reference", optional = true }
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service", optional = true }
+# `llm` keeps the assistant's LLM providers for the AI providers app
+# (`os.ai-providers`); the config crate names the AppCard kernel's octos home.
+octosense-llm-service = { path = "../.sources/system-apps/apps/ai-providers/host-service", optional = true }
+octosense-llm-config = { path = "../.sources/system-apps/apps/ai-providers/config", optional = true }
 # The whole AppCard assistant (OctoSense-System-Apps apps/appcard) hosted in
 # a tile, in-process (Phase B of the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
 # Not shipped for now: strictly opt-in with `--features app-appcard`, on
@@ -78,7 +82,7 @@ octosense-news = { path = "apps/news", optional = true }
 # App Hub's shell integration (store, Card runner, system apps, icons),
 # shared with every OctoSense shell; its build packs the system apps named by
 # OCTOSENSE_SYSTEM_APPS (.cargo/config.toml -> system-apps.json).
-# Same rev as the Mail host service's octosense-appstore (OctoSense-System-Apps):
+# Same rev as the Mail and llm host services' octosense-appstore (OctoSense-System-Apps):
 # one App Hub source, so one host-service registry.
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5", optional = true }
 # OctosMap: a map under a search bar, places, directions by car, on foot and
@@ -100,6 +104,9 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # `app-news`, `app-photos` and `app-maps` link the native modules instead,
 # for comparison; Mail and Camera have no native module any more.
 octosense-mail-service = { path = "../.sources/system-apps/apps/mail/host-service" }
+# `llm`: the AI providers app's providers, camera QR and image import.
+octosense-llm-service = { path = "../.sources/system-apps/apps/ai-providers/host-service" }
+octosense-llm-config = { path = "../.sources/system-apps/apps/ai-providers/config" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", default-features = false }
 
 [features]
@@ -113,7 +120,7 @@ mobile-only = []
 # Also usable on desktop for testing the same embedded apps with --module.
 # AppCard is not among them: it ships only with `--features app-appcard`.
 mobile-apps = ["app-reference", "app-sheets", "app-photos", "app-news", "app-maps", "app-hub"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
@@ -191,7 +198,10 @@ makepad-widgets = { path = "../.sources/makepad/widgets" }
 
 # OpenHarmony's ioctl ABI differs from Linux; this is the reviewed native-mobile
 # fix from mobile PR #10, vendored by octos. octos-app's own [patch] does not
-# reach this workspace, so Home takes nix from the SAME octos rev octos-app
-# pins for octos-core/octos-cli (one octos source).
+# reach this workspace, so Home repeats it: the same nix octos-app patches in
+# (OctoSense-System-Apps apps/appcard/app/Cargo.toml). octos main, which
+# octos-app now takes octos-core/octos-cli from, no longer vendors nix, so it
+# still comes from the vendor/ tree of the former branch rev 18fcd3f1. It is
+# not an octos crate: `cargo tree -i octos-core` still sees one octos source.
 [patch.crates-io]
 nix = { git = "https://github.com/octos-org/octos.git", rev = "18fcd3f16e527d2b601d7ae244f056fb711bb6b8" }

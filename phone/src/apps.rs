@@ -326,15 +326,16 @@ mod tests {
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {
-            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail"]
+            &["reference", "sheets", "photos", "appcard", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
         } else {
-            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail"]
+            &["reference", "sheets", "photos", "news", "maps", "apphub", "settings", "camera", "mail", "ai-providers"]
         };
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
-        // Camera and Mail have no native module: they are system script apps
-        // (ADR 0004) the Card runner hosts, launched by their manifest id.
-        for id in ["camera", "mail"] {
+        // Camera, Mail and AI providers have no native module: they are
+        // system script apps (ADR 0004) the Card runner hosts, launched by
+        // their manifest id.
+        for id in ["camera", "mail", "ai-providers"] {
             let app = catalog.iter().find(|app| app.id == id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
         }

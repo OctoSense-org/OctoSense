@@ -148,6 +148,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+        <!-- AI providers' "Choose image": an invisible helper that asks the
+             system picker for one image in a task of its own (Home is
+             singleInstance, so it cannot take a picker's result itself). -->
+        <activity android:name="dev.makepad.octosense.QrImagePickActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:taskAffinity="dev.makepad.octosense.qrpick"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <!-- Pin confirmation must not start a second Makepad renderer. -->
         <activity android:name="dev.makepad.octosense.ThemeSettingsActivity"
             android:label="@string/octosense_wallpaper_style"

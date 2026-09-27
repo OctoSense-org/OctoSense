@@ -4,10 +4,20 @@
     "base_revision": "cd812acde910e9c4523f83509356450eb8edf908",
     "patch": "patches/runtime/makepad-settings.patch",
     "sha256": "6f7c1347d5436a6c46a4a94a687e3128ada5ca9c5512fe9c9ca6161f66ad7021",
-    "tree": "4990d3717a3963fcdeaf2fa9ecd4eb9d91085d6d",
+    "tree": "5065dcc11f1738440dd15459017fbd8c47ad8621",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates."
+    ],
+    "stacked": [
+      {
+        "patch": "patches/runtime/makepad-qr-scanner.patch",
+        "source_commit": "3735a8e9145dfb14bce1678c1150addd9a09c22c",
+        "sha256": "9c380b70e6bfc2f19f58e4cc55146fdfc77bbc17566a206f20c74a2a86a124b1",
+        "product_fixes": [
+          "QR scanner API (OctoSense-org/makepad#31, merged into makepad main at b03656ee but not in runtime cd812acd; platform/ and tools/ only, its qr_scan example is left out): Cx::show_qr_scanner opens the Android Camera2 scanner and answers exactly once with NativeQrScanned { json } or NativeQrCancelled { reason }; back, pause and a refused CAMERA permission cancel it."
+        ]
+      }
     ]
   }
 }

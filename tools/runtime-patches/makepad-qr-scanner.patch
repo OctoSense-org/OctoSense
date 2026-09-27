@@ -1,0 +1,381 @@
+diff --git a/platform/src/cx_api.rs b/platform/src/cx_api.rs
+index 3fe9de0fd..71c12d2a3 100644
+--- a/platform/src/cx_api.rs
++++ b/platform/src/cx_api.rs
+@@ -546,6 +546,12 @@ pub enum CxOsOp {
+     HideNativeComposer,
+     ExpandNativeComposer,
+     CollapseNativeComposer,
++    /// Open the native full-screen QR scanner (camera permission prompt
++    /// first when needed). Only the Android backend handles it; on every other
++    /// backend `Cx::show_qr_scanner` never queues it and instead posts
++    /// `NativeQrCancelled { reason: "unsupported" }`, so the catch-alls that
++    /// ignore it are never reached.
++    ShowQrScanner,
+     PrepareAudioPlayback(LiveId, VideoSource, bool, bool),
+     BeginVideoPlayback(LiveId),
+     PauseVideoPlayback(LiveId),
+@@ -668,6 +674,7 @@ fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+             Self::HideNativeComposer => write!(f, "HideNativeComposer"),
+             Self::ExpandNativeComposer => write!(f, "ExpandNativeComposer"),
+             Self::CollapseNativeComposer => write!(f, "CollapseNativeComposer"),
++            Self::ShowQrScanner => write!(f, "ShowQrScanner"),
+             Self::PrepareAudioPlayback(..) => write!(f, "PrepareAudioPlayback"),
+             Self::BeginVideoPlayback(..) => write!(f, "BeginVideoPlayback"),
+             Self::PauseVideoPlayback(..) => write!(f, "PauseVideoPlayback"),
+@@ -782,6 +789,31 @@ pub fn collapse_native_composer(&mut self) {
+         self.platform_ops.push_back(CxOsOp::CollapseNativeComposer);
+     }
+ 
++    /// Open the native full-screen QR scanner.
++    ///
++    /// Exactly one bare action follows every call (handle it in
++    /// `handle_actions` with `action.downcast_ref::<T>()`):
++    /// - [`NativeQrScanned`](crate::event::NativeQrScanned) with the full
++    ///   decoded text when a code is read (the scanner then closes), or
++    /// - [`NativeQrCancelled`](crate::event::NativeQrCancelled) with a
++    ///   `reason` when it closes without a result: `"cancelled"` (back button
++    ///   or tap), `"interrupted"` (the app went to the background),
++    ///   `"permission_denied"` (CAMERA refused), `"camera_error"` (no camera,
++    ///   or it failed / was taken by another app) or `"unsupported"`.
++    ///
++    /// Android only (Camera2 preview + a pure-Rust `rqrr` decode). Every other
++    /// platform immediately posts `NativeQrCancelled { reason: "unsupported" }`
++    /// so callers never wait forever. A call while the scanner is already open
++    /// is ignored; the pending result still arrives once.
++    pub fn show_qr_scanner(&mut self) {
++        #[cfg(target_os = "android")]
++        self.platform_ops.push_back(CxOsOp::ShowQrScanner);
++        #[cfg(not(target_os = "android"))]
++        Cx::post_action(crate::event::NativeQrCancelled {
++            reason: "unsupported".to_string(),
++        });
++    }
++
+     pub fn in_draw_event(&self) -> bool {
+         self.in_draw_event
+     }
+diff --git a/platform/src/event/event.rs b/platform/src/event/event.rs
+index 649d89180..8938723e0 100644
+--- a/platform/src/event/event.rs
++++ b/platform/src/event/event.rs
+@@ -537,12 +537,23 @@ pub struct NativeDeepLink {
+ #[derive(Clone, Debug, Default)]
+ pub struct NativeComposerExpand;
+ 
+-/// The composer's QR scanner decoded a payload (the provisioning config JSON).
++/// The native QR scanner (`Cx::show_qr_scanner` or the composer's ⛶ button)
++/// decoded a code. A bare action.
+ #[derive(Clone, Debug, Default)]
+ pub struct NativeQrScanned {
++    /// The complete decoded text of the QR code, untruncated, whatever it is
++    /// (e.g. an `OCTOS1E:` provisioning string). Named `json` for
++    /// compatibility with its first user, which scanned a JSON config.
+     pub json: String,
+ }
+ 
++/// The native QR scanner closed without a result. A bare action; see
++/// `Cx::show_qr_scanner` for the `reason` values.
++#[derive(Clone, Debug, Default)]
++pub struct NativeQrCancelled {
++    pub reason: String,
++}
++
+ /// A card's `octos.invoke` call arriving from the system browser document.
+ #[derive(Clone, Debug, Default)]
+ pub struct NativeSystemBrowserInvoke {
+diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
+index be61a1d73..e14ec3cf0 100644
+--- a/platform/src/os/linux/android/android.rs
++++ b/platform/src/os/linux/android/android.rs
+@@ -1573,11 +1573,16 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+                 self.handle_action_receiver();
+             }
+             FromJavaMessage::QrScanned { json } => {
+-                // The composer QR scanner decoded a payload — hand it to the app
+-                // (it applies it as an LLM-provisioning config). Drain this tick.
++                // The QR scanner decoded a code — hand the full text to the app
++                // (e.g. an LLM-provisioning payload). Drain this tick.
+                 Cx::post_action(crate::event::NativeQrScanned { json });
+                 self.handle_action_receiver();
+             }
++            FromJavaMessage::QrCancelled { reason } => {
++                // The QR scanner closed without a result. Drain this tick.
++                Cx::post_action(crate::event::NativeQrCancelled { reason });
++                self.handle_action_receiver();
++            }
+             FromJavaMessage::SystemBrowserInvoke {
+                 browser_id,
+                 call_id,
+@@ -2840,6 +2845,9 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+                 CxOsOp::CollapseNativeComposer => unsafe {
+                     android_jni::to_java_collapse_composer();
+                 },
++                CxOsOp::ShowQrScanner => unsafe {
++                    android_jni::to_java_request_qr_scanner();
++                },
+                 CxOsOp::SpawnSystemBrowser {
+                     browser_id,
+                     url,
+diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
+index 54dc9f906..5179e8e95 100644
+--- a/platform/src/os/linux/android/android_jni.rs
++++ b/platform/src/os/linux/android/android_jni.rs
+@@ -255,6 +255,7 @@ pub enum FromJavaMessage {
+     ComposerSwitch,
+     ComposerExpand,
+     QrScanned { json: String },
++    QrCancelled { reason: String },
+     SystemBrowserInvoke { browser_id: i64, call_id: i64, tool: String, args: String },
+     SystemBrowserPageError { browser_id: i64, code: i32, description: String, url: String },
+     DeepLink { url: String },
+@@ -2924,7 +2925,26 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onLocation(
+     }
+ }
+ 
+-/// Detect + decode a QR from an 8-bit greyscale (luma) buffer. Returns the text.
++/// The QR scanner overlay closed without a decode (back / tap / app paused /
++/// camera error / CAMERA permission denied). `reason` is the short code
++/// documented on `Cx::show_qr_scanner`.
++#[no_mangle]
++pub unsafe extern "C" fn Java_dev_makepad_android_MakepadNative_onQrCancelled(
++    env: *mut jni_sys::JNIEnv,
++    _: jni_sys::jclass,
++    reason: jni_sys::jstring,
++) {
++    let reason = if reason.is_null() {
++        "cancelled".to_string()
++    } else {
++        jstring_to_string(env, reason)
++    };
++    send_from_java_message(FromJavaMessage::QrCancelled { reason });
++}
++
++/// Detect + decode a QR from an 8-bit greyscale (luma) buffer. Returns the
++/// complete decoded text (rqrr decodes every segment of any version, so a
++/// 1000+ character alphanumeric payload comes back whole, not truncated).
+ fn decode_qr_luma(luma: &[u8], w: usize, h: usize) -> Option<String> {
+     let mut img = rqrr::PreparedImage::prepare_from_greyscale(w, h, |x, y| luma[y * w + x]);
+     for grid in img.detect_grids() {
+@@ -3038,6 +3058,13 @@ pub unsafe fn to_java_collapse_composer() {
+     ndk_utils::call_void_method!(env, get_activity(), "collapseComposer", "()V");
+ }
+ 
++// The full-screen QR scanner (`MakepadActivity.requestQrScanner`): asks for
++// CAMERA if needed, then reports back via onQrCameraFrame / onQrCancelled.
++pub unsafe fn to_java_request_qr_scanner() {
++    let env = attach_jni_env();
++    ndk_utils::call_void_method!(env, get_activity(), "requestQrScanner", "()V");
++}
++
+ // The system browser is a Java WebView the activity hosts over the GL surface
+ // (`MakepadActivity.spawnSystemBrowser` and friends).
+ pub unsafe fn to_java_spawn_system_browser(browser_id: LiveId, url: &str, navigable: bool) {
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 9e6d0458d..274d922b1 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1290,6 +1290,8 @@ public class MakepadActivity
+     private HandlerThread mQrBgThread;
+     private Handler mQrBgHandler;
+     private volatile boolean mQrScanning = false;
++    // A CAMERA request for the scanner is in flight (dedupes repeat requests).
++    private boolean mQrPermPending = false;
+     private long mQrLastFrameMs = 0;
+     private static final int QR_CAMERA_PERM_REQ = 0x51A2;
+ 
+@@ -1704,6 +1706,8 @@ public class MakepadActivity
+             stopGpsLocationUpdates();
+             return;
+         }
++        // Never hold the camera in the background: close an open QR scanner.
++        if (mQrScanning) closeQrScanner("interrupted");
+         prepareSurfaceSnapshotOverlayForPause();
+         super.onPause();
+         if(view!=null) view.retireInputConnection();
+@@ -1802,6 +1806,18 @@ public class MakepadActivity
+         trimSurfaceSnapshotCaches();
+     }
+ 
++    // Back closes an open QR scanner (and releases the camera). Intercepted
++    // here, before the view tree: the focused MakepadSurface consumes every
++    // key (BACK included) and forwards it to Rust, so onBackPressed never runs.
++    @Override
++    public boolean dispatchKeyEvent(KeyEvent event) {
++        if (mQrScanning && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
++            if (event.getAction() == KeyEvent.ACTION_UP) closeQrScanner("cancelled");
++            return true;
++        }
++        return super.dispatchKeyEvent(event);
++    }
++
+     @Override
+     @SuppressWarnings("deprecation")
+     public void onBackPressed() {
+@@ -1914,14 +1930,22 @@ public class MakepadActivity
+             MakepadNative.onPermissionResult(permissions[i], requestId, status);
+         }
+ 
+-        // QR-scanner camera permission: open the scanner once granted.
++        // QR-scanner camera permission: open the scanner once granted, else
++        // report the refusal so the caller is not left waiting.
+         if (requestId == QR_CAMERA_PERM_REQ) {
++            mQrPermPending = false;
++            boolean granted = false;
+             for (int i = 0; i < permissions.length; i++) {
+                 if (Manifest.permission.CAMERA.equals(permissions[i])
+                     && grantResults[i] == PackageManager.PERMISSION_GRANTED) {
+-                    showQrScanner();
++                    granted = true;
+                 }
+             }
++            if (granted) {
++                showQrScanner();
++            } else {
++                MakepadNative.onQrCancelled("permission_denied");
++            }
+         }
+ 
+         // Location permission granted → start GPS updates.
+@@ -3325,7 +3349,7 @@ public class MakepadActivity
+         qrBtn.setOnClickListener(new View.OnClickListener() {
+             @Override
+             public void onClick(View v) {
+-                showQrScanner();
++                requestQrScanner();
+             }
+         });
+ 
+@@ -3383,16 +3407,26 @@ public class MakepadActivity
+         mRootLayout.addView(mComposerOverlay);
+     }
+ 
+-    // Open the QR scanner overlay (requesting CAMERA first). Rust decodes the
+-    // streamed frames; on a hit it applies the LLM config (see onQrCameraFrame).
++    // Open the QR scanner overlay: the single entry point for both the
++    // composer's ⛶ button and Rust's `Cx::show_qr_scanner` (CxOsOp::ShowQrScanner).
++    // Safe to call from any thread. Every open ends in exactly one
++    // MakepadNative.onQrCameraFrame hit (-> NativeQrScanned) or
++    // onQrCancelled(reason) (-> NativeQrCancelled).
++    public void requestQrScanner() {
++        runOnUiThread(new Runnable() { public void run() { showQrScanner(); } });
++    }
++
++    // UI thread: ask for CAMERA first when needed, then open the overlay. Rust
++    // decodes the streamed frames (see onQrCameraFrame).
+     private void showQrScanner() {
+-        if (mQrScanning) return;
++        if (mQrScanning || mQrPermPending) return;
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+             && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
++            mQrPermPending = true;
+             requestPermissions(new String[]{Manifest.permission.CAMERA}, QR_CAMERA_PERM_REQ);
+             return; // re-opened from onRequestPermissionsResult once granted
+         }
+-        runOnUiThread(new Runnable() { public void run() { startQrScanner(); } });
++        startQrScanner();
+     }
+ 
+     private void startQrScanner() {
+@@ -3418,7 +3452,7 @@ public class MakepadActivity
+         mQrScanOverlay.addView(hint, hintLp);
+         mQrScanOverlay.setClickable(true);
+         mQrScanOverlay.setOnClickListener(new View.OnClickListener() {
+-            @Override public void onClick(View v) { hideQrScanner(); }
++            @Override public void onClick(View v) { closeQrScanner("cancelled"); }
+         });
+         mRootLayout.addView(mQrScanOverlay);
+ 
+@@ -3449,7 +3483,7 @@ public class MakepadActivity
+             }
+             if (backId == null) {
+                 String[] ids = mgr.getCameraIdList();
+-                if (ids.length == 0) { hideQrScanner(); return; }
++                if (ids.length == 0) { closeQrScanner("camera_error"); return; }
+                 backId = ids[0];
+             }
+             StreamConfigurationMap map = mgr.getCameraCharacteristics(backId)
+@@ -3491,7 +3525,9 @@ public class MakepadActivity
+                             for (int col = 0; col < w; col++) luma[out++] = rowBuf[col * pixStride];
+                         }
+                         if (MakepadNative.onQrCameraFrame(luma, w, h)) {
+-                            hideQrScanner();
++                            // Rust already posted NativeQrScanned: close silently.
++                            mQrScanning = false;
++                            closeQrScanner(null);
+                         }
+                     } catch (Exception e) {
+                         // transient frame errors are fine; keep scanning
+@@ -3518,34 +3554,51 @@ public class MakepadActivity
+                                     if (mQrCameraDevice == null) return;
+                                     mQrCaptureSession = session;
+                                     try { session.setRepeatingRequest(rb.build(), null, mQrBgHandler); }
+-                                    catch (Exception e) { hideQrScanner(); }
++                                    catch (Exception e) { closeQrScanner("camera_error"); }
+                                 }
+                                 @Override public void onConfigureFailed(CameraCaptureSession s) {
+-                                    hideQrScanner();
++                                    closeQrScanner("camera_error");
+                                 }
+                             }, mQrBgHandler);
+                     } catch (Exception e) {
+                         android.util.Log.e("Makepad", "QR camera2 session failed: " + e);
+-                        hideQrScanner();
++                        closeQrScanner("camera_error");
+                     }
+                 }
+-                @Override public void onDisconnected(CameraDevice device) { device.close(); }
++                @Override public void onDisconnected(CameraDevice device) {
++                    // Another client took the camera (or it went away): the
++                    // overlay would be a dead black screen, so close it.
++                    device.close();
++                    closeQrScanner("camera_error");
++                }
+                 @Override public void onError(CameraDevice device, int error) {
+                     android.util.Log.e("Makepad", "QR camera2 error: " + error);
+                     device.close();
+-                    hideQrScanner();
++                    closeQrScanner("camera_error");
+                 }
+             }, mQrBgHandler);
+         } catch (Exception e) {
+             android.util.Log.e("Makepad", "QR camera2 open failed: " + e);
+-            hideQrScanner();
++            closeQrScanner("camera_error");
+         }
+     }
+ 
+-    // Close the scanner + release the camera. Safe to call from any thread.
++    // Close the scanner (reported to Rust as cancelled) + release the camera.
++    // Safe to call from any thread.
+     public void hideQrScanner() {
++        closeQrScanner("cancelled");
++    }
++
++    // Close the scanner + release the camera. Safe to call from any thread.
++    // A non-null `reason` is reported once via onQrCancelled if the scanner was
++    // still open; null closes silently (after a successful decode).
++    private void closeQrScanner(final String reason) {
+         runOnUiThread(new Runnable() { public void run() {
++            boolean wasScanning = mQrScanning;
+             mQrScanning = false;
++            if (wasScanning && reason != null) {
++                MakepadNative.onQrCancelled(reason);
++            }
+             try { if (mQrCaptureSession != null) mQrCaptureSession.close(); } catch (Exception ignore) {}
+             mQrCaptureSession = null;
+             try { if (mQrCameraDevice != null) mQrCameraDevice.close(); } catch (Exception ignore) {}
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
+index cc642e3b9..daecd8509 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
+@@ -97,6 +97,9 @@ public class MakepadNative {
+     // A camera frame (NV21 luma plane) from the QR scanner overlay. Rust decodes
+     // it; returns true if a QR was found (the caller then closes the scanner).
+     public native static boolean onQrCameraFrame(byte[] luma, int width, int height);
++    // The QR scanner closed without a decode ("cancelled", "interrupted",
++    // "permission_denied", "camera_error"); posted to Rust as NativeQrCancelled.
++    public native static void onQrCancelled(String reason);
+ 
+     // midi
+     public native static void onMidiDeviceOpened(String name, Object midi_device);

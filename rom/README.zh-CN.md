@@ -12,7 +12,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | --- | --- | --- |
 | **OctoSense-ROM**（本仓库） | 手机 Shell、ROM 镜像、安装器 | |
 | [OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) | 桌面端 Shell | Home 于 2026 年 9 月 15 日从中拆分出来，两者仍共享大量源码（见 [home/README.zh-CN.md](home/README.zh-CN.md)）。 |
-| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | 新闻、相册、地图、相机、邮件这五个隔离运行的脚本应用，邮件宿主服务，以及 AppCard 助手 | 版本固定在 `home/native-apps.lock.json`，检出到 `.sources/system-apps`。 |
+| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | 新闻、相册、地图、相机、邮件、AI 提供商这六个隔离运行的脚本应用，邮件与 `llm` 宿主服务，以及 AppCard 助手 | 版本固定在 `home/native-apps.lock.json`，检出到 `.sources/system-apps`。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、准入检查、`hub` 命令行、`card-host`，以及各 Shell 共用的 crate `octosense-app-hub-app` | 作为 git 依赖固定在 `home/Cargo.toml`。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何开发并发布 OctoSense 应用 | 不参与构建。要为 Home 开发应用，从这里开始。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 运行时发布版本：指定 Makepad 与 OctoScript 的版本 | 版本固定在 `home/native-runtime.lock.json`。 |
@@ -34,7 +34,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | `home/docs/` | Home 的 ADR、Android 与性能记录、设计笔记 |
 | `home/*.lock.json`、`home/system-apps.json` | 源码版本锁定和系统应用选择（见[版本固定与更新](#版本固定与更新)） |
 | `vendor/octosense/` | ROM 产品层：makefile、权限、资源覆盖、sepolicy、系统 agent |
-| `patches/` | LineageOS 与内核补丁；当 `home/runtime-patches.lock.json` 列出 Makepad 补丁时，`patches/runtime/` 存放该补丁（目前为 Settings 补丁） |
+| `patches/` | LineageOS 与内核补丁；当 `home/runtime-patches.lock.json` 列出 Makepad 补丁时，`patches/runtime/` 存放该补丁（目前为 Settings 补丁，以及叠加其上的二维码扫描补丁） |
 | `scripts/` | Home 构建、ROM 产物准备、构建、刷机、发布和手机检查 |
 | `web-installer/` | 面向 OnePlus 6 的 WebUSB 安装器（本地开发预览版） |
 | `docs/` | ROM 的 ADR，以及构建、刷机、更新和验证记录 |
@@ -60,7 +60,7 @@ python3 scripts/setup-home.py              # check out every pin into .sources/
 python3 scripts/setup-home.py --check --cargo
 ```
 
-setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本（并应用 `home/runtime-patches.lock.json` 列出的经过审查的 Makepad 补丁；目前为 Settings 补丁），并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
+setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本（并应用 `home/runtime-patches.lock.json` 列出的经过审查的 Makepad 补丁；目前为 Settings 补丁，以及叠加其上的二维码扫描补丁），并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
 
 ### 在桌面上运行 Home
 
@@ -158,7 +158,7 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 
 | 类型 | 来源 | 运行方式 |
 | --- | --- | --- |
-| 系统应用：新闻、相册、地图、相机、邮件 | OctoSense-System-Apps 的 `apps/<name>/bundle/`，由 `home/system-apps.json` 选择 | 隔离运行的脚本应用，打包进构建产物 |
+| 系统应用：新闻、相册、地图、相机、邮件、AI 提供商 | OctoSense-System-Apps 的 `apps/<name>/bundle/`，由 `home/system-apps.json` 选择 | 隔离运行的脚本应用，打包进构建产物 |
 | 商店应用 | App Hub 目录，运行时安装 | 隔离运行的脚本应用或卡片应用 |
 | AppCard 助手 | OctoSense-System-Apps 的 `apps/appcard/app/app`（`octos-app`） | 原生模块，需显式启用（`app-appcard`）；默认不发布 |
 | 原生模块 | `home/apps/*`，以及来自 Makepad 的 Sheets | 链接的模块，由 feature 控制 |
@@ -167,13 +167,13 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 
 **商店应用**。App Hub（`apphub`）浏览签名目录，校验并安装应用包；Card 运行器（`card`）按每个已安装应用的清单所申请的权限，在独立的 isolate 中打开它。已安装的应用以 `hub:<manifest-id>` 出现在启动器和最近任务中。两者都来自 `octosense-app-hub-app`，由默认的 `app-hub` feature 链接，所有移动端构建也都包含。如何开发和发布应用：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)。
 
-**宿主服务与密钥**。应用不能自己持有的东西，通过宿主服务获取：`host.request("family.method", ...)`，需要清单授权。邮件是第一个宿主服务：`mail` 服务（OctoSense-System-Apps 的 `apps/mail/host-service`）保管账户和密码，密码存放在钥匙串中或由 Android Keystore 密钥保护，应用只能拿到文件夹、邮件和发送功能，永远拿不到 socket 或密码。密钥归宿主所有：任何脚本应用都不收集密码、PIN 或一次性验证码。用户只在宿主自有面板上输入这类信息；在隔离运行的应用中，运行时会让密码输入框失效；App Hub 的准入检查会拒绝声明了此类输入框的应用包。
+**宿主服务与密钥**。应用不能自己持有的东西，通过宿主服务获取：`host.request("family.method", ...)`，需要清单授权。邮件是第一个宿主服务：`mail` 服务（OctoSense-System-Apps 的 `apps/mail/host-service`）保管账户和密码，密码存放在钥匙串中或由 Android Keystore 密钥保护，应用只能拿到文件夹、邮件和发送功能，永远拿不到 socket 或密码。`llm` 服务（`apps/ai-providers/host-service`）为 AI 提供商应用保管 AppCard 助手的 LLM 提供商：密钥只在它的面板上输入、扫码或导入，链接了 AppCard（`app-appcard`）时，更改后 Home 会重启 AppCard 内核。密钥归宿主所有：任何脚本应用都不收集密码、PIN 或一次性验证码。用户只在宿主自有面板上输入这类信息；在隔离运行的应用中，运行时会让密码输入框失效；App Hub 的准入检查会拒绝声明了此类输入框的应用包。
 
 **原生模块**。移动端构建总是链接 Reference、Sheets 和 App Hub。桌面构建通过 feature 选择：
 
 | Feature | 链接内容 |
 | --- | --- |
-| `app-hub`（默认） | App Hub、Card 运行器、系统应用和邮件服务 |
+| `app-hub`（默认） | App Hub、Card 运行器、系统应用以及邮件和 `llm` 服务 |
 | `app-reference`、`app-sheets` | Reference、Makepad Sheets |
 | `app-appcard` | AppCard 及 octos 内核（在所有目标平台上都需显式启用，见下文） |
 | `app-news`、`app-photos`、`app-maps` | 原生的新闻、相册、地图，用于对比；各自会替换对应的脚本应用 |
@@ -190,15 +190,15 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 | `home/native-apps.lock.json` | OctoSense-System-Apps 的版本（`.sources/system-apps`） |
 | `home/system-apps.json` | 包含哪些系统应用，以及 Home 为它们挂载的资源 |
 | `home/native-runtime.lock.json` | OctoScript-Makepad 的版本；其 `runtime.json` 指定 Makepad 与 OctoScript |
-| `home/runtime-patches.lock.json` | 运行时之上经过审查的 Makepad 补丁（基础版本、SHA-256、应用后的 tree）；目前记录 Settings 补丁 |
+| `home/runtime-patches.lock.json` | 运行时之上经过审查的 Makepad 补丁（基础版本、SHA-256、应用后的 tree）；目前记录 Settings 补丁和叠加的二维码扫描补丁（`stacked`） |
 | `home/Cargo.toml`、`home/Cargo.lock` | Makepad 的 `rev`（必须与运行时一致）、App Hub 的 `rev`、`nix` 使用的 octos `rev` |
 | `home/upstream/makepad.json` | 从 Makepad 导入的窗口管理器源码的来源记录 |
 
-Cargo 清单保证**每种依赖只有一个来源**：`[patch]` 把所有 Makepad crate（包括 App Hub 的 crate 和 `octos-app` 引用的那些）指向 `.sources/makepad`；`nix` 取自 `octos-app` 所用的同一个 octos 版本。App Hub 不需要 `[patch]`：Home 和 Mail 宿主服务引用同一个 App Hub 版本，因此依赖图中只有一个 App Hub 来源。
+Cargo 清单保证**每种依赖只有一个来源**：`[patch]` 把所有 Makepad crate（包括 App Hub 的 crate 和 `octos-app` 引用的那些）指向 `.sources/makepad`；`nix` 与 `octos-app` 应用的补丁相同（octos `18fcd3f1` 中 vendor 的副本；octos main 已不再 vendor 它）。App Hub 不需要 `[patch]`：Home 与 Mail、`llm` 宿主服务引用同一个 App Hub 版本，因此依赖图中只有一个 App Hub 来源。
 
-- **System-Apps**。在 `home/native-apps.lock.json` 中写入新版本，运行 `python3 scripts/setup-home.py --update`；如果 `octos-app` 的依赖有变化，在 `home/` 下不带 `--locked` 构建一次，并提交 `home/Cargo.lock`。如果新的 System-Apps 固定了不同的 octos 版本，把 `home/Cargo.toml` 中 `nix` 的补丁也移到该版本。
+- **System-Apps**。在 `home/native-apps.lock.json` 中写入新版本，运行 `python3 scripts/setup-home.py --update`；如果 `octos-app` 的依赖有变化，在 `home/` 下不带 `--locked` 构建一次，并提交 `home/Cargo.lock`。`home/Cargo.toml` 中 `nix` 的补丁应与 System-Apps 的 `apps/appcard/app/Cargo.toml` 中的保持一致。
 - **Makepad / OctoScript**。更新 `home/native-runtime.lock.json` 中的 OctoScript-Makepad 版本，把其中的 Makepad 版本同步到 `home/Cargo.toml` 和 `home/apps/*/Cargo.toml` 的每个 `rev = "…"`，并对运行时补丁（如有）做 rebase 或删除。任何不一致都会让 `setup-home.py --check --cargo` 失败。完整流程见 [home/docs/makepad-fork.md（英文）](home/docs/makepad-fork.md#adopting-a-fork-revision)。
-- **运行时补丁**。运行时的 Makepad（main `cd812acd`）已包含 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）。`patches/runtime/makepad-settings.patch` 在此基础上保留 Settings 的输入、无障碍和渲染修复。如果某个修复必须先于运行时发布上线，把补丁放进 `patches/runtime/`，并在 `home/runtime-patches.lock.json` 中记录为 `makepad` 条目；setup 应用补丁后将其保留为已暂存状态，`--check` 只接受记录中的那个 tree。
+- **运行时补丁**。运行时的 Makepad（main `cd812acd`）已包含 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）。`patches/runtime/makepad-settings.patch` 在此基础上保留 Settings 的输入、无障碍和渲染修复。`patches/runtime/makepad-qr-scanner.patch` 叠加在它之上（同一条目中的 `stacked`，按顺序应用；`tree` 是两者应用后的结果）：[makepad#31](https://github.com/OctoSense-org/makepad/pull/31) 的 platform 与打包部分，即 AI 提供商使用的相机二维码扫描 API。#31 已合入 makepad main，但尚未进入运行时版本；运行时包含它之后，删除该 stacked 条目和补丁文件。如果某个修复必须先于运行时发布上线，把补丁放进 `patches/runtime/`，并在 `home/runtime-patches.lock.json` 中记录为 `makepad` 条目；setup 应用补丁后将其保留为已暂存状态，`--check` 只接受记录中的那个 tree。
 - **App Hub**。把 `octosense-app-hub-app` 的 `rev`（两处依赖声明）改为固定的 System-Apps 中 Mail 宿主服务为 `octosense-appstore` 引用的 App Hub 版本。两个 App Hub 版本意味着两个宿主服务注册表，Card 运行器将看不到 Mail 的服务。
 
 ## 测试与验证
