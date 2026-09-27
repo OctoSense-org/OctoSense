@@ -8,10 +8,13 @@
 
 | To change | Edit | Check with |
 | --- | --- | --- |
-| The desktop shell, its catalogs, themes, WM sync | `desktop/` | `cargo check --locked -p octosense` (and `--features mobile-apps`), `desktop.yml` |
-| Home: the phone shell, Settings, Android/OpenHarmony/iOS packaging, the phone side of the bridge | `phone/` (run cargo from `phone/`) | `cargo check --locked -p octosense-home --features mobile-apps`, `phone.yml` |
+| The shell: window manager, styles, hosting, App Hub, the phone layer, themes and wallpapers | `crates/shell/` (package `octosense-shell`; never copy a shell file into `desktop/src` or `phone/src`) | both packagings' checks below, and from `phone/`: `cargo test --locked --features mobile-apps -p octosense-shell`; `desktop.yml`, `phone.yml` |
+| The desktop packaging: entry point, catalogs, WM sync | `desktop/` | `cargo check --locked -p octosense` (and `--features mobile-apps`), `bash tools/check-shell-graph.sh -p octosense`, `desktop.yml` |
+| Home's packaging: Settings, Android/OpenHarmony/iOS packaging, the phone side of the bridge | `phone/` (run cargo from `phone/`) | `cargo check --locked -p octosense-home --features mobile-apps`, `bash ../tools/check-shell-graph.sh -p octosense-home`, `phone.yml` |
 | The OnePlus 6 image: vendor, patches, flash/OTA, APK build scripts, web installer | `rom/` | from `rom/`: `python3 -m unittest discover -s tests`, `rom.yml`; image builds are not in CI |
-| The octos kernel service | `crates/kernel/` | `cargo test --locked -p octosense-octos-core`, `apps.yml` |
+| The shell's AI services (kernel start, `llm` service, QR import, app peers) | `crates/ai-host/` | `cargo test --locked -p octosense-ai-host --features octos-core,llm`, `apps.yml` |
+| The octos kernel service | `crates/kernel/` | `cargo test --locked -p octosense-kernel`, `apps.yml` |
+| The octos kernel an Android APK bundles | `tools/kernel-artifact.py` | `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | Apps' access to the assistant | `crates/app-peers/` | its README, `apps.yml` |
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
 | A host service (`mail`, `llm`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |

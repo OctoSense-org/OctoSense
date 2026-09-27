@@ -103,14 +103,16 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
    }
    ```
 
-2. 链接宿主服务 `octosense-mail-service` 和 `octosense-llm-service`（workspace 内的
-   path 依赖）并在启动时注册：Mail 服务在真实账户下用 `register()`，Shell 的应用配置中
+2. 通过 Shell（[`crates/shell`](../crates/shell)）链接宿主服务
+   `octosense-mail-service` 和 `octosense-llm-service`（workspace 内的 path 依赖）
+   并在启动时注册：Mail 服务在真实账户下用 `register()`，Shell 的应用配置中
    `mail_demo: true` 时用 `register_demo()`；`llm` 服务使用 octos 内核的 core 目录以及
    Shell 的二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）。App Hub 只在根目录
    `Cargo.toml` 中固定一次，因此只有一个宿主服务注册表。
-3. 从 `../crates/kernel` 链接 `octosense-octos-core`（两个 Shell 的 feature
-   `octos-core`，默认开启），在启动时配置内核；以内核的 core 目录注册 `llm` 服务
-   （开启其 `octos-core` feature），这样修改服务商会重启内核。见 [octos 内核](#octos-内核)。
+3. 通过统一入口 [`crates/ai-host`](../crates/ai-host/README.md)（`octosense-ai-host`）
+   启动 Shell 的 AI 服务：它从 `../crates/kernel` 链接 `octosense-kernel`（两个 Shell
+   的 feature `octos-core`，默认开启），在启动时配置内核，并以内核的 core 目录注册
+   `llm` 服务（开启其 `octos-core` feature），这样修改服务商会重启内核。见 [octos 内核](#octos-内核)。
 4. 可选（需显式开启 `app-appcard`）以 `default-features = false` 链接 AppCard
    的 `octos-app`，并通过其 `AppShell` 控件挂载（见 [AppCard 助手](#appcard-助手)）；
    它连接的是同一个内核。
@@ -136,7 +138,9 @@ appcard/                     原生 AppCard 助手
   tools/                     setup-native.py、octos macOS/OpenHarmony 启动器、build-android.sh 等
   docs/                      架构、构建和评审笔记
   native-runtime.lock.json   AppCard 构建所用的 Octoscript-Makepad 版本（与根目录相同）
-../crates/kernel/            octosense-octos-core：Shell 的 octos 内核（每进程一个，共享）
+../crates/shell/             octosense-shell：两种打包形态共同链接的唯一 Shell
+../crates/ai-host/           octosense-ai-host：Shell 的 AI 服务（内核、`llm`、app peers），统一入口
+../crates/kernel/            octosense-kernel：Shell 的 octos 内核（每进程一个，共享）
 ../crates/app-peers/         octosense-app-peers：应用对助手的受限访问
 ../.github/workflows/apps.yml   宿主服务、AppCard 和 Shell 服务的 CI
 ```
@@ -255,14 +259,14 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 `octos` 服务（profile 中写 `keychain:` 标记），Linux 上是 `<core_dir>/secrets/`，
 其他平台（Android）写在应用私有的 profile 中。密钥只在宿主面板上输入，二维码只在
 宿主面板上显示和扫描；应用只能看到打码后的状态。开启其 `octos-core` feature（Shell
-的默认设置）后，它写入 `octosense_octos_core::core_dir()`，并在每次更改后调用
-`octosense_octos_core::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
+的默认设置）后，它写入 `octosense_kernel::core_dir()`，并在每次更改后调用
+`octosense_kernel::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
 方式见其 [README（英文）](ai-providers/host-service/README.md)。
 
 ## octos 内核
 
 octos Agent 内核是 **Shell 服务**，不属于任何应用。
-[`crates/kernel`](../crates/kernel)（`octosense-octos-core`）就是这个服务；
+[`crates/kernel`](../crates/kernel)（`octosense-kernel`）就是这个服务；
 Shell 默认链接它（cargo feature `octos-core`，在 `mobile-apps` 和原生移动构建中
 同样开启）：
 
@@ -281,8 +285,8 @@ Shell 默认链接它（cargo feature `octos-core`，在 `mobile-apps` 和原生
   配置了内核二进制（Shell 指定，或 `$OCTOS_APP_CORE_BIN`）时才运行内核；没有时
   服务商设置照样保存。
 
-测试（在仓库根目录）：`cargo test --locked -p octosense-octos-core`；有编译好的 `octos` 时，
-`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --locked -p octosense-octos-core --test real_kernel` 会用
+测试（在仓库根目录）：`cargo test --locked -p octosense-kernel`；有编译好的 `octos` 时，
+`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --locked -p octosense-kernel --test real_kernel` 会用
 `octosense-llm-config` 写入的 profile 启动真实内核，并在修改服务商后重启它。
 详见 [crates/kernel/README.md（英文）](../crates/kernel/README.md)。
 
@@ -357,7 +361,7 @@ Shell 的 `system-apps.json` 中加入它。
 | 对象 | 方法 |
 | --- | --- |
 | Mail 服务 | 在仓库根目录：`cargo test --locked -p octosense-mail-service`。钥匙串测试默认忽略：`cargo test -p octosense-mail-service -- --ignored keychain` |
-| octos 内核服务 | `cargo test --locked -p octosense-octos-core`（替身内核）；`OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-octos-core --test real_kernel`（真实内核） |
+| octos 内核服务 | `cargo test --locked -p octosense-kernel`（替身内核）；`OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-kernel --test real_kernel`（真实内核） |
 | `llm` 服务与配置 | `cargo test --locked -p octosense-llm-service -p octosense-llm-config`；加 `--features octosense-llm-service/octos-core` 即 Shell 的构建方式 |
 | AppCard | 上文的命令 |
 | CI | 除真实内核和钥匙串测试外的以上全部：[apps.yml](../.github/workflows/apps.yml) |

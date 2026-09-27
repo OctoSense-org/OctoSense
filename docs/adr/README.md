@@ -10,7 +10,7 @@ Decisions for the OctoSense repository: the shell, its services, the system apps
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 
-Written in OctoSense-ROM `home/docs/adr/` before the repositories merged, and kept here unchanged as history under [`home/`](home/). They keep their own numbers; cite them as "Home ADR 0004". Where one names a path such as `home/src/` or `home/apps/`, read `phone/src/` and `apps/` (see ADR 0001). Their status is as they recorded it.
+Written in OctoSense-ROM `home/docs/adr/` before the repositories merged, and kept here unchanged as history under [`home/`](home/). They keep their own numbers; cite them as "Home ADR 0004". Where one names a path such as `home/src/` or `home/apps/`, read `crates/shell/src/` (the shell; Settings is in `phone/src/`) and `apps/` (see ADR 0001). Their status is as they recorded it.
 
 | Home ADR | Title | Date | Status |
 | --- | --- | --- | --- |

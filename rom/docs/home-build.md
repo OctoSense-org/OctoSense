@@ -22,7 +22,8 @@ is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
 `Cargo.lock` at the same revision as its backend crates. Its build packs
 the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `phone/.cargo/config.toml`
 sets to `phone/system-apps.json`. The octos kernel service
-(`octosense-octos-core`, `crates/kernel`) is is in every standard build (feature `octos-core`, on by
+(`octosense-kernel`, `crates/kernel`, started through the shell's AI
+services in `crates/ai-host`) is in every standard build (feature `octos-core`, on by
 default and always on for Android, iOS and OpenHarmony). The AppCard
 assistant (`octos-app`, `apps/appcard/app/app`) is built
 only with `--features app-appcard`: it is not shipped for now, so default,
@@ -37,7 +38,7 @@ and self-confirmed assistant tools (makepad#36).
 Rinx (`app-rinx`, in the default and `mobile-apps` builds) is linked as a
 native module with `octosense-module` only; CI checks that its standalone
 entry and local kernel stay out of every graph. Its assistant is Home's:
-`phone/src/app_peers_host.rs` gives each module whose declared `octos.*` services
+the shell's AI services (`octosense-ai-host`, `crates/ai-host`) give each module whose declared `octos.*` services
 host policy grants a scoped service from `octosense-app-peers`
 (`crates/app-peers`): one octos peer per app and
 account, owned by the system agent `_main:api:octosense#system`, on the

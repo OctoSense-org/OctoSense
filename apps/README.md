@@ -121,14 +121,16 @@ standalone launcher and ROM image). Each packaging:
    ```
 
 2. Links the host services `octosense-mail-service` and
-   `octosense-llm-service` (workspace path dependencies) and registers them
-   at startup: Mail with `register()` for real accounts, or `register_demo()`
+   `octosense-llm-service` (workspace path dependencies) through the shell,
+   [`crates/shell`](../crates/shell), and registers them at startup: Mail with `register()` for real accounts, or `register_demo()`
    when the shell's app config has `mail_demo: true`; `llm` with the octos
    kernel's core dir and the shell's QR scanner and image picker (see
    [the `llm` service](#the-llm-service)). App Hub is pinned once, in the root
    `Cargo.toml`, so there is one host-service registry.
-3. Links `octosense-octos-core` from `../crates/kernel` (feature `octos-core`
-   in both shells, on by default) and configures the kernel at startup;
+3. Starts the shell's AI services through one entry point,
+   [`crates/ai-host`](../crates/ai-host/README.md) (`octosense-ai-host`): it
+   links `octosense-kernel` from `../crates/kernel` (feature `octos-core` in
+   both shells, on by default), configures the kernel at startup and
    registers the `llm` service (with its `octos-core` feature) on the
    kernel's core dir, so a provider change restarts the kernel. See
    [The octos kernel](#the-octos-kernel).
@@ -158,7 +160,9 @@ appcard/                     the native AppCard assistant
   tools/                     setup-native.py, octos macOS/OpenHarmony runners, build-android.sh, ...
   docs/                      architecture, build and review notes
   native-runtime.lock.json   the Octoscript-Makepad release AppCard builds against (the same as the root's)
-../crates/kernel/            octosense-octos-core: the shell's octos kernel (one per process, shared)
+../crates/shell/             octosense-shell: the one shell both packagings link
+../crates/ai-host/           octosense-ai-host: the shell's AI services (kernel, `llm`, app peers), one entry point
+../crates/kernel/            octosense-kernel: the shell's octos kernel (one per process, shared)
 ../crates/app-peers/         octosense-app-peers: apps' scoped access to the assistant
 ../.github/workflows/apps.yml   CI for the host services, AppCard and the shell services
 ```
@@ -286,7 +290,7 @@ where octos reads them: the macOS keychain `octos` service behind a
 itself elsewhere (Android). Keys are typed, QRs shown and codes scanned only
 on the host's sheets; the app sees masked status. Built with its `octos-core`
 feature (the shells' default), it writes under
-`octosense_octos_core::core_dir()` and calls `octosense_octos_core::restart()`
+`octosense_kernel::core_dir()` and calls `octosense_kernel::restart()`
 after every change, so the running kernel picks up the new providers. The
 method table and registration are in its
 [README](ai-providers/host-service/README.md).
@@ -294,7 +298,7 @@ method table and registration are in its
 ## The octos kernel
 
 The octos agent kernel is a **shell service**, not part of any app.
-[`crates/kernel`](../crates/kernel) (`octosense-octos-core`) is that
+[`crates/kernel`](../crates/kernel) (`octosense-kernel`) is that
 service; the shells link it by default (cargo feature `octos-core`, also on
 in `mobile-apps` and native mobile builds):
 
@@ -317,9 +321,9 @@ in `mobile-apps` and native mobile builds):
   On a desktop a kernel runs only when a binary is configured (the shell's,
   or `$OCTOS_APP_CORE_BIN`); without one the providers are still saved.
 
-Tests, from the repository root: `cargo test --locked -p octosense-octos-core`;
+Tests, from the repository root: `cargo test --locked -p octosense-kernel`;
 with a built `octos`,
-`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --locked -p octosense-octos-core --test real_kernel` starts a real
+`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --locked -p octosense-kernel --test real_kernel` starts a real
 kernel on a profile written by `octosense-llm-config` and restarts it after a
 provider change. Details in [crates/kernel/README.md](../crates/kernel/README.md).
 
@@ -406,7 +410,7 @@ plus an entry in each shell's `system-apps.json`.
 | What | How |
 | --- | --- |
 | Mail service | `cargo test --locked -p octosense-mail-service` from the repository root. The keychain test is ignored by default: `cargo test -p octosense-mail-service -- --ignored keychain` |
-| octos kernel service | `cargo test --locked -p octosense-octos-core` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-octos-core --test real_kernel` (a real one) |
+| octos kernel service | `cargo test --locked -p octosense-kernel` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-kernel --test real_kernel` (a real one) |
 | `llm` service and config | `cargo test --locked -p octosense-llm-service -p octosense-llm-config`; add `--features octosense-llm-service/octos-core` for the shells' build |
 | AppCard | the commands above |
 | CI | all of the above except the real-kernel and keychain tests: [apps.yml](../.github/workflows/apps.yml) |

@@ -8,7 +8,7 @@ Home 是本仓库的三个产品之一（环境准备、目录结构和 CI 见[�
 
 ## 与桌面端 Shell 的关系
 
-2026 年 9 月 15 日，Home 从桌面端 Shell 中拆分出来，拆分点是其移动端 Shell 系列提交的最新位置。此后两份副本分别位于 OctoSense-Desktop 和 OctoSense-ROM（`home/`），直到 2026 年 9 月 27 日两个仓库并入本仓库（[ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)）。`phone/src` 和 `desktop/src` 至今仍共享大量源码（`main.rs`、`desk.rs`、`layout.rs`、`clients.rs`、`shell/*` 以及合成器）；ADR 0001 的下一阶段会把它们合并为一个 Shell crate，以目标平台和 feature 区分桌面与手机。手机版构建是 `mobile_only` 配置：在 Android 上由 `build.rs` 开启，在其他平台上由 `--features mobile-only` 开启。`upstream/makepad.json` 记录了哪些窗口管理器文件是从 Makepad 导入的；`scripts/upstream.py` 负责比较并合并这些文件（[docs/upstream.md（英文）](docs/upstream.md)）。
+2026 年 9 月 15 日，Home 从桌面端 Shell 中拆分出来，拆分点是其移动端 Shell 系列提交的最新位置。此后两份副本分别位于 OctoSense-Desktop 和 OctoSense-ROM（`home/`），直到 2026 年 9 月 27 日两个仓库并入本仓库（[ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)）。此后 Shell 只有一份，位于 [`crates/shell`](../crates/shell)（包名 `octosense-shell`），两个包都链接它；本包只加上入口（`src/main.rs`，一个包装 Shell `App` 的 `App`）和内置设置应用（`src/settings_*.rs`、`src/android_settings.rs`）。手机版构建是 `mobile_only` 配置：在 Android 上由 `build.rs` 开启，在其他平台上由 `--features mobile-only` 开启。`upstream/makepad.json` 记录了哪些窗口管理器文件是从 Makepad 导入的；`scripts/upstream.py` 负责比较并合并这些文件（[docs/upstream.md（英文）](docs/upstream.md)）。
 
 ## 构建与运行
 
@@ -93,9 +93,9 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | 应用磁贴 | 长按 | 移除该磁贴（桌面菜单中的“显示隐藏的磁贴”可将其恢复） |
 | 桌面空白处 | 长按 | 小组件、浅色/深色外观、网格：4 列或 5 列、下拉方式（启动器通知面板或系统级面板）、系统设置、显示隐藏的磁贴 |
 
-下拉手势在拉到 40 % 时即生效（在 1080 像素宽的手机上约为 135 px）；导航类滑动则需要滑完整段距离或快速轻扫。下拉过程中页面会变暗，搜索框跟随手指移动；手势生效时会有一次短促的触感反馈。每个隐藏手势在首次使用之前，桌面页面都会显示一行对应提示（`src/mobile_hints.rs`；Android 会记住哪些提示已经看过）。在已停稳的桌面页面上再次按下 Home，会回到主页面。
+下拉手势在拉到 40 % 时即生效（在 1080 像素宽的手机上约为 135 px）；导航类滑动则需要滑完整段距离或快速轻扫。下拉过程中页面会变暗，搜索框跟随手指移动；手势生效时会有一次短促的触感反馈。每个隐藏手势在首次使用之前，桌面页面都会显示一行对应提示（`crates/shell/src/mobile_hints.rs`；Android 会记住哪些提示已经看过）。在已停稳的桌面页面上再次按下 Home，会回到主页面。
 
-搜索只能通过在桌面上下拉打开；应用库没有搜索栏。搜索结果中，名称以输入内容开头的应用排在前面，按回车即可打开最佳匹配。在应用库中，右侧的字母栏可快速跳转网格；获得使用情况访问权限后，顶部会显示一行“建议”，列出最近使用的应用。应用在通知面板中有通知时，其图标会带一个圆点。最近任务以卡片形式列出托管应用；在 Android 设置中授予使用情况访问权限后（最近任务中的卡片可打开该设置），还会显示一行最近使用过的 Android 应用。每个可点按区域都是带有语音标签的无障碍节点，因此 TalkBack 和 UI 自动化都能读取并操作 Shell（已在安装 TalkBack 的情况下以及通过 UiAutomation 探针验证：无障碍焦点能落到节点上，其点击操作可以打开应用、通知面板或应用抽屉；注意 `adb shell input` 的点按会绕过 TalkBack 的触摸浏览，因此无法用脚本模拟真实的读屏触摸）。标签会跟随 Android 的字体大小设置。Shell 跟随 Android 的深色主题，并绘制在透明的系统栏之下；通知面板中的深色模式磁贴会覆盖外观设置，直到系统设置下一次变更。桥接层的失败原因会以通俗的句子呈现给用户（见 `src/android_integration.rs` 中的 `result_copy`），而不是原因代码。
+搜索只能通过在桌面上下拉打开；应用库没有搜索栏。搜索结果中，名称以输入内容开头的应用排在前面，按回车即可打开最佳匹配。在应用库中，右侧的字母栏可快速跳转网格；获得使用情况访问权限后，顶部会显示一行“建议”，列出最近使用的应用。应用在通知面板中有通知时，其图标会带一个圆点。最近任务以卡片形式列出托管应用；在 Android 设置中授予使用情况访问权限后（最近任务中的卡片可打开该设置），还会显示一行最近使用过的 Android 应用。每个可点按区域都是带有语音标签的无障碍节点，因此 TalkBack 和 UI 自动化都能读取并操作 Shell（已在安装 TalkBack 的情况下以及通过 UiAutomation 探针验证：无障碍焦点能落到节点上，其点击操作可以打开应用、通知面板或应用抽屉；注意 `adb shell input` 的点按会绕过 TalkBack 的触摸浏览，因此无法用脚本模拟真实的读屏触摸）。标签会跟随 Android 的字体大小设置。Shell 跟随 Android 的深色主题，并绘制在透明的系统栏之下；通知面板中的深色模式磁贴会覆盖外观设置，直到系统设置下一次变更。桥接层的失败原因会以通俗的句子呈现给用户（见 `crates/shell/src/android_integration.rs` 中的 `result_copy`），而不是原因代码。
 
 ## 内置设置
 
@@ -118,11 +118,11 @@ adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo
 
 ### octos 内核
 
-octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosense-octos-core`（[`crates/kernel`](../crates/kernel)），feature `octos-core`（默认开启，Android、iOS、OpenHarmony 构建总是开启）。Home 在启动时用自己的数据目录配置它（[src/llm_host.rs](src/llm_host.rs)），在有使用方连接之前不运行任何东西。之后每个进程只有一个内核：Android 上从 APK 原生库目录运行 `liboctos.so serve --stdio`（`rom/scripts/build-home.sh` 构建的每个 APK 都带有它），OpenHarmony 上在进程内运行，桌面上运行 `OCTOS_APP_CORE_BIN` 指定的二进制（未指定则没有），iOS 上没有。它的 core 目录在手机上是 `<数据目录>/octos-home/.octos`，在桌面上是 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`。AI 提供商应用负责配置它（见下文）；AppCard（需显式开启）以及之后的 Rinx 连接并共享它；最后一个使用方离开或 Home 关闭时内核停止。不带内核服务构建（仅桌面）：`--no-default-features` 加上需要的 feature，例如 `--features app-hub`。
+octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosense-kernel`（[`crates/kernel`](../crates/kernel)），feature `octos-core`（默认开启，Android、iOS、OpenHarmony 构建总是开启）。Home 在启动时通过 Shell 的 AI 服务（[`crates/ai-host`](../crates/ai-host/README.md)）用自己的数据目录启动它，在有使用方连接之前不运行任何东西。之后每个进程只有一个内核：Android 上从 APK 原生库目录运行 `liboctos.so serve --stdio`（`rom/scripts/build-home.sh` 构建的每个 APK 都带有它），OpenHarmony 上在进程内运行，桌面上运行 `OCTOS_APP_CORE_BIN` 指定的二进制（未指定则没有），iOS 上没有。它的 core 目录在手机上是 `<数据目录>/octos-home/.octos`，在桌面上是 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`。AI 提供商应用负责配置它（见下文）；AppCard（需显式开启）以及之后的 Rinx 连接并共享它；最后一个使用方离开或 Home 关闭时内核停止。不带内核服务构建（仅桌面）：`--no-default-features` 加上需要的 feature，例如 `--features app-hub`。
 
 ### AI 提供商
 
-AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商，Home 在启动时注册该服务（[src/llm_host.rs](src/llm_host.rs)）：
+AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商，Home 在启动时通过 [`crates/ai-host`](../crates/ai-host/README.md) 注册该服务：
 
 - 它写入的是内核的 profile，`<core 目录>/profiles/_main.json`（手机上是 `<数据目录>/octos-home/.octos`；`OCTOS_APP_CORE_DIR` 可以覆盖）；在 Android 上密钥就保存在这个应用私有的 profile 中，因为 octos 从这里读取；
 - 在 Android 上，导入面板可以用相机**扫描**提供商二维码（Makepad 的 `cx.show_qr_scanner()`，即 makepad#31，自 `d0a9def5` 起包含在运行时中），也可以从**选择的图片**中读取（`QrImagePickActivity`：系统图片选择器，字节通过 `qr.image.result` 数据包中的私有缓存文件交付）；其他平台上粘贴代码；
@@ -159,11 +159,13 @@ cargo run --release -p octosense-home --features mobile-only -- --test-action is
 
 ## 目录结构
 
-- `src/mobile*.rs`：手机 Shell。状态与导航（`mobile.rs`）、手势识别器（`mobile_gestures.rs`）、绘制桌面、应用抽屉、键盘和浮层的界面（`mobile_surface.rs`），以及页面、磁贴、分组、通知面板、实时岛、思考中的章鱼和性能监视器。
-- `src/apps.rs`：本构建链接哪些模块，系统应用和已安装应用如何作为启动器条目出现，以及各自的托管方式。
-- `src/desk/phone.rs`：desk 的手机端合成：托管应用的截取、保留的桌面场景及其模糊金字塔，以及合成器路径。
+- `src/main.rs`：入口：本包的 `App` 包装 Shell 的 `App`（`#[deref] shell`），并加上设置应用的运行时。
+- `src/settings_*.rs`、`src/android_settings.rs`、`resources/settings/`：内置设置应用及其 Android 通道。
+- `../crates/shell/src/mobile*.rs`：Shell 的手机层。状态与导航（`mobile.rs`）、手势识别器（`mobile_gestures.rs`）、绘制桌面、应用抽屉、键盘和浮层的界面（`mobile_surface.rs`），以及页面、磁贴、分组、通知面板、实时岛、思考中的章鱼和性能监视器。
+- `../crates/shell/src/apps.rs`：本构建链接哪些模块，系统应用和已安装应用如何作为启动器条目出现，以及各自的托管方式。
+- `../crates/shell/src/desk/phone.rs`：desk 的手机端合成：托管应用的截取、保留的桌面场景及其模糊金字塔，以及合成器路径。
 - `resources/android/AndroidManifest.xml.template`：activity 定义（Home 角色、分享和深度链接 intent）。
-- `resources/icons/apps/<style>/`：本 Shell 为 News 和 OctosMap 自带的图标，每种框架风格一个 64x64 的 SVG，由 `python3 tools/build_app_icons.py` 生成（`--sheet <path>` 还会用 `rsvg-convert` 渲染一张审阅图）。渲染器不支持裁剪路径、蒙版、滤镜或文字，因此图形在设计上就不会超出磁贴；有一项测试负责确保文件满足这一点。
+- `../crates/shell/resources/icons/apps/<style>/`：Shell 为 News 和 OctosMap 自带的图标，每种框架风格一个 64x64 的 SVG，由 `python3 tools/build_app_icons.py` 生成（`--sheet <path>` 还会用 `rsvg-convert` 渲染一张审阅图；迁移后**未验证**：该脚本仍写入 `phone/resources/icons/apps/`）。渲染器不支持裁剪路径、蒙版、滤镜或文字，因此图形在设计上就不会超出磁贴；有一项测试负责确保文件满足这一点。
 - `../apps/appcard/module`：托管 AppCard 助手（`octos-app`，位于 `../apps/appcard/app/app`）。在所有目标平台上都需显式启用：`--features app-appcard`（它隐含 `octos-core`；助手连接 Home 的内核）。默认构建、`mobile-apps` 和原生移动端构建不包含 AppCard 界面，但包含内核服务。
 - `../apps/reference`：参考模块。
 - `../apps/news/native`、`../apps/photos/native`、`../apps/maps/native`：用于对比的原生模块（feature 分别为 `app-news`、`app-photos`、`app-maps`）。它们的设计说明位于 `docs/plans/`。
@@ -176,11 +178,11 @@ cargo run --release -p octosense-home --features mobile-only -- --test-action is
 
 - 框架：由 `native-runtime.lock.json` 选定的 Octoscript-Makepad 发布版本；其 `runtime.json` 固定了 Makepad 和 OctoScript 的版本，检出到 `.sources/`，并应用经审查的设置补丁（`runtime-patches.lock.json`、`tools/runtime-patches/`）。所有 Makepad crate 都解析到 `.sources/makepad`，因此依赖图中只有一套 widgets/platform/script。该 fork 与上游 Makepad 的关系以及如何更新固定版本，见 [docs/makepad-fork.md（英文）](docs/makepad-fork.md)。
 - App Hub：`octosense-app-hub-app` 及其后端 crate，Home 与 Mail、`llm` 宿主服务使用同一个修订版本。
-- 本仓库内按路径依赖：系统应用包和宿主服务（`apps/`）、octos 内核服务（`crates/kernel`）、应用与 Agent 之间的代理（`crates/app-peers`）以及 `octos-app`（`apps/appcard`）。octos 本身来自 `octos-org/octos` 的一个固定修订版本：只有 OpenHarmony（进程内内核）和 `app-appcard` 构建把它作为 Cargo 依赖。
+- 本仓库内按路径依赖：系统应用包和宿主服务（`apps/`）、Shell（`crates/shell`）及其 AI 服务（`crates/ai-host`）、octos 内核服务（`crates/kernel`）、应用与 Agent 之间的代理（`crates/app-peers`）以及 `octos-app`（`apps/appcard`）。octos 本身来自 `octos-org/octos` 的一个固定修订版本：只有 OpenHarmony（进程内内核）和 `app-appcard` 构建把它作为 Cargo 依赖。
 - Android 上的内核二进制不是 Cargo 依赖：`rom/scripts/build-home.sh` 按该版本交叉编译 `liboctos.so`，并在构建 APK 时通过 `MAKEPAD_ANDROID_EXTRA_LIBS` 打包进去（`--octos-kernel` 使用预先编译好的内核，`--no-octos-kernel` 不打包；见 [docs/android-appcard-build.md（英文）](docs/android-appcard-build.md)）。没有它时手机上不运行内核；服务商设置仍会保存，已链接的 AppCard 会回退到 WebSocket 传输和登录界面。
 
 ## 测试与状态
 
-`cargo test --features mobile-only mobile -- --test-threads=1` 运行 Shell 的单元测试（手势、页面、实时岛、通知面板、分组、磁贴）。完整的 CI 测试集是 `.github/workflows/phone.yml`（编译 Home 及其内置模块、依赖图检查，以及 Home、App Hub 准入和运行时策略的测试）。`scripts/smoke.py` 在 `MAKEPAD_REMOTE` 下启动发布版构建，并通过 HTTP 驱动它。[docs/validation.md（英文）](docs/validation.md) 和 [docs/android/validation-record.md（英文）](docs/android/validation-record.md) 记录了真机验证情况。
+`cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home` 运行 Shell 的单元测试（手势、页面、实时岛、通知面板、分组、磁贴）以及设置应用的测试。完整的 CI 测试集是 `.github/workflows/phone.yml`（编译 Home 及其内置模块、`tools/check-shell-graph.sh` 中的 Shell 依赖图检查，以及 Shell、Home、AI 服务、App Hub 准入和运行时策略的测试）。`scripts/smoke.py` 在 `MAKEPAD_REMOTE` 下启动发布版构建，并通过 HTTP 驱动它。[docs/validation.md（英文）](docs/validation.md) 和 [docs/android/validation-record.md（英文）](docs/android/validation-record.md) 记录了真机验证情况。
 
 状态数据在桌面电脑上保存在 `~/.octosense` 下，在 Android 上保存在应用的数据目录中；可通过 `OCTOSENSE_HOME` 改变其位置。
