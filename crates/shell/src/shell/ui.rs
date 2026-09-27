@@ -284,10 +284,28 @@ script_mod! {
             let uv_g = clamp(uv + base_offset, vec2(0.0, 0.0), vec2(1.0, 1.0))
             let uv_r = clamp(uv_g + color_offset, vec2(0.0, 0.0), vec2(1.0, 1.0))
             let uv_b = clamp(uv_g - color_offset, vec2(0.0, 0.0), vec2(1.0, 1.0))
-            let sample_r = self.sample_gauss(uv_r)
-            let sample_g = self.sample_gauss(uv_g)
-            let sample_b = self.sample_gauss(uv_b)
-            let refracted = vec4(sample_r.r, sample_g.g, sample_b.b, 1.0)
+            // The three channel taps from one sample_gauss call site: each
+            // inlined call is compiled again (the blur is a bicubic mip read),
+            // and three made this program ~0.65 s to compile on Adreno 630.
+            // Without diffraction the taps coincide, so one read serves all.
+            let taps = if self.diffraction_strength > 0.0 {3.0} else {1.0}
+            var refracted = vec4(0.0, 0.0, 0.0, 1.0)
+            var tap = 0.0
+            loop {
+                if tap >= taps { break }
+                let tap_uv = if taps < 1.5 {uv_g} else if tap < 0.5 {uv_r} else if tap < 1.5 {uv_g} else {uv_b}
+                let s = self.sample_gauss(tap_uv)
+                if taps < 1.5 {
+                    refracted = vec4(s.r, s.g, s.b, 1.0)
+                } else if tap < 0.5 {
+                    refracted = vec4(s.r, refracted.g, refracted.b, 1.0)
+                } else if tap < 1.5 {
+                    refracted = vec4(refracted.r, s.g, refracted.b, 1.0)
+                } else {
+                    refracted = vec4(refracted.r, refracted.g, s.b, 1.0)
+                }
+                tap = tap + 1.0
+            }
             let fallback = vec4(self.fallback_color.rgb, 1.0)
             let base = fallback.mix(refracted, self.has_gauss)
 
