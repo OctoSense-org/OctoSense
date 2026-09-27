@@ -19,9 +19,15 @@ the agent shell on top of your operating system:
   between devices by a PIN-protected `OCTOS1E` QR (camera, image or paste).
   Keys are typed and QRs drawn only on the host's own sheets; the app sees
   masked status.
+- **The octos kernel service** (`crates/octos-core`, crate
+  `octosense-octos-core`): the [octos](https://github.com/octos-org/octos)
+  agent kernel as a shell service. The shell starts one kernel per process on
+  demand; the AI providers app configures it (through the `llm` service);
+  AppCard and other consumers connect to it. See
+  [The octos kernel](#the-octos-kernel).
 - **AppCard** (`apps/appcard`) is the one native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
-  that runs on the [octos](https://github.com/octos-org/octos) agent kernel.
+  that runs on the shell's octos kernel.
 
 Rules for agents working here are in [AGENTS.md](AGENTS.md) and
 [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md).
@@ -113,8 +119,13 @@ A shell:
    `register_demo()` when the shell's app config has `mail_demo: true`. The
    shell links App Hub at the same rev the service names for
    `octosense-appstore`, so there is one host-service registry.
-4. Links AppCard's `octos-app` with `default-features = false` and mounts it
-   through its `AppShell` widget (see [AppCard](#the-appcard-assistant)).
+4. Links `octosense-octos-core` (feature `octos-core` in both shells, on by
+   default) and configures the kernel at startup; registers the `llm`
+   service (with its `octos-core` feature) on the kernel's core dir, so a
+   provider change restarts the kernel. See [The octos kernel](#the-octos-kernel).
+5. Optionally (opt-in `app-appcard`) links AppCard's `octos-app` with
+   `default-features = false` and mounts it through its `AppShell` widget
+   (see [AppCard](#the-appcard-assistant)); it connects to the same kernel.
 
 Changes here reach a device only when a shell moves its pin, in a pull request
 in that shell's repository.
@@ -126,6 +137,7 @@ apps/<name>/bundle/          a contained script app: manifest.json, main.splash,
 apps/mail/host-service/      octosense-mail-service, the `mail` host service (Rust)
 apps/ai-providers/           the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
+crates/octos-core/            octosense-octos-core: the shell's octos kernel (one per process, shared)
 apps/appcard/                the native AppCard assistant
   app/                       Cargo workspace: octos-app + store/transport/render crates
   a2app/                     Splash card memory (specs, widget patterns, lint rules), compiled in
@@ -136,6 +148,7 @@ apps/appcard/                the native AppCard assistant
   docs/                      architecture, build and review notes
   native-runtime.lock.json   the Octoscript-Makepad release AppCard builds against
 .github/workflows/appcard.yml   CI for apps/appcard
+.github/workflows/octos-core.yml   CI for crates/octos-core
 ```
 
 ## A system app bundle
@@ -248,6 +261,37 @@ directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
 
+## The octos kernel
+
+The octos agent kernel is a **shell service**, not part of any app.
+[`crates/octos-core`](crates/octos-core) (`octosense-octos-core`) is that
+service; the shells link it by default (cargo feature `octos-core`, also on
+in `mobile-apps` and native mobile builds):
+
+- **One per process, on demand.** The first consumer's `connect()` starts it:
+  `octos serve --stdio` as a child on desktop and Android (on Android the
+  APK's bundled `liboctos.so`), the canonical core in-process on
+  OpenHarmony. Later consumers share it; each gets only the replies to its
+  own requests and its own sessions' notifications. It stops when the last
+  consumer leaves.
+- **Configured by AI providers.** The `llm` host service writes the kernel's
+  profile, `<core_dir>/profiles/_main.json`, and keys (macOS keychain `octos`
+  service behind `keychain:` markers, `<core_dir>/secrets/` on Linux, the
+  profile itself elsewhere), then calls `restart()`: a running kernel stops,
+  its consumers reconnect and a fresh kernel reads the new providers.
+- **Consumers.** AppCard (opt-in) connects through its transport's `kernel`
+  module; Rinx's native mini-app host can take its own connection the same
+  way instead of sharing AppCard's.
+- **The core dir.** The shell's choice, else `$OCTOS_APP_CORE_DIR`, else on a
+  phone `<app data dir>/octos-home/.octos`, else `$HOME/octos-home/.octos`.
+  On a desktop a kernel runs only when a binary is configured (the shell's,
+  or `$OCTOS_APP_CORE_BIN`); without one the providers are still saved.
+
+Tests: `cd crates/octos-core && cargo test`; with a built `octos`,
+`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel` starts a real
+kernel on a profile written by `octosense-llm-config` and restarts it after a
+provider change. Details in [crates/octos-core/README.md](crates/octos-core/README.md).
+
 ## The AppCard assistant
 
 The "Ask anything" tile. You type a request; a routing brain (the AMA) picks
@@ -258,12 +302,14 @@ octos UI Protocol v1.
 - **Code**: `apps/appcard/app`, a Cargo workspace with `octos-app` (router,
   composer, multi-agent dispatch, Splash renderer and validator, L0 card
   generation, WebView overlay), `octos-app-store` (state reducer, no
-  Makepad), `octos-app-transport` (WebSocket and REST client for the octos
-  UI Protocol) and `octos-app-render` (streaming-markdown renderer).
+  Makepad), `octos-app-transport` (the octos UI Protocol over the shell's
+  kernel, a WebSocket or REST) and `octos-app-render` (streaming-markdown
+  renderer).
 - **octos**: every octos crate comes from git `octos-org/octos` at the one
-  rev in `apps/appcard/app/Cargo.toml` (today `18fcd3f1`, branch
-  `appcard/mate70-on-main` until it lands on octos `main`). A shell that also
-  depends on octos must use the same rev.
+  rev in `apps/appcard/app/Cargo.toml` (today `6ad76e5c`, octos `main`);
+  `crates/octos-core` names the same rev for OpenHarmony. A shell that also
+  depends on octos must use the same rev. AppCard starts no kernel of its
+  own: it connects to the shell's ([The octos kernel](#the-octos-kernel)).
 - **Makepad**: not vendored. Makepad, Octoscript and Octoscript-Makepad are
   checkouts *beside* this repository, at the release
   `apps/appcard/native-runtime.lock.json` selects.
@@ -330,6 +376,8 @@ plus an entry in each shell's `system-apps.json`.
 | What | How |
 | --- | --- |
 | Mail service | from a shell workspace that links it: `cargo test -p octosense-mail-service` (ROM: in `home/`). The keychain test is ignored by default: `cargo test -p octosense-mail-service -- --ignored keychain` |
+| octos kernel service | `cd crates/octos-core && cargo test` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel` (a real one); CI in `octos-core.yml` |
+| `llm` service | from `apps/ai-providers`: `cargo test --workspace --features octosense-llm-service/octos-core` |
 | AppCard | the commands above; CI in `appcard.yml` |
 | Script bundles | by hand in `card-host` and in a shell, driven over `MAKEPAD_REMOTE`. No automated UI tests here yet |
 

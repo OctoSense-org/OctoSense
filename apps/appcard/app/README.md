@@ -43,9 +43,15 @@ against `OCTOS_LIVE_URL` (default `http://127.0.0.1:56831`). It reads a local
 
 How the standalone app reaches octos, in order:
 
-1. a local core binary, when both `OCTOS_APP_CORE_BIN` and
-   `OCTOS_APP_CORE_DIR` are set (`../tools/octos-macos.py` sets them; see
-   `../tools/OCTOS-MACOS.md`);
+1. the shell's octos kernel (`octosense-octos-core`, repository
+   `crates/octos-core`), when one can run: on Android the APK's bundled
+   `liboctos.so`, on OpenHarmony always (linked in), on a desktop when a
+   kernel binary is configured by the shell or `OCTOS_APP_CORE_BIN` (its data
+   dir: `OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`;
+   `../tools/octos-macos.py` sets both, see `../tools/OCTOS-MACOS.md`). The
+   kernel is shared with the shell's other consumers and restarted when the
+   AI providers change; the transport then reconnects and re-opens its
+   sessions;
 2. `~/.config/octos-app/server.json` (server URL and profile), with the
    bearer from `OCTOS_APP_TOKEN` or the OS keychain;
 3. otherwise `OCTOS_BASE_URL`, `OCTOS_BEARER` and `OCTOS_PROFILE_ID`

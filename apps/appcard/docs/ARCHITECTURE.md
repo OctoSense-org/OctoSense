@@ -335,13 +335,18 @@ completion-time lint runs. Two properties matter:
 On Android there is **no separate server process**. The octos kernel is bundled
 into the APK as `liboctos.so` and run **in-process over stdio**:
 
-- `app/src/main.rs::stdio_spawn()` execs `liboctos.so serve --stdio` (NDJSON
+- The kernel is the **shell's**, not the app's: `octosense-octos-core`
+  (repository `crates/octos-core`) execs `liboctos.so serve --stdio` (NDJSON
   JSON-RPC on stdin/stdout) from the app's `nativeLibraryDir` (the only
-  exec-able location on Android), with `HOME` = the app data dir. It also ensures
-  the kernel config's memory budget and `appui.sessions_in_cwd` at boot.
+  exec-able location on Android), with `HOME` = `<data dir>/octos-home`, on
+  the first `connect()`, one per process, shared by every consumer. It also
+  ensures the kernel config's memory budget and `appui.sessions_in_cwd`
+  before each start. On OpenHarmony it serves the canonical core in-process.
 - The app talks the **octos ui-protocol** (`session/open` with an optional per-
   session `cwd`, `turn/start`, streamed `UiNotification`s) via
-  `crates/octos-app-transport` (stdio transport).
+  `crates/octos-app-transport` (`kernel` transport, a connection to that
+  kernel). When the AI providers change, the shell restarts the kernel; the
+  transport reconnects and re-opens its sessions from their cursors.
 - Each app agent / the AMA is a `session/open` on this one kernel; concurrency is
   the kernel's (per-session turn actors). The AMA session's `cwd` is the
   app-cards `apps/` dir (its composition write-zone).
@@ -350,7 +355,8 @@ into the APK as `liboctos.so` and run **in-process over stdio**:
   `octos-home/` in the app's data dir.
 
 Desktop builds instead talk to a normal `octos serve` over WebSocket (same
-protocol); Android is stdio.
+protocol) unless a kernel binary is configured (`OCTOS_APP_CORE_BIN`);
+Android and OpenHarmony use the shell's kernel.
 
 ---
 

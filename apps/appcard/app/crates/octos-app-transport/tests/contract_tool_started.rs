@@ -54,7 +54,7 @@ async fn tool_started_arrives_as_durable_notification() {
         cursor_file: None,
         requested_capabilities: Capabilities::requested(),
         workspace_cwd: Some("/tmp".to_owned()),
-        stdio: None,
+        local_kernel: false,
     };
     let (_cmd_tx, mut events) = ws::spawn(cfg);
 

@@ -4,19 +4,22 @@ name: AppCard
 # Octoscript-Makepad runtime beside the repository, run the runtime-lock
 # tests, clippy the app crates, and check the Cargo graph has one Makepad.
 # Script apps under apps/<name>/bundle/ are not built here; AppCard links
-# apps/ai-providers/config, so a change there runs this too.
+# apps/ai-providers/config and the shell's octos kernel (crates/octos-core),
+# so a change there runs this too.
 
 on:
   pull_request:
     paths:
       - 'apps/appcard/**'
       - 'apps/ai-providers/config/**'
+      - 'crates/octos-core/**'
       - '.github/workflows/appcard.yml'
   push:
     branches: [main]
     paths:
       - 'apps/appcard/**'
       - 'apps/ai-providers/config/**'
+      - 'crates/octos-core/**'
       - '.github/workflows/appcard.yml'
   workflow_dispatch:
 
@@ -73,6 +76,12 @@ jobs:
       - name: Clippy (own crates; shared runtime compiles)
         working-directory: octosense-org/OctoSense-System-Apps/apps/appcard/app
         run: cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+
+      # The transport over the shell's octos kernel (octosense-octos-core),
+      # including a kernel restart against the core's stand-in kernel.
+      - name: Test the transport and the store
+        working-directory: octosense-org/OctoSense-System-Apps/apps/appcard/app
+        run: cargo test --locked -p octos-app-transport -p octos-app-store
 
       # `cargo tree -i` fails when the graph holds more than one octos-core.
       - name: Verify one octos source in the app dependency graph

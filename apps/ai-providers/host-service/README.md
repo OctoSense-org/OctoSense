@@ -23,26 +23,40 @@ same catalog and tests each row.
 
 ## Registering it (shells)
 
-Register it once, before the first system app opens, next to Mail:
+The providers it edits are the octos kernel's, and the kernel is a shell
+service: [`octosense-octos-core`](../../../crates/octos-core) runs one per
+process and hands connections to AppCard and the other consumers. Build the
+service with its `octos-core` feature (the shells' `octos-core` feature turns
+it on) and it follows the kernel: the profile goes under the kernel's core
+dir (`octosense_octos_core::core_dir()`) unless the shell names another, and
+every change calls `octosense_octos_core::restart()` (a no-op when no kernel
+runs) before the shell's own hook. Without the feature the service writes
+under `octosense_llm_config::profile::default_core_dir()` and restarts
+nothing.
+
+Register it once, before the first system app opens, next to Mail, after
+configuring the kernel:
 
 ```rust
-// Defaults: the kernel's core dir from octosense_llm_config::profile::
-// default_core_dir() ($OCTOS_APP_CORE_DIR, else $HOME/octos-home/.octos),
-// the platform's vault, no scanner, no change hook.
+// The kernel first (octosense-octos-core): on a phone its core dir is
+// <data dir>/octos-home/.octos, on a desktop $OCTOS_APP_CORE_DIR, else
+// $HOME/octos-home/.octos.
+octosense_octos_core::configure(octosense_octos_core::Options::default().app_data_dir(data_dir));
+
+// Defaults: the kernel's core dir, the platform's vault, no scanner.
 octosense_llm_service::register();
 
 // What a shell normally passes:
 octosense_llm_service::register_with(
     octosense_llm_service::Options::default()
-        .core_dir(core_dir)                       // where profiles/_main.json lives
+        .core_dir(octosense_octos_core::core_dir().unwrap()) // the same dir, said out loud
         .scanner(Arc::new(MyScanner::default()))  // phone only
         .image_picker(Arc::new(MyPicker::default())) // a QR from a picture
-        .image_drops(true)                        // desktop: drops go to offer_image
-        .on_changed(|| restart_appcard_core()),   // any thread
+        .image_drops(true),                       // desktop: drops go to offer_image
 );
 ```
 
-- `core_dir`: the embedded kernel's octos home (`<core_dir>/profiles/_main.json`).
+- `core_dir`: the kernel's octos home (`<core_dir>/profiles/_main.json`).
 - `vault`: overrides where keys go (tests, `OCTOSENSE_LLM_VAULT=file`).
 - `scanner`: an `Arc<dyn QrScanner>`. Leave it out on the desktop; the import
   sheet then takes a pasted `OCTOS1E:` code only.
@@ -54,8 +68,8 @@ octosense_llm_service::register_with(
   to `octosense_llm_service::offer_image(bytes)`; the import sheet then says
   a screenshot can be dropped on it.
 - `on_changed`: called after the saved provider set changed (save, reorder,
-  removal, import). Restart the AppCard kernel from it (it may run on a worker
-  thread: post to the UI thread).
+  removal, import), after the kernel restart. Optional: the restart needs no
+  help from the shell. It may run on a worker thread.
 
 The bundle's manifest asks for `llm`; the shell packs `apps/ai-providers/bundle`
 like any system app (`system-apps.json`). App Hub's admission knows only the

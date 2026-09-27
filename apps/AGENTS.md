@@ -35,8 +35,16 @@ and use the bundles here only as read-only examples.
   with it: one App Hub rev per shell. The `llm` service names the same App Hub
   rev as Mail; move both together.
 - AI providers: `apps/ai-providers/{config,host-service}` test from
-  `apps/ai-providers` with `cargo test --workspace`; AppCard links the config
-  crate, so run AppCard's checks too when it changes.
+  `apps/ai-providers` with `cargo test --workspace` (and
+  `--features octosense-llm-service/octos-core`, the shells' build); AppCard
+  links the config crate, so run AppCard's checks too when it changes.
+- The octos kernel is a shell service, `crates/octos-core`
+  (`octosense-octos-core`): one kernel per process, started on the first
+  `connect()`, shared by AppCard and other consumers, restarted by the `llm`
+  service after a provider change. Test it with `cargo test` in
+  `crates/octos-core` (and `OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test
+  real_kernel` with a real kernel); AppCard and the `llm` service link it, so
+  run their checks too. Consumers never spawn a kernel of their own.
 - Never add a password or one-time-code field to an app; secrets belong to a
   host service's sheet.
 

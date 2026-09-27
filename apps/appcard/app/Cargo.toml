@@ -21,6 +21,9 @@ octos-app-render    = { path = "crates/octos-app-render" }
 # LLM provider sets (registry, _main.json merge, the provisioning QR): the
 # AI providers app's crate, shared with its `llm` host service.
 octosense-llm-config = { path = "../../ai-providers/config" }
+# The shell's octos kernel (crates/octos-core): one per process, shared by
+# AppCard and the shell's other consumers. It owns the kernel's launch.
+octosense-octos-core = { path = "../../../crates/octos-core" }
 
 # Octos: ONE source for every octos crate — git octos-org/octos at a single
 # rev on main (the merge of octos-org/octos#2541, which upstreamed the AppCard
@@ -29,7 +32,8 @@ octosense-llm-config = { path = "../../ai-providers/config" }
 # checkout. Move octos-core and octos-cli together; a consumer that also
 # depends on octos must use the same rev, or the graph gets two octos.
 octos-core = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f" }
-# OpenHarmony only (see octos-app-transport): the core linked in-process.
+# OpenHarmony only: the core linked in-process by octosense-octos-core
+# (crates/octos-core), which names the same rev; move them together.
 octos-cli  = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f", default-features = false }
 
 # Async / wire
