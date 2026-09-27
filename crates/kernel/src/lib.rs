@@ -1,4 +1,4 @@
-//! octosense-octos-core: the shell's octos kernel.
+//! octosense-kernel: the shell's octos kernel.
 //!
 //! The octos agent kernel is a shell service. A shell (OctoSense-ROM Home,
 //! OctoSense-Desktop) [`configure`]s it once at startup; every consumer —

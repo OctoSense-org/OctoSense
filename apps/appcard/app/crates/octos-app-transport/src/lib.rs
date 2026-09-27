@@ -10,7 +10,7 @@
 pub mod capability;
 pub mod cursor;
 pub mod jsonrpc;
-/// The shell's octos kernel (`octosense-octos-core`): stdio child or
+/// The shell's octos kernel (`octosense-kernel`): stdio child or
 /// in-process core, shared with the shell's other consumers.
 pub mod kernel;
 /// Transport-agnostic JSON-RPC core shared by `ws` and `kernel`.
@@ -108,7 +108,7 @@ pub struct TransportConfig {
     /// Per-session workspace cwd to request during `session/open`.
     pub workspace_cwd: Option<String>,
     /// When set, the agent talks to the shell's octos kernel
-    /// (`octosense_octos_core::connect()`, see [`kernel`]) instead of dialing
+    /// (`octosense_kernel::connect()`, see [`kernel`]) instead of dialing
     /// a WebSocket: `octos serve --stdio` as a child on desktop and Android,
     /// the canonical core in-process on OpenHarmony, one per process and
     /// shared with the shell's other consumers. `base_url` / `bearer` are

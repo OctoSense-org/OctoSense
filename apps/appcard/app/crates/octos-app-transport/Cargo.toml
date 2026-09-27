@@ -20,7 +20,7 @@ log               = { workspace = true }
 octos-core        = { workspace = true }
 # The shell's octos kernel: started, shared and restarted by the core; this
 # crate only speaks UI Protocol frames over a connection to it.
-octosense-octos-core = { workspace = true }
+octosense-kernel = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }

@@ -1,4 +1,4 @@
-# octosense-octos-core: the shell's octos kernel
+# octosense-kernel: the shell's octos kernel
 
 The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
 service**. The shell (OctoSense-ROM Home, OctoSense-Desktop) owns it; the
@@ -48,25 +48,25 @@ consumer may use any runtime or none.
 A shell, once at startup, before the first consumer:
 
 ```rust
-octosense_octos_core::configure(
-    octosense_octos_core::Options::default().app_data_dir(cx.get_data_dir()),
+octosense_kernel::configure(
+    octosense_kernel::Options::default().app_data_dir(cx.get_data_dir()),
 );
 // The llm service (feature `octos-core`) writes under the same core dir
-// and calls octosense_octos_core::restart() after every change.
+// and calls octosense_kernel::restart() after every change.
 octosense_llm_service::register_with(
-    octosense_llm_service::Options::default().core_dir(octosense_octos_core::core_dir().unwrap()),
+    octosense_llm_service::Options::default().core_dir(octosense_kernel::core_dir().unwrap()),
 );
 ```
 
 A consumer:
 
 ```rust
-let mut conn = octosense_octos_core::connect()?;       // Err: no kernel here
+let mut conn = octosense_kernel::connect()?;       // Err: no kernel here
 conn.send(r#"{"jsonrpc":"2.0","id":"1","method":"session/open","params":{"session_id":"_main:api:x","profile_id":"_main"}}"#)?;
 loop {
     match conn.recv().await {
         Ok(frame) => { /* a JSON-RPC frame for this consumer */ }
-        Err(octosense_octos_core::CloseReason::Restarted) => { /* connect again, re-open sessions */ break }
+        Err(octosense_kernel::CloseReason::Restarted) => { /* connect again, re-open sessions */ break }
         Err(other) => { /* the kernel stopped or could not start: tell the person */ break }
     }
 }

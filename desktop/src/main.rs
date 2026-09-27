@@ -12,7 +12,6 @@ use makepad_widgets::makepad_platform::thread::{Lane, SignalToUI, TaskHandle};
 use makepad_widgets::*;
 
 mod ai_bus;
-mod app_peers_host;
 mod apps;
 mod binds;
 mod clients;
@@ -31,8 +30,6 @@ mod dock_warp;
 mod host;
 mod hub;
 mod layout;
-#[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
-mod llm_image;
 mod octosense;
 mod module_host;
 mod module_view;
@@ -3953,11 +3950,19 @@ fn scan_theme_color(source: &str, key: &str) -> Option<Vec4f> {
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        // The octos kernel is a shell service: configured here, started when
-        // a consumer (AppCard, Rinx) connects. AI providers' `llm` service
-        // writes its profile and restarts it after a change.
-        #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
-        apps::configure_octos_kernel(cx.get_data_dir());
+        // The shell's AI services (octosense-ai-host): the octos kernel,
+        // configured here and started when a consumer (AppCard, Rinx)
+        // connects; AI providers' `llm` service, which writes its profile and
+        // restarts it after a change; the host policy for apps' assistant.
+        // This shell's Android build has no QR extension: a pasted code.
+        octosense_ai_host::start(octosense_ai_host::Host {
+            qr_import: if cfg!(any(target_os = "android", target_os = "ios")) {
+                octosense_ai_host::QrImport::paste_only()
+            } else {
+                octosense_ai_host::QrImport::platform()
+            },
+            ..octosense_ai_host::Host::platform(cx.get_data_dir())
+        });
         // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
         // `apps/` in the platform data directory or OctoSense's own state.
         #[cfg(feature = "app-hub")]
@@ -4155,8 +4160,6 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        #[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
-        llm_image::handle_actions(actions);
         if self.gallery {
             let gallery = self.ui.widget(cx, ids!(shell_gallery));
             {
@@ -4475,11 +4478,11 @@ impl AppMain for App {
         {
             return;
         }
-        // AI providers' QR import: the open panel a pick asked for, and an
-        // image dropped on its window while the import sheet waits.
-        #[cfg(all(feature = "app-hub", not(any(target_os = "android", target_os = "ios"))))]
+        // AI providers' QR import: the open panel a pick asked for (and its
+        // answer), and an image dropped on its window while the import sheet
+        // waits.
         if self.state.is_some() {
-            llm_image::open_requested(cx);
+            octosense_ai_host::handle_event(cx, event);
             if matches!(event, Event::Drag(_) | Event::Drop(_)) {
                 let desk = self.desk(cx);
                 let desk = desk.borrow::<WmDesk>();
@@ -4488,7 +4491,7 @@ impl AppMain for App {
                     let client = desk.as_ref()?.window_at(p)?;
                     state?.clients.get(&client).map(|slot| slot.app.clone())
                 };
-                if llm_image::handle_drop(event, app_at) {
+                if octosense_ai_host::handle_drop(event, &app_at) {
                     return;
                 }
             }
@@ -4606,8 +4609,7 @@ impl AppMain for App {
                 clients::shutdown_clients(&mut state.clients);
             }
             // Stop the octos kernel, if one runs, and let it release its data dir.
-            #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
-            octosense_octos_core::shutdown();
+            octosense_ai_host::shutdown();
         }
         if let Event::Timer(te) = event {
             self.fire_test_timers(cx, te);

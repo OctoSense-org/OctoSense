@@ -4,7 +4,7 @@
 #   desktop/   the desktop packaging (package `octosense`)
 #   phone/     the Home app: Android, OpenHarmony and iOS packaging (package
 #              `octosense-home`; the APK keeps the dev.makepad.octosense id)
-#   crates/    shell services: kernel (octosense-octos-core), app-peers
+#   crates/    shell services: kernel (octosense-kernel), app-peers, ai-host
 #   apps/      system apps and their host services, native modules, AppCard
 #
 # Every external dependency is pinned ONCE, below, in [workspace.dependencies];
@@ -20,6 +20,7 @@ members = [
     "phone",
     "crates/kernel",
     "crates/app-peers",
+    "crates/ai-host",
     "apps/reference",
     "apps/news/native",
     "apps/photos/native",
@@ -89,8 +90,9 @@ makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-d
 robius-open = { git = "https://github.com/project-robius/robius" }
 
 # --- This repository's crates.
-octosense-octos-core = { path = "crates/kernel" }
+octosense-kernel = { path = "crates/kernel" }
 octosense-app-peers = { path = "crates/app-peers" }
+octosense-ai-host = { path = "crates/ai-host" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
@@ -200,7 +202,6 @@ octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" 
 # contract and one kernel.
 [patch."https://github.com/OctoSense-org/OctoSense-System-Apps.git"]
 octosense-app-peers = { path = "crates/app-peers" }
-octosense-octos-core = { path = "crates/kernel" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 
 # Rinx's Matrix stack: the patched ruma its own workspace uses (Rinx's

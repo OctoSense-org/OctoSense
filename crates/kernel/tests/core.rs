@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use octosense_octos_core::{CloseReason, Connection, Core, Options, Unavailable};
+use octosense_kernel::{CloseReason, Connection, Core, Options, Unavailable};
 use serde_json::{json, Value};
 
 fn fake_kernel() -> PathBuf {

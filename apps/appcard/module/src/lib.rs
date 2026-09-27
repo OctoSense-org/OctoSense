@@ -19,7 +19,7 @@
 //! kernel transport come up, exactly as in the APK) and draws the app's root
 //! body without its `Window{}`. The host's tile is the window.
 //!
-//! The kernel is the shell's, not the app's: `octosense_octos_core` (Home's
+//! The kernel is the shell's, not the app's: `octosense_kernel` (Home's
 //! `octos-core` feature, which `app-appcard` implies) finds `liboctos.so` in
 //! this APK's nativeLibraryDir (bundled by the build, see
 //! docs/android-appcard-build.md), gives it `HOME=<files>/octos-home` and the

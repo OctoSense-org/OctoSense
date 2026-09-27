@@ -69,7 +69,8 @@ class BuildTests(unittest.TestCase):
         self.assertTrue(any(arg.startswith("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/sdk with spaces/ndk/") for arg in cargo))
         self.assertEqual(cargo[cargo.index("cargo"):], ["cargo", "build", "--locked", "--release", "--target",
                                                         "aarch64-linux-android", *build.OCTOS_KERNEL_BUILD])
-        self.assertEqual(kernel, build.REPO / ".sources/octos/target/aarch64-linux-android/release/octos")
+        self.assertEqual(kernel, build.REPO / ".sources/octos-kernel/target/aarch64-linux-android/release/octos")
+        self.assertIn(f"CARGO_TARGET_DIR={build.REPO / '.sources/octos-kernel/target'}", cargo)
         self.assertEqual(build.extra_libs(kernel), f"liboctos.so={kernel}")
         # The kernel is built before the APK that bundles it.
         plan = [command for _, command in build.build_plan(args)]

@@ -74,21 +74,14 @@ octosense-app-hub-app = { workspace = true, optional = true }
 # OctoSense-System-Apps checkout beside this repository
 # (native-apps.lock.json, tools/setup-native.py).
 octosense-mail-service = { workspace = true, optional = true }
-# The `llm` host service the AI providers system app calls: the octos
-# kernel's LLM providers, their keys (macOS keychain) and the phone QR, on
-# host-owned sheets. The config crate names the kernel's octos home it writes.
-octosense-llm-service = { workspace = true, optional = true }
-octosense-llm-config = { workspace = true, optional = true }
-# The octos agent kernel as a shell service (OctoSense-System-Apps
-# crates/octos-core): one kernel per process, started when a consumer (AppCard,
-# Rinx) connects, configured by the AI providers app, restarted when the
-# providers change. Feature `octos-core`, on by default.
-octosense-octos-core = { workspace = true, optional = true }
-# Apps' assistant access (Rinx ADR 0007): for each module whose declared
-# `octos.*` services host policy grants, ONE octos peer owned by the shell's
-# system agent and a scoped service injected at module creation
-# (OctoSense-System-Apps crates/app-peers). Part of `octos-core`.
-octosense-app-peers = { workspace = true, features = ["octos-core"], optional = true }
+# The shell's AI services, one entry point (crates/ai-host): the octos agent
+# kernel as a shell service (one per process, started when a consumer —
+# AppCard, Rinx — connects, restarted when the providers change), the `llm`
+# host service the AI providers system app calls (feature `llm`, with
+# `app-hub`), and apps' assistant access (Rinx ADR 0007: a scoped app-peers
+# service injected at module creation). Kernel with `octos-core`, on by
+# default; Android and iOS always link it.
+octosense-ai-host = { workspace = true }
 # Rinx (Matrix chats, Moments, articles and mini apps) as an in-process
 # module, built without its standalone entry point or local kernel. Its
 # assistant is the shell's, injected at creation: no kernel, no credentials,
@@ -103,10 +96,9 @@ makepad-aichat = { workspace = true, optional = true }
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { workspace = true }
-# The octos kernel service: Android runs the APK's bundled liboctos.so
-# (MAKEPAD_ANDROID_EXTRA_LIBS, tools/android-kernel.py); iOS has none.
-octosense-octos-core = { workspace = true }
-octosense-app-peers = { workspace = true, features = ["octos-core"] }
+# The octos kernel service (octosense-ai-host links it on every phone):
+# Android runs the APK's bundled liboctos.so (MAKEPAD_ANDROID_EXTRA_LIBS,
+# tools/kernel-artifact.py); iOS has none.
 makepad-sheets = { workspace = true }
 
 [features]
@@ -119,19 +111,19 @@ default = ["app-hub", "octos-core", "app-rinx"]
 # module instead, for comparison (a linked module of the same id wins).
 # AppCard is not among them: it ships only with `--features app-appcard`.
 mobile-apps = ["app-reference", "app-sheets", "app-hub", "octos-core"]
-# The octos kernel as a shell service (octosense-octos-core): configured at
+# The octos kernel as a shell service (octosense-kernel, via octosense-ai-host): configured at
 # startup, its profile written and the kernel restarted by the `llm` service,
 # AppCard and other consumers connect to it. Opt out with
 # `--no-default-features` plus the features you still want; Android and iOS
 # builds always link it.
 # App Hub and the host services its system apps call.
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "octosense-ai-host/llm"]
 app-reference = ["dep:octosense-reference"]
 # Sheets linked in as a module (hosting is still Process unless switched).
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
-octos-core = ["dep:octosense-octos-core", "dep:octosense-app-peers", "octosense-llm-service?/octos-core"]
+octos-core = ["octosense-ai-host/octos-core"]
 # The AppCard module (the assistant in a tile) linked in; it connects to the
 # shell's octos kernel, so it implies `octos-core`. Opt-in only, on desktop
 # and native mobile alike: AppCard is not shipped by default for now (it

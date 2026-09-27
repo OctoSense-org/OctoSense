@@ -373,7 +373,7 @@ pub fn apply_provision_payload(payload: &str, pin: Option<&str>) -> Result<Strin
     let what = apply_provision_payload_at_path(&path, payload, pin)?;
     // The kernel is the shell's and may already run (for another consumer):
     // restart it so it reads the new profile. A no-op when none runs.
-    octosense_octos_core::restart();
+    octosense_kernel::restart();
     Ok(what)
 }
 
@@ -411,7 +411,7 @@ fn apply_provision_payload_at_path(path: &Path, payload: &str, pin: Option<&str>
 /// core resolves (the shell's choice, else `$OCTOS_APP_CORE_DIR`, else
 /// `$HOME/octos-home/.octos`): the file the AI providers app edits too.
 fn octos_profile_config_path() -> Result<PathBuf, String> {
-    octosense_octos_core::profile().ok_or_else(|| "no HOME set".to_string())
+    octosense_kernel::profile().ok_or_else(|| "no HOME set".to_string())
 }
 
 // Test adapters: the provisioning tests below predate the shared crate and
