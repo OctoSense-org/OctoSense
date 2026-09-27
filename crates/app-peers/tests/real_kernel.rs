@@ -73,7 +73,7 @@ fn kernel() -> Option<PathBuf> {
 
 fn broker(core: &Core, app: &str, label: &str) -> Broker {
     let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
-    let cfg = BrokerConfig::new(
+    let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
         "_main",
         "_main:api:octosense#system",
@@ -81,6 +81,10 @@ fn broker(core: &Core, app: &str, label: &str) -> Broker {
         label,
         services,
     );
+    // The host keeps each peer's host token beside the kernel (shell state).
+    cfg.state_dir = core
+        .core_dir()
+        .map(|d| d.parent().unwrap().join("host-state"));
     Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())))
 }
 

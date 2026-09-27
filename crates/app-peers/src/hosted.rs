@@ -77,7 +77,7 @@ pub fn launch<'a>(
     if services.is_empty() || !is_namespace_segment(module) {
         return None;
     }
-    let cfg = BrokerConfig::new(
+    let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
         SHARED_PROFILE,
         system_session(),
@@ -85,7 +85,15 @@ pub fn launch<'a>(
         label,
         services,
     );
+    // The shell keeps each app peer's host token beside its kernel's core
+    // dir, outside every app's reach.
+    cfg.state_dir = octosense_octos_core::core_dir().map(|dir| host_state_dir(&dir));
     Some(Broker::new(cfg, Arc::new(CoreConnector::shell())))
+}
+
+/// Where a shell keeps app peers' host tokens for the kernel at `core_dir`.
+pub fn host_state_dir(core_dir: &std::path::Path) -> std::path::PathBuf {
+    core_dir.parent().unwrap_or(core_dir).join("app-peers")
 }
 
 /// Offer `broker` to the instance being created, as a trait object.
