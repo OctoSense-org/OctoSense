@@ -33,8 +33,8 @@ KERNEL_BUILD = ["-p", "octos-cli", "--bin", "octos", "--no-default-features", "-
 
 
 def octos_revision(lock=None):
-    """The one octos revision OctoSense links (Cargo.lock)."""
-    text = (lock or ROOT / "Cargo.lock").read_text()
+    """The one octos revision OctoSense links (the workspace Cargo.lock)."""
+    text = (lock or ROOT.parent / "Cargo.lock").read_text()
     match = re.search(r'name = "octos-cli"\nversion = "[^"]+"\nsource = "git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#', text)
     if not match:
         raise RuntimeError("Cargo.lock names no octos-cli from octos-org/octos: cannot tell which kernel to build")

@@ -16,8 +16,8 @@ publish = false
 
 [dependencies]
 # The same App Hub rev the Mail service pins: one appstore, one registry.
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
-octosense-llm-config = { path = "../config" }
+octosense-appstore = { workspace = true }
+octosense-llm-config = { workspace = true }
 serde_json = "1"
 # The provider test: one small HTTPS request on a worker thread.
 ureq = { version = "2", default-features = false, features = ["tls"] }
@@ -30,7 +30,7 @@ rqrr = { version = "0.10", default-features = false }
 # The shell's octos kernel (crates/octos-core), with the `octos-core`
 # feature: the service then writes the profile under the kernel's core dir by
 # default and restarts the kernel after every change.
-octosense-octos-core = { path = "../../../crates/octos-core", optional = true }
+octosense-octos-core = { workspace = true, optional = true }
 
 [features]
 default = []

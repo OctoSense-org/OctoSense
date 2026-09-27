@@ -59,7 +59,7 @@ class SystemSettingsRoutingTest(unittest.TestCase):
         # inspecting the exact alias. Putting these filters only on the alias
         # therefore loses their priority after a Home APK update over the ROM.
         android = "{http://schemas.android.com/apk/res/android}"
-        manifest = ET.parse(ROOT / "home/resources/android/AndroidManifest.xml.template").getroot()
+        manifest = ET.parse(ROOT / "../phone/resources/android/AndroidManifest.xml.template").getroot()
         application = manifest.find("application")
         entry = next(node for node in application.findall("activity-alias")
                      if node.get(android + "name") == "dev.makepad.octosense.SettingsEntry")
@@ -106,8 +106,8 @@ class SystemSettingsRoutingTest(unittest.TestCase):
             jars = list((Path.home() / ".local/share/octosense/android-tools/makepad-android/platforms").glob("*/android.jar"))
         if not javac or not java or not jars:
             self.skipTest("JDK and Android SDK required for system Settings routing tests")
-        sources = [ROOT / "home/android/contracts/src/main/java/dev/makepad/octosense/contracts/SystemSettings.java",
-                   ROOT / "home/android/contracts/src/main/java/dev/makepad/octosense/contracts/Protocol.java",
+        sources = [ROOT / "../phone/android/contracts/src/main/java/dev/makepad/octosense/contracts/SystemSettings.java",
+                   ROOT / "../phone/android/contracts/src/main/java/dev/makepad/octosense/contracts/Protocol.java",
                    ROOT / "tests/java/SystemSettingsRoutingTest.java"]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

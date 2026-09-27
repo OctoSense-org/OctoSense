@@ -303,7 +303,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
  "x11rb",
 ]
 
@@ -1272,9 +1272,9 @@ dependencies = [
 
 [[package]]
 name = "clap_complete"
-version = "4.6.11"
+version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
+checksum = "3be2ad0423bdbbb0e25bc89add796f3559706d4a95e1bc98e4d9662a957b6a19"
 dependencies = [
  "clap",
  "clap_lex",
@@ -1887,15 +1887,6 @@ checksum = "ac6b926516df9c60bfa16e107b21086399f8285a44ca9711344b9e553c5146e2"
 
 [[package]]
 name = "defmt"
-version = "0.3.100"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0963443817029b2024136fc4dd07a5107eb8f977eaf18fcd1fdeb11306b64ad"
-dependencies = [
- "defmt 1.1.1",
-]
-
-[[package]]
-name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
@@ -2066,7 +2057,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2452,12 +2443,10 @@ dependencies = [
 
 [[package]]
 name = "faster-hex"
-version = "0.10.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04839bdf9d8c10f66806fad16b852fc72aab80873aebc3cb69d85b4fa41543ed"
+checksum = "7223ae2d2f179b803433d9c830478527e92b8117eab39460edae7f1614d9fb73"
 dependencies = [
- "autocfg",
- "defmt 0.3.100",
  "heapless",
  "serde",
 ]
@@ -4461,7 +4450,7 @@ version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ab1baf72f08796de0260609515130699b890ac25f30e610ad894bc5856cafdb"
 dependencies = [
- "defmt 1.1.1",
+ "defmt",
  "jiff-core",
  "jiff-static",
  "jiff-tzdb-platform",
@@ -4478,7 +4467,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e52fe76043ccecc9005d2305ebaadf7d7fc0cc89ca6baa10a94d6bc68c7128c"
 dependencies = [
- "defmt 1.1.1",
+ "defmt",
  "log",
 ]
 
@@ -4674,9 +4663,9 @@ dependencies = [
 
 [[package]]
 name = "kstring"
-version = "2.0.5"
+version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a09b82a7f771ed02dc0dd9b27130a0fa5499fa15ed3027116c1e5e4e591bd9e"
+checksum = "b609e7ca5ea38f093c20a4a102335b247221c9643b7a6bc3510f196f99499a9e"
 dependencies = [
  "static_assertions",
 ]
@@ -5274,6 +5263,10 @@ version = "0.1.0"
 dependencies = [
  "makepad-filesystem-watcher",
 ]
+
+[[package]]
+name = "makepad-map-nav"
+version = "0.1.0"
 
 [[package]]
 name = "makepad-markdown"
@@ -6352,8 +6345,7 @@ dependencies = [
 [[package]]
 name = "nix"
 version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+source = "git+https://github.com/octos-org/octos.git?rev=18fcd3f16e527d2b601d7ae244f056fb711bb6b8#18fcd3f16e527d2b601d7ae244f056fb711bb6b8"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -7207,10 +7199,13 @@ dependencies = [
 name = "octosense-app-peers"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "log",
  "octosense-octos-core",
  "serde_json",
  "tokio",
+ "tokio-tungstenite 0.24.0",
+ "url",
  "uuid",
 ]
 
@@ -7250,6 +7245,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-home"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "makepad-ai-services",
+ "makepad-aichat",
+ "makepad-app-module",
+ "makepad-network",
+ "makepad-sheets",
+ "makepad-strict-json",
+ "makepad-studio-protocol",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+ "octoscript-makepad",
+ "octosense-app-hub-app",
+ "octosense-app-peers",
+ "octosense-appcard",
+ "octosense-llm-config",
+ "octosense-llm-service",
+ "octosense-mail-service",
+ "octosense-maps",
+ "octosense-news",
+ "octosense-octos-core",
+ "octosense-photos",
+ "octosense-reference",
+ "rinx",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "octosense-llm-config"
 version = "0.1.0"
 dependencies = [
@@ -7257,7 +7284,9 @@ dependencies = [
  "chacha20poly1305 0.10.1",
  "chrono",
  "flate2",
+ "png 0.17.16",
  "qrcode",
+ "rqrr",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -7272,6 +7301,8 @@ dependencies = [
  "octosense-appstore",
  "octosense-llm-config",
  "octosense-octos-core",
+ "png 0.17.16",
+ "qrcode",
  "rqrr",
  "serde_json",
  "ureq 2.12.1",
@@ -7297,6 +7328,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-maps"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-map-nav",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+ "reqwest 0.12.28",
+ "rustls",
+ "tokio",
+]
+
+[[package]]
+name = "octosense-news"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+]
+
+[[package]]
 name = "octosense-octos-core"
 version = "0.1.0"
 dependencies = [
@@ -7306,6 +7364,16 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "octosense-photos"
+version = "0.1.0"
+dependencies = [
+ "makepad-app-module",
+ "makepad-widgets",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7821,9 +7889,9 @@ dependencies = [
 
 [[package]]
 name = "process-wrap"
-version = "9.1.1"
+version = "9.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f95f6259ebd0640685b7cd26d635861f39208df0f89b2b61ff5cf76310fa54f6"
+checksum = "2e842efad9119158434d193c6682e2ebee4b44d6ad801d7b349623b3f57cdf55"
 dependencies = [
  "futures",
  "indexmap 2.14.2",
@@ -8596,12 +8664,12 @@ dependencies = [
 [[package]]
 name = "robius-common"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 
 [[package]]
 name = "robius-directories"
 version = "6.0.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "dirs-sys 0.5.0",
  "jni 0.21.1",
@@ -8611,7 +8679,7 @@ dependencies = [
 [[package]]
 name = "robius-file-picker"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "android-build",
  "block2",
@@ -8633,7 +8701,7 @@ dependencies = [
 [[package]]
 name = "robius-location"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "android-build",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8649,7 +8717,7 @@ dependencies = [
 [[package]]
 name = "robius-open"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "block2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8666,7 +8734,7 @@ dependencies = [
 [[package]]
 name = "robius-share"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "android-build",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -8704,7 +8772,7 @@ dependencies = [
 [[package]]
 name = "robius-web-auth-session"
 version = "0.3.1"
-source = "git+https://github.com/project-robius/robius#cca3cc3dc99d8fcb6c69a127cd28d47ba8f3e3eb"
+source = "git+https://github.com/project-robius/robius#71966dc2194307e27d3f9eedc9138614624b4265"
 dependencies = [
  "block2",
  "cfg-if 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -10096,7 +10164,7 @@ dependencies = [
  "memchr 2.8.3",
  "ntapi",
  "objc2-core-foundation",
- "windows 0.56.0",
+ "windows 0.57.0",
 ]
 
 [[package]]
@@ -10845,7 +10913,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11555,6 +11623,16 @@ dependencies = [
 
 [[package]]
 name = "windows"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
+dependencies = [
+ "windows-core 0.57.0",
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows"
 version = "0.61.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
@@ -11620,6 +11698,18 @@ checksum = "4698e52ed2d08f8658ab0c39512a7c00ee5fe2688c65f8c0a4f06750d729f2a6"
 dependencies = [
  "windows-implement 0.56.0",
  "windows-interface 0.56.0",
+ "windows-result 0.1.2",
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
+dependencies = [
+ "windows-implement 0.57.0",
+ "windows-interface 0.57.0",
  "windows-result 0.1.2",
  "windows-targets 0.52.6",
 ]
@@ -11701,6 +11791,17 @@ dependencies = [
 
 [[package]]
 name = "windows-implement"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
@@ -11715,6 +11816,17 @@ name = "windows-interface"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08990546bf4edef8f431fa6326e032865f27138718c587dc21bc0265bbcb57cc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "windows-interface"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
 dependencies = [
  "proc-macro2",
  "quote",

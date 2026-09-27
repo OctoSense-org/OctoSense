@@ -34,10 +34,10 @@ def main():
     subprocess.run(
         [str(args.packager.resolve()), "android", "--sdk-path=" + str(args.sdk.resolve()),
          "--abi=aarch64", "build", "--release", "--locked", "--offline",
-         "--no-default-features", "-p", "octosense"],
+         "--no-default-features", "-p", "octosense-home"],
         cwd=root, env=environment, check=True,
     )
-    shutil.copy2(root / "target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
+    shutil.copy2(root / "target/android/makepad-android-apk/octosense_home/apk/octo_sense.apk",
                  validation_dir / "home-validation.apk")
     print("Validation APK:", validation_dir / "home-validation.apk")
 

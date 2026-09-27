@@ -27,10 +27,10 @@ def main():
         return subprocess.run([str(part) for part in command], env=env, check=True,
                               capture_output=True, text=True).stdout
 
-    spec = importlib.util.spec_from_file_location("fixture_builder", ROOT / "home/android/scripts/run-settings-accessibility-probe.py")
+    spec = importlib.util.spec_from_file_location("fixture_builder", ROOT / "phone/android/scripts/run-settings-accessibility-probe.py")
     builder = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(builder)
-    sources = ROOT / "home/android/validation-fixtures"
+    sources = ROOT / "phone/android/validation-fixtures"
     provider = tuple(sorted((sources / "keyboards-provider").glob("*.java")))
     report = {"device_accessed": False, "fixtures": {}}
     certificates = set()

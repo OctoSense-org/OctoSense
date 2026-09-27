@@ -23,7 +23,7 @@ class CaptionLanguageClientTest(unittest.TestCase):
                 if name.endswith('JSONObject.java'):
                     source=source.replace('public int getInt(String k)', 'public long getLong(String k){return ((Number)values.get(k)).longValue();}public int getInt(String k)')
                 path=Path(tmp)/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(source);sources.append(path)
-            sources += [ROOT/'home/resources/android/java/dev/makepad/octosense/CaptionLanguageSettingsClient.java',ROOT/'tests/java/CaptionLanguageClientTest.java']
+            sources += [ROOT/'../phone/resources/android/java/dev/makepad/octosense/CaptionLanguageSettingsClient.java',ROOT/'tests/java/CaptionLanguageClientTest.java']
             for command in ([javac,'-d',tmp,*map(str,sources)],[java,'-cp',tmp,'dev.makepad.octosense.CaptionLanguageClientTest']):
                 result=subprocess.run(command,capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)

@@ -10,6 +10,9 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+# The OctoSense repository: Home is phone/, the runtime locks and the
+# framework checkouts (.sources/, tools/setup.py) are at its root.
+REPO = ROOT.parent
 
 
 def read_json5(path):
@@ -56,8 +59,8 @@ def main():
     cmake = sdk / 'native/build-tools/cmake/bin'
     if not (cmake / 'cmake').is_file() or not args.packager.is_file():
         p.error('Existing DevEco CMake and cargo-makepad are required')
-    subprocess.run(['python3', str(ROOT / 'scripts/setup-home.py'), '--check'], cwd=ROOT, check=True)
-    env = dict(os.environ, OCTOSENSE_WORKSPACE=str(ROOT / '.sources'))
+    subprocess.run(['python3', str(REPO / 'tools/setup.py'), '--check'], cwd=REPO, check=True)
+    env = dict(os.environ, OCTOSENSE_WORKSPACE=str(REPO / '.sources'))
     java_home = args.deveco_home / 'jbr/Contents/Home'
     if not (java_home / 'bin/java').is_file():
         p.error('The existing DevEco Java runtime is required')
@@ -67,16 +70,16 @@ def main():
     env.pop('MAKEPAD_REMOTE', None)
     if args.remote_port:
         env['MAKEPAD_REMOTE'] = str(args.remote_port)
-    cargo_args = ['-p', 'octosense', '--release', '--locked']
+    cargo_args = ['-p', 'octosense-home', '--release', '--locked']
     if args.offline:
         cargo_args.append('--offline')
     command = [str(args.packager), 'makepad', 'ohos', '--deveco-home=' + str(args.deveco_home), '--arch=aarch64']
-    home = ROOT / 'home'
+    home = REPO / 'phone'
     subprocess.run(command + ['deveco'] + cargo_args, cwd=home, env=env, check=True)
-    project = home / 'target/makepad-open-harmony/octosense'
+    project = home / 'target/makepad-open-harmony/octosense_home'
     # The packager override can come from another checkout. Always take the
     # ArkTS shell and metadata from this product's pinned framework source.
-    shutil.copytree(ROOT / '.sources/makepad/tools/open_harmony/deveco', project, dirs_exist_ok=True)
+    shutil.copytree(REPO / '.sources/makepad/tools/open_harmony/deveco', project, dirs_exist_ok=True)
     # Product-owned window policy: keep native system navigation visible and
     # keep the floating controls inside its safe area.
     shutil.copy2(home / 'ohos/EntryAbility.ets',
@@ -124,8 +127,8 @@ def main():
         'packager': str(args.packager),
         'profile_sha256': hashlib.sha256(profile).hexdigest(),
         'hap_sha256': hashlib.sha256(hap.read_bytes()).hexdigest(),
-        'runtime': json.loads((home / 'native-runtime.lock.json').read_text()),
-        'runtime_patches': json.loads((home / 'runtime-patches.lock.json').read_text()),
+        'runtime': json.loads((REPO / 'native-runtime.lock.json').read_text()),
+        'runtime_patches': json.loads((REPO / 'runtime-patches.lock.json').read_text()),
     }
     (output / 'build.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print('Built Home HAP:', output / 'OctoSenseHome.hap')

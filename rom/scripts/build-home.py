@@ -4,7 +4,7 @@
 Home's octos kernel is a shell service (feature `octos-core`, on in every
 phone build): the APK bundles it as `liboctos.so`, the only place an Android
 app may exec a binary from. By default the kernel is cross-built from the one
-octos revision Home's Cargo.lock pins; `--octos-kernel` bundles a prebuilt
+octos revision the workspace Cargo.lock pins; `--octos-kernel` bundles a prebuilt
 one, `--no-octos-kernel` leaves it out (Home then runs no kernel; the AI
 providers are still saved).
 """
@@ -19,6 +19,10 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+# The OctoSense repository: Home is phone/, the workspace lock and the
+# framework checkouts (.sources/, tools/setup.py) are at its root.
+REPO = ROOT.parent
+HOME = REPO / "phone"
 OCTOS_URL = "https://github.com/octos-org/octos.git"
 # The kernel as the shells' phones run it: the stdio server, no llama.cpp
 # embedder (needs cmake and is not used on a phone).
@@ -28,11 +32,11 @@ ANDROID_API = "33"
 
 
 def octos_revision(lock=None):
-    """The one octos revision Home links (home/Cargo.lock)."""
-    text = (lock or ROOT / "home/Cargo.lock").read_text()
+    """The one octos revision Home links (the workspace Cargo.lock)."""
+    text = (lock or REPO / "Cargo.lock").read_text()
     match = re.search(r'name = "octos-cli"\nversion = "[^"]+"\nsource = "git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#', text)
     if not match:
-        raise RuntimeError("home/Cargo.lock names no octos-cli from octos-org/octos: cannot tell which kernel to build")
+        raise RuntimeError("Cargo.lock names no octos-cli from octos-org/octos: cannot tell which kernel to build")
     return match[1]
 
 
@@ -101,7 +105,7 @@ def kernel_plan(args):
         return [], None
     if args.octos_kernel:
         return [], args.octos_kernel
-    source = ROOT / ".sources/octos"
+    source = REPO / ".sources/octos"
     revision = octos_revision()
     steps = [(ROOT, ["git", "init", "--quiet", str(source)])]
     if not args.offline:
@@ -117,20 +121,20 @@ def extra_libs(kernel):
 
 
 def build_plan(args):
-    sources = ROOT / ".sources"
+    sources = REPO / ".sources"
     cargo = ["cargo", "build", "--locked", "--release", "--manifest-path", str(sources / "makepad/tools/cargo_makepad/Cargo.toml")]
-    gradle = [str(ROOT / "home/android/gradlew"), "--no-daemon", ":contracts:exportHomeContracts", ":system-bridge:assembleRelease"]
+    gradle = [str(HOME / "android/gradlew"), "--no-daemon", ":contracts:exportHomeContracts", ":system-bridge:assembleRelease"]
     packager = args.packager or sources / "makepad/target/release/cargo-makepad"
-    android = [str(packager), "makepad", "android", f"--sdk-path={args.sdk}", "--abi=aarch64", f"--version-code={args.version_code}", "--no-sign", "build", "-p", "octosense", "--release", "--locked"]
+    android = [str(packager), "makepad", "android", f"--sdk-path={args.sdk}", "--abi=aarch64", f"--version-code={args.version_code}", "--no-sign", "build", "-p", "octosense-home", "--release", "--locked"]
     if args.offline:
         cargo.append("--offline")
         gradle.append("--offline")
         android.append("--offline")
-    plan = [(ROOT, [sys.executable, str(ROOT / "scripts/setup-home.py"), "--check"])]
+    plan = [(REPO, [sys.executable, str(REPO / "tools/setup.py"), "--check"])]
     if not args.packager:
         plan.append((sources / "makepad", cargo))
     plan += kernel_plan(args)[0]
-    return plan + [(ROOT / "home/android", gradle), (ROOT / "home", android)]
+    return plan + [(HOME / "android", gradle), (HOME, android)]
 
 
 def certificate_digest(apksigner, apk, env):
@@ -155,7 +159,7 @@ def main(argv=None):
                           "artifacts": ["OctoSenseHome.apk", "OctoSenseBridge.apk", "build.json"],
                           "installs_or_flashes": False}, indent=2))
         return
-    sources = ROOT / ".sources"
+    sources = REPO / ".sources"
     for path in (args.java_home / "bin/java", args.android_sdk / "platforms/android-35/android.jar",
                  args.android_sdk / "build-tools/35.0.0/apksigner"):
         if not path.is_file():
@@ -168,7 +172,7 @@ def main(argv=None):
         for path in (args.sign_key, args.sign_cert):
             if not path.is_file():
                 raise RuntimeError(f"Signing input does not exist: {path}")
-            if path.is_relative_to(ROOT):
+            if path.is_relative_to(REPO):
                 raise RuntimeError("Keep signing keys and certificates outside the product checkout")
     env = dict(os.environ)
     env.update(JAVA_HOME=str(args.java_home), ANDROID_HOME=str(args.android_sdk),
@@ -179,7 +183,7 @@ def main(argv=None):
     env.pop("CARGO_TARGET_DIR", None)
     if args.gradle_home:
         env["OCTOSENSE_GRADLE_HOME"] = str(args.gradle_home)
-    env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + f" --remap-path-prefix={ROOT}=/octosense-rom --remap-path-prefix={Path.home()}=/build").strip()
+    env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + f" --remap-path-prefix={REPO}=/octosense --remap-path-prefix={Path.home()}=/build").strip()
     env.pop("MAKEPAD_ANDROID_EXTRA_LIBS", None)
     if kernel:
         env["MAKEPAD_ANDROID_EXTRA_LIBS"] = extra_libs(kernel)
@@ -188,8 +192,8 @@ def main(argv=None):
             raise RuntimeError(f"The octos kernel was not built: {kernel}")
         subprocess.run(command, cwd=cwd, env=env, check=True)
     inputs = {
-        "OctoSenseHome.apk": ROOT / "home/target/android/makepad-android-apk/octosense/apk/octo_sense.apk",
-        "OctoSenseBridge.apk": ROOT / "home/android/system-bridge/build/outputs/apk/release/system-bridge-release-unsigned.apk",
+        "OctoSenseHome.apk": HOME / "target/android/makepad-android-apk/octosense_home/apk/octo_sense.apk",
+        "OctoSenseBridge.apk": HOME / "android/system-bridge/build/outputs/apk/release/system-bridge-release-unsigned.apk",
     }
     args.output.mkdir(parents=True, exist_ok=True)
     apksigner = args.android_sdk / "build-tools/35.0.0/apksigner"
@@ -214,12 +218,11 @@ def main(argv=None):
     version = re.search(r"versionCode='([0-9]+)'", badging).group(1)
     receipt = {"schema_version": 1, "variant": args.variant, "development": args.development,
                "home_version_code": int(version),
-               "source_revision": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
-               "source_dirty": bool(subprocess.check_output(["git", "-C", str(ROOT), "status", "--porcelain"], text=True)),
-               "runtime": json.loads((ROOT / "home/native-runtime.lock.json").read_text()),
-               "runtime_patches": json.loads((ROOT / "home/runtime-patches.lock.json").read_text()),
+               "source_revision": subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip(),
+               "source_dirty": bool(subprocess.check_output(["git", "-C", str(REPO), "status", "--porcelain"], text=True)),
+               "runtime": json.loads((REPO / "native-runtime.lock.json").read_text()),
+               "runtime_patches": json.loads((REPO / "runtime-patches.lock.json").read_text()),
                "packager": str(args.packager) if args.packager else "pinned source",
-               "native_apps": json.loads((ROOT / "home/native-apps.lock.json").read_text()),
                "octos_kernel": None if not kernel else {
                    "source": "prebuilt" if args.octos_kernel else f"{OCTOS_URL}@{octos_revision()}",
                    "sha256": hashlib.sha256(kernel.read_bytes()).hexdigest()},

@@ -99,7 +99,7 @@ class DefaultRolesBackendTest(unittest.TestCase):
                 path.write_text(content)
                 sources.append(path)
             sources += [ROOT / 'vendor/octosense/settings/src/dev/makepad/octosense/roles/RolesSettingsContract.java',
-                        ROOT / 'home/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense/RoleSettingsBackend.java',
+                        ROOT / '../phone/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense/RoleSettingsBackend.java',
                         ROOT / 'tests/java/DefaultRolesBackendTest.java']
             result = subprocess.run([javac, '-d', output, *map(str, sources)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

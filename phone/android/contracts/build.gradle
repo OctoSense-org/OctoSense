@@ -6,7 +6,7 @@ android {
     defaultConfig { minSdk 26 }
     buildFeatures { aidl true; buildConfig false }
     // One adapter source for the ordinary APK and privileged ROM helper.
-    sourceSets.main.java.srcDir '../../../vendor/octosense/settings/src'
+    sourceSets.main.java.srcDir '../../../rom/vendor/octosense/settings/src'
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8

@@ -56,7 +56,7 @@ class DeviceSettingsContractTest(unittest.TestCase):
                 *([str(ROOT / "vendor/octosense/settings/src/dev/makepad/octosense/controls/DndMode.java")]
                   if source == "SettingsControlsContract" else []),
                 *([str(ROOT / "vendor/octosense/settings/src/dev/makepad/octosense/controls/ColorAccessibility.java"), str(ROOT / "vendor/octosense/settings/src/dev/makepad/octosense/controls/HearingSettings.java"), str(ROOT / "vendor/octosense/settings/src/dev/makepad/octosense/controls/AccessibilityTextMotorSettings.java")] if source == "SettingsControlsContract" else []),
-                str(source_path or ROOT / f"home/resources/android/java/dev/makepad/octosense/{source}.java"),
+                str(source_path or ROOT / f"../phone/resources/android/java/dev/makepad/octosense/{source}.java"),
                 str(ROOT / f"tests/java/{harness}.java"),
             ], check=True, capture_output=True, text=True)
             subprocess.run([java, "-cp", classes, main_class or harness],

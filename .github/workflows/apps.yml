@@ -1,0 +1,108 @@
+name: Apps and services
+
+# The system apps' host services, the AppCard assistant (apps/appcard) and
+# the shell services (crates/kernel, crates/app-peers).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'native-runtime.lock.json'
+      - 'runtime-patches.lock.json'
+      - 'tools/setup.py'
+      - '.github/workflows/apps.yml'
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'native-runtime.lock.json'
+      - 'runtime-patches.lock.json'
+      - 'tools/setup.py'
+      - '.github/workflows/apps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  services:
+    # crates/kernel (octosense-octos-core): the shell's octos kernel, tested
+    # against a stand-in kernel (a python3 script speaking NDJSON JSON-RPC);
+    # crates/app-peers: the scoped assistant service and its broker against a
+    # scripted kernel. The real-kernel tests need an `octos` binary
+    # (OCTOS_CORE_TEST_KERNEL / OCTOS_APP_PEERS_TEST_KERNEL) and pass without.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # The workspace's [patch] tables name .sources/: prepare them even
+      # though these crates do not build Makepad.
+      - run: python3 tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: services
+      - name: Kernel service
+        run: |
+          cargo test --locked -p octosense-octos-core
+          cargo clippy --locked -p octosense-octos-core --all-targets --no-deps -- -D warnings
+      - name: App peers
+        run: |
+          cargo test --locked -p octosense-app-peers
+          cargo test --locked -p octosense-app-peers --features octos-core,ws
+          cargo clippy --locked -p octosense-app-peers --all-targets --no-deps -- -D warnings
+          cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws --no-deps -- -D warnings
+      - name: AI providers config
+        run: cargo test --locked -p octosense-llm-config
+
+  apps:
+    # macOS: the host services and AppCard link App Hub and Makepad, whose
+    # host system-dependency set is verified on macOS (what the dev machines run).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: python3 tools/setup.py
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: apps
+      - name: Host services (Mail, AI providers)
+        run: cargo test --locked -p octosense-mail-service -p octosense-llm-service
+      - name: AppCard runtime setup safeguards
+        working-directory: apps/appcard
+        run: PYTHONPATH=tools python3 -m unittest core.test_native_runtime
+      # -p + --no-deps scopes the lint gate to AppCard's own crates: Makepad is
+      # the source locked by Octoscript-Makepad; its warnings are not ours to
+      # gate, but it is fully compiled here, so this is also the compile check.
+      - name: AppCard clippy (own crates; shared runtime compiles)
+        run: cargo clippy --locked -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+      # The transport over the shell's octos kernel, including a kernel
+      # restart against the core's stand-in kernel.
+      - name: AppCard transport and store
+        run: cargo test --locked -p octos-app-transport -p octos-app-store
+      - name: One Makepad, App Hub, octos and Rinx in the locked graph
+        run: |
+          # `cargo tree -i` fails when the graph holds more than one octos-core.
+          cargo tree --locked -p octos-app -i octos-core --target all --depth 0
+          python3 tools/setup.py --check --cargo

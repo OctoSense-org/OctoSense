@@ -138,19 +138,19 @@ impl PhotosView {
         for (id, svg) in [
             (
                 id!(back),
-                include_str!("../../../resources/icons/chevron-left.svg"),
+                include_str!("../resources/icons/chevron-left.svg"),
             ),
             (
                 id!(previous),
-                include_str!("../../../resources/icons/chevron-left.svg"),
+                include_str!("../resources/icons/chevron-left.svg"),
             ),
             (
                 id!(next),
-                include_str!("../../../resources/icons/chevron-right.svg"),
+                include_str!("../resources/icons/chevron-right.svg"),
             ),
             (
                 id!(search),
-                include_str!("../../../resources/icons/search.svg"),
+                include_str!("../resources/icons/search.svg"),
             ),
             (id!(create), PLUS_ICON),
         ] {

@@ -194,7 +194,7 @@ def main():
     adapter = args.adapter_dex.read_bytes()
     added = dex_classes(adapter)
     assert added and all(name.startswith(('Lcom/android/permissioncontroller/octosense/', 'Ldev/makepad/octosense/roles/', 'Ldev/makepad/octosense/permissions/')) for name in added), 'Adapter DEX includes native or stub classes'
-    components = ROOT / 'home/android/platform-build/permissioncontroller/components.xml'
+    components = ROOT / 'phone/android/platform-build/permissioncontroller/components.xml'
     component_names = [node.get('{' + ANDROID + '}name') for node in checked_components(components)]
     assert all('L' + name.replace('.', '/') + ';' in added for name in component_names), 'Missing adapter component class'
     preserved, native_classes = {}, set()

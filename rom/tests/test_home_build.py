@@ -43,7 +43,7 @@ class BuildTests(unittest.TestCase):
         self.assertNotEqual(ordinary.output, rom.output)
         steps = build.build_plan(ordinary)
         commands = [command for _, command in steps]
-        self.assertEqual(steps[-1][0], ROOT / "home")
+        self.assertEqual(steps[-1][0], ROOT.parent / "phone")
         self.assertIn("--sdk-path=/sdk with spaces", commands[-1])
         self.assertIn("--no-sign", commands[-1])
         self.assertTrue(all("--offline" in c for c in commands[1:] if c[0] != "git"))
@@ -69,7 +69,7 @@ class BuildTests(unittest.TestCase):
         self.assertTrue(any(arg.startswith("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=/sdk with spaces/ndk/") for arg in cargo))
         self.assertEqual(cargo[cargo.index("cargo"):], ["cargo", "build", "--locked", "--release", "--target",
                                                         "aarch64-linux-android", *build.OCTOS_KERNEL_BUILD])
-        self.assertEqual(kernel, build.ROOT / ".sources/octos/target/aarch64-linux-android/release/octos")
+        self.assertEqual(kernel, build.REPO / ".sources/octos/target/aarch64-linux-android/release/octos")
         self.assertEqual(build.extra_libs(kernel), f"liboctos.so={kernel}")
         # The kernel is built before the APK that bundles it.
         plan = [command for _, command in build.build_plan(args)]

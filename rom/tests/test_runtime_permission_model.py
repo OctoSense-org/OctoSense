@@ -61,6 +61,6 @@ class RuntimePermissionModelTest(unittest.TestCase):
    out=Path(output);sources=[]
    for name,body in STUBS.items():
     path=out/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(body);sources.append(path)
-   sources += [ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/permissions/PermissionsSettingsContract.java',ROOT/'home/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense/NativePermissionModel.java',ROOT/'tests/java/RuntimePermissionModelTest.java']
+   sources += [ROOT/'vendor/octosense/settings/src/dev/makepad/octosense/permissions/PermissionsSettingsContract.java',ROOT/'../phone/android/platform-build/permissioncontroller/files/src/com/android/permissioncontroller/octosense/NativePermissionModel.java',ROOT/'tests/java/RuntimePermissionModelTest.java']
    result=subprocess.run([javac,'-d',output,*map(str,sources)],capture_output=True,text=True);self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    result=subprocess.run([java,'-cp',output,'com.android.permissioncontroller.octosense.RuntimePermissionModelTest'],capture_output=True,text=True,timeout=15);self.assertEqual(result.returncode,0,result.stdout+result.stderr)
