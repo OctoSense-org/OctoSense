@@ -11,7 +11,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 
-这些记录在仓库合并前写于 OctoSense-ROM 的 `home/docs/adr/`，现原样作为历史保存在 [`home/`](home/) 下。它们保留原编号，引用时写作“Home ADR 0004”。文中出现 `home/src/`、`home/apps/` 等路径时，对应现在的 `crates/shell/src/`（Shell；设置应用在 `phone/src/`）和 `apps/`（见 ADR 0001）。状态为当时记录的状态。
+这些记录在仓库合并前写于 OctoSense-ROM（已停用，并入本仓库）的 `home/docs/adr/`，现原样作为历史保存在 [`home/`](home/) 下。它们保留原编号，引用时写作“Home ADR 0004”。文中出现 `home/src/`、`home/apps/` 等路径时，对应现在的 `crates/shell/src/`（Shell；设置应用在 `phone/src/`）和 `apps/`（见 ADR 0001）。状态为当时记录的状态。
 
 | Home ADR | 标题 | 日期 | 状态 |
 | --- | --- | --- | --- |

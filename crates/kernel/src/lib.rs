@@ -1,10 +1,10 @@
 //! octosense-kernel: the shell's octos kernel.
 //!
-//! The octos agent kernel is a shell service. A shell (OctoSense-ROM Home,
-//! OctoSense-Desktop) [`configure`]s it once at startup; every consumer —
-//! the AppCard assistant today, Rinx's native mini-app host next — calls
-//! [`connect`] and gets its own [`Connection`] to the ONE kernel of the
-//! process. The AI providers app's `llm` host service writes the kernel's
+//! The octos agent kernel is a shell service. A shell (the phone's Home in
+//! `phone/`, the desktop shell in `desktop/`) [`configure`]s it once at
+//! startup; every consumer — the AppCard assistant today, Rinx's native
+//! mini-app host next — calls [`connect`] and gets its own [`Connection`]
+//! to the ONE kernel of the process. The AI providers app's `llm` host service writes the kernel's
 //! profile under [`core_dir`] and calls [`restart`] after a change.
 //!
 //! - **Lazy, single instance.** The first `connect()` starts the kernel; the

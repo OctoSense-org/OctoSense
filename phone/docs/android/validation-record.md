@@ -5,7 +5,7 @@ Status: phone benchmarks in progress. Native parity across the shell is NOT demo
 ## Source and builds
 
 - Worktree: a separate OctoSense-mobile worktree (`OctoSense-native-perf`)
-- Branch: `perf/native-frame-budget`, based on PR #28 commit [`344655f0281ce390f67181bacbfa6b1721cb696a`](https://github.com/OctoSense-org/octosense-rom/commit/344655f0281ce390f67181bacbfa6b1721cb696a).
+- Branch: `perf/native-frame-budget`, based on PR #28 commit `344655f0281ce390f67181bacbfa6b1721cb696a` (OctoSense-ROM commit 344655f0, repository retired 2026-09-27).
 - Framework remains pinned to makepad `2d9f8286d9ff2cfb348cb3c1ebd72bc9cedf6c22`.
 - `baseline-efc153c.apk`: release APK built from the unchanged base. SHA-256 `968d7c945ee8b94d7ad276a134682b272b453c31ec662aae6ea469609235d8bd`.
 - `wallpaper-cache.apk`: candidate release APK. SHA-256 `3c5789440f100babad0c44bc838af8e03353986085a083d3647fdbe7f6c7384c`.
