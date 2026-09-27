@@ -30,6 +30,7 @@ mod mobile_surface;
 mod mobile_gestures;
 mod mobile_hints;
 mod mobile_app;
+mod mobile_back;
 mod mobile_tiles;
 mod mobile_shade;
 mod mobile_pages;
@@ -4891,6 +4892,14 @@ impl AppMain for App {
         // Android's Home button or gesture, with OctoSense as the Home app.
         if matches!(event, Event::HomeIntent) { self.settings_runtime.entries.cancel(); self.phone_home_intent(cx); return; }
         self.phone_animation_event(cx,event);
+        // Android's Back key (and a platform Back of any kind) is the phone's
+        // Back: the foreground app is offered it first (mobile_back.rs), so it
+        // is not also broadcast through the widget tree.
+        if event.back_pressed() && self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
+            log!("[phone] back");
+            self.phone_action(cx, mobile::PhoneHit::Back);
+            return;
+        }
         if let Some(ne) = self.style_frame.is_event(event) {
             if self.state.is_some() {
                 let dt=if self.style_time==0.0 {0.0}else{(ne.time-self.style_time).min(0.05)};

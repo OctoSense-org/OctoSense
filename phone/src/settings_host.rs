@@ -231,7 +231,17 @@ impl App {
         if self.settings_history_read_request(cx, (client, uid), &request) {return;}
         if self.settings_sounds_request(cx,(client,uid),&request){return;}
         match local_route(&request, |app| self.settings_system_app_available(app)) {
-            Some(LocalRoute::Launch(app)) => { if self.state.is_some() { self.open_home_app(cx, app); } return; }
+            Some(LocalRoute::Launch(app)) => {
+                if self.state.is_some() {
+                    self.open_home_app(cx, app);
+                    // Back from the app it opened returns here (mobile_back.rs).
+                    let phone = &mut self.state_mut().phone;
+                    if let Some(opened) = phone.foreground().filter(|opened| *opened != client) {
+                        phone.return_to = Some(crate::mobile_back::ReturnTo { app: opened, origin: client });
+                    }
+                }
+                return;
+            }
             Some(LocalRoute::Unavailable) => { self.settings_outcome(cx, client, false, "This app is not part of this build."); return; }
             None => {}
         }
