@@ -56,7 +56,8 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     // system app (`os.photos`), and a linked module of the same id wins.
     #[cfg(feature = "app-photos")]
     out.push(&makepad_photos::PHOTOS_MODULE);
-    #[cfg(any(feature = "app-appcard", target_os = "android", target_os = "ios"))]
+    // AppCard is opt-in on every target (not shipped by default for now).
+    #[cfg(feature = "app-appcard")]
     out.push(&octosense_appcard::APPCARD_MODULE);
     #[cfg(feature = "app-rinx")]
     out.push(&rinx::module::RINX_MODULE);
@@ -126,10 +127,21 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
     Vec::new()
 }
 
-/// The services contained apps call through `host.request` (ADR 0004): `mail`
-/// keeps accounts and passwords for the Mail app. `mail_demo` in
-/// MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
-/// keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// The services contained apps call through `host.request` (ADR 0004),
+/// registered once, before the first system app can open:
+///
+/// - `mail` keeps accounts and passwords for the Mail app. `mail_demo` in
+///   MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
+///   keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// - `llm` keeps the octos kernel's LLM providers for AI providers
+///   (`os.ai-providers`), written to the kernel's profile under the shell's
+///   octos core dir (`octosense_octos_core::core_dir()`: `OCTOS_APP_CORE_DIR`,
+///   else `~/octos-home/.octos`), keys in the keychain entry octos reads
+///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No
+///   camera scanner: a phone's profile QR is imported from a picture of it
+///   (the open panel, or an image dropped on the import sheet: `llm_image`),
+///   or by pasting its text. With `octos-core` (default) the service restarts
+///   the kernel after a change; its consumers (AppCard) reconnect.
 #[cfg(feature = "app-hub")]
 pub fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -144,7 +156,38 @@ pub fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        let mut llm = octosense_llm_service::Options::default();
+        #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+        let core_dir = octosense_octos_core::core_dir();
+        #[cfg(not(any(feature = "octos-core", target_os = "android", target_os = "ios")))]
+        let core_dir = octosense_llm_config::profile::default_core_dir();
+        if let Some(dir) = core_dir {
+            llm = llm.core_dir(dir);
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            llm = llm.image_picker(crate::llm_image::picker()).image_drops(true);
+        }
+        octosense_llm_service::register_with(llm);
     });
+}
+
+/// Configure the shell's octos kernel (`octosense_octos_core`) once, at
+/// startup, before anything connects to it. Nothing runs until a consumer
+/// (AppCard, Rinx) connects; then one kernel per process: on a desktop the
+/// binary `OCTOS_APP_CORE_BIN` names (none otherwise), on Android the APK's
+/// `liboctos.so`. Its diagnostics go to the shell's log.
+#[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+pub fn configure_octos_kernel(data_dir: Option<String>) {
+    let mut options = octosense_octos_core::Options::default().log(|line| makepad_widgets::log!("{line}"));
+    if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
+        options = options.app_data_dir(dir);
+    }
+    octosense_octos_core::configure(options);
+    match octosense_octos_core::launch() {
+        Ok(_) => makepad_widgets::log!("octos: kernel service ready (starts on first use), core dir {:?}", octosense_octos_core::core_dir()),
+        Err(why) => makepad_widgets::log!("octos: {why}; the providers are still saved under {:?}", octosense_octos_core::core_dir()),
+    }
 }
 
 /// Apps App Hub installed: each is an app of its own in the launcher, hosted
@@ -340,14 +383,26 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
+        let _one_rinx = crate::app_peers_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = bundled_catalog();
-        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(),
-                   ["reference", "sheets", "appcard", "apphub", "news", "photos", "maps", "camera", "mail"]);
+        // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
+        let expected: &[&str] = if cfg!(feature = "app-appcard") {
+            &["reference", "sheets", "appcard", "apphub", "news", "photos", "maps", "camera", "mail", "ai-providers"]
+        } else {
+            &["reference", "sheets", "apphub", "news", "photos", "maps", "camera", "mail", "ai-providers"]
+        };
+        // Rinx (app-rinx, in `default`) is linked before App Hub.
+        let mut expected: Vec<&str> = expected.to_vec();
+        if cfg!(feature = "app-rinx") {
+            let at = expected.iter().position(|id| *id == "apphub").unwrap();
+            expected.insert(at, "rinx");
+        }
+        assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert!(catalog.iter().all(|app| app.manifest.is_none()));
         // The system apps have no native module: the Card runner hosts them,
         // launched by their manifest id (ADR 0004).
         let registry = AppRegistry::default();
-        for id in ["news", "photos", "maps", "camera", "mail"] {
+        for id in ["news", "photos", "maps", "camera", "mail", "ai-providers"] {
             let app = catalog.iter().find(|app| app.id == id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
             assert_eq!(registry.module(id).map(|m| m.id()), Some("card"));
@@ -399,7 +454,7 @@ mod tests {
     #[test]
     fn the_system_apps_ship_as_card_apps() {
         let ids: Vec<String> = system_card_apps().into_iter().map(|app| app.id).collect();
-        assert_eq!(ids, ["news", "photos", "maps", "camera", "mail"]);
+        assert_eq!(ids, ["news", "photos", "maps", "camera", "mail", "ai-providers"]);
         let registry = AppRegistry::default();
         for id in &ids {
             assert_eq!(registry.hosting(id), Hosting::Module);
@@ -434,7 +489,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "mobile-apps"))]
+#[cfg(all(test, feature = "app-appcard"))]
 mod appcard_isolate_tests {
     /// The app's cards are Splash widgets, each in an ISOLATE that is minted
     /// without the framework's `sys`/`agent` engine; the AppCard module must

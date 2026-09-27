@@ -6,8 +6,8 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3fda5b6f9b48f390bd5396938a95d30ad035cd6d", features = ["appcard", "maps"] }
-makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "3fda5b6f9b48f390bd5396938a95d30ad035cd6d" }
+makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "db4691d0e07dc9d1e498f0430ecfaadc4ae15f8f", features = ["appcard", "maps"] }
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "db4691d0e07dc9d1e498f0430ecfaadc4ae15f8f" }
 # The whole AppCard assistant as a library, from the pinned
 # OctoSense-System-Apps checkout beside this repository (apps/appcard/app/app;
 # native-apps.lock.json, tools/setup-native.py): routing brain, card store and

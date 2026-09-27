@@ -19,7 +19,37 @@ jobs:
       - name: Compile with the shared runtime
         working-directory: workspace/OctoSense
         run: |
-          cargo check --locked --workspace --features mobile-apps
+          # The octos kernel is a shell service (feature `octos-core`): the
+          # default and mobile-apps builds link it, on desktop and Android.
+          cargo check --locked
+          cargo check --locked --features mobile-apps
+          for features in "" "--features mobile-apps"; do
+            for target in "" "--target aarch64-linux-android"; do
+              cargo tree --locked $features $target -i octosense-octos-core --depth 0 >/dev/null || { echo "::error::octosense-octos-core is missing ($features $target)"; exit 1; }
+            done
+          done
+          # AppCard's UI (the octosense-appcard module) stays opt-in: the
+          # default and mobile-apps builds must not link it, and the opt-in
+          # must still build.
+          for target in "" "--target aarch64-linux-android"; do
+            out=$(cargo tree --locked --features mobile-apps $target -i octosense-appcard 2>&1 || true)
+            grep -q "did not match any packages" <<<"$out" || { echo "::error::octosense-appcard is linked without app-appcard ($target)"; echo "$out"; exit 1; }
+          done
+          cargo check --locked --workspace --features mobile-apps,app-appcard
+          # Hosted Rinx (app-rinx, in default) is the library module only:
+          # never its standalone entry or its own local kernel (Rinx ADR
+          # 0007). Its assistant is the shell's app-peers service.
+          for target in "" "--target aarch64-linux-android"; do
+            tree=$(cargo tree --locked $target -e features -i rinx)
+            grep -q 'rinx feature "octosense-module"' <<<"$tree" || { echo "::error::rinx is not linked as a module ($target)"; exit 1; }
+            if grep -qE 'rinx feature "(standalone|octos-local|octos-remote)"' <<<"$tree"; then
+              echo "::error::hosted rinx pulls a standalone runtime ($target)"; exit 1
+            fi
+            cargo tree --locked $target -i octosense-app-peers --depth 0 >/dev/null || { echo "::error::octosense-app-peers is missing ($target)"; exit 1; }
+          done
+      - name: Android kernel bundling tool
+        working-directory: workspace/OctoSense
+        run: python -m unittest tools/test_android_kernel.py
       - name: Reject divergent runtime sources
         working-directory: workspace/OctoSense
         run: |
