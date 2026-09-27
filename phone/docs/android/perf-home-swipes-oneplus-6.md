@@ -51,10 +51,10 @@ adb -s SERIAL shell am start -W -a android.settings.SETTINGS
 adb -s SERIAL shell am force-stop dev.makepad.octosense
 adb -s SERIAL shell am start -W -n dev.makepad.octosense/.MakepadApp \
   --es makepad.TRACE phone.frames
-python3 home/scripts/measure_android_frames.py --serial SERIAL \
+python3 phone/scripts/measure_android_frames.py --serial SERIAL \
   --frame-markers --input-markers --seconds 2.1 \
   --command 'input swipe 800 1050 220 1050 800' --output page-left.json
-python3 home/scripts/measure_android_frames.py --serial SERIAL \
+python3 phone/scripts/measure_android_frames.py --serial SERIAL \
   --frame-markers --input-markers --seconds 2.1 \
   --command 'input swipe 220 1050 800 1050 800' --output page-right.json
 ```

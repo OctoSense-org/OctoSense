@@ -23,12 +23,12 @@ widgets, platform, app-module and the linked app crates. They are not copied
 into OctoSense. Advancing the shared pin includes their changes and their required
 transitive dependencies. Unrelated monorepo sources are not imported here.
 
-OctoSense's extra style is implemented in `src/octosense/style.rs` with local
+OctoSense's extra style is implemented in `crates/shell/src/octosense/style.rs` with local
 light and dark theme/widget files. It sends its complete palette/material using
 the recognized `macos` / `macos-dark` wire families, allowing unmodified upstream
 apps to select the right icons and appearance. The paired Abyssal Currents wallpapers use the standard
 Image widget with crop-to-fill sizing; upstream supplies the image-loading and
-cached-view APIs. `src/octosense/retired_passes.rs`
+cached-view APIs. `crates/shell/src/octosense/retired_passes.rs`
 detaches passes with freed draw-list roots before the new retained GPU working-set scan;
 remove it when upstream guards retired pass slots. No framework fork is required.
 

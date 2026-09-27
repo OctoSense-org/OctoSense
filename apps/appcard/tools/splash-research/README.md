@@ -2,7 +2,7 @@
 
 Three small workflow templates executed by the standalone Splash VM, with a
 bounded Rust host dispatching external tool promises concurrently. See the
-[design](../../docs/SPLASH-RESEARCH.md) and
+design (`docs/SPLASH-RESEARCH.md`, not in this repository) and
 [measurements](../../docs/reviews/splash-research-20260909/README.md).
 
 The [20-intent composition study](composition/README.md) adds live weather, AQI,

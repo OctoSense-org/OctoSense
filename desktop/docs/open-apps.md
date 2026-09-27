@@ -79,7 +79,7 @@ cargo run --release -- --apps config/apps.makepad.json
 
 1. 宿主启动时跑一次 `cargo metadata --offline --locked`,
    在依赖图里找带 `apps/wm/Cargo.toml` 标记的 Makepad 仓库根。
-   (见 `src/octosense/makepad_source.rs`、`src/octosense/catalog.rs`。)
+   (见 `crates/shell/src/octosense/makepad_source.rs`、`crates/shell/src/octosense/catalog.rs`。)
 2. 找不到 checkout(比如离线依赖不全),这些行会被**静默跳过**,
    不会报错 —— 日志里只会看到 `no app 'X' in the registry`。
 
@@ -121,7 +121,7 @@ cargo metadata --format-version 1 --manifest-path Cargo.toml > /dev/null
 }
 ```
 
-规则(与 `src/octosense/catalog.rs` 校验一致):
+规则(与 `crates/shell/src/octosense/catalog.rs` 校验一致):
 
 - `id` 只允许小写字母、数字、`-`、`_`;目录内不允许重复
 - `label` 必填;`policy` 缺省是 `focus`(已有实例就聚焦),`new` 强制开新实例

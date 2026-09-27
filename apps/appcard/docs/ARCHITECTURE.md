@@ -335,7 +335,7 @@ completion-time lint runs. Two properties matter:
 On Android there is **no separate server process**. The octos kernel is bundled
 into the APK as `liboctos.so` and run **in-process over stdio**:
 
-- The kernel is the **shell's**, not the app's: `octosense-octos-core`
+- The kernel is the **shell's**, not the app's: `octosense-kernel`
   (repository `crates/octos-core`) execs `liboctos.so serve --stdio` (NDJSON
   JSON-RPC on stdin/stdout) from the app's `nativeLibraryDir` (the only
   exec-able location on Android), with `HOME` = `<data dir>/octos-home`, on

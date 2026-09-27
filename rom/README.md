@@ -87,8 +87,9 @@ To flash:
 
 Updates reach a flashed phone over the air from GitHub Releases
 ([docs/updates.md](docs/updates.md)); `scripts/ota-push.sh` pushes one from a
-Mac. The updater in images built so far reads the releases of the archived
-OctoSense-ROM repository (`OctoSense-org/octosense-rom`); moving it to this
+Mac. The updater in images built so far reads the releases of the
+OctoSense-ROM repository (`OctoSense-org/octosense-rom`), which is now archived
+and private, so those images get no updates; moving it to this
 repository's `rom-v*` releases is a code change still to make in
 `vendor/octosense/agent/.../Updater.java`, `scripts/publish-release.sh` and
 `scripts/ota-push.sh`.

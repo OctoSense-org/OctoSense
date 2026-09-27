@@ -40,7 +40,7 @@ workspace（迁移后**未验证**）。它封装了相同的命令（`make chec
 
 独立运行的应用按以下顺序连接 octos：
 
-1. Shell 的 octos 内核（`octosense-octos-core`，仓库中的 `crates/kernel`），
+1. Shell 的 octos 内核（`octosense-kernel`，仓库中的 `crates/kernel`），
    只要能运行：Android 上是 APK 内置的 `liboctos.so`，OpenHarmony 上总是可用
    （链接进应用），桌面上需由 Shell 或 `OCTOS_APP_CORE_BIN` 指定内核二进制（数据
    目录为 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`；

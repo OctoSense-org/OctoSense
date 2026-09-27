@@ -91,11 +91,11 @@ Other functions: `core_dir()`, `home()`, `profile()`, `launch()` /
 From the repository root:
 
 ```sh
-cargo test --locked -p octosense-octos-core   # unit tests + the core against a stand-in kernel (python3)
+cargo test --locked -p octosense-kernel   # unit tests + the core against a stand-in kernel (python3)
 # The real kernel: a profile written by octosense-llm-config, session/open,
 # profile/llm/list, a provider change and a restart. Build octos at the rev
 # the root Cargo.toml pins, then:
-OCTOS_CORE_TEST_KERNEL=/path/to/octos cargo test -p octosense-octos-core --test real_kernel -- --nocapture
+OCTOS_CORE_TEST_KERNEL=/path/to/octos cargo test -p octosense-kernel --test real_kernel -- --nocapture
 ```
 
 Build the kernel for that test (and for an Android APK, with the NDK and

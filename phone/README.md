@@ -20,10 +20,11 @@ Home was split from the desktop shell on 15 September 2026, at the tip of its
 mobile shell chain, and the two copies lived in OctoSense-Desktop and
 OctoSense-ROM (`home/`) until both repositories merged into this one on
 27 September 2026 ([ADR 0001](../docs/adr/0001-one-octosense-repository.md)).
-`phone/src` and `desktop/src` still share much of their source (`main.rs`,
-`desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the next
-phase of ADR 0001 reconciles them into one shell crate with desktop and
-phone as targets and features. The phone build is the `mobile_only`
+Since then the shell exists once, in [`crates/shell`](../crates/shell)
+(package `octosense-shell`), which both packages link; this package adds
+the entry point (`src/main.rs`, an `App` that wraps the shell's) and the
+built-in Settings app (`src/settings_*.rs`, `src/android_settings.rs`). The
+phone build is the `mobile_only`
 configuration: `build.rs` turns it on for Android, and `--features
 mobile-only` turns it on elsewhere. `upstream/makepad.json` records which
 window-manager files were imported from Makepad; `scripts/upstream.py`
@@ -139,9 +140,9 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 | App tile | long press | Remove the tile (the home menu's "Show hidden tiles" brings them back) |
 | Empty home | long press | Widgets, Light/Dark appearance, Grid: 4 or 5 columns, Pull-downs (launcher shade or system-wide panel), System setup, Show hidden tiles |
 
-A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field follows the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
+A pull commits from 40 % of the way (≈135 px on a 1080-wide phone); navigation swipes need the full distance or a flick. While a pull is in flight the page dims and a search field follows the finger; a committed gesture gives a short haptic tick. Until each hidden gesture has been used once, the home page shows a one-line hint for it (`crates/shell/src/mobile_hints.rs`; Android remembers what was seen). A second Home press on a settled home page returns to the primary page.
 
-Search opens only by pulling down on Home; the App Library has no search bar. Search ranks names that start with what you typed first and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `src/android_integration.rs`), never as reason codes.
+Search opens only by pulling down on Home; the App Library has no search bar. Search ranks names that start with what you typed first and Return opens the best match. In the App Library, a letter column on the right jumps the grid, and with usage access a "Suggested" row of recently used apps sits on top. Icons carry a dot while their app has a notification in the shade. Recents lists the hosted apps as cards and, with usage access granted in Android's Settings (the card in Recents opens it), a row of the Android apps used lately. Every tappable region is an accessibility node with a spoken label, so TalkBack and UI automation can read and activate the shell (verified with TalkBack installed and with a UiAutomation probe: accessibility focus lands on a node and its click action opens the app, the shade or the drawer; note that `adb shell input` taps bypass TalkBack's touch exploration, so a real screen-reader touch cannot be scripted). Labels follow Android's text size setting. The shell follows Android's dark theme and draws under transparent system bars; the shade's Dark mode tile overrides the appearance until the system setting next changes. The bridge's failure reasons reach the person as plain sentences (`result_copy` in `crates/shell/src/android_integration.rs`), never as reason codes.
 
 ## Built-in Settings
 
@@ -189,10 +190,10 @@ on a device; their notes are [docs/photos.md](docs/photos.md) and
 ### The octos kernel
 
 The octos agent kernel is a Home service, independent of any app:
-`octosense-octos-core` ([`crates/kernel`](../crates/kernel)), feature
+`octosense-kernel` ([`crates/kernel`](../crates/kernel)), feature
 `octos-core` (default, and always on in Android, iOS and OpenHarmony
-builds). Home configures it at startup with its data dir
-([src/llm_host.rs](src/llm_host.rs)); nothing runs until a consumer
+builds). Home starts it at startup with its data dir through the shell's AI
+services ([`crates/ai-host`](../crates/ai-host/README.md)); nothing runs until a consumer
 connects. Then there is one kernel per process: `liboctos.so serve --stdio`
 from the APK's native lib dir on Android (every APK `rom/scripts/build-home.sh`
 builds carries it), the core in-process on OpenHarmony, the binary named by
@@ -208,7 +209,7 @@ stops when the last one leaves and on Home's shutdown. To build without it
 
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers
 through the `llm` host service ([`apps/ai-providers/host-service`](../apps/ai-providers/host-service)), which Home
-registers at startup ([src/llm_host.rs](src/llm_host.rs)):
+registers at startup through [`crates/ai-host`](../crates/ai-host/README.md):
 
 - the profile it writes is the kernel's, `<core dir>/profiles/_main.json`
   (`<data dir>/octos-home/.octos` on a phone; `OCTOS_APP_CORE_DIR` overrides
@@ -273,20 +274,25 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 
 ## Layout
 
-- `src/mobile*.rs`: the phone shell. State and navigation (`mobile.rs`), the
+- `src/main.rs`: the entry point: this package's `App` wraps the shell's
+  (`#[deref] shell`) and adds the Settings runtime.
+- `src/settings_*.rs`, `src/android_settings.rs`, `resources/settings/`: the
+  built-in Settings app and its Android channels.
+- `../crates/shell/src/mobile*.rs`: the phone layer of the shell. State and navigation (`mobile.rs`), the
   gesture recognizer (`mobile_gestures.rs`), the surface that draws home,
   drawer, keyboard and overlays (`mobile_surface.rs`), pages, tiles, groups,
   the shade, the island, the thinking octopus, the perf monitor.
-- `src/apps.rs`: which modules this build links, the system apps and
+- `../crates/shell/src/apps.rs`: which modules this build links, the system apps and
   installed apps as launcher rows, and how each is hosted.
-- `src/desk/phone.rs`: the desk's phone composition: hosted-app captures, the
+- `../crates/shell/src/desk/phone.rs`: the desk's phone composition: hosted-app captures, the
   kept home scene and its blur pyramid, the compositor path.
 - `resources/android/AndroidManifest.xml.template`: the activity (Home role,
   share and deep-link intents).
-- `resources/icons/apps/<style>/`: this shell's own icons for News and
-  OctosMap, one 64x64 SVG per framework style, written by
+- `../crates/shell/resources/icons/apps/<style>/`: the shell's own icons for
+  News and OctosMap, one 64x64 SVG per framework style, written by
   `python3 tools/build_app_icons.py` (`--sheet <path>` also renders a review
-  sheet with `rsvg-convert`). The renderer has no clip paths, masks, filters
+  sheet with `rsvg-convert`; **unverified** since the move: the script still
+  writes `phone/resources/icons/apps/`). The renderer has no clip paths, masks, filters
   or text, so the art stays inside its tile by construction; a test holds the
   files to that.
 - `../apps/appcard/module`: hosts the AppCard assistant (`octos-app`, in
@@ -319,7 +325,8 @@ Every external dependency is pinned once, at the repository root
 - App Hub: `octosense-app-hub-app` and its backend crates, one revision for
   Home and the Mail and `llm` host services.
 - In this repository, by path: the system-app bundles and host services
-  (`apps/`), the octos kernel service (`crates/kernel`), the app-agent broker
+  (`apps/`), the shell (`crates/shell`) and its AI services
+  (`crates/ai-host`), the octos kernel service (`crates/kernel`), the app-agent broker
   (`crates/app-peers`) and `octos-app` (`apps/appcard`). octos itself comes
   from `octos-org/octos` at one revision: as a Cargo dependency only on
   OpenHarmony (the in-process core) and in `app-appcard` builds.
@@ -333,10 +340,12 @@ Every external dependency is pinned once, at the repository root
 
 ## Tests and state
 
-`cargo test --features mobile-only mobile -- --test-threads=1` runs the
-shell's unit tests (gestures, pages, island, shade, groups, tiles). The full
-CI set is `.github/workflows/phone.yml` (compile Home and its bundled modules,
-the graph check, and the tests of Home, App Hub admission and runtime policy).
+`cargo test --locked --features mobile-apps -p octosense-shell -p
+octosense-home` runs the shell's unit tests (gestures, pages, island, shade,
+groups, tiles) and Settings'. The full CI set is
+`.github/workflows/phone.yml` (compile Home and its bundled modules, the
+shell graph guards in `tools/check-shell-graph.sh`, and the tests of the
+shell, Home, the AI services, App Hub admission and runtime policy).
 `scripts/smoke.py` launches a release build under `MAKEPAD_REMOTE` and drives
 it over HTTP. [docs/validation.md](docs/validation.md) and
 [docs/android/validation-record.md](docs/android/validation-record.md) hold

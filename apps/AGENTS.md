@@ -40,11 +40,11 @@ and use the bundles here only as read-only examples.
   `--features octosense-llm-service/octos-core`, the shells' build); AppCard
   links the config crate, so run AppCard's checks too when it changes.
 - The octos kernel is a shell service, `../crates/kernel`
-  (`octosense-octos-core`): one kernel per process, started on the first
+  (`octosense-kernel`): one kernel per process, started on the first
   `connect()`, shared by AppCard and other consumers, restarted by the `llm`
   service after a provider change. Test it with
-  `cargo test --locked -p octosense-octos-core` (and
-  `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-octos-core --test
+  `cargo test --locked -p octosense-kernel` (and
+  `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-kernel --test
   real_kernel` with a real kernel); AppCard and the `llm` service link it, so
   run their checks too. Consumers never spawn a kernel of their own.
 - Native apps reach the assistant through `../crates/app-peers`

@@ -24,12 +24,12 @@ same catalog and tests each row.
 ## Registering it (shells)
 
 The providers it edits are the octos kernel's, and the kernel is a shell
-service: [`octosense-octos-core`](../../../crates/kernel) runs one per
+service: [`octosense-kernel`](../../../crates/kernel) runs one per
 process and hands connections to AppCard and the other consumers. Build the
 service with its `octos-core` feature (the shells' `octos-core` feature turns
 it on) and it follows the kernel: the profile goes under the kernel's core
-dir (`octosense_octos_core::core_dir()`) unless the shell names another, and
-every change calls `octosense_octos_core::restart()` (a no-op when no kernel
+dir (`octosense_kernel::core_dir()`) unless the shell names another, and
+every change calls `octosense_kernel::restart()` (a no-op when no kernel
 runs) before the shell's own hook. Without the feature the service writes
 under `octosense_llm_config::profile::default_core_dir()` and restarts
 nothing.
@@ -38,10 +38,10 @@ Register it once, before the first system app opens, next to Mail, after
 configuring the kernel:
 
 ```rust
-// The kernel first (octosense-octos-core): on a phone its core dir is
+// The kernel first (octosense-kernel): on a phone its core dir is
 // <data dir>/octos-home/.octos, on a desktop $OCTOS_APP_CORE_DIR, else
 // $HOME/octos-home/.octos.
-octosense_octos_core::configure(octosense_octos_core::Options::default().app_data_dir(data_dir));
+octosense_kernel::configure(octosense_kernel::Options::default().app_data_dir(data_dir));
 
 // Defaults: the kernel's core dir, the platform's vault, no scanner.
 octosense_llm_service::register();
@@ -49,7 +49,7 @@ octosense_llm_service::register();
 // What a shell normally passes:
 octosense_llm_service::register_with(
     octosense_llm_service::Options::default()
-        .core_dir(octosense_octos_core::core_dir().unwrap()) // the same dir, said out loud
+        .core_dir(octosense_kernel::core_dir().unwrap()) // the same dir, said out loud
         .scanner(Arc::new(MyScanner::default()))  // phone only
         .image_picker(Arc::new(MyPicker::default())) // a QR from a picture
         .image_drops(true),                       // desktop: drops go to offer_image

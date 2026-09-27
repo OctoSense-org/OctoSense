@@ -199,8 +199,9 @@ octoscript-makepad = { path = ".sources/octoscript-makepad/crates/octoscript-mak
 octoscript-widgets = { path = ".sources/octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" }
 
-# Rinx takes the app-peers contract from OctoSense-System-Apps by git; that
-# code lives here now: the same crates this workspace links, so one broker
+# Rinx still takes the app-peers contract by git from OctoSense-System-Apps
+# (archived; it was imported into this repository): that code lives here
+# now, so these are the same crates this workspace links — one broker
 # contract and one kernel.
 [patch."https://github.com/OctoSense-org/OctoSense-System-Apps.git"]
 octosense-app-peers = { path = "crates/app-peers" }

@@ -45,7 +45,7 @@ against `OCTOS_LIVE_URL` (default `http://127.0.0.1:56831`). It reads a local
 
 How the standalone app reaches octos, in order:
 
-1. the shell's octos kernel (`octosense-octos-core`, the repository's
+1. the shell's octos kernel (`octosense-kernel`, the repository's
    `crates/kernel`), when one can run: on Android the APK's bundled
    `liboctos.so`, on OpenHarmony always (linked in), on a desktop when a
    kernel binary is configured by the shell or `OCTOS_APP_CORE_BIN` (its data

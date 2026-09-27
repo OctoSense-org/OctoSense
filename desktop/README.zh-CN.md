@@ -12,7 +12,7 @@
 | --- | --- |
 | [`../phone/`](../phone/README.zh-CN.md) | Home，手机 Shell。相同的应用模型、相同的运行时、相同的系统应用。 |
 | [`../apps/`](../apps/README.zh-CN.md) | 新闻、相册、地图、相机、邮件、AI 提供商的应用包，邮件与 `llm` 宿主服务，AppCard 助手（`octos-app`，需显式启用，默认不随产品发布），以及 Reference。 |
-| [`../crates/`](../crates/) | octos 内核服务（`crates/kernel`，包名 `octosense-octos-core`）和应用与 Agent 之间的代理（`crates/app-peers`）。 |
+| [`../crates/`](../crates/) | Shell 本身（`crates/shell`，包名 `octosense-shell`，本包包装它）、它的 AI 服务（`crates/ai-host`）、octos 内核服务（`crates/kernel`，包名 `octosense-kernel`）和应用与 Agent 之间的代理（`crates/app-peers`）。 |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 签名目录、商店和 Card 运行器。以 Git crate `octosense-app-hub-app` 链接。 |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 设计、构建应用并发布到 App Hub 的地方。 |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | 固定 Makepad 与 OctoScript 版本的运行时发布。检出在 `.sources/` 中。 |
@@ -24,15 +24,12 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `src/` | Shell（包名 `octosense`）：平铺、launcher、dock、顶栏、托管（`host.rs`、`hub.rs`、`module_host.rs`）、应用注册表（`apps.rs`）。 |
-| `src/shell/` | 顶栏、launcher、菜单、通知、AI 面板、图库。 |
-| `src/octosense/` | OctoSense 专属部分：应用目录加载、状态路径、样式、Makepad 源码解析。 |
+| `src/main.rs` | 入口（包名 `octosense`）：在 Shell 的 `App` 上调用 `octosense_main!()`。Shell 本身（平铺、launcher、dock、顶栏、托管、应用注册表、`shell/`、`octosense/`）在 [`../crates/shell/src`](../crates/shell/src)。 |
 | `config/apps.json` | 默认的开发者程序目录。`apps.makepad.json` 是供 `--apps` 使用的相同副本；`apps.overlay.json` 保存重新生成时应用的调整。 |
 | `system-apps.json` | 本构建打包哪些系统应用，以及从哪里打包（`../apps`）。 |
-| `tools/android-kernel.py` | 把 octos 内核打包进 Android APK。 |
 | `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh` 和 `ai_providers_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用和 AI 提供商），以及 `provision-appcard-llm.sh`（Android）。 |
 | `upstream/makepad.json` | 从 Makepad `apps/wm` 导入的每个文件的来源记录。 |
-| `resources/` | 主题、壁纸、图标、Android manifest 模板、启动脚本。 |
+| `resources/android/` | Android manifest 模板。主题、壁纸、图标和启动脚本属于 Shell，在 [`../crates/shell/resources`](../crates/shell/resources)。 |
 | `docs/` | [验证记录](docs/validation.md)、[上游同步](docs/upstream.md)、[本地 AI](docs/local-ai.md)、[Android AppCard 构建](docs/android-appcard-build.md)、按日期的计划。 |
 | `KEYBINDINGS.md`、`BACKLOG.md` | 快捷键说明；待办事项。 |
 
@@ -81,7 +78,7 @@ cargo run --release -p octosense
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及宿主服务 `octosense-mail-service`（邮件）和 `octosense-llm-service`（AI 提供商）。没有它，构建中既没有 App Hub 也没有系统应用。 |
-| `octos-core` | 开 | octos 内核服务（`octosense-octos-core`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
+| `octos-core` | 开 | octos 内核服务（`octosense-kernel`，来自 `../crates/kernel`）和应用与 Agent 之间的代理（`octosense-app-peers`）：AppCard、Rinx 等使用方共享的唯一内核，由 AI 提供商配置。Android 和 iOS 上始终开启。用 `--no-default-features --features app-hub`（再加上需要的其他 feature）可以去掉它。 |
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
@@ -147,7 +144,7 @@ launcher 把四类应用列在一起：
 
 AI 提供商（`os.ai-providers`）通过 `llm` 服务（`octosense-llm-service`，来自 [`../apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商。密钥只在宿主面板上输入，保存到 octos 读取的 macOS 钥匙串条目；提供商写入 Shell 的 octos core 目录下内核的 profile（`<core 目录>/profiles/_main.json`；core 目录为 `OCTOS_APP_CORE_DIR`，否则为 `~/octos-home/.octos`）。手机上的提供商二维码可从图片导入：**Choose image** 打开文件面板，或把截图拖到导入面板上。**开始 → 设置 → AI providers** 可打开它。更改后服务会重启正在运行的内核，使用方（AppCard）会重新连接到新内核。
 
-**octos 内核**是一项 Shell 服务，不属于任何应用：`octosense-octos-core`（[`../crates/kernel`](../crates/kernel)，feature `octos-core`，默认开启）。Shell 在启动时配置它（`apps::configure_octos_kernel`）；在有使用方连接之前不运行任何东西，之后每个进程只有一个内核（桌面上是 `<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core 目录>`，Android 上是 APK 中的 `liboctos.so`；iOS 以及未设置 `OCTOS_APP_CORE_BIN` 的桌面上没有内核）。AppCard 的 Agent 连接它；Rinx 通过应用与 Agent 之间的代理访问它。最后一个使用方离开或 Shell 退出时内核停止。
+**octos 内核**是一项 Shell 服务，不属于任何应用：`octosense-kernel`（[`../crates/kernel`](../crates/kernel)，feature `octos-core`，默认开启）。Shell 在启动时通过其 AI 服务启动它（[`../crates/ai-host`](../crates/ai-host/README.md)，`octosense_ai_host::start`）；在有使用方连接之前不运行任何东西，之后每个进程只有一个内核（桌面上是 `<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core 目录>`，Android 上是 APK 中的 `liboctos.so`；iOS 以及未设置 `OCTOS_APP_CORE_BIN` 的桌面上没有内核）。AppCard 的 Agent 连接它；Rinx 通过应用与 Agent 之间的代理访问它。最后一个使用方离开或 Shell 退出时内核停止。
 
 需要密码、PIN 或令牌的新功能，应放在宿主服务和宿主自有面板中，绝不放在应用自己的界面里。
 
@@ -280,11 +277,11 @@ Makepad 的 [`makepad_test`](https://github.com/OctoSense-org/makepad/tree/main/
 cargo makepad android run -p octosense --release
 ```
 
-本包的手机构建始终链接 Reference、Sheets 和 octos 内核服务，并通过默认 feature 链接 App Hub 及系统应用；AppCard 只在 `--features app-appcard` 时链接。启动器名称为 **OctoSense**，应用 id 为 `dev.makepad.octosense`。APK 必须以 `liboctos.so` 的形式打包内核：（在 `desktop/` 中）`python3 tools/android-kernel.py --sdk <cargo-makepad Android SDK> -- cargo makepad android run -p octosense --release` 会按工作区 `Cargo.lock` 固定的版本交叉编译 `octos`，并以 `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>` 运行打包器（预先构建好的内核用 `--kernel <path>`）。没有它，手机上不运行内核；AI 提供商设置仍会保存。AppCard 的 Java 功能（GPS、通知、分享、intent）需要分支版本的 buildtool；见 [docs/android-appcard-build.md](docs/android-appcard-build.md)。专门的手机 Shell 是 [Home](../phone/README.zh-CN.md)（包名 `octosense-home`）；这里的 Android 构建用于开发。
+本包的手机构建始终链接 Reference、Sheets 和 octos 内核服务，并通过默认 feature 链接 App Hub 及系统应用；AppCard 只在 `--features app-appcard` 时链接。启动器名称为 **OctoSense**，应用 id 为 `dev.makepad.octosense`。APK 必须以 `liboctos.so` 的形式打包内核：（在 `desktop/` 中）`python3 ../tools/kernel-artifact.py --sdk <cargo-makepad Android SDK> -- cargo makepad android run -p octosense --release` 会按工作区 `Cargo.lock` 固定的版本交叉编译 `octos`，并以 `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>` 运行打包器（预先构建好的内核用 `--kernel <path>`）。没有它，手机上不运行内核；AI 提供商设置仍会保存。AppCard 的 Java 功能（GPS、通知、分享、intent）需要分支版本的 buildtool；见 [docs/android-appcard-build.md](docs/android-appcard-build.md)。专门的手机 Shell 是 [Home](../phone/README.zh-CN.md)（包名 `octosense-home`）；这里的 Android 构建用于开发。
 
 ## 桌面样式与设置
 
-- 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `resources/themes/`，壁纸来源见 [resources/wallpapers/README.md](resources/wallpapers/README.md)。
+- 八种桌面样式。桌面构建启动时使用 **OctoSense** 样式，带 Liquid Glass 窗框，顶栏有 **Light / Dark** 切换；其余样式为 Omarchy、macOS、Windows、Windows 2000、NeXTSTEP、iOS 和 Android。主题源文件在 `../crates/shell/resources/themes/`，壁纸来源见 [crates/shell/resources/wallpapers/README.md](../crates/shell/resources/wallpapers/README.md)。
 - 快捷键：**⌘Space** 菜单，**⌘W** 关闭 tile，**⌘F** tile 全屏，**⌘1…0** 切换工作区，**⌘Shift1…0** 移动 tile。**Learn → Keybindings** 列出全部快捷键；见 [KEYBINDINGS.md](KEYBINDINGS.md)。
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
 - AI 面板（**F10**）的本地模型：[docs/local-ai.md](docs/local-ai.md)。没有模型桌面也能正常工作。
@@ -304,21 +301,19 @@ python3 tools/setup.py
 cd desktop
 cargo check --locked -p octosense
 cargo check --locked -p octosense --features mobile-apps
-cargo tree --locked -p octosense --features mobile-apps -i octosense-octos-core --depth 0   # the kernel service is linked (also for aarch64-linux-android)
-cargo tree --locked -p octosense --features mobile-apps -i octosense-appcard               # must not match: no AppCard UI without app-appcard
 cargo check --locked -p octosense -p octosense-reference -p octosense-appcard --features mobile-apps,app-appcard
-cargo tree --locked -p octosense -e features -i rinx                                       # Rinx only as octosense-module, never standalone
+bash ../tools/check-shell-graph.sh -p octosense   # AI services linked, no AppCard UI without app-appcard, Rinx only as a module, one Makepad/App Hub/octos (host and aarch64-linux-android)
 cd ..
-python3 -m unittest discover -s desktop/tools -p 'test_*.py'
 python3 -m unittest discover -s tools -p 'test_*.py'
 python3 tools/setup.py --check --cargo
 ```
 
-CI **不**运行 `cargo test`、`desktop/scripts` 的测试或冒烟测试；提交 pull request 前请在本地运行：
+若某个 Shell 源文件同时出现在 `crates/shell/src`、`desktop/src`、`phone/src` 中的两处，CI 也会失败。
+
+桌面端任务**不**运行 `cargo test`（Shell 的测试在 `phone.yml` 中运行）、`desktop/scripts` 的测试或冒烟测试；提交 pull request 前请在本地运行：
 
 ```sh
-cargo test --locked -p octosense
-cargo test --locked -p octosense --features mobile-apps
+(cd phone && cargo test --locked --features mobile-apps -p octosense-shell)   # the shell's tests, as phone.yml runs them
 python3 -m unittest discover -s desktop/scripts -p 'test_*.py'
 python3 desktop/scripts/upstream.py catalog
 ```

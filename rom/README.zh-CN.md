@@ -50,7 +50,7 @@ rom/scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and s
 - **命令行**：`scripts/flash.sh <build dir> [serial]`，或 [docs/flashing.md（英文）](docs/flashing.md) 中的 recovery sideload 方式，其中也记录了首次刷写的经验。
 - **刷写之后**：`scripts/verify-phone.sh <build-tag> [serial]` 等待开机，并运行 `scripts/checklist.sh` 和 `scripts/agent-test.sh`。
 
-已刷写的手机通过 GitHub Releases 进行 OTA 更新（[docs/updates.md（英文）](docs/updates.md)）；`scripts/ota-push.sh` 可从 Mac 推送一次更新。目前已构建镜像中的更新器读取的是已归档的 OctoSense-ROM 仓库（`OctoSense-org/octosense-rom`）的 releases；改为读取本仓库的 `rom-v*` releases 还需修改代码：`vendor/octosense/agent/.../Updater.java`、`scripts/publish-release.sh` 和 `scripts/ota-push.sh`。
+已刷写的手机通过 GitHub Releases 进行 OTA 更新（[docs/updates.md（英文）](docs/updates.md)）；`scripts/ota-push.sh` 可从 Mac 推送一次更新。目前已构建镜像中的更新器读取的是 OctoSense-ROM 仓库（`OctoSense-org/octosense-rom`）的 releases，该仓库现已归档并设为私有，因此这些镜像收不到更新；改为读取本仓库的 `rom-v*` releases 还需修改代码：`vendor/octosense/agent/.../Updater.java`、`scripts/publish-release.sh` 和 `scripts/ota-push.sh`。
 
 ## 镜像在 Home 之外增加的内容
 

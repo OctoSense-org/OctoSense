@@ -2,8 +2,8 @@
 #
 # Every OctoSense shell (desktop, phone) hosts the same AI stack:
 #
-# - the octos kernel as a shell service (octosense-octos-core, to be renamed
-#   octosense-kernel): configured once at startup, started on first use,
+# - the octos kernel as a shell service (octosense-kernel, crates/kernel):
+#   configured once at startup, started on first use,
 #   stopped at shutdown;
 # - the `llm` host service the AI providers system app (`os.ai-providers`)
 #   calls, with the platform's QR import (Android camera + image picker, a
@@ -11,8 +11,8 @@
 # - apps' assistant access (Rinx ADR 0007): a scoped octos app-peers service
 #   offered to each granted native module instance at creation.
 #
-# Before this crate both shells carried their own copy of that glue
-# (ROM home/src/llm_host.rs + app_peers_host.rs; Desktop src/apps.rs,
+# Before this crate both shells carried their own copy of that glue (formerly
+# phone/src/llm_host.rs + app_peers_host.rs; desktop/src/apps.rs,
 # app_peers_host.rs, llm_image.rs).
 #
 # Features:
