@@ -1,6 +1,7 @@
 # Home source migration
 
-Date: 2026-09-21. Destination: `OctoSense-org/octosense-rom`.
+Date: 2026-09-21. Destination: the OctoSense-ROM repository (retired; merged into
+the OctoSense repository on 2026-09-27, where `home/` became `phone/`).
 
 ## Imported source and maintained boundaries
 
@@ -28,7 +29,8 @@ uncommitted framework worktrees or silently disable policy enforcement.
 Signing, Android package IDs, data locations, signature permissions and existing
 ROM platform imports are preserved. The ordinary and ROM builds produce distinct
 Home/Bridge pairs. No cross-signer migration is part of this change. The ROM
-release/update URL remains under `OctoSense-org/octosense-rom`.
+release/update URL remained under the OctoSense-ROM repository at the time; it
+is now the OctoSense repository's `rom-latest` release ([updates.md](updates.md)).
 
 ## Work preserved outside this migration
 

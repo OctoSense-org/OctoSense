@@ -8,7 +8,7 @@ Home 是本仓库的三个产品之一（环境准备、目录结构和 CI 见[�
 
 ## 与桌面端 Shell 的关系
 
-2026 年 9 月 15 日，Home 从桌面端 Shell 中拆分出来，拆分点是其移动端 Shell 系列提交的最新位置。此后两份副本分别位于 OctoSense-Desktop 和 OctoSense-ROM（`home/`），直到 2026 年 9 月 27 日两个仓库并入本仓库（[ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)）。此后 Shell 只有一份，位于 [`crates/shell`](../crates/shell)（包名 `octosense-shell`），两个包都链接它；本包只加上入口（`src/main.rs`，一个包装 Shell `App` 的 `App`）和内置设置应用（`src/settings_*.rs`、`src/android_settings.rs`）。手机版构建是 `mobile_only` 配置：在 Android 上由 `build.rs` 开启，在其他平台上由 `--features mobile-only` 开启。`upstream/makepad.json` 记录了哪些窗口管理器文件是从 Makepad 导入的；`scripts/upstream.py` 负责比较并合并这些文件（[docs/upstream.md（英文）](docs/upstream.md)）。
+2026 年 9 月 15 日，Home 从桌面端 Shell 中拆分出来，拆分点是其移动端 Shell 系列提交的最新位置。此后两份副本分别位于 OctoSense-Desktop 和 OctoSense-ROM（已停用，并入本仓库；位于 `home/`），直到 2026 年 9 月 27 日两个仓库并入本仓库（[ADR 0001（英文）](../docs/adr/0001-one-octosense-repository.md)）。此后 Shell 只有一份，位于 [`crates/shell`](../crates/shell)（包名 `octosense-shell`），两个包都链接它；本包只加上入口（`src/main.rs`，一个包装 Shell `App` 的 `App`）和内置设置应用（`src/settings_*.rs`、`src/android_settings.rs`）。手机版构建是 `mobile_only` 配置：在 Android 上由 `build.rs` 开启，在其他平台上由 `--features mobile-only` 开启。`upstream/makepad.json` 记录了哪些窗口管理器文件是从 Makepad 导入的；`scripts/upstream.py` 负责比较并合并这些文件（[docs/upstream.md（英文）](docs/upstream.md)）。
 
 ## 构建与运行
 

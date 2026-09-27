@@ -7,7 +7,8 @@ The OctoSense ROM is LineageOS 22.2 (Android 15) for the OnePlus 6
 agent, Quickstep and SystemUI, so the agent reaches the system layer. This
 directory holds the image only: the product layer, the patches, the scripts
 that build, sign, flash and update the image, and the web installer. It was
-the OctoSense-ROM repository (whose `home/` is now [`../phone/`](../phone/README.md));
+the OctoSense-ROM repository (retired; merged into this repository; its
+`home/` is now [`../phone/`](../phone/README.md));
 see [ADR 0001](../docs/adr/0001-one-octosense-repository.md).
 
 The Home app itself, which also installs as an ordinary Home app on any
@@ -75,6 +76,9 @@ in `~/.config/octosense/build.env`. Signing, receipts and the ROM variant:
 
 To flash:
 
+- **Image:** build one as above, or download the last published build,
+  [`rom-v20260919-j`](https://github.com/OctoSense-org/OctoSense/releases/tag/rom-v20260919-j).
+
 - **Browser:** the [web installer](web-installer/README.md#flash-from-your-browser),
   a local developer preview. A fresh install erases the phone. Public web
   flashing is off until [ROM ADR 0001](docs/adr/0001-public-web-installer.md) is
@@ -85,14 +89,13 @@ To flash:
 - **Afterwards:** `scripts/verify-phone.sh <build-tag> [serial]` waits for
   boot and runs `scripts/checklist.sh` and `scripts/agent-test.sh`.
 
-Updates reach a flashed phone over the air from GitHub Releases
+Updates reach a flashed phone over the air from this repository's GitHub
+Releases: each build is a `rom-v<build-tag>` release, and the phone reads
+`update.json` from the moving `rom-latest` release
 ([docs/updates.md](docs/updates.md)); `scripts/ota-push.sh` pushes one from a
-Mac. The updater in images built so far reads the releases of the
-OctoSense-ROM repository (`OctoSense-org/octosense-rom`), which is now archived
-and private, so those images get no updates; moving it to this
-repository's `rom-v*` releases is a code change still to make in
-`vendor/octosense/agent/.../Updater.java`, `scripts/publish-release.sh` and
-`scripts/ota-push.sh`.
+Mac. Images `20260919-j` and earlier read the releases of the OctoSense-ROM
+repository (retired; merged into this repository), which no longer exists, so a
+phone flashed with one must be reflashed once to receive updates.
 
 ## What the image adds to Home
 
