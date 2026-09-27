@@ -1,5 +1,5 @@
 //! Host-only dispatch. Scripts never receive the Android transport itself.
-use crate::{settings_app::{DeviceSnapshot, SettingsRequest, SettingsSnapshot, SettingsView}, App};
+use crate::{settings_app::{DeviceSnapshot, SettingsRequest, SettingsSnapshot, SettingsView, SystemApp}, App};
 use makepad_strict_json::{s, Value};
 use crate::settings_wifi::WifiRequest;
 use crate::settings_controls::ControlsRequest;
@@ -55,9 +55,30 @@ pub struct SettingsRuntime {
     last_observed: i64,
     resumed: bool,
     active: Option<(crate::hub::ClientId, WidgetUid)>,
+    /// Whether this build ships the AI providers system app; fixed per build,
+    /// so it is read from the registry once.
+    ai_providers: std::cell::OnceCell<bool>,
 }
 #[derive(Clone, Copy)]
 struct Pending { id: i64, client: crate::hub::ClientId, root: WidgetUid, deadline: f64, device: bool }
+
+/// Where a Settings request that never reaches Android goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LocalRoute {
+    /// Open this launcher row through Home's own shell, as tapping its icon does.
+    Launch(&'static str),
+    /// The app is not part of this build; nothing opens.
+    Unavailable,
+}
+/// The seam between Settings and the shell launcher: a typed system-app
+/// request becomes a fixed launcher id or nothing. Every other request
+/// keeps its existing route (`None`), Java included.
+pub(crate) fn local_route(request: &SettingsRequest, available: impl Fn(SystemApp) -> bool) -> Option<LocalRoute> {
+    match request {
+        SettingsRequest::OpenSystemApp(app) => Some(if available(*app) { LocalRoute::Launch(app.launcher_id()) } else { LocalRoute::Unavailable }),
+        _ => None,
+    }
+}
 
 impl SettingsRuntime {
     fn activity_resumed(&mut self, observed: Option<bool>) {
@@ -120,6 +141,16 @@ impl App {
             self.settings_runtime.accessibility.invalidate();self.redraw_all(cx);
         }
     }
+    /// A system app is available when the registry's row for it is the App
+    /// Hub system bundle (not a same-named catalog entry) and the Card runner
+    /// that hosts it is linked, i.e. the launcher could open it.
+    fn settings_system_app_available(&self, app: SystemApp) -> bool {
+        let lookup = || crate::clients::find_app(app.launcher_id())
+            .is_some_and(|def| crate::apps::card_manifest_id(&def) == Some(app.manifest_id()))
+            && self.apps.hosting(app.launcher_id()) == crate::apps::Hosting::Module
+            && self.apps.module(app.launcher_id()).is_some();
+        match app { SystemApp::AiProviders => *self.settings_runtime.ai_providers.get_or_init(lookup) }
+    }
     fn settings_snapshot(&self) -> SettingsSnapshot {
         let Some(state) = &self.state else { return SettingsSnapshot::default(); };
         let phone = &state.phone;
@@ -153,6 +184,7 @@ impl App {
             advanced_network: self.settings_runtime.network.snapshot(), network_error: self.settings_runtime.network.error.clone(),
             sounds:self.settings_runtime.sounds.snapshot.clone(),sounds_loading:self.settings_runtime.sounds.loading(),sounds_error:self.settings_runtime.sounds.error.clone(),
             notification_history:self.settings_runtime.history.snapshot.clone(),history_loading:self.settings_runtime.history.loading(),history_error:self.settings_runtime.history.error.clone(),
+            ai_providers:self.settings_system_app_available(SystemApp::AiProviders),
         }
     }
     pub(crate) fn refresh_settings_app(&mut self, cx: &mut Cx) {
@@ -198,6 +230,11 @@ impl App {
         if self.settings_network_read_request(cx, (client, uid), &request) {return;}
         if self.settings_history_read_request(cx, (client, uid), &request) {return;}
         if self.settings_sounds_request(cx,(client,uid),&request){return;}
+        match local_route(&request, |app| self.settings_system_app_available(app)) {
+            Some(LocalRoute::Launch(app)) => { if self.state.is_some() { self.open_home_app(cx, app); } return; }
+            Some(LocalRoute::Unavailable) => { self.settings_outcome(cx, client, false, "This app is not part of this build."); return; }
+            None => {}
+        }
         if matches!(request, SettingsRequest::Back) {
             if self.state.as_ref().is_some_and(|state| state.style.target.mobile()) {
                 self.phone_action(cx, crate::mobile::PhoneHit::Home);
@@ -402,7 +439,7 @@ impl App {
             SettingsRequest::Controls(ControlsRequest::Snapshot(_)) => unreachable!(),
             SettingsRequest::Wifi(WifiRequest::Snapshot) => unreachable!(),
             SettingsRequest::AppsCatalog {..}|SettingsRequest::AppDetails {..}|SettingsRequest::AppEntryDetails{..} => unreachable!(),
-            SettingsRequest::Back => unreachable!(),
+            SettingsRequest::Back | SettingsRequest::OpenSystemApp(_) => unreachable!(),
         };
         let id = self.android_command_id(cx, channel, operation, fields);
         self.settings_runtime.pending = Some(Pending { id, client, root: uid, deadline: crate::host::now() + 20.0, device });
@@ -696,6 +733,21 @@ mod tests {
             assert!(message.starts_with(expected),"{reason}: {message}");assert!(!message.contains("Setting applied"));
             if reason=="app_storage_requested"{assert!(!message.contains("Waiting"),"A transport receipt must not keep claiming to wait after the native completion arrives");}
         }
+    }
+    #[test]
+    fn system_app_requests_go_to_the_shell_launcher_never_to_android() {
+        use crate::settings_app::Destination;
+        let open = SettingsRequest::OpenSystemApp(SystemApp::AiProviders);
+        assert_eq!(local_route(&open, |_| true), Some(LocalRoute::Launch("ai-providers")));
+        assert_eq!(local_route(&open, |_| false), Some(LocalRoute::Unavailable));
+        // Android destinations and Back keep their own routes.
+        for request in [SettingsRequest::Open(Destination::Accounts), SettingsRequest::Back] {
+            assert_eq!(local_route(&request, |_| true), None);
+        }
+        // The launcher id is a registered system app backed by its App Hub bundle.
+        #[cfg(feature = "app-hub")]
+        assert!(crate::apps::bundled_catalog().iter().any(|app| app.id == SystemApp::AiProviders.launcher_id()
+            && crate::apps::card_manifest_id(app) == Some(SystemApp::AiProviders.manifest_id())));
     }
     fn pending(id: i64, device: bool) -> Pending {
         Pending { id, client: 3, root: WidgetUid(7), deadline: 20.0, device }

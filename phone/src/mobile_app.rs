@@ -500,11 +500,7 @@ impl App {
             }
             PhoneHit::App(app)|PhoneHit::TileApp(app)=>{
                 if self.android_launch(cx, &app) { self.animate_phone(cx); return; }
-                // A running window of the app, a home tile's own client
-                // included: the same client opens, never a second one.
-                let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
-                if let Some(client)=existing {self.activate_client(cx,client);}
-                else {self.launch_app(cx,&app);}
+                self.open_home_app(cx,&app);
             },
             PhoneHit::Card(client)=>{
                 match self.state_mut().phone.groups.pick.filter(|p|*p!=client) {
@@ -865,6 +861,15 @@ impl App {
             }
             _ => {}
         }
+    }
+    /// Open a Home launcher row: a running window of the app, a home tile's
+    /// own client included, comes forward (never a second one); otherwise
+    /// the app launches. The launcher icon and Settings' system-app rows
+    /// share this path.
+    pub(crate) fn open_home_app(&mut self,cx:&mut Cx,app:&str) {
+        let existing=self.state_mut().clients.iter().filter(|(_,slot)|slot.app==app && !slot.warm && !slot.pane && !slot.is_preview && slot.closing.is_none()).map(|(c,_)|*c).min();
+        if let Some(client)=existing {self.activate_client(cx,client);}
+        else {self.launch_app(cx,app);}
     }
     /// The native placement menu for an icon (Add/Remove from Home, the
     /// dock, App info, Uninstall), in the shell's appearance.

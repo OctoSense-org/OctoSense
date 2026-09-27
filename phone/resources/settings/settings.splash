@@ -1170,6 +1170,7 @@
     ]}
 ,
     {t: "scroll", id: "accounts_page", fillw: 1, fillh: 1, c: [{t: "column", fillw: 1, spacing: 12, c: [
+        {t: "button", id: "ai_providers", text: "AI providers", fillw: 1},
         {t: "text", id: "accounts_visibility", fillw: 1},
         {t: "button", id: "accounts_master", fillw: 1},
         {t: "button", id: "accounts_refresh", text: "Refresh", fillw: 1},

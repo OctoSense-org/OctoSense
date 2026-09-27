@@ -51,6 +51,20 @@ impl Destination {
     }
 }
 
+/// Home system apps Settings may open. The set is closed: no launcher or
+/// manifest ID crosses the script boundary, and opening one is navigation
+/// inside Home (the shell launcher), never an Android intent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemApp { AiProviders }
+impl SystemApp {
+    pub const ALL: [SystemApp; 1] = [SystemApp::AiProviders];
+    pub fn wire(self) -> &'static str { match self { Self::AiProviders => "ai_providers" } }
+    /// The launcher row the shell opens, as tapping its icon does.
+    pub fn launcher_id(self) -> &'static str { match self { Self::AiProviders => "ai-providers" } }
+    /// The App Hub system bundle (ADR 0004) behind that row.
+    pub fn manifest_id(self) -> &'static str { match self { Self::AiProviders => "os.ai-providers" } }
+}
+
 /// No raw command, intent, settings key, path or module ID is accepted.
 #[derive(Clone, Debug)]
 pub enum SettingsRequest {
@@ -63,7 +77,7 @@ pub enum SettingsRequest {
     AppNetwork(AppNetworkRequest),
     Display(DisplayRequest), Dnd(DndRequest),
     Back, Theme(Selection), Brightness { value: f64, automatic: bool },
-    Rotation(bool), DoNotDisturb(bool), Open(Destination),
+    Rotation(bool), DoNotDisturb(bool), Open(Destination), OpenSystemApp(SystemApp),
     AppNotifications(AppNotificationsRequest), Roles(RolesRequest), Permissions(PermissionsRequest),
     Device(DeviceSetting), DeviceAccess, DateTime(TimeRequest), NotificationHistory(HistoryRead), Sounds(SoundsRequest),
     AppsCatalog { query: String, include_system: bool, offset: u32, generation: Option<String> },
@@ -243,12 +257,16 @@ pub struct SettingsSnapshot {
     pub advanced_network:Option<NetworkSnapshot>,pub network_error:String,
     pub sounds:Option<SoundsSnapshot>,pub sounds_loading:bool,pub sounds_error:String,
     pub notification_history:Option<HistorySnapshot>,pub history_loading:bool,pub history_error:String,
+    /// The AI providers system app ships in this build and the Card runner
+    /// that hosts it is linked. Availability only: no provider data.
+    pub ai_providers:bool,
 }
 impl SettingsSnapshot {
     pub fn permits(&self, operation: &str) -> bool {
         self.android && self.connected && self.capabilities.contains(operation)
     }
     pub fn permits_device(&self, setting: &DeviceSetting) -> bool { self.android && self.device.as_ref().is_some_and(|state| state.permits(setting)) }
+    pub fn system_app(&self, app: SystemApp) -> bool { match app { SystemApp::AiProviders => self.ai_providers } }
 }
 
 script_mod! {

@@ -192,6 +192,14 @@ missing ID fails closed, preventing a pending confirmation from targeting a
 removed-and-recreated account with the same name/type. No password, access token,
 raw access ID or authenticator result Bundle enters the Settings script protocol.
 
+The Accounts page's first row, AI providers, is navigation only: it opens Home's
+`ai-providers` system app (the `os.ai-providers` App Hub bundle, ADR 0004) through
+the shell's launcher path, exactly as its icon does, in standalone Home and the
+ROM alike. The script can name it only through the closed `SystemApp` set, and
+only when the host observed that the build ships the app and links its Card
+runner; otherwise the row is hidden. No Android intent, ROM service, permission
+or provider data is involved, and no key or model setting crosses into Settings.
+
 
 Settings search is a local index of reviewed, typed built-in destinations. Query
 text and aliases cannot select Android intents, settings keys or host commands.

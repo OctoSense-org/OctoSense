@@ -40,6 +40,21 @@ fn dnd()->SettingsSnapshot{SettingsSnapshot{android:true,dnd_settings:crate::set
  o.account_details.as_mut().unwrap().clear_actions();assert!(click(&mut c,&o,"account_sync_now").requests.is_empty());
  step(&mut c,&o,"navigate","accounts",Value::Null);click(&mut c,&o,"accounts_add");let f=click(&mut c,&o,"provider_row_0");assert_eq!(f.requests[0].get("operation").and_then(Value::as_str),Some("Add"));
 }
+fn visible(f:&Frame,id:&str)->bool{f.patches.iter().rev().find_map(|p|match p{Patch::Visible(k,v)if k==id=>Some(*v),_=>None}).unwrap_or_else(||panic!("missing visible {id}"))}
+#[test]fn script_ai_providers_row_opens_the_system_app_only_when_this_build_has_it(){
+ // Desktop and Android alike: the row is Home navigation, not an Android page.
+ for android in [false,true] {
+  let mut c=new();let o=SettingsSnapshot{android,ai_providers:true,..Default::default()};
+  let f=step(&mut c,&o,"navigate","accounts",Value::Null);assert!(visible(&f,"ai_providers"));assert_eq!(text(&f,"ai_providers"),"AI providers\nAssistant models and keys");
+  step(&mut c,&o,"press","ai_providers",Value::Null);let f=click(&mut c,&o,"ai_providers");
+  assert_eq!(page(&f),"Accounts","Settings stays where it was behind the opened app");
+  assert_eq!(f.requests,vec![obj(vec![("kind",s("open_app")),("app",s("ai_providers"))])]);
+ }
+ // Never a dead row: absent from the build, the row is hidden and inert.
+ let mut c=new();let o=SettingsSnapshot{android:true,..Default::default()};
+ let f=step(&mut c,&o,"navigate","accounts",Value::Null);assert!(!visible(&f,"ai_providers"));
+ assert!(click(&mut c,&o,"ai_providers").requests.is_empty());
+}
 fn notifications()->SettingsSnapshot{
  let mut o=SettingsSnapshot{android:true,app_notifications:crate::settings_app_notifications::AppNotificationsSnapshot::decode(&crate::settings_app_notifications::tests::snapshot(1,0,25)),apps_catalog:crate::settings_apps::AppsCatalog::decode(&crate::settings_apps::tests::catalog(0,1,"")),app_details:crate::settings_apps::AppDetails::decode(&crate::settings_apps::tests::detail("com.example.test",0,0)),..Default::default()};
  o.apps_catalog.as_mut().unwrap().apps[0].target=crate::settings_apps::AppTarget::decode(&s("com.example.test")).unwrap();o
