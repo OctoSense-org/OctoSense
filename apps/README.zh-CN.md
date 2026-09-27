@@ -13,13 +13,18 @@
 - **邮件的宿主服务**（`apps/mail/host-service`）是 Mail 的 Rust 部分：
   IMAP/POP3/SMTP、账户存储和登录面板，由 Shell 运行。应用拿到的是邮件，
   永远拿不到密码或 socket。
+- **`llm` 宿主服务**（`apps/ai-providers/host-service`）是 AI providers 的 Rust
+  部分：基于 octos 模型目录的大模型服务商、存放在平台密钥库中的密钥、“测试连接”，
+  以及通过受 PIN 保护的 `OCTOS1E` 二维码在设备之间迁移服务商（相机、图片或粘贴）。
+  密钥只在宿主自己的面板上输入，二维码也只在那里显示；应用只能看到打码后的状态。
 - **octos 内核服务**（`crates/octos-core`，crate `octosense-octos-core`）：
   把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务。
   Shell 每个进程按需启动一个内核；AI 服务商应用（通过 `llm` 服务）配置它；
   AppCard 等使用方连接到它。见 [octos 内核](#octos-内核)。
 - **AppCard**（`apps/appcard`）是唯一的原生应用：“Ask anything”助手，
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
-  octos 内核之上。
+  octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`
+  时才链接它，默认不随产品发布。
 
 在本仓库工作的 Agent 规则见 [AGENTS.md](AGENTS.md) 和
 [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md)。
@@ -42,12 +47,12 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Camera](apps/camera/bundle) | `os.camera` | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library` | 无 | 无 |
 | [Mail](apps/mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信 | `storage`、`mail` | 无（由服务联网，而不是应用） | [`mail`](apps/mail/host-service) |
 | [AI providers](apps/ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](apps/ai-providers/host-service) |
-| [AppCard](apps/appcard) | 原生 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片 | 不适用（不是 bundle） | 不适用 | 不适用 |
+| [AppCard](apps/appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由 App Hub 的封闭列表定义（`crates/app-policy/src/manifest.rs`
 中的 `KNOWN_CAPABILITIES`）：`images` 可显示任意公网 https 主机的图片，`web`
 在系统 WebView 中打开网页，`library` 把拍摄内容提供给系统相册，`mail` 访问
-宿主的邮件服务。`net` 只能访问 manifest 列出的主机。
+宿主的邮件服务，`llm` 访问宿主的大模型服务商服务。`net` 只能访问 manifest 列出的主机。
 
 ### 状态与已知问题
 
@@ -91,12 +96,14 @@ Shell 会：
    {
      "schema": 1,
      "source": "../.sources/system-apps/apps",
-     "apps": ["news", "photos", "maps", "camera", "mail"],
+     "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
      "assets": { "photos": { "photos": "apps/photos/resources/photos" } }
    }
    ```
 
-3. 链接 `octosense-mail-service`（对固定检出的 path 依赖）并在启动时注册：
+3. 链接宿主服务 `octosense-mail-service` 和 `octosense-llm-service`（对固定检出的
+   path 依赖）并在启动时注册：`llm` 服务使用 octos 内核的 core 目录以及 Shell 的
+   二维码扫描器和图片选择器（见 [`llm` 服务](#llm-服务)）；Mail 服务：
    真实账户用 `register()`，Shell 的应用配置中 `mail_demo: true` 时用
    `register_demo()`。Shell 链接的 App Hub 版本与该服务为 `octosense-appstore` 引用的版本相同，因此只有一个宿主服务注册表。
 4. 链接 `octosense-octos-core`（两个 Shell 的 feature `octos-core`，默认开启），
@@ -230,6 +237,19 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
 账户元数据（不含密码）和已拉取的邮件存放在宿主自己的目录（`<host_dir>/mail`），
 位于所有应用沙箱之外。每个账户只授权给添加它的应用。服务会先测试账户可用，再保存。
 
+### `llm` 服务
+
+`octosense-llm-service`（`apps/ai-providers/host-service`）是 AI providers 的 Rust
+部分。它把 octos 内核的大模型服务商保存在内核的 profile
+`<core_dir>/profiles/_main.json` 中（由 `octosense-llm-config` 合并 `config.llm` 和
+`config.env_vars`，其他键保持不变），密钥则放在 octos 读取的位置：macOS 上是钥匙串
+`octos` 服务（profile 中写 `keychain:` 标记），Linux 上是 `<core_dir>/secrets/`，
+其他平台（Android）写在应用私有的 profile 中。密钥只在宿主面板上输入，二维码只在
+宿主面板上显示和扫描；应用只能看到打码后的状态。开启其 `octos-core` feature（Shell
+的默认设置）后，它写入 `octosense_octos_core::core_dir()`，并在每次更改后调用
+`octosense_octos_core::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
+方式见其 [README（英文）](apps/ai-providers/host-service/README.md)。
+
 ## octos 内核
 
 octos Agent 内核是 **Shell 服务**，不属于任何应用。
@@ -343,7 +363,7 @@ Shell 的 `system-apps.json` 中加入它。
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | 目录、准入检查（`hub stamp`、`check`、`scan`、`sign-manifest`、`publish`）、`card-host`、Card runner 与宿主服务注册表，以及每个 Shell 都链接的 `octosense-app-hub-app` |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
-| [octos](https://github.com/octos-org/octos) | AppCard 运行所依赖的 Agent 内核 |
+| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/octos-core` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `6ad76e5c`） |
 
 ## 参与贡献
 

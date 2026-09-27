@@ -27,7 +27,8 @@ the agent shell on top of your operating system:
   [The octos kernel](#the-octos-kernel).
 - **AppCard** (`apps/appcard`) is the one native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
-  that runs on the shell's octos kernel.
+  that runs on the shell's octos kernel. It is **opt-in**: both shells link
+  it only with `--features app-appcard`, and it is not shipped by default.
 
 Rules for agents working here are in [AGENTS.md](AGENTS.md) and
 [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md).
@@ -51,7 +52,7 @@ repository into the same workspace and, from OctoScript-App-Design-Flow:
 | [Camera](apps/camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
 | [Mail](apps/mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](apps/mail/host-service) |
 | [AI providers](apps/ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](apps/ai-providers/host-service) |
-| [AppCard](apps/appcard) | native | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card | n/a (not a bundle) | n/a | n/a |
+| [AppCard](apps/appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by App Hub's closed list
 (`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
@@ -109,16 +110,19 @@ A shell:
    {
      "schema": 1,
      "source": "../.sources/system-apps/apps",
-     "apps": ["news", "photos", "maps", "camera", "mail"],
+     "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
      "assets": { "photos": { "photos": "apps/photos/resources/photos" } }
    }
    ```
 
-3. Links `octosense-mail-service` (path dependency on the pinned checkout) and
-   registers it at startup: `register()` for real accounts, or
-   `register_demo()` when the shell's app config has `mail_demo: true`. The
-   shell links App Hub at the same rev the service names for
-   `octosense-appstore`, so there is one host-service registry.
+3. Links the host services `octosense-mail-service` and
+   `octosense-llm-service` (path dependencies on the pinned checkout) and
+   registers them at startup: Mail with `register()` for real accounts, or
+   `register_demo()` when the shell's app config has `mail_demo: true`; `llm`
+   with the octos kernel's core dir and the shell's QR scanner and image
+   picker (see [the `llm` service](#the-llm-service)). The shell links App
+   Hub at the same rev the services name for `octosense-appstore`, so there
+   is one host-service registry.
 4. Links `octosense-octos-core` (feature `octos-core` in both shells, on by
    default) and configures the kernel at startup; registers the `llm`
    service (with its `octos-core` feature) on the kernel's core dir, so a
@@ -261,6 +265,22 @@ directory (`<host_dir>/mail`), outside every app's jail. Each account is
 granted only to the apps that added it. The service tests an account before
 keeping it.
 
+### The `llm` service
+
+`octosense-llm-service` (`apps/ai-providers/host-service`) is the Rust half
+of AI providers. It keeps the octos kernel's LLM providers in the kernel's
+profile, `<core_dir>/profiles/_main.json` (`octosense-llm-config` merges
+`config.llm` and `config.env_vars`, keeping every other key), and the keys
+where octos reads them: the macOS keychain `octos` service behind a
+`keychain:` marker, `<core_dir>/secrets/` on Linux, the app-private profile
+itself elsewhere (Android). Keys are typed, QRs shown and codes scanned only
+on the host's sheets; the app sees masked status. Built with its `octos-core`
+feature (the shells' default), it writes under
+`octosense_octos_core::core_dir()` and calls `octosense_octos_core::restart()`
+after every change, so the running kernel picks up the new providers. The
+method table and registration are in its
+[README](apps/ai-providers/host-service/README.md).
+
 ## The octos kernel
 
 The octos agent kernel is a **shell service**, not part of any app.
@@ -390,7 +410,7 @@ plus an entry in each shell's `system-apps.json`.
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
-| [octos](https://github.com/octos-org/octos) | the agent kernel AppCard runs on |
+| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/octos-core`, configured by AI providers, used by AppCard and other consumers (one rev, `6ad76e5c`) |
 
 ## Contributing
 
