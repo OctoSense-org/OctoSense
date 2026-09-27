@@ -136,6 +136,13 @@ collapsible_match = "allow"
 
 [profile.dev]
 opt-level = 1
+# Keep dev builds small: line tables are enough for backtraces, dependencies
+# get no debug info, and incremental caches are disabled (they grow unbounded).
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
 
 # The provisioning QR's Argon2id and the QR/image decoders take seconds
 # unoptimised; optimise just those so debug builds and tests run at speed.
