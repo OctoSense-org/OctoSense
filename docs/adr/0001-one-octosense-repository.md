@@ -41,15 +41,21 @@ octosense/
   apps/           system apps and their host services (was OctoSense-System-Apps apps/):
                   news, photos, maps, camera, mail, ai-providers, appcard (opt-in)
   desktop/        desktop packaging: main, catalogs (config/apps.json), themes, wallpapers,
-                  upstream window-manager sync, release
-  rom/            ROM packaging: Home APK and ROM image, the privileged Settings app,
-                  the Android system bridge and platform-build hooks, vendor/, patches/,
-                  scripts/, web-installer/, ohos/
+                  upstream window-manager sync, release (macOS/Windows/Linux; dev Android APK)
+  phone/          the Home app: Android and OpenHarmony (and iOS simulator) packaging,
+                  APK build scripts and bundled kernel, the Settings app, the phone side
+                  of the system bridge
+  rom/            the OnePlus 6 ROM image only: vendor/ (product, privileged permissions,
+                  overlays, Settings backends), the system side of the bridge (SystemUI,
+                  Quickstep, PermissionController hooks), patches/, image/flash/OTA
+                  scripts, web-installer/
   tools/          kernel-artifact (cross-built liboctos.so), shell-graph checks, setup
   docs/           ADRs (this series; ROM home ADRs 0001–0006 move here as history), guides
 ```
 
-The two shells become two packagings of one `crates/shell`. Desktop and phone differences are targets and features of that crate, not copies.
+The two shells become packagings of one `crates/shell`. Desktop and phone differences are targets and features of that crate, not copies.
+
+`phone/` and `rom/` are separate because they are different products with different build systems: the Home APK installs on any Android phone (cargo-makepad, built in CI), while the ROM image is a LineageOS build for the OnePlus 6 (AOSP chroot, not in CI) that consumes the Home APK and adds the privileged system side. "Home" remains the product name of the phone app.
 
 ### 2. What stays separate
 
@@ -75,7 +81,7 @@ The external pin chain becomes: makepad → OctoScript-Makepad (runtime) → App
 
 ### 4. CI and releases
 
-- **Path-filtered workflows:** the 40-minute ROM `home` job runs when `rom/`, `crates/` or `apps/` change, not for desktop-only or docs changes. Desktop checks run for `desktop/`, `crates/`, `apps/`.
+- **Path-filtered workflows:** the 40-minute phone job runs when `phone/`, `crates/` or `apps/` change, not for desktop-only or docs changes. Desktop checks run for `desktop/`, `crates/`, `apps/`.
 - **Products keep their own releases,** tagged per product: `desktop-v*`, `home-v*` (APK), `rom-v*` (image). System apps ship inside the shells (section 6). Build receipts record the repository commit.
 - **Contributors** keep one PR per change; required checks are the union of the affected paths.
 
@@ -100,9 +106,9 @@ Each phase ends green and shippable.
 | Phase | Work | Exit criteria |
 | --- | --- | --- |
 | 0. Freeze and land | Land or move open PRs on the three repositories (including outside contributors' PRs on forks); announce a short freeze | No open PR left without an owner and a target |
-| 1. Import | Rename OctoSense-Desktop → OctoSense. Import ROM (into `rom/`, with `home/src` kept at `rom/home/src` for now) and System-Apps (`apps/`, `crates/kernel`, `crates/app-peers`) with rewritten history. Workspace dependencies pinned once. Both packagings build from the one checkout | Desktop and ROM CI green from the new repository; APKs contain `liboctos.so`; graph checks pass |
+| 1. Import | Rename OctoSense-Desktop → OctoSense. Import ROM (its `home/` into `phone/`, with `home/src` kept at `phone/src` for now; the image parts into `rom/`) and System-Apps (`apps/`, `crates/kernel`, `crates/app-peers`) with rewritten history. Workspace dependencies pinned once. Both packagings build from the one checkout | Desktop and ROM CI green from the new repository; APKs contain `liboctos.so`; graph checks pass |
 | 2. Services | Create `crates/ai-host`; replace both shells' kernel, llm and broker glue with it; one kernel-artifact tool; one CI graph script | One registration path; ROM and Desktop features forward to `ai-host`; tests from both shells moved and passing |
-| 3. One shell | Reconcile the 29 differing shared files into `crates/shell`; move the generic phone layer out of ROM; `desktop/` and `rom/` keep only packaging and ROM-only code | No `.rs` file exists twice; headless ROM and Desktop runs pass; Android builds for both packagings |
+| 3. One shell | Reconcile the 29 differing shared files into `crates/shell`; move the generic phone layer into `crates/shell`; `desktop/`, `phone/` and `rom/` keep only packaging, the Settings app, the Android integration and ROM-only code | No `.rs` file exists twice; headless ROM and Desktop runs pass; Android builds for both packagings |
 | 4. Archive | Archive OctoSense-ROM and OctoSense-System-Apps with pointers; update org profile, READMEs, AGENTS.md, websites (en + zh); retire sibling locks (`native-apps.lock.json`) | Link check clean across the org; contestant path re-verified |
 
 Estimated effort: phases 0–2 about one week, phase 3 one to two weeks (the shared files must be reconciled, not copied), phase 4 one to two days.
