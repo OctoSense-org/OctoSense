@@ -67,7 +67,7 @@ octosense-appcard = { path = "apps/appcard", optional = true }
 # (system-apps.json, .cargo/config.toml), installed apps and their icons.
 # Same rev as the Mail host service's octosense-appstore (OctoSense-System-Apps):
 # one App Hub source, so one host-service registry.
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "0d36f50b9f0fdfbd8247b5deb8da8baa53c83066", optional = true }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "3e993d4c596560c42f011b2fd00bd40dbcac7cc5", optional = true }
 # The `mail` host service the Mail system app calls through `host.request`:
 # accounts, message lists and send run here, with the passwords the host
 # holds; the app never gets a socket or a secret. From the pinned
