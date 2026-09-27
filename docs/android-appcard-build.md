@@ -1,8 +1,13 @@
 # Android build with AppCard's framework, buildtool and bundled kernel
 
-> AppCard is not shipped for now: Android and iOS builds link it only with
-> `--features app-appcard`. This recipe applies to such opt-in builds; a
-> default APK needs no octos kernel.
+> The octos kernel is a shell service now (`octosense-octos-core`, feature
+> `octos-core`, always on for Android), not AppCard's: **every** APK must
+> bundle `liboctos.so`. `tools/android-kernel.py` does it (it cross-builds
+> the kernel at the revision `Cargo.lock` pins, `--no-default-features
+> --features api,git,ast`, and runs the packager with
+> `MAKEPAD_ANDROID_EXTRA_LIBS`). AppCard itself is not shipped for now and
+> links only with `--features app-appcard`. The steps below are the manual
+> equivalent; their pins are older than the current ones.
 
 OctoSense on the phone now runs the AppCard assistant module (`apps/appcard`,
 which mounts `octos-app` from the pinned OctoSense-System-Apps checkout,
@@ -27,19 +32,20 @@ give it:
    `dev.makepad.octosense`, not persistent).
 3. **The octos kernel**, cross-built for `aarch64-linux-android` and bundled
    into the APK as `liboctos.so`. Android lets an app exec only from its
-   nativeLibraryDir, so the kernel must ship as a "library"; the hosted app
-   (`octos-app`'s `stdio_spawn`) finds it there and runs `octos serve --stdio`
-   with `HOME=<files>/octos-home`.
+   nativeLibraryDir, so the kernel must ship as a "library"; the shell's
+   kernel service (`octosense-octos-core`) finds it there and runs `octos
+   serve --stdio` with `HOME=<files>/octos-home` when the first consumer
+   (AppCard, Rinx) connects.
 
 ## Step by step
 
 ```sh
 # 0. Paths (adjust): a checkout of the fork, a checkout of octos-org/octos at
-#    the rev octos-app pins for every octos crate (18fcd3f1, see
-#    OctoSense-System-Apps apps/appcard/app/Cargo.toml), and the Android
+#    the rev Cargo.lock pins for octos-cli (6ad76e5c today; the same rev
+#    OctoSense-System-Apps pins), and the Android
 #    toolchain dir that `cargo makepad android install-toolchain` produced.
 FORK=/path/to/makepad-fork          # https://github.com/OctoSense-org/makepad.git
-OCTOS=/path/to/octos                # https://github.com/octos-org/octos.git at 18fcd3f16e527d2b601d7ae244f056fb711bb6b8
+OCTOS=/path/to/octos                # https://github.com/octos-org/octos.git at 6ad76e5c1e659bdf10ec05ae869428b48edccf7f
 TOOLCHAIN=/path/to/android_33_macos_aarch64   # ndk/, platforms/, build-tools/, platform-tools/, openjdk/
 
 # 1. The buildtool cargo-makepad. It looks for the toolchain relative to its
@@ -90,25 +96,25 @@ unzip -l target/makepad-android-apk/octosense/apk/octosense.apk | grep liboctos 
 "$ADB" logcat -d -s Makepad | grep -E 'stdio:|kernel'          # the kernel's start
 ```
 
-When the AppCard tile starts (the module delivers `Event::Startup` to the
-hosted app on first contact), the app's agent spawns the kernel over stdio
-and logs one of
+At startup the shell logs `octos: kernel service ready (starts on first use),
+core dir …` (or `octos: no octos kernel: …/liboctos.so is not bundled`). When
+the AppCard tile starts (the module delivers `Event::Startup` to the hosted
+app on first contact), the app's agent connects to the kernel service, which
+starts the kernel and logs `octos-core: starting kernel 1: …/liboctos.so
+serve --stdio`; without a kernel the agent logs `kernel: no octos kernel: …;
+using the WebSocket transport` and the app shows its login screen.
 
-- `stdio: octos=…/lib/arm64/liboctos.so HOME=…/files/octos-home` — the bundled
-  kernel was found and started; the agent's `client_hello` follows;
-- `stdio: bundled octos not found under …; using WebSocket transport` — the
-  APK was built without `MAKEPAD_ANDROID_EXTRA_LIBS`; the app shows its
-  login screen.
+The kernel is the shell's, one per process: the module's `shutdown` drops the
+agent's connection when the tile's instance is torn down, and the kernel stops
+when its last consumer leaves. When the AI providers change, the `llm` service
+restarts it and the agent reconnects.
 
-The kernel is a `kill_on_drop` child of the agent's runtime: the module's
-`shutdown` stops the agent when the tile's instance is torn down, and the
-child goes with it. The module spawns no kernel of its own.
-
-On a desktop the app spawns a local kernel only when BOTH `OCTOS_APP_CORE_BIN`
-(the `octos` binary) and `OCTOS_APP_CORE_DIR` (its data dir; the app runs
-`serve --stdio --data-dir <dir> --config <dir>/config.json` with
-`OCTOS_HOME=<dir>`) are set; otherwise it uses the WebSocket transport / login
-screen, so a developer's own `octos serve` is never touched.
+On a desktop the kernel service runs a local kernel only when
+`OCTOS_APP_CORE_BIN` names the `octos` binary (data dir `OCTOS_APP_CORE_DIR`,
+else `~/octos-home/.octos`; it runs `serve --stdio --data-dir <dir>`, plus
+`--config <dir>/config.json` when that file exists, with `OCTOS_HOME=<dir>`);
+otherwise AppCard uses the WebSocket transport / login screen, so a
+developer's own `octos serve` is never touched.
 
 ## Provisioning the LLM key
 
