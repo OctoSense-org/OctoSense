@@ -6,10 +6,17 @@
 //!
 //! - **free structured sources only**: Google News RSS search, the GDELT DOC
 //!   API and configured RSS/Atom feeds; no results-page scraping;
-//! - **polite fetching**: an honest User-Agent naming OctoSense, robots.txt
-//!   honoured for every host (unreachable robots.txt means "do not fetch"),
-//!   a minimum interval per host, redirects followed by hand (each hop
-//!   checked), a response size cap and a timeout;
+//! - **a personal assistant's fetching**: OctoSense agents read on behalf of
+//!   one person, so robots.txt is **not** applied by default (for feeds,
+//!   person-initiated reads and autonomous research alike). It is an operator
+//!   setting ([`LiveConfig::respect_robots`], or `OCTOSENSE_TOOLBOX_ROBOTS=1`
+//!   through [`LiveConfig::from_env`]); when off, robots.txt is never fetched;
+//! - **polite and safe fetching, always**: an honest User-Agent naming
+//!   OctoSense and octos, a minimum interval per host (5 s for GDELT),
+//!   backoff on 429/503 honouring `Retry-After`, a timeout, a response size
+//!   cap, no cookies or credentials (no paywall or login bypass), and
+//!   private, loopback, link-local and cloud-metadata addresses refused on
+//!   every fetch and every redirect hop (URL literals and DNS answers);
 //! - **plain HTTP reading** with main-text extraction by `dom_smoothie`
 //!   (MIT, a Rust port of Mozilla's readability.js). No browser: pages that
 //!   need JavaScript (Google News article links among them) fail honestly as
@@ -20,14 +27,91 @@ use crate::host::{url_host, CallContext, HostError, HostFuture};
 use futures_util::future::join_all;
 use quick_xml::events::Event;
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The User-Agent every request carries: who we are and where to read more.
-pub const USER_AGENT: &str =
-    "OctoSense-Toolbox/0.1 (research workflows; +https://github.com/OctoSense-org/OctoSense)";
-/// The product token matched against robots.txt groups.
+pub const USER_AGENT: &str = "OctoSense-Toolbox/0.1 (octos research for one person; +https://github.com/OctoSense-org/OctoSense)";
+/// The product token matched against robots.txt groups (when enabled).
 pub const ROBOTS_TOKEN: &str = "octosense-toolbox";
+/// Set to `1` (or `true`) to make [`LiveConfig::from_env`] honour robots.txt.
+pub const ROBOTS_ENV: &str = "OCTOSENSE_TOOLBOX_ROBOTS";
+/// The longest `Retry-After` the adapter waits for; longer means failure.
+pub const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+/// Retries after a 429 or 503.
+pub const MAX_RETRIES: u32 = 2;
+
+/// Whether an address is off limits: loopback, private, link-local (cloud
+/// metadata endpoints live there), unique-local, shared (CGNAT),
+/// unspecified, multicast, broadcast, documentation and benchmarking ranges,
+/// and IPv6 forms of any of those.
+pub fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => blocked_v4(v4),
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return blocked_v4(v4);
+            }
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00 // unique local fc00::/7
+                || (first & 0xffc0) == 0xfe80 // link local fe80::/10
+                || (first & 0xffc0) == 0xfec0 // site local (deprecated)
+                || (first == 0x2001 && v6.segments()[1] == 0x0db8) // documentation
+                || (first == 0x0064 && v6.segments()[1] == 0xff9b) // NAT64 to v4
+                || v6 == Ipv6Addr::new(0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254) // AWS IMDS v6
+        }
+    }
+}
+
+fn blocked_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, _, _] = ip.octets();
+    ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local() // 169.254.0.0/16, incl. 169.254.169.254
+        || ip.is_unspecified()
+        || ip.is_broadcast()
+        || ip.is_multicast()
+        || ip.is_documentation()
+        || a == 0
+        || (a == 100 && (64..=127).contains(&b)) // shared address space
+        || (a == 198 && (18..=19).contains(&b)) // benchmarking
+        || a >= 240 // reserved
+        || (a == 192 && b == 0 && ip.octets()[2] == 0) // IETF protocol assignments
+}
+
+/// A DNS resolver that drops blocked addresses, so neither the first request
+/// nor any redirect can reach an internal host by name (DNS rebinding
+/// included: the connection uses exactly these answers).
+struct GuardedResolver {
+    /// Tests only: also allow loopback (never private or link-local).
+    allow_loopback: bool,
+}
+
+fn allowed(ip: IpAddr, allow_loopback: bool) -> bool {
+    !is_blocked_ip(ip) || (allow_loopback && ip.is_loopback())
+}
+
+impl reqwest::dns::Resolve for GuardedResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_owned();
+        let allow_loopback = self.allow_loopback;
+        Box::pin(async move {
+            let answers: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
+                .await?
+                .filter(|a| allowed(a.ip(), allow_loopback))
+                .collect();
+            if answers.is_empty() {
+                return Err(format!("{host} resolves only to blocked addresses").into());
+            }
+            let addrs: reqwest::dns::Addrs = Box::new(answers.into_iter());
+            Ok(addrs)
+        })
+    }
+}
 
 /// A configured RSS or Atom feed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,30 +123,57 @@ pub struct Feed {
 
 #[derive(Debug, Clone)]
 pub struct LiveConfig {
-    /// Google News RSS search. Off by default: news.google.com's robots.txt
-    /// disallows `/rss` for every agent but a few, and this adapter honours it
-    /// (turning it on only makes each search report it as refused).
+    /// Google News RSS search (a default free source).
     pub google_news: bool,
     pub gdelt: bool,
     pub feeds: Vec<Feed>,
+    /// Operator setting: honour robots.txt. Off by default; when off,
+    /// robots.txt is never fetched.
+    pub respect_robots: bool,
     /// Minimum time between two requests to one host.
     pub min_interval: Duration,
     /// Longer intervals for hosts that publish one (GDELT asks for 5 s).
     pub host_intervals: Vec<(String, Duration)>,
     pub timeout: Duration,
     pub max_response_bytes: usize,
+    /// **Tests only**: allow loopback addresses so a test can serve pages
+    /// from 127.0.0.1. Private, link-local and metadata addresses stay
+    /// blocked. Never set in production; there is no environment switch.
+    #[doc(hidden)]
+    pub allow_loopback_for_tests: bool,
 }
 
 impl Default for LiveConfig {
     fn default() -> Self {
         Self {
-            google_news: false,
+            google_news: true,
             gdelt: true,
             feeds: Vec::new(),
+            respect_robots: false,
             min_interval: Duration::from_secs(1),
             host_intervals: vec![("api.gdeltproject.org".into(), Duration::from_secs(5))],
             timeout: Duration::from_secs(15),
             max_response_bytes: 2 * 1024 * 1024,
+            allow_loopback_for_tests: false,
+        }
+    }
+}
+
+impl LiveConfig {
+    /// The defaults, with the operator's robots.txt setting from
+    /// `OCTOSENSE_TOOLBOX_ROBOTS` (`1` or `true` turns it on).
+    pub fn from_env() -> Self {
+        let respect_robots = std::env::var(ROBOTS_ENV)
+            .map(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false);
+        Self {
+            respect_robots,
+            ..Self::default()
         }
     }
 }
@@ -195,9 +306,15 @@ fn failed(message: impl Into<String>) -> HostError {
 
 impl InterimResearch {
     pub fn new(config: LiveConfig) -> Result<Self, HostError> {
+        // No cookie store, no credentials, no proxy (the resolver must see
+        // the real host), redirects by hand.
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .dns_resolver(Arc::new(GuardedResolver {
+                allow_loopback: config.allow_loopback_for_tests,
+            }))
             .timeout(config.timeout)
             .build()
             .map_err(|e| failed(e.to_string()))?;
@@ -229,11 +346,57 @@ impl InterimResearch {
         }
     }
 
+    /// Pushes this host's next slot to at least `delay` from now (backoff).
+    fn defer(&self, host: &str, delay: Duration) {
+        let mut slots = self.next_slot.lock().unwrap_or_else(|e| e.into_inner());
+        let at = Instant::now() + delay;
+        let slot = slots.entry(host.to_owned()).or_insert(at);
+        *slot = (*slot).max(at);
+    }
+
+    /// Refuses a URL whose host is an IP literal in a blocked range. Names
+    /// are checked by the resolver on every connection.
+    fn check_target(&self, url: &str) -> Result<String, HostError> {
+        let parsed = url::Url::parse(url).map_err(|e| HostError::Denied(format!("{url}: {e}")))?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(HostError::Denied(format!("not an http(s) URL: {url}")));
+        }
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            return Err(HostError::Denied(
+                "URLs with credentials are not fetched".into(),
+            ));
+        }
+        let ip = match parsed.host() {
+            Some(url::Host::Ipv4(v4)) => Some(IpAddr::V4(v4)),
+            Some(url::Host::Ipv6(v6)) => Some(IpAddr::V6(v6)),
+            Some(url::Host::Domain(d)) => {
+                let d = d.trim_end_matches('.').to_ascii_lowercase();
+                if (d == "localhost" || d.ends_with(".localhost"))
+                    && !self.config.allow_loopback_for_tests
+                {
+                    return Err(HostError::Denied(format!("{d} is a local host")));
+                }
+                None
+            }
+            None => return Err(HostError::Denied(format!("no host in {url}"))),
+        };
+        if let Some(ip) = ip {
+            if !allowed(ip, self.config.allow_loopback_for_tests) {
+                return Err(HostError::Denied(format!(
+                    "{ip} is a private, local or metadata address"
+                )));
+            }
+        }
+        url_host(url).ok_or_else(|| HostError::Denied(format!("no host in {url}")))
+    }
+
+    /// One GET. Returns (status, Location or, for 429/503, Retry-After,
+    /// content type, body).
     async fn raw_get(
         &self,
         url: &str,
     ) -> Result<(u16, Option<String>, String, Vec<u8>), HostError> {
-        let host = url_host(url).ok_or_else(|| failed(format!("not an http(s) URL: {url}")))?;
+        let host = self.check_target(url)?;
         self.pace(&host).await;
         let mut response = self
             .client
@@ -253,6 +416,15 @@ impl InterimResearch {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default()
             .to_ascii_lowercase();
+        if matches!(status, 429 | 503) {
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            // The body is not needed; the caller backs off.
+            return Ok((status, retry_after, content_type, Vec::new()));
+        }
         let mut body = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|e| failed(e.to_string()))? {
             if body.len() + chunk.len() > self.config.max_response_bytes {
@@ -264,9 +436,15 @@ impl InterimResearch {
     }
 
     async fn robots_for(&self, url: &str) -> Arc<Robots> {
-        let Some(host) = url_host(url) else {
+        // Per origin: scheme, host and port.
+        let Some(robots_url) = url::Url::parse(url)
+            .ok()
+            .filter(|u| u.has_host())
+            .and_then(|u| u.join("/robots.txt").ok())
+        else {
             return Arc::new(Robots::deny_all());
         };
+        let host = robots_url.origin().ascii_serialization();
         if let Some(cached) = self
             .robots
             .lock()
@@ -275,12 +453,7 @@ impl InterimResearch {
         {
             return cached.clone();
         }
-        let scheme = if url.starts_with("http://") {
-            "http"
-        } else {
-            "https"
-        };
-        let robots = match self.raw_get(&format!("{scheme}://{host}/robots.txt")).await {
+        let robots = match self.raw_get(robots_url.as_str()).await {
             Ok((200..=299, _, _, body)) => {
                 Robots::parse(&String::from_utf8_lossy(&body), ROBOTS_TOKEN)
             }
@@ -296,29 +469,54 @@ impl InterimResearch {
         robots
     }
 
-    /// GET with robots.txt, pacing and at most three redirects, each hop
-    /// checked. Returns (final URL, content type, body).
+    /// GET with pacing, backoff on 429/503, robots.txt when the operator
+    /// turned it on, and at most three redirects, each hop checked again.
+    /// Returns (final URL, content type, body).
     pub async fn get(&self, url: &str) -> Result<(String, String, Vec<u8>), HostError> {
         let mut current = url.to_owned();
-        for _ in 0..4 {
-            let path = path_of(&current);
-            if !self.robots_for(&current).await.allows(&path) {
-                return Err(HostError::Denied(format!("robots.txt disallows {current}")));
+        let mut retries = 0;
+        let mut hops = 0;
+        loop {
+            if self.config.respect_robots {
+                let path = path_of(&current);
+                if !self.robots_for(&current).await.allows(&path) {
+                    return Err(HostError::Denied(format!("robots.txt disallows {current}")));
+                }
             }
             let (status, location, content_type, body) = self.raw_get(&current).await?;
             match status {
                 200..=299 => return Ok((current, content_type, body)),
-                301 | 302 | 303 | 307 | 308 => {
+                429 | 503 => {
+                    let wait = location
+                        .as_deref()
+                        .and_then(parse_retry_after)
+                        .unwrap_or(Duration::from_secs(2 << retries));
+                    if retries >= MAX_RETRIES || wait > MAX_RETRY_AFTER {
+                        return Err(failed(format!(
+                            "HTTP {status} from {current}; retry after {}s",
+                            wait.as_secs()
+                        )));
+                    }
+                    retries += 1;
+                    if let Some(host) = url_host(&current) {
+                        self.defer(&host, wait);
+                    }
+                    continue;
+                }
+                301 | 302 | 303 | 307 | 308 if hops < 3 => {
+                    hops += 1;
                     let next = location.ok_or_else(|| failed("redirect without Location"))?;
+                    // The next hop is checked by `raw_get` like the first.
                     current = url::Url::parse(&current)
                         .and_then(|base| base.join(&next))
                         .map_err(|e| failed(e.to_string()))?
                         .to_string();
                 }
+                301 | 302 | 303 | 307 | 308 => return Err(failed("too many redirects")),
+                // 401/402/403 and the like: no login or paywall workaround.
                 _ => return Err(failed(format!("HTTP {status} from {current}"))),
             }
         }
-        Err(failed("too many redirects"))
     }
 
     async fn provider(
@@ -345,6 +543,17 @@ impl InterimResearch {
         }
         Ok(items)
     }
+}
+
+/// `Retry-After` as seconds or an HTTP date.
+pub fn parse_retry_after(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let at = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let delta = at.with_timezone(&chrono::Utc) - chrono::Utc::now();
+    Some(delta.to_std().unwrap_or(Duration::ZERO))
 }
 
 fn path_of(url: &str) -> String {
@@ -720,5 +929,268 @@ mod tests {
         let gdelt = br#"{"articles":[{"url":"https://c.example/3","title":"G","domain":"c.example","seendate":"20260919T101500Z"}]}"#;
         let items = parse_gdelt(gdelt).unwrap();
         assert_eq!(items[0].published_at, "2026-09-19T10:15:00Z");
+    }
+
+    #[test]
+    fn blocked_addresses() {
+        for ip in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.100.100.200",
+            "0.0.0.0",
+            "255.255.255.255",
+            "224.0.0.1",
+            "::1",
+            "::",
+            "fe80::1",
+            "fc00::1",
+            "fd00:ec2::254",
+            "::ffff:10.0.0.1",
+            "::ffff:169.254.169.254",
+        ] {
+            assert!(is_blocked_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["93.184.216.34", "8.8.8.8", "2606:4700:4700::1111"] {
+            assert!(!is_blocked_ip(ip.parse().unwrap()), "{ip}");
+        }
+        assert_eq!(parse_retry_after("7"), Some(Duration::from_secs(7)));
+        assert_eq!(
+            parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT"),
+            Some(Duration::ZERO)
+        );
+        assert_eq!(parse_retry_after("soon"), None);
+    }
+
+    #[test]
+    fn robots_is_an_operator_setting_off_by_default() {
+        let config = LiveConfig::default();
+        assert!(!config.respect_robots);
+        assert!(config.google_news && config.gdelt);
+        std::env::set_var(ROBOTS_ENV, "1");
+        assert!(LiveConfig::from_env().respect_robots);
+        std::env::set_var(ROBOTS_ENV, "0");
+        assert!(!LiveConfig::from_env().respect_robots);
+        std::env::remove_var(ROBOTS_ENV);
+        assert!(!LiveConfig::from_env().respect_robots);
+    }
+
+    /// A tiny HTTP/1.1 server on 127.0.0.1 that records request paths and
+    /// replays scripted responses per path (the last one repeats).
+    struct Server {
+        base: String,
+        paths: Arc<Mutex<Vec<String>>>,
+    }
+
+    type Reply = (u16, Vec<(&'static str, String)>, String);
+
+    async fn serve(routes: Vec<(&'static str, Vec<Reply>)>) -> Server {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let routes: Arc<Mutex<HashMap<String, Vec<Reply>>>> = Arc::new(Mutex::new(
+            routes.into_iter().map(|(p, r)| (p.to_owned(), r)).collect(),
+        ));
+        let seen = paths.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut request = Vec::new();
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    if stream.readable().await.is_err() {
+                        break;
+                    }
+                    let mut buf = [0u8; 4096];
+                    match stream.try_read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => request.extend_from_slice(&buf[..n]),
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                        Err(_) => break,
+                    }
+                }
+                let text = String::from_utf8_lossy(&request);
+                let path = text.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                seen.lock().unwrap().push(path.clone());
+                let (status, headers, body) = {
+                    let mut routes = routes.lock().unwrap();
+                    match routes.get_mut(&path) {
+                        Some(replies) if replies.len() > 1 => replies.remove(0),
+                        Some(replies) => replies[0].clone(),
+                        None => (404, Vec::new(), String::new()),
+                    }
+                };
+                let mut response = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n",
+                    body.len()
+                );
+                for (k, v) in headers {
+                    response.push_str(&format!("{k}: {v}\r\n"));
+                }
+                response.push_str("\r\n");
+                response.push_str(&body);
+                let bytes = response.into_bytes();
+                let mut written = 0;
+                while written < bytes.len() {
+                    if stream.writable().await.is_err() {
+                        break;
+                    }
+                    match stream.try_write(&bytes[written..]) {
+                        Ok(n) => written += n,
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+        Server { base, paths }
+    }
+
+    fn html() -> Reply {
+        (
+            200,
+            vec![("content-type", "text/html".into())],
+            "<html><body><p>Hello</p></body></html>".into(),
+        )
+    }
+
+    fn local(respect_robots: bool) -> InterimResearch {
+        InterimResearch::new(LiveConfig {
+            respect_robots,
+            min_interval: Duration::ZERO,
+            allow_loopback_for_tests: true,
+            ..LiveConfig::default()
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn by_default_robots_txt_is_never_requested() {
+        let robots = (200, Vec::new(), "User-agent: *\nDisallow: /\n".to_owned());
+        let server = serve(vec![("/robots.txt", vec![robots]), ("/a", vec![html()])]).await;
+        let (_, content_type, body) = local(false)
+            .get(&format!("{}/a", server.base))
+            .await
+            .unwrap();
+        assert_eq!(content_type, "text/html");
+        assert!(String::from_utf8_lossy(&body).contains("Hello"));
+        assert_eq!(*server.paths.lock().unwrap(), vec!["/a".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn with_the_setting_on_robots_txt_is_honoured_and_cached() {
+        let robots = (
+            200,
+            Vec::new(),
+            "User-agent: *\nDisallow: /private\n".to_owned(),
+        );
+        let server = serve(vec![
+            ("/robots.txt", vec![robots]),
+            ("/private/a", vec![html()]),
+            ("/public", vec![html()]),
+        ])
+        .await;
+        let adapter = local(true);
+        let err = adapter
+            .get(&format!("{}/private/a", server.base))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, HostError::Denied(_)), "{err}");
+        adapter
+            .get(&format!("{}/public", server.base))
+            .await
+            .unwrap();
+        assert_eq!(
+            *server.paths.lock().unwrap(),
+            vec!["/robots.txt".to_owned(), "/public".to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn internal_addresses_are_refused_on_every_hop() {
+        // Without the test switch even loopback is refused.
+        let strict = InterimResearch::new(LiveConfig::default()).unwrap();
+        for url in [
+            "http://127.0.0.1:9/x",
+            "http://localhost/x",
+            "http://10.0.0.1/x",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::1]/x",
+            "http://[fd00:ec2::254]/x",
+            "http://user:secret@93.184.216.34/x",
+            "file:///etc/passwd",
+        ] {
+            let err = strict.get(url).await.unwrap_err();
+            assert!(matches!(err, HostError::Denied(_)), "{url}: {err}");
+        }
+        // A redirect to a metadata or private address is refused too.
+        let server = serve(vec![
+            (
+                "/to-metadata",
+                vec![(
+                    302,
+                    vec![(
+                        "location",
+                        "http://169.254.169.254/latest/meta-data/".into(),
+                    )],
+                    String::new(),
+                )],
+            ),
+            (
+                "/to-private",
+                vec![(
+                    301,
+                    vec![("location", "http://192.168.1.1/admin".into())],
+                    String::new(),
+                )],
+            ),
+        ])
+        .await;
+        let adapter = local(false);
+        for path in ["/to-metadata", "/to-private"] {
+            let err = adapter
+                .get(&format!("{}{path}", server.base))
+                .await
+                .unwrap_err();
+            assert!(matches!(err, HostError::Denied(_)), "{path}: {err}");
+        }
+        assert_eq!(server.paths.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn backs_off_on_429_and_503_with_retry_after() {
+        let server = serve(vec![
+            (
+                "/slow",
+                vec![
+                    (429, vec![("retry-after", "1".into())], String::new()),
+                    html(),
+                ],
+            ),
+            (
+                "/busy",
+                vec![(503, vec![("retry-after", "120".into())], String::new())],
+            ),
+        ])
+        .await;
+        let adapter = local(false);
+        let started = Instant::now();
+        adapter.get(&format!("{}/slow", server.base)).await.unwrap();
+        assert!(started.elapsed() >= Duration::from_millis(950));
+        // Retry-After beyond the cap fails at once rather than waiting.
+        let started = Instant::now();
+        let err = adapter
+            .get(&format!("{}/busy", server.base))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("503"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(
+            *server.paths.lock().unwrap(),
+            vec!["/slow".to_owned(), "/slow".to_owned(), "/busy".to_owned()]
+        );
     }
 }

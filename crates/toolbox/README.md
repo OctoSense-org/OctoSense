@@ -92,8 +92,15 @@ The result also carries `diagnostics`, `stats` (calls, model calls, pages, denie
 Backends:
 
 - **Fixture** (`fixture::FixtureBackend` and `fixture::FakeModel`): replays recorded searches and pages with their delays. The fake model is deterministic and extractive: it builds each point from an article's first sentence and cites it. Tests and evaluation use this backend.
-- **Interim live adapter** (`research::live`, feature `live`). **Interim**: it is replaced once the octos research engine (octos#2568) and metasearch (octos#2576) land. It fetches only free structured sources: the GDELT DOC API and configured RSS/Atom feeds. Fetching is polite. The User-Agent is `OctoSense-Toolbox/0.1 (…; +https://github.com/OctoSense-org/OctoSense)`. robots.txt is honoured on every host; when robots.txt is unreachable, the host is not fetched. Each host gets a minimum interval: 1 s, or 5 s for GDELT, as GDELT asks. Redirects are followed by hand and each hop is checked. Responses are capped at 2 MiB, with a 15 s timeout. Pages are read over plain HTTP, and `dom_smoothie` (MIT, a port of Mozilla's readability.js) extracts the main text. Pages that need JavaScript fail as partial results.
-  - **Google News RSS is off by default**: news.google.com's robots.txt disallows `/rss` for general agents, and the adapter honours it. With it turned on, each search reports it as refused.
+- **Interim live adapter** (`research::live`, feature `live`). **Interim**: it is replaced once the octos research engine (octos#2568) and metasearch (octos#2576) land. It fetches only free structured sources: Google News RSS search, the GDELT DOC API and configured RSS/Atom feeds. It never scrapes results pages. Pages are read over plain HTTP, and `dom_smoothie` (MIT, a port of Mozilla's readability.js) extracts the main text. Pages that need JavaScript fail as partial results; Google News article links are among them.
+  - **robots.txt is an operator setting, off by default.** OctoSense agents are personal assistants that read on behalf of one person, so robots.txt is not applied by default. That holds for feeds, reads a person starts and autonomous research alike. When it is off, robots.txt is never fetched. An operator turns it on with `LiveConfig { respect_robots: true, .. }` or `OCTOSENSE_TOOLBOX_ROBOTS=1` (read by `LiveConfig::from_env()`). When it is on, the rules are RFC 9309: our product token's group, else `*`; the longest match wins; they are cached per origin; an unreachable robots.txt means the host is not fetched.
+  - **Always on, whatever the setting:**
+    - an honest User-Agent: `OctoSense-Toolbox/0.1 (octos research for one person; +https://github.com/OctoSense-org/OctoSense)`;
+    - a minimum interval per host: 1 s, or 5 s for GDELT, as GDELT asks;
+    - backoff on 429 and 503: up to 2 retries, honouring `Retry-After` in seconds or as an HTTP date; a wait over 30 s fails at once;
+    - a 15 s timeout and a 2 MiB response cap;
+    - no cookies, credentials or proxies, and 401/402/403 are failures, so there is no paywall or login bypass;
+    - **SSRF blocking** on every fetch and every redirect hop. Loopback, private, link-local (including cloud-metadata 169.254.169.254 and `fd00:ec2::254`), unique-local, shared (CGNAT), multicast, reserved and IPv4-mapped forms are refused, both as URL literals and in DNS answers. A resolver filters the addresses the connection actually uses, so DNS rebinding cannot get past the check. `localhost` names are refused.
   - **Licenses**: `dom_smoothie`, `dom_query`, `gjson`, `html-escape` (MIT), `flagset` (Apache-2.0), `quick-xml` (MIT), and Mozilla's `cssparser` and `selectors` (MPL-2.0, unmodified; the workspace already links them through `scraper`). All of these are behind the `live` feature.
 
 ## Forks
@@ -160,10 +167,13 @@ All of these were run on 27 Sep 2026.
 
 ```sh
 cargo test --locked -p octosense-toolbox                     # 35 tests, fixtures only
-cargo test --locked -p octosense-toolbox --features live     # + adapter unit tests; the smoke test stays ignored
+cargo test --locked -p octosense-toolbox --features live     # 43 tests: + adapter tests on a local server (robots.txt
+                                                             # never requested by default; honoured when on; SSRF; backoff)
 cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
-# The live smoke test: GDELT plus the BBC and Guardian technology feeds, the
-# extractive stand-in model. On 27 Sep 2026: ready, 3 sources read, 15.2 s.
+# The live smoke test: Google News RSS, GDELT and the BBC and Guardian technology
+# feeds, the extractive stand-in model. On 27 Sep 2026: partial, 2 of 3 sources
+# read (the Google News link needs a browser), 48.6 s, of which the
+# search took 48.3 s (one slow provider; not diagnosed further).
 cargo test -p octosense-toolbox --features live --test live -- --ignored --nocapture
 # After changing a template or a fixture: rewrite the lock and the expected
 # results from the current output, then review the diff.
