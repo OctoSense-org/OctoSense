@@ -44,6 +44,7 @@ octosense-ai-host = { workspace = true }
 octosense-photos = { workspace = true, optional = true }
 octosense-reference = { workspace = true, optional = true }
 octosense-mail-service = { workspace = true, optional = true }
+octosense-news-service = { workspace = true, optional = true }
 # Rinx (Matrix chats and mini apps) as a native module (`app-rinx`). It gets
 # the assistant only through the injected service: no kernel, no credentials,
 # no AppCard.
@@ -63,6 +64,7 @@ makepad-aichat = { workspace = true, optional = true }
 octosense-reference = { workspace = true }
 octosense-app-hub-app = { workspace = true }
 octosense-mail-service = { workspace = true }
+octosense-news-service = { workspace = true }
 octosense-ai-host = { workspace = true, features = ["llm"] }
 makepad-sheets = { workspace = true }
 
@@ -78,7 +80,7 @@ mobile-apps = ["app-rinx", "app-reference", "app-sheets", "app-photos", "app-new
 octos-core = ["octosense-ai-host/octos-core"]
 # Rinx as a native module; its assistant is the shell's (implies `octos-core`).
 app-rinx = ["dep:rinx", "octos-core"]
-app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "octosense-ai-host/llm"]
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"]
 app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 # Native Photos, News and OctosMap modules; without them these are the system

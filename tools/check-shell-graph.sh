@@ -13,6 +13,8 @@
 #
 # - the shell's AI services are linked: octosense-ai-host, the octos kernel
 #   (octosense-kernel, formerly octosense-octos-core) and octosense-app-peers;
+# - with App Hub linked, so are the host services its Card runner offers the
+#   system apps (octosense-mail-service, octosense-news-service);
 # - AppCard's UI (octosense-appcard) is NOT linked without `app-appcard`;
 # - hosted Rinx is the library module only (feature "octosense-module"),
 #   never its standalone entry or a kernel of its own (Rinx ADR 0007);
@@ -33,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     -p|--package) package=(-p "$2"); shift 2 ;;
     --features-set) feature_sets+=("$2"); shift 2 ;;
     --target) targets+=("$2"); shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -83,6 +85,11 @@ for features in "${feature_sets[@]}"; do
     for pkg in octosense-ai-host "$kernel_pkg" octosense-app-peers; do
       linked "$pkg" "${args[@]}" || fail "$pkg is missing ($where)"
     done
+    if linked octosense-app-hub-app "${args[@]}"; then
+      for pkg in octosense-mail-service octosense-news-service; do
+        linked "$pkg" "${args[@]}" || fail "$pkg is missing with App Hub ($where)"
+      done
+    fi
     if [[ ",$features," != *",app-appcard,"* ]] && linked octosense-appcard "${args[@]}"; then
       fail "octosense-appcard is linked without app-appcard ($where)"
     fi

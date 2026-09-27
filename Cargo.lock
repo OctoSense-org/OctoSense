@@ -7379,6 +7379,7 @@ dependencies = [
  "octosense-mail-service",
  "octosense-maps",
  "octosense-news",
+ "octosense-news-service",
  "octosense-photos",
  "octosense-reference",
  "rinx",

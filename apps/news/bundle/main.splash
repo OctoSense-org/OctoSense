@@ -21,6 +21,9 @@ let reading = nil
 // Where stories come from: the host's `news` service when this shell offers
 // it (it fetches on a timer and keeps the stories, so News opens from its
 // cache), else this script's own fetch, as in shells without the service.
+// TODO(App-Hub#18): the shells register the service, but manifest.json does
+// not request `news` yet: App Hub's pinned admission does not know the
+// capability. Add it once App Hub is repinned past OctoSense-App-Hub#18.
 let use_service = false
 let service_waiting = 0
 let service_relist = false
