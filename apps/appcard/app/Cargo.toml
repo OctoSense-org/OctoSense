@@ -31,10 +31,10 @@ octosense-octos-core = { path = "../../../crates/octos-core" }
 # The crates inherit from their own workspace, which cargo reads out of the
 # checkout. Move octos-core and octos-cli together; a consumer that also
 # depends on octos must use the same rev, or the graph gets two octos.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f" }
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "552767dd50e16e08c6225a0cb252fe884e794084" }
 # OpenHarmony only: the core linked in-process by octosense-octos-core
 # (crates/octos-core), which names the same rev; move them together.
-octos-cli  = { git = "https://github.com/octos-org/octos.git", rev = "6ad76e5c1e659bdf10ec05ae869428b48edccf7f", default-features = false }
+octos-cli  = { git = "https://github.com/octos-org/octos.git", rev = "552767dd50e16e08c6225a0cb252fe884e794084", default-features = false }
 
 # Async / wire
 tokio              = { version = "1", features = ["rt", "macros", "net", "time", "sync"] }
