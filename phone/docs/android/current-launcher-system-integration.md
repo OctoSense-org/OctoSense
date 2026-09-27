@@ -5,6 +5,9 @@ to remain installed; temporary fixture grants are removed after testing.
 
 ## On the phone
 
+- **Back** closes what an app has open over itself first (a system app's
+  sign-in or add-model sheet), then leaves the app for where it was opened
+  from: Home, or Settings when Settings opened it. On Home it stays on Home.
 - Across unlocked apps, pull down from the physical **top-right edge** for
   **OctoSense Controls**, or the **top-left edge** for **OctoSense Notifications**.
   Close or Back returns to the app underneath. **System setup → System-wide
