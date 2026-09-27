@@ -157,6 +157,11 @@ impl Connector for WsConnector {
                     .map_err(|_| "bad token")?,
             );
             headers.insert("x-profile-id", profile.parse().map_err(|_| "bad profile")?);
+            // Bound sessions reopen in the workspace the server gave them.
+            headers.insert(
+                "x-octos-ui-features",
+                "session.workspace_cwd.v1".parse().map_err(|_| "bad features")?,
+            );
             let (socket, _) = tokio_tungstenite::connect_async(request)
                 .await
                 .map_err(|e| format!("could not reach the server: {e}"))?;
