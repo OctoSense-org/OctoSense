@@ -227,8 +227,13 @@ impl AiBus {
         let Some(mut up) = HostedUp::parse(json) else { return Route::Drop };
         // The sender's claim is never used: the link IS the identity.
         up.from = Some(Self::endpoint_of(client));
-        match &up.msg {
+        match &mut up.msg {
             ServiceUp::Register { manifest, .. } => {
+                // Another process cannot vouch for the person's consent: its
+                // destructive tools wait for the pane's own confirm card. Only
+                // in-process modules (`register_local`, trusted native code)
+                // keep a tool's claim that its own sheet confirms it.
+                manifest.clear_self_confirm();
                 self.manifests.insert(client, manifest.clone());
             }
             ServiceUp::Unregister => {
@@ -496,5 +501,93 @@ mod local_tests {
         assert!(bye.contains("Unregister") && bye.contains("\"m4\""));
         assert!(bus.local_clients().is_empty());
         assert!(bus.client_died(4).is_none());
+    }
+
+    #[test]
+    fn only_an_in_process_module_keeps_a_self_confirmed_tool() {
+        let send = || {
+            sheets().with_tool(
+                ToolDef::new("send", "Send the sheet.", r#"{"type":"object","properties":{}}"#, Risk::Destructive)
+                    .confirmed_by_app(),
+            )
+        };
+        let registered = |json: &str| match HostedUp::parse(json).expect("valid").msg {
+            ServiceUp::Register { manifest, .. } => manifest,
+            _ => panic!("expected a registration"),
+        };
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        // A module in this process: its own sheet is the one confirmation.
+        let local = registered(&bus.register_local(4, send()));
+        assert!(local.tool("send").unwrap().confirms_itself());
+        // A process client's claim is dropped before the pane sees it, and in
+        // the replay, so the pane confirms its destructive tools itself.
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: send(), port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom(5, &up.to_json()) else { panic!("expected ToPane") };
+        assert!(!registered(&json).tool("send").unwrap().confirms_itself());
+        let replay = bus.replay(AiBus::os_manifest(&[]));
+        assert!(registered(&replay[1]).tool("send").unwrap().confirms_itself(), "m4 keeps it");
+        assert!(!registered(&replay[2]).tool("send").unwrap().confirms_itself(), "w5 does not");
+    }
+
+    /// End to end through the pane's engine: a module's self-confirmed tool
+    /// reaches the module at once (its own sheet asks the person), while the
+    /// same claim from another process still gets the pane's confirm card.
+    #[test]
+    fn the_pane_skips_its_confirm_only_for_a_modules_self_confirmed_tool() {
+        use makepad_ai_services::engine::{EngineCore, EngineEvent, Model, ModelEvent, ServiceRegistry, ToolDefinition};
+        use makepad_ai_services::port::ServiceLink;
+        /// A model that asks for one call.
+        struct OneCall(Vec<ModelEvent>);
+        impl Model for OneCall {
+            fn label(&self) -> String {
+                "test".into()
+            }
+            fn configure(&mut self, _: &str, _: &[ToolDefinition]) -> Result<(), String> {
+                Ok(())
+            }
+            fn send_user(&mut self, _: &str, _: &str) {}
+            fn send_tool_result(&mut self, _: &str, _: &str, _: bool) {}
+            fn cancel(&mut self) {}
+            fn reset(&mut self) {}
+            fn poll(&mut self) -> Vec<ModelEvent> {
+                std::mem::take(&mut self.0)
+            }
+        }
+        let manifest = || {
+            sheets()
+                .with_tool(
+                    ToolDef::new("send", "Send the sheet.", r#"{"type":"object","properties":{}}"#, Risk::Destructive)
+                        .confirmed_by_app(),
+                )
+                .with_tool(ToolDef::new("delete", "Delete the sheet.", r#"{"type":"object","properties":{}}"#, Risk::Destructive))
+        };
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        let local = bus.register_local(4, manifest());
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: manifest(), port_tag: 0 } };
+        let Route::ToPane(process) = bus.on_custom(5, &up.to_json()) else { panic!("expected ToPane") };
+        for (frame, endpoint, tool, pane_confirms) in [
+            (&local, "m4", "send", false),
+            (&local, "m4", "delete", true),
+            (&process, "w5", "send", true),
+        ] {
+            let up = HostedUp::parse(frame).expect("valid registration");
+            let ServiceUp::Register { manifest, .. } = up.msg.clone() else { panic!("expected a registration") };
+            let registry = ServiceRegistry::new();
+            let (link, host) = ServiceLink::pair(manifest);
+            registry.register_as(link, EndpointId(endpoint.into()), "test", None).unwrap();
+            host.up.send(up).unwrap();
+            registry.pump();
+            while host.down.try_recv().is_ok() {}
+            let call = ModelEvent::ToolCall { call_id: "m1".into(), name: format!("sheets.{tool}"), args: "{}".into() };
+            let model = OneCall(vec![call, ModelEvent::TurnDone { tool_calls: 1 }]);
+            let mut core = EngineCore::new(registry, Box::new(model), None, 1);
+            core.send("do it", 0.0);
+            let events = core.pump(0.1);
+            let confirm = events.contains(&EngineEvent::Confirm { call_id: "m1".into() });
+            assert_eq!(confirm, pane_confirms, "{endpoint} {tool}: {events:?}");
+            let reached = std::iter::from_fn(|| host.down.try_recv().ok())
+                .any(|down| matches!(down.msg, ServiceDown::Call(ref c) if c.tool == tool));
+            assert_eq!(reached, !pane_confirms, "{endpoint} {tool}: the call reaches the app only without a card");
+        }
     }
 }
