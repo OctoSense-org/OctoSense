@@ -44,7 +44,7 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
     // Rinx: Matrix chats and mini apps. Its assistant is the shell's, given
-    // at creation (app_peers_host); it never starts a kernel of its own.
+    // at creation (octosense-ai-host); it never starts a kernel of its own.
     #[cfg(feature = "app-rinx")]
     out.push(&rinx::module::RINX_MODULE);
     #[cfg(any(feature = "app-reference", native_mobile))]
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn bundled_apps_open_without_catalog_files_or_child_processes() {
         use makepad_widgets::*;
-        let _one_rinx = crate::app_peers_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _one_rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let catalog = bundled_catalog();
         // AppCard is opt-in (`app-appcard`), not part of `mobile-apps`.
         let expected: &[&str] = if cfg!(feature = "app-appcard") {

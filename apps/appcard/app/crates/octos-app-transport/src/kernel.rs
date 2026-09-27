@@ -1,7 +1,7 @@
-//! Transport over the shell's octos kernel (`octosense-octos-core`).
+//! Transport over the shell's octos kernel (`octosense-kernel`).
 //!
 //! The kernel is a shell service: one per process, started on the first
-//! `octosense_octos_core::connect()` (`octos serve --stdio` as a child on
+//! `octosense_kernel::connect()` (`octos serve --stdio` as a child on
 //! desktop and Android, the canonical core in-process on OpenHarmony) and
 //! shared with every other consumer. This task holds one connection to it
 //! and speaks the same NDJSON JSON-RPC frames the stdio transport used to
@@ -21,7 +21,7 @@
 use std::sync::Arc;
 
 use octos_core::ui_protocol::RpcError;
-use octosense_octos_core::CloseReason;
+use octosense_kernel::CloseReason;
 use tokio::sync::mpsc;
 
 use crate::proto::{
@@ -85,7 +85,7 @@ async fn run(
     let mut shared = SharedState::new(cfg.cursor.clone(), persist);
     let mut attempt: u32 = 0;
     loop {
-        let mut conn = match octosense_octos_core::connect() {
+        let mut conn = match octosense_kernel::connect() {
             Ok(conn) => conn,
             Err(e) => {
                 log::error!("kernel: {e}");

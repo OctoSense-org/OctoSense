@@ -166,7 +166,7 @@ impl OctosUiAgent {
         let stdio_transport = config.local_kernel || cfg!(target_env = "ohos");
         // The agent's own runtime drives the transport task; the kernel
         // itself (a child, or on OpenHarmony the in-process core with its
-        // 8 MiB worker stacks) runs on octosense-octos-core's runtime.
+        // 8 MiB worker stacks) runs on octosense-kernel's runtime.
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .enable_all()

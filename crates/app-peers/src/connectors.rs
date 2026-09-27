@@ -3,11 +3,11 @@
 #[cfg(any(feature = "octos-core", feature = "ws"))]
 use crate::broker::{BoxFuture, Connector, Link};
 
-/// The shell's kernel (`octosense-octos-core`), or a kernel a standalone app
-/// owns through its own [`octosense_octos_core::Core`].
+/// The shell's kernel (`octosense-kernel`), or a kernel a standalone app
+/// owns through its own [`octosense_kernel::Core`].
 #[cfg(feature = "octos-core")]
 pub struct CoreConnector {
-    core: Option<octosense_octos_core::Core>,
+    core: Option<octosense_kernel::Core>,
     owned: bool,
 }
 
@@ -23,7 +23,7 @@ impl CoreConnector {
 
     /// A kernel this app owns: started on the first request, stopped by
     /// [`Connector::shutdown`] (and when its last connection leaves).
-    pub fn owned(core: octosense_octos_core::Core) -> Self {
+    pub fn owned(core: octosense_kernel::Core) -> Self {
         Self {
             core: Some(core),
             owned: true,
@@ -31,8 +31,8 @@ impl CoreConnector {
     }
 
     /// A kernel another party owns and shares (tests; a shell's own
-    /// [`octosense_octos_core::Core`] instance): never stopped from here.
-    pub fn shared(core: octosense_octos_core::Core) -> Self {
+    /// [`octosense_kernel::Core`] instance): never stopped from here.
+    pub fn shared(core: octosense_kernel::Core) -> Self {
         Self {
             core: Some(core),
             owned: false,
@@ -45,7 +45,7 @@ impl Connector for CoreConnector {
     fn available(&self) -> Result<(), String> {
         match &self.core {
             Some(core) => core.launch().map(|_| ()),
-            None => octosense_octos_core::launch().map(|_| ()),
+            None => octosense_kernel::launch().map(|_| ()),
         }
         .map_err(|e| e.to_string())
     }
@@ -53,7 +53,7 @@ impl Connector for CoreConnector {
     fn connect(&self) -> BoxFuture<'static, Result<Box<dyn Link>, String>> {
         let connection = match &self.core {
             Some(core) => core.connect(),
-            None => octosense_octos_core::connect(),
+            None => octosense_kernel::connect(),
         };
         Box::pin(async move {
             connection
@@ -74,7 +74,7 @@ impl Connector for CoreConnector {
 }
 
 #[cfg(feature = "octos-core")]
-struct CoreLink(octosense_octos_core::Connection);
+struct CoreLink(octosense_kernel::Connection);
 
 #[cfg(feature = "octos-core")]
 impl Link for CoreLink {

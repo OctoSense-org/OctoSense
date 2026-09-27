@@ -46,7 +46,7 @@ fn listed_pid(event: &TransportEvent) -> Option<u64> {
 async fn a_restarted_kernel_is_rejoined_and_the_session_reopened() {
     let dir = std::env::temp_dir().join(format!("octos-app-kernel-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    octosense_octos_core::configure(octosense_octos_core::Options::default().core_dir(&dir).program(fake_kernel()));
+    octosense_kernel::configure(octosense_kernel::Options::default().core_dir(&dir).program(fake_kernel()));
 
     let cfg = TransportConfig {
         base_url: Url::parse("http://127.0.0.1").unwrap(),
@@ -68,7 +68,7 @@ async fn a_restarted_kernel_is_rejoined_and_the_session_reopened() {
     let (first, _) = until(&mut events, listed_pid).await;
 
     // The providers changed: the shell restarts its kernel.
-    assert!(octosense_octos_core::restart());
+    assert!(octosense_kernel::restart());
     until(&mut events, |e| matches!(e, TransportEvent::ConnectionState(ConnectionState::Reconnecting { attempt: 1 })).then_some(())).await;
     let (_, between) = until(&mut events, |e| matches!(e, TransportEvent::ConnectionState(ConnectionState::Live)).then_some(())).await;
     assert!(
@@ -78,7 +78,7 @@ async fn a_restarted_kernel_is_rejoined_and_the_session_reopened() {
     commands.send(OutboundCommand::ListSessions).await.unwrap();
     let (second, _) = until(&mut events, listed_pid).await;
     assert_ne!(first, second, "a new kernel answers");
-    assert_eq!(octosense_octos_core::status().generation, 2);
+    assert_eq!(octosense_kernel::status().generation, 2);
 
     drop(commands);
     let _ = std::fs::remove_dir_all(dir);

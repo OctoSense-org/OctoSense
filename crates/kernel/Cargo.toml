@@ -1,4 +1,4 @@
-# octosense-octos-core — the shell's octos kernel (one per process).
+# octosense-kernel — the shell's octos kernel (one per process).
 #
 # The shell owns the octos agent kernel as a service: this crate resolves the
 # kernel's core dir (where the AI providers app's `llm` service writes
@@ -12,7 +12,7 @@
 # workspace take this crate as a plain path dependency. The empty
 # `[workspace]` below lets it test on its own from this directory.
 [package]
-name        = "octosense-octos-core"
+name        = "octosense-kernel"
 version     = "0.1.0"
 edition     = "2021"
 license     = "Apache-2.0"

@@ -63,7 +63,7 @@
 //! `config.llm` (primary and fallbacks) and the key env vars in
 //! `config.env_vars`. Keys go to the [`vault`]; every change restarts the
 //! shell's octos kernel (with the `octos-core` feature:
-//! `octosense_octos_core::restart()`, a no-op when none runs) and then calls
+//! `octosense_kernel::restart()`, a no-op when none runs) and then calls
 //! the shell's `on_changed` hook.
 use octosense_appstore::services::{close_sheet_later, HostService, Replier, ServiceCall, ServiceHost};
 use octosense_llm_config::{catalog, profile, qr, registry, Provider};
@@ -143,7 +143,7 @@ pub type OnChanged = Arc<dyn Fn() + Send + Sync>;
 #[derive(Clone, Default)]
 pub struct Options {
     /// The kernel's octos home, holding `profiles/_main.json`. `None`: the
-    /// shell's octos kernel's (`octosense_octos_core::core_dir()`, feature
+    /// shell's octos kernel's (`octosense_kernel::core_dir()`, feature
     /// `octos-core`), else `octosense_llm_config::profile::default_core_dir()`.
     pub core_dir: Option<PathBuf>,
     /// Where keys go. `None`: [`vault::platform`] for the core dir.
@@ -227,7 +227,7 @@ fn resolved_core_dir(options: &Options) -> PathBuf {
     let kernel: Option<PathBuf> = {
         #[cfg(feature = "octos-core")]
         {
-            octosense_octos_core::core_dir()
+            octosense_kernel::core_dir()
         }
         #[cfg(not(feature = "octos-core"))]
         {
@@ -246,7 +246,7 @@ fn resolved_core_dir(options: &Options) -> PathBuf {
 /// starts, so restart it (if it runs), then tell the shell.
 fn changed(on_changed: &Option<OnChanged>) {
     #[cfg(feature = "octos-core")]
-    octosense_octos_core::restart();
+    octosense_kernel::restart();
     if let Some(changed) = on_changed {
         changed();
     }
@@ -1028,7 +1028,7 @@ mod octos_core_tests {
     /// explicit dir still wins.
     #[test]
     fn the_profile_is_the_kernels_unless_the_shell_says_otherwise() {
-        if let Some(kernel) = octosense_octos_core::core_dir() {
+        if let Some(kernel) = octosense_kernel::core_dir() {
             assert_eq!(resolved_core_dir(&Options::default()), kernel);
         }
         let explicit = std::env::temp_dir().join("llm-explicit-core");
@@ -1039,6 +1039,6 @@ mod octos_core_tests {
         let flag = called.clone();
         changed(&Some(Arc::new(move || flag.store(true, std::sync::atomic::Ordering::SeqCst))));
         assert!(called.load(std::sync::atomic::Ordering::SeqCst));
-        assert!(!octosense_octos_core::status().running);
+        assert!(!octosense_kernel::status().running);
     }
 }
