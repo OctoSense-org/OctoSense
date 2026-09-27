@@ -63,7 +63,7 @@ public final class ThemeCatalog {
     }
     private ThemeCatalog(Context context) throws Exception {
         byte[] bytes;
-        try(InputStream stream=context.getAssets().open("makepad/octosense/resources/themes/mobile-presets.json");
+        try(InputStream stream=context.getAssets().open("makepad/octosense_shell/resources/themes/mobile-presets.json");
             ByteArrayOutputStream buffer=new ByteArrayOutputStream()) {
             byte[] part=new byte[4096]; int n;
             while((n=stream.read(part))!=-1) buffer.write(part,0,n);
