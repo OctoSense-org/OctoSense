@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
 dependencies = [
  "article-core",
  "libc",
@@ -8450,7 +8450,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8522,7 +8522,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=5cf70a822aadb0da626123affa67c814f6848b58#5cf70a822aadb0da626123affa67c814f6848b58"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
 dependencies = [
  "serde",
  "serde_json",
