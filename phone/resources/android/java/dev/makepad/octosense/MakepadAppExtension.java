@@ -223,6 +223,12 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
             offer(() -> emitUiMode(focused));
         };
         activity.getWindow().getDecorView().getViewTreeObserver().addOnWindowFocusChangeListener(settingsFocusListener);
+        // AI providers' "Choose image": the picked image's file comes back on
+        // the worker, like every other packet (Rust: llm_host.rs).
+        QrImagePickActivity.setListener((id,status,detail) -> {
+            Runnable report=() -> emit("qr.image.result",json("id",id,"status",status,"detail",detail));
+            if(!offer(report)) main.postDelayed(() -> offer(report),100);
+        });
         refreshCatalog();
         onIntent(activity.getIntent());
     }
@@ -498,6 +504,16 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
                         if(id instanceof Integer||id instanceof Long)settingsEntryDelivery.received(((Number)id).longValue());
                     }
                 }catch(JSONException malformed) { /* The retained entry waits for a valid receipt. */ }
+            });
+            return;
+        }
+        if("qr.image".equals(channel)) {
+            long id=0;
+            try {id=new JSONObject(payload).optLong("id",0);} catch(JSONException ignored) {}
+            final long pick=id;
+            main.post(() -> {
+                try {QrImagePickActivity.start(activity,pick);}
+                catch(Exception e) {offer(() -> emit("qr.image.result",json("id",pick,"status","error","detail","picker_unavailable")));}
             });
             return;
         }
@@ -1576,6 +1592,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        QrImagePickActivity.setListener(null);
         offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});
         if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();
         android.view.ViewTreeObserver focusObserver=activity.getWindow().getDecorView().getViewTreeObserver();

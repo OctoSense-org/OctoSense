@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "source": "../.sources/system-apps/apps",
-  "apps": ["news", "photos", "maps", "camera", "mail"],
+  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
   "assets": {
     "photos": { "photos": "apps/photos/resources/photos" }
   }
