@@ -38,6 +38,9 @@ pub struct AppInstance {
     shutdown: Option<Box<dyn FnOnce(&mut ScriptVm)>>,
     /// Results and publications the executor sent later.
     upstream: Receiver<ModuleUpstream>,
+    /// The instance's scoped assistant service (Rinx ADR 0007), when the
+    /// module declares and is granted `octos.*` services.
+    assistant: Option<crate::app_peers_host::Assistant>,
 }
 
 impl AppInstance {
@@ -120,6 +123,9 @@ impl ModuleHost {
             windows: Default::default(),
         };
         let vm_id = cx.alloc_splash_vm_with_network(false);
+        // The assistant is offered to THIS instance for the duration of its
+        // create only; the module takes it there or never gets it.
+        let assistant = crate::app_peers_host::offer(module, &scope);
         let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
             // The isolate came up with the stock theme; the WM's palette
             // retints it exactly as it retints a child process's.
@@ -130,6 +136,7 @@ impl ModuleHost {
             module.register(vm);
             module.create(vm, open, handles)
         });
+        crate::app_peers_host::withdraw(module, &scope);
         log!(
             "wm: module instance {}.{} for client {} in isolate {:?} (scope {})",
             module.id(),
@@ -150,6 +157,7 @@ impl ModuleHost {
                 executor: parts.executor,
                 shutdown: Some(parts.shutdown),
                 upstream,
+                assistant,
             },
         );
         Ok(())
@@ -169,6 +177,11 @@ impl ModuleHost {
             });
             instance.root.redraw(cx);
         }
+    }
+
+    /// The assistant service Home gave this instance, if any.
+    pub fn assistant_of(&self, client: ClientId) -> Option<&crate::app_peers_host::Assistant> {
+        self.instances.get(&client)?.assistant.as_ref()
     }
 
     pub fn is_module(&self, client: ClientId) -> bool {
@@ -285,6 +298,10 @@ impl ModuleHost {
         };
         if let Some(shutdown) = instance.shutdown.take() {
             cx.with_script_vm_id_trusted(instance.vm_id, |vm| shutdown(vm));
+        }
+        // Release the app's assistant leases; the shared kernel stays.
+        if let Some(assistant) = instance.assistant.take() {
+            assistant.release();
         }
         let vm_id = instance.vm_id;
         let label = format!("{}.{}", instance.module.id(), instance.instance_no);
