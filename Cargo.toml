@@ -4,7 +4,9 @@
 #   desktop/   the desktop packaging (package `octosense`)
 #   phone/     the Home app: Android, OpenHarmony and iOS packaging (package
 #              `octosense-home`; the APK keeps the dev.makepad.octosense id)
-#   crates/    shell services: kernel (octosense-kernel), app-peers, ai-host
+#   crates/    shell (octosense-shell: window manager, hosting, phone layer —
+#              both packages link it) and its services: ai-host, kernel,
+#              app-peers
 #   apps/      system apps and their host services, native modules, AppCard
 #
 # Every external dependency is pinned ONCE, below, in [workspace.dependencies];
@@ -21,6 +23,7 @@ members = [
     "crates/kernel",
     "crates/app-peers",
     "crates/ai-host",
+    "crates/shell",
     "apps/reference",
     "apps/news/native",
     "apps/photos/native",
@@ -65,7 +68,6 @@ makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev
 makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "6cf03859630761f5cb99ce7fcdfd8c30475d9ab8" }
 makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "6cf03859630761f5cb99ce7fcdfd8c30475d9ab8" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "6cf03859630761f5cb99ce7fcdfd8c30475d9ab8", default-features = false }
-makepad-photos = { git = "https://github.com/OctoSense-org/makepad.git", rev = "6cf03859630761f5cb99ce7fcdfd8c30475d9ab8", default-features = false }
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "6cf03859630761f5cb99ce7fcdfd8c30475d9ab8", default-features = false }
 # --- OctoScript (Octoscript 68f6a9df) and its Makepad runtime
 # (Octoscript-Makepad 6881fb6c, native-runtime.lock.json).
@@ -93,6 +95,7 @@ robius-open = { git = "https://github.com/project-robius/robius" }
 octosense-kernel = { path = "crates/kernel" }
 octosense-app-peers = { path = "crates/app-peers" }
 octosense-ai-host = { path = "crates/ai-host" }
+octosense-shell = { path = "crates/shell" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
@@ -174,7 +177,6 @@ makepad-app-module = { path = ".sources/makepad/libs/app_module" }
 makepad-wm-theme = { path = ".sources/makepad/libs/wm_theme" }
 makepad-map-nav = { path = ".sources/makepad/libs/map_nav" }
 makepad-sheets = { path = ".sources/makepad/apps/sheets" }
-makepad-photos = { path = ".sources/makepad/apps/photos" }
 makepad-aichat = { path = ".sources/makepad/apps/aichat" }
 # Rinx's article editor: the Markdown and math components.
 makepad-markdown = { path = ".sources/makepad/libs/markdown" }

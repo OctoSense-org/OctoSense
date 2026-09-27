@@ -718,7 +718,7 @@ mod tests {
     fn settings_entry_received_before_shell_start_is_retained_without_launching_or_mutating() {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut app=cx.with_vm(|vm|App::script_new(vm));
         let packet=|id,route|makepad_strict_json::obj(vec![("schema",Value::Int(1)),("id",Value::Int(id)),("route",s(route))]).to_json();
-        for (id,route) in [(1,"wifi"),(3,"display"),(2,"sound")] {assert!(app.android_event(&mut cx,&Event::AndroidIntegration{channel:"settings.entry".into(),payload:packet(id,route)}));}
+        for (id,route) in [(1,"wifi"),(3,"display"),(2,"sound")] {assert!(app.settings_android_early(&mut cx,&Event::AndroidIntegration{channel:"settings.entry".into(),payload:packet(id,route)}));}
         assert!(app.state.is_none()&&app.module_host.is_empty());assert_eq!(app.settings_runtime.entries.pending().unwrap().route,crate::settings_entry::EntryRoute::Display);
         app.settings_entry_tick(&mut cx);assert!(app.settings_runtime.entries.pending().is_some());
         app.settings_runtime.activity_resumed(Some(true));app.settings_entry_tick(&mut cx);assert!(app.state.is_none()&&app.module_host.is_empty());assert!(app.settings_runtime.entries.pending().is_some());
@@ -728,7 +728,7 @@ mod tests {
         use makepad_app_module::AppModule;
         use crate::{module_host::ModuleHost,settings_app::SETTINGS_MODULE,mobile_theme::Selection};
         let mut cx=Cx::new(Box::new(|_,_|{}));cx.with_vm(makepad_widgets::script_mod);
-        let mut app=cx.with_vm(|vm|App::script_new(vm));app.module_host=ModuleHost::default();
+        crate::install_ext();let mut app=cx.with_vm(|vm|App::script_new(vm));app.module_host=ModuleHost::default();
         app.module_host.apply_style(&mut cx,&Selection::default().sheet(crate::desktop::DesktopStyle::Android,false));
         app.module_host.create(&mut cx,1,&SETTINGS_MODULE,SETTINGS_MODULE.open_schema().empty_open().unwrap(),dvec2(400.,700.)).unwrap();
         let root=app.module_host.get(1).unwrap().root.clone();let vm=app.module_host.get(1).unwrap().vm_id;
