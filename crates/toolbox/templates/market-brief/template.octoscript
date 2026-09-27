@@ -1,0 +1,71 @@
+use mod.research
+use mod.std.array
+use mod.std.text
+
+// Market brief (adapted from the experiment's stock workflow, which read a
+// quote, a baseline and headlines concurrently): one news search per symbol,
+// all started together, the top articles per symbol read concurrently, then
+// one brief with citations. v1 has no quote method: prices appear only as
+// the cited sources state them.
+let searches = []
+for entry in request.symbols {
+    array.push(searches, research.search({topic: entry.name + " " + entry.symbol + " stock", language: request.search_language, limit: request.per_symbol, max_age_hours: request.max_age_hours}))
+}
+let symbols = []
+let reads = []
+let read_symbols = []
+let incomplete = false
+let index = 0
+for pending in searches {
+    let entry = request.symbols[index]
+    let found = try pending.await() catch nil
+    if found == nil {
+        incomplete = true
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: 0})
+    } else {
+        if found.source.partial {
+            incomplete = true
+        }
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: array.len(found.items)})
+        for item in found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_symbols, entry.symbol)
+        }
+    }
+    index = index + 1
+}
+
+let ids = []
+let sources = []
+let missing = 0
+index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, symbol: read_symbols[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let names = []
+for entry in request.symbols {
+    array.push(names, entry.name + " (" + entry.symbol + ")")
+}
+let task = "brief"
+if array.len(request.symbols) > 1 {
+    task = "compare"
+}
+let brief = nil
+if array.len(ids) > 0 {
+    let focus = "What recent news says about " + text.join(names, ", ") + ": developments and the risks the sources name. No price predictions or advice."
+    let resolved = try research.digest({task: task, language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    brief = resolved
+}
+let status = "ready"
+if incomplete || missing > 0 || array.len(ids) == 0 || brief == nil {
+    status = "partial"
+}
+{status: status, data: {symbols: symbols, language: request.language, brief: brief, sources: sources, missing: missing}}

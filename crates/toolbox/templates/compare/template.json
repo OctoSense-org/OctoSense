@@ -1,0 +1,42 @@
+{
+  "id": "compare",
+  "version": "1.0.0",
+  "title": "Compare two subjects",
+  "description": "Search the same aspect of two subjects together (two cities' weekend weather, two companies' news), read the results concurrently and write one comparison with citations. Without sources for both sides there is no comparison.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["subjects", "aspect", "language"],
+    "properties": {
+      "subjects": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "minLength": 1, "maxLength": 60}},
+      "aspect": {"type": "string", "minLength": 1, "maxLength": 80, "description": "What to compare, for example \"weekend weather\"."},
+      "language": {"type": "string", "minLength": 2, "maxLength": 16},
+      "search_language": {"type": "string", "minLength": 2, "maxLength": 16, "default": "en"},
+      "per_subject": {"type": "integer", "minimum": 1, "maximum": 3, "default": 2},
+      "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 720, "default": 72}
+    }
+  },
+  "modules": [{"module": "research", "methods": ["search", "article", "digest"]}],
+  "budget": {"max_calls": 9, "max_model_calls": 1, "max_pages": 8, "max_ms": 60000, "max_concurrency": 4},
+  "output": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["subjects", "aspect", "language", "comparison", "sources", "missing"],
+    "properties": {
+      "subjects": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}},
+      "aspect": {"type": "string"},
+      "language": {"type": "string"},
+      "comparison": {"description": "research.digest's result (task compare), or null without sources for both subjects."},
+      "sources": {"type": "array", "maxItems": 6, "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "subject", "title", "url", "source", "published_at", "evidence_sha256"],
+        "properties": {
+          "id": {"type": "string"}, "subject": {"type": "string"}, "title": {"type": "string"},
+          "url": {"type": "string"}, "source": {"type": "string"}, "published_at": {"type": "string"},
+          "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64}
+        }}},
+      "missing": {"type": "integer", "minimum": 0}
+    }
+  },
+  "provenance": true
+}

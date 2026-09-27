@@ -43,6 +43,8 @@ jobs:
     # crates/app-peers: the scoped assistant service and its broker against a
     # scripted kernel. The real-kernel tests need an `octos` binary
     # (OCTOS_CORE_TEST_KERNEL / OCTOS_APP_PEERS_TEST_KERNEL) and pass without.
+    # crates/toolbox: the system toolbox's workflow templates, on recorded
+    # fixtures (the live smoke test is #[ignore]d: it needs the network).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -51,7 +53,7 @@ jobs:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       # The workspace's [patch] tables name .sources/: prepare them even
       # though these crates do not build Makepad.
       - run: python3 tools/setup.py
@@ -70,6 +72,13 @@ jobs:
           cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws --no-deps -- -D warnings
       - name: AI providers config
         run: cargo test --locked -p octosense-llm-config
+      - name: System toolbox (workflow templates)
+        run: |
+          cargo fmt -p octosense-toolbox --check
+          cargo test --locked -p octosense-toolbox
+          cargo test --locked -p octosense-toolbox --features live
+          cargo clippy --locked -p octosense-toolbox --all-targets --no-deps -- -D warnings
+          cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
 
   apps:
     # macOS: the host services and AppCard link App Hub and Makepad, whose

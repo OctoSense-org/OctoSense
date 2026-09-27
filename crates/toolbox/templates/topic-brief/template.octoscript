@@ -1,0 +1,98 @@
+use mod.research
+use mod.std.array
+
+// Topic brief across languages: search terms per language (the topic, or its
+// translation), one search per language, a round-robin merge, the top N
+// articles read concurrently, then one digest with citations.
+
+// 1. Every translation starts before any is awaited.
+let translations = []
+for entry in request.languages {
+    if entry.translate {
+        array.push(translations, research.query({query: request.topic, language: entry.language}))
+    } else {
+        array.push(translations, nil)
+    }
+}
+
+// 2. Each language's search starts as soon as its terms are known.
+let searches = []
+let queries = []
+let index = 0
+for entry in request.languages {
+    let terms = request.topic
+    let pending = translations[index]
+    if pending != nil {
+        let translated = try pending.await() catch nil
+        if translated != nil {
+            terms = translated.query
+        }
+    }
+    array.push(queries, {language: entry.language, terms: terms})
+    array.push(searches, research.search({topic: terms, language: entry.language, limit: request.per_language, max_age_hours: request.max_age_hours}))
+    index = index + 1
+}
+let lists = []
+let incomplete = false
+index = 0
+for pending in searches {
+    let found = try pending.await() catch nil
+    if found == nil {
+        incomplete = true
+        array.push(lists, [])
+        queries[index].found = 0
+    } else {
+        if found.source.partial {
+            incomplete = true
+        }
+        array.push(lists, found.items)
+        queries[index].found = array.len(found.items)
+    }
+    index = index + 1
+}
+
+// 3. Round-robin across languages so every language is represented.
+let chosen = []
+for round in array.range(0, request.per_language) {
+    for items in lists {
+        if round < array.len(items) && array.len(chosen) < request.read_top {
+            let item = items[round]
+            if array.contains(chosen, item.id) == false {
+                array.push(chosen, item.id)
+            }
+        }
+    }
+}
+
+// 4. Read concurrently.
+let reads = []
+for id in chosen {
+    array.push(reads, research.article({id: id}))
+}
+let ids = []
+let sources = []
+let missing = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+}
+
+// 5. One digest in the reader's language, citing article ids.
+let brief = nil
+if array.len(ids) > 0 {
+    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
+    brief = resolved
+}
+let status = "ready"
+if incomplete || missing > 0 || array.len(chosen) == 0 {
+    status = "partial"
+}
+if array.len(ids) > 0 && brief == nil {
+    status = "partial"
+}
+{status: status, data: {topic: request.topic, language: request.language, queries: queries, brief: brief, sources: sources, missing: missing}}

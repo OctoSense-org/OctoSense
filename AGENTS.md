@@ -16,6 +16,7 @@
 | The octos kernel service | `crates/kernel/` | `cargo test --locked -p octosense-kernel`, `apps.yml` |
 | The octos kernel an Android APK bundles | `tools/kernel-artifact.py` | `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | Apps' access to the assistant | `crates/app-peers/` | its README, `apps.yml` |
+| The system toolbox's workflow templates (library, runner, forks, evaluation, `mod.research`) | `crates/toolbox/` (templates in `crates/toolbox/templates/<id>/`) | `cargo test --locked -p octosense-toolbox`, its README, `apps.yml` |
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
 | A host service (`mail`, `llm`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |
 | AppCard (opt-in) | `apps/appcard/` | [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md), `apps.yml` |

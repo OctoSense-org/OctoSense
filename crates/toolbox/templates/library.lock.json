@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "templates": {
+    "briefing": {
+      "version": "1.0.0",
+      "digest": "7b65f65f1ae19ea6d46c7aa9faf2c8661c7820cc2feb8bd76a55461b7aed1fd4"
+    },
+    "compare": {
+      "version": "1.0.0",
+      "digest": "9d7b57a17a8db4d516fdf7a1ba8b9e4cd1e4bccba34372a0de72b1fec438e0bd"
+    },
+    "market-brief": {
+      "version": "1.0.0",
+      "digest": "55130cc64c927ae6b082e783fbb412929f2c31c1682021bc599ae42ea21e7fb3"
+    },
+    "news-digest": {
+      "version": "1.0.0",
+      "digest": "07290bd7400d75a33021f9a53d0c35841cfd30a739732fea4f0281039733a11e"
+    },
+    "topic-brief": {
+      "version": "1.0.0",
+      "digest": "238475146da769d8576eb76d065c8cc5b298f50c0b5e29296af3ec644c4e79bb"
+    },
+    "weather-plan": {
+      "version": "1.0.0",
+      "digest": "4f72d89f5f72d79e6044da2f9b50543d52a5604a653477fb80b42476260d7644"
+    }
+  }
+}

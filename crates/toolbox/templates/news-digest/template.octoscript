@@ -1,0 +1,45 @@
+use mod.research
+use mod.std.array
+
+// News digest (from the splash-research experiment): translate the query if
+// asked, discover sources, read every article concurrently, then summarize
+// once in the requested language with citations by article id.
+let topic = request.topic
+if request.translate_query {
+    let translated = research.query({query: request.topic, language: request.search_language}).await()
+    topic = translated.query
+}
+let found = research.search({topic: topic, language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours}).await()
+
+// Start every read before awaiting any: the host runs them concurrently.
+let tasks = []
+for item in found.items {
+    array.push(tasks, research.article({id: item.id}))
+}
+let ids = []
+let sources = []
+let missing = 0
+for task in tasks {
+    let article = try task.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+}
+
+// One model call, only when there is something to digest.
+let digest = nil
+if array.len(ids) > 0 {
+    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids}).await() catch nil
+    digest = resolved
+}
+let status = "ready"
+if missing > 0 || found.source.partial || array.len(found.items) == 0 {
+    status = "partial"
+}
+if array.len(ids) > 0 && digest == nil {
+    status = "partial"
+}
+{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing}}

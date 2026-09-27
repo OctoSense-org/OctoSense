@@ -1,0 +1,116 @@
+{
+  "name": "one-language-fails",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "es",
+        "translate": true
+      }
+    ],
+    "per_language": 2,
+    "read_top": 3,
+    "topic": "urban heat islands"
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "urban heat islands",
+        "language": "en",
+        "delay_ms": 50,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/en/cool-roofs",
+            "title": "Riverton paints 400 roofs white to cut summer heat",
+            "source": "Riverton Record",
+            "language": "en",
+            "published_at": "2026-09-19T07:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "islas de calor urbano",
+        "language": "es",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [],
+        "error": "provider unavailable"
+      }
+    ],
+    "pages": {
+      "https://example.invalid/en/cool-roofs": {
+        "text": "Riverton will paint 400 public roofs with reflective coating before next summer. The city estimates indoor temperatures in those buildings will drop by up to 3°C.",
+        "title": null,
+        "delay_ms": 80,
+        "error": null
+      }
+    },
+    "translations": {
+      "urban heat islands": "islas de calor urbano"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "data": {
+      "brief": {
+        "language": "en",
+        "points": [
+          {
+            "citations": [
+              "sc5bdf393ab2c"
+            ],
+            "text": "Riverton will paint 400 public roofs with reflective coating before next summer."
+          }
+        ],
+        "summary": "Sources: Riverton paints 400 roofs white to cut summer heat",
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 0,
+      "queries": [
+        {
+          "found": 1,
+          "language": "en",
+          "terms": "urban heat islands"
+        },
+        {
+          "found": 0,
+          "language": "es",
+          "terms": "islas de calor urbano"
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "4732c9d98a6c1c9a0cb913b3822eb41ec832f0946c3945fff6c344b6c546fc46",
+          "id": "sc5bdf393ab2c",
+          "language": "en",
+          "published_at": "2026-09-19T07:00:00Z",
+          "source": "Riverton Record",
+          "title": "Riverton paints 400 roofs white to cut summer heat",
+          "url": "https://example.invalid/en/cool-roofs"
+        }
+      ],
+      "topic": "urban heat islands"
+    }
+  }
+}

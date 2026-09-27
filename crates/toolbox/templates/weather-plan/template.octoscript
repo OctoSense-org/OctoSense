@@ -1,0 +1,55 @@
+use mod.research
+use mod.std.array
+
+// Weather plan (adapted from the experiment's weather workflow, which read a
+// forecast and air quality concurrently): search published forecasts and air
+// quality reports for the place at the same time, read them concurrently,
+// then write one plan with citations. Air quality is optional: without it
+// the plan is still made, marked partial.
+let forecast_search = research.search({topic: request.location + " weather forecast", language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours})
+let air_search = research.search({topic: request.location + " air quality", language: request.search_language, limit: 1, max_age_hours: request.max_age_hours})
+let forecast = forecast_search.await()
+let air = try air_search.await() catch nil
+
+let reads = []
+let kinds = []
+for item in forecast.items {
+    array.push(reads, research.article({id: item.id}))
+    array.push(kinds, "forecast")
+}
+if air != nil {
+    for item in air.items {
+        array.push(reads, research.article({id: item.id}))
+        array.push(kinds, "air_quality")
+    }
+}
+let ids = []
+let sources = []
+let missing = 0
+let index = 0
+let has_forecast = false
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        if kinds[index] == "forecast" {
+            has_forecast = true
+        }
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, kind: kinds[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let plan = nil
+if has_forecast {
+    let focus = request.activity + " in " + request.location + " over the next " + request.days + " days: which days suit it, what to do instead on bad days, and what to bring"
+    let resolved = try research.digest({task: "plan", language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    plan = resolved
+}
+let status = "ready"
+if air == nil || missing > 0 || has_forecast == false || plan == nil || forecast.source.partial {
+    status = "partial"
+}
+{status: status, data: {location: request.location, activity: request.activity, days: request.days, language: request.language, plan: plan, sources: sources, missing: missing}}

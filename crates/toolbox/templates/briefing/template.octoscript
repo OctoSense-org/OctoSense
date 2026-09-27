@@ -1,0 +1,61 @@
+use mod.research
+use mod.std.array
+use mod.std.text
+
+// Daily briefing (from the experiment's composition set, "briefing"): a few
+// topics searched together, the top articles of each read concurrently, one
+// briefing with a point or two per topic and citations.
+let searches = []
+for topic in request.topics {
+    array.push(searches, research.search({topic: topic, language: request.search_language, limit: request.per_topic, max_age_hours: request.max_age_hours}))
+}
+let topics = []
+let reads = []
+let read_topics = []
+let incomplete = false
+let index = 0
+for pending in searches {
+    let topic = request.topics[index]
+    let found = try pending.await() catch nil
+    if found == nil {
+        incomplete = true
+        array.push(topics, {topic: topic, found: 0})
+    } else {
+        if found.source.partial || array.len(found.items) == 0 {
+            incomplete = true
+        }
+        array.push(topics, {topic: topic, found: array.len(found.items)})
+        for item in found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_topics, topic)
+        }
+    }
+    index = index + 1
+}
+
+let ids = []
+let sources = []
+let missing = 0
+index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, topic: read_topics[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let briefing = nil
+if array.len(ids) > 0 {
+    let focus = "A briefing on: " + text.join(request.topics, "; ")
+    let resolved = try research.digest({task: "brief", language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    briefing = resolved
+}
+let status = "ready"
+if incomplete || missing > 0 || array.len(ids) == 0 || briefing == nil {
+    status = "partial"
+}
+{status: status, data: {topics: topics, language: request.language, briefing: briefing, sources: sources, missing: missing}}

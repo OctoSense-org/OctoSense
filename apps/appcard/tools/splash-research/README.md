@@ -1,5 +1,12 @@
 # Splash research experiment
 
+> **Now a library.** The news digest, weather, stock and composition workflows
+> here became the system toolbox's workflow templates in
+> [`crates/toolbox`](../../../../crates/toolbox/README.md) (`news-digest`,
+> `topic-brief`, `weather-plan`, `market-brief`, `briefing`, `compare`), run
+> by a Rust runner with forks and evaluation and no Python. This experiment
+> stays as history and as the measurements behind them.
+
 Three small workflow templates executed by the standalone Splash VM, with a
 bounded Rust host dispatching external tool promises concurrently. See the
 design (`docs/SPLASH-RESEARCH.md`, not in this repository) and

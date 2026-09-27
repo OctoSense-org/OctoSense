@@ -1,0 +1,61 @@
+use mod.research
+use mod.std.array
+
+// Compare (from the experiment's composition set, "compare"): the same
+// aspect of two subjects searched together, read concurrently, one
+// comparison with citations. Both sides are needed: a missing side leaves the
+// comparison out and marks the result partial.
+let first = request.subjects[0]
+let second = request.subjects[1]
+let first_search = research.search({topic: first + " " + request.aspect, language: request.search_language, limit: request.per_subject, max_age_hours: request.max_age_hours})
+let second_search = research.search({topic: second + " " + request.aspect, language: request.search_language, limit: request.per_subject, max_age_hours: request.max_age_hours})
+let first_found = try first_search.await() catch nil
+let second_found = try second_search.await() catch nil
+
+let reads = []
+let read_subjects = []
+let incomplete = false
+for side in [{subject: first, found: first_found}, {subject: second, found: second_found}] {
+    if side.found == nil {
+        incomplete = true
+    } else {
+        if side.found.source.partial {
+            incomplete = true
+        }
+        for item in side.found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_subjects, side.subject)
+        }
+    }
+}
+
+let ids = []
+let sources = []
+let covered = []
+let missing = 0
+let index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        if array.contains(covered, read_subjects[index]) == false {
+            array.push(covered, read_subjects[index])
+        }
+        array.push(sources, {id: article.id, subject: read_subjects[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let comparison = nil
+if array.len(covered) == 2 {
+    let focus = "Compare " + first + " and " + second + ": " + request.aspect
+    let resolved = try research.digest({task: "compare", language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    comparison = resolved
+}
+let status = "ready"
+if incomplete || missing > 0 || comparison == nil {
+    status = "partial"
+}
+{status: status, data: {subjects: request.subjects, aspect: request.aspect, language: request.language, comparison: comparison, sources: sources, missing: missing}}

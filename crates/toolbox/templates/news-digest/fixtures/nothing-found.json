@@ -1,0 +1,41 @@
+{
+  "name": "nothing-found",
+  "params": {
+    "language": "en",
+    "topic": "city infrastructure"
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "city infrastructure",
+        "language": "en",
+        "delay_ms": 20,
+        "partial": true,
+        "providers": [
+          "google-news-rss"
+        ],
+        "items": [],
+        "error": null
+      }
+    ],
+    "pages": {},
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "data": {
+      "digest": null,
+      "language": "en",
+      "missing": 0,
+      "sources": [],
+      "topic": "city infrastructure"
+    }
+  }
+}

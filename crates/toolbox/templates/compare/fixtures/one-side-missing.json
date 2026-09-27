@@ -1,0 +1,87 @@
+{
+  "name": "one-side-missing",
+  "params": {
+    "aspect": "weekend weather",
+    "language": "en",
+    "per_subject": 1,
+    "subjects": [
+      "Riverton",
+      "Villaserena"
+    ]
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Riverton weekend weather",
+        "language": "en",
+        "delay_ms": 40,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/riverton/weekend",
+            "title": "Riverton weekend: warm and dry",
+            "source": "Riverton Record",
+            "language": "en",
+            "published_at": "2026-09-19T20:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Villaserena weekend weather",
+        "language": "en",
+        "delay_ms": 35,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/riverton/weekend": {
+        "text": "Riverton expects a warm, dry weekend with highs of 25°C on both days.",
+        "title": null,
+        "delay_ms": 50,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "data": {
+      "aspect": "weekend weather",
+      "comparison": null,
+      "language": "en",
+      "missing": 0,
+      "sources": [
+        {
+          "evidence_sha256": "bdd14ef3ada0e55e8e227c0f9330cf7782fd051cb22f2280f15d1fd270898037",
+          "id": "s16ee544c78e9",
+          "published_at": "2026-09-19T20:00:00Z",
+          "source": "Riverton Record",
+          "subject": "Riverton",
+          "title": "Riverton weekend: warm and dry",
+          "url": "https://example.invalid/riverton/weekend"
+        }
+      ],
+      "subjects": [
+        "Riverton",
+        "Villaserena"
+      ]
+    }
+  }
+}
