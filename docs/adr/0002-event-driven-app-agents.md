@@ -60,7 +60,7 @@ Every app publishes a **tool manifest**: the operations that make sense for that
 - **Implemented where the capability lives.** Tools that need data, devices, network or secrets are implemented by the app's **host service** (native code; for example Mail's `list`, `read`, `draft_reply`, `send`), so a secret never reaches the model or the script. Tools that only reshape the app's own data may be implemented by the app itself.
 - **Registered with the kernel for the app's peer.** The kernel offers the model exactly these tools (plus the few generic ones the manifest names, such as research or `glance.publish`) and routes each call to its implementation, with the calling peer's identity. Results are structured, size-capped and recorded in the run's audit log.
 - **Callers.** The app's own agent always. The **system agent** and **other apps' agents** only where the host grants it, and only the tools the app marks as shareable (for example a Calendar `free_busy` Read tool for a travel app). The person's "Ask anything" assistant calls them the same way, so a request and a background run use one surface.
-- **Risk decides supervision.** Read and in-app Act run unattended. An outward or destructive tool (send, post, share, buy, delete) called without a person present does not run: it becomes a **confirmation card** with the exact arguments, and runs when the person approves.
+- **Risk decides supervision.** Read and in-app Act run unattended. An outward or destructive tool (send, post, share, buy, delete) called without a person present does not run: it becomes an **approval request** in the app's conversation (section 10), with the exact arguments, and runs only when the person approves there.
 
 ### 5. Deterministic collection, LLM thinking
 
@@ -102,7 +102,22 @@ App agents publish; the shell stores; the **system agent ranks and trims**. It s
 
 Each run records what it distilled into the **app's memory namespace** (octos Recall tier) through a memory ingestion call. Promotion into shared user memory (for example, an appointment other apps should know about) happens by an explicit rule in the app's `AGENT.md`, or with the person's approval.
 
-### 10. What an autonomous app agent may do
+### 10. People talk to an app's agent inside the app
+
+Every app with an agent gets a **built-in conversation with its own agent**, drawn by the shell (the same component in every app, like a host sheet) and backed by the app's peer: the same context, history, memory, `AGENT.md`, skills and tools. It is where the person steps into the loop:
+
+- **Approvals.** When a background run reaches an outward or destructive tool, it pauses and posts an **approval request** into the app's conversation: what it wants to do, the exact arguments (the reply text, the event change, the recipients), why, and what happens if the person declines. The person can **approve, edit the arguments, or decline**; the run continues from where it paused, or stops and records the decision. Requests expire, and an expired request is declined.
+- **Questions.** An agent that cannot decide on its own (which of two meetings to keep, which topic the person meant) asks in the conversation instead of guessing, and the run waits or continues without that step, as its `AGENT.md` says.
+- **Follow-ups and steering.** The person can ask about a card ("why is this here?", "tell me more"), correct the agent ("less of this topic"), or change what it collects. Corrections become data (topics, filters, preferences) or memory, not edits to `AGENT.md`.
+- **One thread per run.** Each background run that needs the person has its own thread, so its card, the approval and the outcome stay together.
+
+**Where requests surface.** A pending approval shows on the app's glance card ("Needs you: approve reply to Alice") and as a notification; tapping either opens the app at that thread. Approving in the conversation is the only way an outward or destructive tool runs; a card or notification never approves on its own. The system agent may batch and order pending requests across apps, but it never approves on the person's behalf.
+
+**Person present versus absent.** With the person in the conversation, the agent may propose an outward action and run it after the person's explicit confirmation there. Without the person, it only queues the request. The approval record (request, arguments, decision, time) goes into the run's audit log.
+
+**Built on the UI Protocol.** The conversation uses the kernel's existing approval and question messages over the app peer's context, so octos, the shell's conversation component and other clients (octoscode-web, the TUI) handle approvals the same way.
+
+### 11. What an autonomous app agent may do
 
 Least privilege, declared by the app, checked by App Hub, granted by the host, enforced by the kernel on every call:
 
@@ -113,7 +128,7 @@ Least privilege, declared by the app, checked by App Hub, granted by the host, e
 | **Files** | only the app's folder | app jail and the kernel's per-app workspace |
 | **Memory** | only `app/<app>/…`; promotion by rule or approval | kernel memory namespaces |
 | **Secrets** | none; keys and passwords stay in host services | host services |
-| **Risk** | each tool declares Read, Act or Destructive. Read and in-app Act run unattended; anything outward (send, post, share, buy, delete) becomes a **confirmation card** | kernel approval gate |
+| **Risk** | each tool declares Read, Act or Destructive. Read and in-app Act run unattended; anything outward (send, post, share, buy, delete) pauses as an **approval request** in the app's conversation, surfaced on its card and as a notification | kernel approval gate; the app's conversation |
 | **Model** | chosen by the host from the person's providers to meet the app's declared requirements; policy may lower the tier or force local models; the person may override | host, system agent, Settings |
 | **Budgets** | tokens, run time, research depth, browser pages, runs per day, Wi-Fi/charging conditions | system agent and kernel limits |
 | **Output** | cards only through `glance.publish`, only L0/L1, checked and pinned | shell |
@@ -139,7 +154,7 @@ app agent (app peer)
   ├─ decide what matters, using the app's own tools; gather more from allowed sources
   ├─ write findings → sys.digest source; record in app memory
   ├─ L0 card, more than one style → render in card-host --remote → critique → revise
-  ├─ admit → glance.publish (outward actions become confirmation cards)
+  ├─ admit → glance.publish (outward actions pause as approval requests in the app's conversation)
   └─ propose changes to what is collected (data) → next run
 system agent: policy and budgets; rank the glance screen; cross-app insights
 ```
@@ -166,7 +181,7 @@ system agent: policy and budgets; rank the glance screen; cross-app insights
 In order; each step usable on its own.
 
 1. **Kernel (octos):** host-registered tools per peer (schema, risk, routing to the host); enforce a peer's tool list and tool risk levels; peers own schedules; a host-authorised "wake peer with event" call; memory ingestion from runs.
-2. **Shell (`crates/ai-host`, `crates/app-peers`):** installing each app's `AGENT.md` and skills into its peer workspace; selecting each peer's model from the person's providers under policy (`peer/model/set`), with per-app override in Settings; background peer handles for host services under host policy; `events` from data services to peers; registering each app's tools with its peer and routing calls to the host service or the app; budgets, kill switch and audit log in Settings.
+2. **Shell (`crates/ai-host`, `crates/app-peers`):** the built-in per-app conversation (threads per run; approvals with approve, edit and decline; questions; expiry; deep links from cards and notifications); installing each app's `AGENT.md` and skills into its peer workspace; selecting each peer's model from the person's providers under policy (`peer/model/set`), with per-app override in Settings; background peer handles for host services under host policy; `events` from data services to peers; registering each app's tools with its peer and routing calls to the host service or the app; budgets, kill switch and audit log in Settings.
 3. **App Hub:** the bundle gains `AGENT.md`, the app's skills, its model requirements and its tool manifest (schemas, risk, background and shareable flags), and the manifest a background permission; admission checks and pins them.
 4. **Data services:** a common shape (collect, ledger, emit events) and the first services for the system apps that need them.
 5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
@@ -179,4 +194,5 @@ In order; each step usable on its own.
 - How the person reviews and edits an app's `AGENT.md` and what its data service collects.
 - How model requirements are expressed (a small closed vocabulary, or octos's model hints) and how the host breaks ties between providers.
 - Budget defaults per app, and how cost is shown.
-- Whether a card may carry a short-lived action (Act) or only open its app.
+- Whether a card may carry a short-lived action (Act) or only open its app's conversation.
+- How approvals behave across devices (approve on the phone a run that happened on the desktop).
