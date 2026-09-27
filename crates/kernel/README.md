@@ -1,7 +1,7 @@
 # octosense-kernel: the shell's octos kernel
 
 The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
-service**. The shell (OctoSense-ROM Home, OctoSense-Desktop) owns it; the
+service**. The shell (Home in `phone/`, the desktop in `desktop/`) owns it; the
 **AI providers** system app configures it through the `llm` host service;
 **AppCard**, and next Rinx's native mini-app host, connect to it. This crate
 is that service: one kernel per process, started on demand, shared,
@@ -88,30 +88,31 @@ Other functions: `core_dir()`, `home()`, `profile()`, `launch()` /
 
 ## Testing
 
+From the repository root:
+
 ```sh
-cd crates/octos-core
-cargo test                    # unit tests + the core against a stand-in kernel (python3)
+cargo test --locked -p octosense-kernel   # unit tests + the core against a stand-in kernel (python3)
 # The real kernel: a profile written by octosense-llm-config, session/open,
 # profile/llm/list, a provider change and a restart. Build octos at the rev
-# AppCard pins, then:
-OCTOS_CORE_TEST_KERNEL=/path/to/octos cargo test --test real_kernel -- --nocapture
+# the root Cargo.toml pins, then:
+OCTOS_CORE_TEST_KERNEL=/path/to/octos cargo test -p octosense-kernel --test real_kernel -- --nocapture
 ```
 
 Build the kernel for that test (and for an Android APK, with the NDK and
-`--target aarch64-linux-android`) from octos-org/octos at the rev in
-`apps/appcard/app/Cargo.toml`:
+`--target aarch64-linux-android`) from octos-org/octos at the rev in the root
+`Cargo.toml` `[workspace.dependencies]`:
 
 ```sh
 cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
 ```
 
-CI: `.github/workflows/octos-core.yml` (this crate) and
-`.github/workflows/appcard.yml` (AppCard, which links it).
+CI: `.github/workflows/apps.yml` (the `services` job tests this crate; the
+`apps` job builds AppCard, which links it).
 
 ## One octos
 
 On OpenHarmony this crate links `octos-cli` from git octos-org/octos at the
-one rev AppCard pins (`a6ea8505`). Move the two together. A workspace that
-builds it for OpenHarmony also needs AppCard's `nix` patch (octos rev
-`18fcd3f1`, see `apps/appcard/app/Cargo.toml`). On every other target it
+one rev the root `Cargo.toml` pins for every octos crate (`a6ea8505`). A
+workspace that builds it for OpenHarmony also needs the `nix` patch (octos
+rev `18fcd3f1`, see the root `Cargo.toml` `[patch.crates-io]`). On every other target it
 links no octos crate at all: the kernel is a separate binary.

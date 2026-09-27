@@ -5,7 +5,7 @@ This document adds no new phone validation, tracing session, hook installation
 or device configuration change. Exact event availability and decoded-method
 coverage must be checked on the target ROM.
 
-Related: [ADR 0001](../adr/0001-hybrid-android-launcher-and-system-bridge.md),
+Related: [ADR 0001](../../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md),
 [system integration](system-integration-plan.md), and
 [performance measurement contract](performance-plan.md).
 

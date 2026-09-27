@@ -85,6 +85,6 @@ Java/repository Settings checks. Its standalone ARM64 development APK `202609254
 has been built and signed. At that revision, installation and Android acceptance were blocked
 by the session's restricted ADB access. The source inventory
 and exact validation scope are recorded in
-[the migration inventory](../android/settings-octoscript-logic-inventory.md).
+[the migration inventory](../../../phone/docs/android/settings-octoscript-logic-inventory.md).
 PR #21's subsequent main rebase and validation are recorded separately there;
 the original APK is not acceptance evidence for the rebased source.

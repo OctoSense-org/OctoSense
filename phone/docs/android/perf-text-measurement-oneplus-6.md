@@ -29,7 +29,7 @@ remain off by default.
 
 ## Method and measured results
 
-Use the existing `home/scripts/measure_android_frames.py` harness with
+Use the existing `phone/scripts/measure_android_frames.py` harness with
 `--frame-markers --input-markers --seconds 2.1`, graph off, and
 `makepad.TRACE=phone.frames`. Match submitted frames to the shell's active scene
 markers and SurfaceFlinger's actual presentation times. Retain gaps within active

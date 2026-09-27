@@ -35,11 +35,11 @@
 如果还没有检出源码：
 
 ```sh
-git clone https://github.com/OctoSense-org/OctoSense-ROM.git
-cd OctoSense-ROM
+git clone https://github.com/OctoSense-org/OctoSense.git
+cd OctoSense/rom
 ```
 
-在仓库根目录运行下面的命令，把 `/absolute/path/to/rom-images` 替换成存放五个镜像的**绝对路径**。命令会生成 `manifest.json`，准备一个独立的临时目录，并启动仅本机可访问的 HTTP 服务。保持这个终端运行：
+在 `rom/` 目录运行下面的命令，把 `/absolute/path/to/rom-images` 替换成存放五个镜像的**绝对路径**。命令会生成 `manifest.json`，准备一个独立的临时目录，并启动仅本机可访问的 HTTP 服务。保持这个终端运行：
 
 ```sh
 (

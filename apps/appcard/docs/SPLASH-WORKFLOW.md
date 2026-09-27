@@ -2,7 +2,7 @@
 
 **2026-09-09 update:** For short Octos One research, the standalone Splash
 language can orchestrate deferred tool reads directly. The runnable
-[Splash research experiment](SPLASH-RESEARCH.md) uses bounded host concurrency
+Splash research experiment (`SPLASH-RESEARCH.md`, not in this repository) uses bounded host concurrency
 and small templates without a DOT planner. The historical recommendation below
 to keep DOT for orchestration concerns the long agent/report workflow; it is
 not a requirement for every app research task. `splash-workflow` durability
