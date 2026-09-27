@@ -53,7 +53,7 @@ visible until user action, so they do not need a fabricated dismissal timer.
 ## Reproducibility and acceptance
 
 `runtime-patches.lock.json` pins the combined
-`patches/runtime/makepad-settings.patch` against Makepad `cd812acd`. It
+`patches/runtime/makepad-settings.patch` against Makepad `d0a9def5` (rebased from `cd812acd`, same line changes). It
 adds Settings accessibility and IME changes on top of the upstream contained-app runtime. An independent Git index reconstruction
 verifies the complete patched tree before APK packaging.
 
