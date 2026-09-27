@@ -140,8 +140,8 @@ registers at startup ([src/llm_host.rs](src/llm_host.rs)):
   it); on Android the keys are in that app-private profile, since octos
   reads them there;
 - on Android the import sheet can **scan** a provider QR with the camera
-  (Makepad's `cx.show_qr_scanner()`, carried as a stacked runtime patch until
-  the runtime includes makepad#31) or read one from a **chosen image**
+  (Makepad's `cx.show_qr_scanner()`, makepad#31, in the runtime since
+  `d0a9def5`) or read one from a **chosen image**
   (`QrImagePickActivity`: the system picker, the bytes handed over in a
   private cache file on the `qr.image.result` packet); elsewhere it takes a
   pasted code;
@@ -161,7 +161,7 @@ by the default `app-hub` feature and on every mobile build. The **Preview
 catalog** switch shows the built-in apps while the live catalog is empty.
 
 See the crate's
-[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/3e993d4c596560c42f011b2fd00bd40dbcac7cc5/crates/app-hub-app/README.md)
+[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md)
 at the pinned revision and the [native design evidence](docs/design/app-hub/README.md).
 App authors start with
 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).

@@ -34,7 +34,7 @@ OctoSense 是运行在操作系统之上的 Agent 交互 Shell，基于 [Makepad
 | `home/docs/` | Home 的 ADR、Android 与性能记录、设计笔记 |
 | `home/*.lock.json`、`home/system-apps.json` | 源码版本锁定和系统应用选择（见[版本固定与更新](#版本固定与更新)） |
 | `vendor/octosense/` | ROM 产品层：makefile、权限、资源覆盖、sepolicy、系统 agent |
-| `patches/` | LineageOS 与内核补丁；当 `home/runtime-patches.lock.json` 列出 Makepad 补丁时，`patches/runtime/` 存放该补丁（目前为 Settings 补丁，以及叠加其上的二维码扫描补丁） |
+| `patches/` | LineageOS 与内核补丁；当 `home/runtime-patches.lock.json` 列出 Makepad 补丁时，`patches/runtime/` 存放该补丁（目前为 Settings 补丁） |
 | `scripts/` | Home 构建、ROM 产物准备、构建、刷机、发布和手机检查 |
 | `web-installer/` | 面向 OnePlus 6 的 WebUSB 安装器（本地开发预览版） |
 | `docs/` | ROM 的 ADR，以及构建、刷机、更新和验证记录 |
@@ -60,7 +60,7 @@ python3 scripts/setup-home.py              # check out every pin into .sources/
 python3 scripts/setup-home.py --check --cargo
 ```
 
-setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本（并应用 `home/runtime-patches.lock.json` 列出的经过审查的 Makepad 补丁；目前为 Settings 补丁，以及叠加其上的二维码扫描补丁），并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
+setup 会把 OctoSense-System-Apps、OctoScript-Makepad、Makepad 和 OctoScript 检出到锁定的版本（并应用 `home/runtime-patches.lock.json` 列出的经过审查的 Makepad 补丁；目前为 Settings 补丁），并且不会改动存在本地修改的检出。`--update` 把干净的检出移动到新的锁定版本；`--check` 不做任何修改，只要有检出与锁定不符就失败；`--cargo` 还会拒绝依赖图中出现第二份核心 Makepad crate。
 
 ### 在桌面上运行 Home
 
@@ -195,7 +195,7 @@ scripts/stage-forks.sh /path/to/lineage-tree  # apply vendor/octosense and stage
 | `home/native-apps.lock.json` | OctoSense-System-Apps 的版本（`.sources/system-apps`） |
 | `home/system-apps.json` | 包含哪些系统应用，以及 Home 为它们挂载的资源 |
 | `home/native-runtime.lock.json` | OctoScript-Makepad 的版本；其 `runtime.json` 指定 Makepad 与 OctoScript |
-| `home/runtime-patches.lock.json` | 运行时之上经过审查的 Makepad 补丁（基础版本、SHA-256、应用后的 tree）；目前记录 Settings 补丁和叠加的二维码扫描补丁（`stacked`） |
+| `home/runtime-patches.lock.json` | 运行时之上经过审查的 Makepad 补丁（基础版本、SHA-256、应用后的 tree）；目前只记录 Settings 补丁 |
 | `home/Cargo.toml`、`home/Cargo.lock` | Makepad 的 `rev`（必须与运行时一致）、App Hub 的 `rev`、`nix` 使用的 octos `rev`（`18fcd3f1`）；lock 文件还固定了 octos 本身（`6ad76e5c`，即 OctoSense-System-Apps 固定的版本），`build-home.sh` 用它构建手机上的内核 |
 | `home/upstream/makepad.json` | 从 Makepad 导入的窗口管理器源码的来源记录 |
 
@@ -203,7 +203,7 @@ Cargo 清单保证**每种依赖只有一个来源**：`[patch]` 把所有 Makep
 
 - **System-Apps**。在 `home/native-apps.lock.json` 中写入新版本，运行 `python3 scripts/setup-home.py --update`；如果 `octos-app` 的依赖有变化，在 `home/` 下不带 `--locked` 构建一次，并提交 `home/Cargo.lock`。`home/Cargo.toml` 中 `nix` 的补丁应与 System-Apps 的 `apps/appcard/app/Cargo.toml` 中的保持一致。
 - **Makepad / OctoScript**。更新 `home/native-runtime.lock.json` 中的 OctoScript-Makepad 版本，把其中的 Makepad 版本同步到 `home/Cargo.toml` 和 `home/apps/*/Cargo.toml` 的每个 `rev = "…"`，并对运行时补丁（如有）做 rebase 或删除。任何不一致都会让 `setup-home.py --check --cargo` 失败。完整流程见 [home/docs/makepad-fork.md（英文）](home/docs/makepad-fork.md#adopting-a-fork-revision)。
-- **运行时补丁**。运行时的 Makepad（main `cd812acd`）已包含 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）。`patches/runtime/makepad-settings.patch` 在此基础上保留 Settings 的输入、无障碍和渲染修复。`patches/runtime/makepad-qr-scanner.patch` 叠加在它之上（同一条目中的 `stacked`，按顺序应用；`tree` 是两者应用后的结果）：[makepad#31](https://github.com/OctoSense-org/makepad/pull/31) 的 platform 与打包部分，即 AI 提供商使用的相机二维码扫描 API。#31 已合入 makepad main，但尚未进入运行时版本；运行时包含它之后，删除该 stacked 条目和补丁文件。如果某个修复必须先于运行时发布上线，把补丁放进 `patches/runtime/`，并在 `home/runtime-patches.lock.json` 中记录为 `makepad` 条目；setup 应用补丁后将其保留为已暂存状态，`--check` 只接受记录中的那个 tree。
+- **运行时补丁**。运行时的 Makepad（main `d0a9def5`，OctoScript-Makepad `99c1e5ee`）已包含 [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)（隔离运行的脚本应用）和 [makepad#31](https://github.com/OctoSense-org/makepad/pull/31)（AI 提供商使用的相机二维码扫描 API）。`patches/runtime/makepad-settings.patch` 在此基础上保留 Settings 的输入、无障碍和渲染修复，是唯一的运行时补丁（条目可以在 `stacked` 下按顺序列出更多补丁）。如果某个修复必须先于运行时发布上线，把补丁放进 `patches/runtime/`，并在 `home/runtime-patches.lock.json` 中记录为 `makepad` 条目；setup 应用补丁后将其保留为已暂存状态，`--check` 只接受记录中的那个 tree。
 - **App Hub**。把 `octosense-app-hub-app` 的 `rev`（两处依赖声明）改为固定的 System-Apps 中 Mail 宿主服务为 `octosense-appstore` 引用的 App Hub 版本。两个 App Hub 版本意味着两个宿主服务注册表，Card 运行器将看不到 Mail 的服务。
 
 ## 测试与验证

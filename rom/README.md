@@ -41,7 +41,7 @@ The organisation overview is at
 | `home/docs/` | Home ADRs, Android and performance records, design notes |
 | `home/*.lock.json`, `home/system-apps.json` | Source pins and the system-app selection (see [Pins and updates](#pins-and-updates)) |
 | `vendor/octosense/` | ROM product layer: makefiles, permissions, overlays, sepolicy, the privileged agent |
-| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (currently the Settings integration, with the makepad#31 QR-scanner patch stacked on it) |
+| `patches/` | LineageOS and kernel patches; `patches/runtime/` holds a reviewed Makepad patch when `home/runtime-patches.lock.json` names one (currently the Settings integration) |
 | `scripts/` | Home builds, ROM staging, build, flash, release and phone checks |
 | `web-installer/` | WebUSB installer for the OnePlus 6 (local developer preview) |
 | `docs/` | ROM ADRs, build, flashing, update and validation records |
@@ -74,7 +74,7 @@ python3 scripts/setup-home.py --check --cargo
 
 Setup checks out OctoSense-System-Apps, OctoScript-Makepad, Makepad and
 OctoScript at their locked revisions (applying any reviewed Makepad patch
-`home/runtime-patches.lock.json` names, currently the Settings overlay with the QR-scanner patch stacked on it), and refuses to touch a checkout with local changes. `--update` moves clean
+`home/runtime-patches.lock.json` names, currently the Settings overlay), and refuses to touch a checkout with local changes. `--update` moves clean
 checkouts to new pins; `--check` changes nothing and fails unless every
 checkout matches its lock; `--cargo` also rejects a second copy of any core
 Makepad crate in the dependency graph.
@@ -315,7 +315,7 @@ transport and login screen.
 | `home/native-apps.lock.json` | OctoSense-System-Apps revision (`.sources/system-apps`) |
 | `home/system-apps.json` | Which system apps ship, and the assets Home mounts for them |
 | `home/native-runtime.lock.json` | OctoScript-Makepad revision; its `runtime.json` names Makepad and OctoScript |
-| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, SHA-256, resulting tree); currently the Settings overlay and the stacked QR-scanner patch |
+| `home/runtime-patches.lock.json` | Reviewed Makepad patches on top of the runtime (base revision, SHA-256, resulting tree); currently the Settings overlay |
 | `home/Cargo.toml`, `home/Cargo.lock` | Makepad `rev` (must equal the runtime's), App Hub `rev`, the octos `rev` used for `nix` (`18fcd3f1`); the lock also fixes octos itself (`6ad76e5c`, the rev OctoSense-System-Apps pins), which `build-home.sh` builds the phone's kernel from |
 | `home/upstream/makepad.json` | Provenance of the window-manager sources imported from Makepad |
 
@@ -336,17 +336,13 @@ services name the same App Hub revision, so the graph has one App Hub source.
   or drop any runtime patch. `setup-home.py --check --cargo` fails on any
   mismatch. The full procedure is in
   [home/docs/makepad-fork.md](home/docs/makepad-fork.md#adopting-a-fork-revision).
-- **Runtime patch.** The runtime's Makepad (main `cd812acd`)
-  includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
-  (contained script apps). `patches/runtime/makepad-settings.patch` adds the
-  Settings input, accessibility and renderer fixes on top.
-  `patches/runtime/makepad-qr-scanner.patch` is stacked on it (`stacked` in
-  the same entry, applied in order; `tree` is the result of both): the
-  platform and packager part of
-  [makepad#31](https://github.com/OctoSense-org/makepad/pull/31), the camera
-  QR scanner API AI providers uses. #31 is merged into makepad main but not
-  yet in a runtime release; drop the stacked entry and the file once the
-  runtime includes it. When a fix must ship
+- **Runtime patch.** The runtime's Makepad (main `d0a9def5`, OctoScript-Makepad
+  `99c1e5ee`) includes [makepad#30](https://github.com/OctoSense-org/makepad/pull/30)
+  (contained script apps) and [makepad#31](https://github.com/OctoSense-org/makepad/pull/31)
+  (the camera QR scanner API AI providers uses). `patches/runtime/makepad-settings.patch`
+  adds the Settings input, accessibility and renderer fixes on top; it is the
+  only runtime patch (an entry may list further patches under `stacked`,
+  applied in order). When a fix must ship
   ahead of a runtime release,
   put the patch in `patches/runtime/` and record it as a `makepad` entry in
   `home/runtime-patches.lock.json`; setup applies it and leaves it staged, and

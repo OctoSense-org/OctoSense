@@ -1,5 +1,5 @@
 diff --git a/draw/src/shader/draw_text.rs b/draw/src/shader/draw_text.rs
-index 24583be8..7cd8d164 100644
+index 24583be828cb1f76c814a1e0ce0e457a8e2933ad..7cd8d1647ae9140940f78bf0bf5b8d74ce11173f 100644
 --- a/draw/src/shader/draw_text.rs
 +++ b/draw/src/shader/draw_text.rs
 @@ -590,6 +590,20 @@ fn register_draw_text_slug(vm: &mut ScriptVm) {
@@ -227,7 +227,7 @@ index 24583be8..7cd8d164 100644
 +}
 diff --git a/platform/src/accessibility.rs b/platform/src/accessibility.rs
 new file mode 100644
-index 00000000..40e1aac9
+index 0000000000000000000000000000000000000000..40e1aac9f43842f44817415babf5d75c774729e1
 --- /dev/null
 +++ b/platform/src/accessibility.rs
 @@ -0,0 +1,29 @@
@@ -261,7 +261,7 @@ index 00000000..40e1aac9
 +    }
 +}
 diff --git a/platform/src/cx.rs b/platform/src/cx.rs
-index f011f4bc..de09102a 100644
+index f011f4bcc06af34f2bb1236fdf8ef75c3a8961e5..de09102a70b8a2e395b9d1fa11ca193eddd524d0 100644
 --- a/platform/src/cx.rs
 +++ b/platform/src/cx.rs
 @@ -67,6 +67,7 @@ pub struct Cx {
@@ -294,7 +294,7 @@ index f011f4bc..de09102a 100644
              mouse_cursor: Default::default(),
              null_texture,
 diff --git a/platform/src/event/event.rs b/platform/src/event/event.rs
-index 2ab3afaa..649d8918 100644
+index 7a9d273933cdee7d4a2713f740fb47e099a770e6..8938723e08e595dae11456d8f9e091cc2209f9cc 100644
 --- a/platform/src/event/event.rs
 +++ b/platform/src/event/event.rs
 @@ -217,6 +217,8 @@ pub enum Event {
@@ -323,7 +323,7 @@ index 2ab3afaa..649d8918 100644
              Self::TextRangeReplace(_) => 35,
              Self::TextCopy(_) => 36,
 diff --git a/platform/src/lib.rs b/platform/src/lib.rs
-index a310cd1f..a16cc32d 100644
+index a310cd1f6d2ce3280fb85e7c0dd75f54684a38a7..a16cc32dc7cc8dd8e797734f84ebae7e02ae8901 100644
 --- a/platform/src/lib.rs
 +++ b/platform/src/lib.rs
 @@ -111,6 +111,7 @@
@@ -335,7 +335,7 @@ index a310cd1f..a16cc32d 100644
  #[macro_use]
  mod app_main;
 diff --git a/platform/src/os/linux/android/android.rs b/platform/src/os/linux/android/android.rs
-index f397b03c..be61a1d7 100644
+index 0c8630f66badc559a37b1182c1a5060e2927ec2d..e14ec3cf01769de93f938fdf77a05441308492c1 100644
 --- a/platform/src/os/linux/android/android.rs
 +++ b/platform/src/os/linux/android/android.rs
 @@ -235,6 +235,21 @@ pub(crate) fn boost_render_thread() {
@@ -543,7 +543,7 @@ index f397b03c..be61a1d7 100644
              FromJavaMessage::ComposerSubmit { text } => {
                  // The native floating composer submitted text. Deliver it as a
                  // bare action and drain it *this tick* (post_action alone would
-@@ -1593,11 +1645,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1598,11 +1650,13 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                  self.handle_action_receiver();
              }
              FromJavaMessage::SafeAreaInsets {
@@ -557,7 +557,7 @@ index f397b03c..be61a1d7 100644
                  let new_insets = crate::event::SafeAreaInsets {
                      top,
                      right,
-@@ -1623,6 +1677,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
+@@ -1628,6 +1682,7 @@ pub(crate) fn handle_message(&mut self, msg: FromJavaMessage) {
                      }
                  }
              }
@@ -565,7 +565,7 @@ index f397b03c..be61a1d7 100644
              FromJavaMessage::Init(_) => {}
          }
      }
-@@ -2199,6 +2254,7 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2204,6 +2259,7 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
              let mut initial_params: Option<AndroidParams> = None;
              let mut initial_surface: Option<(*mut ndk_sys::ANativeWindow, i32, i32)> = None;
              let mut initial_physical_keyboard: Option<bool> = None;
@@ -573,7 +573,7 @@ index f397b03c..be61a1d7 100644
  
              let (window, width, height, android_params) = loop {
                  // Here use blocking method `recv` to reduce CPU usage during cold start.
-@@ -2206,6 +2262,10 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2211,6 +2267,10 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
                      Ok(FromJavaMessage::Init(params)) => {
                          initial_params = Some(params);
                      }
@@ -584,7 +584,7 @@ index f397b03c..be61a1d7 100644
                      Ok(FromJavaMessage::SurfaceCreated { window }) => {
                          // Bootstrap off the first SurfaceChanged so we have a
                          // real size. SurfaceCreated still hands us an acquired
-@@ -2249,7 +2309,8 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
+@@ -2254,7 +2314,8 @@ pub fn android_entry<F>(activity: *const std::ffi::c_void, startup: F)
                  }
  
                  if initial_params.is_some() && initial_surface.is_some() {
@@ -594,7 +594,7 @@ index f397b03c..be61a1d7 100644
                      let (window, width, height) = initial_surface.take().unwrap();
                      break (window, width, height, android_params);
                  }
-@@ -2723,6 +2784,10 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -2728,6 +2789,10 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                      self.os.timers.timers.remove(&timer_id);
                  }
                  CxOsOp::ShowTextIME(_area, _pos, config) => unsafe {
@@ -605,7 +605,7 @@ index f397b03c..be61a1d7 100644
                      // A focused `TextInput` re-issues `ShowTextIME` on every
                      // draw. Calling into Java each time thrashes the IME:
                      // `configure_keyboard` can restart the input connection,
-@@ -2740,38 +2805,14 @@ fn handle_platform_ops(&mut self) -> EventFlow {
+@@ -2745,38 +2810,14 @@ fn handle_platform_ops(&mut self) -> EventFlow {
                      }
                  },
                  CxOsOp::HideTextIME => unsafe {
@@ -646,7 +646,7 @@ index f397b03c..be61a1d7 100644
                  CxOsOp::ShareText(content) => unsafe {
                      android_jni::to_java_share_text(content);
                  },
-@@ -3695,6 +3736,7 @@ fn default() -> Self {
+@@ -3703,6 +3744,7 @@ fn default() -> Self {
              last_ime_height: 0.0,
              last_ime_visible: false,
              last_ime_config: None,
@@ -654,7 +654,7 @@ index f397b03c..be61a1d7 100644
              media: CxAndroidMedia::default(),
              display: None,
              surface_alive: false,
-@@ -3840,6 +3882,12 @@ pub struct CxOs {
+@@ -3848,6 +3890,12 @@ pub struct CxOs {
      /// real change. Reset to `None` on `HideTextIME` and when Java reports the
      /// keyboard closed.
      pub last_ime_config: Option<TextInputConfig>,
@@ -669,7 +669,7 @@ index f397b03c..be61a1d7 100644
      pub fullscreen: bool,
 diff --git a/platform/src/os/linux/android/android_ime.rs b/platform/src/os/linux/android/android_ime.rs
 new file mode 100644
-index 00000000..ea66e807
+index 0000000000000000000000000000000000000000..ea66e8075a19f73befc68137b3949a5970d89699
 --- /dev/null
 +++ b/platform/src/os/linux/android/android_ime.rs
 @@ -0,0 +1,63 @@
@@ -737,7 +737,7 @@ index 00000000..ea66e807
 +    }
 +}
 diff --git a/platform/src/os/linux/android/android_jni.rs b/platform/src/os/linux/android/android_jni.rs
-index d3ceb985..54dc9f90 100644
+index 93d15a63ed5639ab4aadd56689ce96d826732fc7..5179e8e95b1829d8913e24265b0649734a7e8338 100644
 --- a/platform/src/os/linux/android/android_jni.rs
 +++ b/platform/src/os/linux/android/android_jni.rs
 @@ -90,7 +90,10 @@ pub enum TouchPhase {
@@ -785,7 +785,7 @@ index d3ceb985..54dc9f90 100644
      // ---- posted by the buildtool's octos Java (composer overlay, deep links,
      // QR scanner, file picker, streaming download, runhtml card bridge) ----
      ComposerSubmit { text: String },
-@@ -270,6 +264,10 @@ pub enum FromJavaMessage {
+@@ -271,6 +265,10 @@ pub enum FromJavaMessage {
  }
  unsafe impl Send for FromJavaMessage {}
  
@@ -796,7 +796,7 @@ index d3ceb985..54dc9f90 100644
  static MESSAGES_TX: Mutex<Option<mpsc::Sender<FromJavaMessage>>> = Mutex::new(None);
  static INTEGRATION_PENDING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
  
-@@ -1028,6 +1026,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
+@@ -1029,6 +1027,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
      _: *mut jni_sys::JNIEnv,
      _: jni_sys::jobject,
  ) {
@@ -804,7 +804,7 @@ index d3ceb985..54dc9f90 100644
      send_from_java_message(FromJavaMessage::Resume);
  }
  
-@@ -1036,6 +1035,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
+@@ -1037,6 +1036,7 @@ fn init_simple_render_loop(device_refresh_rate: f32) {
      _: *mut jni_sys::JNIEnv,
      _: jni_sys::jobject,
  ) {
@@ -812,7 +812,7 @@ index d3ceb985..54dc9f90 100644
      send_from_java_message(FromJavaMessage::Pause);
  }
  
-@@ -1173,7 +1173,10 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+@@ -1174,7 +1174,10 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
  
          touches.push(TouchPoint {
              state: {
@@ -824,7 +824,7 @@ index d3ceb985..54dc9f90 100644
                      match action_masked {
                          0 | 5 => TouchState::Start,
                          1 | 6 => TouchState::Stop,
-@@ -1194,7 +1197,7 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
+@@ -1195,7 +1198,7 @@ pub extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnLongClick(
              time: time as f64 / 1000.0,
          });
      }
@@ -833,7 +833,7 @@ index d3ceb985..54dc9f90 100644
  }
  
  #[no_mangle]
-@@ -1268,8 +1271,10 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
+@@ -1269,8 +1272,10 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
      right: jni_sys::jfloat,
      bottom: jni_sys::jfloat,
      left: jni_sys::jfloat,
@@ -844,7 +844,7 @@ index d3ceb985..54dc9f90 100644
          top: top as f64,
          right: right as f64,
          bottom: bottom as f64,
-@@ -1277,6 +1282,15 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
+@@ -1278,6 +1283,15 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_surfaceOnSafeAreaInsets(
      });
  }
  
@@ -860,7 +860,7 @@ index d3ceb985..54dc9f90 100644
  #[no_mangle]
  extern "C" fn Java_dev_makepad_android_MakepadNative_onRenderLoop(
      _: *mut jni_sys::JNIEnv,
-@@ -1683,34 +1697,24 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
+@@ -1684,34 +1698,24 @@ extern "C" fn Java_dev_makepad_android_MakepadNative_onWebSocketError(
  }
  
  #[no_mangle]
@@ -910,7 +910,7 @@ index d3ceb985..54dc9f90 100644
  }
  
  unsafe fn jstring_to_string(env: *mut jni_sys::JNIEnv, java_string: jni_sys::jstring) -> String {
-@@ -2688,6 +2692,7 @@ pub unsafe fn to_java_configure_keyboard(config: &TextInputConfig) {
+@@ -2689,6 +2693,7 @@ pub unsafe fn to_java_configure_keyboard(config: &TextInputConfig) {
  
  /// Update IME text state for programmatic changes (Rust→Java)
  pub unsafe fn to_java_update_ime_text_state(
@@ -918,7 +918,7 @@ index d3ceb985..54dc9f90 100644
      full_text: &str,
      selection_start: i32,
      selection_end: i32,
-@@ -2695,15 +2700,16 @@ pub unsafe fn to_java_update_ime_text_state(
+@@ -2696,15 +2701,16 @@ pub unsafe fn to_java_update_ime_text_state(
      composing_end: i32,
  ) {
      let env = attach_jni_env();
@@ -940,7 +940,7 @@ index d3ceb985..54dc9f90 100644
          selection_end as jni_sys::jint,
          composing_start as jni_sys::jint,
 diff --git a/platform/src/os/linux/android/mod.rs b/platform/src/os/linux/android/mod.rs
-index a4a335df..8a4c7700 100644
+index a4a335dfe177ebb533e981ae67ca629926de4b02..8a4c77000e57822fb3674c4bcf7da82dede2ddc9 100644
 --- a/platform/src/os/linux/android/mod.rs
 +++ b/platform/src/os/linux/android/mod.rs
 @@ -14,3 +14,5 @@
@@ -950,7 +950,7 @@ index a4a335df..8a4c7700 100644
 +
 +pub mod android_ime;
 diff --git a/platform/src/os/linux/gl_sys.rs b/platform/src/os/linux/gl_sys.rs
-index 2a2afcf7..abb6e157 100644
+index 2a2afcf71d08a92711f678d9b2ac57eb3b8d3094..abb6e15749c61f61c74b566ab6fa4da87c1ae1b3 100644
 --- a/platform/src/os/linux/gl_sys.rs
 +++ b/platform/src/os/linux/gl_sys.rs
 @@ -405,7 +405,16 @@ macro_rules! gl_flush_error {
@@ -979,7 +979,7 @@ index 2a2afcf7..abb6e157 100644
                  loadfn,
                  TglGenVertexArrays,
 diff --git a/platform/src/os/linux/opengl.rs b/platform/src/os/linux/opengl.rs
-index 8e4e483c..7ddc0be2 100644
+index 8e4e483c65658bc3c58771e3a4f4adc5d551fcdb..7ddc0be291d4ae699ab0f6eb9c97e748d08644f9 100644
 --- a/platform/src/os/linux/opengl.rs
 +++ b/platform/src/os/linux/opengl.rs
 @@ -1669,6 +1669,10 @@ fn read_program_cache(
@@ -1064,7 +1064,7 @@ index 8e4e483c..7ddc0be2 100644
                          let mut filename = format!("{}/shader_{:08x}", cache_dir, shader_hash.0);
  
 diff --git a/platform/src/window.rs b/platform/src/window.rs
-index c763d850..b2b321cd 100644
+index c763d85011f5496c2ace021f2edc32534155eb1c..b2b321cd22918f922d575510a1e3f1d41e6617b6 100644
 --- a/platform/src/window.rs
 +++ b/platform/src/window.rs
 @@ -294,7 +294,7 @@ pub fn id_iter(&self) -> impl Iterator<Item = WindowId> + '_ {
@@ -1151,7 +1151,7 @@ index c763d850..b2b321cd 100644
      fn set_window_dpi_override_converts_every_in_window_metric() {
          let mut cx = test_cx();
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
-index cc3f25b9..9e6d0458 100644
+index c6e70c6fbdf341369ef87064c6f7f88aa5766e73..274d922b1b1dd38abe20d264170bbb73832950e0 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
 @@ -370,7 +370,7 @@ class MakepadSystemInsets {
@@ -1356,7 +1356,7 @@ index cc3f25b9..9e6d0458 100644
      }
  
      private void createApplicationExtension() {
-@@ -1588,6 +1662,26 @@ public class MakepadActivity
+@@ -1590,6 +1664,26 @@ public class MakepadActivity
          MakepadNative.activityOnStart();
      }
  
@@ -1383,15 +1383,15 @@ index cc3f25b9..9e6d0458 100644
      @Override
      protected void onResume() {
          super.onResume();
-@@ -1612,6 +1706,7 @@ public class MakepadActivity
-         }
+@@ -1616,6 +1710,7 @@ public class MakepadActivity
+         if (mQrScanning) closeQrScanner("interrupted");
          prepareSurfaceSnapshotOverlayForPause();
          super.onPause();
 +        if(view!=null) view.retireInputConnection();
          MakepadNative.activityOnPause();
          if (mApplicationExtension != null) mApplicationExtension.onPause();
          stopGpsLocationUpdates();
-@@ -2579,6 +2674,7 @@ public class MakepadActivity
+@@ -2603,6 +2698,7 @@ public class MakepadActivity
          runOnUiThread(new Runnable() {
              @Override
              public void run() {
@@ -1399,7 +1399,7 @@ index cc3f25b9..9e6d0458 100644
                  if (show) {
                      if (view == null || view.getInputMode() == MakepadSurface.INPUT_MODE_NONE) {
                          return;
-@@ -2623,17 +2719,16 @@ public class MakepadActivity
+@@ -2647,17 +2743,16 @@ public class MakepadActivity
          });
      }
  
@@ -1421,7 +1421,7 @@ index cc3f25b9..9e6d0458 100644
                          selStart,
                          selEnd,
                          composingStart,
-@@ -2997,16 +3092,19 @@ public class MakepadActivity
+@@ -3021,16 +3116,19 @@ public class MakepadActivity
  
                  if (action == MotionEvent.ACTION_DOWN) {
                      setSelectionHandlePosition(v, absX, absY);
@@ -1442,7 +1442,7 @@ index cc3f25b9..9e6d0458 100644
                      return true;
                  }
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
-index 10f38031..4df27905 100644
+index 10f380316be5b8f0c19829a74343f58b5fcd64ad..4df2790521b5fe61bd20607e9fca7177c1975109 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadInputConnection.java
 @@ -7,6 +7,7 @@ import android.os.Bundle;
@@ -1837,7 +1837,7 @@ index 10f38031..4df27905 100644
      }
  }
 diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
-index ecaaa84c..cc642e3b 100644
+index a63e3864aca222a41351d00b02edbf4b476f3512..daecd85096052eb2619905c5d3d2e5aaf322587c 100644
 --- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
 +++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadNative.java
 @@ -32,7 +32,8 @@ public class MakepadNative {
@@ -1881,7 +1881,7 @@ index ecaaa84c..cc642e3b 100644
      // Native floating chat composer (an Android view floating over the GL
      // surface) submitted its text — user tapped send or pressed IME "Send".
 diff --git a/widgets/src/animator.rs b/widgets/src/animator.rs
-index 5c190169..d88c3ea2 100644
+index 5c190169d9434d5915369716cd897813ad4565de..d88c3ea28d509b2568d279824d5f0ee31fd19aff 100644
 --- a/widgets/src/animator.rs
 +++ b/widgets/src/animator.rs
 @@ -627,7 +627,7 @@ pub fn play(
@@ -1946,10 +1946,10 @@ index 5c190169..d88c3ea2 100644
 +    }
 +}
 diff --git a/widgets/src/text_input.rs b/widgets/src/text_input.rs
-index 5b60547f..21095a01 100644
+index a3c1be2b459e79ac08bfca86e155cfcdab570b77..410f54d6a7778b91c527e2467f6bf4153485955f 100644
 --- a/widgets/src/text_input.rs
 +++ b/widgets/src/text_input.rs
-@@ -945,6 +945,13 @@ pub fn set_selection(&mut self, cx: &mut Cx, selection: Selection) {
+@@ -941,6 +941,13 @@ pub fn set_selection(&mut self, cx: &mut Cx, selection: Selection) {
          self.clear_composition();
          self.history.force_new_edit_group();
          self.draw_bg.redraw(cx);
@@ -1963,7 +1963,7 @@ index 5b60547f..21095a01 100644
      }
  
      pub fn cursor(&self) -> Cursor {
-@@ -2513,6 +2520,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+@@ -2509,6 +2516,14 @@ fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
              }
              return;
          }
@@ -1979,7 +1979,7 @@ index 5b60547f..21095a01 100644
              self.draw_bg.redraw(cx);
              self.draw_cursor.redraw(cx);
 diff --git a/widgets/src/view.rs b/widgets/src/view.rs
-index ad333ec3..fe70f06c 100644
+index ad333ec3e3cf83c623fbde95472827f983b10588..fe70f06c87b51334caa27c8e3fc026b98a09210b 100644
 --- a/widgets/src/view.rs
 +++ b/widgets/src/view.rs
 @@ -529,6 +529,11 @@ pub fn set_uniform(&self, cx: &Cx, uniform: LiveId, value: &[f32]) {

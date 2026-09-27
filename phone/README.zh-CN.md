@@ -78,14 +78,14 @@ octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosen
 AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（`apps/ai-providers/host-service`）编辑 octos 内核的 LLM 提供商，Home 在启动时注册该服务（[src/llm_host.rs](src/llm_host.rs)）：
 
 - 它写入的是内核的 profile，`<core 目录>/profiles/_main.json`（手机上是 `<数据目录>/octos-home/.octos`；`OCTOS_APP_CORE_DIR` 可以覆盖）；在 Android 上密钥就保存在这个应用私有的 profile 中，因为 octos 从这里读取；
-- 在 Android 上，导入面板可以用相机**扫描**提供商二维码（Makepad 的 `cx.show_qr_scanner()`，在运行时包含 makepad#31 之前以叠加的运行时补丁提供），也可以从**选择的图片**中读取（`QrImagePickActivity`：系统图片选择器，字节通过 `qr.image.result` 数据包中的私有缓存文件交付）；其他平台上粘贴代码；
+- 在 Android 上，导入面板可以用相机**扫描**提供商二维码（Makepad 的 `cx.show_qr_scanner()`，即 makepad#31，自 `d0a9def5` 起包含在运行时中），也可以从**选择的图片**中读取（`QrImagePickActivity`：系统图片选择器，字节通过 `qr.image.result` 数据包中的私有缓存文件交付）；其他平台上粘贴代码；
 - 每次更改后，服务会重启正在运行的内核：使用方会重新连接到读取新 profile 的内核（AppCard 保留窗口和会话；正在进行的请求会失败并提示“the octos kernel restarted”）。
 
 ## App Hub
 
 App Hub（`apphub`）用于浏览已签名的 OctoSense 应用目录、搜索、查看应用详情、安装经过验证的应用包，并维护已安装应用的应用库。已安装的应用在隔离的 Card 实例（`card`）中打开，并在启动器和最近任务中单独显示。两者都来自 App Hub 的共享 Shell crate `octosense-app-hub-app`（OctoSense-App-Hub 中的 `crates/app-hub-app`），由默认的 `app-hub` feature 链接，且包含在所有移动端构建中。**预览目录**开关会在线上目录为空时显示内置应用。
 
-参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/3e993d4c596560c42f011b2fd00bd40dbcac7cc5/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
+参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
 
 ## 在桌面电脑上运行
 
