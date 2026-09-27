@@ -26,7 +26,7 @@ What exists (2026-09-27):
 
 Every app that asks for one gets **its own octos agent**: its app peer, with private context, history, workspace and memory. The app's agent does the thinking about that app's data and publishes that app's cards.
 
-The **system agent does not write prompts for app agents.** It is the supervisor: background-run policy, budgets, the kill switch, curating the glance screen, and the few cross-app insights no single app owns (for example, a delayed flight from one app combined with a meeting in another).
+The **system agent does not write prompts for app agents.** It is the supervisor and the outer loop: background-run policy, budgets, the kill switch, curating the glance screen, the few cross-app insights no single app owns (for example, a delayed flight from one app combined with a meeting in another), and **improving each app agent over time** from how it performs (section 11).
 
 App agents are **peers inside the shell's one kernel**, not separate kernel processes. Peers already separate workspace, memory and history, so one kernel gives the isolation. It avoids starting a 100 MB+ kernel per app on a phone, avoids copying provider keys into every app, and lets the system agent see what apps publish without a cross-kernel protocol. A separate kernel for an untrusted third-party app may be added later as a policy option, not the default.
 
@@ -46,7 +46,7 @@ What the agent does when woken comes from the app's **`AGENT.md`** and skills (s
 
 An app's agent is defined by the app, in its bundle, next to `manifest.json`, and pinned by App Hub with the rest of the app:
 
-- **`AGENT.md`**: the agent's role and instructions: what to do on each trigger, what matters in this app's data, the rubric its cards must meet, and its rules for promoting memory. Written by the app's author; the system agent does not compose or rewrite it.
+- **`AGENT.md`**: the agent's role and instructions: what to do on each trigger, what matters in this app's data, the rubric its cards must meet, and its rules for promoting memory. Written by the app's author and pinned; the system agent never edits it, but may add a local overlay on top of it (section 11).
 - **Skills**: octos skills (`SKILL.md` plus manifest) that package the app's multi-step procedures (for example "write a cited digest" or "triage the inbox"). They are installed into **that app's peer workspace only**, and a skill can use only the tools the app's manifest grants; it never widens them.
 - **Model requirements, not model names**: what the agent needs (tool calling, vision for card critique, long context, reasoning depth, cost tier, and *local only* for private data), optionally per task (a fast model for triage, a strong one for synthesis).
 
@@ -108,7 +108,7 @@ Every app with an agent gets a **built-in conversation with its own agent**, dra
 
 - **Approvals.** When a background run reaches an outward or destructive tool, it pauses and posts an **approval request** into the app's conversation: what it wants to do, the exact arguments (the reply text, the event change, the recipients), why, and what happens if the person declines. The person can **approve, edit the arguments, or decline**; the run continues from where it paused, or stops and records the decision. Requests expire, and an expired request is declined.
 - **Questions.** An agent that cannot decide on its own (which of two meetings to keep, which topic the person meant) asks in the conversation instead of guessing, and the run waits or continues without that step, as its `AGENT.md` says.
-- **Follow-ups and steering.** The person can ask about a card ("why is this here?", "tell me more"), correct the agent ("less of this topic"), or change what it collects. Corrections become data (topics, filters, preferences) or memory, not edits to `AGENT.md`.
+- **Follow-ups and steering.** The person can ask about a card ("why is this here?", "tell me more"), correct the agent ("less of this topic"), or change what it collects. Corrections become data (topics, filters, preferences) or memory, and feed the system agent's tuning of the app agent (section 11); they never edit the pinned `AGENT.md`.
 - **One thread per run.** Each background run that needs the person has its own thread, so its card, the approval and the outcome stay together.
 
 **Where requests surface.** A pending approval shows on the app's glance card ("Needs you: approve reply to Alice") and as a notification; tapping either opens the app at that thread. Approving in the conversation is the only way an outward or destructive tool runs; a card or notification never approves on its own. The system agent may batch and order pending requests across apps, but it never approves on the person's behalf.
@@ -117,7 +117,19 @@ Every app with an agent gets a **built-in conversation with its own agent**, dra
 
 **Built on the UI Protocol.** The conversation uses the kernel's existing approval and question messages over the app peer's context, so octos, the shell's conversation component and other clients (octoscode-web, the TUI) handle approvals the same way.
 
-### 11. What an autonomous app agent may do
+### 11. The system agent improves app agents (the outer loop)
+
+The system agent observes how each app agent performs and **tunes it**, without touching what App Hub pinned:
+
+- **Base and overlay.** The app's `AGENT.md` and skills stay the pinned **base**. The system agent maintains a per-app, per-device **overlay**: extra or refined instructions, examples, rubric weights, and adjusted skill variants, applied on top of the base when the app's peer runs. The overlay is versioned.
+- **What an overlay can never change:** tools, hosts, permissions, risk levels, budgets or the model policy. Those come from the manifest and host policy and are enforced by the kernel whatever the instructions say. An overlay also cannot remove the base's safety rules.
+- **What it learns from:** the run log (cost, time, failures, tool errors), card critique scores, and the person's behaviour: approvals and declines, edited arguments, questions asked, corrections ("less of this"), cards opened, kept or dismissed.
+- **Evaluate before adopting.** A proposed change is a diff against the current overlay. It is evaluated first, by replaying recent runs or by trying it on a share of new runs, and adopted only if its scores improve without raising cost beyond budget. Adopted changes can be rolled back automatically when later scores fall.
+- **Visible and reversible.** The person sees each app's overlay history in Settings and can revert or freeze it; larger changes (a new skill variant, a changed card rubric) can require the person's approval in the app's conversation.
+- **No instructions from data.** App data, web pages and messages are untrusted. The system agent writes overlays from metrics and the person's feedback, never by copying text from what the app agent read, so content cannot plant instructions (prompt injection).
+- **Upstream, optionally.** With the person's consent, an improvement can be offered to the app's author as a suggestion for the next version of the pinned base.
+
+### 12. What an autonomous app agent may do
 
 Least privilege, declared by the app, checked by App Hub, granted by the host, enforced by the kernel on every call:
 
@@ -156,7 +168,8 @@ app agent (app peer)
   ├─ L0 card, more than one style → render in card-host --remote → critique → revise
   ├─ admit → glance.publish (outward actions pause as approval requests in the app's conversation)
   └─ propose changes to what is collected (data) → next run
-system agent: policy and budgets; rank the glance screen; cross-app insights
+system agent: policy and budgets; rank the glance screen; cross-app insights;
+              observe runs → evaluate → adopt overlay changes to AGENT.md/skills
 ```
 
 ## Consequences
@@ -185,13 +198,15 @@ In order; each step usable on its own.
 3. **App Hub:** the bundle gains `AGENT.md`, the app's skills, its model requirements and its tool manifest (schemas, risk, background and shareable flags), and the manifest a background permission; admission checks and pins them.
 4. **Data services:** a common shape (collect, ledger, emit events) and the first services for the system apps that need them.
 5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
-6. **Cards:** a `card-studio` skill (render in `card-host --remote`, measured checks, vision critique, revise within budget); `glance.publish` and the glance screen's curation.
-7. **A first app end to end** through steps 1–6, then the other system apps.
+6. **Outer loop:** per-app overlays for `AGENT.md` and skills (versioned, applied on top of the pinned base), run metrics and feedback signals, offline evaluation by replay or split trials, adoption and rollback, and the overlay history in Settings.
+7. **Cards:** a `card-studio` skill (render in `card-host --remote`, measured checks, vision critique, revise within budget); `glance.publish` and the glance screen's curation.
+8. **A first app end to end** through steps 1–7, then the other system apps.
 
 ## Open questions
 
 - Where render and critique run for a phone-only user with no desktop or server.
-- How the person reviews and edits an app's `AGENT.md` and what its data service collects.
+- How the person reviews an app's `AGENT.md`, its overlay and what its data service collects.
+- Which metrics define a better app agent per app, and how much evaluation (replays, trial share) the outer loop may spend.
 - How model requirements are expressed (a small closed vocabulary, or octos's model hints) and how the host breaks ties between providers.
 - Budget defaults per app, and how cost is shown.
 - Whether a card may carry a short-lived action (Act) or only open its app's conversation.
