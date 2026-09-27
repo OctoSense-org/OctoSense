@@ -1,5 +1,5 @@
 //! The kernel transport over the shell's octos core, against the core's
-//! stand-in kernel (crates/octos-core/tests/fixtures/fake_kernel.py): a
+//! stand-in kernel (crates/kernel/tests/fixtures/fake_kernel.py): a
 //! session opens, the shell restarts the kernel (the AI providers changed),
 //! and the transport reconnects to the new kernel and opens the session
 //! again by itself, without a second `SessionOpen` for the app.
@@ -18,7 +18,7 @@ use tokio::sync::mpsc::Receiver;
 use url::Url;
 
 fn fake_kernel() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../../crates/octos-core/tests/fixtures/fake_kernel.py")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../../../crates/kernel/tests/fixtures/fake_kernel.py")
 }
 
 async fn until<T>(events: &mut Receiver<TransportEvent>, mut f: impl FnMut(&TransportEvent) -> Option<T>) -> (T, Vec<String>) {
