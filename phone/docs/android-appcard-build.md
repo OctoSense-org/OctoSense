@@ -1,14 +1,15 @@
 # Android build with AppCard's framework, buildtool and bundled kernel
 
-> The octos kernel is a Home service now (`octosense-octos-core`, feature
+> The octos kernel is a Home service now (`octosense-kernel`, feature
 > `octos-core`, always on in Android builds), not AppCard's: **every** APK
-> bundles `liboctos.so`, and `scripts/build-home.sh` does it for you (it
-> cross-builds the kernel at the revision `home/Cargo.lock` pins; see
-> [docs/home-build.md](../../docs/home-build.md#android-builds)). AppCard
+> bundles `liboctos.so`, and `rom/scripts/build-home.sh` does it for you (it
+> cross-builds the kernel with `tools/kernel-artifact.py` at the revision the
+> root `Cargo.lock` pins; see
+> [docs/home-build.md](../../rom/docs/home-build.md#android-builds)). AppCard
 > itself is not shipped for now and links only with
 > `--features app-appcard`. The manual steps below still describe what the
 > script does; their pins are older than the current ones (the kernel is
-> octos-org/octos at the rev in `home/Cargo.lock`, built with
+> octos-org/octos at the rev in the root `Cargo.lock`, built with
 > `--no-default-features --features api,git,ast`).
 
 OctoSense on the phone now runs the Octoscript-AppCard module (`apps/appcard`)
@@ -33,7 +34,7 @@ on the makepad fork's AppCard framework line and needs three things the stock
 3. **The octos kernel**, cross-built for `aarch64-linux-android` and bundled
    into the APK as `liboctos.so`. Android lets an app exec only from its
    nativeLibraryDir, so the kernel must ship as a "library"; Home's kernel
-   service (`octosense-octos-core`) finds it there and runs `octos serve
+   service (`octosense-kernel`) finds it there and runs `octos serve
    --stdio` with `HOME=<files>/octos-home` when the first consumer (AppCard,
    Rinx) connects.
 

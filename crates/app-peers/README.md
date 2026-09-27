@@ -2,7 +2,7 @@
 
 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md):
 an OctoSense shell runs ONE octos kernel and ONE provider profile
-([`crates/octos-core`](../octos-core)). A native app that declares assistant
+([`crates/kernel`](../kernel)). A native app that declares assistant
 services (the exact `octos.*` names App Hub publishes) and that host policy
 grants gets ONE octos peer owned by the shell's system agent, and a scoped
 service handle injected at module creation. The app opens request contexts of
@@ -70,9 +70,10 @@ service.release();                            // app closed
 
 ## Testing
 
+From the repository root:
+
 ```sh
-cd crates/app-peers
-cargo test --features octos-core,ws   # unit + scripted-kernel tests
+cargo test --locked -p octosense-app-peers --features octos-core,ws   # unit + scripted-kernel tests
 # The real kernel (UPCR-2026-034) with a scripted local model (python3):
-OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test --features octos-core --test real_kernel -- --nocapture
+OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --features octos-core --test real_kernel -- --nocapture
 ```

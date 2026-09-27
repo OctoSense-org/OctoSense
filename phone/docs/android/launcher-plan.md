@@ -64,9 +64,9 @@ This is a **source inspection dated 15 September 2026**, using the local `OctoSe
 
 | Source evidence | What it establishes |
 |---|---|
-| [App registry](../../src/apps.rs) defines `Hosting::Module` and `Hosting::Process` | Existing hosting supports linked Makepad modules and the cooperating desktop process protocol |
-| [Platform hosting gate](../../src/host.rs) disables `processes_available()` on Android and iOS | The desktop child-app hosting path is not available on the phone |
-| [Module frame capture](../../src/dock_warp.rs) records drawing into a `WindowFrame` texture | Current app previews and effects operate on content rendered through Makepad |
+| [App registry](../../../crates/shell/src/apps.rs) defines `Hosting::Module` and `Hosting::Process` | Existing hosting supports linked Makepad modules and the cooperating desktop process protocol |
+| [Platform hosting gate](../../../crates/shell/src/host.rs) disables `processes_available()` on Android and iOS | The desktop child-app hosting path is not available on the phone |
+| [Module frame capture](../../../crates/shell/src/dock_warp.rs) records drawing into a `WindowFrame` texture | Current app previews and effects operate on content rendered through Makepad |
 | Makepad's `VideoPlayer.java` uses `SurfaceTexture`; its Android camera code supports hardware-buffer textures | Android media texture interoperation exists, but it does not establish access to other apps' windows |
 | Searches of OctoSense and the inspected Makepad platform, widgets, and Android Java sources found no task-hosting implementation using `TaskView`, `TaskOrganizer`, `ActivityView`, `VirtualDisplay`, or `SurfaceControlViewHost` | A native Android app-hosting layer would be new integration work |
 

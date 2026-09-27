@@ -2,8 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Product-wide ROM and delivery decisions live here. Home-specific records remain
-in [home/docs/adr](../../home/docs/adr/README.md).
+Product-wide ROM and delivery decisions live here. Home-specific records, and the
+repository's own, are in [docs/adr](../../../docs/adr/README.md).
 
 | ADR | Date | Status |
 | --- | --- | --- |

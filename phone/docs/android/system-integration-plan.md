@@ -2,7 +2,7 @@
 
 16 September 2026. Research and read-only device probe. The architecture is accepted in ADR 0001; implementation and device validation remain outstanding.
 
-Architecture record: [ADR 0001: Hybrid Android launcher and system bridge](../adr/0001-hybrid-android-launcher-and-system-bridge.md). The ADR defines the selected package/interface contracts, recovery behavior and acceptance gates. This plan retains the detailed research and device evidence supporting that decision.
+Architecture record: [ADR 0001: Hybrid Android launcher and system bridge](../../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md). The ADR defines the selected package/interface contracts, recovery behavior and acceptance gates. This plan retains the detailed research and device evidence supporting that decision.
 
 ## Implementation direction
 
@@ -28,9 +28,9 @@ The ADB shell's root grant does not establish that a future bridge APK has a Mag
 
 ## 2. Where OctoSense stands
 
-- [`src/mobile_shade.rs:134`](../../src/mobile_shade.rs#L134) flips local Wi-Fi, Bluetooth, torch, rotation, and DND booleans. Android is not called there.
-- [`src/mobile_shade.rs:158`](../../src/mobile_shade.rs#L158) supplies demo notification cards. Its action handler dismisses a local card; action labels do not contain Android action handles.
-- [`src/mobile_shade.rs:258`](../../src/mobile_shade.rs#L258) changes local brightness and volume values. Those values are not system controls.
+- [`crates/shell/src/mobile_shade.rs:134`](../../../crates/shell/src/mobile_shade.rs#L134) flips local Wi-Fi, Bluetooth, torch, rotation, and DND booleans. Android is not called there.
+- [`crates/shell/src/mobile_shade.rs:158`](../../../crates/shell/src/mobile_shade.rs#L158) supplies demo notification cards. Its action handler dismisses a local card; action labels do not contain Android action handles.
+- [`crates/shell/src/mobile_shade.rs:258`](../../../crates/shell/src/mobile_shade.rs#L258) changes local brightness and volume values. Those values are not system controls.
 - [`resources/android/AndroidManifest.xml.template`](../../resources/android/AndroidManifest.xml.template) registers Home and ordinary permissions, but no notification listener, SMS-role components, or bridge service. `POST_NOTIFICATIONS` covers posting notifications, not reading other apps' notifications.
 - [`src/main.rs:4497`](../../src/main.rs#L4497) already receives `Event::HomeIntent`. The local Makepad framework queues Java-to-Rust messages in `platform/src/os/linux/android/android_jni.rs:956`; its `MakepadActivity.java:2511` can post OctoSense's own notifications. This is a useful transport pattern, not a system-control backend.
 - [`tools/cargo_makepad/src/android/compile.rs:1128`](https://github.com/OctoSense-org/makepad/blob/1d3d383e84a66dbb18a4a860f505430c9d5b20f4/tools/cargo_makepad/src/android/compile.rs#L1128) compiles a fixed list of framework Java sources. The custom manifest hook exists at line 1030, but adding a manifest component alone does not compile its Java class. App-specific Java/AIDL source support is an explicit implementation task.
@@ -98,7 +98,7 @@ Public notification access supports posted/removed callbacks and cancellation/sn
 
 For SMS, use `createForSubscriptionId` and observe subscription changes; do not silently use an arbitrary slot. Only the default SMS package receives the delivery intents and writes the SMS provider through the default-app route. Its required receiver, activity, and respond-via-message components belong to that same package. A companion can own the role and delegate presentation to OctoSense, or OctoSense can own it after its Android packaging supports those components. Ordinary send permission and a complete default-SMS client are different deliverables. [SmsManager](https://developer.android.com/reference/android/telephony/SmsManager), [Telephony](https://developer.android.com/reference/android/provider/Telephony), [SubscriptionManager](https://developer.android.com/reference/android/telephony/SubscriptionManager).
 
-RCS remains a separate carrier/vendor/backend integration. Root and the SMS role do not provide Google Messages' RCS service or automatically satisfy the IMS single-registration requirements. See the [existing RCS feasibility analysis](../../../docs/octosense-android-rcs-feasibility.md) and [AOSP IMS requirements](https://source.android.com/docs/core/connect/ims-single-registration).
+RCS remains a separate carrier/vendor/backend integration. Root and the SMS role do not provide Google Messages' RCS service or automatically satisfy the IMS single-registration requirements. See the existing RCS feasibility analysis (`docs/octosense-android-rcs-feasibility.md`, not in this repository) and [AOSP IMS requirements](https://source.android.com/docs/core/connect/ims-single-registration).
 
 Modern app targets cannot simply call the old Wi-Fi and Bluetooth toggle methods: Android documents restrictions and system/device-owner exceptions. Build one adapter for this exact ROM before broadening support. [WifiManager](https://developer.android.com/reference/android/net/wifi/WifiManager#setWifiEnabled(boolean)), [BluetoothAdapter](https://developer.android.com/reference/android/bluetooth/BluetoothAdapter), [ConnectivityManager](https://developer.android.com/reference/android/net/ConnectivityManager).
 

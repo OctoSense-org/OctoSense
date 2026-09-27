@@ -53,7 +53,7 @@ for the 80 MB+ kernel. The deployment therefore splits three ways:
 |---|---|---|
 | `OctosOne.apk` (slim, libs stripped out, re-signed with the same debug key) | `/system/priv-app/OctosOne/` | the system app package |
 | `libmakepad.so`, `libstd-*.so` (uncompressed) | `/system/priv-app/OctosOne/lib/x86_64/` | PMS resolves `nativeLibraryDir` here (the "legacyNativeLibraryDir") |
-| `liboctos.so` (the 80 MB+ kernel) | `/data/user/0/dev.makepad.octos_app/files/octos-home/.bin/` | too big for the system image; no longer found automatically: Android 10+ W^X forbids exec from app data, and the kernel launch (`octosense-octos-core`, repository `crates/octos-core`) looks only in `nativeLibraryDir` unless a shell passes `Options::program` |
+| `liboctos.so` (the 80 MB+ kernel) | `/data/user/0/dev.makepad.octos_app/files/octos-home/.bin/` | too big for the system image; no longer found automatically: Android 10+ W^X forbids exec from app data, and the kernel launch (`octosense-kernel`, repository `crates/kernel`) looks only in `nativeLibraryDir` unless a shell passes `Options::program` |
 
 ### Recipe (emulator)
 

@@ -1,10 +1,10 @@
-# octos-app workspace
+# octos-app crate
 
 [English](README.md) | 简体中文
 
-AppCard 助手的 Cargo workspace：面向 [octos](https://github.com/octos-org/octos)
+AppCard 助手的 crate（OctoSense 仓库根 workspace 的成员）：面向 [octos](https://github.com/octos-org/octos)
 Agent 内核的原生 Makepad 与 Splash 客户端。OctoSense 的 Shell 把它作为控件挂载；
-它也可以构建为独立应用。它在本仓库中的位置以及所需的同级运行时，见
+它也可以构建为独立应用。它在仓库中的位置以及所需的框架源码（仓库根目录的 `.sources/`），见
 [../README.zh-CN.md](../README.zh-CN.md)。
 
 ## Crate
@@ -24,23 +24,23 @@ Agent 内核的原生 Makepad 与 Splash 客户端。OctoSense 的 Shell 把它�
 
 ## 构建、测试、运行
 
-先准备同级运行时（在 `apps/appcard` 中：`python3 tools/setup-native.py`）。
-然后在本目录中：
+先准备框架源码（在仓库根目录运行 `python3 tools/setup.py`），然后在仓库根目录：
 
 ```sh
-cargo check
-cargo test --workspace
-cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+cargo check --locked -p octos-app
+cargo test --locked -p octos-app-transport -p octos-app-store
+cargo clippy --locked -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
 cargo run -p octos-app
 ```
 
-`Makefile` 封装了相同的命令（`make check`、`test`、`run`、`clippy`、`fmt`），
+`Makefile` 早于迁移：它在这里运行 `cargo … --workspace`，现在指的是整个根
+workspace（迁移后**未验证**）。它封装了相同的命令（`make check`、`test`、`run`、`clippy`、`fmt`），
 另有 `make smoke-live`：针对 `OCTOS_LIVE_URL`（默认 `http://127.0.0.1:56831`）
 运行默认忽略的实时传输测试。存在本地 `.env` 时会读取它。
 
 独立运行的应用按以下顺序连接 octos：
 
-1. Shell 的 octos 内核（`octosense-octos-core`，仓库中的 `crates/octos-core`），
+1. Shell 的 octos 内核（`octosense-kernel`，仓库中的 `crates/kernel`），
    只要能运行：Android 上是 APK 内置的 `liboctos.so`，OpenHarmony 上总是可用
    （链接进应用），桌面上需由 Shell 或 `OCTOS_APP_CORE_BIN` 指定内核二进制（数据
    目录为 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`；
@@ -55,6 +55,5 @@ cargo run -p octos-app
 
 ## CI
 
-CI 是仓库根目录的
-[.github/workflows/appcard.yml](../../../.github/workflows/appcard.yml)。本
-workspace 内的 `.github/workflows/` 是代码从早先仓库带过来的，GitHub 在这里不会运行它。
+CI 是仓库根目录 [.github/workflows/apps.yml](../../../.github/workflows/apps.yml)
+的 `apps` 任务。本目录中的 `.github/workflows/` 是代码从早先仓库带过来的，GitHub 在这里不会运行它。

@@ -9,7 +9,7 @@ App Hub's preview uses its own six monochrome SVG glyphs in
 `apps/app-hub/resources/icons/`, placed on category-colored backgrounds.
 Those were added with the preview UI and differ from the launcher artwork.
 
-The launcher resolves an app ID through `src/octosense/style.rs`:
+The launcher resolves an app ID through `crates/shell/src/octosense/style.rs`:
 
 - News and Maps use `resources/icons/apps/<style>/<id>.svg` in this repository.
 - Photos, Sheets and Mail use the Makepad theme catalog under

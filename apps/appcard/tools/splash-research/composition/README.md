@@ -80,7 +80,7 @@ valid references; they do not establish factual faithfulness.
 
 Use the existing persistent Studio bridge at `127.0.0.1:8170`, connected to Studio
 at port 8001. The `octos` mount points to `app/`, whose `makepad.splash` defines
-`octos-macos-composition`. Follow [aichat/AGENTS.md](../../../aichat/AGENTS.md).
+`octos-macos-composition`. Follow `aichat/AGENTS.md` (not in this repository).
 The request seed is `/tmp/octos-macos-composition-request.json`; it must already
 contain the local launcher configuration, as prepared in this experiment.
 

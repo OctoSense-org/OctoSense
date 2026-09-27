@@ -1,17 +1,16 @@
 # Android build with AppCard's framework, buildtool and bundled kernel
 
-> The octos kernel is a shell service now (`octosense-octos-core`, feature
+> The octos kernel is a shell service now (`octosense-kernel`, feature
 > `octos-core`, always on for Android), not AppCard's: **every** APK must
-> bundle `liboctos.so`. `tools/android-kernel.py` does it (it cross-builds
+> bundle `liboctos.so`. The repository's `tools/kernel-artifact.py` does it (it cross-builds
 > the kernel at the revision `Cargo.lock` pins, `--no-default-features
 > --features api,git,ast`, and runs the packager with
 > `MAKEPAD_ANDROID_EXTRA_LIBS`). AppCard itself is not shipped for now and
 > links only with `--features app-appcard`. The steps below are the manual
 > equivalent; their pins are older than the current ones.
 
-OctoSense on the phone now runs the AppCard assistant module (`apps/appcard`,
-which mounts `octos-app` from the pinned OctoSense-System-Apps checkout,
-`../OctoSense-System-Apps/apps/appcard/app/app`) on the makepad fork's AppCard
+OctoSense on the phone now runs the AppCard assistant module (`apps/appcard/module`,
+which mounts `octos-app` from `apps/appcard/app/app` in this repository) on the makepad fork's AppCard
 framework line and needs three things the stock `cargo makepad` build does not
 give it:
 
@@ -33,7 +32,7 @@ give it:
 3. **The octos kernel**, cross-built for `aarch64-linux-android` and bundled
    into the APK as `liboctos.so`. Android lets an app exec only from its
    nativeLibraryDir, so the kernel must ship as a "library"; the shell's
-   kernel service (`octosense-octos-core`) finds it there and runs `octos
+   kernel service (`octosense-kernel`) finds it there and runs `octos
    serve --stdio` with `HOME=<files>/octos-home` when the first consumer
    (AppCard, Rinx) connects.
 
@@ -41,8 +40,8 @@ give it:
 
 ```sh
 # 0. Paths (adjust): a checkout of the fork, a checkout of octos-org/octos at
-#    the rev Cargo.lock pins for octos-cli (6ad76e5c today; the same rev
-#    OctoSense-System-Apps pins), and the Android
+#    the rev Cargo.lock pins for octos-cli (6ad76e5c when this was written; one
+#    revision for the whole workspace), and the Android
 #    toolchain dir that `cargo makepad android install-toolchain` produced.
 FORK=/path/to/makepad-fork          # https://github.com/OctoSense-org/makepad.git
 OCTOS=/path/to/octos                # https://github.com/octos-org/octos.git at 6ad76e5c1e659bdf10ec05ae869428b48edccf7f

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-这里记录整个 ROM 产品及交付方式的决策。Home 专属的决策记录位于 [home/docs/adr](../../home/docs/adr/README.zh-CN.md)。
+这里记录整个 ROM 产品及交付方式的决策。Home 专属的决策记录和整个仓库的决策记录位于 [docs/adr](../../../docs/adr/README.zh-CN.md)。
 
 | ADR | 日期 | 状态 |
 | --- | --- | --- |

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-这些模块实现了 ADR 0001 的第一个原型。`contracts` 为普通的 Makepad Home 客户端导出 AIDL 接口；`system-bridge` 构建配套 APK；Gradle 的 `quickstep` 目标构建经过身份验证的 Home 布局服务。独立的平台构建现已能够编译原生 Quickstep 控制器和最近任务（Recents）。根据用户的 [Trebuchet 移除请求（英文）](../docs/android/trebuchet-removal-record.md)，其 ROM 专用模块已在 OnePlus 6 上启用。重启后，基本的原生导航以及任务恢复/移除均已通过；更全面的转场验证仍未完成。参见 [ADR（英文）](../docs/adr/0001-hybrid-android-launcher-and-system-bridge.md)和[实现记录（英文）](../docs/android/adr-0001-implementation-record.md)。
+这些模块实现了 ADR 0001 的第一个原型。`contracts` 为普通的 Makepad Home 客户端导出 AIDL 接口；`system-bridge` 构建配套 APK；Gradle 的 `quickstep` 目标构建经过身份验证的 Home 布局服务。独立的平台构建现已能够编译原生 Quickstep 控制器和最近任务（Recents）。根据用户的 [Trebuchet 移除请求（英文）](../docs/android/trebuchet-removal-record.md)，其 ROM 专用模块已在 OnePlus 6 上启用。重启后，基本的原生导航以及任务恢复/移除均已通过；更全面的转场验证仍未完成。参见 [ADR（英文）](../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md)和[实现记录（英文）](../docs/android/adr-0001-implementation-record.md)。
 
 当前启动器的控制项和权限流程见[当前启动器中的系统功能（英文）](../docs/android/current-launcher-system-integration.md)。原生 Quickstep 构建还提供可选启用的[跨应用 OctoSense 面板（英文）](../docs/android/systemui-shade-replacement.md)，它使用同一个经过身份验证的 System Bridge，同时保留核心 SystemUI。[原生 OctoSense SystemUI 构建（英文）](../docs/android/octosense-systemui-build.md)补上了其余的系统界面分支，并记录了其发布签名关卡。独立的 `systemui-preview` Gradle 模块只在普通的临时应用身份下测试设备控制页面，无法替代 SystemUI。
 
