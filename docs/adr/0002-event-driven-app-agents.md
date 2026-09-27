@@ -56,7 +56,7 @@ An app's agent is defined by the app, in its bundle, next to `manifest.json`, an
 
 Every app publishes a **tool manifest**: the operations that make sense for that app, typed and described so a model can use them well, much like the service manifests in upstream makepad's aichat. An app's agent works through **its app's tools**, not through raw files, sockets or generic scraping, and the same tools serve every caller.
 
-- **Declared in the bundle**, next to `manifest.json` and `AGENT.md`: for each tool a name in the app's namespace (`<app>.<tool>`), a description, a JSON Schema for its input and output, a **risk level** (Read, Act or Destructive), and whether it may run in the background. App Hub checks the declarations at admission and pins them with the app.
+- **Declared in `tools.json`**, next to `AGENT.md`: for each tool a name in the app's namespace (`<app>.<tool>`), a description, a JSON Schema for its input and output, a **risk level** (Read, Act or Destructive), a **confirmation owner** (`confirm`: `host` or `app`, section 12), whether it may run in the background, and whether it is shareable. It is the one source for every kind of app (section 12); App Hub, or the shell build for native modules, checks the declarations and pins them with the app.
 - **Implemented where the capability lives.** Tools that need data, devices, network or secrets are implemented by the app's **host service** (native code; for example Mail's `list`, `read`, `draft_reply`, `send`), so a secret never reaches the model or the script. Tools that only reshape the app's own data may be implemented by the app itself.
 - **Registered with the kernel for the app's peer.** The kernel offers the model exactly these tools (plus the few generic ones the manifest names, such as research or `glance.publish`) and routes each call to its implementation, with the calling peer's identity. Results are structured, size-capped and recorded in the run's audit log.
 - **Callers.** The app's own agent always. The **system agent** and **other apps' agents** only where the host grants it, and only the tools the app marks as shareable (for example a Calendar `free_busy` Read tool for a travel app). The person's "Ask anything" assistant calls them the same way, so a request and a background run use one surface.
@@ -129,13 +129,40 @@ The system agent observes how each app agent performs and **tunes it**, without 
 - **No instructions from data.** App data, web pages and messages are untrusted. The system agent writes overlays from metrics and the person's feedback, never by copying text from what the app agent read, so content cannot plant instructions (prompt injection).
 - **Upstream, optionally.** With the person's consent, an improvement can be offered to the app's author as a suggestion for the next version of the pinned base.
 
-### 12. What an autonomous app agent may do
+### 12. Native modules and script apps follow one model
+
+Everything above applies the same way to **contained script apps** (run by App Hub's Card runner, e.g. News, Mail) and **native modules** (Rust modules linked into the shell, e.g. Rinx). Only where the rules are enforced differs.
+
+| | Contained script app | Native module |
+|---|---|---|
+| **Declarations** (`AGENT.md`, `skills/`, `tools.json`, agent fields) | in the bundle, pinned by App Hub | the same files as module resources, pinned by the shell build |
+| **Tools** | `tools.json`; implemented by the app's host service or the app | `tools.json` is the only declaration. The app-peers broker loads it and builds its tool definitions from it; the module's Rust code only implements executors keyed by tool name. A build check requires every declared tool to have an executor and every executor to be declared. |
+| **Registration with the kernel** | the shell (`crates/ai-host`) calls `peer/tools/register` for the app's peer | the broker, which owns the host-owned peer (Rinx ADR 0007), calls `peer/tools/register`; the module never talks to the kernel |
+| **Enforcement** | kernel per peer, plus the Card runner's isolate and the app's grants | kernel per peer, plus the module's own code (trusted tier) |
+| **Approvals** | the shell's shared conversation component in the app | the module's own conversation UI (for Rinx, its chat) |
+| **Data service** | a host service (e.g. the News service) | the module's own sync (for Rinx, Matrix sync stays Rinx's code); the shell supplies the wake and the schedule |
+
+**Who confirms a destructive tool.** `risk` and `confirm` are separate fields; confirmation is never derived from risk:
+
+- `risk: destructive`, `confirm: host`: the kernel's approval path. Person present or absent, the call waits for approval in the owning app's conversation.
+- `risk: destructive`, `confirm: app`: the app confirms it itself. With the person present, the app's own confirmation sheet is the only confirmation (for example, Rinx's send-message sheet), and the kernel does not prompt again. With the person absent, it becomes an approval request in the owning app's conversation. The person is never asked twice.
+
+In every case approvals go only to the owning app's conversation through the kernel's existing approval path, deduplicated by `<session>/<turn>/<tool_call_id>`, and the system agent cannot answer approvals for host-bound peers (octos#2560).
+
+**Cards.** Anything a native module publishes to the glance screen goes through `glance.publish` as an L0 card with the same `card-studio` checks. A native module's own in-app surfaces (for example, Rinx's in-room mini apps) stay under that module's authority model (Rinx ADRs 0002 and 0005) and are not routed through the glance render and critique unless they are published as glance cards.
+
+**Follow-ups outside this ADR's first slice.**
+
+- **Background wake for native modules.** A native module that declares `background: true` needs the shell to wake it on its schedule and run a catch-up (today Rinx stops Matrix sync when backgrounded and gets no background signal). The shell provides the wake and schedule; the module runs its own sync and emits events to its peer like a data service. This comes after the News slice.
+- **Secrets in native modules.** Native modules keep secrets in the platform vault through the host, like Mail and AI providers. For Rinx this is [hagency-org/Rinx#29](https://github.com/hagency-org/Rinx/issues/29) (the Matrix access token and database passphrase move out of the session file).
+
+### 13. What an autonomous app agent may do
 
 Least privilege, declared by the app, checked by App Hub, granted by the host, enforced by the kernel on every call:
 
 | Layer | Restriction | Enforced by |
 |---|---|---|
-| **Tools** | only the app's own tool manifest plus the generic tools its manifest names (`agent.tools`); tools of other apps only where granted and marked shareable; nothing else is visible to the model | kernel, per peer context |
+| **Tools** | only the app's own `tools.json` plus the generic tools its manifest names (`agent.tools`); tools of other apps only where granted and marked shareable; nothing else is visible to the model | kernel, per peer context (script apps and native modules alike) |
 | **Network** | only the manifest's declared hosts, plus external-information providers the host grants | host network policy on every fetch |
 | **Files** | only the app's folder | app jail and the kernel's per-app workspace |
 | **Memory** | only `app/<app>/…`; promotion by rule or approval | kernel memory namespaces |
@@ -157,6 +184,7 @@ The same loop serves every app; only the data service, `AGENT.md` and skills, th
 | **Calendar / travel** | calendar sync; flight or transit status | `calendar.list`, `calendar.free_busy` (shareable), `calendar.move` (Act, confirm) | sees a delay or conflict, works out consequences | "Your 9:00 is at risk: flight +40 min" with options | changing or declining an event |
 | **Weather** | forecast and warnings feed | `weather.forecast`, `weather.alerts` | relates warnings to the person's plans and places | "Storm at 17:00 near your commute" | none |
 | **Health** | the device's health store | `health.summary`, `health.trend` (Read, never shareable) | notices a trend against the person's baseline | weekly summary; a gentle flag | sharing with anyone |
+| **Rinx** (Matrix; native module) | Rinx's own Matrix sync, woken by the shell (follow-up) | `rinx.rooms.list`, `rinx.unread`, `rinx.message.draft`, `rinx.message.send` (Destructive, `confirm: app`) | summarizes mentions and decisions, drafts replies | "3 mentions need you" | sending (Rinx's own sheet if present, else an approval request in Rinx) |
 
 ```
 data service (timer or notification, no model) ──▶ app folder + ledger
@@ -195,7 +223,7 @@ In order; each step usable on its own.
 
 1. **Kernel (octos):** host-registered tools per peer (schema, risk, routing to the host); enforce a peer's tool list and tool risk levels; peers own schedules; a host-authorised "wake peer with event" call; memory ingestion from runs.
 2. **Shell (`crates/ai-host`, `crates/app-peers`):** the built-in per-app conversation (threads per run; approvals with approve, edit and decline; questions; expiry; deep links from cards and notifications); installing each app's `AGENT.md` and skills into its peer workspace; selecting each peer's model from the person's providers under policy (`peer/model/set`), with per-app override in Settings; background peer handles for host services under host policy; `events` from data services to peers; registering each app's tools with its peer and routing calls to the host service or the app; budgets, kill switch and audit log in Settings.
-3. **App Hub:** the bundle gains `AGENT.md`, the app's skills, its model requirements and its tool manifest (schemas, risk, background and shareable flags), and the manifest a background permission; admission checks and pins them.
+3. **App Hub:** the bundle gains `AGENT.md`, the app's skills, its model requirements and `tools.json` (schemas, risk, `confirm`, background and shareable flags), and the manifest a background permission; admission checks and pins them. The same parser and checks are a library the app-peers broker uses for native modules' `tools.json`.
 4. **Data services:** a common shape (collect, ledger, emit events) and the first services for the system apps that need them.
 5. **External information (octos):** structured JSON output from research, `lang`, `since` and per-domain limits; free structured providers and SearXNG; browser rendering and main-text extraction for pages to be cited; robots.txt; review of `deep-crawl`'s automation hiding.
 6. **Outer loop:** per-app overlays for `AGENT.md` and skills (versioned, applied on top of the pinned base), run metrics and feedback signals, offline evaluation by replay or split trials, adoption and rollback, and the overlay history in Settings.
