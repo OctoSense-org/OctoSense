@@ -1,0 +1,35 @@
+--- a/entry/src/main/ets/makepad/makepad.ets
++++ b/entry/src/main/ets/makepad/makepad.ets
+@@ -79,0 +80,4 @@
++  // Coalesce per-frame requests and serialize attach/show/hide. Otherwise an
++  // outstanding attach can show the keyboard after Home has requested hide.
++  private keyboardWanted: boolean = false;
++  private keyboardWork: Promise<void> = Promise.resolve();
+@@ -97 +101,8 @@
+-    this.showTextInput();
++    if (this.keyboardWanted) { return; }
++    this.keyboardWanted = true;
++    this.keyboardWork = this.keyboardWork.then(async () => {
++      if (this.keyboardWanted) { await this.showTextInput(); }
++    }).catch((err: Any) => {
++      this.keyboardWanted = false;
++      console.error('Keyboard show failed: ' + JSON.stringify(err));
++    });
+@@ -107 +118,7 @@
+-    this.hideTextInput();
++    if (!this.keyboardWanted) { return; }
++    this.keyboardWanted = false;
++    this.keyboardWork = this.keyboardWork.then(async () => {
++      if (!this.keyboardWanted) { await this.hideTextInput(); }
++    }).catch((err: Any) => {
++      console.error('Keyboard hide failed: ' + JSON.stringify(err));
++    });
+@@ -214 +231,2 @@
+-    this.inputMethodController.showTextInput().then(() => {
++    if (!this.keyboardWanted) { await this.hideTextInput(); return; }
++    await this.inputMethodController.showTextInput().then(() => {
+@@ -222 +240 @@
+-    this.inputMethodController.hideTextInput().then(() => {
++    await this.inputMethodController.hideTextInput().then(() => {
+@@ -263,0 +282 @@
++          this.keyboardWanted = false;

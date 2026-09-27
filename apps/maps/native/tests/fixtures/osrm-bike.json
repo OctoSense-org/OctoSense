@@ -1,0 +1,253 @@
+{
+ "code": "Ok",
+ "routes": [
+  {
+   "geometry": "wr{bFj||fV?BUNyCtBWP[RYR_@TKHIH]TeAr@_@Vu@f@MHi@^K?KFCBIDKHSLCLEBQLC@OJQLWPMHa@XC@{@l@i@\\IDJVpAnDHPFR^`Ar@hBFRFPv@vBXt@FLFPn@~ABJ^`ABFBFBF@DDJx@|Bb@jAPd@Rf@QDgBhBONSZORMPc@t@e@z@e@~@yBdEMVQd@M`@I\\G`@Cb@A^@ZB^B^F^Lt@HTJ^|@xCFVPt@Pr@`@hBH\\ZxARnABLBRDVHt@Fp@Dz@Dz@DjA@bBC~@ExAC\\CZIdA[hCGb@Kz@e@vDSt@Md@O`@GNKPU^KNEFGFKL{@`AMNQRKLk@l@IJo@x@g@r@KTuB`CkAnAUVOPMLsCbDoBtBW\\EBEDIHGFUTONYFm@^q@f@wA`BWXgA~AwClEe@n@aBzBc@j@gB|BcAtAsAfBGRGJEJMVGPi@rAq@dBKVGN]x@EH]x@Ob@MZc@hA[v@]bAKXg@xAUh@EHQb@Qb@g@nASf@cAjC]|@Q^eAhCw@nBYp@CHKTkBxEmAvCi@vAcAhCCDGPGNKVIRSh@AB?DBLKXCFGRELCPERCPCNEZATC`@Cd@Az@?Z?B?T?JATAbAAV?\\?BCn@AT?PAJARE^EXCRI`@ELIXUj@GJO\\OBi@nAw@fBYdAUp@q@jBIXE^CXAX?V@P@P@RBNDTFRDNDJFJHNHJJLJJJJNHVN`@Rj@V\\RVRb@`@l@p@f@d@rAtAd@`@Rv@@JBN@L?P?NCPEZCZAVA\\@\\@\\F`@D\\BFBLFZGNENGFC@aAZKBWHABADLf@j@vBl@xBDRFT@BTbAr@pC?@DNFT?@dA~D?@FPDR@@dAbE@@DRDPd@hBZpA?@FVJ`@?@h@xBb@dB`@dBFXLb@Hb@B\\MNSRAlCRFE\\EVCNEDKH}Ap@",
+   "distance": 7644,
+   "duration": 2080,
+   "legs": [
+    {
+     "steps": [
+      {
+       "name": "East Santa Clara Street",
+       "distance": 1.3,
+       "duration": 6.5,
+       "maneuver": {
+        "type": "depart",
+        "location": [
+         -121.886303,
+         37.338204
+        ],
+        "bearing_after": 240
+       }
+      },
+      {
+       "name": "North 5th Street",
+       "distance": 356.4,
+       "duration": 85.5,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.886316,
+         37.338198
+        ],
+        "bearing_after": 327
+       }
+      },
+      {
+       "name": "North 5th Street",
+       "distance": 212.1,
+       "duration": 62.3,
+       "maneuver": {
+        "type": "continue",
+        "modifier": "straight",
+        "location": [
+         -121.888393,
+         37.340947
+        ],
+        "bearing_after": 333
+       }
+      },
+      {
+       "name": "East Julian Street",
+       "distance": 431.4,
+       "duration": 107,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "left",
+        "location": [
+         -121.889593,
+         37.342571
+        ],
+        "bearing_after": 236
+       }
+      },
+      {
+       "name": "West Julian Street",
+       "distance": 161.7,
+       "duration": 49.1,
+       "maneuver": {
+        "type": "new name",
+        "modifier": "straight",
+        "location": [
+         -121.893771,
+         37.340577
+        ],
+        "bearing_after": 239
+       }
+      },
+      {
+       "name": "Coleman Avenue",
+       "distance": 2138.1,
+       "duration": 519.9,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.895342,
+         37.339836
+        ],
+        "bearing_after": 345
+       }
+      },
+      {
+       "name": "Coleman Avenue",
+       "distance": 2326.9,
+       "duration": 713.2,
+       "maneuver": {
+        "type": "continue",
+        "modifier": "slight right",
+        "location": [
+         -121.91517,
+         37.346281
+        ],
+        "bearing_after": 344
+       }
+      },
+      {
+       "name": "Coleman Avenue",
+       "distance": 107,
+       "duration": 25.6,
+       "maneuver": {
+        "type": "continue",
+        "modifier": "straight",
+        "location": [
+         -121.936691,
+         37.357365
+        ],
+        "bearing_after": 303
+       }
+      },
+      {
+       "name": "",
+       "distance": 458,
+       "duration": 109.8,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight left",
+        "location": [
+         -121.937632,
+         37.357935
+        ],
+        "bearing_after": 295
+       }
+      },
+      {
+       "name": "De La Cruz Boulevard",
+       "distance": 114.2,
+       "duration": 27.9,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "straight",
+        "location": [
+         -121.941507,
+         37.356772
+        ],
+        "bearing_after": 216
+       }
+      },
+      {
+       "name": "",
+       "distance": 198.4,
+       "duration": 48.9,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "slight right",
+        "location": [
+         -121.942304,
+         37.355963
+        ],
+        "bearing_after": 244
+       }
+      },
+      {
+       "name": "Alviso Street",
+       "distance": 86.3,
+       "duration": 29.6,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.944468,
+         37.35574
+        ],
+        "bearing_after": 298
+       }
+      },
+      {
+       "name": "Civic Center Drive",
+       "distance": 852.5,
+       "duration": 206.9,
+       "maneuver": {
+        "type": "new name",
+        "modifier": "left",
+        "location": [
+         -121.944913,
+         37.356393
+        ],
+        "bearing_after": 250
+       }
+      },
+      {
+       "name": "",
+       "distance": 99.3,
+       "duration": 27.4,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.953734,
+         37.353336
+        ],
+        "bearing_after": 320
+       }
+      },
+      {
+       "name": "",
+       "distance": 36,
+       "duration": 21.9,
+       "maneuver": {
+        "type": "turn",
+        "modifier": "right",
+        "location": [
+         -121.954659,
+         37.353424
+        ],
+        "bearing_after": 281
+       }
+      },
+      {
+       "name": "",
+       "distance": 64.4,
+       "duration": 38.5,
+       "maneuver": {
+        "type": "fork",
+        "modifier": "slight right",
+        "location": [
+         -121.955039,
+         37.353528
+        ],
+        "bearing_after": 326
+       }
+      },
+      {
+       "name": "",
+       "distance": 0,
+       "duration": 0,
+       "maneuver": {
+        "type": "arrive",
+        "modifier": "right",
+        "location": [
+         -121.955335,
+         37.354056
+        ],
+        "bearing_after": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

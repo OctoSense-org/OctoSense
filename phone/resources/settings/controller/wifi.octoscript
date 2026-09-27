@@ -1,0 +1,113 @@
+// Wi-Fi discovery and saved networks. Credentials stay in the native consent UI.
+fn settings_wifi_init(s) { if s["wifi_ui"]==nil { s.wifi_ui={saved:false,offset:0,selected:nil,forget:nil,pressed:nil} } }
+fn settings_wifi_rows(s,o) {
+    let rows=[]
+    if o.wifi!=nil { for row in o.wifi.networks { if (s.wifi_ui.saved && row.saved) || (!s.wifi_ui.saved && (row.available || row.connected)) { rows.push(row) } } }
+    return rows
+}
+fn settings_wifi_selected(s,o) { if o.wifi!=nil { for row in o.wifi.networks { if row.target==s.wifi_ui.selected { return row } } }; return nil }
+fn settings_wifi_name(row) { if row.ssid==nil || row.ssid=="" { return "Hidden or unavailable network name" }; return row.ssid }
+fn settings_wifi_security(value) { return settings_named(value,[["Open","Open"],["Owe","Enhanced Open"],["OpenOwe","Open / Enhanced Open"],["Wep","WEP"],["Wpa2","WPA2"],["Wpa3","WPA3"],["Wpa2Wpa3","WPA2 / WPA3"],["Eap","Enterprise"]],"Unknown security") }
+fn settings_wifi_candidate(s,o,id) {
+    let state=o.wifi; if state==nil { return nil }
+    if id=="wifi_enabled" && state.enabled!=nil && settings_has(state.capabilities,"Toggle") { return {kind:"wifi",operation:"Enabled",enabled:!state.enabled} }
+    if id=="wifi_scan" && settings_has(state.capabilities,"Scan") { return {kind:"wifi",operation:"Scan"} }
+    if id=="wifi_access" && settings_has(state.capabilities,"RequestAccess") { return {kind:"wifi",operation:"Access"} }
+    let row=settings_wifi_selected(s,o)
+    if row!=nil && s.page=="WifiNetwork" {
+        for pair in [["wifi_connect","Connect"],["wifi_configure","Configure"],["wifi_forget","Forget"],["wifi_forget_confirm","Forget"]] {
+            if id==pair[0] && settings_has(row.actions,pair[1]) {
+                if id=="wifi_forget_confirm" && s.wifi_ui.forget!=row.target { return nil }
+                return {kind:"wifi",operation:"Network",target:row.target,action:pair[1]}
+            }
+        }
+    }
+    return nil
+}
+fn settings_wifi_row(s,o,id) { let rows=settings_wifi_rows(s,o); let i=0; while i<20 { if id=="wifi_row_"+i && s.wifi_ui.offset+i<rows.len() { return rows[s.wifi_ui.offset+i] }; i=i+1 }; return nil }
+fn settings_wifi_event(s,e,o,out) {
+    settings_wifi_init(s); let ui=s.wifi_ui
+    let rows=settings_wifi_rows(s,o); if ui.offset>0 && ui.offset>=rows.len() { ui.offset=0; settings_scroll(out,"wifi_page") }
+    let selected=settings_wifi_selected(s,o)
+    if selected==nil || !settings_has(selected.actions,"Forget") { ui.forget=nil }
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; if e.kind!="pause" { ui.forget=nil }; return false }
+    if s.page!="Wifi" && s.page!="WifiNetwork" { return false }
+    let row=settings_wifi_row(s,o,e.id); let candidate=settings_wifi_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,target:nil,request:candidate}; if row!=nil { ui.pressed.target=row.target }; return row!=nil || candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" || s.pending { return false }
+    if e.id=="wifi_forget_cancel" { ui.forget=nil; return true }
+    if s.page=="Wifi" {
+        if e.id=="wifi_available_tab" || e.id=="wifi_saved_tab" { ui.saved=e.id=="wifi_saved_tab"; ui.offset=0; ui.pressed=nil; settings_scroll(out,"wifi_page"); return true }
+        if e.id=="wifi_previous" || e.id=="wifi_next" {
+            if e.id=="wifi_previous" { ui.offset=settings_max(0,ui.offset-20) } else if ui.offset+20<rows.len() { ui.offset=ui.offset+20 }
+            ui.pressed=nil; settings_scroll(out,"wifi_page"); return true
+        }
+        if row!=nil && o.android {
+            let held=ui.pressed; ui.pressed=nil
+            if held!=nil && (held.id!=e.id || held.target!=row.target) { return true }
+            ui.selected=row.target; ui.forget=nil; s.page="WifiNetwork"; settings_scroll(out,"wifi_network_page"); return true
+        }
+    }
+    if !o.android { return false }
+    if e.id=="wifi_refresh" || e.id=="wifi_network_refresh" { settings_request(out,{kind:"read",domain:"wifi"}); return true }
+    if candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+        if e.id=="wifi_forget" { ui.forget=candidate.target } else { settings_request(out,candidate); ui.forget=nil }
+        return true
+    }
+    return false
+}
+fn settings_wifi_refresh(s,o,out) {
+    settings_wifi_init(s); if s.page!="Wifi" && s.page!="WifiNetwork" { return }
+    let ui=s.wifi_ui; let state=o.wifi; let ready=o.android && !s.pending; let connection="No current Wi-Fi connection reported."; let scan="Wi-Fi information unavailable or loading."; let unavailable=""; let enabled="Wi-Fi state unavailable"
+    if state!=nil {
+        if state.enabled!=nil { enabled=settings_bool_label("Wi-Fi",state.enabled) }
+        if state.connection!=nil {
+            let c=state.connection; let name=c.ssid; if name==nil || name=="" { name="Network name unavailable" }
+            connection="Current connection: "+name+"\n"+settings_named(c.internet,[["Validated","Internet available"],["CaptivePortal","Sign-in required"],["LocalOnly","Local network only"]],"Internet status unknown")
+            for field in [["IP address",c.ip_address,""],["Link speed",c.link_speed_mbps," Mbps"],["Frequency",c.frequency_mhz," MHz"],["Signal",c.rssi_dbm," dBm"]] { if field[1]!=nil { connection=connection+"\n"+field[0]+": "+field[1]+field[2] } }
+        }
+        scan=settings_named(state.scan_state,[["Idle","Scan results"],["Scanning","Scan in progress"],["Throttled","Android delayed scanning"],["Unavailable","Scanning unavailable"]],"Scanning unavailable")
+        if state.scan_age_ms!=nil { let age=state.scan_age_ms; if age.is_string() { age=age.to_f64() }; scan=scan+" · "+mod.math.floor(age/1000)+" seconds old" }
+        if !settings_has(state.capabilities,"Toggle") { unavailable="Wi-Fi on/off is controlled in Android Settings on this installation.\n" }
+        if !state.scan_available { unavailable=unavailable+"Nearby network details are unavailable. Android may require Wi-Fi permissions and Location to be enabled.\n" }
+        if !state.saved_available { unavailable=unavailable+"Saved network details are unavailable on this installation." }
+    }
+    settings_text(out,"wifi_enabled",enabled); settings_text(out,"wifi_connection",connection); settings_text(out,"wifi_scan_status",scan); settings_text(out,"wifi_availability",unavailable.trim())
+    for id in ["wifi_enabled","wifi_scan","wifi_access"] { settings_enabled(out,id,ready && settings_wifi_candidate(s,o,id)!=nil) }
+    settings_visible(out,"wifi_access",state!=nil && settings_has(state.capabilities,"RequestAccess"))
+    for id in ["wifi_refresh","wifi_network_refresh"] { settings_enabled(out,id,ready) }
+    let nearby="✓ Nearby"; let saved="Saved"; if ui.saved { nearby="Nearby"; saved="✓ Saved" }
+    settings_text(out,"wifi_available_tab",nearby); settings_text(out,"wifi_saved_tab",saved)
+    settings_enabled(out,"wifi_available_tab",!s.pending); settings_enabled(out,"wifi_saved_tab",!s.pending)
+    let rows=settings_wifi_rows(s,o); let count=settings_min(20,rows.len()-ui.offset)
+    let readable=state!=nil && ((!ui.saved && state.scan_available) || (ui.saved && state.saved_available))
+    let summary="Network list unavailable."
+    if readable { summary="No nearby networks reported."; if ui.saved { summary="No saved networks reported." } }
+    if rows.len()>0 { summary="Networks "+(ui.offset+1)+"–"+(ui.offset+count)+" of "+rows.len(); if state.truncated { summary=summary+" · Android returned the first 256 networks" } }
+    settings_text(out,"wifi_list_summary",summary); settings_enabled(out,"wifi_previous",!s.pending && ui.offset>0); settings_enabled(out,"wifi_next",!s.pending && ui.offset+20<rows.len())
+    let i=0
+    while i<20 {
+        let row=nil; let id="wifi_row_"+i; if ui.offset+i<rows.len() { row=rows[ui.offset+i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,ready && row!=nil)
+        if row!=nil {
+            let label=settings_wifi_name(row)+"\n"+settings_wifi_security(row.security)
+            if row.connected { label=label+" · Connected" }; if row.saved { label=label+" · Saved" }; if row.signal_level!=nil { label=label+" · Signal "+row.signal_level+"/4" }
+            settings_text(out,id,label); settings_patch(out,"semantic",id,"wifi:"+row.target)
+        }
+        i=i+1
+    }
+    let row=settings_wifi_selected(s,o); let identity="This network is no longer in the current observation."; let details=""
+    if row!=nil {
+        identity=settings_wifi_name(row)
+        let saved="Unavailable"; if state.saved_available { saved="No" }; if row.saved { saved="Yes" }
+        let connected="Unavailable"; if state.connection==nil || state.connection.target!=nil { connected="No" }; if row.connected { connected="Yes" }
+        let signal="Unavailable"; if row.signal_level!=nil { signal=""+row.signal_level+"/4" }
+        details="Security: "+settings_wifi_security(row.security)+"\nSaved: "+saved+"\nNearby: "+settings_apps_flag(row.available,"Yes","No")+"\nConnected: "+connected+"\nSignal: "+signal
+    }
+    settings_text(out,"wifi_network_identity",identity); settings_text(out,"wifi_network_details",details)
+    for id in ["wifi_connect","wifi_configure","wifi_forget","wifi_forget_confirm"] { settings_enabled(out,id,ready && settings_wifi_candidate(s,o,id)!=nil) }
+    settings_visible(out,"wifi_forget_confirmation",ui.forget!=nil && row!=nil); settings_enabled(out,"wifi_forget_cancel",!s.pending)
+}

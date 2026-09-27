@@ -1,0 +1,488 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/makepad/makepad.git",
+  "revision": "74b63be83e101ab3a28d3604df77e9662d50a833",
+  "dependency_revision": "74b63be83e101ab3a28d3604df77e9662d50a833",
+  "source_prefix": "apps/wm/",
+  "files": [
+    {
+      "source": "LICENSE",
+      "destination": "LICENSES/Makepad-MIT.txt",
+      "sha256": "3855d73a873244ec424ac5781d5d8fc8e2a789ff9d2f1cb804bec585a64ea88f"
+    },
+    {
+      "source": "apps/wm/Cargo.toml",
+      "destination": "Cargo.toml",
+      "sha256": "95783bedb659049df2fe8f8633dc50a53ca49b2a8d970817a314b1a7d97d7dcf"
+    },
+    {
+      "source": "apps/wm/KEYBINDINGS.md",
+      "destination": "KEYBINDINGS.md",
+      "sha256": "ffb1698a4f382939444735de5556f2d2896a5f395da6011167f5923965ba1e48"
+    },
+    {
+      "source": "apps/wm/resources/icons/battery.svg",
+      "destination": "resources/icons/battery.svg",
+      "sha256": "d71c1b4d187cca4975dd7736a19d343e01247d92ebcb36649413cc7f373e2c62"
+    },
+    {
+      "source": "apps/wm/resources/icons/bell-off.svg",
+      "destination": "resources/icons/bell-off.svg",
+      "sha256": "d52d874a854c855c4a980c232523b0fdb3bca4190ca353e5c7915093bc573539"
+    },
+    {
+      "source": "apps/wm/resources/icons/bell.svg",
+      "destination": "resources/icons/bell.svg",
+      "sha256": "07e0364bdffad3d6eba0e496dfa5ea983a88cc2c7e586c72ac689b88c61d1604"
+    },
+    {
+      "source": "apps/wm/resources/icons/bluetooth-off.svg",
+      "destination": "resources/icons/bluetooth-off.svg",
+      "sha256": "df8902109494fef14a8537402505fc05de98d7d769022b842b9b28b5cea4e08d"
+    },
+    {
+      "source": "apps/wm/resources/icons/bluetooth.svg",
+      "destination": "resources/icons/bluetooth.svg",
+      "sha256": "c8bc1e0303a3f5fa050a415d35b0c1823a5d12dd9f60296e8571d01224253f15"
+    },
+    {
+      "source": "apps/wm/resources/icons/brightness.svg",
+      "destination": "resources/icons/brightness.svg",
+      "sha256": "3fb11f06bbdc86bc9602967689fcd07b18c84ba9522e4a373c4062b00f4afbe3"
+    },
+    {
+      "source": "apps/wm/resources/icons/calendar.svg",
+      "destination": "resources/icons/calendar.svg",
+      "sha256": "6f4b924bb1b99621641999b2a7d4913629503c975bcadf5e01e6915ea3d7ad60"
+    },
+    {
+      "source": "apps/wm/resources/icons/check.svg",
+      "destination": "resources/icons/check.svg",
+      "sha256": "8a3c8290eb0e867b3c18b0736c28f6223c0e93b7a7832fc859f6f729449ff842"
+    },
+    {
+      "source": "apps/wm/resources/icons/chevron-down.svg",
+      "destination": "resources/icons/chevron-down.svg",
+      "sha256": "bfd7e271abaa85afd7b3277d30d35f8a2273689ad9b50fe454fb4a2df514ddc0"
+    },
+    {
+      "source": "apps/wm/resources/icons/chevron-left.svg",
+      "destination": "resources/icons/chevron-left.svg",
+      "sha256": "c177e27990fb888df06c7e341f9c8f1f3aae66636cfddbd51bb06f473187d5f8"
+    },
+    {
+      "source": "apps/wm/resources/icons/chevron-right.svg",
+      "destination": "resources/icons/chevron-right.svg",
+      "sha256": "4b66af40734af0e0552541051cc5d590038ebfd9fd885eb7e6dfc36332c8db65"
+    },
+    {
+      "source": "apps/wm/resources/icons/close.svg",
+      "destination": "resources/icons/close.svg",
+      "sha256": "005411d29797c3e4fdf8c01c7937a438e0bba88e1b275b59db710923cae0d392"
+    },
+    {
+      "source": "apps/wm/resources/icons/cpu.svg",
+      "destination": "resources/icons/cpu.svg",
+      "sha256": "fec47cd2a17120ce0a35c8bc9b8fb21e2711b6ce420429d226264c88fff2b9a7"
+    },
+    {
+      "source": "apps/wm/resources/icons/dot.svg",
+      "destination": "resources/icons/dot.svg",
+      "sha256": "a1648c3741020d07db19446825a0a185070e6618760015518236556ad2afba91"
+    },
+    {
+      "source": "apps/wm/resources/icons/globe.svg",
+      "destination": "resources/icons/globe.svg",
+      "sha256": "1d73b35c564460d9f7b83149a9a9bd35ed70111fb2fa2289148acc49c0faa675"
+    },
+    {
+      "source": "apps/wm/resources/icons/headphone.svg",
+      "destination": "resources/icons/headphone.svg",
+      "sha256": "93ae38ddea8d974a93ef729126ae4b690d70437b8b5ee8db06d47b2020e1d7d9"
+    },
+    {
+      "source": "apps/wm/resources/icons/key-backspace.svg",
+      "destination": "resources/icons/key-backspace.svg",
+      "sha256": "1355b9a436d8d777c4ca57c0f80b7a7ca48c5fadabe39fcdc407237c1f1e4885"
+    },
+    {
+      "source": "apps/wm/resources/icons/key-shift.svg",
+      "destination": "resources/icons/key-shift.svg",
+      "sha256": "93e0d8f92d18fba2d4afb8671bf0dee62597a009fd367718b8be8a33d15a08c7"
+    },
+    {
+      "source": "apps/wm/resources/icons/keyboard.svg",
+      "destination": "resources/icons/keyboard.svg",
+      "sha256": "b9f17ef1fa98a32d643cb9855f6ce0997d3ba12d535ed7b540c4fff84649d98e"
+    },
+    {
+      "source": "apps/wm/resources/icons/lock.svg",
+      "destination": "resources/icons/lock.svg",
+      "sha256": "8b869302085d46ee8629727dedfb787df4fed83aeb3870ce93ecadef8ff782fe"
+    },
+    {
+      "source": "apps/wm/resources/icons/menu.svg",
+      "destination": "resources/icons/menu.svg",
+      "sha256": "736b73e14080cec019e85a063f832c603c997fb75a61f2fb7ff142e4accea704"
+    },
+    {
+      "source": "apps/wm/resources/icons/mic-off.svg",
+      "destination": "resources/icons/mic-off.svg",
+      "sha256": "b4016ecfc128e81ef5bcb9d22c5844f88c55d9d581cdb573a1cceb0aaf8fbc4f"
+    },
+    {
+      "source": "apps/wm/resources/icons/mic.svg",
+      "destination": "resources/icons/mic.svg",
+      "sha256": "ad5a2039b2ea32d568cfb7d597f78eaa869627b220d76268808f753296b59eb3"
+    },
+    {
+      "source": "apps/wm/resources/icons/monitor.svg",
+      "destination": "resources/icons/monitor.svg",
+      "sha256": "b245a22b70de7314a01b8d0e635971dacae9ee51d8b18adc588b33d4dbe310de"
+    },
+    {
+      "source": "apps/wm/resources/icons/moon.svg",
+      "destination": "resources/icons/moon.svg",
+      "sha256": "c6062445a7be40885503071434464eef8dfac63128442b7db5015460cd6c3459"
+    },
+    {
+      "source": "apps/wm/resources/icons/photo.svg",
+      "destination": "resources/icons/photo.svg",
+      "sha256": "69eb32374f81df3e53e59a89fb99521d22383f7e2f25fc56dc3755c811c1aa35"
+    },
+    {
+      "source": "apps/wm/resources/icons/play.svg",
+      "destination": "resources/icons/play.svg",
+      "sha256": "a7b6a813e4ebc30482e1e751510d92ca888201479a0a46b198aed8ce463678e1"
+    },
+    {
+      "source": "apps/wm/resources/icons/power.svg",
+      "destination": "resources/icons/power.svg",
+      "sha256": "17efa50079ea4bbeebdb28b01b7e04f808e05a6ca39c0e2e04cae7f94adb0b59"
+    },
+    {
+      "source": "apps/wm/resources/icons/pulse.svg",
+      "destination": "resources/icons/pulse.svg",
+      "sha256": "2e95cb9698d8d1b65d911f6a7f794da18814e26c65d781962d7674bf9550eb17"
+    },
+    {
+      "source": "apps/wm/resources/icons/record.svg",
+      "destination": "resources/icons/record.svg",
+      "sha256": "3dd939df22f596d9d90e80bae499930c7aba59a777e597f8b8493373642dec1b"
+    },
+    {
+      "source": "apps/wm/resources/icons/refresh.svg",
+      "destination": "resources/icons/refresh.svg",
+      "sha256": "d3c3108a81e5ae336cd45e157933eeae6ba4d3e7d05b20529832f3389d964f1f"
+    },
+    {
+      "source": "apps/wm/resources/icons/search.svg",
+      "destination": "resources/icons/search.svg",
+      "sha256": "929845c3262f30ad612c604dbda9c6b5861cd4858078ba10d5d4f50810a72a4b"
+    },
+    {
+      "source": "apps/wm/resources/icons/shirt.svg",
+      "destination": "resources/icons/shirt.svg",
+      "sha256": "a766b0d11fc231b8f189e213c277f97945cfeea8f6d24c2eddf9d3456a2f5019"
+    },
+    {
+      "source": "apps/wm/resources/icons/speaker.svg",
+      "destination": "resources/icons/speaker.svg",
+      "sha256": "32b68e96a6b5b10e486d80089d89b0b33f268cb13f148310558bc1ce16a122cf"
+    },
+    {
+      "source": "apps/wm/resources/icons/volume-0.svg",
+      "destination": "resources/icons/volume-0.svg",
+      "sha256": "ede191f3ff65a8ad3ac817ef24dddbba71037a129cec1e530d06903368044d51"
+    },
+    {
+      "source": "apps/wm/resources/icons/volume-1.svg",
+      "destination": "resources/icons/volume-1.svg",
+      "sha256": "aa0b3ef99d2205910c7b80079fda5081c5a4d38344ec37c5698b85f025759cd9"
+    },
+    {
+      "source": "apps/wm/resources/icons/volume-2.svg",
+      "destination": "resources/icons/volume-2.svg",
+      "sha256": "84d02340bbe19e1d8f9851ec92f397e6e22a510707b86cf060c3bdcc49b88568"
+    },
+    {
+      "source": "apps/wm/resources/icons/volume-3.svg",
+      "destination": "resources/icons/volume-3.svg",
+      "sha256": "5fb3283a924b74bd928da076f3e18ea9e010303ff26bbe75e96ac6ef47598a26"
+    },
+    {
+      "source": "apps/wm/resources/icons/wifi-off.svg",
+      "destination": "resources/icons/wifi-off.svg",
+      "sha256": "d2497ad9fb30f87acdb492f085052103fe7f709568aa2038a4a314943bc2321e"
+    },
+    {
+      "source": "apps/wm/resources/icons/wifi.svg",
+      "destination": "resources/icons/wifi.svg",
+      "sha256": "e554db6548a7baf13398441f5b08c70e4d7298b4ca6d54f4f8011877a48f5338"
+    },
+    {
+      "source": "apps/wm/resources/icons/window-max.svg",
+      "destination": "resources/icons/window-max.svg",
+      "sha256": "d1db1b8e307a7c4de838b4b19bef962eeb684ff9fb53daf2d65b9b22781f5256"
+    },
+    {
+      "source": "apps/wm/resources/icons/window-min.svg",
+      "destination": "resources/icons/window-min.svg",
+      "sha256": "3e6b062ad5f987ee1cff4989f6feaf34e4593095c87da3fb87cf5cb44d08d48e"
+    },
+    {
+      "source": "apps/wm/resources/icons/window-restore.svg",
+      "destination": "resources/icons/window-restore.svg",
+      "sha256": "de04732fb6f655e260e221a4f7144e2b817015c31d7cda29100b4d94f2ce4fb3"
+    },
+    {
+      "source": "apps/wm/resources/startup.splash",
+      "destination": "resources/startup.splash",
+      "sha256": "e08cb962ba825370b2fec6e11d1e9008420d7662ab15e435564c16b9a2b9bffc"
+    },
+    {
+      "source": "apps/wm/src/ai_bus.rs",
+      "destination": "src/ai_bus.rs",
+      "sha256": "76f3c8cede2ee600ad1e9e7df7562f78e531aea31eaed306c874ecfa5c1ec8ed"
+    },
+    {
+      "source": "apps/wm/src/apps.rs",
+      "destination": "src/apps.rs",
+      "sha256": "f1a4d8548a7778cc7dac2c4a654e507e17c1178e4dbab6000e107a7c2239bf27"
+    },
+    {
+      "source": "apps/wm/src/binds.rs",
+      "destination": "src/binds.rs",
+      "sha256": "d2b9808ff0d7ce9aaa67b7897248498000b60868f781d84f222c0db4aaca782d"
+    },
+    {
+      "source": "apps/wm/src/clients.rs",
+      "destination": "src/clients.rs",
+      "sha256": "d5716cadf8ddff3086c70046531301f9324a222bba9f0d1678a2310656b9a306"
+    },
+    {
+      "source": "apps/wm/src/demo_home.rs",
+      "destination": "src/demo_home.rs",
+      "sha256": "1ba73f3ac0c19139119a462fe451b7b6bf3ad9b6a10759c4fb18fc65a9db244e"
+    },
+    {
+      "source": "apps/wm/src/desk.rs",
+      "destination": "src/desk.rs",
+      "sha256": "297bfebbbcc5f82b253ffb8b3e0284d70fa610ab38a23cc28ada4e662cb25d81"
+    },
+    {
+      "source": "apps/wm/src/desk/phone.rs",
+      "destination": "src/desk/phone.rs",
+      "sha256": "3316dc7593b34eb58570424122a4e0d8d4474e8ab4211ef6dd842d8cefa30cca"
+    },
+    {
+      "source": "apps/wm/src/desktop.rs",
+      "destination": "src/desktop.rs",
+      "sha256": "3a3b2f58b642cd7f3910925ea4e5223857e1c2c7c60333bbca1d15665be51375"
+    },
+    {
+      "source": "apps/wm/src/desktop_app.rs",
+      "destination": "src/desktop_app.rs",
+      "sha256": "441654d8662ec59fca6066c34e126abadf678056929965ce6d9ad28d8b3b82cd"
+    },
+    {
+      "source": "apps/wm/src/desktop_layout.rs",
+      "destination": "src/desktop_layout.rs",
+      "sha256": "6ee0020526980da6ff63510e2aa0ce1d8ee31a74869b682ce38f8afe8cd5cc7c"
+    },
+    {
+      "source": "apps/wm/src/dock_warp.rs",
+      "destination": "src/dock_warp.rs",
+      "sha256": "52cf3dceeb8b3774c78eb02beb58bdbdce7e3cc8acd283674a617bfe3fa2a556"
+    },
+    {
+      "source": "apps/wm/src/host.rs",
+      "destination": "src/host.rs",
+      "sha256": "cac7b53d834047a75743b994f417c24af94af761fc61d8c59f8e009697937ef9"
+    },
+    {
+      "source": "apps/wm/src/hub.rs",
+      "destination": "src/hub.rs",
+      "sha256": "63bc2fbc97e3e829bcfddf2e465bbb82d0839fd9e1e8183407f78308e6946587"
+    },
+    {
+      "source": "apps/wm/src/layout.rs",
+      "destination": "src/layout.rs",
+      "sha256": "1f96ca32191d528c60ccaf649b129f0ad5ca711e4033e00540bd40c2296a96e3"
+    },
+    {
+      "source": "apps/wm/src/main.rs",
+      "destination": "src/main.rs",
+      "sha256": "8b8d4cc63573a38c1e5427bc1949ed8ab307dd1763bd7fc7f8969cf9df346e56"
+    },
+    {
+      "source": "apps/wm/src/mobile.rs",
+      "destination": "src/mobile.rs",
+      "sha256": "16826996b41b234906598956d5c89d6f56402b6dd8ca1e9f8a3835b9e4636800"
+    },
+    {
+      "source": "apps/wm/src/mobile_app.rs",
+      "destination": "src/mobile_app.rs",
+      "sha256": "fdddd4a36f2024d86676dce5c37f53129278582132db4d7eff809c6597ff9af2"
+    },
+    {
+      "source": "apps/wm/src/mobile_surface.rs",
+      "destination": "src/mobile_surface.rs",
+      "sha256": "b37af0e76d7ccedb39263d3633f3ab93678171fc59b395f803eb1b9ad17516f0"
+    },
+    {
+      "source": "apps/wm/src/mobile_surface/search.rs",
+      "destination": "src/mobile_surface/search.rs",
+      "sha256": "bfc50b900737133e73923a9452e2790ac1d7f0fef7870c8cc6bedb22baef0f32"
+    },
+    {
+      "source": "apps/wm/src/mobile_tiles.rs",
+      "destination": "src/mobile_tiles.rs",
+      "sha256": "fe4d9d598afa913873107ae46e4a0cd147694a991d0e0b08b2491ae9e5a1f82e"
+    },
+    {
+      "source": "apps/wm/src/module_host.rs",
+      "destination": "src/module_host.rs",
+      "sha256": "275fbf670061dfb0aca1621063c33e46e9e2ec3e21c15a033e5c315136d6837c"
+    },
+    {
+      "source": "apps/wm/src/module_view.rs",
+      "destination": "src/module_view.rs",
+      "sha256": "8d42ce3ad13f0aacda0218cac78f5cbce3717d177c8eb55d652d3bd21c02ea7b"
+    },
+    {
+      "source": "apps/wm/src/pane_links.rs",
+      "destination": "src/pane_links.rs",
+      "sha256": "421068d31afbbe16ac403263f5478092ae8cc5951757bd4cded19ab5ff12b8d1"
+    },
+    {
+      "source": "apps/wm/src/preview.rs",
+      "destination": "src/preview.rs",
+      "sha256": "875cd047bd242e900233e376b33dbaca120792e986cad6dac28c91b44af12872"
+    },
+    {
+      "source": "apps/wm/src/run_view.rs",
+      "destination": "src/run_view.rs",
+      "sha256": "b6ac52b22098fe1b51c1cdbf71cb0007543e0f4fe1ec73de94101dd9c4a3a8f3"
+    },
+    {
+      "source": "apps/wm/src/scene.rs",
+      "destination": "src/scene.rs",
+      "sha256": "3fb2d822f079fcdada67501822b5f0202b82b1a15998b80a6385e22808d9f040"
+    },
+    {
+      "source": "apps/wm/src/shell/ai_pane.rs",
+      "destination": "src/shell/ai_pane.rs",
+      "sha256": "71c47ef5acdfd44268ab94fa34a38cdee6f217a8890b5e1cfd3110a9c35ad277"
+    },
+    {
+      "source": "apps/wm/src/shell/bar.rs",
+      "destination": "src/shell/bar.rs",
+      "sha256": "46ca5c335faf8bc3bda1c9fbeb98d5d0c62c766a05462f86dd7dc4e885d0dc71"
+    },
+    {
+      "source": "apps/wm/src/shell/gallery.rs",
+      "destination": "src/shell/gallery.rs",
+      "sha256": "2542da262284d87333f761142bdf33d0a7c6bd5aa0e01e22f3b8cb747f5f17b7"
+    },
+    {
+      "source": "apps/wm/src/shell/launcher.rs",
+      "destination": "src/shell/launcher.rs",
+      "sha256": "3e6eef43390808f1bf63cdbcfba8ebc1ada0d7a9495bfa4dafc05f4e5e3da613"
+    },
+    {
+      "source": "apps/wm/src/shell/menu.rs",
+      "destination": "src/shell/menu.rs",
+      "sha256": "db4e60acb1e0b96489cf06cb4e85191c70c369d871247d40f8d8fd3913a48e84"
+    },
+    {
+      "source": "apps/wm/src/shell/menu/nextstep.rs",
+      "destination": "src/shell/menu/nextstep.rs",
+      "sha256": "fb846e4b04d30c418f1377d4cf459eb3f8992aba4b2a869d45b106b25c8f4604"
+    },
+    {
+      "source": "apps/wm/src/shell/mod.rs",
+      "destination": "src/shell/mod.rs",
+      "sha256": "11e51d8618f702888f0d6eb5f403a40c04ffa9d7b83b498751cf2b69f9597be0"
+    },
+    {
+      "source": "apps/wm/src/shell/notifications.rs",
+      "destination": "src/shell/notifications.rs",
+      "sha256": "8e0d8f0a2bcec7f91c7ddc6ddaecdc8c95cfbb8b40e04bae6ac865f29778a20d"
+    },
+    {
+      "source": "apps/wm/src/shell/osd.rs",
+      "destination": "src/shell/osd.rs",
+      "sha256": "6caa5796b36896888d0a79cc199dd507b6ee7105fb45db09eec788dd1d7db35d"
+    },
+    {
+      "source": "apps/wm/src/shell/panels.rs",
+      "destination": "src/shell/panels.rs",
+      "sha256": "e16a5b3f0d318b0bde6e81b69ba92c4c8c8547cbbeeab1ed45031a90367a92bb"
+    },
+    {
+      "source": "apps/wm/src/shell/ui.rs",
+      "destination": "src/shell/ui.rs",
+      "sha256": "00966215a845176a39a14b1592779e3168f412bb862fc55fc8f0a4043778c543"
+    },
+    {
+      "source": "apps/wm/src/snap.rs",
+      "destination": "src/snap.rs",
+      "sha256": "dfe9f6c2523cbccb92307973024943f1447f13176a2ac7d54db7e8e6b70f7b3c"
+    },
+    {
+      "source": "apps/wm/src/theme.rs",
+      "destination": "src/theme.rs",
+      "sha256": "db1bf89b5ddf6d86b8968f1aeef389a3bdd1443abc59132635b11bffd34dee06"
+    },
+    {
+      "source": "apps/wm/src/tile.rs",
+      "destination": "src/tile.rs",
+      "sha256": "a956d6aac298b688fcf9b83b3adbe0797821790e24aeedb06b87b1f1665560cc"
+    }
+  ],
+  "adaptations": [
+    "Cargo manifest uses pinned external dependencies and lean default features.",
+    "WM fonts use named dependency resources.",
+    "OctoSense owns app registration, state paths, and opt-in startup behavior.",
+    "Desktop and web builds start with OctoSense Light and its bundled wallpaper; native Android and iOS, and the standalone mobile shell, retain their touch shells.",
+    "Omarchy's default Tokyo Night wallpaper is embedded for offline startup; installed wallpapers take precedence and explicit downloads remain available. Asset provenance is recorded in resources/wallpapers/README.md.",
+    "User-facing branding is OctoSense; wire protocol identifiers remain compatible.",
+    "Client lifecycle reports failed builds and synchronously terminates/reaps process groups on host shutdown.",
+    "Run-view widget geometry follows the presented surface after its startup background disappears.",
+    "Desktop and mobile launch surfaces only expose available catalog apps; mobile tile background launches honor prewarming opt-in.",
+    "Theme material tests load the local OctoSense stylesheet adapter instead of assuming a monorepo-relative widgets directory.",
+    "Desktop widget geometry uses its stable turtle area and explicitly enumerates hosted children so floating styles and tree refreshes retain app discovery.",
+    "The OctoSense style is owned locally, using official macOS icon/layout APIs and complete light/dark stylesheets over the existing protocol. Shell colors follow the selected local palette.",
+    "The OctoSense desktop uses paired light/dark Abyssal Currents rasters through the standard crop-to-fill Image widget; Android retains its animated background. The replaced fork SVG is recorded under retained_fork_assets.replaced_files.",
+    "The local retired-pass adapter detaches passes with freed draw-list roots before the upstream retained GPU working-set scan, preserving live pass roots.",
+    "The catalog follows official Makepad apps; the stable studio catalog ID now launches Director, which replaced Studio upstream.",
+    "OctoSense owns the project identity, package names and local resource paths; pristine upstream names and hashes are retained for syncing."
+  ],
+  "omissions": [],
+  "default_source": "../makepad",
+  "retained_fork_assets": {
+    "repository": "https://github.com/OctoSense-org/makepad.git",
+    "revision": "ff134865d5e4491d9f5a2d21278f317826fff888",
+    "files": [
+      {
+        "source": "widgets/themes/makeos/theme.splash",
+        "destination": "resources/themes/octosense/theme.splash",
+        "sha256": "b7517d4e77a8812bfc986f45ed076699022adcc50c82e1456b5555c33491d54f"
+      },
+      {
+        "source": "widgets/themes/makeos/widgets.splash",
+        "destination": "resources/themes/octosense/widgets.splash",
+        "sha256": "ebaad2a4eb58d155282cb8d5ef1ec77f3745b9cc2e2ef656c3090c7206921573"
+      }
+    ],
+    "replaced_files": [
+      {
+        "source": "apps/wm/resources/wallpapers/makeos.svg",
+        "sha256": "cfb1eefda276dc4ca9f15577326c37c95ee75f3121af7cd6d80b417d9e04a605",
+        "former_destination": "resources/wallpapers/octosense.svg",
+        "replacement": "resources/wallpapers/octosense-abyssal-currents.png"
+      }
+    ]
+  }
+}

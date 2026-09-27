@@ -1,0 +1,83 @@
+// OTA presentation and explicit offer/restart reviews. URLs are never exposed.
+fn settings_updates_init(s) { if s["updates_ui"]==nil { s.updates_ui={review:nil,pressed:nil} } }
+fn settings_updates_permits(row,r) {
+    if row==nil || r==nil { return false }
+    if r.operation=="Check" { return settings_has(row.capabilities,"Check") }
+    if r.operation=="Reboot" { return settings_has(row.capabilities,"Reboot") && row.rom_phase=="Reboot" && r.key==row.reboot_key }
+    if r.operation=="Install" && row.offer!=nil && row.offer.key==r.key {
+        if r.part=="Rom" { return settings_has(row.capabilities,"InstallRom") }
+        if r.part=="Home" { return settings_has(row.capabilities,"InstallHome") }
+    }
+    return false
+}
+fn settings_updates_candidate(s,o,id) {
+    let row=o.updates; let r=nil
+    if row==nil { return nil }
+    if id=="updates_check" { r={kind:"updates",operation:"Check"} }
+    if id=="updates_reboot" && row.reboot_key!=nil { r={kind:"updates",operation:"Reboot",key:row.reboot_key} }
+    if row.offer!=nil {
+        if id=="updates_rom" { r={kind:"updates",operation:"Install",part:"Rom",key:row.offer.key} }
+        if id=="updates_home" { r={kind:"updates",operation:"Install",part:"Home",key:row.offer.key} }
+    }
+    if id=="updates_confirm" { r=s.updates_ui.review }
+    if settings_updates_permits(row,r) { return r }
+    return nil
+}
+fn settings_updates_event(s,e,o,out) {
+    settings_updates_init(s); let ui=s.updates_ui
+    if ui.review!=nil && !settings_updates_permits(o.updates,ui.review) { ui.review=nil }
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" || e.kind=="back" { ui.pressed=nil; if e.kind!="pause" { ui.review=nil }; return false }
+    if s.page!="Updates" { return false }
+    let candidate=settings_updates_candidate(s,o,e.id)
+    if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; return candidate!=nil }
+    if e.kind=="release" { ui.pressed=nil; return false }
+    if e.kind!="click" || s.pending { return false }
+    if e.id=="updates_cancel_review" { ui.review=nil; return true }
+    if e.id=="updates_refresh" { if o.android { settings_request(out,{kind:"read",domain:"updates"}) }; return true }
+    if candidate==nil { return false }
+    let held=ui.pressed; ui.pressed=nil
+    if !o.android || (held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json())) { return true }
+    if e.id=="updates_check" || e.id=="updates_confirm" { settings_request(out,candidate); ui.review=nil }
+    else { ui.review=candidate }
+    return true
+}
+fn settings_updates_label(value) {
+    for row in [["Never","Not checked yet"],["Checking","Checking for updates…"],["Checked","Check completed"],["Reboot","Restart required"],["ReportingError","Reporting update error"],["Rollback","Attempting rollback"],["Permission","Permission required"],["Cleanup","Cleaning up previous update"]] { if row[0]==value { return row[1] } }
+    return settings_or(value,"Unavailable")
+}
+fn settings_updates_refresh(s,o,out) {
+    settings_updates_init(s)
+    if s.page!="Updates" { return }
+    let row=o.updates; let ui=s.updates_ui; let ready=o.android && !s.pending
+    let availability="Waiting for update service information…"; let current="Current versions unavailable"; let check=""; let offer="No update offer reported."; let rom="Unavailable"; let home="Unavailable"
+    if row!=nil {
+        availability="System update service is unavailable on this installation."
+        if row.availability=="Available" { availability="System update service available" }
+        if row.availability=="Restricted" { availability="System updates are restricted or the device is locked." }
+        current="Device: "+settings_or(row.model,"Unavailable")+" ("+settings_or(row.device,"Unavailable")+")\nSystem: "+settings_or(row.rom_version,"Unavailable")+"\nOctoSense Home: "+settings_or(row.home_version,"Unavailable")+"\nActive slot: "+settings_or(row.slot,"Unavailable")
+        check=settings_updates_label(row.check_state); if row.check_state=="Failed" { check="Update check failed" }
+        if row.checked_at_text!=nil { check=check+"\nLast check: "+row.checked_at_text }; if row.check_error!=nil { check=check+"\n"+row.check_error }
+        if row.offer!=nil {
+            let r=row.offer; offer="Release: "+r.release+"\nSystem offered: "+settings_or(r.rom_version,"Not offered")
+            if r.rom_newer { offer=offer+" (newer)" }; offer=offer+"\nOctoSense Home offered: "+settings_or(r.home_version,"Not offered"); if r.home_newer { offer=offer+" (newer)" }
+        }
+        rom=settings_updates_label(row.rom_phase); if row.rom_phase=="Available" { rom="Update available" }
+        if row.rom_progress!=nil { rom=rom+" · "+settings_round(row.rom_progress*100)+"%" }; if row.rom_error!=nil { rom=rom+"\n"+row.rom_error }
+        home=settings_updates_label(row.home_phase); if row.home_error!=nil { home=home+"\n"+row.home_error }
+    }
+    settings_text(out,"updates_availability",availability); settings_text(out,"updates_current",current); settings_text(out,"updates_check_state",check); settings_text(out,"updates_offer",offer)
+    settings_text(out,"updates_rom_state","System update: "+rom); settings_text(out,"updates_home_state","Home update: "+home)
+    settings_enabled(out,"updates_refresh",ready)
+    for id in ["updates_check","updates_rom","updates_home","updates_reboot","updates_confirm"] { settings_enabled(out,id,ready && settings_updates_candidate(s,o,id)!=nil) }
+    settings_visible(out,"updates_confirmation",ui.review!=nil); settings_enabled(out,"updates_cancel_review",!s.pending)
+    let copy=""; let button="Install reviewed update"
+    if ui.review!=nil {
+        if ui.review.operation=="Reboot" { copy="Restart this device now to complete the installed system update? Open apps will close."; button="Restart now" }
+        else if row!=nil && row.offer!=nil && row.offer.key==ui.review.key {
+            let name="System"; let version=row.offer.rom_version; let note="A restart is required after installation."
+            if ui.review.part=="Home" { name="OctoSense Home"; version=row.offer.home_version; note="OctoSense Home will restart and its open apps will close." }
+            copy="Install "+name+" update "+settings_or(version,"Unavailable")+" from "+row.offer.release+"? "+note
+        }
+    }
+    settings_text(out,"updates_confirmation_text",copy); settings_text(out,"updates_confirm",button)
+}

@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.makepad.octosense.roleassistantfixture" android:versionCode="1" android:versionName="1">
+    <uses-sdk android:minSdkVersion="30" android:targetSdkVersion="35"/>
+    <application android:label="OctoSense role validation assistant" android:allowBackup="false">
+        <activity android:name="dev.makepad.octosense.rolebrowserfixture.BrowserActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+    </application>
+    <instrumentation android:name="dev.makepad.octosense.rolebrowserfixture.RoleBrowserProbe" android:targetPackage="dev.makepad.octosense.roleassistantfixture" android:label="Synthetic assistant role state"/>
+</manifest>

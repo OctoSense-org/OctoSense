@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "id": "app-hub-v1",
+  "artboard": [
+    406,
+    776
+  ],
+  "locales": [
+    "en"
+  ],
+  "generation": {
+    "atlas": "source/atlas.png",
+    "prompt": "source/atlas-prompt.txt",
+    "provider": "OpenAI imagegen tool",
+    "model": "not reported by tool",
+    "requested_size": [
+      1624,
+      1552
+    ],
+    "quality": "high"
+  },
+  "scenes": [
+    {
+      "id": "today-preview",
+      "design_id": "apphub-today-preview",
+      "directory": "scenes/today-preview",
+      "crop": [
+        8,
+        12,
+        245,
+        756
+      ],
+      "surface": "app",
+      "title": "today-preview"
+    },
+    {
+      "id": "apps-preview",
+      "design_id": "apphub-apps-preview",
+      "directory": "scenes/apps-preview",
+      "crop": [
+        261,
+        12,
+        245,
+        756
+      ],
+      "surface": "app",
+      "title": "apps-preview"
+    },
+    {
+      "id": "search-preview",
+      "design_id": "apphub-search-preview",
+      "directory": "scenes/search-preview",
+      "crop": [
+        514,
+        12,
+        245,
+        756
+      ],
+      "surface": "app",
+      "title": "search-preview"
+    },
+    {
+      "id": "detail-preview",
+      "design_id": "apphub-detail-preview",
+      "directory": "scenes/detail-preview",
+      "crop": [
+        767,
+        12,
+        245,
+        756
+      ],
+      "surface": "app",
+      "title": "detail-preview"
+    },
+    {
+      "id": "install-confirmation",
+      "design_id": "apphub-install-confirmation",
+      "directory": "scenes/install-confirmation",
+      "crop": [
+        8,
+        783,
+        245,
+        739
+      ],
+      "surface": "app",
+      "title": "install-confirmation"
+    },
+    {
+      "id": "library",
+      "design_id": "apphub-library",
+      "directory": "scenes/library",
+      "crop": [
+        261,
+        783,
+        245,
+        739
+      ],
+      "surface": "app",
+      "title": "library"
+    },
+    {
+      "id": "live-empty",
+      "design_id": "apphub-live-empty",
+      "directory": "scenes/live-empty",
+      "crop": [
+        514,
+        783,
+        245,
+        739
+      ],
+      "surface": "app",
+      "title": "live-empty"
+    },
+    {
+      "id": "live-error",
+      "design_id": "apphub-live-error",
+      "directory": "scenes/live-error",
+      "crop": [
+        767,
+        783,
+        245,
+        739
+      ],
+      "surface": "app",
+      "title": "live-error"
+    }
+  ],
+  "cards": [],
+  "artwork": {
+    "source_prefix": "http://127.0.0.1:8170/",
+    "root": "artwork"
+  },
+  "outputs": {
+    "intake": "intake",
+    "cards": "cards",
+    "bundle": "bundle",
+    "wasm": "wasm",
+    "runs": "runs"
+  },
+  "browser_modules": [],
+  "checks": {}
+}

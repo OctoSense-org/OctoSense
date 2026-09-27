@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="dev.makepad.octosense.settingsbroker"
+    android:sharedUserId="android.uid.system"
+    android:versionCode="1"
+    android:versionName="0.1">
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+    <uses-permission android:name="android.permission.CHANGE_CONFIGURATION" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <application android:label="OctoSense Settings broker"
+        android:allowBackup="false" android:usesCleartextTraffic="false"
+        android:supportsRtl="true" android:theme="@android:style/Theme.DeviceDefault">
+        <!-- Bind-only service; no launcher, boot receiver or persistent process. -->
+        <service android:name=".OctoSenseAccountSettingsService"
+            android:exported="true"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseZenSettingsService"
+            android:exported="true"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseAppNotificationsService"
+            android:exported="true"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseAppBatteryService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseAppNetworkService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseAppStorageService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseAppLanguageService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseSystemLanguageService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <service android:name=".OctoSenseKeyboardService"
+            android:exported="true" android:directBootAware="false"
+            android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+        <!-- SettingsLib may include this optional product component. It is not part of this broker. -->
+        <activity android:name="com.android.settingslib.avatarpicker.AvatarPickerActivity" tools:node="remove" />
+        <activity android:name=".OctoSenseKeyboardActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|fontScale|fontWeightAdjustment|locale|layoutDirection"
+            android:theme="@style/KeyboardNativeTheme" />
+        <!-- The immutable one-shot PendingIntent is the only external entry. -->
+        <activity android:name=".OctoSenseRemoveAccountActivity"
+            android:exported="false" android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.Alert" />
+    </application>
+</manifest>

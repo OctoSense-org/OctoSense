@@ -1,0 +1,4 @@
+<resources>
+    <string name="launcher_fixture_title">OctoSense launcher validation</string>
+    <string name="launcher_fixture_return">Return to Home</string>
+</resources>
