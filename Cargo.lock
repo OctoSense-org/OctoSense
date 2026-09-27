@@ -6721,6 +6721,7 @@ dependencies = [
  "octos-core",
  "octoscript-node",
  "octoscript-ui-l0",
+ "octosense-llm-config",
  "reqwest 0.12.28",
  "robius-open",
  "serde",
@@ -7171,7 +7172,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0d36f50b9f0fdfbd8247b5deb8da8baa53c83066#0d36f50b9f0fdfbd8247b5deb8da8baa53c83066"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=3e993d4c596560c42f011b2fd00bd40dbcac7cc5#3e993d4c596560c42f011b2fd00bd40dbcac7cc5"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7187,7 +7188,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0d36f50b9f0fdfbd8247b5deb8da8baa53c83066#0d36f50b9f0fdfbd8247b5deb8da8baa53c83066"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=3e993d4c596560c42f011b2fd00bd40dbcac7cc5#3e993d4c596560c42f011b2fd00bd40dbcac7cc5"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7201,7 +7202,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0d36f50b9f0fdfbd8247b5deb8da8baa53c83066#0d36f50b9f0fdfbd8247b5deb8da8baa53c83066"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=3e993d4c596560c42f011b2fd00bd40dbcac7cc5#3e993d4c596560c42f011b2fd00bd40dbcac7cc5"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7222,7 +7223,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0d36f50b9f0fdfbd8247b5deb8da8baa53c83066#0d36f50b9f0fdfbd8247b5deb8da8baa53c83066"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=3e993d4c596560c42f011b2fd00bd40dbcac7cc5#3e993d4c596560c42f011b2fd00bd40dbcac7cc5"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7231,6 +7232,21 @@ dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-llm-config"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305 0.10.1",
+ "chrono",
+ "flate2",
+ "qrcode",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "url",
 ]
 
 [[package]]
