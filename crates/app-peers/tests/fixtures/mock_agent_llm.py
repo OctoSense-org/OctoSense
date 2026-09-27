@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""A scripted OpenAI-compatible model that plays the system agent and an app
+peer for the question/answer test. No network, no keys; standard library.
+
+Rules, looking at the request's messages and offered tools:
+  - after a tool result: finish with text ("PEER GOT <answer>" when the
+    result carries the system agent's answer, else "OK");
+  - a user text "TELL_PEER:<slug>" with peer_send_input offered: send the peer
+    "QUESTION_ME" ("TELL_PEER_HOLD:<slug>": "QUESTION_HOLD", never answered);
+  - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
+  - a message naming a waiting peer with peer_respond offered: answer "42";
+  - otherwise echo.
+Prints its port, then serves until killed. Logs each decision to stderr.
+"""
+import json
+import re
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def text_of(message):
+    content = message.get("content")
+    if isinstance(content, list):
+        return " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+    return content or ""
+
+
+def decide(body):
+    messages = body.get("messages", [])
+    tools = {t.get("function", {}).get("name") for t in body.get("tools", []) or []}
+    last = messages[-1] if messages else {}
+    everything = "\n".join(text_of(m) for m in messages)
+    if last.get("role") == "tool":
+        result = text_of(last)
+        if "42" in result and "QUESTION_ME" in everything:
+            return {"text": "PEER GOT 42"}
+        return {"text": "OK"}
+    last_user = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            last_user = text_of(m)
+            break
+    match = re.search(r"TELL_PEER(_HOLD)?:([a-z0-9-]+)", last_user)
+    if match and "peer_send_input" in tools:
+        message = "QUESTION_HOLD" if match.group(1) else "QUESTION_ME"
+        return {"tool": "peer_send_input", "args": {"slug": match.group(2), "message": message}}
+    if ("QUESTION_ME" in last_user or "QUESTION_HOLD" in last_user) and "ask_user_question" in tools:
+        return {"tool": "ask_user_question", "args": {"questions": [{
+            "header": "Number", "question": "Which number should I use?",
+            "options": [{"label": "42", "description": "the answer"}, {"label": "7"}]}]}}
+    if "peer_respond" in tools and "QUESTION_HOLD" not in everything and "TELL_PEER_HOLD" not in everything:
+        waiting = re.search(r"\b(rinx-[0-9a-f]{8})\b", last_user)
+        if waiting and ("await" in last_user.lower() or "question" in last_user.lower() or "input" in last_user.lower()):
+            return {"tool": "peer_respond", "args": {"slug": waiting.group(1), "answer": "42"}}
+    return {"text": "ECHO: " + (last_user.strip().splitlines()[-1] if last_user.strip() else "")}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))) or b"{}")
+        decision = decide(body)
+        last = (body.get("messages") or [{}])[-1]
+        print("decision:", json.dumps(decision), "after:", text_of(last)[:300].replace("\n", " "), file=sys.stderr, flush=True)
+        if "tool" in decision:
+            call = {"id": "call_1", "type": "function",
+                    "function": {"name": decision["tool"], "arguments": json.dumps(decision["args"])}}
+            message = {"role": "assistant", "content": None, "tool_calls": [call]}
+            finish = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": decision["text"]}
+            finish = "stop"
+        if body.get("stream"):
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream")
+            self.end_headers()
+            delta = {"role": "assistant"}
+            if "tool" in decision:
+                delta["tool_calls"] = [{"index": 0, **call}]
+            else:
+                delta["content"] = decision["text"]
+            for chunk in [
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+                 "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}},
+            ]:
+                chunk.update({"id": "c1", "object": "chat.completion.chunk", "model": "mock-model"})
+                self.wfile.write(b"data: " + json.dumps(chunk).encode() + b"\n\n")
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            return
+        data = json.dumps({"id": "c1", "object": "chat.completion", "model": "mock-model",
+                           "choices": [{"index": 0, "message": message, "finish_reason": finish}],
+                           "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}).encode()
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_address[1], flush=True)
+server.serve_forever()

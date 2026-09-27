@@ -333,6 +333,12 @@ impl Broker {
             .map(|(_, p)| (p.slug.clone(), p.session.clone()))
     }
 
+    /// The peer's running turn (driven by its owner), as this broker saw it
+    /// start. `release` interrupts it.
+    pub fn peer_active_turn(&self) -> Option<String> {
+        self.0.lock().peer_turn.clone()
+    }
+
     /// Bind (create or resume) the app's peer for the current account now,
     /// without a model inference. A host calls this at launch; otherwise the
     /// first request does it.

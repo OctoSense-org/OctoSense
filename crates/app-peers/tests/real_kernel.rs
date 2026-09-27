@@ -297,3 +297,161 @@ fn an_account_change_drops_a_late_reply_and_resume_keeps_the_peer_across_restart
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Criterion 3 of ADR 0007 with a scripted model: the system agent sends the
+/// app peer input, the peer asks a question, the kernel wakes the system
+/// agent, which answers, and the peer continues with the answer.
+#[test]
+fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("qa");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound without inference");
+    let (slug, peer_session) = rinx.peer().unwrap();
+
+    let turn = uuid_like();
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": turn,
+               "input": [{"kind": "text", "text": format!("TELL_PEER:{slug}")}]}),
+    )
+    .expect("system turn");
+    let mut transcript = Value::Null;
+    for _ in 0..120 {
+        transcript = rinx
+            .host_request(
+                "session/hydrate",
+                json!({"session_id": peer_session, "include": ["messages"]}),
+            )
+            .unwrap_or(Value::Null);
+        if transcript.to_string().contains("PEER GOT 42") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let text = transcript.to_string();
+    assert!(
+        text.contains("QUESTION_ME"),
+        "the system agent's input reached the peer: {text}"
+    );
+    assert!(
+        text.contains("PEER GOT 42"),
+        "the peer continued with the system agent's answer: {text}"
+    );
+
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn uuid_like() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let hex = format!("{nanos:032x}");
+    format!(
+        "{}-{}-4{}-8{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[13..16],
+        &hex[17..20],
+        &hex[20..32]
+    )
+}
+
+/// Criterion 3, interrupt: the system agent hands the peer work that parks
+/// on a question nobody answers; closing the app stops the peer's turn (the
+/// conservative background policy) without stopping the kernel.
+#[test]
+fn closing_the_app_interrupts_its_peers_running_work() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("interrupt");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound");
+    let (slug, peer_session) = rinx.peer().unwrap();
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+               "input": [{"kind": "text", "text": format!("TELL_PEER_HOLD:{slug}")}]}),
+    )
+    .expect("system turn");
+    // The peer runs the system agent's input and parks on its question.
+    let mut turn = None;
+    for _ in 0..120 {
+        turn = rinx.peer_active_turn();
+        if turn.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let turn = turn.expect("the peer is working on the system agent's input");
+    std::thread::sleep(Duration::from_secs(2));
+    let observer = broker(&core, "observer", "Observer");
+    let state = |observer: &Broker| {
+        observer
+            .host_request(
+                "turn/state/get",
+                json!({"session_id": peer_session, "turn_id": turn}),
+            )
+            .map(|r| r["state"].clone())
+    };
+    let before = state(&observer).expect("turn state");
+    eprintln!("peer turn before release: {before}");
+    assert!(
+        before == "running" || before == "awaiting_input" || before == "active",
+        "{before}"
+    );
+    rinx.release();
+    let mut after = Value::Null;
+    for _ in 0..40 {
+        after = state(&observer).unwrap_or(Value::Null);
+        if after != before {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    eprintln!("peer turn after release: {after}");
+    assert_ne!(after, before, "closing the app stopped the peer's turn");
+    assert!(
+        core.status().running,
+        "the kernel keeps running for other apps"
+    );
+    drop(observer);
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
