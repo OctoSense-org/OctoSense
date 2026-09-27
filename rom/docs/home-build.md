@@ -1,29 +1,30 @@
 # Home builds and ROM staging
 
-Home is the Rust workspace in `home/`. Run commands below from the
-`octosense-rom` root. Builds do not install an APK, flash a phone, change a Home
+Home is the `phone/` package (`octosense-home`) of the OctoSense workspace.
+Run commands below from the repository root unless noted (the ROM scripts
+live in `rom/scripts/`). Builds do not install an APK, flash a phone, change a Home
 role or publish a release.
 
 ## Prepare source dependencies
 
 ```sh
-python3 scripts/setup-home.py
-python3 scripts/setup-home.py --check --cargo
+python3 tools/setup.py
+python3 tools/setup.py --check --cargo
 ```
 
 Requires Python 3.9+, Git and Rust stable. The setup script prepares exact
 revisions in ignored `.sources/`; it preserves unrelated local modifications.
-`home/native-runtime.lock.json` selects the framework release and
-`home/native-apps.lock.json` selects the OctoSense-System-Apps source that holds the system script apps (`apps/<name>/bundle/`, chosen by `home/system-apps.json`) and the Mail host service. App Hub
+`native-runtime.lock.json` selects the framework release. The system script
+apps (`apps/<name>/bundle/`, chosen by `phone/system-apps.json`) and the Mail
+and `llm` host services are in this repository's `apps/`. App Hub
 is App Hub's shared shell crate `octosense-app-hub-app` (OctoSense-App-Hub
-`crates/app-hub-app`), a git dependency pinned in `home/Cargo.toml` and
-`home/Cargo.lock` at the same revision as its backend crates. Its build packs
-the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `home/.cargo/config.toml`
-sets to `home/system-apps.json`. The octos kernel service
-(`octosense-octos-core`, `.sources/system-apps/crates/octos-core`) comes from
-the same checkout and is in every standard build (feature `octos-core`, on by
+`crates/app-hub-app`), a git dependency pinned once in the root `Cargo.toml` and
+`Cargo.lock` at the same revision as its backend crates. Its build packs
+the system apps named by `OCTOSENSE_SYSTEM_APPS`, which `phone/.cargo/config.toml`
+sets to `phone/system-apps.json`. The octos kernel service
+(`octosense-octos-core`, `crates/kernel`) is is in every standard build (feature `octos-core`, on by
 default and always on for Android, iOS and OpenHarmony). The AppCard
-assistant (`octos-app`, `.sources/system-apps/apps/appcard/app/app`) is built
+assistant (`octos-app`, `apps/appcard/app/app`) is built
 only with `--features app-appcard`: it is not shipped for now, so default,
 `mobile-apps` and native mobile builds leave its UI out.
 
@@ -36,12 +37,12 @@ and self-confirmed assistant tools (makepad#36).
 Rinx (`app-rinx`, in the default and `mobile-apps` builds) is linked as a
 native module with `octosense-module` only; CI checks that its standalone
 entry and local kernel stay out of every graph. Its assistant is Home's:
-`src/app_peers_host.rs` gives each module whose declared `octos.*` services
+`phone/src/app_peers_host.rs` gives each module whose declared `octos.*` services
 host policy grants a scoped service from `octosense-app-peers`
-(`.sources/system-apps/crates/app-peers`): one octos peer per app and
+(`crates/app-peers`): one octos peer per app and
 account, owned by the system agent `_main:api:octosense#system`, on the
-shell's kernel. A module without granted assistant services gets no peer. `home/runtime-patches.lock.json`
-records only the Settings overlay, `patches/runtime/makepad-settings.patch`,
+shell's kernel. A module without granted assistant services gets no peer. `runtime-patches.lock.json`
+records only the Settings overlay, `tools/runtime-patches/makepad-settings.patch`,
 for Android input, accessibility and renderer integration.
 The lock records the pinned base, patch SHA-256 and resulting Git tree; setup
 applies it to the pinned checkout and leaves it staged. `--check` accepts only
@@ -73,7 +74,7 @@ pass a full JDK through `--java-home` or `JAVA_HOME`.
 Standalone development pair, signed with the existing Makepad development key:
 
 ```sh
-scripts/build-home.sh --variant standalone --development \
+rom/scripts/build-home.sh --variant standalone --development \
   --sdk /path/to/makepad-android \
   --android-sdk /path/to/android-sdk \
   --gradle-home /path/to/gradle-8.11.1 \
@@ -87,15 +88,15 @@ Do not use the ROM platform key for ordinary distribution.
 ROM Home and Bridge, signed with the existing ROM platform identity:
 
 ```sh
-scripts/build-home.sh --variant rom \
+rom/scripts/build-home.sh --variant rom \
   --sdk /path/to/makepad-android \
   --android-sdk /path/to/android-sdk \
   --gradle-home /path/to/gradle-8.11.1 \
   --java-home /path/to/full-jdk \
   --sign-key /private/rom-keys/platform.pk8 \
   --sign-cert /private/rom-keys/platform.x509.pem
-python3 scripts/stage-home.py
-scripts/stage-forks.sh /path/to/lineage-tree
+python3 rom/scripts/stage-home.py
+rom/scripts/stage-forks.sh /path/to/lineage-tree
 ```
 
 `stage-forks.sh` resets previously staged SystemUI and Quickstep files and the
@@ -115,7 +116,7 @@ unchanged. The build does not create or migrate signing keys.
 **The octos kernel.** Every APK carries Home's octos kernel as
 `lib/arm64-v8a/liboctos.so` (an Android app may exec only from its native
 lib dir). By default the script cross-builds it: it checks out
-`https://github.com/octos-org/octos.git` at the revision `home/Cargo.lock`
+`https://github.com/octos-org/octos.git` at the revision `Cargo.lock`
 pins for `octos-cli` into `.sources/octos`, builds `cargo build --locked
 --release --target aarch64-linux-android -p octos-cli --bin octos
 --no-default-features --features api,git,ast` with the NDK clang from
@@ -169,7 +170,7 @@ review and the existing private-key publication check remain necessary.
 
 ## OpenHarmony Home
 
-The same `home/` workspace also builds a normal OpenHarmony application. It
+The same `phone/` package also builds a normal OpenHarmony application. It
 links the native modules and App Hub in process, because a phone cannot spawn
 the desktop catalog's Cargo binaries. This does not grant Android's Home role,
 replace the HarmonyOS system launcher, or make an Android ROM flashable on a
@@ -180,7 +181,7 @@ device-authorized signing profile. Export the existing DevEco `signingConfigs`
 array into a private JSON file outside the repository:
 
 ```sh
-python3 scripts/build-home-ohos.py \
+python3 rom/scripts/build-home-ohos.py \
   --deveco-home /Applications/DevEco-Studio.app/Contents \
   --packager /path/to/cargo-makepad \
   --signing-config /private/home-signing.json \
@@ -196,13 +197,13 @@ keys or silently substitutes an application's identity.
 The builder uses DevEco's existing CMake and Java, resets generated ArkTS files
 from the pinned framework template, supplies missing permission descriptions,
 and removes signing credentials from the generated project after packaging.
-It then applies the product's `home/ohos/EntryAbility.ets` window policy:
+It then applies the product's `phone/ohos/EntryAbility.ets` window policy:
 HarmonyOS reserves the native status and navigation bars, and Home draws a
 draggable floating ball over hosted content. Tapping it opens a compact panel
 with **返回首页** and **最近应用**. Dragging docks it inside the nearest side;
 tapping outside dismisses the panel without activating the content underneath.
 The ball stays in the app window and reserves no content height.
-The generated ArkTS bridge also receives `home/ohos/keyboard.patch` to coalesce
+The generated ArkTS bridge also receives `phone/ohos/keyboard.patch` to coalesce
 per-frame keyboard requests and serialize attach/show/hide while leaving the
 pinned framework checkout intact. OpenHarmony uses only its native keyboard.
 OpenHarmony does not recognize shell edge swipes or draw a second navigation

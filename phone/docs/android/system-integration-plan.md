@@ -2,7 +2,7 @@
 
 16 September 2026. Research and read-only device probe. The architecture is accepted in ADR 0001; implementation and device validation remain outstanding.
 
-Architecture record: [ADR 0001: Hybrid Android launcher and system bridge](../adr/0001-hybrid-android-launcher-and-system-bridge.md). The ADR defines the selected package/interface contracts, recovery behavior and acceptance gates. This plan retains the detailed research and device evidence supporting that decision.
+Architecture record: [ADR 0001: Hybrid Android launcher and system bridge](../../../docs/adr/home/0001-hybrid-android-launcher-and-system-bridge.md). The ADR defines the selected package/interface contracts, recovery behavior and acceptance gates. This plan retains the detailed research and device evidence supporting that decision.
 
 ## Implementation direction
 

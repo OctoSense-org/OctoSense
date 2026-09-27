@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-16
 - **Status:** Accepted
-- **Implementation status:** In progress; Home/bridge prototypes and the separate Quickstep layout-service prototype are installed on the approved OnePlus 6. Native API/Binder checks, Android/hosted icon placement storage/UI, public launch with the bridge service unavailable, activity/process recreation, package replacement/reconnection, widget pages, native Done input, current-user shortcut pin/icon/launch, synthetic notification label/icon rendering and cleanup have phone evidence. Home's visible-icon geometry is acknowledged across the authenticated service, with revision/invalidation and same-signer foreign-package rejection checks passing. The ROM-matched native Quickstep/Recents APK now compiles and passes packaging inspection; a deployment module is prepared. Native installation, app-to-Home transitions, broader lifecycle validation and performance parity remain pending; no milestone exit gate is complete. See the [implementation record](../android/adr-0001-implementation-record.md).
+- **Implementation status:** In progress; Home/bridge prototypes and the separate Quickstep layout-service prototype are installed on the approved OnePlus 6. Native API/Binder checks, Android/hosted icon placement storage/UI, public launch with the bridge service unavailable, activity/process recreation, package replacement/reconnection, widget pages, native Done input, current-user shortcut pin/icon/launch, synthetic notification label/icon rendering and cleanup have phone evidence. Home's visible-icon geometry is acknowledged across the authenticated service, with revision/invalidation and same-signer foreign-package rejection checks passing. The ROM-matched native Quickstep/Recents APK now compiles and passes packaging inspection; a deployment module is prepared. Native installation, app-to-Home transitions, broader lifecycle validation and performance parity remain pending; no milestone exit gate is complete. See the [implementation record](../../../phone/docs/android/adr-0001-implementation-record.md).
 - **Scope:** OctoSense-mobile Android architecture; native-launcher parity and optional system controls
 - **Initial target:** OnePlus 6, Android 15 / API 35, LineageOS 22.2
 
@@ -14,7 +14,7 @@ The objective is to match the built-in launcher's appearance, interaction, relia
 
 The read-only device probe confirmed Magisk 29.0 and UID 0 access from ADB. SELinux was permissive and both SIM slots were absent. These results establish a development route, but do not validate a future helper's root grant, enforcing-mode compatibility, feature setters or SMS transmission.
 
-This ROM reports `STATUS_BAR_SERVICE` and `MANAGE_ACTIVITY_TASKS` as `signature|recents`. Several other relevant permissions are signature-only. Privileged APK placement, platform signing, trusted Recents designation and root execution are distinct mechanisms; system placement alone cannot supply all required access. [Permission evidence and probe record](../android/system-integration-plan.md#5-privilege-boundaries-that-change-the-design), [AOSP privileged permissions](https://source.android.com/docs/core/permissions/perms-allowlist).
+This ROM reports `STATUS_BAR_SERVICE` and `MANAGE_ACTIVITY_TASKS` as `signature|recents`. Several other relevant permissions are signature-only. Privileged APK placement, platform signing, trusted Recents designation and root execution are distinct mechanisms; system placement alone cannot supply all required access. [Permission evidence and probe record](../../../phone/docs/android/system-integration-plan.md#5-privilege-boundaries-that-change-the-design), [AOSP privileged permissions](https://source.android.com/docs/core/permissions/perms-allowlist).
 
 ## Decision
 
@@ -154,7 +154,7 @@ M1 supplies the ordinary launcher release. M4 supplies the initial native-launch
 - **Functionality:** app launch and Home return, swipe/hold, cancel/reverse, Recents resume/dismiss, quick switch, keyboard-visible navigation, rotation and lock/unlock behave correctly.
 - **Public integrations:** shortcut pinning, widget configuration/resize/update, profile locking and package changes preserve correct identity and state.
 - **Reliability:** reboot, activity/process recreation, helper death, root denial and permission revocation leave a usable core launcher and explicit feature states.
-- **Performance:** use the gates below and the [performance plan](../android/performance-plan.md). Compare equivalent scenarios with Trebuchet, or native SystemUI for shade operations, on the same phone, ROM, refresh rate and controlled workload.
+- **Performance:** use the gates below and the [performance plan](../../../phone/docs/android/performance-plan.md). Compare equivalent scenarios with Trebuchet, or native SystemUI for shade operations, on the same phone, ROM, refresh rate and controlled workload.
 - **Privilege:** demonstrate the actual helper identity, Recents configuration/grants, SystemUI binding and enforcing-mode behavior. Command-help discovery is not setter validation.
 
 ### Performance gates for the initial target
@@ -176,7 +176,7 @@ Feature readiness is reported separately from this accepted architectural decisi
 
 ## Related records
 
-- [ADR 0001 implementation record](../android/adr-0001-implementation-record.md) — prototype source, approved tools, build evidence and remaining milestone work.
-- [Android system integration plan](../android/system-integration-plan.md) — source evidence, device probe, API routes and detailed experiments.
-- [Android launcher plan](../android/launcher-plan.md) — Home foundation and previous system-integration investigation.
-- [Android performance plan](../android/performance-plan.md) — measurement requirements and rendering work.
+- [ADR 0001 implementation record](../../../phone/docs/android/adr-0001-implementation-record.md) — prototype source, approved tools, build evidence and remaining milestone work.
+- [Android system integration plan](../../../phone/docs/android/system-integration-plan.md) — source evidence, device probe, API routes and detailed experiments.
+- [Android launcher plan](../../../phone/docs/android/launcher-plan.md) — Home foundation and previous system-integration investigation.
+- [Android performance plan](../../../phone/docs/android/performance-plan.md) — measurement requirements and rendering work.

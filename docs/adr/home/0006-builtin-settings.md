@@ -34,7 +34,7 @@ services as the authority for state and policy. Keep a feature parity ledger
 against the ROM's actual Android 15 / LineageOS Settings source. Each row records
 implemented controls, temporary native links, missing controls, hardware or
 policy conditions, and acceptance checks. A native link is migration coverage,
-not implemented OctoSense UI. See [the parity checklist](../android/settings-parity.md)
+not implemented OctoSense UI. See [the parity checklist](../../../phone/docs/android/settings-parity.md)
 for the navigation, complete target surface, and current delivery boundary.
 
 `ModuleHost` grants Settings authority from the compiled singleton's identity
@@ -255,7 +255,7 @@ user dismissal. Gboard cold typing, immediate selected replacement/Clear,
 composition, Back across polling and native-Activity return, retap and Done passed
 on the isolated emulator. This introduces no fixed input delays or blocking
 pointer barrier. Other IMEs, accessibility and hardware still require their own
-acceptance; see the detailed [input validation](../android/settings.md).
+acceptance; see the detailed [input validation](../../../phone/docs/android/settings.md).
 
 Sound selection uses a separate finite ringtone/notification/alarm contract and
 a bounded RingtoneManager catalog. Media URIs remain in the native backend; only
@@ -457,7 +457,7 @@ role-grant API. App incarnation, current holder, owner and policy are rechecked
 at the positive button and actual holder readback. Enhanced Confirmation and
 administrator-restricted choices remain platform-mediated. The adapter adds no
 broad role permission to Home or Agent and preserves the native controller's
-package, resources, role service and data. See the [default-role audit](../android/settings-default-roles-audit.md).
+package, resources, role service and data. See the [default-role audit](../../../phone/docs/android/settings-default-roles-audit.md).
 
 Common runtime permissions use a second finite service inside that same native
 PermissionController, not a Home/Agent grant API. The native group and per-group
@@ -478,7 +478,7 @@ The native model remains authoritative for selected choices. Specialized media,
 selected photos, Health Connect, virtual-device permission scopes and special
 access require their own models/consent and are not folded into this common
 adapter. Ordinary installations have explicit unavailable state and native
-recovery. See the [runtime-permission audit](../android/settings-runtime-permissions-audit.md).
+recovery. See the [runtime-permission audit](../../../phone/docs/android/settings-runtime-permissions-audit.md).
 
 DND policy and time schedules extend the existing Zen broker. Home and Agent
 receive no notification-policy grant or general rule-management interface.
@@ -494,4 +494,4 @@ still required. Unknown status stays unknown and other provider types remain
 read-only with native recovery. The dedicated public DND entry only navigates;
 intent extras cannot change policy or create rules. Calendar/provider triggers,
 per-rule interruption policies and effects retain separate implementation and
-acceptance work. See the [DND audit](../android/settings-dnd-rules-audit.md).
+acceptance work. See the [DND audit](../../../phone/docs/android/settings-dnd-rules-audit.md).

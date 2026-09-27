@@ -24,7 +24,7 @@ same catalog and tests each row.
 ## Registering it (shells)
 
 The providers it edits are the octos kernel's, and the kernel is a shell
-service: [`octosense-octos-core`](../../../crates/octos-core) runs one per
+service: [`octosense-octos-core`](../../../crates/kernel) runs one per
 process and hands connections to AppCard and the other consumers. Build the
 service with its `octos-core` feature (the shells' `octos-core` feature turns
 it on) and it follows the kernel: the profile goes under the kernel's core

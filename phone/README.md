@@ -10,23 +10,98 @@ the apps it runs, the system apps, Reference and Sheets, and the octos agent
 kernel as a service. (AppCard is not shipped for now; it links only with
 `--features app-appcard`.)
 
-Setup, builds for every target, pins and CI are in the
-[root README](../README.md). This page is the Home-specific deep dive.
+Home is one of the three products in this repository (the
+[root README](../README.md) has setup, the layout and CI). The ROM image that
+preinstalls it with the privileged system side is [`rom/`](../rom/README.md).
 
-## Relation to OctoSense-Desktop
+## Relation to the desktop shell
 
-Home was split from the desktop shell,
-[OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) (then
-named OctoSense), on 15 September 2026, at the tip of its mobile shell chain
-(PRs #22 to #28). The two still share much of their source (`src/main.rs`,
-`desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor). The phone
-build is the `mobile_only` configuration of the one crate: `build.rs` turns
-it on for Android, and `--features mobile-only` turns it on elsewhere.
-Desktop-only work belongs in the desktop repository. A shared
-`octosense-core` crate is the intended next step, so fixes stop needing
-cherry-picks. `upstream/makepad.json` records which window-manager files were
-imported from Makepad; `scripts/upstream.py` compares and merges them
-([docs/upstream.md](docs/upstream.md)).
+Home was split from the desktop shell on 15 September 2026, at the tip of its
+mobile shell chain, and the two copies lived in OctoSense-Desktop and
+OctoSense-ROM (`home/`) until both repositories merged into this one on
+27 September 2026 ([ADR 0001](../docs/adr/0001-one-octosense-repository.md)).
+`phone/src` and `desktop/src` still share much of their source (`main.rs`,
+`desk.rs`, `layout.rs`, `clients.rs`, `shell/*`, the compositor); the next
+phase of ADR 0001 reconciles them into one shell crate with desktop and
+phone as targets and features. The phone build is the `mobile_only`
+configuration: `build.rs` turns it on for Android, and `--features
+mobile-only` turns it on elsewhere. `upstream/makepad.json` records which
+window-manager files were imported from Makepad; `scripts/upstream.py`
+compares and merges them ([docs/upstream.md](docs/upstream.md)).
+
+## Build and run
+
+Prepare the pinned sources once from the repository root
+(`python3 tools/setup.py`, see the [root README](../README.md#set-up)), then
+run cargo from this directory: `phone/.cargo/config.toml` selects the
+phone's system apps.
+
+**On a desktop**, the phone shell in a phone-sized window with App Hub, the
+six system apps and the built-in Settings (only macOS is built in CI):
+
+```sh
+cargo run --release -p octosense-home --features mobile-only
+```
+
+| Switch | Effect |
+| --- | --- |
+| `--features mobile-apps` | Also link the native modules (Reference, Sheets, and the native News, Photos and Maps, which then replace their script apps); not AppCard |
+| `--features app-appcard` | Also link the AppCard assistant, which is not shipped by default for now |
+| `-- --module <id>` | Host a linked module in-process instead of as a child process |
+| `-- --test-action <name>` | Fire a shell action at startup (see [Run on a desktop](#run-on-a-desktop)) |
+| `MAKEPAD_WM_TEST_APP=<app>[:<count>]` | Launch an app (count times) once the shell is up |
+| `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | Serve Mail from a demo mailbox (password `demo`) |
+| `OCTOSENSE_HOME=<dir>` | Keep state somewhere other than `~/.octosense` |
+
+**Android APK.** `rom/scripts/build-home.sh` (a wrapper for
+`build-home.py`) builds the Home APK and its System Bridge APK, signs them
+together, bundles the octos kernel as `liboctos.so`, and writes
+`OctoSenseHome.apk`, `OctoSenseBridge.apk` and a `build.json` receipt. It never
+installs or flashes. A standalone development pair, signed with Makepad's
+development key, from the repository root:
+
+```sh
+cargo build --release --manifest-path .sources/makepad/tools/cargo_makepad/Cargo.toml
+rom/scripts/build-home.sh --variant standalone --development \
+  --sdk /path/to/makepad-android \
+  --android-sdk /path/to/android-sdk \
+  --gradle-home /path/to/gradle-8.11.1 \
+  --java-home /path/to/full-jdk \
+  --packager .sources/makepad/target/release/cargo-makepad
+```
+
+You need a `cargo-makepad` Android SDK/NDK directory (`cargo-makepad makepad
+android --sdk-path=<dir> install-toolchain`), the Android SDK with platform 35
+and build-tools 35.0.0, a full JDK 17+ and Gradle 8.11.1; the script installs
+none of them. Add `--dry-run` to print the plan; for a release, replace
+`--development` with `--sign-key` and `--sign-cert` pointing at the existing
+signer, kept outside the checkout. Use the pinned packager, not upstream's: it
+carries this app's Java activity ([docs/build-tool.md](docs/build-tool.md)).
+Signing, receipts and the ROM variant: [rom/docs/home-build.md](../rom/docs/home-build.md).
+
+**Package name.** Home's application ID is `dev.makepad.octosense`, in both
+the standalone and the ROM variant. A phone running the OctoSense ROM already
+has that ID, signed with the platform key, so a development build cannot
+replace it. To install a test build beside it, call the packager with another
+package name, from `phone/`:
+
+```sh
+../.sources/makepad/target/release/cargo-makepad makepad android \
+  --sdk-path=/path/to/makepad-android \
+  --package-name=dev.makepad.octosense.scriptapps \
+  build -p octosense-home --release
+```
+
+`run` in place of `build` also installs and starts it; address it with its own
+name, for example `adb shell am start -n dev.makepad.octosense.scriptapps/.MakepadApp`.
+
+**OpenHarmony:** `python3 rom/scripts/build-home-ohos.py --deveco-home ...
+--packager ... --signing-config ...` builds a normal OpenHarmony app with an
+existing DevEco signing profile
+([rom/docs/home-build.md](../rom/docs/home-build.md#openharmony-home)).
+**iOS simulator:** from `phone/`,
+`../.sources/makepad/target/release/cargo-makepad makepad apple ios --org=dev.makepad --app=octosense run-sim -p octosense-home --features mobile-only`.
+Neither is built in CI.
 
 ## The Home role
 
@@ -76,32 +151,32 @@ follows live theme and text-size changes while preserving the current page.
 Navigation, search, drafts, reviews and application event handlers execute in
 [Octoscript controllers](resources/settings/controller); native code retains
 rendering, text input and typed Android bindings. See the
-[port design and validation status](docs/adr/0005-settings-octoscript-controller.md).
+[port design and validation status](../docs/adr/home/0005-settings-octoscript-controller.md).
 Complete system Settings replacement is in progress; some areas still open
 Android Settings. See the [current controls and validation](docs/android/settings.md),
 [feature parity checklist](docs/android/settings-parity.md), and
-[architecture decision](docs/adr/0006-builtin-settings.md).
+[architecture decision](../docs/adr/home/0006-builtin-settings.md).
 
 ## System apps
 
 News, Photos, Maps, Camera, Mail and AI providers are contained script apps
-([ADR 0004](docs/adr/0004-system-apps-are-contained-script-apps.md)). Their
-bundles live in OctoSense-System-Apps (`apps/<name>/bundle/`, pinned by
-`native-apps.lock.json`); `system-apps.json` names which this Home ships and
+([ADR 0004](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)). Their
+bundles live in [`apps/`](../apps/README.md) (`apps/<name>/bundle/`);
+this directory's `system-apps.json` names which this Home ships and
 mounts the artwork Home owns (Photos' sample library,
-`apps/photos/resources/photos`). App Hub's Card runner runs each in its own
+`apps/photos/native/resources/photos`). App Hub's Card runner runs each in its own
 isolate under its manifest's policy, in the standalone Home and in the ROM
 alike. Each keeps its short launcher id (`news` for `os.news`), so icons,
 tiles and the dock are unchanged.
 
-Mail reads and sends through the `mail` host service (`apps/mail/host-service`
-in OctoSense-System-Apps): the person signs in on the host's own sheet, the
+Mail reads and sends through the `mail` host service
+([`apps/mail/host-service`](../apps/mail/host-service)): the person signs in on the host's own sheet, the
 password stays in the keychain or behind an Android Keystore key, and the app
 never holds a socket or a password. For a demo mailbox (password `demo`):
 
 ```sh
-# desktop, from home/
-MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release --features mobile-only
+# desktop, from phone/
+MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --features mobile-only
 # phone
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
@@ -114,12 +189,12 @@ on a device; their notes are [docs/photos.md](docs/photos.md) and
 ### The octos kernel
 
 The octos agent kernel is a Home service, independent of any app:
-`octosense-octos-core` (OctoSense-System-Apps `crates/octos-core`), feature
+`octosense-octos-core` ([`crates/kernel`](../crates/kernel)), feature
 `octos-core` (default, and always on in Android, iOS and OpenHarmony
 builds). Home configures it at startup with its data dir
 ([src/llm_host.rs](src/llm_host.rs)); nothing runs until a consumer
 connects. Then there is one kernel per process: `liboctos.so serve --stdio`
-from the APK's native lib dir on Android (every APK `scripts/build-home.sh`
+from the APK's native lib dir on Android (every APK `rom/scripts/build-home.sh`
 builds carries it), the core in-process on OpenHarmony, the binary named by
 `OCTOS_APP_CORE_BIN` on a desktop (none otherwise), none on iOS. Its core
 dir is `<data dir>/octos-home/.octos` on a phone and `OCTOS_APP_CORE_DIR`,
@@ -132,7 +207,7 @@ stops when the last one leaves and on Home's shutdown. To build without it
 ### AI providers
 
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers
-through the `llm` host service (`apps/ai-providers/host-service`), which Home
+through the `llm` host service ([`apps/ai-providers/host-service`](../apps/ai-providers/host-service)), which Home
 registers at startup ([src/llm_host.rs](src/llm_host.rs)):
 
 - the profile it writes is the kernel's, `<core dir>/profiles/_main.json`
@@ -171,17 +246,17 @@ App authors start with
 The same shell in a phone-sized window, on Metal, DirectX or OpenGL:
 
 ```sh
-cargo run --release --features mobile-only
-cargo run --release --features mobile-only -- --test-action island:demo --test-action capture:/tmp/shell.png
+cargo run --release -p octosense-home --features mobile-only
+cargo run --release -p octosense-home --features mobile-only -- --test-action island:demo --test-action capture:/tmp/shell.png
 ```
 
 `--test-action` pushes fixtures (`island:demo`, `island:expand`, `page:<n>`,
 `ask-appcard:<text>`, `launch-<app id>`, `taps:<x>,<y>@<s>`), and
 `capture:<path>` writes the presented frame every 5 s, so a scripted run can
 be inspected without a screen. `MAKEPAD_APP_CONFIG='{"test_actions":[...]}'`
-passes the same list where arguments cannot be given. A plain `cargo run` is
-the universal desktop shell of the desktop repository; it keeps building here
-but is not this repository's product. It starts in **OctoSense Light** with
+passes the same list where arguments cannot be given. Without `mobile-only`
+this package starts the universal desktop shell; the desktop product is
+[`desktop/`](../desktop/README.md). It starts in **OctoSense Light** with
 its bundled wallpaper; Omarchy and the other styles remain in the style menu.
 
 ## Performance
@@ -214,39 +289,43 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   sheet with `rsvg-convert`). The renderer has no clip paths, masks, filters
   or text, so the art stays inside its tile by construction; a test holds the
   files to that.
-- `apps/appcard`: hosts the AppCard assistant (`octos-app`, a path dependency
-  into `../.sources/system-apps/apps/appcard/app/app`). Opt-in only, on every
-  target: `--features app-appcard` (it implies `octos-core`; the assistant
-  connects to Home's kernel). Default, `mobile-apps` and native mobile
-  builds leave the AppCard UI out, not the kernel service.
-- `apps/reference`: the reference module.
-- `apps/news`, `apps/photos`, `apps/maps`: the native comparison modules
-  (features `app-news`, `app-photos`, `app-maps`). Their design notes are in
-  `docs/plans/`.
+- `../apps/appcard/module`: hosts the AppCard assistant (`octos-app`, in
+  `../apps/appcard/app/app`). Opt-in only, on every target:
+  `--features app-appcard` (it implies `octos-core`; the assistant connects
+  to Home's kernel). Default, `mobile-apps` and native mobile builds leave
+  the AppCard UI out, not the kernel service.
+- `../apps/reference`: the reference module.
+- `../apps/news/native`, `../apps/photos/native`, `../apps/maps/native`: the
+  native comparison modules (features `app-news`, `app-photos`, `app-maps`).
+  Their design notes are in `docs/plans/`.
 - `android/`: the System Bridge, contracts, Quickstep and SystemUI projects
   ([android/README.md](android/README.md)).
-- `docs/`: records and recipes; `docs/adr/` the Home decisions;
-  `docs/android/` the performance and launcher records.
+- `docs/`: records and recipes; `docs/android/` the performance and launcher
+  records. The Home decisions (ADRs 0001–0006) are in
+  [`../docs/adr/home/`](../docs/adr/README.md).
 
 ## Dependencies
 
+Every external dependency is pinned once, at the repository root
+([root README](../README.md#what-it-depends-on)):
+
 - Framework: the Octoscript-Makepad release selected by
-  `native-runtime.lock.json`; its `runtime.json` pins Makepad and OctoScript.
-  Cargo `[patch]` sections resolve every Makepad crate to
-  `../.sources/makepad`, so the graph has one widgets/platform/script. Do not
-  substitute a moving branch. How the fork relates to upstream Makepad and how
-  a pin moves: [docs/makepad-fork.md](docs/makepad-fork.md).
-- App Hub: `octosense-app-hub-app` and its backend crates, one pinned
-  revision, the same one the Mail host service names, so no `[patch]` is
-  needed for one App Hub source.
-- OctoSense-System-Apps (`native-apps.lock.json`): the system-app bundles,
-  the Mail and `llm` host services, the octos kernel service
-  (`crates/octos-core`) and `octos-app`. octos comes from `octos-org/octos`
-  at one revision: as a Cargo dependency only on OpenHarmony (the in-process
-  core) and in `app-appcard` builds (protocol types).
+  `native-runtime.lock.json`; its `runtime.json` pins Makepad and OctoScript,
+  checked out in `.sources/` with the reviewed Settings patch
+  (`runtime-patches.lock.json`, `tools/runtime-patches/`). Every Makepad crate
+  resolves to `.sources/makepad`, so the graph has one widgets/platform/script.
+  How the fork relates to upstream Makepad and how a pin moves:
+  [docs/makepad-fork.md](docs/makepad-fork.md).
+- App Hub: `octosense-app-hub-app` and its backend crates, one revision for
+  Home and the Mail and `llm` host services.
+- In this repository, by path: the system-app bundles and host services
+  (`apps/`), the octos kernel service (`crates/kernel`), the app-agent broker
+  (`crates/app-peers`) and `octos-app` (`apps/appcard`). octos itself comes
+  from `octos-org/octos` at one revision: as a Cargo dependency only on
+  OpenHarmony (the in-process core) and in `app-appcard` builds.
 - The kernel binary is not a Cargo dependency on Android: `liboctos.so` is
   cross-built from that revision and bundled at APK build time with
-  `MAKEPAD_ANDROID_EXTRA_LIBS` by `scripts/build-home.sh` (`--octos-kernel`
+  `MAKEPAD_ANDROID_EXTRA_LIBS` by `rom/scripts/build-home.sh` (`--octos-kernel`
   for a prebuilt one, `--no-octos-kernel` for none;
   [docs/android-appcard-build.md](docs/android-appcard-build.md)). Without
   it the phone runs no kernel; the providers are still saved, and AppCard
@@ -256,7 +335,8 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
 
 `cargo test --features mobile-only mobile -- --test-threads=1` runs the
 shell's unit tests (gestures, pages, island, shade, groups, tiles). The full
-CI set is in the [root README](../README.md#testing-and-validation).
+CI set is `.github/workflows/phone.yml` (compile Home and its bundled modules,
+the graph check, and the tests of Home, App Hub admission and runtime policy).
 `scripts/smoke.py` launches a release build under `MAKEPAD_REMOTE` and drives
 it over HTTP. [docs/validation.md](docs/validation.md) and
 [docs/android/validation-record.md](docs/android/validation-record.md) hold

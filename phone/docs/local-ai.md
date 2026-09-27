@@ -10,15 +10,15 @@ With `OCTOSENSE_HOME` set, use `<OCTOSENSE_HOME>/weights/` instead. Existing `~/
 
 ## Make the assistant app available
 
-These commands target the project's validated macOS setup and run from `home/`. The default catalog (`config/apps.json`) launches `makepad-aichat` from the pinned Makepad checkout `.sources/makepad`, with its model engine enabled by the app's default features. The model file alone does not install that app.
+These commands target the project's validated macOS setup and run from `phone/`. The default catalog (`config/apps.json`) launches `makepad-aichat` from the pinned Makepad checkout `.sources/makepad`, with its model engine enabled by the app's default features. The model file alone does not install that app.
 
 If that checkout does not exist, prepare the pinned sources from the repository root:
 
 ```sh
-python3 scripts/setup-home.py
+python3 tools/setup.py
 ```
 
-For an existing checkout, `python3 scripts/setup-home.py --check` confirms it matches the pin. A personal app catalog must also contain an `aichat` entry; see [developer programs and the catalog](https://github.com/OctoSense-org/OctoSense-Desktop#developer-programs-and-the-catalog) in the OctoSense-Desktop README. Opening the assistant builds it through Cargo on first launch. It does not require enabling the host's optional `app-aichat` feature.
+For an existing checkout, `python3 tools/setup.py --check` (from the repository root) confirms it matches the pin. A personal app catalog must also contain an `aichat` entry; see [developer programs and the catalog](../../desktop/README.md#developer-programs-and-the-catalog) in the desktop README. Opening the assistant builds it through Cargo on first launch. It does not require enabling the host's optional `app-aichat` feature.
 
 ## Install the tested model
 

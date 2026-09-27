@@ -9,14 +9,14 @@ or composes an app agent, and that agent generates a live interactive card. The
 card is a Splash DSL card or a webview card, and it binds real data at render
 time.
 
-Unlike the other apps in this repository, AppCard is not (yet) a contained
+Unlike the other apps in `apps/`, AppCard is not (yet) a contained
 script app with a `bundle/`. It is the one **native** app here: a Rust module
 (`octos-app`) that the shells link in-process.
 
 What lives here (paths relative to `apps/appcard/`):
 
 ```
-app/              Cargo workspace root.
+app/              AppCard's crates (members of the repository's root workspace).
   app/            octos-app: routing brain (router + composer), multi-agent
                   dispatch, Splash card renderer + post-generation validator,
                   L0 card generation, WebView overlay for webview cards.
@@ -31,7 +31,8 @@ a2app-l0/         L0 card corpora: framework, catalog and per-app exemplars that
                   L0 card generation is prompted with. Also compiled in.
 personal-data/    octos skill: read-only search over Mail/Calendar data.
 vendor/           Vendored third-party crates (see the repository NOTICE).
-tools/            setup-native.py (sibling runtime), octos macOS/OHOS runners,
+module/           octosense-appcard: the shell module that mounts octos-app in a tile.
+tools/            setup-native.py (runtime check), octos macOS/OHOS runners,
                   build-android.sh, dev-goal bridges, llm-qr, splash-research.
 docs/             Architecture, protocol, build and review notes.
 ```
@@ -40,59 +41,58 @@ docs/             Architecture, protocol, build and review notes.
 
 Every octos crate (`octos-core`, and on OpenHarmony `octos-cli` with the
 ~20 crates it pulls in) comes from **one** source: git
-`https://github.com/octos-org/octos.git` at the single rev in `app/Cargo.toml`
-(today `18fcd3f1`, branch `appcard/mate70-on-main`, until its commits land on
-octos main). octos's OpenHarmony-safe `nix` is patched from the same rev. There
-is no octos submodule. A shell that also depends on octos must use the same
-rev, so its graph keeps one octos; check with
-`cargo tree -i octos-core --target all`.
+`https://github.com/octos-org/octos.git` at the single rev in the repository's
+root `Cargo.toml` `[workspace.dependencies]` (today `a6ea8505`, octos main),
+shared with `crates/kernel` and both shells. octos's OpenHarmony-safe `nix`
+is patched in the root `[patch.crates-io]` (from octos `18fcd3f1`). There is
+no octos submodule; check the graph keeps one octos with
+`cargo tree --locked -p octos-app -i octos-core --target all --depth 0`.
 
 The runners that build the kernel *binary* (`tools/build-android.sh`,
-`tools/octos-ohos.py`, `tools/octos-macos.py`) use an octos checkout at that
-rev, by default `octos/` beside this repository (`OCTOS_SOURCE` selects
-another); `build-android.sh` refuses a checkout at any other rev.
+`tools/octos-ohos.py`, `tools/octos-macos.py`) use an octos checkout, by
+default `octos/` in the framework workspace (`OCTOS_SOURCE` selects another);
+`build-android.sh` refuses a checkout at any other rev. They read that rev
+from `app/Cargo.toml`, which the move into the root workspace removed:
+**unverified**, these runners likely need `OCTOS_SOURCE` and a fix before they
+work again. The shells' Android APKs bundle the kernel through
+`rom/scripts/build-home.sh` instead.
 
-## Sibling workspace
+## Framework sources
 
-The app does not carry its own Makepad. `app/Cargo.toml` patches Makepad,
-Octoscript and Octoscript-Makepad to checkouts beside this repository
-(`../../../../makepad`, `../../../../octoscript`,
-`../../../../octoscript-makepad` from `app/`). They must be at the release
-that `native-runtime.lock.json` selects. Lay the workspace out like this:
-
-```
-octosense-org/
-  OctoSense-System-Apps/   this repository; AppCard is apps/appcard/
-  octoscript-makepad/      shared UI framework; its runtime.json pins the engines
-  octoscript/
-  makepad/
-```
-
-Prepare and verify it from `apps/appcard/`:
+The app does not carry its own Makepad. Its crates take Makepad, Octoscript
+and Octoscript-Makepad with `workspace = true`, and the root `Cargo.toml`
+patches them to the checkouts in `.sources/` at the repository root, at the
+release `native-runtime.lock.json` selects (this directory's copy of the lock
+names the same release). Prepare and verify them from the repository root:
 
 ```sh
-python3 tools/setup-native.py          # clone/prepare the siblings at the locked release
-python3 tools/setup-native.py --check --cargo-manifest app/Cargo.toml
+python3 tools/setup.py                 # prepare .sources/ (makepad, octoscript, octoscript-makepad)
+python3 tools/setup.py --check --cargo # verify, including one Makepad in the graph
 ```
 
-`--update` moves clean sibling checkouts to a new release. Dirty trees are left
-alone. `OCTOSENSE_WORKSPACE` selects a workspace other than the parent of this
-repository. For details, see [docs/NATIVE-WORKSPACE.md](docs/NATIVE-WORKSPACE.md).
+`app/app/build.rs` embeds framework resources from `OCTOSENSE_WORKSPACE`,
+which the root `.cargo/config.toml` sets to `.sources`. This directory's own
+Python tools (`tools/setup-native.py`, `build-android.sh`, the octos runners)
+read the same variable but, outside cargo, still default to the parent of the
+repository root; set `OCTOSENSE_WORKSPACE=<repo>/.sources` when you run them.
+For the original sibling layout, see [docs/NATIVE-WORKSPACE.md](docs/NATIVE-WORKSPACE.md).
 
 ## Build and test
 
+From the repository root:
+
 ```sh
-cd app
-cargo check
-cargo test --workspace
-cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
-PYTHONPATH=tools python3 -m unittest core.test_native_runtime   # from apps/appcard
+cargo clippy --locked -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+cargo test --locked -p octos-app-transport -p octos-app-store
+cargo run -p octos-app                                          # standalone window
+(cd apps/appcard && PYTHONPATH=tools python3 -m unittest core.test_native_runtime)
 ```
 
-CI ([.github/workflows/appcard.yml](../../.github/workflows/appcard.yml), run
-only for changes under `apps/appcard/`) prepares the locked runtime, runs the
-runtime lock tests and clippy, and checks that the Cargo graph has one Makepad
-source. For Android, see [docs/BUILDING-ANDROID.md](docs/BUILDING-ANDROID.md)
+CI is the `apps` job of [.github/workflows/apps.yml](../../.github/workflows/apps.yml)
+(changes under `apps/`, `crates/` and the workspace files): it prepares
+`.sources/`, runs the runtime lock tests, clippy for the four crates and the
+transport and store tests, and checks that the Cargo graph has one Makepad,
+octos, App Hub and Rinx source. For Android, see [docs/BUILDING-ANDROID.md](docs/BUILDING-ANDROID.md)
 and `tools/build-android.sh`. For OpenHarmony, see
 [docs/BUILDING-OPENHARMONY.md](docs/BUILDING-OPENHARMONY.md).
 
@@ -102,19 +102,18 @@ A shell takes `octos-app` without its standalone entry points and mounts it
 as a widget:
 
 ```toml
-# as the shells do it: a path dependency on their pinned checkout of this repository
-octos-app = { path = "<checkout>/apps/appcard/app/app", default-features = false }
-# or a git dependency (Cargo finds the package inside the repository by name)
-octos-app = { git = "https://github.com/OctoSense-org/OctoSense-System-Apps.git", rev = "<sha>", default-features = false }
+# inside this repository: a workspace dependency (as apps/appcard/module does)
+octos-app = { workspace = true, default-features = false }
+# outside it: a git dependency (Cargo finds the package inside the repository by name)
+octos-app = { git = "https://github.com/OctoSense-org/OctoSense.git", rev = "<sha>", default-features = false }
 ```
 
-It must also patch Makepad, Octoscript and Octoscript-Makepad to the locked
+An outside consumer must also patch Makepad, Octoscript and Octoscript-Makepad to the locked
 release and set `OCTOSENSE_WORKSPACE` in its Cargo configuration (the build
 embeds framework resources from that workspace; from a git checkout the
-default, the parent of this repository, does not exist). A dependency's
-`[patch]` sections do not apply to its consumer, so a shell that builds for
-OpenHarmony also patches `nix` from the same octos rev, as `app/Cargo.toml`
-does.
+default does not exist). A dependency's `[patch]` sections do not apply to
+its consumer, so a consumer that builds for OpenHarmony also patches `nix`
+as the root `Cargo.toml` does.
 
 The hosting API is in `app/app/src/host.rs`: call
 `octos_app::register_script_mods(vm)`, then mount `AppShell::create(vm)`, a
@@ -122,18 +121,17 @@ widget that owns the app and draws `OctosAppBody` (the app's root without the
 standalone `Window`). `AppShell::ask` submits text as if typed into the
 composer; `AppShell::shutdown` runs before the host frees the isolate.
 
-- **OctoSense ROM**, `home/apps/appcard`, and **OctoSense-Desktop**,
-  `apps/appcard`: an `AppCardModule` that implements the shell's `AppModule`
-  trait around `AppShell`. Both build it from the System-Apps revision their
-  `native-apps.lock.json` pins (since
-  [OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18) and
-  [OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)),
-  with octos `18fcd3f1`; a change here reaches them when they move that pin.
+- **Both OctoSense shells** (desktop and Home) mount it through
+  [`module/`](module) (`octosense-appcard`): an `AppCardModule` that
+  implements the shell's `AppModule` trait around `AppShell`, opt-in with
+  `--features app-appcard`. They build it from the same commit, so a change
+  here reaches them in the same pull request.
 - **Rinx** embeds the AppCard tile; its repin is a separate follow-up.
 
 ## Provenance
 
-Moved here from
+Part of the OctoSense-System-Apps repository until 2026-09-27, then imported
+into OctoSense with its history. It moved into System-Apps from
 OctoSense-org/OctoSense-AppCard
 at commit `d0a836b8`, which had split it from
 [OctoSense-org/OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)

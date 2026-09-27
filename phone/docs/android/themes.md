@@ -17,7 +17,7 @@ light/dark mode, and system wallpaper. Other Android apps choose whether to use
 those dynamic colors. A standalone APK cannot change all privileged system
 styling; it reports that limitation after applying the OctoSense theme.
 
-Implementation: [ADR 0002](../../../docs/adr/0002-rom-themes.md).
+Implementation: [ADR 0002](../../../rom/docs/adr/0002-rom-themes.md).
 App integration and migration status: [shared theme contract](app-theme-contract.md).
 Some custom app interfaces still use fixed colors; receiving the shared widget
 theme does not automatically recolor those surfaces.

@@ -49,11 +49,11 @@ Root access and a terminal app on the phone are not required.
 If you do not have the source checkout yet:
 
 ```sh
-git clone https://github.com/OctoSense-org/OctoSense-ROM.git
-cd OctoSense-ROM
+git clone https://github.com/OctoSense-org/OctoSense.git
+cd OctoSense/rom
 ```
 
-From the repository root, replace `/absolute/path/to/rom-images` below with
+From `rom/`, replace `/absolute/path/to/rom-images` below with
 the directory containing your five images. The following commands generate
 `manifest.json`, prepare a separate temporary serving directory, and start a
 server accessible only from this computer. Leave this terminal running:

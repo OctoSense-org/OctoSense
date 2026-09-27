@@ -1,58 +1,66 @@
-# OctoSense System Apps
+# OctoSense system apps
 
 English | [简体中文](README.zh-CN.md)
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
-the agent shell on top of your operating system:
+the agent shell on top of your operating system, and the host services behind
+them. They live in `apps/` of the [OctoSense repository](../README.md); until
+2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
 - **News, Photos, Maps, Camera, Mail and AI providers** are *contained script apps*. Each is
   an OctoScript (Splash) program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under exactly the permissions its `manifest.json` asks
   for. That is the same containment a store app gets. They are also worked
   examples of the app shape any developer publishes through the App Hub.
-- **Mail's host service** (`apps/mail/host-service`) is the Rust half of Mail:
+- **Mail's host service** (`mail/host-service`) is the Rust half of Mail:
   IMAP/POP3/SMTP, the account store and the sign-in sheet, run by the shell.
   The app gets mail, never a password or a socket.
-- **The `llm` host service** (`apps/ai-providers/host-service`) is the Rust half
+- **The `llm` host service** (`ai-providers/host-service`) is the Rust half
   of AI providers: the assistant's LLM providers over octos's model catalog,
   keys in the platform secret store, Test connection, and moving providers
   between devices by a PIN-protected `OCTOS1E` QR (camera, image or paste).
   Keys are typed and QRs drawn only on the host's own sheets; the app sees
   masked status.
-- **The octos kernel service** (`crates/octos-core`, crate
-  `octosense-octos-core`): the [octos](https://github.com/octos-org/octos)
-  agent kernel as a shell service. The shell starts one kernel per process on
-  demand; the AI providers app configures it (through the `llm` service);
-  AppCard and other consumers connect to it. See
-  [The octos kernel](#the-octos-kernel).
-- **AppCard** (`apps/appcard`) is the one native app: the "Ask anything"
+- **AppCard** (`appcard`) is the one native app: the "Ask anything"
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
   it only with `--features app-appcard`, and it is not shipped by default.
+- **Native comparison modules** (`news/native`, `photos/native`,
+  `maps/native`) and **Reference** (`reference`): Rust modules Home links
+  behind features (`app-news`, `app-photos`, `app-maps`, `app-reference`);
+  the desktop links only Reference this way (its `app-photos` is Makepad's
+  own Photos module).
+
+The shell services these apps rely on are next door:
+[`../crates/kernel`](../crates/kernel) (the octos kernel service, see
+[The octos kernel](#the-octos-kernel)) and
+[`../crates/app-peers`](../crates/app-peers) (apps' access to the assistant).
 
 Rules for agents working here are in [AGENTS.md](AGENTS.md) and
-[apps/appcard/AGENTS.md](apps/appcard/AGENTS.md).
+[appcard/AGENTS.md](appcard/AGENTS.md), on top of the repository's
+[AGENTS.md](../AGENTS.md).
 
 **Building your own app?** You do not need to build or change this
 repository. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s
 reading list (OctoScript-App-Design-Flow's `AGENTS.md`, then
 `docs/QUICKSTART.md`), and read the bundles here as worked examples
-(`apps/<name>/bundle/main.splash`). To run one next to your app, clone this
-repository into the same workspace and, from OctoScript-App-Design-Flow:
-`tools/octo run ../OctoSense-System-Apps/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
-(`--no-stamp` leaves this checkout unmodified; Mail needs a shell, see below).
+(`apps/<name>/bundle/main.splash`). To run one next to your app, clone the
+OctoSense repository into the same workspace and, from
+OctoScript-App-Design-Flow:
+`tools/octo run ../OctoSense/apps/photos/bundle --system --no-stamp --app-data /tmp/sys-apps`
+(`--no-stamp` leaves the checkout unmodified; Mail needs a shell, see below).
 
 ## The apps
 
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
-| [News](apps/news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com` | none |
-| [Photos](apps/photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage` | none | none (full-size files come from a shell asset mount, see below) |
-| [Maps](apps/maps/bundle) | `os.maps` | `MapView` map, place search, places, routes and a drive mode; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
-| [Camera](apps/camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
-| [Mail](apps/mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](apps/mail/host-service) |
-| [AI providers](apps/ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](apps/ai-providers/host-service) |
-| [AppCard](apps/appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
+| [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com` | none |
+| [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage` | none | none (full-size files come from a shell asset mount, see below) |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes and a drive mode; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
+| [Camera](camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
+| [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](mail/host-service) |
+| [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
+| [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by App Hub's closed list
 (`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
@@ -68,20 +76,20 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
   refuses one, so capture is untested elsewhere.
 - **Photos**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
   2 MB). The full-size files the viewer shows are served at
-  `{{assets}}/photos/...` only when a shell mounts them: ROM Home mounts
-  `home/apps/photos/resources/photos` (in OctoSense-ROM, about 87 MB);
-  OctoSense-Desktop mounts nothing, so the viewer has no full-size image
-  there.
+  `{{assets}}/photos/...` only when a shell mounts them: Home mounts
+  `photos/native/resources/photos` (about 87 MB, `phone/system-apps.json`);
+  the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
+  no full-size image there.
 - **News, Maps**: run in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
-  Mail's and the `llm` host services pin App Hub `46d67e51` (main after
-  OctoSense-App-Hub#15; #11 added the `llm` capability, #14 the Matrix and
-  Octos host-service capabilities), the rev the shells link, so a shell's
-  graph has one
-  `octosense-appstore` and one host-service registry without a `[patch]`.
-- **Script bundles have no CI here.** `.github/workflows/appcard.yml` covers
-  only `apps/appcard/**`.
+  Mail's and the `llm` host services use the one App Hub revision the root
+  `Cargo.toml` pins (`46d67e51`, main after OctoSense-App-Hub#15; #11 added
+  the `llm` capability, #14 the Matrix and Octos host-service capabilities),
+  the same one the shells link, so a build has one `octosense-appstore` and
+  one host-service registry.
+- **Script bundles have no CI.** [`apps.yml`](../.github/workflows/apps.yml)
+  tests the host services, AppCard and the shell services, not the bundles.
 - **AppCard `personal-data` skill** reads the old native Mail module's
   `mailbox-*.json` files. The script Mail app's mail now lives in the host
   service's own directory (`<host_dir>/mail/box-*.json`), so the skill
@@ -89,71 +97,70 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
 - Only Camera ships its own launcher icon (`bundle/icon.png`); the shells
   draw the others.
 
-## How shells consume this repository
+## How the shells pack them
 
-The shells pin a revision of this repository and choose which apps to ship:
-OctoSense-ROM's Home (standalone launcher and ROM image, since
-[OctoSense-ROM#18](https://github.com/OctoSense-org/OctoSense-ROM/pull/18)) and
-OctoSense-Desktop (since
-[OctoSense-Desktop#36](https://github.com/OctoSense-org/OctoSense-Desktop/pull/36)).
-A shell:
+Both shells in this repository ship the system apps: the desktop
+([`../desktop`](../desktop/README.md)) and Home ([`../phone`](../phone/README.md),
+standalone launcher and ROM image). Each packaging:
 
-1. Pins this repository in `native-apps.lock.json` (ROM: `home/native-apps.lock.json`,
-   checked out at `.sources/system-apps`; Desktop: a sibling checkout at
-   `../OctoSense-System-Apps`).
-2. Lists the apps in `system-apps.json` and points `OCTOSENSE_SYSTEM_APPS` at
-   it in `.cargo/config.toml`. App Hub's shell crate `octosense-app-hub-app`
-   reads that file at build time, packs each `apps/<name>/bundle/` into the
-   binary and fills in its digest. `assets` maps extra directories into an
-   app's `{{assets}}` (Photos, in the ROM):
+1. Lists the apps in its `system-apps.json` (`desktop/system-apps.json`,
+   `phone/system-apps.json`), found through `OCTOSENSE_SYSTEM_APPS`: the root
+   `.cargo/config.toml` points at the desktop's, `phone/.cargo/config.toml`
+   at the phone's (so run phone builds from `phone/`). App Hub's shell crate
+   `octosense-app-hub-app` reads that file at build time, packs each
+   `apps/<name>/bundle/` into the binary and fills in its digest. `assets`
+   maps extra directories into an app's `{{assets}}` (Photos, on the phone):
 
    ```json
    {
      "schema": 1,
-     "source": "../.sources/system-apps/apps",
+     "source": "../apps",
      "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
-     "assets": { "photos": { "photos": "apps/photos/resources/photos" } }
+     "assets": { "photos": { "photos": "../apps/photos/native/resources/photos" } }
    }
    ```
 
-3. Links the host services `octosense-mail-service` and
-   `octosense-llm-service` (path dependencies on the pinned checkout) and
-   registers them at startup: Mail with `register()` for real accounts, or
-   `register_demo()` when the shell's app config has `mail_demo: true`; `llm`
-   with the octos kernel's core dir and the shell's QR scanner and image
-   picker (see [the `llm` service](#the-llm-service)). The shell links App
-   Hub at the same rev the services name for `octosense-appstore`, so there
-   is one host-service registry.
-4. Links `octosense-octos-core` (feature `octos-core` in both shells, on by
-   default) and configures the kernel at startup; registers the `llm`
-   service (with its `octos-core` feature) on the kernel's core dir, so a
-   provider change restarts the kernel. See [The octos kernel](#the-octos-kernel).
-5. Optionally (opt-in `app-appcard`) links AppCard's `octos-app` with
+2. Links the host services `octosense-mail-service` and
+   `octosense-llm-service` (workspace path dependencies) and registers them
+   at startup: Mail with `register()` for real accounts, or `register_demo()`
+   when the shell's app config has `mail_demo: true`; `llm` with the octos
+   kernel's core dir and the shell's QR scanner and image picker (see
+   [the `llm` service](#the-llm-service)). App Hub is pinned once, in the root
+   `Cargo.toml`, so there is one host-service registry.
+3. Links `octosense-octos-core` from `../crates/kernel` (feature `octos-core`
+   in both shells, on by default) and configures the kernel at startup;
+   registers the `llm` service (with its `octos-core` feature) on the
+   kernel's core dir, so a provider change restarts the kernel. See
+   [The octos kernel](#the-octos-kernel).
+4. Optionally (opt-in `app-appcard`) links AppCard's `octos-app` with
    `default-features = false` and mounts it through its `AppShell` widget
    (see [AppCard](#the-appcard-assistant)); it connects to the same kernel.
 
-Changes here reach a device only when a shell moves its pin, in a pull request
-in that shell's repository.
+There are no pins to move: a change here reaches both shells in the same pull
+request.
 
-## Repository layout
+## Layout
 
 ```
-apps/<name>/bundle/          a contained script app: manifest.json, main.splash, artwork
-apps/mail/host-service/      octosense-mail-service, the `mail` host service (Rust)
-apps/ai-providers/           the `llm` host service (host-service/) and octosense-llm-config (config/:
+<name>/bundle/               a contained script app: manifest.json, main.splash, artwork
+<name>/native/               native comparison module (news, photos, maps); Photos' full-size library
+mail/host-service/           octosense-mail-service, the `mail` host service (Rust)
+ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)
-crates/octos-core/            octosense-octos-core: the shell's octos kernel (one per process, shared)
-apps/appcard/                the native AppCard assistant
-  app/                       Cargo workspace: octos-app + store/transport/render crates
+reference/                   the reference module
+appcard/                     the native AppCard assistant
+  app/                       octos-app + store/transport/render crates (members of the root workspace)
+  module/                    octosense-appcard: the shell module that mounts it
   a2app/                     Splash card memory (specs, widget patterns, lint rules), compiled in
   a2app-l0/                  L0 card framework, catalog and per-app exemplar cards, compiled in
   personal-data/             octos skill: read-only search over Mail and Calendar data
   vendor/                    vendored third-party crates (rustyline, mmap-rs; see NOTICE)
   tools/                     setup-native.py, octos macOS/OpenHarmony runners, build-android.sh, ...
   docs/                      architecture, build and review notes
-  native-runtime.lock.json   the Octoscript-Makepad release AppCard builds against
-.github/workflows/appcard.yml   CI for apps/appcard
-.github/workflows/octos-core.yml   CI for crates/octos-core
+  native-runtime.lock.json   the Octoscript-Makepad release AppCard builds against (the same as the root's)
+../crates/kernel/            octosense-octos-core: the shell's octos kernel (one per process, shared)
+../crates/app-peers/         octosense-app-peers: apps' scoped access to the assistant
+../.github/workflows/apps.yml   CI for the host services, AppCard and the shell services
 ```
 
 ## A system app bundle
@@ -194,11 +201,11 @@ flags, and host-service support, are on App Hub `main` (since
 [OctoSense-App-Hub#4](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/4)).
 
 ```sh
-# in an OctoSense-App-Hub checkout
+# in an OctoSense-App-Hub checkout; <OctoSense> is a checkout of this repository
 cargo build --release -p octosense-card-host --bin card-host
 
-card-host --bundle <System-Apps>/apps/news/bundle --system
-card-host --bundle <System-Apps>/apps/photos/bundle --system --static photos=<dir of full-size photos>
+card-host --bundle <OctoSense>/apps/news/bundle --system
+card-host --bundle <OctoSense>/apps/photos/bundle --system --static photos=<dir of full-size photos>
 ```
 
 | Flag | Effect |
@@ -221,8 +228,10 @@ a shell build that links the service, with the demo mailbox (any address,
 password `demo`, sample messages, sends that go nowhere):
 
 ```sh
-# OctoSense-Desktop (repository root), or ROM Home (in home/)
+# the desktop, from the repository root
 MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense
+# Home in a phone-sized window, from phone/
+MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --features mobile-only
 ```
 
 The demo keeps its password in a file, so no keychain prompt appears.
@@ -280,12 +289,12 @@ feature (the shells' default), it writes under
 `octosense_octos_core::core_dir()` and calls `octosense_octos_core::restart()`
 after every change, so the running kernel picks up the new providers. The
 method table and registration are in its
-[README](apps/ai-providers/host-service/README.md).
+[README](ai-providers/host-service/README.md).
 
 ## The octos kernel
 
 The octos agent kernel is a **shell service**, not part of any app.
-[`crates/octos-core`](crates/octos-core) (`octosense-octos-core`) is that
+[`crates/kernel`](../crates/kernel) (`octosense-octos-core`) is that
 service; the shells link it by default (cargo feature `octos-core`, also on
 in `mobile-apps` and native mobile builds):
 
@@ -308,10 +317,11 @@ in `mobile-apps` and native mobile builds):
   On a desktop a kernel runs only when a binary is configured (the shell's,
   or `$OCTOS_APP_CORE_BIN`); without one the providers are still saved.
 
-Tests: `cd crates/octos-core && cargo test`; with a built `octos`,
-`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel` starts a real
+Tests, from the repository root: `cargo test --locked -p octosense-octos-core`;
+with a built `octos`,
+`OCTOS_CORE_TEST_KERNEL=<octos> cargo test --locked -p octosense-octos-core --test real_kernel` starts a real
 kernel on a profile written by `octosense-llm-config` and restarts it after a
-provider change. Details in [crates/octos-core/README.md](crates/octos-core/README.md).
+provider change. Details in [crates/kernel/README.md](../crates/kernel/README.md).
 
 ## The AppCard assistant
 
@@ -320,33 +330,29 @@ or composes an app agent; the agent generates a live card, Splash or
 webview, that binds real data at render time. It talks to octos over the
 octos UI Protocol v1.
 
-- **Code**: `apps/appcard/app`, a Cargo workspace with `octos-app` (router,
+- **Code**: `apps/appcard/app`, crates in the root workspace: `octos-app` (router,
   composer, multi-agent dispatch, Splash renderer and validator, L0 card
   generation, WebView overlay), `octos-app-store` (state reducer, no
   Makepad), `octos-app-transport` (the octos UI Protocol over the shell's
   kernel, a WebSocket or REST) and `octos-app-render` (streaming-markdown
   renderer).
 - **octos**: every octos crate comes from git `octos-org/octos` at the one
-  rev in `apps/appcard/app/Cargo.toml` (today `a6ea8505`, octos `main`);
-  `crates/octos-core` names the same rev for OpenHarmony. A shell that also
-  depends on octos must use the same rev. AppCard starts no kernel of its
+  rev in the root `Cargo.toml` `[workspace.dependencies]` (today `a6ea8505`,
+  octos `main`), shared with `crates/kernel` and the shells. AppCard starts no kernel of its
   own: it connects to the shell's ([The octos kernel](#the-octos-kernel)).
 - **Makepad**: not vendored. Makepad, Octoscript and Octoscript-Makepad are
-  checkouts *beside* this repository, at the release
-  `apps/appcard/native-runtime.lock.json` selects.
+  the checkouts in `.sources/` at the repository root that `tools/setup.py`
+  prepares, at the release `native-runtime.lock.json` selects; the root
+  `.cargo/config.toml` sets `OCTOSENSE_WORKSPACE=.sources`, so AppCard's
+  build embeds its framework assets from there.
 
-Build and test (details in [apps/appcard/README.md](apps/appcard/README.md)):
+Build and test from the repository root (details in [appcard/README.md](appcard/README.md)):
 
 ```sh
-cd apps/appcard
-python3 tools/setup-native.py                       # prepare the sibling runtime
-python3 tools/setup-native.py --check --cargo-manifest app/Cargo.toml
-PYTHONPATH=tools python3 -m unittest core.test_native_runtime
-
-cd app
-cargo check
-cargo test --workspace
-cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+python3 tools/setup.py                               # prepare .sources/
+(cd apps/appcard && PYTHONPATH=tools python3 -m unittest core.test_native_runtime)
+cargo clippy --locked -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
+cargo test --locked -p octos-app-transport -p octos-app-store
 cargo run -p octos-app                               # standalone window (default feature `standalone`)
 ```
 
@@ -361,17 +367,20 @@ and OpenHarmony builds: `docs/BUILDING-ANDROID.md`,
 `default-features = false` (no `fn main`), calls
 `octos_app::register_script_mods(vm)`, and mounts `AppShell::create(vm)`: a
 widget that owns the app and draws `OctosAppBody`, the app's root without
-the standalone `Window`. `AppShell::ask` submits text as if typed. In the ROM
-and Desktop shells this sits in an `AppCardModule` that implements the
-shell's `AppModule` trait (`home/apps/appcard` and `apps/appcard` in those
-repositories).
+the standalone `Window`. `AppShell::ask` submits text as if typed. In both
+shells this sits in an `AppCardModule` that implements the shell's
+`AppModule` trait ([`appcard/module`](appcard/module), package
+`octosense-appcard`).
 
-**CI**: [.github/workflows/appcard.yml](.github/workflows/appcard.yml) runs on
-changes under `apps/appcard/**` (macOS): it prepares the locked runtime, runs
-the runtime-lock tests, clippy for the four crates (which compiles the whole
-app), and checks the graph has one octos and one Makepad source.
-`apps/appcard/app/.github/workflows/` is left over from the original
-repository and does not run here.
+**CI**: [.github/workflows/apps.yml](../.github/workflows/apps.yml) runs on
+changes under `apps/`, `crates/`, the workspace files and `tools/setup.py`.
+Its macOS job prepares `.sources/`, runs the Mail and `llm` host-service
+tests, the AppCard runtime-lock tests, clippy for AppCard's four crates
+(which compiles the whole app), AppCard's transport and store tests, and
+checks the graph has one octos, one Makepad, one App Hub and one Rinx
+source. Its Ubuntu job tests `crates/kernel`, `crates/app-peers` and
+`octosense-llm-config`. `apps/appcard/app/.github/workflows/` is left over
+from the original repository and does not run.
 
 ## Changing an app
 
@@ -384,10 +393,10 @@ repository and does not run here.
 3. Never add a password or code field. If the app needs a secret, a host
    service and its sheet handle it.
 4. Run it with `card-host --system` (Mail: in a shell with the demo). Test on
-   a phone through the ROM's Home as a separate test package, never by
+   a phone through Home built as a separate test package, never by
    replacing the device's installed Home.
-5. Open a pull request here. After it merges, bump the pin in each shell
-   (`native-apps.lock.json`) in a pull request there.
+5. Open one pull request. The shells pack `apps/` directly, so there is no
+   pin to bump.
 
 A **new** system app is a new `apps/<name>/bundle/` with an `os.<name>` id,
 plus an entry in each shell's `system-apps.json`.
@@ -396,33 +405,35 @@ plus an entry in each shell's `system-apps.json`.
 
 | What | How |
 | --- | --- |
-| Mail service | from a shell workspace that links it: `cargo test -p octosense-mail-service` (ROM: in `home/`). The keychain test is ignored by default: `cargo test -p octosense-mail-service -- --ignored keychain` |
-| octos kernel service | `cd crates/octos-core && cargo test` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test --test real_kernel` (a real one); CI in `octos-core.yml` |
-| `llm` service | from `apps/ai-providers`: `cargo test --workspace --features octosense-llm-service/octos-core` |
-| AppCard | the commands above; CI in `appcard.yml` |
+| Mail service | `cargo test --locked -p octosense-mail-service` from the repository root. The keychain test is ignored by default: `cargo test -p octosense-mail-service -- --ignored keychain` |
+| octos kernel service | `cargo test --locked -p octosense-octos-core` (a stand-in kernel); `OCTOS_CORE_TEST_KERNEL=<octos> cargo test -p octosense-octos-core --test real_kernel` (a real one) |
+| `llm` service and config | `cargo test --locked -p octosense-llm-service -p octosense-llm-config`; add `--features octosense-llm-service/octos-core` for the shells' build |
+| AppCard | the commands above |
+| CI | all of the above except the real-kernel and keychain tests: [apps.yml](../.github/workflows/apps.yml) |
 | Script bundles | by hand in `card-host` and in a shell, driven over `MAKEPAD_REMOTE`. No automated UI tests here yet |
 
 ## Related repositories
 
 | Repository | Role |
 | --- | --- |
-| [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM) | phone shell (`home/`): standalone launcher or burned into the ROM image |
-| [OctoSense-Desktop](https://github.com/OctoSense-org/OctoSense-Desktop) | desktop shell |
+| [OctoSense](../README.md) (this repository) | the shells that ship these apps: [`desktop/`](../desktop/README.md) and Home in [`phone/`](../phone/README.md) (standalone launcher or preinstalled by the [`rom/`](../rom/README.md) image); the shell services in `crates/` |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | catalog, gate (`hub stamp`, `check`, `scan`, `sign-manifest`, `publish`), `card-host`, the Card runner and host-service registry, and `octosense-app-hub-app`, the crate every shell links |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
-| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/octos-core`, configured by AI providers, used by AppCard and other consumers (one rev, `a6ea8505`) |
+| [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, a native module; reaches the assistant through `crates/app-peers` |
+| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/kernel`, configured by AI providers, used by AppCard and other consumers (one rev, `a6ea8505`) |
 
 ## Contributing
 
 - Pull requests against `main`; never force-push `main`.
 - Keep changes small and test them in a shell. Follow [AGENTS.md](AGENTS.md).
-- AppCard changes must pass `appcard.yml`.
+- Changes under `apps/` must pass `apps.yml`, and the shells' `desktop.yml` and `phone.yml`.
 
 ## History and license
 
-The bundles and the Mail service were first written in OctoSense-mobile
-(archived) and OctoScript-App-Design-Flow (formerly Octoscript-AppCard),
+This directory was the OctoSense-System-Apps repository until 2026-09-27,
+imported here with its history. The bundles and the Mail service were first
+written in OctoSense-mobile (archived) and OctoScript-App-Design-Flow (formerly Octoscript-AppCard),
 where their history remains. AppCard came from
 OctoSense-org/OctoSense-AppCard (`d0a836b8`), split from
 OctoScript-App-Design-Flow's `app/` at `cbbda4da`.
