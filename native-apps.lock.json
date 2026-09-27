@@ -3,7 +3,7 @@
   "repositories": {
     "system-apps": {
       "url": "https://github.com/OctoSense-org/OctoSense-System-Apps.git",
-      "revision": "c0f2199c6d504ae65d8632747bb491bed820891b"
+      "revision": "47b96a0ae0b105844a71210f93980901132c3157"
     }
   }
 }

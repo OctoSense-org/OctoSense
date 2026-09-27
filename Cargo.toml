@@ -74,11 +74,16 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # OctoSense-System-Apps checkout beside this repository
 # (native-apps.lock.json, tools/setup-native.py).
 octosense-mail-service = { path = "../OctoSense-System-Apps/apps/mail/host-service", optional = true }
-# The `llm` host service the AI providers system app calls: the assistant's
-# LLM providers, their keys (macOS keychain) and the phone QR, on host-owned
-# sheets. The config crate names the AppCard kernel's octos home it writes.
+# The `llm` host service the AI providers system app calls: the octos
+# kernel's LLM providers, their keys (macOS keychain) and the phone QR, on
+# host-owned sheets. The config crate names the kernel's octos home it writes.
 octosense-llm-service = { path = "../OctoSense-System-Apps/apps/ai-providers/host-service", optional = true }
 octosense-llm-config = { path = "../OctoSense-System-Apps/apps/ai-providers/config", optional = true }
+# The octos agent kernel as a shell service (OctoSense-System-Apps
+# crates/octos-core): one kernel per process, started when a consumer (AppCard,
+# Rinx) connects, configured by the AI providers app, restarted when the
+# providers change. Feature `octos-core`, on by default.
+octosense-octos-core = { path = "../OctoSense-System-Apps/crates/octos-core", optional = true }
 # Rinx (the Matrix client with Moments and articles) as an in-process module.
 # Built without its standalone window entry point.
 rinx = { git = "https://github.com/upstreamlabs/Rinx", rev = "5ad2c1739e5b4776588518ab76440a5367c9968e", default-features = false, features = ["octosense-module"], optional = true }
@@ -91,17 +96,26 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # available modules into native mobile builds without requiring CLI flags.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 octosense-reference = { path = "apps/reference" }
+# The octos kernel service: Android runs the APK's bundled liboctos.so
+# (MAKEPAD_ANDROID_EXTRA_LIBS, tools/android-kernel.py); iOS has none.
+octosense-octos-core = { path = "../OctoSense-System-Apps/crates/octos-core" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "cd812acde910e9c4523f83509356450eb8edf908", default-features = false }
 
 [features]
 # App Hub is part of the standard launcher: the store, the Card runner and
-# the system apps (News, Photos, Maps, Camera, Mail, AI providers) it runs.
-default = ["app-hub"]
+# the system apps (News, Photos, Maps, Camera, Mail, AI providers) it runs;
+# the octos kernel is a shell service in every standard build.
+default = ["app-hub", "octos-core"]
 # Also usable on desktop for testing the same embedded apps with --module.
 # Photos is the system app here; `app-photos` links Makepad's native Photos
 # module instead, for comparison (a linked module of the same id wins).
 # AppCard is not among them: it ships only with `--features app-appcard`.
-mobile-apps = ["app-reference", "app-sheets", "app-hub"]
+mobile-apps = ["app-reference", "app-sheets", "app-hub", "octos-core"]
+# The octos kernel as a shell service (octosense-octos-core): configured at
+# startup, its profile written and the kernel restarted by the `llm` service,
+# AppCard and other consumers connect to it. Opt out with
+# `--no-default-features` plus the features you still want; Android and iOS
+# builds always link it.
 # App Hub and the host services its system apps call.
 app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
 app-reference = ["dep:octosense-reference"]
@@ -109,10 +123,12 @@ app-reference = ["dep:octosense-reference"]
 app-sheets = ["dep:makepad-sheets"]
 # Photos (the picture wall) linked in as a module, the same way.
 app-photos = ["dep:makepad-photos"]
-# The AppCard module (the assistant in a tile, with the octos kernel) linked
-# in. Opt-in only, on desktop and native mobile alike: AppCard is not shipped
-# by default for now (it interfered with the other apps).
-app-appcard = ["dep:octosense-appcard"]
+octos-core = ["dep:octosense-octos-core", "octosense-llm-service?/octos-core"]
+# The AppCard module (the assistant in a tile) linked in; it connects to the
+# shell's octos kernel, so it implies `octos-core`. Opt-in only, on desktop
+# and native mobile alike: AppCard is not shipped by default for now (it
+# interfered with the other apps).
+app-appcard = ["dep:octosense-appcard", "octos-core"]
 # The aichat module linked in (the pane seats it in-process where there are
 # no processes, or when `aichat` is switched to module hosting).
 app-aichat = ["dep:makepad-aichat"]

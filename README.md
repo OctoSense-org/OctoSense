@@ -11,12 +11,12 @@ OctoSense-Desktop is the desktop shell of [OctoSense](https://github.com/OctoSen
 | Repository | Role for this repo |
 | --- | --- |
 | [OctoSense-ROM](https://github.com/OctoSense-org/OctoSense-ROM) | The phone shell (`home/`). Same app model, same runtime, same system apps. |
-| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | News, Photos, Maps, Camera, Mail and AI providers bundles, the Mail and `llm` host services and the AppCard assistant (`octos-app`). Pinned sibling checkout. |
+| [OctoSense-System-Apps](https://github.com/OctoSense-org/OctoSense-System-Apps) | News, Photos, Maps, Camera, Mail and AI providers bundles, the Mail and `llm` host services, the octos kernel service (`crates/octos-core`) and the AppCard assistant (`octos-app`, opt-in, not shipped by default). Pinned sibling checkout. |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad) | The runtime release that pins Makepad and OctoScript. Pinned sibling checkout. |
 | [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The framework. Pinned sibling checkout. |
-| [octos](https://github.com/octos-org/octos) | The agent kernel behind the AppCard assistant. Git dependency, one revision (`18fcd3f1`), linked only with `app-appcard`. |
+| [octos](https://github.com/octos-org/octos) | The agent kernel, a shell service (`octos-core`, on by default): AI providers configures it, AppCard and other consumers connect to it. One revision (`6ad76e5c`, the one System-Apps pins), in `Cargo.lock`; the kernel itself is a separate binary (desktop: `OCTOS_APP_CORE_BIN`; Android: bundled `liboctos.so`). |
 
 ## Repository layout
 
@@ -109,10 +109,11 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 | `app-reference` | off | Links Reference as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
 | `app-photos` | off | Links Makepad's native Photos module; it replaces the Photos system app of the same id (for comparison). |
-| `app-appcard` | off | Links the AppCard assistant module (`apps/appcard`) and octos. Opt-in on every target, phones included; not shipped for now. |
+| `app-appcard` | off | Links the AppCard assistant module (`apps/appcard`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
+| `octos-core` | on | The octos kernel service (`octosense-octos-core`, from `../OctoSense-System-Apps/crates/octos-core`): the one kernel AppCard and other consumers share, configured by AI providers. Always on for Android and iOS. Leave it out with `--no-default-features --features app-hub` (and whatever else you want). |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `app-rinx` | off | Links [Rinx](https://github.com/upstreamlabs/Rinx), the Matrix client, as a module. |
-| `mobile-apps` | off | `app-reference` + `app-sheets` + `app-hub`: the set phone builds link, for testing on desktop. Not AppCard. |
+| `mobile-apps` | off | `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
 A linked module opens with `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory):
 
@@ -139,7 +140,7 @@ App Hub's modules are the exception: they have no process form and always open i
 | `MAKEPAD_APP_CONFIG='{"mail_demo":true}'` | Serve Mail's demo mailbox (see [Demos](#demos)). |
 | `OCTOSENSE_MAIL_VAULT=file` | Keep Mail passwords in a 0600 file instead of the macOS keychain. |
 | `OCTOSENSE_LLM_VAULT=file` | Keep AI providers' keys in the owner-only octos profile instead of the macOS keychain. |
-| `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | Point the AppCard assistant at a local octos kernel. |
+| `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs (none: no kernel on this desktop) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
 ## The app model
@@ -169,7 +170,9 @@ Mail is the worked example (`octosense-mail-service`, from `../OctoSense-System-
 - The service tests the account, stores the password in the platform secret store (macOS keychain), and grants the account only to the app that added it.
 - Mail state lives under the host's own directory, outside every app's jail.
 
-AI providers (`os.ai-providers`) edits the LLM providers the AppCard assistant runs on through the `llm` service (`octosense-llm-service`, from `../OctoSense-System-Apps/apps/ai-providers/host-service`). Keys are typed only on host sheets and go to the macOS keychain entry octos reads; the providers are written to the AppCard kernel's octos profile (`OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`). A phone's provider QR is imported from a picture of it: **Choose image** opens the open panel, or drop a screenshot on the import sheet. **Start → Settings → AI providers** opens it. With `--features app-appcard`, a change restarts a running AppCard so its kernel reads the new providers.
+AI providers (`os.ai-providers`) edits the octos kernel's LLM providers through the `llm` service (`octosense-llm-service`, from `../OctoSense-System-Apps/apps/ai-providers/host-service`). Keys are typed only on host sheets and go to the macOS keychain entry octos reads; the providers are written to the kernel's profile under the shell's octos core dir (`<core dir>/profiles/_main.json`; core dir `OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`). A phone's provider QR is imported from a picture of it: **Choose image** opens the open panel, or drop a screenshot on the import sheet. **Start → Settings → AI providers** opens it. After a change the service restarts the kernel if one runs; its consumers (AppCard) reconnect to the new one.
+
+**The octos kernel** is a shell service, not part of any app: `octosense-octos-core` (feature `octos-core`, default). The shell configures it at startup (`apps::configure_octos_kernel`); nothing runs until a consumer connects, then one kernel per process (`<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core dir>` on a desktop, the APK's `liboctos.so` on Android; none on iOS or on a desktop without `OCTOS_APP_CORE_BIN`). AppCard's agent connects to it; Rinx's host can take its own connection. It stops when the last consumer leaves and when the shell exits.
 
 New app features that need a password, PIN or token belong in a host service and a host sheet, never in the app's own UI.
 
@@ -236,7 +239,7 @@ python3 scripts/upstream.py catalog --apply  # rewrite config/apps.json and apps
 
 ### The AppCard assistant
 
-AppCard is **not shipped for now**: it interfered with the other apps, so no build links it unless asked. Default, `mobile-apps`, Android and iOS builds leave it and octos out, and it has no tile, group or launcher entry. `--features app-appcard` brings it back on any target (for a phone, pass the feature to `cargo makepad`); it needs the `../OctoSense-System-Apps` sibling that `tools/setup-native.py` prepares and pulls octos at the revision below.
+AppCard is **not shipped for now**: it interfered with the other apps, so no build links it unless asked. Default, `mobile-apps`, Android and iOS builds leave its UI out (the octos kernel service stays), and it has no tile, group or launcher entry. `--features app-appcard` brings it back on any target (for a phone, pass the feature to `cargo makepad`); it needs the `../OctoSense-System-Apps` sibling that `tools/setup-native.py` prepares and pulls octos at the revision below.
 
 `apps/appcard` (feature `app-appcard`, opt-in) hosts the whole AppCard assistant in one tile: `octos-app` from `../OctoSense-System-Apps/apps/appcard/app/app`, built without its `standalone` feature. Routing, cards, sessions, the composer and the kernel agent run inside the tile's isolate; `ask` is the module's AI-bus tool.
 
@@ -244,7 +247,7 @@ AppCard is **not shipped for now**: it interfered with the other apps, so no bui
 cargo run --release --features app-appcard -- --module appcard
 ```
 
-On desktop, `OCTOS_APP_CORE_BIN` and `OCTOS_APP_CORE_DIR` point it at a local octos kernel; without one it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision `octos-app` pins.
+It starts no kernel of its own: it connects to the shell's. On desktop that needs `OCTOS_APP_CORE_BIN` (and optionally `OCTOS_APP_CORE_DIR`); without a kernel it shows its login / WebSocket screen. Every octos crate comes from octos-org/octos at the one revision `octos-app` and `crates/octos-core` pin (`6ad76e5c`).
 
 ## Demos
 
@@ -301,7 +304,7 @@ With the Makepad Android toolchain installed and a device on ADB:
 cargo makepad android run -p octosense --release
 ```
 
-Phone builds always link Reference and Sheets, and App Hub with the system apps through the default feature; AppCard only with `--features app-appcard`. The launcher label is **OctoSense**, application id `dev.makepad.octosense`. With `app-appcard`, AppCard's Java features (GPS, notifications, share, intents) and the bundled `liboctos.so` kernel need the fork's buildtool and `MAKEPAD_ANDROID_EXTRA_LIBS`; see [docs/android-appcard-build.md](docs/android-appcard-build.md). The dedicated phone shell is OctoSense-ROM's `home/`.
+Phone builds always link Reference and Sheets and the octos kernel service, and App Hub with the system apps through the default feature; AppCard only with `--features app-appcard`. The launcher label is **OctoSense**, application id `dev.makepad.octosense`. The APK must bundle the kernel as `liboctos.so`: `python3 tools/android-kernel.py --sdk <cargo-makepad Android SDK> -- cargo makepad android run -p octosense --release` cross-builds `octos` at the revision `Cargo.lock` pins (in `target/octos-kernel/`) and runs the packager with `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>` (`--kernel <path>` for a prebuilt one). Without it the phone runs no kernel; the AI providers are still saved. AppCard's Java features (GPS, notifications, share, intents) need the fork's buildtool; see [docs/android-appcard-build.md](docs/android-appcard-build.md). The dedicated phone shell is OctoSense-ROM's `home/`.
 
 ## Desktop styles and settings
 
@@ -328,7 +331,9 @@ After any change: `python3 tools/setup-native.py --update`, `cargo update` as ne
 cargo test --locked --workspace
 cargo test --locked --workspace --features mobile-apps
 cargo test --locked -p octosense --features mobile-apps,app-appcard appcard
-cargo tree --locked --features mobile-apps -i octos-core   # must not match: no octos without app-appcard
+cargo tree --locked --features mobile-apps -i octosense-octos-core   # the octos kernel service is linked
+cargo tree --locked --features mobile-apps -i octosense-appcard      # must not match: no AppCard UI without app-appcard
+python3 -m unittest tools/test_android_kernel.py
 python3 -m unittest discover -s scripts -p 'test_*.py'
 python3 scripts/upstream.py catalog
 python3 tools/setup-native.py --check --cargo-manifest Cargo.toml
@@ -346,7 +351,7 @@ Results for each change are recorded in [docs/validation.md](docs/validation.md)
 
 ## CI
 
-`.github/workflows/runtime.yml` runs on every push and pull request, on macOS 14: `setup-native.py`, `cargo check --locked --features mobile-apps`, a `cargo tree` check that octos is absent from the `mobile-apps` graph (host and Android), `cargo check --locked --workspace --features mobile-apps,app-appcard`, and `setup-native.py --check --cargo-manifest Cargo.toml`. It does **not** run `cargo test`, the Python tests or the smoke tests; run those locally before opening a PR.
+`.github/workflows/runtime.yml` runs on every push and pull request, on macOS 14: `setup-native.py`, `cargo check --locked` (default and `--features mobile-apps`), `cargo tree` checks that the octos kernel service is in the default and `mobile-apps` graphs and the AppCard UI (`octosense-appcard`) is not (host and Android), `cargo check --locked --workspace --features mobile-apps,app-appcard`, the `tools/android-kernel.py` tests, and `setup-native.py --check --cargo-manifest Cargo.toml`. It does **not** run `cargo test`, the other Python tests or the smoke tests; run those locally before opening a PR.
 
 ## Known gaps
 

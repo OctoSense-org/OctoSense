@@ -133,15 +133,15 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 /// - `mail` keeps accounts and passwords for the Mail app. `mail_demo` in
 ///   MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault instead (no
 ///   keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
-/// - `llm` keeps the assistant's LLM providers for AI providers
-///   (`os.ai-providers`), written to the AppCard kernel's octos profile
-///   (`OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`), keys in the keychain
-///   entry octos reads (`OCTOSENSE_LLM_VAULT=file` keeps them in the
-///   owner-only profile). No camera scanner: a phone's profile QR is imported
-///   from a picture of it (the open panel, or an image dropped on the import
-///   sheet: `llm_image`), or by pasting its text. With AppCard linked
-///   (`app-appcard`), a change restarts its core so the kernel reads the new
-///   providers; without it there is nothing to restart.
+/// - `llm` keeps the octos kernel's LLM providers for AI providers
+///   (`os.ai-providers`), written to the kernel's profile under the shell's
+///   octos core dir (`octosense_octos_core::core_dir()`: `OCTOS_APP_CORE_DIR`,
+///   else `~/octos-home/.octos`), keys in the keychain entry octos reads
+///   (`OCTOSENSE_LLM_VAULT=file` keeps them in the owner-only profile). No
+///   camera scanner: a phone's profile QR is imported from a picture of it
+///   (the open panel, or an image dropped on the import sheet: `llm_image`),
+///   or by pasting its text. With `octos-core` (default) the service restarts
+///   the kernel after a change; its consumers (AppCard) reconnect.
 #[cfg(feature = "app-hub")]
 pub fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -157,33 +157,37 @@ pub fn register_host_services() {
             octosense_mail_service::register()
         }
         let mut llm = octosense_llm_service::Options::default();
-        if let Some(dir) = octosense_llm_config::profile::default_core_dir() {
+        #[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+        let core_dir = octosense_octos_core::core_dir();
+        #[cfg(not(any(feature = "octos-core", target_os = "android", target_os = "ios")))]
+        let core_dir = octosense_llm_config::profile::default_core_dir();
+        if let Some(dir) = core_dir {
             llm = llm.core_dir(dir);
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             llm = llm.image_picker(crate::llm_image::picker()).image_drops(true);
         }
-        #[cfg(feature = "app-appcard")]
-        {
-            llm = llm.on_changed(|| {
-                RESTART_APPCARD.store(true, std::sync::atomic::Ordering::Release);
-                makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
-            });
-        }
         octosense_llm_service::register_with(llm);
     });
 }
 
-/// Set (any thread) when AI providers changed the saved provider set.
-#[cfg(all(feature = "app-hub", feature = "app-appcard"))]
-static RESTART_APPCARD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// UI thread: whether the AppCard core should restart to read a changed
-/// provider set (once per change).
-#[cfg(all(feature = "app-hub", feature = "app-appcard"))]
-pub fn take_appcard_restart() -> bool {
-    RESTART_APPCARD.swap(false, std::sync::atomic::Ordering::AcqRel)
+/// Configure the shell's octos kernel (`octosense_octos_core`) once, at
+/// startup, before anything connects to it. Nothing runs until a consumer
+/// (AppCard, Rinx) connects; then one kernel per process: on a desktop the
+/// binary `OCTOS_APP_CORE_BIN` names (none otherwise), on Android the APK's
+/// `liboctos.so`. Its diagnostics go to the shell's log.
+#[cfg(any(feature = "octos-core", target_os = "android", target_os = "ios"))]
+pub fn configure_octos_kernel(data_dir: Option<String>) {
+    let mut options = octosense_octos_core::Options::default().log(|line| makepad_widgets::log!("{line}"));
+    if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
+        options = options.app_data_dir(dir);
+    }
+    octosense_octos_core::configure(options);
+    match octosense_octos_core::launch() {
+        Ok(_) => makepad_widgets::log!("octos: kernel service ready (starts on first use), core dir {:?}", octosense_octos_core::core_dir()),
+        Err(why) => makepad_widgets::log!("octos: {why}; the providers are still saved under {:?}", octosense_octos_core::core_dir()),
+    }
 }
 
 /// Apps App Hub installed: each is an app of its own in the launcher, hosted
