@@ -164,7 +164,9 @@ impl Connector for WsConnector {
             // Bound sessions reopen in the workspace the server gave them.
             headers.insert(
                 "x-octos-ui-features",
-                "session.workspace_cwd.v1".parse().map_err(|_| "bad features")?,
+                "session.workspace_cwd.v1"
+                    .parse()
+                    .map_err(|_| "bad features")?,
             );
             let (socket, _) = tokio_tungstenite::connect_async(request)
                 .await
