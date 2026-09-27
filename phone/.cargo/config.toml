@@ -1,0 +1,7 @@
+# Phone builds (run from phone/): the rest of the environment is the
+# workspace's (../.cargo/config.toml).
+[env]
+# The system apps this Home ships (ADR 0004). App Hub's shell crate
+# (octosense-app-hub-app) packs them at build time and reads the selection
+# only from this variable; unset, it ships none.
+OCTOSENSE_SYSTEM_APPS = { value = "system-apps.json", relative = true }

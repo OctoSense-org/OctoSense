@@ -1,0 +1,141 @@
+// Keyboard inventory, provider identity and native-consent return state.
+fn settings_keyboard_ui(s) {
+    if s["keyboard_ui"]==nil { s.keyboard_ui={query:"",draft:"",offset:0,waiting:false,last:nil,selected:nil,follow:false,pressed:nil} }
+    return s.keyboard_ui
+}
+fn settings_keyboard_matches(ui,row) { return row!=nil && row.query==ui.query && (row.offset==ui.offset || (row.offset==0 && ui.offset>=row.total)) }
+fn settings_keyboard_observed(s,o) {
+    let ui=settings_keyboard_ui(s)
+    if ui.waiting || !settings_keyboard_matches(ui,o.keyboards) { return nil }
+    return o.keyboards
+}
+fn settings_keyboard_selected(s,o) {
+    let ui=settings_keyboard_ui(s); let row=settings_keyboard_observed(s,o)
+    if ui.selected==nil || row==nil { return nil }
+    for item in row.rows { if item.id==ui.selected.id && item.target==ui.selected.target { return item } }
+    return nil
+}
+fn settings_keyboard_read(s,out) {
+    let ui=settings_keyboard_ui(s); ui.waiting=true; ui.pressed=nil
+    settings_request(out,{kind:"read",domain:"keyboards",query:ui.query,offset:ui.offset})
+}
+fn settings_keyboard_enter(s,o,out) {
+    let last=nil; if o.keyboards!=nil { last=o.keyboards.request_id }
+    s.keyboard_ui={query:"",draft:"",offset:0,waiting:true,last:last,selected:nil,follow:false,pressed:nil}
+    s.page="Keyboards"; settings_patch(out,"input","keyboard_query","")
+    settings_keyboard_read(s,out); settings_scroll(out,"keyboards_page")
+}
+fn settings_keyboard_candidate(s,o,id) {
+    let row=settings_keyboard_observed(s,o)
+    if o.android!=true || s.pending || row==nil || !row.fresh || row.availability!="Available" || row.key==nil { return nil }
+    if id=="keyboard_choose_default" {
+        if row.can_choose_default { return {kind:"keyboards",key:row.key,target:nil,operation:"choose_default"} }
+        return nil
+    }
+    let selected=settings_keyboard_selected(s,o)
+    if selected==nil { return nil }
+    let operation=nil
+    if id=="keyboard_enable" && selected.can_enable && !selected.enabled { operation="enable" }
+    if id=="keyboard_disable" && selected.can_disable && selected.enabled { operation="disable" }
+    if id=="keyboard_settings" && selected.can_settings { operation="provider_settings" }
+    if id=="keyboard_subtypes" && selected.can_subtypes { operation="subtypes" }
+    if operation==nil { return nil }
+    return {kind:"keyboards",key:row.key,target:selected.target,operation:operation}
+}
+fn settings_keyboard_event(s,e,o,out) {
+    let ui=settings_keyboard_ui(s)
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" { ui.pressed=nil }
+    if s.page=="System" && e.kind=="click" && e.id=="keyboards_open" {
+        if o.android==true && !s.pending { settings_keyboard_enter(s,o,out) }; return true
+    }
+    if s.page!="Keyboards" && s.page!="KeyboardDetails" { return false }
+    let native=o.keyboards
+    if settings_keyboard_matches(ui,native) && native.request_id!=ui.last {
+        ui.last=native.request_id; ui.waiting=false; ui.offset=native.offset
+        if ui.follow && ui.selected!=nil { for row in native.rows { if row.id==ui.selected.id { ui.selected=row } } }
+        ui.follow=false
+    }
+    if e.kind=="result" && e.value["domain"]=="keyboards" && e.value["phase"]=="submitted" {
+        ui.waiting=true; ui.follow=true; ui.pressed=nil; return false
+    }
+    if s.page=="KeyboardDetails" && (e.kind=="back" || (e.kind=="click" && e.id=="back")) {
+        s.page="Keyboards"; ui.selected=nil; ui.pressed=nil; settings_scroll(out,"keyboards_page"); return true
+    }
+    if e.kind=="input" && e.id=="keyboard_query" { ui.draft=e.value; return true }
+    let ready=o.android==true && !s.pending; let snapshot=settings_keyboard_observed(s,o)
+    if e.kind=="click" || e.kind=="return" {
+        if e.id=="keyboard_search" || e.id=="keyboard_clear" || (e.kind=="return" && e.id=="keyboard_query") {
+            if ready && s.page=="Keyboards" {
+                let draft=ui.draft; if e.id=="keyboard_clear" { draft=""; settings_patch(out,"input","keyboard_query","") }
+                let query=draft.trim()
+                if settings_language_query(query,"keyboard_ui") { ui.draft=draft; ui.query=query; ui.offset=0; settings_keyboard_read(s,out) }
+            }; return true
+        }
+        if e.id=="keyboard_native" || e.id=="keyboard_detail_native" { if ready { settings_request(out,{kind:"open",destination:"keyboards"}) }; return true }
+        if e.id=="keyboard_refresh" || e.id=="keyboard_detail_refresh" { if ready { ui.follow=true; settings_keyboard_read(s,out) }; return true }
+        if e.id=="keyboard_previous" || e.id=="keyboard_next" {
+            if ready && snapshot!=nil && snapshot.fresh {
+                let offset=settings_max(0,snapshot.offset-20); if e.id=="keyboard_next" { offset=snapshot.offset+20 }
+                if offset<snapshot.total { ui.offset=offset; settings_keyboard_read(s,out); settings_scroll(out,"keyboards_page") }
+            }; return true
+        }
+    }
+    for id in ["keyboard_choose_default","keyboard_enable","keyboard_disable","keyboard_settings","keyboard_subtypes"] {
+        if e.id==id { let request=settings_keyboard_candidate(s,o,id); if settings_consent_held(ui,e,request) { settings_request(out,request) }; return true }
+    }
+    let i=0
+    while i<20 {
+        if e.id=="keyboard_row_"+i {
+            let row=nil; if ready && snapshot!=nil && snapshot.fresh && i<snapshot.rows.len() { row=snapshot.rows[i] }
+            let target=nil; if row!=nil { target={id:row.id,target:row.target} }
+            if settings_consent_held(ui,e,target) { ui.selected=row; s.page="KeyboardDetails"; settings_blur(out); settings_scroll(out,"keyboard_detail_page") }
+            return true
+        }; i=i+1
+    }
+    return false
+}
+fn settings_keyboard_refresh(s,o,out) {
+    let ready=o.android==true && !s.pending; settings_enabled(out,"keyboards_open",ready)
+    if s.page!="Keyboards" && s.page!="KeyboardDetails" { return }
+    let ui=settings_keyboard_ui(s); let snapshot=settings_keyboard_observed(s,o); let selected=settings_keyboard_selected(s,o)
+    let shown=selected; if shown==nil { shown=ui.selected }
+    let availability="Waiting for Android keyboard information…"
+    if snapshot!=nil {
+        availability="Keyboard controls are unavailable on this installation."
+        if snapshot.availability=="Available" { availability="Android manages keyboard warnings and current-keyboard selection." }
+        if snapshot.availability=="Restricted" { availability="Keyboard controls are unavailable while locked or restricted." }
+    }
+    settings_text(out,"keyboards_availability",availability)
+    let current="Unavailable"; let summary=""
+    if snapshot!=nil {
+        if snapshot.default_id!=nil { current=snapshot.default_id; if current=="" { current="None reported" }; for row in snapshot.rows { if row.id==snapshot.default_id { current=row.label } } }
+        if snapshot.availability=="Available" { summary="No matching keyboards"; if snapshot.total>0 { summary="Keyboards "+(snapshot.offset+1)+"–"+(snapshot.offset+snapshot.rows.len())+" of "+snapshot.total } }
+    }
+    settings_text(out,"keyboard_current","Current keyboard: "+current); settings_text(out,"keyboard_summary",summary)
+    let hint=""; if ui.draft.trim()!=ui.query { hint="Search to apply filter edits." }; settings_text(out,"keyboard_filter_hint",hint)
+    let identity=""; if shown!=nil { identity=shown.label+"\n"+shown.package+"\n"+shown.id }; settings_text(out,"keyboard_identity",identity)
+    let state="Keyboard choices changed or are unavailable. Refresh to review the current provider."
+    if selected!=nil {
+        let enabled="Off"; if selected.enabled { enabled="On" }; let current="No"; if selected.selected { current="Yes" }
+        state="Enabled: "+enabled+"\nCurrent keyboard: "+current+"\n"+selected.summary
+        if selected.restriction!="" { state=state+"\n"+selected.restriction }
+    }
+    settings_text(out,"keyboard_state",state)
+    for id in ["keyboard_search","keyboard_clear","keyboard_refresh","keyboard_detail_refresh","keyboard_native","keyboard_detail_native"] { settings_enabled(out,id,ready) }
+    for id in ["keyboard_choose_default","keyboard_enable","keyboard_disable","keyboard_settings","keyboard_subtypes"] {
+        let request=settings_keyboard_candidate(s,o,id); settings_enabled(out,id,request!=nil)
+        if request!=nil { settings_patch(out,"semantic",id,request.to_json()) }
+    }
+    settings_enabled(out,"keyboard_previous",ready && snapshot!=nil && snapshot.fresh && snapshot.offset>0)
+    settings_enabled(out,"keyboard_next",ready && snapshot!=nil && snapshot.fresh && snapshot.offset+snapshot.rows.len()<snapshot.total)
+    let i=0
+    while i<20 {
+        let id="keyboard_row_"+i; let row=nil; if snapshot!=nil && i<snapshot.rows.len() { row=snapshot.rows[i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,ready && snapshot!=nil && snapshot.fresh && row!=nil)
+        if row!=nil {
+            let enabled="Disabled"; if row.enabled { enabled="Enabled" }; let current=""; if row.selected { current=" · Current" }
+            settings_text(out,id,row.label+"\n"+row.package+" · "+enabled+current)
+            settings_patch(out,"semantic",id,"keyboard:"+row.id+":"+row.target)
+        }; i=i+1
+    }
+}

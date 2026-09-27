@@ -1,0 +1,193 @@
+// Saved interruption policy and Android time schedules, with retained drafts.
+fn settings_dnd_init(s) { if s["dnd_ui"]==nil { s.dnd_ui={offset:0,generation:nil,seen:nil,selected:nil,draft:nil,delete:nil,submitted:nil,pressed:nil,row_pressed:nil,notice:""} } }
+fn settings_dnd_fields() { return [["Calls","Calls",["Anyone","Contacts","Starred","None"]],["Messages","Messages",["Anyone","Contacts","Starred","None"]],["Conversations","Conversations",["All","Important","None"]],["RepeatCallers","Repeated callers",["Off","On"]],["Alarms","Alarms",["Off","On"]],["Media","Media",["Off","On"]],["System","System sounds",["Off","On"]],["Reminders","Reminders",["Off","On"]],["Events","Calendar events",["Off","On"]]] }
+fn settings_dnd_days() { return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"] }
+fn settings_dnd_observed(s,o) { let n=o.dnd_settings; if n!=nil && n.offset==s.dnd_ui.offset { return n }; return nil }
+fn settings_dnd_rule(s,o) { let n=settings_dnd_observed(s,o); if n!=nil { for r in n.rules { if r.target==s.dnd_ui.selected { return r } } }; return nil }
+fn settings_dnd_read(s,o,out) { if o.android { settings_request(out,{kind:"read",domain:"dnd",offset:s.dnd_ui.offset,key:s.dnd_ui.generation}) } }
+fn settings_dnd_schedule(d) {
+    if d==nil || d.name.trim()=="" || d.name.to_chars().len()>100 || !settings_query_valid(d.name) || d.start.len()!=5 || d.end.len()!=5 { return nil }
+    let start=settings_time_parse(d.start); let end=settings_time_parse(d.end)
+    if start==nil || end==nil || (d.enabled && d.days.len()==0) { return nil }
+    return {name:d.name,days:d.days,start:start/60,end:end/60,exit_at_alarm:d.exit,enabled:d.enabled}
+}
+fn settings_dnd_draft_request(s) {
+    let d=s.dnd_ui.draft; let schedule=settings_dnd_schedule(d)
+    if schedule==nil { return nil }
+    return {kind:"dnd",operation:"Save",key:d.key,target:d.target,schedule:schedule}
+}
+fn settings_dnd_permits(n,r) {
+    if n==nil || r==nil || !n.available || n.key!=r.key { return false }
+    if r.operation=="Policy" { for row in n.policy { if row.field==r.field { return row.can_set && row.value!=r.value } }; return false }
+    if r.operation=="Save" && r.target==nil { return n.can_create }
+    for row in n.rules {
+        if row.target==r.target {
+            if r.operation=="Save" { return row.can_edit }
+            if r.operation=="Delete" { return row.can_delete }
+            if r.operation=="Enabled" { return row.can_edit && row.enabled!=r.enabled && (!r.enabled || (row.schedule!=nil && row.schedule.days.len()>0)) }
+        }
+    }
+    return false
+}
+fn settings_dnd_candidate(s,o,id) {
+    let n=settings_dnd_observed(s,o); if n==nil { return nil }
+    let r=nil; let i=0
+    for field in settings_dnd_fields() { let j=0; for value in field[2] { if id=="dnd_policy_"+i+"_"+j { r={kind:"dnd",operation:"Policy",key:n.key,field:field[0],value:value} }; j=j+1 }; i=i+1 }
+    let row=settings_dnd_rule(s,o)
+    if row!=nil {
+        if id=="dnd_enabled" { r={kind:"dnd",operation:"Enabled",key:n.key,target:row.target,enabled:!row.enabled} }
+        if id=="dnd_delete" { r={kind:"dnd",operation:"Delete",key:n.key,target:row.target} }
+    }
+    if id=="dnd_delete_confirm" { r=s.dnd_ui.delete }
+    if id=="dnd_save" {
+        r=settings_dnd_draft_request(s)
+    }
+    if settings_dnd_permits(n,r) { return r }; return nil
+}
+fn settings_dnd_manual(o,id) {
+    let c=o.controls; if c==nil || c.page!="Notifications" { return nil }
+    for mode in ["Off","Priority","Alarms","Silence"] {
+        if id=="dnd_manual_"+text.lower(mode) {
+            for row in c.controls { if row.id=="DndMode" && row.availability=="Available" && row.value!=mode && settings_has(row.options,mode) { return {kind:"control",page:"notifications",control:"dnd_mode",value:text.lower(mode)} } }
+        }
+    }
+    return nil
+}
+fn settings_dnd_edit(s,o,out,new) {
+    let n=settings_dnd_observed(s,o); if n==nil { return }
+    let d=nil
+    if new && n.can_create { d={key:n.key,target:nil,name:"",start:"22:00",end:"07:00",days:[1,2,3,4,5,6,7],exit:false,enabled:false} }
+    if !new {
+        let r=settings_dnd_rule(s,o)
+        if r!=nil && r.can_edit && r.schedule!=nil { let t=r.schedule; d={key:n.key,target:r.target,name:r.name,start:settings_time_format(t.start*60),end:settings_time_format(t.end*60),days:t.days,exit:t.exit_at_alarm,enabled:r.enabled} }
+    }
+    if d==nil { return }
+    s.dnd_ui.draft=d; s.dnd_ui.pressed=nil; s.page="DndEditor"
+    for pair in [["dnd_name",d.name],["dnd_start",d.start],["dnd_end",d.end]] { settings_patch(out,"input",pair[0],pair[1]) }
+    settings_scroll(out,"dnd_editor_page")
+}
+fn settings_dnd_event(s,e,o,out) {
+    settings_dnd_init(s); let ui=s.dnd_ui
+    if e.kind=="pause" || e.kind=="navigate" || e.kind=="entry" { ui.pressed=nil; ui.row_pressed=nil; if e.kind!="pause" { ui.draft=nil; ui.delete=nil; ui.submitted=nil }; return false }
+    if e.kind=="back" || (e.kind=="click" && e.id=="back") { ui.pressed=nil; ui.row_pressed=nil; ui.draft=nil; ui.delete=nil; ui.submitted=nil; return false }
+    let n=o.dnd_settings
+    if n!=nil && n.id!=ui.seen {
+        ui.seen=n.id; if n.stale && n.offset==0 { ui.offset=0; ui.notice="Schedules changed. Showing the first page."; if s.page=="DndRules" { settings_scroll(out,"dnd_rules_page") } }
+        ui.generation=n.generation
+    }
+    if e.kind=="result" && e.value["domain"]=="dnd" && e.value["phase"]=="completed" {
+        let applied=e.value["applied"]==true
+        let current=settings_dnd_draft_request(s)
+        if applied && s.page=="DndEditor" && ui.submitted!=nil && current!=nil && current.to_json()==ui.submitted.to_json() { ui.draft=nil; s.page="DndRules"; settings_blur(out); settings_scroll(out,"dnd_rules_page") }
+        ui.submitted=nil; return false
+    }
+    if !settings_has(["Dnd","DndPolicy","DndRules","DndRule","DndEditor"],s.page) { return false }
+    n=settings_dnd_observed(s,o); let ready=o.android && !s.pending
+    if s.page=="DndEditor" && e.kind=="input" && ui.draft!=nil {
+        if e.id=="dnd_name" { ui.draft.name=e.value; return true }; if e.id=="dnd_start" { ui.draft.start=e.value; return true }; if e.id=="dnd_end" { ui.draft.end=e.value; return true }
+    }
+    let row=nil; let i=0
+    if n!=nil && s.page=="DndRules" { for r in n.rules { if e.id=="dnd_row_"+i { row=r }; i=i+1 } }
+    let candidate=settings_dnd_candidate(s,o,e.id); if s.page=="Dnd" { let manual=settings_dnd_manual(o,e.id); if manual!=nil { candidate=manual } }
+    if e.kind=="press" { ui.pressed={id:e.id,request:candidate}; ui.row_pressed=nil; if row!=nil { ui.row_pressed={id:e.id,target:row.target} }; return candidate!=nil || row!=nil }
+    if e.kind=="release" { ui.pressed=nil; ui.row_pressed=nil; return false }
+    if e.kind!="click" { return false }
+    if e.id=="dnd_cancel" && !s.pending { ui.draft=nil; ui.submitted=nil; s.page="DndRules"; settings_blur(out); return true }
+    if e.id=="dnd_delete_cancel" && !s.pending { ui.delete=nil; return true }
+    for pair in [["dnd_policy_open","DndPolicy"],["dnd_rules_open","DndRules"]] { if e.id==pair[0] { s.page=pair[1]; settings_scroll(out,settings_active_scroll(s.page)); return true } }
+    if !ready { return false }
+    if e.id=="dnd_native" || e.id=="dnd_rule_native" { settings_request(out,{kind:"open",destination:"dnd"}); return true }
+    if settings_has(["dnd_refresh","dnd_rules_refresh","dnd_policy_refresh"],e.id) { settings_dnd_read(s,o,out); return true }
+    if e.id=="dnd_add" || e.id=="dnd_edit" { settings_dnd_edit(s,o,out,e.id=="dnd_add"); return true }
+    if s.page=="DndEditor" && ui.draft!=nil {
+        i=0
+        while i<7 {
+            if e.id=="dnd_day_"+i {
+                let selected=i+1; let days=[]; let day=1
+                while day<=7 { let included=settings_has(ui.draft.days,day); if day==selected { included=!included }; if included { days.push(day) }; day=day+1 }
+                ui.draft.days=days; return true
+            }
+            i=i+1
+        }
+        if e.id=="dnd_exit" { ui.draft.exit=!ui.draft.exit; return true }; if e.id=="dnd_draft_enabled" { ui.draft.enabled=!ui.draft.enabled; return true }
+    }
+    if s.page=="DndRules" && (e.id=="dnd_previous" || e.id=="dnd_next") {
+        if n!=nil { let offset=n.offset-20; if e.id=="dnd_next" { offset=n.offset+20 }; if offset>=0 && offset<n.total { ui.offset=offset; ui.generation=n.generation; settings_dnd_read(s,o,out); settings_scroll(out,"dnd_rules_page") } }
+        return true
+    }
+    if row!=nil {
+        let held=ui.row_pressed; ui.row_pressed=nil
+        if held==nil || (held.id==e.id && held.target==row.target) { ui.selected=row.target; ui.delete=nil; s.page="DndRule"; settings_scroll(out,"dnd_rule_page") }
+        return true
+    }
+    if candidate!=nil {
+        let held=ui.pressed; ui.pressed=nil
+        if held!=nil && (held.id!=e.id || held.request.to_json()!=candidate.to_json()) { return true }
+        if e.id=="dnd_delete" { ui.delete=candidate }
+        else { if e.id=="dnd_save" { ui.submitted=candidate }; settings_request(out,candidate); if e.id=="dnd_delete_confirm" { ui.delete=nil; s.page="DndRules" } }
+        return true
+    }
+    return false
+}
+fn settings_dnd_policy_label(field,value) { if value=="None" && settings_has(["Calls","Messages"],field) { return "No one" }; if value=="Starred" { return "Starred contacts" }; return settings_or(value,"Unavailable") }
+fn settings_dnd_mode(value) { return settings_named(value,[["off","Off"],["priority","Priority only"],["alarms","Alarms only"],["silence","Total silence"]],"Unavailable") }
+fn settings_dnd_refresh(s,o,out) {
+    settings_dnd_init(s); if !settings_has(["Dnd","DndPolicy","DndRules","DndRule","DndEditor"],s.page) { return }
+    let ui=s.dnd_ui; let n=settings_dnd_observed(s,o); let ready=o.android && !s.pending
+    let manual=nil; let current=nil; let availability="Waiting for Android…"; let policy_note="These choices are unavailable, restricted, or read-only under the current manual mode."; let repeat=""; let summary="Rule information unavailable."
+    if n!=nil {
+        manual=n.manual_mode; current=n.current_mode
+        availability="Do Not Disturb controls are unavailable on this installation. Android settings remains available."
+        if n.available { availability="Schedules can keep Do Not Disturb active after manual mode is turned off." }
+        for row in n.policy { if row.can_set { policy_note="These are saved default interruption choices. Active rules and notification settings also affect delivery." } }
+        if n.repeat_minutes!=nil { repeat="Repeated callers uses Android’s "+n.repeat_minutes+"-minute window." }
+        summary="Schedules and rules are unavailable on this installation."
+        if n.available { summary="No schedules or rules reported."; if n.total>0 { summary="Rules "+(n.offset+1)+"–"+(n.offset+n.rules.len())+" of "+n.total; if n.truncated { summary=summary+" · Limited list" } } }
+    }
+    settings_text(out,"dnd_state","Manual mode: "+settings_dnd_mode(manual)+"\nCurrent effective mode: "+settings_dnd_mode(current)); settings_text(out,"dnd_availability",availability); settings_text(out,"dnd_policy_note",policy_note); settings_text(out,"dnd_repeat_note",repeat); settings_text(out,"dnd_list_summary",summary); settings_text(out,"dnd_list_notice",ui.notice)
+    let observed=nil; if o.controls!=nil && o.controls.page=="Notifications" { for row in o.controls.controls { if row.id=="DndMode" { observed=row.value } } }
+    for value in ["Off","Priority","Alarms","Silence"] { let id="dnd_manual_"+text.lower(value); let label=settings_dnd_mode(text.lower(value)); if observed==value { label=label+" · Selected" }; settings_text(out,id,label); settings_enabled(out,id,ready && settings_dnd_manual(o,id)!=nil) }
+    let i=0
+    for field in settings_dnd_fields() {
+        let saved=nil; let effective=nil
+        if n!=nil { for row in n.policy { if row.field==field[0] { saved=row.value } }; for row in n.effective { if row.field==field[0] { effective=row.value } }; nil }
+        settings_text(out,"dnd_policy_label_"+i,field[1]+"\nSaved: "+settings_dnd_policy_label(field[0],saved)+"\nCurrently effective: "+settings_dnd_policy_label(field[0],effective))
+        let j=0
+        for value in field[2] { let id="dnd_policy_"+i+"_"+j; let label=settings_dnd_policy_label(field[0],value); if saved==value { label=label+" · Selected" }; settings_text(out,id,label); settings_enabled(out,id,ready && settings_dnd_candidate(s,o,id)!=nil); j=j+1 }
+        i=i+1
+    }
+    i=0
+    while i<20 {
+        let r=nil; let id="dnd_row_"+i; if n!=nil && i<n.rules.len() { r=n.rules[i] }
+        settings_visible(out,id,r!=nil); settings_enabled(out,id,ready && r!=nil)
+        if r!=nil { settings_text(out,id,r.name+"\n"+settings_apps_flag(r.enabled,"On","Off")+" · "+settings_or(settings_apps_flag(r.active,"Active","Inactive"),"Activity unavailable")); settings_patch(out,"semantic",id,"dnd:"+r.target) }
+        i=i+1
+    }
+    settings_enabled(out,"dnd_previous",ready && n!=nil && n.offset>0); settings_enabled(out,"dnd_next",ready && n!=nil && n.offset+20<n.total); settings_enabled(out,"dnd_add",ready && n!=nil && n.can_create)
+    let rule=settings_dnd_rule(s,o); let identity="This rule is no longer in the current observation."; let description=""; let toggle="Enable schedule"
+    if rule!=nil {
+        identity=rule.name; if rule.enabled { toggle="Disable schedule" }
+        description="This provider or rule type uses Android configuration. Its settings are preserved."
+        if rule.schedule!=nil {
+            let t=rule.schedule; let days=""; for d in t.days { if days!="" { days=days+", " }; days=days+settings_dnd_days()[d-1] }
+            description=settings_apps_flag(rule.enabled,"On","Off")+"\n"+settings_time_format(t.start*60)+"–"+settings_time_format(t.end*60)+"\nDays: "+days+"\n"+settings_bool_label("Exit at next alarm",t.exit_at_alarm)+"\n"+settings_or(settings_apps_flag(rule.active,"Active now","Not active now"),"Activity unavailable")
+        }
+    }
+    settings_text(out,"dnd_rule_identity",identity); settings_text(out,"dnd_rule_description",description); settings_text(out,"dnd_enabled",toggle); settings_enabled(out,"dnd_edit",ready && rule!=nil && rule.can_edit)
+    settings_visible(out,"dnd_delete_review",ui.delete!=nil); settings_enabled(out,"dnd_delete_cancel",!s.pending)
+    for id in ["dnd_save","dnd_enabled","dnd_delete","dnd_delete_confirm"] { settings_enabled(out,id,ready && settings_dnd_candidate(s,o,id)!=nil) }
+    let d=ui.draft; let current=false
+    if d!=nil && n!=nil && n.key==d.key { if d.target==nil { current=n.can_create } else { for r in n.rules { if r.target==d.target && r.can_edit { current=true } }; nil } }
+    for id in ["dnd_name","dnd_start","dnd_end","dnd_exit","dnd_draft_enabled"] { settings_enabled(out,id,ready && current) }
+    i=0
+    for day in settings_dnd_days() { let id="dnd_day_"+i; settings_text(out,id,settings_bool_label(day,d!=nil && settings_has(d.days,i+1))); settings_enabled(out,id,ready && current); i=i+1 }
+    settings_text(out,"dnd_exit",settings_bool_label("Exit at next alarm",d!=nil && d.exit)); settings_text(out,"dnd_draft_enabled",settings_bool_label("Schedule enabled",d!=nil && d.enabled))
+    let note="DND settings changed or access is unavailable. Your draft is kept; cancel and review the current values."
+    if current {
+        if settings_dnd_schedule(d)==nil { note="Enter a name and valid 24-hour times (HH:MM). Choose at least one day to enable the schedule." }
+        else if d.target==nil { note="Creates an Android time schedule in Priority-only mode using Android’s default policy for a new rule. Review the days and enabled state before saving." }
+        else { note="Save changes only this schedule’s name, time, days, alarm exit and enabled state. Its interruption policy and other settings are preserved." }
+    }
+    settings_text(out,"dnd_draft_note",note); settings_enabled(out,"dnd_cancel",!s.pending)
+    for id in ["dnd_refresh","dnd_rules_refresh","dnd_policy_refresh"] { settings_enabled(out,id,ready) }
+}

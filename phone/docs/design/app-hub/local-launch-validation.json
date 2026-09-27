@@ -1,0 +1,60 @@
+{
+  "recorded_at_utc": "2026-09-23T00:50:29.887296+00:00",
+  "reason": "App Hub was omitted by the documented local launch because its Cargo feature was not enabled by default.",
+  "fix": "Enable app-hub in the default Cargo feature set.",
+  "command": "cargo run --release --features mobile-only --offline",
+  "environment": {
+    "MAKEPAD_REMOTE": "true",
+    "state": "isolated target/app-hub/validation/default-state",
+    "catalog": "production",
+    "auto_launch_app": false
+  },
+  "verification": {
+    "test_command": "cargo test --release --bin octosense --features mobile-only --offline",
+    "tests_passed": 289,
+    "tests_failed": 0,
+    "native_actions": [
+      "Open All apps using the rightmost home page indicator",
+      "App Hub icon and label visible",
+      "Click App Hub icon",
+      "App Hub opens the signed live catalog empty state"
+    ],
+    "logical_size": [
+      412,
+      892
+    ],
+    "capture_pixel_size": [
+      824,
+      1784
+    ]
+  },
+  "files": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "a0098227e28bae50af5557bec54faf8bacfce4328178eb567221c5653efc7966"
+    },
+    {
+      "path": "target/release/octosense",
+      "sha256": "3bc4bdb48942a82d0724f2987af6e7259c6d53942dbfd3f5589521efff4085f1"
+    },
+    {
+      "path": "target/app-hub/validation/default-launch-tests.log",
+      "sha256": "900e00b0ab592ceb1fb736cdd97f04613cf558554f561620a9628ce513cd0eb3"
+    },
+    {
+      "path": "target/app-hub/validation/default.log",
+      "sha256": "14f38e5912ca33f5cd1b31a4d8de1db30885a1fa705baacd2a371d264c5d3efd"
+    }
+  ],
+  "captures": [
+    {
+      "path": "docs/design/app-hub/evidence/default-all-apps.png",
+      "sha256": "4a4e2e12cd8799c3379f8d3ed65d3ba0d410136ff12d68a0296cb7b514717cd0"
+    },
+    {
+      "path": "docs/design/app-hub/evidence/default-apphub-open.png",
+      "sha256": "1b48dc1b5fba93566cf4528881f3b1f63a133a2b86dcdedd7b5bc258eb7e3994"
+    }
+  ],
+  "android_note": "Android already linked App Hub automatically; no new Android build was required for this local default-feature correction."
+}

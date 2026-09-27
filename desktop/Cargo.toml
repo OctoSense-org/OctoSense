@@ -1,0 +1,145 @@
+# wm — makepad window manager. An Omarchy-behaving tiling window manager
+# built as a Makepad app.
+#
+# Nested mode (this crate, all desktop OSes): wm owns one OS window,
+# fullscreen it and it is the desktop. Tiles host other Makepad apps as
+# child processes through the Studio runview mechanism: a tiny in-process
+# websocket hub accepts `--stdin-loop` clients, each tile shares a GPU
+# swapchain (IOSurface / DXGI handle / DMA-BUF) with its child and forwards
+# input over the studio protocol.
+#
+# Session mode (later, Linux only): the same layout/chrome/protocol with a
+# Wayland compositor display backend instead of a Makepad window. The
+# layout tree, keybindings, theming and client management are kept free of
+# nested-mode assumptions for that reason.
+
+[package]
+name = "octosense"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+default-run = "octosense"
+
+[package.metadata.packager]
+product_name = "OctoSense"
+identifier = "dev.makepad.octosense"
+
+# Android builds this entry point as a shared library. Declaring it explicitly
+# avoids cargo-makepad's generated wrapper duplicating our workspace section.
+[lib]
+path = "src/main.rs"
+# The binary target runs the tests for this shared source.
+test = false
+bench = false
+doctest = false
+
+[[bin]]
+name = "octosense"
+path = "src/main.rs"
+
+[dependencies]
+# `appcard,maps`: the Octoscript-AppCard widget set (kit, text roles, weather,
+# finance, matplot) and the map navigation layer the appcard module renders.
+makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
+makepad-studio-protocol = { workspace = true }
+makepad-network = { workspace = true }
+makepad-wm-api = { workspace = true }
+# The AI services wire only: the WM relays frames between the aichat child and the apps.
+makepad-ai-services = { workspace = true }
+makepad-strict-json = { workspace = true }
+# In-process hosting (aicontrol §3): the module contract, the palette applied
+# into each instance's isolate, and the modules this build links.
+makepad-app-module = { workspace = true }
+makepad-wm-theme = { workspace = true }
+makepad-sheets = { workspace = true, optional = true }
+makepad-photos = { workspace = true, optional = true }
+octosense-reference = { workspace = true, optional = true }
+# The whole Octoscript-AppCard app hosted in a tile, in-process (Phase B of
+# the AppCard port): octos-app's AppShell — routing brain, cards, kernel agent.
+# Not shipped for now: strictly opt-in with `--features app-appcard`, on
+# every target (it is in neither `default`, `mobile-apps`, nor the native
+# mobile dependencies below).
+octosense-appcard = { workspace = true, optional = true }
+# App Hub, as every OctoSense shell links it (OctoSense-App-Hub
+# crates/app-hub-app): the native store module (`apphub`), the Card runner
+# module (`card`) that runs contained script apps, the system apps packed at
+# build time from the selection `OCTOSENSE_SYSTEM_APPS` names
+# (system-apps.json, .cargo/config.toml), installed apps and their icons.
+# Same rev as the Mail and llm host services' octosense-appstore
+# (OctoSense-System-Apps): one App Hub source, so one host-service registry.
+octosense-app-hub-app = { workspace = true, optional = true }
+# The `mail` host service the Mail system app calls through `host.request`:
+# accounts, message lists and send run here, with the passwords the host
+# holds; the app never gets a socket or a secret. From the pinned
+# OctoSense-System-Apps checkout beside this repository
+# (native-apps.lock.json, tools/setup-native.py).
+octosense-mail-service = { workspace = true, optional = true }
+# The `llm` host service the AI providers system app calls: the octos
+# kernel's LLM providers, their keys (macOS keychain) and the phone QR, on
+# host-owned sheets. The config crate names the kernel's octos home it writes.
+octosense-llm-service = { workspace = true, optional = true }
+octosense-llm-config = { workspace = true, optional = true }
+# The octos agent kernel as a shell service (OctoSense-System-Apps
+# crates/octos-core): one kernel per process, started when a consumer (AppCard,
+# Rinx) connects, configured by the AI providers app, restarted when the
+# providers change. Feature `octos-core`, on by default.
+octosense-octos-core = { workspace = true, optional = true }
+# Apps' assistant access (Rinx ADR 0007): for each module whose declared
+# `octos.*` services host policy grants, ONE octos peer owned by the shell's
+# system agent and a scoped service injected at module creation
+# (OctoSense-System-Apps crates/app-peers). Part of `octos-core`.
+octosense-app-peers = { workspace = true, features = ["octos-core"], optional = true }
+# Rinx (Matrix chats, Moments, articles and mini apps) as an in-process
+# module, built without its standalone entry point or local kernel. Its
+# assistant is the shell's, injected at creation: no kernel, no credentials,
+# no AppCard.
+rinx = { workspace = true, features = ["octosense-module"], optional = true }
+# The assistant as a module, seated in the pane in-process: the web build's
+# only chat, a desktop option. Without the engine feature: no model runtime,
+# NoModel and the tool console (the child process keeps the real models).
+makepad-aichat = { workspace = true, optional = true }
+
+# A phone cannot spawn the desktop catalog's Cargo binaries. Link the
+# available modules into native mobile builds without requiring CLI flags.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+octosense-reference = { workspace = true }
+# The octos kernel service: Android runs the APK's bundled liboctos.so
+# (MAKEPAD_ANDROID_EXTRA_LIBS, tools/android-kernel.py); iOS has none.
+octosense-octos-core = { workspace = true }
+octosense-app-peers = { workspace = true, features = ["octos-core"] }
+makepad-sheets = { workspace = true }
+
+[features]
+# App Hub is part of the standard launcher: the store, the Card runner and
+# the system apps (News, Photos, Maps, Camera, Mail, AI providers) it runs;
+# the octos kernel is a shell service in every standard build.
+default = ["app-hub", "octos-core", "app-rinx"]
+# Also usable on desktop for testing the same embedded apps with --module.
+# Photos is the system app here; `app-photos` links Makepad's native Photos
+# module instead, for comparison (a linked module of the same id wins).
+# AppCard is not among them: it ships only with `--features app-appcard`.
+mobile-apps = ["app-reference", "app-sheets", "app-hub", "octos-core"]
+# The octos kernel as a shell service (octosense-octos-core): configured at
+# startup, its profile written and the kernel restarted by the `llm` service,
+# AppCard and other consumers connect to it. Opt out with
+# `--no-default-features` plus the features you still want; Android and iOS
+# builds always link it.
+# App Hub and the host services its system apps call.
+app-hub = ["dep:octosense-app-hub-app", "dep:octosense-mail-service", "dep:octosense-llm-service", "dep:octosense-llm-config"]
+app-reference = ["dep:octosense-reference"]
+# Sheets linked in as a module (hosting is still Process unless switched).
+app-sheets = ["dep:makepad-sheets"]
+# Photos (the picture wall) linked in as a module, the same way.
+app-photos = ["dep:makepad-photos"]
+octos-core = ["dep:octosense-octos-core", "dep:octosense-app-peers", "octosense-llm-service?/octos-core"]
+# The AppCard module (the assistant in a tile) linked in; it connects to the
+# shell's octos kernel, so it implies `octos-core`. Opt-in only, on desktop
+# and native mobile alike: AppCard is not shipped by default for now (it
+# interfered with the other apps).
+app-appcard = ["dep:octosense-appcard", "octos-core"]
+# The aichat module linked in (the pane seats it in-process where there are
+# no processes, or when `aichat` is switched to module hosting).
+app-aichat = ["dep:makepad-aichat"]
+# Rinx linked in as a module; its assistant is the shell's (it implies
+# `octos-core`). Rinx never starts a kernel of its own here.
+app-rinx = ["dep:rinx", "octos-core"]

@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="dev.makepad.octosense.permission.BIND_HOME_INTEGRATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <queries><package android:name="dev.makepad.octosense.quickstep" /></queries>
+    <application>
+        <service android:name=".QueueCallbackService" android:exported="false" android:process=":queue_callback" />
+        <activity android:name=".validation.LauncherFixtureActivity" android:exported="true"
+            android:label="Launcher validation" android:icon="@android:drawable/ic_menu_view">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+    <instrumentation android:name=".validation.CallerRejectionInstrumentation"
+        android:targetPackage="dev.makepad.octosense.bridge" android:functionalTest="true" />
+    <instrumentation android:name=".BridgeQueueInstrumentation"
+        android:targetPackage="dev.makepad.octosense.bridge" android:functionalTest="true" />
+    <instrumentation android:name=".validation.GlobalShadeFixtureInstrumentation"
+        android:targetPackage="dev.makepad.octosense.bridge" android:functionalTest="true" />
+</manifest>

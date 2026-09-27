@@ -1,0 +1,10 @@
+# Build artifacts
+target/
+app/target/
+*.apk
+*.unaligned.apk
+
+# Python / misc
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,14 @@
+<components xmlns:android="http://schemas.android.com/apk/res/android">
+    <service android:name="com.android.permissioncontroller.octosense.OctoSenseRolesService"
+        android:exported="true" android:directBootAware="false"
+        android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+    <activity android:name="com.android.permissioncontroller.octosense.OctoSenseRoleConfirmationActivity"
+        android:exported="false" android:excludeFromRecents="true"
+        android:showWhenLocked="false" android:theme="@style/RequestRole.FilterTouches" />
+    <service android:name="com.android.permissioncontroller.octosense.OctoSensePermissionsService"
+        android:exported="true" android:directBootAware="false"
+        android:permission="dev.makepad.octosense.permission.BIND_AGENT_PLATFORM" />
+    <activity android:name="com.android.permissioncontroller.octosense.OctoSensePermissionOperationActivity"
+        android:exported="false" android:excludeFromRecents="true"
+        android:showWhenLocked="false" android:theme="@style/RequestRole.FilterTouches" />
+</components>

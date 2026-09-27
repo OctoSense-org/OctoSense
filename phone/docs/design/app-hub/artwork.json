@@ -1,0 +1,14 @@
+[
+  {
+    "path": "apps/app-hub/resources/coast.jpg",
+    "source": "apps/photos/resources/photos/coast.jpg",
+    "sha256": "903c2be7d744f1e38f5bcd039c225227781225598fa81a3146f92a9b8c9de5db",
+    "use": "Editorial preview artwork, not app screenshot"
+  },
+  {
+    "path": "apps/app-hub/resources/mountain.jpg",
+    "source": "apps/photos/resources/photos/mountain.jpg",
+    "sha256": "e18af06d2902a82ab14d8b2718e4dcc831e2c60e56c877f5fa6cb81c7afd893d",
+    "use": "Editorial preview artwork, not app screenshot"
+  }
+]

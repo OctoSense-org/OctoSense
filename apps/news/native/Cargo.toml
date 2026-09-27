@@ -1,0 +1,13 @@
+[package]
+name = "octosense-news"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+makepad-widgets = { workspace = true }
+makepad-app-module = { workspace = true }
+makepad-wm-theme = { workspace = true }
+makepad-wm-api = { workspace = true }
+makepad-ai-services = { workspace = true }

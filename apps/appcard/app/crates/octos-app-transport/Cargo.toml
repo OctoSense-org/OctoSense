@@ -1,0 +1,35 @@
+[package]
+name        = "octos-app-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "WebSocket + REST snapshot transport for octos-app — speaks the UI Protocol v1"
+
+[dependencies]
+tokio             = { workspace = true, features = ["io-util"] }
+tokio-tungstenite = { workspace = true }
+futures-util      = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+uuid              = { workspace = true }
+chrono            = { workspace = true }
+url               = { workspace = true }
+reqwest           = { workspace = true }
+log               = { workspace = true }
+octos-core        = { workspace = true }
+# The shell's octos kernel: started, shared and restarted by the core; this
+# crate only speaks UI Protocol frames over a connection to it.
+octosense-octos-core = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+
+[lints]
+workspace = true
+
+# Android: logcat backend for the real `log` facade — without this, every
+# `log::` record from this crate and octos-app-store is silently dropped on
+# device (the app shell's `log::` macros are makepad's shim, not this facade).
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.14"

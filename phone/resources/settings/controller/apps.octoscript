@@ -1,0 +1,166 @@
+// Installed app inventory, local filter drafts, details and raw permissions.
+fn settings_apps_init(s) {
+    if s["apps"]==nil { s.apps={query:"",filter:"",include_system:false,offset:0,generation:nil,permission_offset:0,notice:"",seen:nil,pressed:nil} }
+}
+fn settings_query_valid(query) {
+    let chars=query.to_chars()
+    if chars.len()>128 { return false }
+    for code in chars { if code<32 || (code>=127 && code<=159) { return false } }
+    return true
+}
+fn settings_apps_catalog(s,o) {
+    let c=o.apps_catalog
+    if c!=nil && c.query==s.apps.filter && c.include_system==s.apps.include_system && c.offset==s.apps.offset { return c }
+    return nil
+}
+fn settings_apps_details(s,o) {
+    let d=settings_selected_details(s,o)
+    if d!=nil && (!d.exists || d.permissions_offset==s.apps.permission_offset) { return d }
+    return nil
+}
+fn settings_apps_read(s,o,out) {
+    if !o.android { return }
+    if s.page=="Apps" { settings_request(out,{kind:"read",domain:"apps",query:s.apps.filter,include_system:s.apps.include_system,offset:s.apps.offset,generation:s.apps.generation}) }
+    else if s.context["app_target"]!=nil { settings_request(out,{kind:"read",domain:"app_details",target:s.context["app_target"],offset:s.apps.permission_offset}) }
+}
+fn settings_apps_observe(s,o,out) {
+    let c=o.apps_catalog; let a=s.apps
+    if c!=nil && c.request_id!=a.seen && c.query==a.filter && c.include_system==a.include_system {
+        a.seen=c.request_id
+        if c.stale && c.offset==0 && a.offset!=0 { a.offset=0; a.notice="Installed apps changed. Showing the first page."; settings_scroll(out,"apps_list") }
+        if c.offset==a.offset { a.generation=c.generation }
+    }
+    let d=settings_selected_details(s,o)
+    if d!=nil && d.exists && d.permissions_offset==0 && a.permission_offset>=d.permissions_total { a.permission_offset=0 }
+}
+fn settings_apps_row(s,o,id) {
+    let c=settings_apps_catalog(s,o)
+    if c==nil { return nil }
+    let i=0
+    for app in c.apps { if id=="app_row_"+i { return app }; i=i+1 }
+    return nil
+}
+fn settings_apps_event(s,e,o,out) {
+    settings_apps_init(s); settings_apps_observe(s,o,out)
+    let a=s.apps; let ready=o.android && !s.pending
+    if e.kind=="pause" || e.kind=="entry" || e.kind=="navigate" || e.kind=="back" { a.pressed=nil; return false }
+    if s.page!="Apps" && s.page!="AppDetails" { return false }
+    if e.kind=="input" && e.id=="apps_query" { a.query=e.value; return true }
+    let row=settings_apps_row(s,o,e.id)
+    if e.kind=="press" && s.page=="Apps" {
+        a.pressed={id:e.id,target:nil}; if row!=nil { a.pressed.target=row.target }; return row!=nil
+    }
+    if e.kind=="release" { a.pressed=nil; return false }
+    if e.kind!="click" && e.kind!="return" { return false }
+    if !ready { return false }
+    if s.page=="Apps" {
+        if e.id=="apps_search" || e.id=="apps_show_system" || (e.kind=="return" && e.id=="apps_query") {
+            if !settings_query_valid(a.query) { return true }
+            if e.id=="apps_show_system" { a.include_system=!a.include_system }
+            a.filter=a.query.trim(); a.offset=0; a.generation=nil; a.notice=""; a.pressed=nil
+            settings_scroll(out,"apps_list"); settings_apps_read(s,o,out); return true
+        }
+        if e.id=="apps_refresh" { a.offset=0; a.generation=nil; a.notice=""; a.pressed=nil; settings_scroll(out,"apps_list"); settings_apps_read(s,o,out); return true }
+        let c=settings_apps_catalog(s,o)
+        let next=settings_has(["apps_next","apps_next_bottom"],e.id) && c!=nil && c.offset+20<c.total
+        let previous=settings_has(["apps_previous","apps_previous_bottom"],e.id) && a.offset>0
+        if next || previous {
+            if next { a.offset=a.offset+20 } else { a.offset=a.offset-20 }
+            a.notice=""; a.pressed=nil; settings_scroll(out,"apps_list"); settings_apps_read(s,o,out); return true
+        }
+        if row!=nil {
+            let held=a.pressed; a.pressed=nil
+            if held!=nil && (held.id!=e.id || held.target!=row.target) { return true }
+            s.context.app_target=row.target; a.permission_offset=0; s.page="AppDetails"
+            s.app_policy={battery_review:nil,storage_review:nil,pressed:nil}
+            settings_scroll(out,"app_detail"); settings_apps_read(s,o,out); return true
+        }
+    }
+    if s.page=="AppDetails" {
+        let d=settings_apps_details(s,o)
+        if e.id=="app_refresh" { settings_apps_read(s,o,out); return true }
+        let next=e.id=="permissions_next" && d!=nil && d.exists && d.permissions_offset+20<d.permissions_total
+        let previous=e.id=="permissions_previous" && a.permission_offset>0
+        if next || previous || e.id=="permissions_first" {
+            if next { a.permission_offset=a.permission_offset+20 } else if previous { a.permission_offset=a.permission_offset-20 } else { a.permission_offset=0 }
+            settings_scroll(out,"app_detail"); settings_apps_read(s,o,out); return true
+        }
+        if d!=nil && d.exists {
+            if e.id=="app_usage_access" && d.storage.can_request_usage_access { settings_request(out,{kind:"apps_usage_access",target:d.target}); return true }
+            for item in [["app_launch","Launch"],["app_uninstall","Uninstall"],["app_android_info","AppInfo"]] {
+                if e.id==item[0] { if settings_has(d.actions,item[1]) { settings_request(out,{kind:"app_action",target:d.target,action:item[1]}) }; return true }
+            }
+        }
+    }
+    return false
+}
+fn settings_apps_pair(name,value) { return name+": "+settings_or(value,"Unavailable") }
+fn settings_apps_flag(value,yes,no) { if value==nil { return nil }; if value { return yes }; return no }
+fn settings_apps_refresh(s,o,out) {
+    settings_apps_init(s)
+    if s.page!="Apps" && s.page!="AppDetails" { return }
+    let a=s.apps; let ready=o.android && !s.pending
+    let valid=settings_query_valid(a.query); let c=settings_apps_catalog(s,o)
+    settings_enabled(out,"apps_search",ready && valid); settings_enabled(out,"apps_show_system",ready && valid); settings_enabled(out,"apps_refresh",ready)
+    let system="System apps: Hidden"; if a.include_system { system="System apps: Shown" }; settings_text(out,"apps_show_system",system)
+    let summary="App list unavailable or loading."
+    if !valid { summary="Search is limited to 128 characters on one line." }
+    else if c!=nil {
+        summary="No matching Android apps."
+        if c.total>0 && c.apps.len()==0 { summary="This page is empty. Refresh the app list." }
+        if c.apps.len()>0 { summary="Apps "+(c.offset+1)+"–"+(c.offset+c.apps.len())+" of "+c.total; if a.query.trim()!=a.filter { summary=summary+" · Search to apply edits" } }
+    }
+    settings_text(out,"apps_summary",summary); settings_text(out,"apps_notice",a.notice)
+    for id in ["apps_previous","apps_previous_bottom"] { settings_enabled(out,id,ready && a.offset>0) }
+    for id in ["apps_next","apps_next_bottom"] { settings_enabled(out,id,ready && c!=nil && c.offset+20<c.total) }
+    let i=0
+    while i<20 {
+        let id="app_row_"+i; let row=nil
+        if c!=nil && i<c.apps.len() { row=c.apps[i] }
+        settings_visible(out,id,row!=nil); settings_enabled(out,id,ready && row!=nil)
+        if row!=nil {
+            let label=row.label+"\n"+row.target
+            if row.system { label=label+" · System" }; if !row.enabled { label=label+" · Disabled" }
+            settings_text(out,id,label); settings_patch(out,"semantic",id,"app:"+row.target)
+        }
+        i=i+1
+    }
+    let d=settings_apps_details(s,o); let exists=d!=nil && d.exists
+    let identity="App details unavailable or loading.\n"+settings_or(s.context["app_target"],"")
+    if d!=nil { identity="This app is no longer installed for the current user.\n"+d.target; if d.exists { identity=settings_or(d.label,"Android app")+"\n"+d.target } }
+    settings_text(out,"app_identity",identity)
+    for id in ["app_metadata","app_storage","app_shared","app_permissions_title","app_permissions_summary","app_permissions_note"] { settings_visible(out,id,exists) }
+    if exists {
+        let metadata=""
+        for pair in [["Version",d.version_name],["Version code",d.version_code],["Target Android API",d.target_sdk],["State",settings_apps_flag(d.enabled,"Enabled","Disabled")],["System app",settings_apps_flag(d.system,"Yes","No")],["Suspended",settings_apps_flag(d.suspended,"Yes","No")],["Installed",d.first_install_text],["Updated",d.last_update_text]] {
+            if metadata!="" { metadata=metadata+"\n" }; metadata=metadata+settings_apps_pair(pair[0],pair[1])
+        }
+        settings_text(out,"app_metadata",metadata)
+        settings_text(out,"app_storage","Storage\nApp: "+settings_storage_bytes(d.storage.app_bytes)+"\nData (includes cache): "+settings_storage_bytes(d.storage.data_bytes)+"\nCache: "+settings_storage_bytes(d.storage.cache_bytes))
+        let note=""; if d.storage.shared_uid { note="These storage figures may include other packages that share this app's Android user ID." }
+        if d.target=="dev.makepad.octosense" { note="Built-in OctoSense modules, including Mail and Settings, run within Home. Their data belongs to this Android package." }
+        settings_text(out,"app_shared",note)
+        let permissions="No requested permissions."
+        if d.permissions_total>0 { permissions="Permissions changed. Return to the first permission page." }
+        if d.permissions.len()>0 { permissions="Permissions "+(d.permissions_offset+1)+"–"+(d.permissions_offset+d.permissions.len())+" of "+d.permissions_total }
+        settings_text(out,"app_permissions_summary",permissions)
+    }
+    for pair in [["app_launch","Launch"],["app_uninstall","Uninstall"],["app_android_info","AppInfo"]] { settings_enabled(out,pair[0],ready && exists && settings_has(d.actions,pair[1])) }
+    settings_enabled(out,"app_refresh",ready && s.context["app_target"]!=nil)
+    settings_visible(out,"app_usage_access",exists && !d.storage.available && d.storage.can_request_usage_access); settings_enabled(out,"app_usage_access",ready && exists && d.storage.can_request_usage_access)
+    for id in ["permissions_previous","permissions_first"] { settings_enabled(out,id,ready && exists && a.permission_offset>0) }
+    settings_enabled(out,"permissions_next",ready && exists && d.permissions_offset+20<d.permissions_total)
+    settings_visible(out,"permission_navigation",exists && (d.permissions_total>20 || a.permission_offset>0))
+    i=0
+    while i<20 {
+        let row=nil; let id="app_permission_"+i
+        if exists && i<d.permissions.len() { row=d.permissions[i] }
+        settings_visible(out,id,row!=nil)
+        if row!=nil {
+            let label=settings_or(row.label,row.name); if row.label!=nil { label=label+"\n"+row.name }
+            label=label+"\n"+settings_or(settings_apps_flag(row.granted,"Granted","Denied"),"Grant state unavailable")+" · "+settings_or(settings_apps_flag(row.runtime,"Runtime permission","Not a runtime permission"),"Permission type unavailable")+"\nProtection: "+settings_or(row.protection,"Unavailable")
+            settings_text(out,id,label)
+        }
+        i=i+1
+    }
+}

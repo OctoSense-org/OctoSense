@@ -1,0 +1,147 @@
+// Pure Settings application controller. No renderer or Android effects are callable.
+// The host imports fresh data, validates the complete result, then commits it.
+fn settings_theme_default() { return {preset:"octosense", appearance:"system", wallpaper:"gradient"} }
+fn settings_theme_copy(t) { return {preset:t.preset, appearance:t.appearance, wallpaper:t.wallpaper} }
+fn settings_theme_equal(a,b) { return a.preset==b.preset && a.appearance==b.appearance && a.wallpaper==b.wallpaper }
+fn settings_has(values,wanted) {
+    if values==nil { return false }
+    for value in values { if value==wanted { return true } }
+    return false
+}
+fn settings_or(value,fallback) { if value==nil { return fallback }; return value }
+fn settings_min(a,b) { if a<b { return a }; return b }
+fn settings_max(a,b) { if a>b { return a }; return b }
+fn settings_round(value) { return mod.math.floor(value+0.5) }
+fn settings_patch(out,op,id,value) { out.patch.push({op:op,id:id,value:value}) }
+fn settings_text(out,id,value) { settings_patch(out,"text",id,value) }
+fn settings_enabled(out,id,value) { settings_patch(out,"enabled",id,value) }
+fn settings_visible(out,id,value) { settings_patch(out,"visible",id,value) }
+fn settings_scroll(out,id) { out.patch.push({op:"scroll",id:id,x:0,y:0}) }
+fn settings_blur(out) { out.patch.push({op:"blur"}) }
+fn settings_request(out,value) { out.requests.push(value) }
+fn settings_new() {
+    return {
+        version:1, page:"Overview", active_scroll:"scroll", initialized:false,
+        pending:false, message:"", message_origin:"",
+        theme_draft:settings_theme_default(), theme_seen:settings_theme_default(),
+        search_query:"", search_offset:0, search_rows:[], search_pressed:nil,
+        search_destination:nil, controls_section:"Notifications", controls_parent:"Overview",
+        drafts:{}, pressed:{}, context:{}, lists:{}
+    }
+}
+fn settings_cancel_gesture(s) {
+    s.pressed={}; s.search_pressed=nil
+    for name in ["apps","app_policy","control_ui","caption_ui","roles_ui","permission_ui","updates_ui","network_ui","display_ui","wifi_ui","bt_ui","time_ui","sound_ui","history_ui","app_language_ui","caption_language_ui","system_language_ui","keyboard_ui","notifications_ui","accounts_ui","dnd_ui"] {
+        let ui=s[name]
+        if ui!=nil { ui["pressed"]=nil; ui["row_pressed"]=nil }
+    }
+}
+fn settings_page_origin(s) { return s.page+":"+s.controls_section }
+fn settings_observe_core(s,o) {
+    let theme=settings_or(o["theme"],settings_theme_default())
+    if !s.initialized || settings_theme_equal(s.theme_draft,s.theme_seen) {
+        s.theme_draft=settings_theme_copy(theme)
+    }
+    s.theme_seen=settings_theme_copy(theme)
+    s.initialized=true
+}
+fn settings_status(s,o) {
+    if o["android"]!=true { return "Device controls are available on Android." }
+    let errors=[
+        {pages:["Apps","AppDetails"],value:o["apps_error"]},
+        {pages:["Wifi","WifiNetwork"],value:o["wifi_error"]},
+        {pages:["Bluetooth","BluetoothDevice"],value:o["bluetooth_error"]},
+        {pages:["Accounts","AccountProviders","AccountDetails","AccountSync"],value:o["accounts_error"]},
+        {pages:["Updates"],value:o["updates_error"]},
+        {pages:["AdvancedNetwork"],value:o["network_error"]},
+        {pages:["DisplayOptions"],value:o["display_error"]},
+        {pages:["DefaultApps","RoleChoices"],value:o["roles_error"]},
+        {pages:["AppPermissions","PermissionChoices"],value:o["permissions_error"]},
+        {pages:["AppNotifications","NotificationChannel"],value:o["app_notifications_error"]},
+        {pages:["Dnd","DndPolicy","DndRules","DndRule","DndEditor"],value:o["dnd_error"]},
+        {pages:["AppNetwork"],value:o["app_network_error"]},
+        {pages:["AppBattery"],value:o["app_battery_error"]},
+        {pages:["AppStorage"],value:o["app_storage_error"]},
+        {pages:["AppLanguage"],value:o["app_language_error"]},
+        {pages:["SystemLanguages"],value:o["system_language_error"]},
+        {pages:["CaptionLanguage"],value:o["caption_language_error"]},
+        {pages:["Keyboards","KeyboardDetails"],value:o["keyboards_error"]}
+    ]
+    if s.page=="Controls" || s.page=="ControlChoices" || s.page=="CaptionChoice" {
+        if s.controls_section=="CaptionCustom" && o["caption_custom_error"]!=nil && o["caption_custom_error"]!="" { return o["caption_custom_error"] }
+        if o["controls_error"]!=nil && o["controls_error"]!="" { return o["controls_error"] }
+    }
+    for error in errors {
+        if settings_has(error.pages,s.page) && error.value!=nil && error.value!="" { return error.value }
+    }
+    if s.message_origin==settings_page_origin(s) { return s.message }
+    return ""
+}
+fn settings_core_refresh(s,o,out) {
+    for page in settings_pages() { settings_visible(out,page.id,page.page==s.page) }
+    s.active_scroll=settings_active_scroll(s.page)
+    settings_visible(out,"scroll",s.active_scroll=="scroll")
+    settings_text(out,"title",settings_page_title(s))
+    settings_text(out,"status",settings_status(s,o))
+    settings_basics_refresh(s,o,out)
+    settings_search_refresh(s,out)
+}
+fn settings_step(s,e,o) {
+    let out={state:s,patch:[],requests:[],handled:false}
+    settings_observe_core(s,o)
+    if o["scroll_y"]!=nil { s.context.scroll_y=o.scroll_y }
+    // Domain lifecycle delivery is unconditional: pause and entry must retire
+    // captured targets even when the global event is already handled.
+    let apps_handled=settings_apps_event(s,e,o,out)
+    let app_handled=settings_app_policy_event(s,e,o,out)
+    let caption_handled=settings_caption_event(s,e,o,out)
+    let controls_handled=settings_controls_event(s,e,o,out)
+    let consent_handled=settings_consent_event(s,e,o,out)
+    let updates_handled=settings_updates_event(s,e,o,out)
+    let network_handled=settings_network_event(s,e,o,out)
+    let display_handled=settings_display_event(s,e,o,out)
+    let wifi_handled=settings_wifi_event(s,e,o,out)
+    let bt_handled=settings_bt_event(s,e,o,out)
+    let datetime_handled=settings_datetime_event(s,e,o,out)
+    let media_handled=settings_media_event(s,e,o,out)
+    let language_handled=settings_language_event(s,e,o,out)
+    let system_handled=settings_system_event(s,e,o,out)
+    let keyboard_handled=settings_keyboard_event(s,e,o,out)
+    let notifications_handled=settings_notifications_event(s,e,o,out)
+    let accounts_handled=settings_accounts_event(s,e,o,out)
+    let dnd_handled=settings_dnd_event(s,e,o,out)
+    if e.kind=="observe" || e.kind=="theme" { out.handled=true }
+    if e.kind=="cancel_gesture" { settings_cancel_gesture(s); out.handled=true }
+    if e.kind=="result" {
+        if e.value.pending==true || !s.pending { s.message_origin=settings_page_origin(s) }
+        s.pending=e.value.pending==true
+        s.message=settings_or(e.value.message,"")
+        out.handled=true
+    }
+    if e.kind=="pause" { s.pressed={}; s.search_pressed=nil; out.handled=true }
+    if apps_handled || app_handled || caption_handled || controls_handled || consent_handled || updates_handled || network_handled || display_handled || wifi_handled || bt_handled || datetime_handled || media_handled || language_handled || system_handled || keyboard_handled || notifications_handled || accounts_handled || dnd_handled { out.handled=true }
+    if !out.handled { out.handled=settings_navigation_event(s,e,o,out) }
+    if !out.handled { out.handled=settings_basics_event(s,e,o,out) }
+    settings_core_refresh(s,o,out)
+    settings_apps_refresh(s,o,out)
+    settings_app_policy_refresh(s,o,out)
+    settings_controls_refresh(s,o,out)
+    settings_caption_refresh(s,o,out)
+    settings_consent_refresh(s,o,out)
+    settings_updates_refresh(s,o,out)
+    settings_network_refresh(s,o,out)
+    settings_display_refresh(s,o,out)
+    settings_wifi_refresh(s,o,out)
+    settings_bt_refresh(s,o,out)
+    settings_datetime_refresh(s,o,out)
+    settings_media_refresh(s,o,out)
+    settings_language_refresh(s,o,out)
+    settings_system_refresh(s,o,out)
+    settings_keyboard_refresh(s,o,out)
+    settings_notifications_refresh(s,o,out)
+    settings_accounts_refresh(s,o,out)
+    settings_dnd_refresh(s,o,out)
+    settings_subscriptions(s,o)
+    settings_accessibility_refresh(s,o,out)
+    return out
+}

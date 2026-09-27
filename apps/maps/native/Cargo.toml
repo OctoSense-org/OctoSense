@@ -1,0 +1,31 @@
+[package]
+name = "octosense-maps"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The arrival time is the C library's local time (`localtime_r`), as the
+# shell's clock is.
+libc = "0.2"
+# `maps`: the MapView vector-tile renderer and its archive readers.
+makepad-widgets = { workspace = true, features = ["maps"] }
+makepad-app-module = { workspace = true }
+makepad-wm-theme = { workspace = true }
+makepad-wm-api = { workspace = true }
+# The executor half of the module contract: its manifest and call types.
+makepad-ai-services = { workspace = true }
+# The route, its maneuvers and the session that map-matches a position onto
+# it. No dependencies of its own; the routes come from OSRM (routing.rs).
+makepad-map-nav = { workspace = true }
+
+# Android 9's Java TLS provider cannot reach TLS-1.3-only routing servers.
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = { version = "1.53.1", features = ["rt", "net", "sync", "time", "macros"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = { version = "1.53.1", features = ["rt", "net", "sync", "time", "macros"] }
+rustls = { version = "0.23.44", default-features = false, features = ["ring", "std"] }

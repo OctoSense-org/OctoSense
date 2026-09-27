@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "default": "octosense",
+  "presets": [
+    {
+      "id": "octosense",
+      "name": "OctoSense",
+      "description": "Blue accents and soft ocean tones",
+      "description_zh": "蓝色点缀，柔和海洋色调",
+      "seed": "3976C6",
+      "radius": 18,
+      "light": {
+        "background": "F3F7FC",
+        "surface": "FFFFFF",
+        "surface_variant": "DFEAF7",
+        "text": "172B45",
+        "muted": "52647B",
+        "accent": "285EAA",
+        "on_accent": "FFFFFF",
+        "border": "B8C9DD",
+        "wallpaper_top": "DDEAF7",
+        "wallpaper_bottom": "A9CFE1"
+      },
+      "dark": {
+        "background": "0B1220",
+        "surface": "182438",
+        "surface_variant": "22334B",
+        "text": "E1ECFC",
+        "muted": "A5B8D1",
+        "accent": "9AC1FF",
+        "on_accent": "102E58",
+        "border": "42536D",
+        "wallpaper_top": "172A47",
+        "wallpaper_bottom": "142E38"
+      }
+    },
+    {
+      "id": "minimal",
+      "name": "Minimal",
+      "description": "Quiet neutrals and clear surfaces",
+      "description_zh": "简洁中性色，清晰界面",
+      "seed": "52606D",
+      "radius": 10,
+      "light": {
+        "background": "F6F7F8",
+        "surface": "FFFFFF",
+        "surface_variant": "E8ECF0",
+        "text": "18212A",
+        "muted": "58636E",
+        "accent": "405D78",
+        "on_accent": "FFFFFF",
+        "border": "C4CDD5",
+        "wallpaper_top": "F0F3F6",
+        "wallpaper_bottom": "D8E0E7"
+      },
+      "dark": {
+        "background": "101316",
+        "surface": "1C2228",
+        "surface_variant": "2A323A",
+        "text": "ECF0F4",
+        "muted": "A9B4BF",
+        "accent": "B1C9DF",
+        "on_accent": "1B344B",
+        "border": "49535F",
+        "wallpaper_top": "182129",
+        "wallpaper_bottom": "10171C"
+      }
+    },
+    {
+      "id": "paper",
+      "name": "Paper",
+      "description": "Warm surfaces for comfortable reading",
+      "description_zh": "温暖纸色，舒适阅读",
+      "seed": "87633D",
+      "radius": 12,
+      "light": {
+        "background": "FAF5E9",
+        "surface": "FFFCF4",
+        "surface_variant": "EDE3CF",
+        "text": "362E24",
+        "muted": "72634E",
+        "accent": "79542E",
+        "on_accent": "FFFFFF",
+        "border": "D5C5A9",
+        "wallpaper_top": "F6EDDA",
+        "wallpaper_bottom": "E4D6B9"
+      },
+      "dark": {
+        "background": "1C1915",
+        "surface": "2A251E",
+        "surface_variant": "393025",
+        "text": "F1E6D3",
+        "muted": "C3B396",
+        "accent": "DFC093",
+        "on_accent": "38260E",
+        "border": "665742",
+        "wallpaper_top": "30291D",
+        "wallpaper_bottom": "211E18"
+      }
+    },
+    {
+      "id": "vivid",
+      "name": "Vivid",
+      "description": "Rich purple with a colorful background",
+      "description_zh": "鲜明紫色，缤纷背景",
+      "seed": "7854C8",
+      "radius": 22,
+      "light": {
+        "background": "FAF5FF",
+        "surface": "FFFFFF",
+        "surface_variant": "EDE0FC",
+        "text": "30203F",
+        "muted": "715C84",
+        "accent": "7040A9",
+        "on_accent": "FFFFFF",
+        "border": "CFB4E9",
+        "wallpaper_top": "EBDAFC",
+        "wallpaper_bottom": "C2D8FF"
+      },
+      "dark": {
+        "background": "191021",
+        "surface": "2B1D39",
+        "surface_variant": "402C52",
+        "text": "F5E7FF",
+        "muted": "CCB1DF",
+        "accent": "D7ADFF",
+        "on_accent": "391251",
+        "border": "79548E",
+        "wallpaper_top": "432551",
+        "wallpaper_bottom": "17294B"
+      }
+    }
+  ]
+}

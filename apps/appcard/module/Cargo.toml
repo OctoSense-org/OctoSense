@@ -1,0 +1,19 @@
+[package]
+name = "octosense-appcard"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
+makepad-app-module = { workspace = true }
+# The whole AppCard assistant app as a library, from the pinned
+# OctoSense-System-Apps checkout (apps/appcard/app/app, native-apps.lock.json;
+# OCTOSENSE_WORKSPACE points its asset embedding at ../.sources): routing
+# brain, card store and transport, L0 lowering, sessions, composer, kernel agent — mounted here as
+# its `AppShell` widget. No default features: the app's own entry points
+# (`app_main!`, the dev monitor) stay out; this module is the entry point.
+octos-app = { workspace = true }
+# Tool arguments (`ask` takes `{"text": ...}`).
+serde_json = "1.0"
