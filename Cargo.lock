@@ -7326,6 +7326,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "octosense-news-service"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "octosense-appstore",
+ "roxmltree 0.21.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq 2.12.1",
+ "url",
+]
+
+[[package]]
 name = "octosense-photos"
 version = "0.1.0"
 dependencies = [
