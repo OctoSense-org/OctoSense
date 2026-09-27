@@ -1,6 +1,6 @@
 //! Data conversion and finite native bindings for the Settings script controller.
 //! No navigation, draft, label, or widget-event decisions belong here.
-use crate::settings_app::{Destination, DeviceSetting, SettingsRequest, SettingsSnapshot};
+use crate::settings_app::{Destination, DeviceSetting, SettingsRequest, SettingsSnapshot, SystemApp};
 use makepad_strict_json::{s, Value};
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
@@ -43,7 +43,8 @@ pub fn observation(state: &SettingsSnapshot, pending: bool) -> Result<Value, Str
         app_battery, app_battery_error, app_network, app_network_error,
         dnd_settings, dnd_error, permissions, permissions_error, roles, roles_error,
         display_options, display_error, advanced_network, network_error, sounds,
-        sounds_loading, sounds_error, notification_history, history_loading, history_error);
+        sounds_loading, sounds_error, notification_history, history_loading, history_error,
+        ai_providers);
     fields.push(("theme".into(), state.theme.encode()));
     fields.push(("pending".into(), Value::Bool(pending)));
     // Allocate transport lease identities without exposing a native effect to scripts.
@@ -443,6 +444,14 @@ pub fn basic_request(value: &Value, observed: &SettingsSnapshot) -> Option<Setti
             if !observed.android { return None; }
             SettingsRequest::Open(destination(text(value, "destination")?)?)
         }
+        "open_app" => {
+            // Navigation inside Home, so no Android requirement; only an app
+            // the host observed as present may be named, and only by its wire.
+            exact(value, &["kind", "app"])?;
+            let app = SystemApp::ALL.into_iter().find(|app| Some(app.wire()) == text(value, "app"))?;
+            if !observed.system_app(app) { return None; }
+            SettingsRequest::OpenSystemApp(app)
+        }
         "device_access" => {
             exact(value, &["kind"])?;
             if !observed.android || !observed.device.as_ref()?.can_request_write_settings? { return None; }
@@ -498,5 +507,22 @@ pub fn basic_request(value: &Value, observed: &SettingsSnapshot) -> Option<Setti
             obj(vec![("kind", s("device")), ("setting", s("enabled_input_methods")), ("value", s("provider/.IME"))]),
             obj(vec![("kind", s("back")), ("shell", s("ignored command"))]),
         ] { assert!(basic_request(&request, &state).is_none()); }
+    }
+    #[test] fn open_app_names_only_an_observed_system_app_by_its_wire() {
+        let request = obj(vec![("kind", s("open_app")), ("app", s("ai_providers"))]);
+        let mut state = SettingsSnapshot::default();
+        assert!(basic_request(&request, &state).is_none(), "an app this build lacks cannot be opened");
+        // Navigation inside Home: no Android, bridge or capability is needed.
+        state.ai_providers = true;
+        assert!(matches!(basic_request(&request, &state), Some(SettingsRequest::OpenSystemApp(SystemApp::AiProviders))));
+        for request in [
+            obj(vec![("kind", s("open_app")), ("app", s("ai-providers"))]),
+            obj(vec![("kind", s("open_app")), ("app", s("os.ai-providers"))]),
+            obj(vec![("kind", s("open_app")), ("app", s("camera"))]),
+            obj(vec![("kind", s("open_app")), ("app", Value::Null)]),
+            obj(vec![("kind", s("open_app"))]),
+            obj(vec![("kind", s("open_app")), ("app", s("ai_providers")), ("args", s("--system=os.mail"))]),
+            obj(vec![("kind", s("open")), ("destination", s("ai_providers"))]),
+        ] { assert!(basic_request(&request, &state).is_none(), "{request:?}"); }
     }
 }
