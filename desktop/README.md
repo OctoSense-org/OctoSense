@@ -82,6 +82,7 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
+| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile, in-process by default (a `terminal: Process` line in `wm/apps.splash` under the state directory switches it to a process). The assistant gets its read tools (`read_screen`, `read_scrollback`); `run` is not offered. On macOS the shell's PTY helper is `octosense` itself, so no second binary ships beside it. |
 | `app-photos` | off | Links Makepad's native Photos module; it replaces the Photos system app of the same id (for comparison). |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
@@ -187,7 +188,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
+`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). Terminal is also linked (`app-terminal`, on by default) and opens in-process; its `config/apps.json` row is the process form a person can switch to. The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 

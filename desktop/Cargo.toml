@@ -45,8 +45,9 @@ octosense-shell = { workspace = true }
 [features]
 # App Hub is part of the standard launcher: the store, the Card runner and
 # the system apps (News, Photos, Maps, Mail, AI providers; Camera is phone-only) it runs;
-# the octos kernel is a shell service in every standard build.
-default = ["app-hub", "octos-core", "app-rinx"]
+# the octos kernel is a shell service in every standard build. Terminal is a
+# system app too, linked in-process.
+default = ["app-hub", "octos-core", "app-rinx", "app-terminal"]
 # The embedded apps, also usable on the desktop with --module. AppCard is not
 # among them: it ships only with `--features app-appcard`.
 mobile-apps = ["octosense-shell/mobile-apps"]
@@ -58,6 +59,8 @@ octos-core = ["octosense-shell/octos-core"]
 app-hub = ["octosense-shell/app-hub"]
 app-reference = ["octosense-shell/app-reference"]
 app-sheets = ["octosense-shell/app-sheets"]
+# The Terminal system app: a login shell in a tile, in-process by default.
+app-terminal = ["octosense-shell/app-terminal"]
 # Native Photos, News and OctosMap modules instead of the system script apps.
 app-photos = ["octosense-shell/app-photos"]
 app-news = ["octosense-shell/app-news"]

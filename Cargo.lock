@@ -5549,6 +5549,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-terminal"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-services",
+ "makepad-app-module",
+ "makepad-strict-json",
+ "makepad-widgets",
+ "makepad-wm-api",
+ "makepad-wm-theme",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "makepad-tsdf"
 version = "0.1.0"
 dependencies = [
@@ -7517,6 +7530,7 @@ dependencies = [
  "makepad-sheets",
  "makepad-strict-json",
  "makepad-studio-protocol",
+ "makepad-terminal",
  "makepad-widgets",
  "makepad-wm-api",
  "makepad-wm-theme",
