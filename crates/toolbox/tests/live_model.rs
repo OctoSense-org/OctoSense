@@ -1,24 +1,27 @@
-//! Templates with a real model: the interim live adapter for sources and
-//! DeepSeek (`deepseek-v4-flash`, OpenAI-compatible chat API) for `query`
-//! and `digest`. Needs the network, the `live` feature and a key; not run in
-//! CI. The key is read only from `DEEPSEEK_API_KEY`, and the tests skip
-//! when it is unset:
+//! Templates with a real model: a live backend for sources and DeepSeek
+//! (`deepseek-v4-flash`, OpenAI-compatible chat API) for `query` and
+//! `digest`. Needs the network, a key, and the `live` feature (the interim
+//! adapter) or the `octos-engine` feature (the octos research engine with
+//! headless Chrome; used when both are on, unless `LIVE_BACKEND=interim`).
+//! Not run in CI. The key is read only from `DEEPSEEK_API_KEY`, and the
+//! tests skip when it is unset:
 //!
 //! `DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features live --test live_model -- --ignored --nocapture --test-threads=1`
+//! `DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features octos-engine --test live_model -- --ignored --nocapture --test-threads=1`
 //!
 //! `c_validation_topics` repeats the 27 Sep 2026 validation's toolbox runs
 //! (six topics, both research templates, twelve runs); set `LIVE_OUT` to a
 //! directory to keep each run's result, the pages read (first 600 bytes of
-//! evidence) and the model's token usage as JSON.
+//! evidence) and the model's token usage as JSON, and `LIVE_TOPICS` to a
+//! comma-separated subset (`openai,hormuz,typhoon,vucic`).
 
-#![cfg(feature = "live")]
+#![cfg(any(feature = "live", feature = "octos-engine"))]
 
 mod common;
 
 use octosense_toolbox::host::{CallContext, HostError, HostFuture};
-use octosense_toolbox::research::live::{Feed, InterimResearch, LiveConfig};
 use octosense_toolbox::research::{
-    cap_evidence, item_id, FoundItem, ModelClient, ModelRequest, PageText, ResearchBackend,
+    cap_evidence, item_id, Feed, FoundItem, ModelClient, ModelRequest, PageText, ResearchBackend,
     ResearchHost, SearchQuery, SearchResults, MAX_EVIDENCE_BYTES,
 };
 use octosense_toolbox::{run, RunOptions, RunResult, RunStatus};
@@ -120,34 +123,77 @@ fn key() -> Option<String> {
     key
 }
 
-/// The interim adapter with the feeds these tests use.
-fn backend() -> InterimResearch {
+/// The publisher feeds the interim adapter uses.
+#[cfg_attr(not(feature = "live"), allow(dead_code))]
+fn feeds() -> Vec<Feed> {
     let feed = |url: &str, name: &str, language: &str| Feed {
         url: url.into(),
         name: name.into(),
         language: language.into(),
     };
-    InterimResearch::new(LiveConfig {
-        feeds: vec![
-            feed(
-                "https://feeds.bbci.co.uk/news/technology/rss.xml",
-                "BBC News",
-                "en",
-            ),
-            feed(
-                "https://www.theguardian.com/uk/technology/rss",
-                "The Guardian",
-                "en",
-            ),
-            feed(
-                "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
-                "BBC 中文",
-                "zh",
-            ),
-        ],
-        ..LiveConfig::from_env()
-    })
-    .unwrap()
+    vec![
+        feed(
+            "https://feeds.bbci.co.uk/news/technology/rss.xml",
+            "BBC News",
+            "en",
+        ),
+        feed(
+            "https://www.theguardian.com/uk/technology/rss",
+            "The Guardian",
+            "en",
+        ),
+        feed(
+            "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml",
+            "BBC 中文",
+            "zh",
+        ),
+    ]
+}
+
+/// The octos research engine, unless
+/// `LIVE_BACKEND=interim` (or only the `live` feature is on).
+#[cfg(feature = "octos-engine")]
+fn octos_backend() -> Option<Arc<dyn ResearchBackend>> {
+    use octosense_toolbox::research::octos::{OctosConfig, OctosResearch};
+    if std::env::var("LIVE_BACKEND").as_deref() == Ok("interim") {
+        return None;
+    }
+    // The metasearch's own publisher-feeds engine replaces the feeds the
+    // interim adapter is given.
+    let backend = OctosResearch::new(OctosConfig::from_env());
+    eprintln!(
+        "backend: octos research engine (renders: {})",
+        backend.renders()
+    );
+    Some(Arc::new(backend))
+}
+
+#[cfg(not(feature = "octos-engine"))]
+fn octos_backend() -> Option<Arc<dyn ResearchBackend>> {
+    None
+}
+
+/// The interim adapter with the feeds these tests use.
+#[cfg(feature = "live")]
+fn interim_backend() -> Arc<dyn ResearchBackend> {
+    use octosense_toolbox::research::live::{InterimResearch, LiveConfig};
+    eprintln!("backend: interim adapter");
+    Arc::new(
+        InterimResearch::new(LiveConfig {
+            feeds: feeds(),
+            ..LiveConfig::from_env()
+        })
+        .unwrap(),
+    )
+}
+
+#[cfg(not(feature = "live"))]
+fn interim_backend() -> Arc<dyn ResearchBackend> {
+    panic!("LIVE_BACKEND=interim needs the `live` feature")
+}
+
+fn backend() -> Arc<dyn ResearchBackend> {
+    octos_backend().unwrap_or_else(interim_backend)
 }
 
 fn deepseek(key: String) -> DeepSeek {
@@ -162,10 +208,7 @@ fn deepseek(key: String) -> DeepSeek {
 /// The host, or `None` (the test skips) without `DEEPSEEK_API_KEY`.
 fn host() -> Option<ResearchHost> {
     let key = key()?;
-    Some(ResearchHost::new(
-        Arc::new(backend()),
-        Arc::new(deepseek(key)),
-    ))
+    Some(ResearchHost::new(backend(), Arc::new(deepseek(key))))
 }
 
 fn topic() -> String {
@@ -248,7 +291,7 @@ async fn b_topic_brief_en_zh() {
 
 /// Records what the backend read, so a person can judge each source.
 struct Recording {
-    inner: InterimResearch,
+    inner: Arc<dyn ResearchBackend>,
     reads: Mutex<Vec<Value>>,
 }
 
@@ -302,8 +345,15 @@ async fn c_validation_topics() {
         ("tb-typhoon", "台风", "zh", Some("en")),
         ("tb-vucic", "Vucic resignation", "en", None),
     ];
+    // `LIVE_TOPICS=openai,typhoon` runs only those topics.
+    let only: Option<Vec<String>> = std::env::var("LIVE_TOPICS")
+        .ok()
+        .map(|t| t.split(',').map(|s| format!("tb-{}", s.trim())).collect());
     let mut runs = Vec::new();
     for (label, topic, language, second) in topics {
+        if only.as_ref().is_some_and(|o| !o.iter().any(|l| l == label)) {
+            continue;
+        }
         let digest = json!({"topic": topic, "language": language, "search_language": language,
             "limit": 5, "max_age_hours": 72});
         let mut languages = vec![json!({"language": language, "translate": false})];
@@ -318,6 +368,9 @@ async fn c_validation_topics() {
     }
     let started_all = Instant::now();
     for (label, template, params) in runs {
+        // `ResearchHost` takes an `Arc`; the backend trait asks for neither
+        // `Send` nor `Sync`, and the run stays on this thread.
+        #[allow(clippy::arc_with_non_send_sync)]
         let backend = Arc::new(Recording {
             inner: backend(),
             reads: Mutex::new(Vec::new()),

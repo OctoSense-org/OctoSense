@@ -7,7 +7,9 @@ mod common;
 use common::{app, case, probe, temp_dir, template};
 use octosense_toolbox::fixture::{self, FixtureData};
 use octosense_toolbox::host::{CallContext, HostError, HostFuture, HostReply, Usage};
-use octosense_toolbox::{run, Budget, ErrorKind, RunOptions, RunStatus, Scope, ToolboxHost};
+use octosense_toolbox::{
+    run, scope, AppContext, Budget, ErrorKind, RunOptions, RunStatus, ToolboxHost,
+};
 use serde_json::{json, Value};
 use std::cell::RefCell;
 
@@ -665,10 +667,9 @@ async fn output_is_validated_against_the_schema() {
 async fn the_apps_scope_filters_and_refuses() {
     let (case, template) = city();
     let folder = temp_dir("scope");
-    let scoped = app(&folder).with_scope(Scope {
-        denied_domains: vec!["example.invalid".into()],
-        ..Scope::default()
-    });
+    // The grant is octos's `Scope`, parsed by `Scope::from_grant`.
+    let scoped = app(&folder)
+        .with_scope(scope::parse(&json!({"domains_deny": ["example.invalid"]})).unwrap());
     let result = run(
         &template,
         &scoped,
@@ -684,10 +685,7 @@ async fn the_apps_scope_filters_and_refuses() {
     assert!(result.data.is_null());
     assert!(result.provenance.is_empty());
 
-    let spanish_only = app(&folder).with_scope(Scope {
-        languages: vec!["es".into()],
-        ..Scope::default()
-    });
+    let spanish_only = app(&folder).with_scope(scope::parse(&json!({"langs": ["es"]})).unwrap());
     let result = run(
         &template,
         &spanish_only,
@@ -703,7 +701,58 @@ async fn the_apps_scope_filters_and_refuses() {
     assert!(result
         .diagnostics
         .iter()
-        .any(|d| d.contains("outside the app's scope")));
+        .any(|d| d.contains("language en is not in this app's research grant")));
+
+    // `max_results` caps what one search gives the app, with a note.
+    let two_results = app(&folder).with_scope(scope::parse(&json!({"max_results": 2})).unwrap());
+    let result = run(
+        &template,
+        &two_results,
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.data["sources"].as_array().unwrap().len(), 2);
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("count clamped to this app's limit of 2")));
+}
+
+#[test]
+fn an_app_context_carries_the_grant_in_octos_shape_only() {
+    let context: AppContext = serde_json::from_value(json!({
+        "app_id": "os.news", "grants": ["research"], "folder": "/tmp/os.news",
+        "scope": {"langs": ["en", "zh-hant"], "max_age_days": 3, "max_depth": 0, "max_pages": 0}
+    }))
+    .unwrap();
+    assert_eq!(context.scope.langs, ["en", "zh-Hant"]);
+    assert_eq!(context.scope.max_results, 20);
+    // No scope: unrestricted, with octos's default results per search.
+    let context: AppContext = serde_json::from_value(
+        json!({"app_id": "os.news", "grants": [], "folder": "/tmp/os.news"}),
+    )
+    .unwrap();
+    assert_eq!(context.scope, scope::unrestricted());
+    // The old toolbox shape is refused, naming the new fields.
+    let error = serde_json::from_value::<AppContext>(json!({
+        "app_id": "os.news", "grants": ["research"], "folder": "/tmp/os.news",
+        "scope": {"languages": ["en"], "allowed_domains": ["example.org"], "recency_hours": 24}
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("old toolbox shape"), "{error}");
+    assert!(
+        error.contains("`allowed_domains` is now `domains_allow`"),
+        "{error}"
+    );
+    // So is any field octos's scope does not have.
+    assert!(serde_json::from_value::<AppContext>(json!({
+        "app_id": "os.news", "grants": [], "folder": "/tmp/os.news", "scope": {"depth": 1}
+    }))
+    .is_err());
 }
 
 /// Records the context every call carries.

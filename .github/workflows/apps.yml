@@ -77,8 +77,9 @@ jobs:
           cargo fmt -p octosense-toolbox --check
           cargo test --locked -p octosense-toolbox
           cargo test --locked -p octosense-toolbox --features live
+          cargo test --locked -p octosense-toolbox --features octos-engine
           cargo clippy --locked -p octosense-toolbox --all-targets --no-deps -- -D warnings
-          cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
+          cargo clippy --locked -p octosense-toolbox --all-targets --features live,octos-engine --no-deps -- -D warnings
 
   apps:
     # macOS: the host services and AppCard link App Hub and Makepad, whose

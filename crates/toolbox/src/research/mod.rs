@@ -3,13 +3,15 @@
 //! [`ResearchHost`] implements [`ToolboxHost`] for the `research` module over
 //! two pluggable parts: a [`ResearchBackend`] that finds and reads sources
 //! (the fixture backend in tests and evaluation; the interim [`live`] adapter;
-//! later the octos research engine, octos#2568, and metasearch, octos#2576)
+//! the octos research engine, octos#2568, in `octos` behind the
+//! `octos-engine` feature; later metasearch, octos#2582)
 //! and a [`ModelClient`] the host supplies for `query` and `digest`.
 //!
 //! The policy lives here, once, whatever the backend:
 //!
-//! - every call is checked against the calling app's scope (languages,
-//!   regions, allowed and denied domains, recency);
+//! - every call is checked against the calling app's grant, octos's
+//!   `Scope` ([`crate::scope`]): languages, regions, categories, domains,
+//!   recency and results per search;
 //! - search results get host-assigned ids; `article` reads only ids from this
 //!   run's searches, so a template cannot fetch an arbitrary URL;
 //! - evidence text stays in the host (capped, hashed); the script sees an
@@ -29,14 +31,19 @@
 //! - provenance (URL, title, source, retrieval time, evidence hash) is kept by
 //!   the host and returned with each reply.
 
+#[cfg(feature = "octos-engine")]
+pub mod chrome;
 #[cfg(feature = "live")]
 pub mod live;
+#[cfg(feature = "octos-engine")]
+pub mod octos;
 pub mod relevance;
 pub mod summary;
 
 use crate::host::{CallContext, HostError, HostFuture, HostReply, Provenance, Usage};
 use crate::json::contains_url;
 use crate::library::hex;
+use crate::scope;
 use crate::ToolboxHost;
 use relevance::Topic;
 use serde::{Deserialize, Serialize};
@@ -112,6 +119,15 @@ pub struct SearchResults {
     /// failed or was skipped and why, items dropped as off topic.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// A configured RSS or Atom feed (a publisher's own feed, not a search
+/// engine): the live backends keep only its items that mention the topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Feed {
+    pub url: String,
+    pub name: String,
+    pub language: String,
 }
 
 /// A page's main text as a backend read it.
@@ -221,7 +237,7 @@ impl ResearchHost {
     async fn query(&self, ctx: &CallContext, input: Value) -> Result<HostReply, HostError> {
         let query = input["query"].as_str().unwrap_or_default().to_owned();
         let language = input["language"].as_str().unwrap_or("en").to_owned();
-        if !ctx.app.scope.allows_language(&language) {
+        if !scope::allows_language(&ctx.app.scope, &language) {
             return Err(HostError::Denied(format!(
                 "language {language} is outside the app's scope"
             )));
@@ -265,34 +281,30 @@ impl ResearchHost {
 
     async fn search(&self, ctx: &CallContext, input: Value) -> Result<HostReply, HostError> {
         let scope = &ctx.app.scope;
+        let topic = input["topic"].as_str().unwrap_or_default().to_owned();
         let language = input["language"].as_str().map(str::to_owned);
         let region = input["region"].as_str().map(str::to_owned);
-        if let Some(l) = &language {
-            if !scope.allows_language(l) {
-                return Err(HostError::Denied(format!(
-                    "language {l} is outside the app's scope"
-                )));
-            }
-        }
-        if let Some(r) = &region {
-            if !scope.allows_region(r) {
-                return Err(HostError::Denied(format!(
-                    "region {r} is outside the app's scope"
-                )));
-            }
-        }
         let limit = input["limit"].as_u64().unwrap_or(5).clamp(1, 10) as u32;
         let requested_age = input["max_age_hours"].as_u64().map(|h| h as u32);
-        let max_age_hours = match (requested_age, scope.recency_hours) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        // octos's `Scope::search_args` (or the thin parser's same rules):
+        // a language, region or category outside the grant is refused,
+        // recency and the result count are clamped.
+        let narrowed = scope::narrow_search(
+            scope,
+            &topic,
+            language.as_deref(),
+            region.as_deref(),
+            requested_age,
+            limit,
+        )
+        .map_err(HostError::Denied)?;
+        let limit = narrowed.limit;
         let query = SearchQuery {
-            topic: input["topic"].as_str().unwrap_or_default().to_owned(),
+            topic,
             language,
             region,
             limit,
-            max_age_hours,
+            max_age_hours: narrowed.max_age_hours,
             max_fetches: MAX_SEARCH_FETCHES,
         };
         let topic = Topic::new(&query.topic);
@@ -314,10 +326,10 @@ impl ResearchHost {
             if !item.url.starts_with("https://") && !item.url.starts_with("http://") {
                 continue;
             }
-            if !scope.allows_url(&item.url) {
+            if scope.check_domain(&item.url).is_err() {
                 continue;
             }
-            if !item.language.is_empty() && !scope.allows_language(&item.language) {
+            if !item.language.is_empty() && !scope::allows_language(scope, &item.language) {
                 continue;
             }
             let title_key = item.title.trim().to_lowercase();
@@ -371,7 +383,7 @@ impl ResearchHost {
                 model_calls: 0,
                 fetches: results.fetches,
             },
-            notes: results.notes,
+            notes: narrowed.notes.into_iter().chain(results.notes).collect(),
         })
     }
 
@@ -382,8 +394,8 @@ impl ResearchHost {
                 "{id} is not a result of this run's searches"
             )));
         };
-        if !ctx.app.scope.allows_url(&item.url) {
-            return Err(HostError::Denied("outside the app's scope".into()));
+        if let Err(why) = ctx.app.scope.check_domain(&item.url) {
+            return Err(HostError::Denied(why));
         }
         let page = self.backend.read(ctx, &item).await?;
         let (evidence, truncated) = cap_evidence(&page.text, MAX_EVIDENCE_BYTES);
@@ -478,7 +490,7 @@ impl ResearchHost {
     async fn digest(&self, ctx: &CallContext, input: Value) -> Result<HostReply, HostError> {
         let task = input["task"].as_str().unwrap_or("digest").to_owned();
         let language = input["language"].as_str().unwrap_or("en").to_owned();
-        if !ctx.app.scope.allows_language(&language) {
+        if !scope::allows_language(&ctx.app.scope, &language) {
             return Err(HostError::Denied(format!(
                 "language {language} is outside the app's scope"
             )));

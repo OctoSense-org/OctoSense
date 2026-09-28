@@ -13,7 +13,9 @@
 //!   to the template's `max_concurrency` ([`run`]);
 //! - defines `mod.research` v1 ([`research`]) with a fixture backend for tests
 //!   and evaluation ([`fixture`]) and, behind the `live` feature, a small
-//!   interim adapter over public feeds ([`research::live`]);
+//!   interim adapter over public feeds (`research::live`) and, behind the
+//!   `octos-engine` feature, the octos research engine with headless Chrome
+//!   (`research::octos`);
 //! - forks a template into an app's folder, refusing any widening of its
 //!   modules, methods or budget ([`fork`]), and evaluates two templates on the
 //!   same recorded inputs ([`evaluate`]);
@@ -33,6 +35,7 @@ pub mod manifest;
 pub mod modules;
 pub mod research;
 pub mod runner;
+pub mod scope;
 
 pub use api::Toolbox;
 pub use evaluate::{evaluate, EvalCase, EvaluationReport, QualityScorer, Verdict, VerdictOutcome};
