@@ -85,6 +85,11 @@ pub struct BrokerConfig {
     /// it created. `None` keeps tokens in memory, so a peer created by this
     /// process cannot be resumed after a restart.
     pub state_dir: Option<std::path::PathBuf>,
+    /// The tools the host registers for the app's peer and runs for it
+    /// (octos UPCR-2026-035). `None` registers the empty set: with the
+    /// feature every peer registers, tools or not.
+    #[cfg(feature = "peer-tools")]
+    pub host_tools: Option<Arc<dyn crate::peer_tools::HostTools>>,
 }
 
 impl BrokerConfig {
@@ -118,6 +123,8 @@ impl BrokerConfig {
             },
             turn_timeout: Duration::from_secs(180),
             state_dir: None,
+            #[cfg(feature = "peer-tools")]
+            host_tools: None,
         }
     }
 }
@@ -274,6 +281,9 @@ struct State {
     contexts: Vec<Weak<ContextInner>>,
     model: Option<ModelInfo>,
     last_error: Option<String>,
+    /// Host tool calls in flight and the registered set (UPCR-2026-035).
+    #[cfg(feature = "peer-tools")]
+    tools: crate::peer_tools::Calls,
 }
 
 struct Inner {
@@ -318,6 +328,8 @@ impl Broker {
                 contexts: Vec::new(),
                 model: None,
                 last_error: None,
+                #[cfg(feature = "peer-tools")]
+                tools: Default::default(),
             }),
             connecting: tokio::sync::Mutex::new(()),
             binding: tokio::sync::Mutex::new(()),
@@ -502,6 +514,13 @@ impl Inner {
             st.peer = None;
             st.peer_turn = None;
             st.last_error = Some(why.to_owned());
+            // A call sent on this link can only be answered on it: stop
+            // them all; the next link registers again.
+            #[cfg(feature = "peer-tools")]
+            {
+                st.tools.cancel_all();
+                st.tools.registered.clear();
+            }
             let pending: Vec<Reply> = st.pending.drain().map(|(_, r)| r).collect();
             let contexts: Vec<Arc<ContextInner>> =
                 st.contexts.iter().filter_map(Weak::upgrade).collect();
@@ -530,7 +549,7 @@ impl Inner {
         }
     }
 
-    fn inbound(&self, frame: &str) {
+    fn inbound(self: &Arc<Self>, frame: &str) {
         if std::env::var_os("APP_PEERS_TRACE").is_some() {
             eprintln!("app-peers <- {}", frame);
         }
@@ -557,6 +576,11 @@ impl Inner {
             return;
         };
         let params = value.get("params").cloned().unwrap_or(Value::Null);
+        #[cfg(feature = "peer-tools")]
+        if matches!(method, crate::peer_tools::CALL | crate::peer_tools::CANCEL) {
+            self.tool_notification(method, &params);
+            return;
+        }
         let Some(session_id) = params.get("session_id").and_then(Value::as_str) else {
             return;
         };
@@ -712,6 +736,14 @@ impl Inner {
             }
             None => known_token,
         };
+        // octos UPCR-2026-035 / OctoSense #62: register on this link after
+        // every successful prepare, before anything can start a turn; a
+        // failure leaves the peer unbound, so no turn starts.
+        #[cfg(feature = "peer-tools")]
+        if let Err(err) = self.register_tools(&slug, token.as_deref()).await {
+            self.fail(&err);
+            return Err(err);
+        }
         let session = format!(
             "{}#peer-{slug}",
             self.cfg
@@ -739,6 +771,135 @@ impl Inner {
         st.peer = Some((generation, peer.clone()));
         st.model = model;
         Ok((generation, peer))
+    }
+
+    /// `peer/tools/register` for the bound peer, on this broker's link.
+    #[cfg(feature = "peer-tools")]
+    async fn register_tools(
+        self: &Arc<Self>,
+        slug: &str,
+        token: Option<&str>,
+    ) -> Result<(), String> {
+        let registration = self
+            .cfg
+            .host_tools
+            .as_ref()
+            .map(|t| t.registration())
+            .unwrap_or_default();
+        let params = registration.params(&self.cfg.profile_id, &self.cfg.originator, slug, token);
+        match self.request(crate::peer_tools::REGISTER, params).await {
+            Ok(_) => {
+                self.lock().tools.registered = registration.names();
+                Ok(())
+            }
+            Err(err) => Err(format!(
+                "The assistant could not take this app's tools ({err}); it stays unavailable until they are registered"
+            )),
+        }
+    }
+
+    /// `peer/tool/call` and `peer/tool/cancel` from the kernel.
+    #[cfg(feature = "peer-tools")]
+    fn tool_notification(self: &Arc<Self>, method: &str, params: &Value) {
+        use crate::peer_tools::{Admit, ToolCall, ToolError, CANCEL};
+        if method == CANCEL {
+            if let Some(call_id) = params["call_id"].as_str() {
+                self.lock().tools.cancel(call_id);
+            }
+            return;
+        }
+        let call = match ToolCall::from_params(params) {
+            Ok(call) => call,
+            Err(err) => {
+                log::warn!("app-peers: {err}");
+                return;
+            }
+        };
+        let (peer, admit) = {
+            let mut st = self.lock();
+            let peer = match &st.peer {
+                Some((_, peer)) if peer.slug == call.peer && !st.released => peer.clone(),
+                // Not this broker's peer: it cannot answer for it.
+                _ => return,
+            };
+            let admit = if !st.tools.registered.contains(&call.name) {
+                Admit::Answer(Err(ToolError::new(
+                    "not_registered",
+                    format!("{} is not among this app's tools", call.name),
+                )))
+            } else {
+                st.tools.admit(&call)
+            };
+            (peer, admit)
+        };
+        match admit {
+            Admit::Wait => {}
+            Admit::Answer(result) => {
+                self.send_tool_result(&peer, call.call_id.clone(), result);
+            }
+            Admit::Start(cancel) => {
+                let Some(tools) = self.cfg.host_tools.clone() else {
+                    let result = Err(ToolError::new("not_registered", "this app has no tools"));
+                    let waiters = self.lock().tools.finish(&call.occurrence(), &result);
+                    for call_id in waiters {
+                        self.send_tool_result(&peer, call_id, result.clone());
+                    }
+                    return;
+                };
+                let inner = self.clone();
+                let deadline = Duration::from_millis(call.timeout_ms.max(1));
+                let occurrence = call.occurrence();
+                self.rt().spawn(async move {
+                    let outcome = {
+                        let run = tools.call(call, cancel.clone());
+                        tokio::pin!(run);
+                        let outcome = tokio::select! {
+                            result = &mut run => Some(result),
+                            _ = cancel.cancelled() => None,
+                            _ = tokio::time::sleep(deadline) => None,
+                        };
+                        // Fire the cancel before the call's future is dropped,
+                        // so work it handed elsewhere stops too.
+                        if outcome.is_none() {
+                            cancel.cancel();
+                        }
+                        outcome
+                    };
+                    let Some(result) = outcome.filter(|_| !cancel.is_cancelled()) else {
+                        // Never answered after a cancel or the deadline.
+                        inner.lock().tools.abandon(&occurrence);
+                        return;
+                    };
+                    let waiters = inner.lock().tools.finish(&occurrence, &result);
+                    for call_id in waiters {
+                        inner.send_tool_result(&peer, call_id, result.clone());
+                    }
+                });
+            }
+        }
+    }
+
+    #[cfg(feature = "peer-tools")]
+    fn send_tool_result(
+        self: &Arc<Self>,
+        peer: &PeerInfo,
+        call_id: String,
+        result: Result<Value, crate::peer_tools::ToolError>,
+    ) {
+        let params = crate::peer_tools::result_params(
+            &self.cfg.profile_id,
+            &self.cfg.originator,
+            &peer.slug,
+            peer.token.as_deref(),
+            &call_id,
+            &result,
+        );
+        let inner = self.clone();
+        self.rt().spawn(async move {
+            if let Err(err) = inner.request(crate::peer_tools::RESULT, params).await {
+                log::warn!("app-peers: the answer to tool call {call_id} was refused: {err}");
+            }
+        });
     }
 
     fn close_context_on_kernel(
@@ -1290,6 +1451,8 @@ impl OctosAppService for Broker {
                 return;
             }
             st.released = true;
+            #[cfg(feature = "peer-tools")]
+            st.tools.cancel_all();
             let turn = st.peer_turn.take();
             turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone()))
         };

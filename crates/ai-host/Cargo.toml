@@ -21,6 +21,8 @@
 #   dependencies below): `cfg(kernel)` in the source, set by build.rs.
 # - `llm`: register the `llm` host service (a shell's `app-hub` feature turns
 #   it on; phones always).
+# - `toolbox-peers`: the system toolbox as app peers' host-registered tools
+#   (octos#2567); off by default, see below.
 #
 # The kernel is crates/kernel, the app-peers contract and broker
 # crates/app-peers, the `llm` service and its config apps/ai-providers/*;
@@ -38,6 +40,21 @@ license.workspace = true
 default = []
 octos-core = ["dep:octosense-kernel", "octosense-app-peers/octos-core", "octosense-llm-service?/octos-core"]
 llm = ["dep:octosense-llm-service"]
+# The system toolbox offered to app agents (ADR 0002 section 6, News M5):
+# every app peer registers its toolbox tools (possibly none) with the kernel
+# and the host runs their calls. Off by default: it needs a kernel with
+# octos#2567 (host-registered peer tools); a kernel without it refuses the
+# registration and the broker then starts no turns, Rinx's included.
+toolbox-peers = [
+    "octos-core",
+    "llm",
+    "octosense-app-peers/peer-tools",
+    "dep:octosense-toolbox",
+    "octosense-toolbox/octos-engine",
+    "dep:octosense-appstore",
+    "dep:serde_json",
+    "dep:tokio",
+]
 
 [dependencies]
 makepad-widgets = { workspace = true }
@@ -48,6 +65,10 @@ octosense-llm-config = { workspace = true }
 octosense-app-peers = { workspace = true }
 octosense-kernel = { workspace = true, optional = true }
 octosense-llm-service = { workspace = true, optional = true }
+octosense-toolbox = { workspace = true, optional = true }
+octosense-appstore = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "sync", "macros"] }
 
 # Native mobile builds always carry the kernel (Android bundles liboctos.so,
 # OpenHarmony links the core in-process, iOS runs none) and, when the `llm`

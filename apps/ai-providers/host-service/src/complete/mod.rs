@@ -53,7 +53,9 @@
 //! to call it too, so direct calls and template calls share one budget per
 //! app: its `ModelRequest {system, user, output_schema}` maps onto a
 //! [`Request`] with `system` set and `input` the user document ([`host`]
-//! hands out the registered host).
+//! hands out the registered host). A host caller's input may be up to
+//! [`HOST_INPUT_MAX`] (a digest carries its articles' evidence); an app's
+//! stays at [`INPUT_MAX`].
 use crate::model::{effective_model, ProfileStore};
 use crate::probe;
 use crate::vault::Vault;
@@ -77,6 +79,10 @@ pub const FAMILY: &str = "model";
 pub const TASK_MAX: usize = 4 * 1024;
 /// The input, as compact JSON, in bytes.
 pub const INPUT_MAX: usize = 32 * 1024;
+/// The input of a host caller's call (`system` set: the toolbox's digests,
+/// whose user document carries the articles' evidence), which
+/// `host.request` can never make.
+pub const HOST_INPUT_MAX: usize = 256 * 1024;
 /// The model's reply text (after a code fence is removed), in bytes: the
 /// host's hard cap on what an app gets back.
 pub const OUTPUT_MAX: usize = 16 * 1024;
@@ -219,8 +225,9 @@ impl Request {
             return Err(bad(format!("task is over {TASK_MAX} bytes")));
         }
         let input = self.input.to_string().len();
-        if input > INPUT_MAX {
-            return Err(bad(format!("input is {input} bytes; the most is {INPUT_MAX}")));
+        let max = if self.system.is_some() { HOST_INPUT_MAX } else { INPUT_MAX };
+        if input > max {
+            return Err(bad(format!("input is {input} bytes; the most is {max}")));
         }
         if self.schema.is_null() {
             return Err(bad("schema is required".into()));

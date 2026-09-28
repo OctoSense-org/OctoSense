@@ -33,6 +33,7 @@ pub mod json;
 pub mod library;
 pub mod manifest;
 pub mod modules;
+pub mod peer;
 pub mod research;
 pub mod runner;
 pub mod scope;

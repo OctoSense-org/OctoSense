@@ -7271,9 +7271,13 @@ dependencies = [
  "makepad-app-module",
  "makepad-widgets",
  "octosense-app-peers",
+ "octosense-appstore",
  "octosense-kernel",
  "octosense-llm-config",
  "octosense-llm-service",
+ "octosense-toolbox",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

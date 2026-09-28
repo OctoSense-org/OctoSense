@@ -41,9 +41,16 @@
 //!   declares or is granted nothing gets nothing, and no peer is allocated.
 //!   Dropping the [`Assistant`] releases the instance's leases and
 //!   interrupts its peer's running work; the kernel and other apps go on.
+//! - **The system toolbox for app agents** (feature `toolbox-peers`, off by
+//!   default until octos#2567 is on the pin): every app peer registers its
+//!   toolbox tools with the kernel and the host runs their calls
+//!   ([`toolbox_peers`]). Its results live in each app's host-owned toolbox
+//!   folder ([`toolbox_folder`]), which exists with or without the feature.
 
 mod bridge;
 mod qr;
+#[cfg(feature = "toolbox-peers")]
+pub mod toolbox_peers;
 
 pub use bridge::{Bridge, Done};
 pub use qr::{ImageSource, PickError, QrImport, DROP_APP};
@@ -341,6 +348,32 @@ pub fn kernel_running() -> bool {
     false
 }
 
+// ---- the system toolbox's folders ------------------------------------------
+
+/// The host's folder for every app's toolbox, under the apps root:
+/// `<apps root>/.host/toolbox`. Outside every app's jail
+/// (`<apps root>/<app id>`), so an app cannot write a digest the glance
+/// screen would show as the host's.
+pub const TOOLBOX_HOST_DIR: [&str; 2] = [".host", "toolbox"];
+
+/// `<apps root>/.host/toolbox` ([`TOOLBOX_HOST_DIR`]). The glance screen's
+/// `sys.digest` resolver (OctoSense #87) reads run results under it.
+pub fn toolbox_root(apps_root: &std::path::Path) -> PathBuf {
+    TOOLBOX_HOST_DIR.iter().fold(apps_root.to_path_buf(), |dir, part| dir.join(part))
+}
+
+/// One app's toolbox folder, `<apps root>/.host/toolbox/<app id>`: run
+/// results in `toolbox/runs/<template>/<run>.json`, forks in
+/// `toolbox/templates/`, research items in `research/`. `None` for an id
+/// that is not one safe path segment.
+pub fn toolbox_folder(apps_root: &std::path::Path, app_id: &str) -> Option<PathBuf> {
+    let valid = !app_id.is_empty()
+        && app_id.len() <= 64
+        && !app_id.starts_with('.')
+        && app_id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    valid.then(|| toolbox_root(apps_root).join(app_id))
+}
+
 // ---- apps' assistant access -------------------------------------------------
 
 /// The host policy in force: [`Policy::shipped`] until [`start`] installs
@@ -429,11 +462,21 @@ pub fn offer(module: &dyn AppModule, scope: &InstanceScope) -> Offer {
     let assistant = STATE.get().is_none_or(|s| s.kernel).then(|| {
         // Before `start` (a module host's own tests) the kernel keeps its
         // defaults; after it, only a shell that hosts a kernel offers.
+        #[cfg(not(feature = "toolbox-peers"))]
         let broker = octosense_app_peers::hosted::launch(
             module.id(),
             module.label(),
             module.capabilities().iter().copied(),
             host_policy(),
+        )?;
+        // Every peer registers its toolbox tools, possibly none (octos#2567).
+        #[cfg(feature = "toolbox-peers")]
+        let broker = octosense_app_peers::hosted::launch_with_tools(
+            module.id(),
+            module.label(),
+            module.capabilities().iter().copied(),
+            host_policy(),
+            toolbox_peers::tools_for_module(module.id(), module.capabilities().iter().copied()),
         )?;
         octosense_app_peers::hosted::offer(module.id(), &scope, &broker);
         Some(Assistant { broker })

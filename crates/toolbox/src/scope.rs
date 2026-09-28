@@ -152,6 +152,41 @@ pub fn narrow_search(
     compat::narrow_search(scope, topic, language, region, max_age_hours, limit)
 }
 
+/// A `deep_crawl` narrowed to the grant (the `crawl` capability's limits).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NarrowedCrawl {
+    pub url: String,
+    /// Link hops from `url`, at least 1, at most the grant's `max_depth`.
+    pub max_depth: u32,
+    /// Pages read, at least 1, at most the grant's `max_pages`.
+    pub max_pages: u32,
+    /// Only URLs whose path starts with this, if set.
+    pub path_prefix: Option<String>,
+}
+
+/// Narrows one `deep_crawl` call (`{url, max_depth?, max_pages?,
+/// path_prefix?}`) to the grant, or refuses it: crawling not granted
+/// (`max_depth` or `max_pages` 0), no `url`, or a site outside the domain
+/// lists. Depth defaults to 1 and pages to 10, both clamped to the grant.
+/// With the feature this is `Scope::crawl_args`.
+pub fn narrow_crawl(scope: &Scope, args: &Value) -> Result<NarrowedCrawl, String> {
+    #[cfg(feature = "octos-engine")]
+    let narrowed = scope.crawl_args(args)?;
+    #[cfg(not(feature = "octos-engine"))]
+    let narrowed = compat::crawl_args(scope, args)?;
+    let number = |key: &str| narrowed.get(key).and_then(Value::as_u64).unwrap_or(1) as u32;
+    Ok(NarrowedCrawl {
+        url: narrowed["url"].as_str().unwrap_or_default().to_owned(),
+        max_depth: number("max_depth"),
+        max_pages: number("max_pages"),
+        path_prefix: narrowed
+            .get("path_prefix")
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
+            .map(str::to_owned),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +248,30 @@ mod tests {
         assert!(allows_language(&scope, "zh-CN"));
         assert!(!allows_language(&scope, "en"));
         assert!(allows_language(&unrestricted(), "en"));
+    }
+
+    #[test]
+    fn crawls_need_the_crawl_limits_and_stay_within_them() {
+        let none = parse(&json!({})).unwrap();
+        let error = narrow_crawl(&none, &json!({"url": "https://example.org/"})).unwrap_err();
+        assert!(
+            error.contains("crawling is not in this app's grant"),
+            "{error}"
+        );
+        let scope =
+            parse(&json!({"max_depth": 2, "max_pages": 5, "domains_deny": ["bad.example.org"]}))
+                .unwrap();
+        let narrowed = narrow_crawl(
+            &scope,
+            &json!({"url": "https://example.org/", "max_depth": 9, "max_pages": 90, "path_prefix": "/a"}),
+        )
+        .unwrap();
+        assert_eq!((narrowed.max_depth, narrowed.max_pages), (2, 5));
+        assert_eq!(narrowed.path_prefix.as_deref(), Some("/a"));
+        let defaults = narrow_crawl(&scope, &json!({"url": "https://example.org/"})).unwrap();
+        assert_eq!((defaults.max_depth, defaults.max_pages), (1, 5));
+        assert!(narrow_crawl(&scope, &json!({"url": "https://bad.example.org/"})).is_err());
+        assert!(narrow_crawl(&scope, &json!({})).is_err());
     }
 
     #[test]
@@ -292,6 +351,18 @@ mod tests {
                     octos_research::lang::matches_any(tag, &octos.langs),
                     compat::matches_any(tag, &thin.langs),
                     "{grant} {tag}"
+                );
+            }
+            for args in [
+                json!({"url": "https://example.org/a"}),
+                json!({"url": "https://example.org/a", "max_depth": 9, "max_pages": 900, "path_prefix": "/news"}),
+                json!({"url": "https://bad.example.org/a", "max_depth": 1}),
+                json!({"max_depth": 1}),
+            ] {
+                assert_eq!(
+                    octos.crawl_args(&args),
+                    compat::crawl_args(&thin, &args),
+                    "{grant} {args}"
                 );
             }
             for (language, region, hours, limit) in searches {

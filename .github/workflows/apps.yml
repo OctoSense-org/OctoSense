@@ -70,6 +70,10 @@ jobs:
           cargo test --locked -p octosense-app-peers --features octos-core,ws
           cargo clippy --locked -p octosense-app-peers --all-targets --no-deps -- -D warnings
           cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws --no-deps -- -D warnings
+          # Host-registered peer tools (octos#2567): off by default, tested
+          # against the scripted kernel.
+          cargo test --locked -p octosense-app-peers --features octos-core,ws,peer-tools
+          cargo clippy --locked -p octosense-app-peers --all-targets --features octos-core,ws,peer-tools --no-deps -- -D warnings
       - name: AI providers config
         run: cargo test --locked -p octosense-llm-config
       - name: System toolbox (workflow templates)
@@ -106,6 +110,9 @@ jobs:
           cargo test --locked -p octosense-ai-host
           cargo test --locked -p octosense-ai-host --features octos-core,llm
           cargo clippy --locked -p octosense-ai-host --all-targets --features octos-core,llm --no-deps -- -D warnings
+          # The system toolbox for app agents (octos#2567): off by default.
+          cargo test --locked -p octosense-ai-host --features toolbox-peers
+          cargo clippy --locked -p octosense-ai-host --all-targets --features toolbox-peers --no-deps -- -D warnings
       - name: AppCard runtime setup safeguards
         working-directory: apps/appcard
         run: PYTHONPATH=tools python3 -m unittest core.test_native_runtime

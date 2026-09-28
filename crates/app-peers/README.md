@@ -21,6 +21,7 @@ ordinary session with the profile's memory.
 | `broker` | `broker::Broker`: peer binding, contexts, a lease check on every request and before every reply, event routing, stale-reply dropping | via the features below |
 | `octos-core` | `connectors::CoreConnector` (the shell's kernel, or an owned one) and `hosted` (`HostPolicy`, `launch`, `offer`) | shells; a standalone app's local runtime |
 | `ws` | `connectors::WsConnector`: an explicit remote octos server | a standalone app's remote mode |
+| `peer-tools` | host-registered peer tools (octos UPCR-2026-035, octos#2567): `peer_tools::HostTools`, `BrokerConfig::host_tools`, `hosted::launch_with_tools`; registration after every prepare and reconnect, `peer/tool/call` routing | `crates/ai-host`'s `toolbox-peers`; off by default |
 
 ## A shell
 
@@ -68,12 +69,53 @@ service.release();                            // app closed
   interrupts the peer's running turn. The peer and its memory stay for the
   next launch.
 
+## Host-registered tools (`peer-tools`)
+
+With the feature, every broker follows OctoSense issue #62's rules for
+octos#2567:
+
+- **Register on every prepare and reconnect.** Right after each successful
+  `peer/prepare`, on the same link that later opens contexts and starts
+  turns, the broker calls `peer/tools/register` with the app's set
+  (`BrokerConfig::host_tools`), or the **empty set** when it has none (Rinx
+  today). A lost link unbinds the peer, so the next request prepares and
+  registers again before any turn.
+- **No turns without registration.** If registering fails the peer stays
+  unbound: no context opens, no turn starts, and `availability()` is
+  `Failed` with the reason.
+- **Calls.** `peer/tool/call` for the bound peer runs the host's
+  `HostTools::call`, at most once per `(session, turn, tool call, args
+  digest)` (a repeat gets the first result), and answers `peer/tool/result`.
+  A tool that was not registered is refused (`not_registered`) without
+  running. `peer/tool/cancel`, the call's `timeout_ms`, a release or a lost
+  link cancel the call: its future is dropped after its `Cancel` fires, and
+  it is never answered.
+
+**What changes for a peer that registers** (octos#2567, by design): its
+turns get exactly the registered tools (the empty set means none, not the
+profile's roster), app memory and context reach only turns driven by the
+registering connection, and kernel-internal continuations (a system agent's
+`peer_send_input`) get no tools. The four real-kernel tests of system agent
+to peer exchanges are therefore ignored with the feature on; see
+`tests/real_kernel.rs`.
+
+Without the feature none of this is compiled and the broker behaves as
+before.
+
 ## Testing
 
 From the repository root:
 
 ```sh
 cargo test --locked -p octosense-app-peers --features octos-core,ws   # unit + scripted-kernel tests
+cargo test --locked -p octosense-app-peers --features octos-core,ws,peer-tools   # + registration and tool calls
 # The real kernel (UPCR-2026-034) with a scripted local model (python3):
 OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --features octos-core --test real_kernel -- --nocapture
+# A kernel with octos#2567 (host-registered peer tools), the feature on:
+OCTOS_APP_PEERS_TEST_KERNEL=/path/to/octos cargo test -p octosense-app-peers --features octos-core,peer-tools --test real_kernel -- --nocapture
 ```
+
+On 28 Sep 2026 against an `octos` built from octos#2567 (e270d039 and again at 31c51064): without
+the feature 6 passed; with it 3 passed (the new
+`a_registered_host_tool_is_called_by_a_real_turn` included) and 4 are
+ignored as above.

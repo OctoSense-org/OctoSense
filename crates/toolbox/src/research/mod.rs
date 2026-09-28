@@ -152,6 +152,32 @@ pub trait ResearchBackend {
         ctx: &'a CallContext,
         item: &'a FoundItem,
     ) -> HostFuture<'a, Result<PageText, HostError>>;
+
+    /// Reads one page of a crawl (`deep_crawl`, the `crawl` capability): its
+    /// main text, the URL it was finally read from, and the absolute
+    /// `http(s)` links on it. Backends that cannot list links refuse, which
+    /// is the default.
+    fn read_links<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+        _url: &'a str,
+    ) -> HostFuture<'a, Result<LinkedPage, HostError>> {
+        Box::pin(async {
+            Err(HostError::Denied(
+                "this research backend cannot crawl".into(),
+            ))
+        })
+    }
+}
+
+/// One page of a crawl.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedPage {
+    /// Where the page was read from, after redirects.
+    pub final_url: String,
+    pub page: PageText,
+    /// Absolute `http(s)` links, in page order, without fragments.
+    pub links: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

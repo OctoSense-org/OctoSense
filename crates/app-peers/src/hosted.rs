@@ -73,6 +73,32 @@ pub fn launch<'a>(
     declared: impl IntoIterator<Item = &'a str>,
     policy: &HostPolicy,
 ) -> Option<Broker> {
+    let cfg = config(module, label, declared, policy)?;
+    Some(Broker::new(cfg, Arc::new(CoreConnector::shell())))
+}
+
+/// [`launch`], with the tools the host registers for the app's peer and
+/// runs for it (octos UPCR-2026-035). Every peer registers with the
+/// feature; `None` registers the empty set, like [`launch`].
+#[cfg(feature = "peer-tools")]
+pub fn launch_with_tools<'a>(
+    module: &str,
+    label: &str,
+    declared: impl IntoIterator<Item = &'a str>,
+    policy: &HostPolicy,
+    tools: Option<Arc<dyn crate::peer_tools::HostTools>>,
+) -> Option<Broker> {
+    let mut cfg = config(module, label, declared, policy)?;
+    cfg.host_tools = tools;
+    Some(Broker::new(cfg, Arc::new(CoreConnector::shell())))
+}
+
+fn config<'a>(
+    module: &str,
+    label: &str,
+    declared: impl IntoIterator<Item = &'a str>,
+    policy: &HostPolicy,
+) -> Option<BrokerConfig> {
     let services = effective_services(module, declared, policy);
     if services.is_empty() || !is_namespace_segment(module) {
         return None;
@@ -88,7 +114,7 @@ pub fn launch<'a>(
     // The shell keeps each app peer's host token beside its kernel's core
     // dir, outside every app's reach.
     cfg.state_dir = octosense_kernel::core_dir().map(|dir| host_state_dir(&dir));
-    Some(Broker::new(cfg, Arc::new(CoreConnector::shell())))
+    Some(cfg)
 }
 
 /// Where a shell keeps app peers' host tokens for the kernel at `core_dir`.

@@ -28,6 +28,8 @@ pub mod broker;
 pub mod connectors;
 #[cfg(feature = "octos-core")]
 pub mod hosted;
+#[cfg(feature = "peer-tools")]
+pub mod peer_tools;
 
 pub use contract::*;
 

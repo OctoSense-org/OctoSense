@@ -44,7 +44,9 @@
 //!   say `readable: false` and templates skip them.
 
 use super::chrome::{Chrome, ChromeConfig};
-use super::{same_language, FoundItem, PageText, ResearchBackend, SearchQuery, SearchResults};
+use super::{
+    same_language, FoundItem, LinkedPage, PageText, ResearchBackend, SearchQuery, SearchResults,
+};
 use crate::host::{url_host, CallContext, HostError, HostFuture};
 use octos_research::metasearch::{
     EngineReport, EngineStatus, MetaItem, Metasearch, ReqwestFetch, SearchRequest,
@@ -182,6 +184,9 @@ impl OctosResearch {
             timeout: config.timeout,
             respect_robots: config.respect_robots,
             renderer,
+            // `deep_crawl` lists a page's links from its HTML
+            // ([`ResearchBackend::read_links`]).
+            keep_html: true,
             ..ReaderConfig::default()
         });
         Self {
@@ -490,6 +495,82 @@ impl ResearchBackend for OctosResearch {
             })
         })
     }
+
+    fn read_links<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        url: &'a str,
+    ) -> HostFuture<'a, Result<LinkedPage, HostError>> {
+        Box::pin(async move {
+            let scope = &ctx.app.scope;
+            scope.check_domain(url).map_err(HostError::Denied)?;
+            let page = self.reader.read(url).await.map_err(read_error)?;
+            scope
+                .check_domain(&page.final_url)
+                .map_err(HostError::Denied)?;
+            let links = extract_links(&page.html, &page.final_url);
+            Ok(LinkedPage {
+                final_url: page.final_url,
+                page: PageText {
+                    text: page.text,
+                    title: page.meta.title.filter(|t| !t.trim().is_empty()),
+                },
+                links,
+            })
+        })
+    }
+}
+
+/// The absolute `http(s)` links of `<a href>`s in `html`, resolved against
+/// `base`, without fragments, deduplicated in page order. A plain scan, not
+/// a parser: it only has to find links, never to render.
+pub fn extract_links(html: &str, base: &str) -> Vec<String> {
+    let Ok(base) = url::Url::parse(base) else {
+        return Vec::new();
+    };
+    let lower = html.to_ascii_lowercase();
+    let mut links = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut from = 0;
+    while let Some(at) = lower[from..].find("href") {
+        let start = from + at + 4;
+        from = start;
+        let rest = &html[start..];
+        let trimmed = rest.trim_start();
+        let Some(after_eq) = trimmed.strip_prefix('=') else {
+            continue;
+        };
+        let after_eq = after_eq.trim_start();
+        let value = match after_eq.chars().next() {
+            Some(q @ ('"' | '\'')) => match after_eq[1..].find(q) {
+                Some(end) => &after_eq[1..1 + end],
+                None => continue,
+            },
+            Some(_) => {
+                let end = after_eq
+                    .find(|c: char| c.is_whitespace() || c == '>')
+                    .unwrap_or(after_eq.len());
+                &after_eq[..end]
+            }
+            None => continue,
+        };
+        let value = value.trim().replace("&amp;", "&");
+        if value.is_empty() || value.starts_with('#') {
+            continue;
+        }
+        let Ok(mut link) = base.join(&value) else {
+            continue;
+        };
+        if !matches!(link.scheme(), "http" | "https") {
+            continue;
+        }
+        link.set_fragment(None);
+        let link = link.to_string();
+        if seen.insert(link.clone()) {
+            links.push(link);
+        }
+    }
+    links
 }
 
 #[cfg(test)]
@@ -510,6 +591,22 @@ mod tests {
             source_url: None,
             kind: ItemKind::Article,
         }
+    }
+
+    #[test]
+    fn links_are_absolute_http_without_fragments_or_repeats() {
+        let html = r##"<a href="/a">A</a> <A HREF='b?x=1&amp;y=2#top'>B</A>
+            <a href=https://other.example/c>C</a> <a href="#frag">F</a>
+            <a href="mailto:x@example.org">M</a> <a href="/a#again">A2</a>"##;
+        assert_eq!(
+            extract_links(html, "https://example.org/dir/page"),
+            [
+                "https://example.org/a",
+                "https://example.org/dir/b?x=1&y=2",
+                "https://other.example/c",
+            ]
+        );
+        assert!(extract_links(html, "not a url").is_empty());
     }
 
     #[test]

@@ -16,6 +16,8 @@
 # - `octos-core`: the broker over the shell's kernel (`octosense-kernel`),
 #   for shells and for a standalone app that owns its local runtime.
 # - `ws`: the broker over an explicit remote octos server (WebSocket).
+# - `peer-tools`: host-registered peer tools (octos#2567, UPCR-2026-035):
+#   registration after every prepare and reconnect, and tool-call routing.
 [package]
 name        = "octosense-app-peers"
 version     = "0.1.0"
@@ -31,6 +33,12 @@ default = []
 broker = ["dep:tokio", "dep:log", "dep:uuid"]
 octos-core = ["broker", "dep:octosense-kernel"]
 ws = ["broker", "dep:tokio-tungstenite", "dep:futures-util", "dep:url"]
+# Host-registered peer tools (octos UPCR-2026-035, octos#2567): every peer
+# registers its tool set (possibly empty) after each prepare and reconnect,
+# and the broker runs `peer/tool/call` through `BrokerConfig::host_tools`.
+# Off by default: it needs a kernel with octos#2567 (a kernel without it
+# refuses the registration, and the broker then starts no turns).
+peer-tools = ["broker"]
 
 [dependencies]
 serde_json = "1"
