@@ -335,6 +335,10 @@ fn contained_rejects_oversized_reply() {
 
 #[test]
 fn policy_contained_apps_defaults() {
-    assert!(crate::Policy::shipped().contained_apps());
+    // Off until first-use consent exists (ADR 0004 section 4), unless a
+    // developer turns it on.
+    if std::env::var("OCTOSENSE_CONTAINED_APPS").as_deref() != Ok("1") {
+        assert!(!crate::Policy::shipped().contained_apps());
+    }
     assert!(!crate::Policy::none().contained_apps());
 }

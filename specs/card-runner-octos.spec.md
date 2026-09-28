@@ -16,7 +16,7 @@ Let OctoScript apps that App Hub installs and the Card runner hosts use the shel
 - The argument rules are Rinx's: `octos.turn.start` takes only `text`, non-blank after trimming and at most 32 KiB; `octos.session.open`, `octos.session.history` and `octos.turn.interrupt` take only the empty object `{}`.
 - Tool approvals: an `approval/requested` event is answered with `ContextOp::Approval { approve: false }`; a successful reply object gains `denied_approvals`, the titles of the declined tools.
 - Replies are capped at 2 MiB (`MAX_REPLY_BYTES`); a larger one is an error, never truncated.
-- `Policy` gains `contained_apps`: true in `Policy::shipped()`, false in `Policy::none()`; it is the shell's switch.
+- `Policy` gains `contained_apps`: false in `Policy::shipped()` until first-use consent exists (ADR 0004 section 4; `OCTOSENSE_CONTAINED_APPS=1` turns it on for development), false in `Policy::none()`; it is the shell's switch.
 - The logic does not depend on `cfg(kernel)`: peers come from a `PeerFactory`. Only the shell's factory, under `cfg(kernel)`, creates brokers through `hosted::launch`. Tests use a fake factory over App Hub's real `dispatch` and `take_replies_for`.
 - `octosense-appstore` becomes a regular dependency of `octosense-ai-host` (it is already in the workspace graph).
 <!-- lint-ack: decision-coverage — a dependency is a build decision, proven by `cargo check -p octosense-ai-host` passing; it has no runtime behaviour a scenario could observe -->
@@ -161,4 +161,4 @@ Scenario: The switch's defaults
     Package: octosense-ai-host
     Filter: policy_contained_apps_defaults
   When contained_apps is read from `Policy::shipped()` and `Policy::none()`
-  Then the first is true and the second is false
+  Then both are false unless `OCTOSENSE_CONTAINED_APPS=1` is set

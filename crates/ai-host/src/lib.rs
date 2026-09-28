@@ -132,8 +132,13 @@ impl Policy {
     /// The native modules that ship with OctoSense: Rinx (its native mini-app
     /// host serves these to reviewed mini apps). The person's AI provider
     /// choice lives in AI providers; a per-app toggle is future work.
+    ///
+    /// The `octos` service for contained apps is OFF in the shipped policy
+    /// until the person consents at first use (ADR 0004 section 4).
+    /// `OCTOSENSE_CONTAINED_APPS=1` turns it on for development and tests.
     pub fn shipped() -> Self {
-        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_apps(true)
+        let contained = std::env::var("OCTOSENSE_CONTAINED_APPS").is_ok_and(|v| v == "1");
+        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_apps(contained)
     }
 
     /// Turn the `octos` service for contained apps on or off (the shell's

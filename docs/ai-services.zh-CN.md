@@ -163,7 +163,7 @@ flowchart TB
 | `news` | 仅 `os.*` 应用 | News 的数据服务（订阅源、已读记录、`news.list`、`news.read` 等），不使用模型。Shell 锁定的 App Hub 还没有 `news` 权限，所以 News 应用包仍自己抓取 |
 | `glance` | 仅 `os.*` 应用，并且在 Shell 锁定的 App Hub 下没有 manifest 能申请 `glance` | 向 glance 屏幕发布 L0 卡片。目前只有 Shell 的 `OCTOSENSE_GLANCE_DEMO=1` 演示卡片会用到它；权限见 [#86](https://github.com/OctoSense-org/OctoSense/pull/86) |
 | `model` | – | **尚未注册。** App Hub `main` 接受 `model` 权限（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)），用于一次性的 `model.complete {task, input, schema, class}`（`class` 为 `fast` 或 `strong`；宿主从用户的提供方中挑选模型，按 schema 校验回复，按应用管理每日预算；没有工具和记忆）。OctoSense 服务尚未实现；调用返回 `no service answers "model" on this device`（在 App Hub `e8601b8` 的 `card-host` 中运行），而且 Shell 锁定的 App Hub 不认识这个名称 |
-| `octos` | manifest 声明了确切 `octos.*` 名称的任何应用；前提是 Shell 托管了内核，且 `Policy::contained_apps` 为开（出厂策略即为开） | 助手：经应用自己的、由宿主拥有的 peer `card.<应用 id>`（`crates/ai-host/src/contained.rs`）。四个 `octos.*` 调用沿用 Rinx 的参数规则（`octos.turn.start` 只接受 `text`，非空白、最多 32 KiB；其余只接受 `{}`）。peer 发起的工具审批会被拒绝（Card runner 还没有审批面板），并列在回复的 `denied_approvals` 中；超过 2 MiB 的回复会被拒绝 |
+| `octos` | manifest 声明了确切 `octos.*` 名称的任何应用；前提是 Shell 托管了内核，且 `Policy::contained_apps` 为开（在首次使用同意功能落地前，出厂策略为关，见 ADR 0004 第 4 节；设置 `OCTOSENSE_CONTAINED_APPS=1` 可试用） | 助手：经应用自己的、由宿主拥有的 peer `card.<应用 id>`（`crates/ai-host/src/contained.rs`）。四个 `octos.*` 调用沿用 Rinx 的参数规则（`octos.turn.start` 只接受 `text`，非空白、最多 32 KiB；其余只接受 `{}`）。peer 发起的工具审批会被拒绝（Card runner 还没有审批面板），并列在回复的 `denied_approvals` 中；超过 2 MiB 的回复会被拒绝 |
 
 因此，隔离运行的应用（商店应用或系统应用）只能通过 `octos.*` 使用助手，且需要 Shell 托管了内核。它会收到：
 
