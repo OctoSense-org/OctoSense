@@ -78,7 +78,11 @@ pub struct Scope {
     pub regions: Vec<String>,
     pub allowed_domains: Vec<String>,
     pub denied_domains: Vec<String>,
-    pub max_depth: Option<u32>,
+    /// Articles one run may read (narrows the template's `max_pages`).
+    /// There is no depth limit: `mod.research` reads only this run's search
+    /// results and never follows a link from a page, so every read is at
+    /// depth one. A crawl method would bring one; an old scope that carries
+    /// `max_depth` still loads, and the field is ignored.
     pub max_pages: Option<u32>,
     /// Oldest item age, in hours.
     pub recency_hours: Option<u32>,
@@ -278,5 +282,12 @@ mod tests {
         assert!(!scope.allows_url("https://bad.example.org/x"));
         assert!(!scope.allows_url("https://example.com/x"));
         assert!(!scope.allows_url("https://notexample.org/x"));
+    }
+
+    #[test]
+    fn an_old_scope_with_max_depth_still_loads() {
+        let scope: Scope =
+            serde_json::from_value(serde_json::json!({"max_depth": 2, "max_pages": 3})).unwrap();
+        assert_eq!(scope.max_pages, Some(3));
     }
 }

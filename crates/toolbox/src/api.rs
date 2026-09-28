@@ -277,8 +277,10 @@ fn error_json(e: &Error) -> Value {
     json!({"error": {"kind": e.kind, "message": e.message}})
 }
 
-/// The four tools' descriptors (name, description, input schema) for host
-/// registration with a peer's tool set.
+/// The four tools' descriptors (name, risk, description, input schema) for
+/// host registration with a peer's tool set. `risk` is one of the levels
+/// octos and App Hub's `tools.json` accept: `read`, `act` or `destructive`
+/// (forking writes only to the calling app's own folder, so it is `act`).
 pub fn tool_descriptors() -> Value {
     json!([
         {"name": "workflow.list", "risk": "read",
@@ -288,7 +290,7 @@ pub fn tool_descriptors() -> Value {
          "description": "Run a workflow template with parameters; the result (with sources) is written to this app's folder.",
          "input_schema": {"type": "object", "required": ["id"], "additionalProperties": false,
             "properties": {"id": {"type": "string"}, "params": {"type": "object"}, "run_id": {"type": "string"}}}},
-        {"name": "workflow.fork", "risk": "act_in_app",
+        {"name": "workflow.fork", "risk": "act",
          "description": "Copy a library template into this app's folder to edit it; it keeps lineage to its parent.",
          "input_schema": {"type": "object", "required": ["id"], "additionalProperties": false,
             "properties": {"id": {"type": "string"}, "new_id": {"type": "string"}}}},

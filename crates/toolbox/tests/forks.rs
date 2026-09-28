@@ -408,3 +408,24 @@ async fn the_tool_surface_lists_runs_forks_and_evaluates() {
     );
     let _ = std::fs::remove_dir_all(folder);
 }
+
+#[test]
+fn tool_descriptors_use_the_hub_risk_levels() {
+    // octos and App Hub's tools.json accept only these three.
+    let descriptors = octosense_toolbox::api::tool_descriptors();
+    for tool in descriptors.as_array().unwrap() {
+        let risk = tool["risk"].as_str().unwrap();
+        assert!(
+            ["read", "act", "destructive"].contains(&risk),
+            "{}: {risk}",
+            tool["name"]
+        );
+    }
+    let fork = descriptors
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "workflow.fork")
+        .unwrap();
+    assert_eq!(fork["risk"], "act");
+}

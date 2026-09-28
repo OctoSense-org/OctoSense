@@ -84,7 +84,7 @@ The result also carries `diagnostics`, `stats` (calls, model calls, pages, searc
 
 `research::ResearchHost` implements `ToolboxHost` for this module over two parts: a `ResearchBackend` (finds and reads sources) and a `ModelClient` (supplied by the host). The policy is enforced here, once, whatever the backend:
 
-- **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit.
+- **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit, and `max_pages` narrows the run's page budget. The scope has no depth limit (`max_depth` was declared and never enforced, and is removed): `mod.research` reads only this run's search results and never follows a link from a page, so every read is at depth one. A scope that still carries `max_depth` loads, and the field is ignored.
 - **Ids**: search results get host-assigned ids derived from their URLs. `article` reads only this run's ids, so a template cannot fetch an arbitrary URL.
 - **Evidence**: article text stays in the host, capped at 6000 bytes on a paragraph boundary and hashed. The script sees a 400-byte excerpt and the hash.
 - **Relevance** (`research::relevance`, in the host so it survives the engine swap): topics are split into terms, stop-words ("of", "the", "news", "de", "新闻" …) ignored; words match whole words, case- and accent-insensitively, with a light suffix stemmer; runs of Han, kana, Hangul or Thai match as substrings after both sides are folded to Simplified Chinese with a small character table (common news vocabulary, about 540 characters; a character outside it matches only its own script).
@@ -159,7 +159,7 @@ The tests show this rule deciding real cases:
 - `fork(app, {id, new_id?})`
 - `evaluate(app, {a, b, cases})`
 
-`handle_json(app, {"tool": "workflow.run", "arguments": {…}})` routes the same calls as JSON and returns errors as `{"error": {kind, message}}`. `api::tool_descriptors()` gives the four tools' names, risk and input schemas for registration with a peer.
+`handle_json(app, {"tool": "workflow.run", "arguments": {…}})` routes the same calls as JSON and returns errors as `{"error": {kind, message}}`. `api::tool_descriptors()` gives the four tools' names, risk and input schemas for registration with a peer. The risk levels are the ones octos#2567 and App Hub's `tools.json` accept: `workflow.list`, `workflow.run` and `workflow.evaluate` are `read`, and `workflow.fork` is `act` (it writes only into the calling app's folder). The descriptors carry no `confirm` field.
 
 ## How an app agent will use it
 
