@@ -15,7 +15,7 @@ spec.loader.exec_module(kernel)
 
 # The head of octos#2591 (`serve --host-managed`) until it merges; then the
 # merged octos commit (the root Cargo.toml says the same).
-REV = "2cd29e44ca4bff8c54fe1de10179b5cf29017571"
+REV = "27ccc8b497c520c9766ff353e78fb8ff7249e917"
 
 
 def lock_with(*revs):

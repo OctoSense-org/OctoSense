@@ -106,8 +106,9 @@ child above and nothing listens. **AI providers → Talk to Octos** turns it on
   that never leaves this process, and request octos's stdio feature set
   (`octos_core::ui_protocol::UI_PROTOCOL_STDIO_DEFAULT_FEATURES`);
 - mints an **external token**. It opens `/api/ui-protocol/ws` and nothing
-  else: no REST or admin route, no `server/shutdown`, and no answers to the
-  approvals or questions of apps' assistants (host-owned app peers);
+  else: no REST or admin route, no `server/shutdown`, no answers to the
+  approvals or questions of apps' assistants (host-owned app peers), and no
+  control of those peers;
 - keeps the listener in this process (Unix) and hands it to every kernel
   generation, so a restart keeps the port and no other app can take it in
   between. Elsewhere a restart reuses the port when it is free, and otherwise

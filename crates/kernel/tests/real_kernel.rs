@@ -239,6 +239,10 @@ async fn talk_to_octos_admits_an_external_client_to_the_ui_protocol_only() {
             "session_id": peer, "approval_id": uuid::Uuid::new_v4().to_string(), "decision": "approve"})).await;
         assert_eq!(answer["error"]["data"]["kind"], "host_owned_peer_answer_denied", "{answer}");
     }
+    // Nor manage host-owned app peers (octos UPCR-2026-036).
+    let control = ws_frame(&mut browser, "ctx", "peer/context/open", json!({
+        "session_id": SYSTEM_SESSION, "peer": "rinx", "context_id": "a"})).await;
+    assert_eq!(control["error"]["data"]["kind"], "host_owned_peer_control_denied", "{control}");
     // DNS rebinding and other local apps.
     let (status, _) = http(port, "GET", "/health", &format!("rebind.example:{port}"), None, "").await;
     assert_eq!(status, 421, "a foreign Host header is refused");

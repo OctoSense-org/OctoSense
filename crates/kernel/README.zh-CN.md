@@ -93,7 +93,7 @@ Talk to Octos 让 Web 客户端或终端界面与本设备的助手对话。它*
   原生使用方通过其 WebSocket 继续收发同样的帧，使用从不离开本进程的宿主令牌，并请求
   octos 的 stdio 功能集（`octos_core::ui_protocol::UI_PROTOCOL_STDIO_DEFAULT_FEATURES`）；
 - 生成一个**外部令牌**。它只能打开 `/api/ui-protocol/ws`：不能访问 REST 或管理接口，
-  不能调用 `server/shutdown`，也不能回答应用助手（宿主拥有的应用 peer）的审批或提问；
+  不能调用 `server/shutdown`，不能回答应用助手（宿主拥有的应用 peer）的审批或提问，也不能管理这些 peer；
 - 监听套接字保存在本进程中（Unix）并交给每一代内核，因此重启保持端口不变，中间也没有
   其他应用能占用它。其他平台上，端口空闲时重启沿用原端口，否则换到新端口并生成新的外部令牌；
 - 原生使用方离开后服务仍保持运行，直到关闭该功能或 Shell 退出。内核的 stdin 是它的生命线：

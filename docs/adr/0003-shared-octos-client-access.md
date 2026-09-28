@@ -43,7 +43,8 @@ separate kernel would be a different assistant with different memory.
    The external token gets no REST route (403), no admin route (401), no
    `server/shutdown` (never offered on a host-managed server), and no answers
    to approvals or questions of host-owned app peers (`peer-…`/`peerctx-…`
-   sessions). Those belong to the person in the app, as UPCR-2026-034 already
+   sessions), nor any call to their control plane (creating, resuming or
+   binding one, changing its model, opening or closing its request contexts). Those belong to the person in the app, as UPCR-2026-034 already
    requires of the system agent. The external token is minted when Talk to
    Octos turns on, and again on **Revoke all clients** (which restarts the
    server, ending open connections). A new shell lifetime mints a new one.
