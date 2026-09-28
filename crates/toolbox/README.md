@@ -79,7 +79,7 @@ The result also carries `diagnostics`, `stats` (calls, model calls, reads, searc
 |---|---|---|---|
 | `query` | `{query, language?}` | `{query, language}`: search terms in `language` | 1 model call |
 | `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at, readable}], source: {partial, providers, queried_at}}`, readable items first | 1 call; its fetches are reported, not charged to `max_reads` |
-| `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256, on_topic}` | 1 page |
+| `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256, on_topic}` | 1 read (`max_reads`) |
 | `digest` | `{task: digest\|brief\|plan\|compare, language, article_ids, focus?}` (articles read in **this run**) | `{task, language, summary, points: [{text, citations, label?}], off_topic: [id]}` | 1 model call |
 
 `research::ResearchHost` implements `ToolboxHost` for this module over two parts: a `ResearchBackend` (finds and reads sources) and a `ModelClient` (supplied by the host). The policy is enforced here, once, whatever the backend:
