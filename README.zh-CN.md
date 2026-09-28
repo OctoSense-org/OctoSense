@@ -25,7 +25,7 @@
 | [`crates/ai-host/`](crates/ai-host/README.md) | Shell 的 AI 服务，统一入口，package `octosense-ai-host`：octos 内核服务、带平台二维码导入的 `llm` 宿主服务，以及应用访问助手的通道。 |
 | [`crates/kernel/`](crates/kernel/README.md) | octos 内核服务，package `octosense-kernel`：把 [octos](https://github.com/octos-org/octos) Agent 内核作为 Shell 服务，每个进程一个，由 AI 服务商配置，供所有使用方共享。 |
 | [`crates/app-peers/`](crates/app-peers/README.md) | 应用与 Agent 之间的代理：应用访问助手的通道（[Rinx ADR 0007（英文）](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)）。 |
-| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、AI 服务商），均为受隔离约束的脚本应用；它们的宿主服务（`mail`、`llm`）；用于对比的原生模块（`apps/*/native`）；`apps/reference`；以及需显式启用的 AppCard 助手（`apps/appcard`）。 |
+| [`apps/`](apps/README.zh-CN.md) | 系统应用（新闻、相册、地图、相机、邮件、AI 服务商、YouTube），均为受隔离约束的脚本应用；它们的宿主服务（`mail`、`llm`）；用于对比的原生模块（`apps/*/native`）；`apps/reference`；以及需显式启用的 AppCard 助手（`apps/appcard`）。 |
 | `tools/` | `setup.py`（锁定版本的框架源码）、经审查的 Makepad 运行时补丁（`runtime-patches/`）、`kernel-artifact.py`（Android APK 以 `liboctos.so` 形式打包的 octos 内核）、`check-shell-graph.sh`（每个 Shell 构建都要通过的依赖图检查）。 |
 | [`docs/adr/`](docs/adr/README.zh-CN.md) | 架构决策记录：本仓库的决策，以及作为历史保留的 Home 决策 0001–0006。 |
 | `Cargo.toml`、`Cargo.lock` | 一个工作区。所有外部依赖都只在 `[workspace.dependencies]` 中锁定一次。 |

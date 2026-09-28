@@ -11,7 +11,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | Where | Role for the desktop |
 | --- | --- |
 | [`../phone/`](../phone/README.md) | Home, the phone shell. Same app model, same runtime, same system apps. |
-| [`../apps/`](../apps/README.md) | News, Photos, Maps, Mail and AI providers bundles (Camera is phone-only), the Mail and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
+| [`../apps/`](../apps/README.md) | News, Photos, Maps, Mail, AI providers and YouTube bundles (Camera is phone-only), the Mail and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
 | [`../crates/`](../crates/) | The shell itself (`crates/shell`, package `octosense-shell`, which this package wraps), its AI services (`crates/ai-host`), the octos kernel service (`crates/kernel`, package `octosense-kernel`) and the app-agent broker (`crates/app-peers`). |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
@@ -123,7 +123,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Mail, AI providers (Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, AI providers, YouTube (Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |
