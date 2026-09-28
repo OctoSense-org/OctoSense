@@ -3,7 +3,7 @@
 - **Date:** 2026-09-28
 - **Status:** Proposed
 - **Scope:** How OctoSense declares, links, hosts, isolates and trusts its bundled native Rust apps on each target; where every app keeps its data and what its agent may read; how every bundled app, native or script, owns an octos app agent; how the system agent and app agents work across apps; and how the person approves what they do, live or in advance.
-- **Relates to:** [ADR 0001](0001-one-octosense-repository.md); [ADR 0002](0002-event-driven-app-agents.md) (app agents; amended by this ADR); [Home ADR 0002](home/0002-agentic-app-security-model.md) and [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (amended); Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md); octos UPCR-2026-034 (host-owned app peers, merged), UPCR-2026-035 ([octos#2567](https://github.com/octos-org/octos/pull/2567), host tools per app peer, open) and UPCR-2026-036 (`serve --host-managed`, [octos#2591](https://github.com/octos-org/octos/pull/2591), merged); [ADR 0003](0003-shared-octos-client-access.md) (Talk to Octos, OctoSense [#98](https://github.com/OctoSense-org/OctoSense/pull/98): external clients never reach app agents).
+- **Relates to:** [ADR 0001](0001-one-octosense-repository.md); [ADR 0002](0002-event-driven-app-agents.md) (app agents; amended by this ADR); [Home ADR 0002](home/0002-agentic-app-security-model.md) and [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (amended); Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md); octos UPCR-2026-034 (host-owned app peers, merged), UPCR-2026-035 ([octos#2567](https://github.com/octos-org/octos/pull/2567), host tools per app peer, open) and UPCR-2026-036 (`serve --host-managed`, [octos#2591](https://github.com/octos-org/octos/pull/2591), merged); [octos#2601](https://github.com/octos-org/octos/pull/2601) (tool origin, per-connection ownership); [ADR 0003](0003-shared-octos-client-access.md) (Talk to Octos, OctoSense [#98](https://github.com/OctoSense-org/OctoSense/pull/98): external clients never reach app agents).
 
 ## Context
 
@@ -47,13 +47,13 @@
 - **No 8-peer ceiling.** `peer/prepare` stages 1–8 peers **per call** (`n`); the only total is a soft cap of 8192 live peer registrations. The model's `peer_handoff` tool is limited to 4 per turn; host-owned app peers are not created through it. OctoSense's broker prepares one peer per call.
 - **Master and peer talk through an inbox and a file blackboard.** Master → peer: `brief.md` at creation, then `peer_send_input`, delivered as the peer's next user turn (originator only; in serve through a durable queue drained every 2–5 s, best-effort at-least-once). Peer → master: each turn writes `peers/<slug>/result.md` (+ `result-N.md`, `turns.txt`), read with `peer_gather` / `peer_list`, "the only cross-peer channel". A peer asks with `ask_user_question`; the master answers with `peer_respond`. Depth 1: peers cannot create, steer or close peers.
 - **Host-owned app peers** (UPCR-2026-034): owned by the shell's system-agent session; exclusive workspace and memory namespace per (app, account); resumable with a host token; **request contexts** (`peer/context/open`) give an app's clients separate transcripts, folders and child memory namespaces. The system agent may answer an app peer's questions, never approve its tools.
-- **Host tools per app peer** (UPCR-2026-035, #2567, open): the host registers the app's `tools.json`; the kernel sends every call to the **host's connection** (`peer/tool/call`, carrying `context_id`), the host answers (`peer/tool/result`); once-only execution, timeouts, audit, approvals for destructive and outward tools, budgets. The kernel never talks to an app.
+- **Host tools per app peer** (UPCR-2026-035, #2567, open): the host registers the app's `tools.json`; the kernel sends every call to the **host's connection** (`peer/tool/call`, carrying `context_id`), the host answers (`peer/tool/result`); once-only execution, timeouts, audit, approvals for destructive and outward tools, budgets. The kernel never talks to an app. As agreed on #2567: registration is **additive** (the peer-safe generic tools always stay); ownership is **per connection** (the registering connection is the tool host and owns the peer's approvals); host-routed tools have their own origin and are excluded from Talk to Octos external turns (#2601's builtin-only allowlist); and the system agent's input to a host-owned peer is delivered to the host's driving connection as **`peer/input`**.
 - **Host-managed serve** (UPCR-2026-036, OctoSense #98): opt-in websocket kernel with a host token and an external token. External clients (a web client, a TUI) get no peer methods and cannot name an app peer's session.
 
 ### Gaps
 
-1. **A system-agent turn on an app peer gets none of the app's context.** #2567 gives tools, memory and context only to turns driven by the host's connection; "kernel continuations get a minimal prompt and no memory at all", and `peer_send_input` arrives as such a continuation.
-2. **App tools are per peer.** An app agent cannot call another app's tool, and the system agent has no app tools.
+1. **A system-agent turn on an app peer got none of the app's context.** #2567 gives tools, memory and context only to turns driven by the host's connection, and `peer_send_input` used to arrive as a tool-less kernel continuation. Closed on #2567 by `peer/input` (section 6); the shell has to handle it.
+2. **App tools are per peer.** An app agent cannot call another app's tool, and the system agent has no app tools; the system agent's turns instead get octos's full default tool set, shell included (section 12).
 3. **Script apps have no agent on `main`.** [#106](https://github.com/OctoSense-org/OctoSense/pull/106) (open) adds the `octos` host service, one peer `card.<app id>` per app; it declines tool approvals (the Card runner has no approval sheet yet).
 4. **Native apps in their own process cannot reach an agent**: `ai_host::offer` hands the peer to a module in-process only.
 5. Only Rinx is granted an agent, in code (`Policy::shipped()`).
@@ -93,10 +93,15 @@ Script system apps stay in `desktop/system-apps.json` and `phone/system-apps.jso
 
 | Target | Native app |
 | --- | --- |
-| macOS, Windows | own process by default |
-| Linux with a Vulkan build and a Wayland session | own process by default |
+| macOS, Windows | own process where its `hosting` says so (for now only the Terminal, below) |
+| Linux with a Vulkan build and a Wayland session | own process where its `hosting` says so (for now only the Terminal) |
 | Linux without them (OpenGL, X11) | **in-process for every app**, for now |
 | Android, iOS, OpenHarmony, wasm | in-process only |
+
+**Where the process apps start (decided on #110).** The **Terminal is the only process app for now.** The other native apps stay in-process on every target until their reason is gone:
+
+- **App Hub stays in-process** because it hosts the Card runner that every script app runs in.
+- **Rinx stays in-process** until the peer link (section 5) and the process sandboxes (section 3) exist; it then moves by a reviewed change to its `hosting` in `native-apps.json`.
 
 A process app that dies takes only itself down: its tile shows it closed with a restart; the shell and other apps keep running. Desktop release packages ship each process app's `bin`.
 
@@ -120,7 +125,7 @@ Three flows:
 | --- | --- | --- | --- |
 | 1. The app talks to its agent (UI, triggers) | the service injected at `create` | the **peer link** (section 5) | `host.request("octos.*")` (#106) |
 | 2. The agent uses the app's tools with full context | the shell executes the call in-process | the peer link carries `peer/tool/call` in and the result out | the app's host service executes it |
-| 3. The system agent talks to the agent | in the kernel | in the kernel | in the kernel |
+| 3. The system agent talks to the agent | in the kernel; its input reaches the shell as `peer/input` and the shell drives the turn (section 6) | the same, relayed on the peer link | the same |
 
 The shell is always the kernel's host connection: it holds the host token, registers the app's tools, drives the app peer's turns and routes tool calls.
 
@@ -138,16 +143,18 @@ The shell stamps identity from the socket, enforces #2567's host obligations for
 ### 6. The system agent and app agents
 
 - The system agent is the originator of every app peer. It briefs and asks with `peer_send_input`, reads answers on the blackboard, answers questions with `peer_respond`, and never approves an app agent's tools.
-- **A turn the system agent starts on an app peer must run with the app's tools, memory and context.** We ask octos for it on #2567 (originator input from the same host's system agent is host-driven). Until then the shell relays: it drives that turn on its own host connection and leaves the result on the blackboard.
+- **A turn the system agent starts on an app peer runs with the app's tools, memory and context: the `peer/input` event** (agreed on #2567). The system agent's `peer_send_input` to a host-owned peer is not run as a kernel continuation; octos delivers it to the host's driving connection as `peer/input {peer, session_id, input_id, turn_id, text}`, and the shell starts the turn on that connection (`turn/start` with the kernel's `turn_id`), so it is host-driven: it has the app's tools and memory, and its approvals and questions are raised in the app's conversation. The system agent follows it on the blackboard and answers questions with `peer_respond`. If no host connection holds the peer (never registered, or disconnected), octos runs and queues nothing and tells the system agent the app is not connected; the system agent waits for the app or reports the failure visibly.
+- **The system agent may also call granted tools of apps directly** (section 7), under its defined tool set (section 12).
 - In OctoSense the AI services bus is not the system agent's channel to apps. It stays for upstream Makepad apps.
 
 ### 7. Cross-app work
 
-**The system agent plans; the app that owns the domain acts.**
+**Cross-app tools, by grant (decided on #110; replaces D1).** App agents **and the system agent** may call another app's tools when the calling app's manifest asks for them and they are granted. This supersedes the earlier rule that the system agent never holds app tools.
 
-- **Changes** (create, send, update, delete) go to the owning app's agent, which acts with its own tools and, where granted, other apps' **shareable** tools: "schedule a meeting" goes to Calendar, which calls Mail's `mail.send` for the invitations and records them on the event.
-- **Read-only questions** may call an app's shareable **read** tools directly from the system agent ("what's on my calendar today?"). *(Proposed; D1 awaits confirmation.)*
-- **The shell routes cross-app tool calls.** An app declares in `tools.json` which tools are shareable; an app's manifest asks for others' shareable tools; the person grants them. The shell registers a granted tool in the calling app's peer tool list (as `mail.send`, marked as Mail's), receives the call like any other, checks the grant and hands it to the owning app's host service or process. No octos change is needed; it may move into octos once proven.
+- **Granted.** An app declares in `tools.json` which of its tools are shareable; a calling app's manifest asks for others' shareable tools. The shell grants them when a script app is installed; for a native app the grant is part of its reviewed entry in `native-apps.json`. The system agent's grants are part of its defined tool set (section 12).
+- **Registered, routed and checked by the shell.** The shell registers each granted tool in the caller's tool list as a host-routed tool (as `mail.send`, marked as Mail's), receives the call like any other, checks the grant on every call and hands it to the owning app's host service or process. It uses #2567's additive registration and host-routed origin, so no granted tool reaches a Talk to Octos external client; it may move further into octos once proven.
+- **Authorized by the shell.** A call from app A's agent, or from the system agent, to app B's tool is checked by the shell against the manifest grants; no second, agent-level consent is needed. Outward and destructive tools still follow section 8: a live approval on the shell's sheet, or a standing rule keyed to (owning app, tool), with the calling app shown on the sheet.
+- **Who acts.** The system agent plans. A bounded call it is granted (a read such as "what's on my calendar today?", or a single action) it may make directly. Work that needs an app's own context and judgement goes to that app's agent through `peer/input`: "schedule a meeting" goes to Calendar, which calls Mail's `mail.send` for the invitations and records them on the event.
 - **Partial failure is reported, not hidden**: which step succeeded, which did not. A call whose outcome is unknown is never retried without the person (octos marks it `outcome_unknown`).
 - **Ambiguity is asked**, not guessed (two Edwards, no free slot).
 - **Completion** is announced by the system app ("booked; invites sent to 4"); each app's own UI shows the change because its data changed.
@@ -156,9 +163,10 @@ The shell stamps identity from the socket, enforces #2567's host obligations for
 
 Only the person approves. The system agent never does, and cannot be talked into it: it reads untrusted text, and rules are checked mechanically.
 
-- **Live.** Pending approvals surface in the app's conversation, on its card and as a notification; the system agent may batch those of one request into one sheet in its chat (a plan plus its outward actions, with exact arguments). The shell answers each approval with the person's decision.
+- **The shell renders every approval UI (decided on #110).** Every agent's tool calls pass through the shell, so the shell draws every approval sheet, whether it appears in the app's conversation or batched in the system chat. **An agent's own text is never an approval surface.** Each line shows the **owning app, the tool and the exact arguments**, and for a cross-app call the **calling app** (another app's agent, or the system agent).
+- **Live.** Pending approvals surface on a shell-drawn sheet in the app's conversation, on its card and as a notification; the system agent may batch those of one request into one shell-drawn sheet in its chat (a plan plus its outward actions, with exact arguments). The shell answers each approval with the person's decision.
 - **In advance: standing approvals.** The person sets rules; the shell's **approval router** evaluates each approval request against them on the exact arguments and answers it, or surfaces it:
-  - scope: per app and per tool, with conditions (recipients in contacts or in the thread, no attachments, triggered by the person, amount or count limits) and a daily cap;
+  - scope: keyed to **(owning app, tool)**, whoever calls it, so a cross-app call is covered by the owning app's rule and the sheet or notification shows the calling app; with conditions (recipients in contacts or in the thread, no attachments, triggered by the person, amount or count limits) and a daily cap;
   - created in Settings → Assistant → Approvals, or from an approval sheet ("always for people in my contacts", "allow for 1 hour"); the system agent may suggest a rule, only the person creates one;
   - **no "everything, forever" rule**: the broadest rule is time-boxed ("approve everything this app asks for the next hour"), with a visible indicator;
   - excluded always: tools that declare `auto_approvable: false` (permanent deletion, payments, sharing outside the device, account and security changes) and calls whose outcome is unknown;
@@ -195,7 +203,7 @@ Rules:
 
 - **The agent's workspace is its account's folder** (`peer/prepare` `cwd`), matching octos's one peer per (app, account) and its memory namespace `app/<app>/acct-<hash>`. An agent never sees another account's folder; octos refuses overlapping workspaces, so this holds by construction. The kernel's file tools read and write there, fenced to it; request contexts get `contexts/<id>/` inside it.
 - **Secrets are never inside an app's jail.** Script apps reach theirs only through host services (Mail's passwords already live on host sheets). Native apps use a host secrets API (the OS keychain where the platform has one) that returns them to the app's code and never writes them under `apps/`. The shell checks at start that no agent workspace contains a `secrets/` path.
-- **What the agent should not read raw stays out of its folder**: an app keeps encrypted or internal stores (Rinx's Matrix crypto store and tokens) under `secrets/<app id>/`, and writes into its account folder what its agent should read (exported threads, shared attachments, the agent's own notes and results). Rinx, today in `~/.local/share/rinx` (#101), moves under this layout.
+- **What the agent should not read raw stays out of its folder**: an app keeps encrypted or internal stores (Rinx's Matrix crypto store and tokens) under `secrets/<app id>/`, and writes into its account folder what its agent should read (exported threads, shared attachments, the agent's own notes and results). Rinx, today in `~/.local/share/rinx` (#101), moves under this layout. That move, and any App Hub pin move that comes with it, goes through the tagged-Rinx rule (OctoSense pins only Rinx release tags) and the App Hub lockstep fix, both in [hagency-org/Rinx#37](https://github.com/hagency-org/Rinx/issues/37).
 - **Paths come from the host**, never hard-coded: script apps get the jail from the Card runner, native apps from the host API that also gives their account folder.
 - **Uninstall** deletes `apps/<app id>/` and `secrets/<app id>/`; **signing out** an account closes its agent and its contexts; deleting an account folder closes that agent.
 
@@ -226,16 +234,18 @@ Enforcement:
 
 ### 12. Toolbox grants: per capability, and no command execution
 
-An app agent gets toolbox tools only for the capabilities its manifest declares and the person grants (ADR 0002 §6; the registration in [#108](https://github.com/OctoSense-org/OctoSense/pull/108)):
+An app agent gets toolbox tools only for the capabilities its manifest declares and the person grants (ADR 0002 §6; the registration in [#108](https://github.com/OctoSense-org/OctoSense/pull/108)). They are host-routed tools registered additively on its peer, like granted cross-app tools (section 7):
 
 | Toolbox | Who gets it | Runs |
 | --- | --- | --- |
-| web search and page reading (`research`) | apps granted `research` | host |
-| crawling (`crawl`, with depth and page limits) | apps granted `crawl` | host |
+| web search and page reading (`toolbox.search`, `toolbox.web_read`; deep research as a template through `workflow.run`, not octos's `deep_research`) | apps granted `research` | host |
+| crawling (`toolbox.deep_crawl`, with depth and page limits) | apps granted `crawl` | host |
 | the app's own files | every app agent | octos, fenced to its account folder |
 | memory | every app agent, its own namespace | octos |
 | one-shot model calls (`model`) | apps granted `model` | host service |
 | **command execution** | **no app agent, and not the system agent** | – |
+
+**The system agent's tool set is defined and enforced (decided on #110).** "Not the system agent" is not true today: the system agent's turns get octos's full default tool set, shell included. The system agent gets an explicit list instead: its supervision tools (the peer tools, glance curation, policy and budgets), the toolbox tools it is granted, and the cross-app tools granted to it (section 7); no command execution. The list is enforced in octos or in the shell's host configuration, and a test starts a system-agent turn and checks it is offered exactly that list (in particular, no `shell`). This is a plan step (step 4), and it lands before any cross-app grant reaches the system agent.
 
 A shell escapes every other boundary: the workspace fence (`cat` reads anywhere, including `secrets/`), the network policy (`curl` reaches any host), budgets and audit (one call does anything), and it turns prompt injection into code execution. octos already refuses it to app peers (#2567's generic-tool allowlist) and to external clients (#98). An app that needs computation gets a narrow tool instead (for example a sandboxed `toolbox.run_python`: no network, only its folder, time and memory limits). Running real commands on the person's machine is the Terminal app's shareable `terminal.run`: destructive, `auto_approvable: false`, granted only to an app that asks for it, each command approved live with the exact command shown, run in a terminal the person sees.
 
@@ -254,6 +264,7 @@ How it is turned on and kept from leaking into normal use:
 - **A developer profile** (its own OctoSense home, test accounts) is the intended place: there developer mode **stays on until turned off**, with no expiry and no prompts. With real accounts signed in, the shell warns, offers to switch to a developer profile, and if the person continues, developer mode ends by itself after 8 hours or at restart. Grants and rules made in developer mode never carry over to another profile.
 - **Always visible**: a banner ("Developer mode: all apps have full access") with a one-tap off.
 - **Always audited**: every tool call, `dev.run` command and automatic approval, which doubles as a debugging trace.
+- **Never for external clients (decided on #110).** Developer mode stays, to speed up building a system this complex, but Talk to Octos external clients ([ADR 0003](0003-shared-octos-client-access.md)) never get developer grants or `dev.run`: they are grants to app agents on the shell's host connection only. `dev.run` is host-routed, so octos already keeps it out of an external turn (#2601); the shell also never registers it on a session an external client can reach.
 
 ## Worked examples
 
@@ -269,33 +280,35 @@ How it is turned on and kept from leaking into normal use:
 1. The person asks the system agent (chat or voice). It asks Calendar's agent who "the group" is and when they are free; Calendar resolves Edward (from contacts, or Mail's shareable `mail.lookup_contact`).
 2. The system agent proposes "Tue 3–4 pm, Ana, Bo, Chen and Edward (edward@…); book and send invitations?"
 3. On yes, it delegates to Calendar's agent, which calls `calendar.create_event` and Mail's `mail.send` four times (routed by the shell).
-4. The four sends are outward: one batched sheet in the chat shows the exact invitations, unless a standing rule ("Calendar may send invitations to my contacts") answers them.
+4. The four sends are outward: one batched sheet, drawn by the shell in the chat, shows each invitation's owning app and tool (Mail, `mail.send`), the calling app (Calendar) and the exact arguments, unless a standing rule on (Mail, `mail.send`) ("send to my contacts") answers them. The shell had already checked that Calendar's manifest was granted `mail.send`; no agent is asked to consent.
 5. Calendar's UI shows the event; the system app notifies "Meeting booked Tue 3 pm; invitations sent to 4." A failed invitation is named and not retried without the person.
 
 ## Consequences
 
 - One manifest entry adds or updates a native app; CI keeps the derived places in step.
 - On macOS, Windows and Vulkan Linux a native crash no longer takes the shell down; mobile and non-Vulkan Linux depend on the robustness bar.
-- Every app can have an agent with its full context; the system agent can delegate to it once system-agent turns carry the app's context.
-- Cross-app work has one owner per change and needs no octos change.
-- The person decides every outward action, now or through narrow, time-boxed, audited rules.
-- New work: the generator; process sandboxes; the peer link; shell tool routing; the approval router and its Settings; consent at first use; release packaging of process apps; module panic containment.
+- Every app can have an agent with its full context; the system agent delegates to it through `peer/input`, and may call the tools it is granted.
+- Cross-app tools are granted by manifest and authorized by the shell on every call, for app agents and the system agent alike; octos supplies the additive, host-routed registration (#2567, #2601).
+- The person decides every outward action, on a sheet only the shell draws, now or through narrow, time-boxed, audited rules keyed to (owning app, tool).
+- The system agent loses its default shell access and gets a defined, tested tool set.
+- New work: the generator; the system agent's tool set; `peer/input` in the shell; process sandboxes; the peer link; shell tool routing; the approval router and its Settings; consent at first use; release packaging of process apps; module panic containment.
 
 ## Plan
 
 1. `native-apps.json` and `tools/native_apps.py` with `--check`; delete the native News, Maps and Photos crates. No behaviour change otherwise.
-2. Terminal as a process on macOS and Windows; release packages ship its `bin`.
-3. On octos#2567: originator-driven turns get the app's context (and the UPCR-2026-034 approval wording, section 8).
-4. Land #106 (script apps' agents) and #108 (toolbox tools); rebase #85 on #98.
-5. #2567 in the shell: register app tools, execute or relay `peer/tool/call`, shareable-tool routing.
-6. The approval router, standing approvals and their Settings; consent at first use.
-7. The peer link and its Makepad client API; process sandboxes.
-8. Module panic containment.
-9. The storage layout and contract (section 11): App Hub's `storage` fields; the host paths and secrets APIs; Rinx and the host services move under `apps/` and `secrets/`; the startup check.
-10. Developer mode (section 13): the developer profile, the grants, `dev.run`, the banner and audit; `terminal.run` as a confirmed shareable tool (section 12).
+2. Terminal as a process on macOS and Windows, the only process app for now; release packages ship its `bin`. App Hub and Rinx stay in-process (section 2).
+3. Land octos#2567 with the agreed design: additive registration, per-connection ownership, host-routed origin kept out of external turns (#2601), and `peer/input` (and the UPCR-2026-034 approval wording, section 8).
+4. **The system agent's tool set** (section 12): define it (supervision tools, granted toolbox tools, granted cross-app tools; no shell), enforce it in octos or in the shell's host configuration, and add a test that a system-agent turn is offered exactly that list. Before any cross-app grant reaches the system agent.
+5. Land #106 (script apps' agents) and #108 (toolbox tools); rebase #85 on #98.
+6. #2567 in the shell: register app tools, execute or relay `peer/tool/call`, handle `peer/input`; grant cross-app tools from manifests (at install for script apps, from `native-apps.json` for native apps), register them marked with the owning app, and check every call against the grants.
+7. Shell-drawn approval sheets everywhere (owning app, tool, exact arguments, calling app); the approval router, standing approvals keyed to (owning app, tool) and their Settings; consent at first use.
+8. The peer link and its Makepad client API; process sandboxes. Then Rinx may move to a process by a reviewed `hosting` change.
+9. Module panic containment.
+10. The storage layout and contract (section 11): App Hub's `storage` fields; the host paths and secrets APIs; Rinx and the host services move under `apps/` and `secrets/` (the Rinx move, #101, and any App Hub pin move through the tagged-Rinx rule and the lockstep fix, hagency-org/Rinx#37); the startup check.
+11. Developer mode (section 13): the developer profile, the grants, `dev.run`, the banner and audit, and a test that an external client gets neither developer grants nor `dev.run`; `terminal.run` as a confirmed shareable tool (section 12).
 
 ## Open questions
 
-- **D1 (proposed above, awaiting confirmation):** read-only questions call shareable read tools directly; every change goes through the owning app's agent.
+- D1 is decided on #110 (section 7): app agents and the system agent may call other apps' granted tools, and the shell authorizes each call.
 - Linux without Vulkan: revisit once process hosting is measured there (readback cost for light apps).
 - The exact `tools.json` fields rules can match (recipients, attachments, amounts), agreed with App Hub.
