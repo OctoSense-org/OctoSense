@@ -74,6 +74,7 @@
     "data": {
       "brief": {
         "language": "en",
+        "off_topic": [],
         "points": [
           {
             "citations": [
@@ -91,6 +92,7 @@
         {
           "found": 1,
           "language": "en",
+          "off_topic": 0,
           "read": 1,
           "terms": "urban heat islands",
           "unreadable": 0
@@ -98,6 +100,7 @@
         {
           "found": 0,
           "language": "es",
+          "off_topic": 0,
           "read": 0,
           "terms": "islas de calor urbano",
           "unreadable": 0

@@ -3,8 +3,8 @@ use mod.std.array
 
 // Topic brief across languages: search terms per language (the topic, or its
 // translation), one search per language, then reads chosen so that every
-// language is read whenever it found a readable article, then one digest
-// with citations.
+// language is read whenever it found a readable article on the topic, then
+// one digest with citations.
 
 // 1. Every translation starts before any is awaited.
 let translations = []
@@ -16,7 +16,13 @@ for entry in request.languages {
     }
 }
 
-// 2. Each language's search starts as soon as its terms are known.
+// 2. Each language's search starts as soon as its terms are known. It asks
+// for enough results to fill `read_top` alone, in case the other languages
+// have nothing readable.
+let search_limit = request.per_language
+if request.read_top > search_limit {
+    search_limit = request.read_top
+}
 let searches = []
 let queries = []
 let index = 0
@@ -29,8 +35,8 @@ for entry in request.languages {
             terms = translated.query
         }
     }
-    array.push(queries, {language: entry.language, terms: terms, found: 0, unreadable: 0, read: 0})
-    array.push(searches, research.search({topic: terms, language: entry.language, limit: request.per_language, max_age_hours: request.max_age_hours}))
+    array.push(queries, {language: entry.language, terms: terms, found: 0, unreadable: 0, read: 0, off_topic: 0})
+    array.push(searches, research.search({topic: terms, language: entry.language, limit: search_limit, max_age_hours: request.max_age_hours}))
     index = index + 1
 }
 
@@ -70,13 +76,20 @@ for pending in searches {
 
 // 4. Read in rounds. Each round starts its reads together: first one for
 // every language not read yet, then round-robin until `read_top` would be
-// reached. A failed read is replaced in the next round by that language's
-// next candidate. Attempts are capped at `read_top` plus one per language.
+// reached, at most `per_language` candidates from one language. When no
+// language has a candidate left within that share and `read_top` still has
+// room, the share is lifted: the unused budget goes to the languages that
+// have more readable results. A failed or off-topic read (the host says
+// `on_topic: false` when the page does not mention the search's terms) is
+// replaced in the next round by that language's next candidate. Attempts
+// are capped at `read_top` plus one per language.
 let languages = array.len(request.languages)
 let max_attempts = request.read_top + languages
 let attempts = 0
+let share = request.per_language
 let ids = []
 let sources = []
+let source_languages = []
 let missing = 0
 while array.len(ids) < request.read_top && attempts < max_attempts {
     let order = []
@@ -100,12 +113,16 @@ while array.len(ids) < request.read_top && attempts < max_attempts {
     while picked && array.len(batch) < want {
         picked = false
         for l in order {
-            if array.len(batch) < want && cursors[l] < array.len(pools[l]) {
+            if array.len(batch) < want && cursors[l] < array.len(pools[l]) && cursors[l] < share {
                 array.push(batch, research.article({id: pools[l][cursors[l]]}))
                 array.push(batch_languages, l)
                 cursors[l] = cursors[l] + 1
                 picked = true
             }
+        }
+        if picked == false && share < search_limit {
+            share = search_limit
+            picked = true
         }
     }
     if array.len(batch) == 0 {
@@ -118,25 +135,45 @@ while array.len(ids) < request.read_top && attempts < max_attempts {
         let article = try pending.await() catch nil
         if article == nil {
             missing = missing + 1
+        } elif article.on_topic == false {
+            queries[l].off_topic = queries[l].off_topic + 1
         } else {
             queries[l].read = queries[l].read + 1
             array.push(ids, article.id)
+            array.push(source_languages, l)
             array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
         }
         index = index + 1
     }
 }
 
-// 5. One digest in the reader's language, citing article ids.
+// 5. One digest in the reader's language, citing article ids. The model
+// also marks articles that are not about the topic; those leave the
+// sources and count as off topic for their language.
 let brief = nil
 if array.len(ids) > 0 {
     let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
     brief = resolved
 }
+if brief != nil {
+    let kept = []
+    index = 0
+    for source in sources {
+        let l = source_languages[index]
+        if array.contains(brief.off_topic, source.id) {
+            queries[l].off_topic = queries[l].off_topic + 1
+            queries[l].read = queries[l].read - 1
+        } else {
+            array.push(kept, source)
+        }
+        index = index + 1
+    }
+    sources = kept
+}
 
-// Partial when a search failed, a read failed, nothing was read, the model
-// failed, or a language that found results went unread while `read_top`
-// still had room for it.
+// Partial when a search failed, a read failed, nothing on the topic was
+// read, the model failed, or a language that found results went unread
+// while `read_top` still had room for it.
 let covered = 0
 let uncovered = false
 for query in queries {

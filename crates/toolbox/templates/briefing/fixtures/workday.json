@@ -79,6 +79,7 @@
     "data": {
       "briefing": {
         "language": "en",
+        "off_topic": [],
         "points": [
           {
             "citations": [

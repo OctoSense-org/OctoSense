@@ -81,6 +81,7 @@
       "aspect": "weekend weather",
       "comparison": {
         "language": "en",
+        "off_topic": [],
         "points": [
           {
             "citations": [

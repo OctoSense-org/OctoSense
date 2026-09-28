@@ -5,6 +5,11 @@
 //! when it is unset:
 //!
 //! `DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features live --test live_model -- --ignored --nocapture --test-threads=1`
+//!
+//! `c_validation_topics` repeats the 27 Sep 2026 validation's toolbox runs
+//! (six topics, both research templates, twelve runs); set `LIVE_OUT` to a
+//! directory to keep each run's result, the pages read (first 600 bytes of
+//! evidence) and the model's token usage as JSON.
 
 #![cfg(feature = "live")]
 
@@ -12,11 +17,14 @@ mod common;
 
 use octosense_toolbox::host::{CallContext, HostError, HostFuture};
 use octosense_toolbox::research::live::{Feed, InterimResearch, LiveConfig};
-use octosense_toolbox::research::{ModelClient, ModelRequest, ResearchHost};
+use octosense_toolbox::research::{
+    cap_evidence, item_id, FoundItem, ModelClient, ModelRequest, PageText, ResearchBackend,
+    ResearchHost, SearchQuery, SearchResults, MAX_EVIDENCE_BYTES,
+};
 use octosense_toolbox::{run, RunOptions, RunResult, RunStatus};
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const MODEL: &str = "deepseek-v4-flash";
@@ -28,6 +36,8 @@ struct DeepSeek {
     http: reqwest::Client,
     key: String,
     calls: AtomicU32,
+    /// Prompt tokens (cache hits, misses) and completion tokens so far.
+    usage: [AtomicU64; 3],
 }
 
 impl ModelClient for DeepSeek {
@@ -78,6 +88,14 @@ impl ModelClient for DeepSeek {
                 .as_str()
                 .ok_or_else(|| HostError::Failed("deepseek: no content".into()))?
                 .to_owned();
+            let usage = &reply["usage"];
+            for (slot, field) in self.usage.iter().zip([
+                "prompt_cache_hit_tokens",
+                "prompt_cache_miss_tokens",
+                "completion_tokens",
+            ]) {
+                slot.fetch_add(usage[field].as_u64().unwrap_or(0), Ordering::Relaxed);
+            }
             eprintln!(
                 "[model call {n}] {:?} {:.1}s in={} out={} reasoning={} finish={}",
                 request.task,
@@ -92,21 +110,24 @@ impl ModelClient for DeepSeek {
     }
 }
 
-/// The host, or `None` (the test skips) without `DEEPSEEK_API_KEY`.
-fn host() -> Option<ResearchHost> {
+fn key() -> Option<String> {
     let key = std::env::var("DEEPSEEK_API_KEY")
         .ok()
         .filter(|k| !k.trim().is_empty());
-    let Some(key) = key else {
+    if key.is_none() {
         eprintln!("DEEPSEEK_API_KEY is not set; skipping");
-        return None;
-    };
+    }
+    key
+}
+
+/// The interim adapter with the feeds these tests use.
+fn backend() -> InterimResearch {
     let feed = |url: &str, name: &str, language: &str| Feed {
         url: url.into(),
         name: name.into(),
         language: language.into(),
     };
-    let backend = InterimResearch::new(LiveConfig {
+    InterimResearch::new(LiveConfig {
         feeds: vec![
             feed(
                 "https://feeds.bbci.co.uk/news/technology/rss.xml",
@@ -126,13 +147,25 @@ fn host() -> Option<ResearchHost> {
         ],
         ..LiveConfig::from_env()
     })
-    .unwrap();
-    let model = DeepSeek {
+    .unwrap()
+}
+
+fn deepseek(key: String) -> DeepSeek {
+    DeepSeek {
         http: reqwest::Client::new(),
         key,
         calls: AtomicU32::new(0),
-    };
-    Some(ResearchHost::new(Arc::new(backend), Arc::new(model)))
+        usage: Default::default(),
+    }
+}
+
+/// The host, or `None` (the test skips) without `DEEPSEEK_API_KEY`.
+fn host() -> Option<ResearchHost> {
+    let key = key()?;
+    Some(ResearchHost::new(
+        Arc::new(backend()),
+        Arc::new(deepseek(key)),
+    ))
 }
 
 fn topic() -> String {
@@ -211,4 +244,142 @@ async fn b_topic_brief_en_zh() {
             query["language"], query["terms"], query["found"], query["unreadable"], query["read"]
         );
     }
+}
+
+/// Records what the backend read, so a person can judge each source.
+struct Recording {
+    inner: InterimResearch,
+    reads: Mutex<Vec<Value>>,
+}
+
+impl ResearchBackend for Recording {
+    fn search<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        query: SearchQuery,
+    ) -> HostFuture<'a, Result<SearchResults, HostError>> {
+        self.inner.search(ctx, query)
+    }
+
+    fn read<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+        item: &'a FoundItem,
+    ) -> HostFuture<'a, Result<PageText, HostError>> {
+        Box::pin(async move {
+            let result = self.inner.read(ctx, item).await;
+            let entry = match &result {
+                Ok(page) => {
+                    let (evidence, _) = cap_evidence(&page.text, MAX_EVIDENCE_BYTES);
+                    let mut end = evidence.len().min(600);
+                    while !evidence.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    json!({"id": item_id(&item.url), "url": item.url, "title": item.title,
+                        "language": item.language, "evidence": &evidence[..end]})
+                }
+                Err(e) => json!({"id": item_id(&item.url), "url": item.url, "title": item.title,
+                    "error": e.to_string()}),
+            };
+            self.reads.lock().unwrap().push(entry);
+            result
+        })
+    }
+}
+
+#[tokio::test]
+#[ignore = "live network and model; needs DEEPSEEK_API_KEY"]
+async fn c_validation_topics() {
+    let Some(key) = key() else { return };
+    let out = std::env::var_os("LIVE_OUT").map(std::path::PathBuf::from);
+    let model = Arc::new(deepseek(key));
+    // Topic, its language, and the second language topic-brief also searches.
+    let topics = [
+        ("tb-openai", "OpenAI", "en", Some("zh")),
+        ("tb-nvidia", "Nvidia earnings", "en", None),
+        ("tb-hormuz", "Strait of Hormuz", "en", Some("zh")),
+        ("tb-euaiact", "EU AI Act", "en", None),
+        ("tb-typhoon", "台风", "zh", Some("en")),
+        ("tb-vucic", "Vucic resignation", "en", None),
+    ];
+    let mut runs = Vec::new();
+    for (label, topic, language, second) in topics {
+        let digest = json!({"topic": topic, "language": language, "search_language": language,
+            "limit": 5, "max_age_hours": 72});
+        let mut languages = vec![json!({"language": language, "translate": false})];
+        if let Some(second) = second {
+            languages.push(json!({"language": second, "translate": true}));
+        }
+        let read_top = if second.is_some() { 5 } else { 4 };
+        let brief = json!({"topic": topic, "language": language, "languages": languages,
+            "per_language": 3, "read_top": read_top, "max_age_hours": 72});
+        runs.push((label.replacen("tb-", "nd-", 1), "news-digest", digest));
+        runs.push((label.to_owned(), "topic-brief", brief));
+    }
+    let started_all = Instant::now();
+    for (label, template, params) in runs {
+        let backend = Arc::new(Recording {
+            inner: backend(),
+            reads: Mutex::new(Vec::new()),
+        });
+        let host = ResearchHost::new(backend.clone(), model.clone());
+        let folder = common::temp_dir("live-validation");
+        let started = Instant::now();
+        let result = run(
+            &common::template(template),
+            &common::app(&folder),
+            params.clone(),
+            &host,
+            RunOptions::default(),
+        )
+        .await
+        .unwrap();
+        let wall = started.elapsed().as_secs_f64();
+        let _ = std::fs::remove_dir_all(&folder);
+        let sources = result.data["sources"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let languages: std::collections::BTreeSet<String> = sources
+            .iter()
+            .filter_map(|s| s["language"].as_str().map(str::to_owned))
+            .collect();
+        println!(
+            "\n{label}: {:?} {wall:.1}s kept={} languages={languages:?} off_topic={} queries={}",
+            result.status,
+            sources.len(),
+            result.data["off_topic"],
+            result.data["queries"]
+        );
+        for source in &sources {
+            println!("  kept: [{}] {}", source["language"], source["title"]);
+        }
+        for d in &result.diagnostics {
+            println!("  diagnostic: {d}");
+        }
+        if let Some(out) = &out {
+            std::fs::create_dir_all(out).unwrap();
+            let record = json!({"label": label, "template": template, "params": params,
+                "wall_s": wall, "result": result,
+                "reads": *backend.reads.lock().unwrap()});
+            std::fs::write(
+                out.join(format!("{label}.json")),
+                serde_json::to_string_pretty(&record).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+    let [hit, miss, completion] = &model.usage;
+    let (hit, miss, completion) = (
+        hit.load(Ordering::Relaxed),
+        miss.load(Ordering::Relaxed),
+        completion.load(Ordering::Relaxed),
+    );
+    // DeepSeek's off-peak flash prices per million tokens (27 Sep 2026).
+    let usd = (hit as f64 * 0.003 + miss as f64 * 0.15 + completion as f64 * 0.60) / 1e6;
+    println!(
+        "\nall runs: {:.1}s, {} model calls, tokens cached {hit} / uncached {miss} / out {completion}, about ${usd:.4}",
+        started_all.elapsed().as_secs_f64(),
+        model.calls.load(Ordering::Relaxed)
+    );
 }

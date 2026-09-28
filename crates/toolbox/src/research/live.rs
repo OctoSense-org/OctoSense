@@ -20,9 +20,22 @@
 //! - **plain HTTP reading** with main-text extraction by `dom_smoothie`
 //!   (MIT, a Rust port of Mozilla's readability.js). No browser: pages that
 //!   need JavaScript (Google News article links among them) fail honestly as
-//!   partial results.
+//!   partial results;
+//! - **one slow provider does not block a search**: providers run
+//!   concurrently, each under [`LiveConfig::provider_deadline`]; the shared
+//!   APIs (GDELT, Google News) are asked once, and a 429 or 503 from one
+//!   trips a breaker for its host for the rest of the process. Every
+//!   provider that failed, timed out or was skipped is named, with the
+//!   reason, in the search's notes (and so in the run's diagnostics);
+//! - **the right Google News edition** per language ([`google_news_locale`]:
+//!   `zh` is `hl=zh-CN&gl=CN&ceid=CN:zh-Hans`, `zh-TW` and `zh-HK` the
+//!   Traditional editions);
+//! - **configured feeds are filtered by topic**: a feed item is kept only
+//!   when its headline and summary mention every significant term of the
+//!   query ([`super::relevance::Topic::matches`]).
 
-use super::{FoundItem, PageText, ResearchBackend, SearchQuery, SearchResults};
+use super::relevance::Topic;
+use super::{same_language, FoundItem, PageText, ResearchBackend, SearchQuery, SearchResults};
 use crate::host::{url_host, CallContext, HostError, HostFuture};
 use futures_util::future::join_all;
 use quick_xml::events::Event;
@@ -135,6 +148,14 @@ pub struct LiveConfig {
     /// Longer intervals for hosts that publish one (GDELT asks for 5 s).
     pub host_intervals: Vec<(String, Duration)>,
     pub timeout: Duration,
+    /// The longest one search provider may take (pacing included). A slower
+    /// provider is left out of that search, with a note, so it cannot hold
+    /// up the others.
+    pub provider_deadline: Duration,
+    /// The GDELT DOC API endpoint.
+    pub gdelt_endpoint: String,
+    /// The Google News RSS search endpoint.
+    pub google_news_endpoint: String,
     pub max_response_bytes: usize,
     /// **Tests only**: allow loopback addresses so a test can serve pages
     /// from 127.0.0.1. Private, link-local and metadata addresses stay
@@ -153,6 +174,11 @@ impl Default for LiveConfig {
             min_interval: Duration::from_secs(1),
             host_intervals: vec![("api.gdeltproject.org".into(), Duration::from_secs(5))],
             timeout: Duration::from_secs(15),
+            // GDELT's 429 arrives after about 10.5 s; the deadline lets it
+            // arrive, so the breaker trips instead of every search timing out.
+            provider_deadline: Duration::from_secs(12),
+            gdelt_endpoint: "https://api.gdeltproject.org/api/v2/doc/doc".into(),
+            google_news_endpoint: "https://news.google.com/rss/search".into(),
             max_response_bytes: 2 * 1024 * 1024,
             allow_loopback_for_tests: false,
         }
@@ -398,6 +424,11 @@ impl InterimResearch {
     ) -> Result<(u16, Option<String>, String, Vec<u8>), HostError> {
         let host = self.check_target(url)?;
         self.pace(&host).await;
+        // A search that waited for its turn behind the request that tripped
+        // the breaker does not send another.
+        if let Some(reason) = tripped(&breaker_key(url)) {
+            return Err(failed(format!("{BREAKER}{reason}")));
+        }
         let mut response = self
             .client
             .get(url)
@@ -473,6 +504,15 @@ impl InterimResearch {
     /// turned it on, and at most three redirects, each hop checked again.
     /// Returns (final URL, content type, body).
     pub async fn get(&self, url: &str) -> Result<(String, String, Vec<u8>), HostError> {
+        self.get_with(url, MAX_RETRIES).await
+    }
+
+    /// [`Self::get`] with at most `max_retries` retries after a 429 or 503.
+    async fn get_with(
+        &self,
+        url: &str,
+        max_retries: u32,
+    ) -> Result<(String, String, Vec<u8>), HostError> {
         let mut current = url.to_owned();
         let mut retries = 0;
         let mut hops = 0;
@@ -491,7 +531,7 @@ impl InterimResearch {
                         .as_deref()
                         .and_then(parse_retry_after)
                         .unwrap_or(Duration::from_secs(2 << retries));
-                    if retries >= MAX_RETRIES || wait > MAX_RETRY_AFTER {
+                    if retries >= max_retries || wait > MAX_RETRY_AFTER {
                         return Err(failed(format!(
                             "HTTP {status} from {current}; retry after {}s",
                             wait.as_secs()
@@ -519,17 +559,54 @@ impl InterimResearch {
         }
     }
 
+    /// One search provider: the shared APIs (GDELT, Google News) are asked
+    /// once, without retries, and a 429 or 503 from one trips its breaker
+    /// for the rest of the process; a feed is fetched like any page.
     async fn provider(
         &self,
         name: &str,
         url: String,
         feed: Option<&Feed>,
-    ) -> Result<Vec<FoundItem>, HostError> {
-        let (_, _, body) = self.get(&url).await?;
-        if name == "gdelt" {
-            return parse_gdelt(&body);
+    ) -> Result<Vec<FoundItem>, ProviderError> {
+        let api = feed.is_none();
+        let key = breaker_key(&url);
+        if api {
+            if let Some(reason) = tripped(&key) {
+                return Err(ProviderError::Skipped(reason));
+            }
         }
-        let mut items = parse_feed(&body)?;
+        let fetched = if api {
+            self.get_with(&url, 0).await
+        } else {
+            self.get(&url).await
+        };
+        let body = match fetched {
+            Ok((_, _, body)) => body,
+            Err(HostError::Failed(m)) if m.starts_with(BREAKER) => {
+                return Err(ProviderError::Skipped(m[BREAKER.len()..].to_owned()))
+            }
+            Err(e) => {
+                return Err(match throttled(&e) {
+                    Some(status) if api => {
+                        let reason = format!(
+                            "{} ({status})",
+                            if status == 429 {
+                                "rate-limited"
+                            } else {
+                                "unavailable"
+                            }
+                        );
+                        trip(&key, &reason);
+                        ProviderError::Throttled(reason)
+                    }
+                    _ => ProviderError::Failed(e.to_string()),
+                })
+            }
+        };
+        if name == "gdelt" {
+            return parse_gdelt(&body).map_err(|e| ProviderError::Failed(e.to_string()));
+        }
+        let mut items = parse_feed(&body).map_err(|e| ProviderError::Failed(e.to_string()))?;
         for item in &mut items {
             item.via = name.to_owned();
             if let Some(feed) = feed {
@@ -543,6 +620,182 @@ impl InterimResearch {
         }
         Ok(items)
     }
+}
+
+/// The error prefix of a request the breaker stopped.
+const BREAKER: &str = "breaker: ";
+
+/// Why a search provider gave nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProviderError {
+    /// Its breaker was tripped earlier in this process.
+    Skipped(String),
+    /// It answered 429 or 503 just now (the breaker is now tripped).
+    Throttled(String),
+    /// No answer within [`LiveConfig::provider_deadline`].
+    Late(Duration),
+    Failed(String),
+}
+
+impl ProviderError {
+    /// The note for the run's diagnostics.
+    fn note(&self, name: &str) -> String {
+        match self {
+            Self::Skipped(reason) => {
+                format!("{name} skipped: {reason} earlier in this process")
+            }
+            Self::Throttled(reason) => {
+                format!("{name} {reason}; not queried again in this process")
+            }
+            Self::Late(deadline) => {
+                format!("{name}: no answer within {} s", deadline.as_secs_f64())
+            }
+            Self::Failed(e) => format!("{name} failed: {e}"),
+        }
+    }
+}
+
+/// The status of a 429 or 503 failure from [`InterimResearch::get_with`].
+fn throttled(error: &HostError) -> Option<u16> {
+    let HostError::Failed(message) = error else {
+        return None;
+    };
+    let status = message.strip_prefix("HTTP ")?.get(..3)?;
+    match status {
+        "429" => Some(429),
+        "503" => Some(503),
+        _ => None,
+    }
+}
+
+/// API hosts that rate-limited a search in this process, by host (and
+/// port), with why.
+/// A shared API that answered 429 is not asked again until the process
+/// restarts: retrying on every search only lengthens every search.
+fn breakers() -> &'static Mutex<HashMap<String, String>> {
+    static BREAKERS: std::sync::OnceLock<Mutex<HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    BREAKERS.get_or_init(Default::default)
+}
+
+fn breaker_key(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| {
+            let host = u.host_str()?.to_ascii_lowercase();
+            Some(match u.port() {
+                Some(port) => format!("{host}:{port}"),
+                None => host,
+            })
+        })
+        .unwrap_or_default()
+}
+
+fn tripped(key: &str) -> Option<String> {
+    breakers()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(key)
+        .cloned()
+}
+
+fn trip(key: &str, reason: &str) {
+    breakers()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(key.to_owned())
+        .or_insert_with(|| reason.to_owned());
+}
+
+/// Google News's edition parameters `(hl, gl, ceid)` for a BCP 47 language
+/// tag and an optional region. Chinese needs a script edition: `zh`,
+/// `zh-CN`, `zh-Hans` and `zh-SG` are Simplified (`CN:zh-Hans` by
+/// default), `zh-TW`, `zh-Hant` and `zh-MO` Traditional Taiwan, `zh-HK`
+/// Hong Kong. Other languages default to their main edition.
+pub fn google_news_locale(language: &str, region: Option<&str>) -> (String, String, String) {
+    let mut parts = language.split(['-', '_']);
+    let primary = parts
+        .next()
+        .filter(|p| !p.is_empty())
+        .unwrap_or("en")
+        .to_ascii_lowercase();
+    let subtags: Vec<String> = parts.map(str::to_owned).collect();
+    let tag_region = subtags
+        .iter()
+        .find(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()))
+        .map(|s| s.to_ascii_uppercase());
+    let region = region
+        .map(|r| r.trim().to_ascii_uppercase())
+        .filter(|r| r.len() == 2)
+        .or(tag_region);
+    if primary == "zh" {
+        let hant = subtags.iter().any(|s| s.eq_ignore_ascii_case("hant"));
+        return match region.as_deref() {
+            Some("HK") => ("zh-HK".into(), "HK".into(), "HK:zh-Hant".into()),
+            Some(r @ ("TW" | "MO")) => ("zh-TW".into(), r.into(), format!("{r}:zh-Hant")),
+            None if hant => ("zh-TW".into(), "TW".into(), "TW:zh-Hant".into()),
+            Some(r) if hant => ("zh-TW".into(), r.into(), format!("{r}:zh-Hant")),
+            Some(r) => ("zh-CN".into(), r.into(), format!("{r}:zh-Hans")),
+            None => ("zh-CN".into(), "CN".into(), "CN:zh-Hans".into()),
+        };
+    }
+    let default_region = match primary.as_str() {
+        "ja" => "JP",
+        "ko" => "KR",
+        "de" => "DE",
+        "fr" => "FR",
+        "es" => "ES",
+        "pt" => "BR",
+        "it" => "IT",
+        "ru" => "RU",
+        "ar" => "EG",
+        "hi" => "IN",
+        "nl" => "NL",
+        "sv" => "SE",
+        "pl" => "PL",
+        "tr" => "TR",
+        "uk" => "UA",
+        "vi" => "VN",
+        "th" => "TH",
+        "id" => "ID",
+        "he" => "IL",
+        _ => "US",
+    };
+    let gl = region.unwrap_or_else(|| default_region.to_owned());
+    // English and Portuguese editions name their region in `hl`; Spanish
+    // outside Spain is the Latin American edition.
+    let hl = match (primary.as_str(), gl.as_str()) {
+        ("en" | "pt", g) => format!("{primary}-{g}"),
+        ("es", "ES") => "es".to_owned(),
+        ("es", _) => "es-419".to_owned(),
+        (p, _) => p.to_owned(),
+    };
+    let ceid = match (primary.as_str(), gl.as_str()) {
+        ("pt", "BR") => "BR:pt-419".to_owned(),
+        ("pt", "PT") => "PT:pt-150".to_owned(),
+        ("es", "ES") => "ES:es".to_owned(),
+        ("es", g) => format!("{g}:es-419"),
+        (p, g) => format!("{g}:{p}"),
+    };
+    (hl, gl, ceid)
+}
+
+/// A Google News RSS search URL for `topic` in `language`'s edition.
+pub fn google_news_url(
+    endpoint: &str,
+    topic: &str,
+    hours: u32,
+    language: &str,
+    region: Option<&str>,
+) -> String {
+    let (hl, gl, ceid) = google_news_locale(language, region);
+    format!(
+        "{endpoint}?q={}&hl={}&gl={}&ceid={}",
+        encode(&format!("{topic} when:{hours}h")),
+        encode(&hl),
+        encode(&gl),
+        encode(&ceid)
+    )
 }
 
 /// `Retry-After` as seconds or an HTTP date.
@@ -613,6 +866,29 @@ pub fn normalize_date(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
         })
 }
 
+/// A feed item's description as plain text: tags dropped, at most 1000
+/// bytes. Used only to judge relevance.
+fn snippet(html: &str) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let mut end = text.len().min(1000);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].trim().to_owned()
+}
+
 /// Items of an RSS 2.0 or Atom document.
 pub fn parse_feed(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
     let mut reader = quick_xml::Reader::from_reader(bytes);
@@ -638,6 +914,7 @@ pub fn parse_feed(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                         published_at: String::new(),
                         via: String::new(),
                         readable: true,
+                        snippet: String::new(),
                     });
                 } else if name == "link" {
                     if let Some(item) = current.as_mut() {
@@ -680,6 +957,9 @@ pub fn parse_feed(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                                 .unwrap_or_default();
                         }
                         "source" if item.source.is_empty() => item.source = text,
+                        "description" | "summary" if item.snippet.is_empty() => {
+                            item.snippet = snippet(&text);
+                        }
                         _ => {}
                     },
                     None if field == "language" => feed_language = text,
@@ -687,9 +967,14 @@ pub fn parse_feed(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                 }
             }
             Event::CData(t) => {
-                if let (Some(item), "title") = (current.as_mut(), field.as_str()) {
-                    if item.title.is_empty() {
-                        item.title = String::from_utf8_lossy(&t).into_owned();
+                if let Some(item) = current.as_mut() {
+                    let text = String::from_utf8_lossy(&t);
+                    match field.as_str() {
+                        "title" if item.title.is_empty() => item.title = text.into_owned(),
+                        "description" | "summary" if item.snippet.is_empty() => {
+                            item.snippet = snippet(&text);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -733,6 +1018,7 @@ pub fn parse_gdelt(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                             .unwrap_or_default(),
                         via: "gdelt".into(),
                         readable: true,
+                        snippet: String::new(),
                     })
                 })
                 .collect()
@@ -749,11 +1035,6 @@ impl ResearchBackend for InterimResearch {
         Box::pin(async move {
             let hours = query.max_age_hours.unwrap_or(72);
             let language = query.language.clone().unwrap_or_else(|| "en".into());
-            let region = query
-                .region
-                .clone()
-                .unwrap_or_else(|| "US".into())
-                .to_ascii_uppercase();
             let mut calls: Vec<(String, String, Option<&Feed>)> = Vec::new();
             if self.config.gdelt {
                 let mut q = query.topic.clone();
@@ -763,7 +1044,8 @@ impl ResearchBackend for InterimResearch {
                 calls.push((
                     "gdelt".into(),
                     format!(
-                        "https://api.gdeltproject.org/api/v2/doc/doc?query={}&mode=artlist&format=json&maxrecords={}&timespan={hours}h&sort=datedesc",
+                        "{}?query={}&mode=artlist&format=json&maxrecords={}&timespan={hours}h&sort=datedesc",
+                        self.config.gdelt_endpoint,
                         encode(&q),
                         (query.limit * 2).min(50)
                     ),
@@ -773,82 +1055,113 @@ impl ResearchBackend for InterimResearch {
             if self.config.google_news {
                 calls.push((
                     "google-news-rss".into(),
-                    format!(
-                        "https://news.google.com/rss/search?q={}&hl={}&gl={region}&ceid={region}:{}",
-                        encode(&format!("{} when:{hours}h", query.topic)),
-                        encode(&language),
-                        encode(language.split('-').next().unwrap_or("en"))
+                    google_news_url(
+                        &self.config.google_news_endpoint,
+                        &query.topic,
+                        hours,
+                        &language,
+                        query.region.as_deref(),
                     ),
                     None,
                 ));
             }
             for feed in &self.config.feeds {
-                if feed.language.is_empty() || feed.language.eq_ignore_ascii_case(&language) {
+                if feed.language.is_empty() || same_language(&feed.language, &language) {
                     calls.push((format!("feed:{}", feed.name), feed.url.clone(), Some(feed)));
                 }
             }
+            let mut notes = Vec::new();
             let mut partial = calls.len() as u32 > query.max_pages;
+            if partial {
+                notes.push(format!(
+                    "{} providers left out (at most {} per search)",
+                    calls.len() as u32 - query.max_pages,
+                    query.max_pages
+                ));
+            }
             calls.truncate(query.max_pages as usize);
-            let pages = calls.len() as u32;
-            let results = join_all(
-                calls
-                    .iter()
-                    .map(|(name, url, feed)| self.provider(name, url.clone(), *feed)),
-            )
+            // Every provider runs concurrently under its own deadline, so one
+            // slow or throttled provider cannot hold up the search.
+            let deadline = self.config.provider_deadline;
+            let results = join_all(calls.iter().map(|(name, url, feed)| async move {
+                match tokio::time::timeout(deadline, self.provider(name, url.clone(), *feed)).await
+                {
+                    Ok(result) => result,
+                    Err(_) => Err(ProviderError::Late(deadline)),
+                }
+            }))
             .await;
-            let terms: Vec<String> = query
-                .topic
-                .split_whitespace()
-                .filter(|w| w.chars().count() >= 2)
-                .map(str::to_lowercase)
-                .collect();
+            let pages = results
+                .iter()
+                .filter(|r| !matches!(r, Err(ProviderError::Skipped(_))))
+                .count() as u32;
+            let topic = Topic::new(&query.topic);
             let cutoff = chrono::Utc::now() - chrono::Duration::hours(i64::from(hours));
             let mut providers = Vec::new();
-            let mut errors = Vec::new();
+            let mut failures = Vec::new();
+            let mut off_topic = 0;
+            let mut needs_browser_notes = Vec::new();
             let mut lists = Vec::new();
             for ((name, _, feed), result) in calls.iter().zip(results) {
                 match result {
                     Ok(items) => {
                         providers.push(name.clone());
-                        // GDELT's `sourcelang:` and Google News's `hl` select
-                        // the query's language, so their items are in it.
+                        // GDELT's `sourcelang:` and Google News's edition
+                        // select the query's language, so their items are in it.
                         let tagged = match name.as_str() {
                             "gdelt" => gdelt_language(&language).is_some(),
                             "google-news-rss" => true,
                             _ => false,
                         };
-                        let items: Vec<FoundItem> = items
-                            .into_iter()
-                            .map(|mut i| {
-                                i.readable = !needs_browser(&i.url);
-                                if tagged && i.language.is_empty() {
-                                    i.language = language.clone();
-                                }
-                                i
-                            })
-                            .filter(|i| normalize_date(&i.published_at).is_none_or(|d| d >= cutoff))
-                            .filter(|i| {
-                                // Configured feeds are not search engines: keep
-                                // only items that mention the query.
-                                feed.is_none() || {
-                                    let title = i.title.to_lowercase();
-                                    terms.iter().any(|t| title.contains(t))
-                                }
-                            })
-                            .collect();
-                        lists.push(items);
+                        let mut kept = Vec::new();
+                        for mut item in items {
+                            item.readable = !needs_browser(&item.url);
+                            if tagged && item.language.is_empty() {
+                                item.language = language.clone();
+                            }
+                            if normalize_date(&item.published_at).is_some_and(|d| d < cutoff) {
+                                continue;
+                            }
+                            // Configured feeds are not search engines: keep
+                            // only items whose headline or summary mentions
+                            // every significant term of the query.
+                            if feed.is_some()
+                                && !topic.matches(&format!("{} {}", item.title, item.snippet))
+                            {
+                                off_topic += 1;
+                                continue;
+                            }
+                            kept.push(item);
+                        }
+                        let unreadable = kept.iter().filter(|i| !i.readable).count();
+                        if unreadable > 0 {
+                            needs_browser_notes.push(format!(
+                                "{name}: {unreadable} results are Google News links, which need a browser to read"
+                            ));
+                        }
+                        lists.push(kept);
                     }
                     Err(e) => {
                         partial = true;
-                        errors.push(format!("{name}: {e}"));
+                        failures.push(e.note(name));
                     }
                 }
             }
-            if providers.is_empty() && pages > 0 {
+            if providers.is_empty() && !calls.is_empty() {
                 return Err(failed(format!(
-                    "every provider failed ({})",
-                    errors.join("; ")
+                    "every provider failed: {}",
+                    failures.join("; ")
                 )));
+            }
+            for failure in failures {
+                notes.push(format!("{failure}; results from other sources"));
+            }
+            notes.extend(needs_browser_notes);
+            if off_topic > 0 {
+                notes.push(format!(
+                    "feeds: {off_topic} items skipped as off topic (headline and summary do not mention {})",
+                    topic.terms().join(" + ")
+                ));
             }
             // Interleave providers so one source does not fill the list.
             let mut items = Vec::new();
@@ -868,6 +1181,7 @@ impl ResearchBackend for InterimResearch {
                 providers,
                 partial,
                 pages,
+                notes,
             })
         })
     }
@@ -1011,6 +1325,229 @@ mod tests {
         assert!(!LiveConfig::from_env().respect_robots);
     }
 
+    #[test]
+    fn google_news_editions_per_language() {
+        let locale = |l: &str, r: Option<&str>| {
+            let (hl, gl, ceid) = google_news_locale(l, r);
+            format!("hl={hl}&gl={gl}&ceid={ceid}")
+        };
+        // The validation's 0-result query was `hl=zh&gl=US&ceid=US:zh`.
+        assert_eq!(locale("zh", None), "hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
+        assert_eq!(locale("zh-CN", None), "hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
+        assert_eq!(locale("zh-Hans", None), "hl=zh-CN&gl=CN&ceid=CN:zh-Hans");
+        assert_eq!(locale("zh-TW", None), "hl=zh-TW&gl=TW&ceid=TW:zh-Hant");
+        assert_eq!(locale("zh-Hant", None), "hl=zh-TW&gl=TW&ceid=TW:zh-Hant");
+        assert_eq!(locale("zh-HK", None), "hl=zh-HK&gl=HK&ceid=HK:zh-Hant");
+        assert_eq!(locale("zh", Some("hk")), "hl=zh-HK&gl=HK&ceid=HK:zh-Hant");
+        assert_eq!(locale("zh", Some("SG")), "hl=zh-CN&gl=SG&ceid=SG:zh-Hans");
+        assert_eq!(locale("en", None), "hl=en-US&gl=US&ceid=US:en");
+        assert_eq!(locale("en-GB", None), "hl=en-GB&gl=GB&ceid=GB:en");
+        assert_eq!(locale("en", Some("IN")), "hl=en-IN&gl=IN&ceid=IN:en");
+        assert_eq!(locale("ja", None), "hl=ja&gl=JP&ceid=JP:ja");
+        assert_eq!(locale("ko", None), "hl=ko&gl=KR&ceid=KR:ko");
+        assert_eq!(locale("de", None), "hl=de&gl=DE&ceid=DE:de");
+        assert_eq!(locale("fr", None), "hl=fr&gl=FR&ceid=FR:fr");
+        assert_eq!(locale("es", None), "hl=es&gl=ES&ceid=ES:es");
+        assert_eq!(locale("es", Some("MX")), "hl=es-419&gl=MX&ceid=MX:es-419");
+        assert_eq!(locale("pt", None), "hl=pt-BR&gl=BR&ceid=BR:pt-419");
+        assert_eq!(locale("pt-PT", None), "hl=pt-PT&gl=PT&ceid=PT:pt-150");
+        assert_eq!(locale("", None), "hl=en-US&gl=US&ceid=US:en");
+        assert_eq!(
+            google_news_url("https://news.google.com/rss/search", "台风", 72, "zh", None),
+            "https://news.google.com/rss/search?q=%E5%8F%B0%E9%A3%8E+when%3A72h&hl=zh-CN&gl=CN&ceid=CN%3Azh-Hans"
+        );
+    }
+
+    #[test]
+    fn feed_summaries_are_kept_as_plain_snippets() {
+        let rss = br#"<rss><channel><item><title>Tankers wait</title><link>https://a.example/1</link>
+            <description><![CDATA[<p>Iran checks ships in the <b>Strait of Hormuz</b>.</p>]]></description></item>
+            <item><title>T2</title><link>https://a.example/2</link><description>Plain &amp; simple</description></item>
+            </channel></rss>"#;
+        let items = parse_feed(rss).unwrap();
+        assert_eq!(
+            items[0].snippet,
+            "Iran checks ships in the  Strait of Hormuz ."
+        );
+        assert_eq!(items[1].snippet, "Plain & simple");
+    }
+
+    fn ctx() -> CallContext {
+        CallContext {
+            app: Arc::new(crate::AppContext::new("os.test", std::env::temp_dir())),
+            run_id: "r".into(),
+            template_id: "t".into(),
+            template_digest: String::new(),
+            budget: crate::Budget {
+                max_calls: 8,
+                max_model_calls: 2,
+                max_pages: 8,
+                max_ms: 60_000,
+                max_concurrency: 4,
+            },
+            remaining: crate::host::Remaining {
+                calls: 8,
+                model_calls: 2,
+                pages: 8,
+                ms: 60_000,
+            },
+            call_index: 0,
+        }
+    }
+
+    fn query(topic: &str) -> SearchQuery {
+        SearchQuery {
+            topic: topic.into(),
+            language: Some("en".into()),
+            region: None,
+            limit: 5,
+            max_age_hours: Some(72),
+            max_pages: 8,
+        }
+    }
+
+    fn rss(titles: &[&str]) -> Reply {
+        let items: String = titles
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                format!("<item><title>{t}</title><link>https://n.example/{i}</link></item>")
+            })
+            .collect();
+        (
+            200,
+            vec![("content-type", "application/rss+xml".into())],
+            format!("<rss><channel>{items}</channel></rss>"),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_provider_is_named_and_not_asked_again() {
+        let server = serve(vec![("/gdelt", vec![(429, Vec::new(), String::new())])]).await;
+        let news = serve(vec![(
+            "/gn",
+            vec![rss(&["Tankers wait at the Strait of Hormuz"])],
+        )])
+        .await;
+        let adapter = InterimResearch::new(LiveConfig {
+            gdelt_endpoint: format!("{}/gdelt", server.base),
+            google_news_endpoint: format!("{}/gn", news.base),
+            min_interval: Duration::ZERO,
+            allow_loopback_for_tests: true,
+            ..LiveConfig::default()
+        })
+        .unwrap();
+        let ctx = ctx();
+        let first = adapter
+            .search(&ctx, query("Strait of Hormuz"))
+            .await
+            .unwrap();
+        assert!(first.partial);
+        assert_eq!(first.providers, vec!["google-news-rss"]);
+        assert_eq!(first.items.len(), 1);
+        assert_eq!(
+            first.notes,
+            vec!["gdelt rate-limited (429); not queried again in this process; results from other sources"]
+        );
+        assert!(first.items[0].readable);
+        // The breaker holds for the rest of the process: no second request.
+        let second = adapter
+            .search(&ctx, query("Strait of Hormuz"))
+            .await
+            .unwrap();
+        assert_eq!(
+            second.notes,
+            vec!["gdelt skipped: rate-limited (429) earlier in this process; results from other sources"]
+        );
+        assert_eq!(second.pages, 1);
+        let gdelt_requests = server
+            .paths
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.starts_with("/gdelt"))
+            .count();
+        assert_eq!(gdelt_requests, 1);
+    }
+
+    #[tokio::test]
+    async fn results_that_need_a_browser_are_counted_in_a_note() {
+        let feed = (
+            200,
+            vec![("content-type", "application/rss+xml".into())],
+            "<rss><channel><item><title>Typhoon nears the coast</title>\
+             <link>https://news.google.com/rss/articles/CBMiX</link></item></channel></rss>"
+                .to_owned(),
+        );
+        let news = serve(vec![("/gn", vec![feed])]).await;
+        let adapter = InterimResearch::new(LiveConfig {
+            gdelt: false,
+            google_news_endpoint: format!("{}/gn", news.base),
+            min_interval: Duration::ZERO,
+            allow_loopback_for_tests: true,
+            ..LiveConfig::default()
+        })
+        .unwrap();
+        let results = adapter.search(&ctx(), query("typhoon")).await.unwrap();
+        assert!(!results.items[0].readable);
+        assert_eq!(
+            results.notes,
+            vec!["google-news-rss: 1 results are Google News links, which need a browser to read"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_slow_provider_does_not_hold_up_the_search() {
+        // A server that accepts and never answers.
+        let silent = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let silent_base = format!("http://{}", silent.local_addr().unwrap());
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = silent.accept().await {
+                held.push(stream);
+            }
+        });
+        let server = serve(vec![(
+            "/feed",
+            vec![rss(&[
+                "Tankers wait at the Strait of Hormuz",
+                "Pope Leo warns of a paradise of machines",
+                "Strait talk: the week in gadgets",
+            ])],
+        )])
+        .await;
+        let adapter = InterimResearch::new(LiveConfig {
+            google_news: false,
+            gdelt_endpoint: format!("{silent_base}/gdelt"),
+            feeds: vec![Feed {
+                url: format!("{}/feed", server.base),
+                name: "Desk".into(),
+                language: "en".into(),
+            }],
+            provider_deadline: Duration::from_millis(300),
+            min_interval: Duration::ZERO,
+            allow_loopback_for_tests: true,
+            ..LiveConfig::default()
+        })
+        .unwrap();
+        let started = Instant::now();
+        let results = adapter
+            .search(&ctx(), query("Strait of Hormuz"))
+            .await
+            .unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        // The feed keeps only the headline with every term of the topic.
+        let titles: Vec<&str> = results.items.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(titles, vec!["Tankers wait at the Strait of Hormuz"]);
+        assert_eq!(
+            results.notes,
+            vec![
+                "gdelt: no answer within 0.3 s; results from other sources".to_owned(),
+                "feeds: 2 items skipped as off topic (headline and summary do not mention strait + hormuz)".to_owned(),
+            ]
+        );
+    }
+
     /// A tiny HTTP/1.1 server on 127.0.0.1 that records request paths and
     /// replays scripted responses per path (the last one repeats).
     struct Server {
@@ -1051,7 +1588,8 @@ mod tests {
                 seen.lock().unwrap().push(path.clone());
                 let (status, headers, body) = {
                     let mut routes = routes.lock().unwrap();
-                    match routes.get_mut(&path) {
+                    let route = path.split('?').next().unwrap_or("/");
+                    match routes.get_mut(route) {
                         Some(replies) if replies.len() > 1 => replies.remove(0),
                         Some(replies) => replies[0].clone(),
                         None => (404, Vec::new(), String::new()),

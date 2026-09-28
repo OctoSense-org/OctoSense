@@ -737,3 +737,106 @@ async fn results_are_written_to_the_apps_folder() {
     assert_eq!(written["provenance"].as_array().unwrap().len(), 3);
     let _ = std::fs::remove_dir_all(folder);
 }
+
+#[tokio::test]
+async fn provider_failures_and_off_topic_reads_reach_the_diagnostics() {
+    let case = case("news-digest", "off-topic-dropped");
+    let host = fixture::host(&case.fixture);
+    let folder = temp_dir("diagnostics");
+    let result = run(
+        &template("news-digest"),
+        &app(&folder),
+        case.params.clone(),
+        &host,
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    let diagnostics = result.diagnostics.join("\n");
+    // The failing provider is named, with the reason.
+    assert!(
+        diagnostics.contains(
+            "research.search (call 0): gdelt rate-limited (429); not queried again in this process; results from other sources"
+        ),
+        "{diagnostics}"
+    );
+    // Each page the relevance gate dropped, and the model's own check.
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|d| d.contains("off topic, the page does not mention strait + hormuz"))
+            .count(),
+        2,
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("digest: the model marked 1 of 2 articles off topic"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("dropped: it cites only articles marked off topic"),
+        "{diagnostics}"
+    );
+    assert_eq!(result.data["off_topic"], 3);
+}
+
+#[tokio::test]
+async fn the_host_leaves_off_topic_articles_out_of_any_digest() {
+    // A template that ignores `on_topic` still cannot digest an off-topic page.
+    let case = case("news-digest", "off-topic-dropped");
+    let host = fixture::host(&case.fixture);
+    let folder = temp_dir("gate");
+    let source = r#"
+use mod.research
+let found = research.search({topic: "Strait of Hormuz", language: "en", limit: 4}).await()
+let ids = []
+let flags = []
+for item in found.items {
+    let article = research.article({id: item.id}).await()
+    array.push(ids, article.id)
+    array.push(flags, article.on_topic)
+}
+let only_off = []
+for item in found.items {
+    if item.title == "Pope Leo warns of a 'paradise of machines'" {
+        array.push(only_off, item.id)
+    }
+}
+let refused = try research.digest({task: "brief", language: "en", article_ids: only_off}).await() catch nil
+let digest = research.digest({task: "brief", language: "en", article_ids: ids}).await()
+{status: "ready", data: {flags: flags, refused: refused == nil, cited: digest.points}}
+"#;
+    let source = format!("use mod.std.array\n{source}");
+    let template = probe(&["search", "article", "digest"], &source).unwrap();
+    let result = run(
+        &template,
+        &app(&folder),
+        json!({}),
+        &host,
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.data["refused"], true, "{:?}", result.diagnostics);
+    let flags: Vec<bool> = result.data["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f.as_bool().unwrap())
+        .collect();
+    assert_eq!(flags.iter().filter(|f| !**f).count(), 2, "{flags:?}");
+    // Only the two pages that mention the topic are cited.
+    let cited: Vec<&str> = result.data["cited"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|p| p["citations"].as_array().unwrap())
+        .map(|c| c.as_str().unwrap())
+        .collect();
+    assert_eq!(cited.len(), 2, "{cited:?}");
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("no article given is about the topic")));
+}

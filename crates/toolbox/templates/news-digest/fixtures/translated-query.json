@@ -61,7 +61,7 @@
         "error": null
       },
       "https://example.invalid/news/water": {
-        "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks across two districts. Water loss in those districts was 12% lower than in the same months last year.",
+        "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks in the city water network across two districts. Water loss in those districts was 12% lower than in the same months last year.",
         "title": null,
         "delay_ms": 90,
         "error": null
@@ -82,6 +82,7 @@
     "data": {
       "digest": {
         "language": "zh-CN",
+        "off_topic": [],
         "points": [
           {
             "citations": [
@@ -99,7 +100,7 @@
             "citations": [
               "s3820b1dec583"
             ],
-            "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks across two districts."
+            "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks in the city water network across two districts."
           }
         ],
         "summary": "Sources: Harbor City approves electric bus order; Ocho bibliotecas amplían su horario durante un piloto; Water utility reports early leak-detection results",
@@ -107,6 +108,7 @@
       },
       "language": "zh-CN",
       "missing": 0,
+      "off_topic": 0,
       "sources": [
         {
           "evidence_sha256": "d7006e8135e503bb16aedc89b4f5e6848da09c42d82097795a84fcbc609d8ba8",
@@ -125,7 +127,7 @@
           "url": "https://example.invalid/news/libraries"
         },
         {
-          "evidence_sha256": "1464f7fa5fe6edd95282a0f93cd0a62d0ad8cfcfb6d9271303d79bc3e0b6c2b1",
+          "evidence_sha256": "df81c69700483080f018a0650f903a899908bc9c302881f1a58a4e70199c730a",
           "id": "s3820b1dec583",
           "published_at": "2026-09-18T16:00:00Z",
           "source": "Clearwater Courier",

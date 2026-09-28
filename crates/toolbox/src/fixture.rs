@@ -6,8 +6,8 @@
 
 use crate::host::{CallContext, HostError, HostFuture};
 use crate::research::{
-    FoundItem, ModelClient, ModelRequest, ModelTask, PageText, ResearchBackend, ResearchHost,
-    SearchQuery, SearchResults,
+    item_id, FoundItem, ModelClient, ModelRequest, ModelTask, PageText, ResearchBackend,
+    ResearchHost, SearchQuery, SearchResults,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -61,6 +61,10 @@ pub struct RecordedSearch {
     /// A recording of a backend that queries several providers sets more.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub fetches: u32,
+    /// Notes the backend reports with the results (a provider that failed
+    /// or was skipped, and why).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 fn one() -> u32 {
@@ -105,6 +109,11 @@ pub struct FakeModelConfig {
     /// drop them and keep the rest.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub malformed_points: bool,
+    /// URLs of articles the model marks off topic in a focused digest. It
+    /// still writes their points (the worst case), so the host must remove
+    /// them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub off_topic: Vec<String>,
 }
 
 /// Replays recorded searches and pages.
@@ -158,6 +167,7 @@ impl ResearchBackend for FixtureBackend {
                 providers: recorded.providers.clone(),
                 partial: recorded.partial,
                 pages: recorded.fetches,
+                notes: recorded.notes.clone(),
             })
         })
     }
@@ -278,7 +288,19 @@ impl ModelClient for FakeModel {
                             "citations": [cite]}));
                         points.push(json!({"text": "Invented.", "citations": ["s000000000000"]}));
                     }
-                    Ok(json!({"summary": summary, "points": points}).to_string())
+                    let mut reply = json!({"summary": summary, "points": points});
+                    let focused = !input["focus"].as_str().unwrap_or_default().is_empty();
+                    if focused && !self.config.off_topic.is_empty() {
+                        let marked: Vec<String> =
+                            self.config.off_topic.iter().map(|u| item_id(u)).collect();
+                        let off: Vec<&Value> = articles
+                            .iter()
+                            .map(|a| &a["id"])
+                            .filter(|id| marked.iter().any(|m| id.as_str() == Some(m)))
+                            .collect();
+                        reply["off_topic"] = json!(off);
+                    }
+                    Ok(reply.to_string())
                 }
             }
         })

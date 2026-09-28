@@ -141,7 +141,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "article",
             kind: MethodKind::Page,
-            description: "Read one search result's page and keep its main text as evidence",
+            description: "Read one search result's page and keep its main text as evidence; `on_topic: false` when the page does not mention the terms of the search that found it (the host will not digest it)",
             input: || {
                 json!({"type": "object", "additionalProperties": false, "required": ["id"],
                     "properties": {"id": string(1, 64)}})
@@ -149,7 +149,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
             output: || {
                 json!({"type": "object", "additionalProperties": false,
                     "required": ["id", "title", "url", "source", "language", "published_at",
-                        "excerpt", "chars", "truncated", "evidence_sha256"],
+                        "excerpt", "chars", "truncated", "evidence_sha256", "on_topic"],
                     "properties": {
                         "id": string(1, 64),
                         "title": string(0, 400),
@@ -160,7 +160,8 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
                         "excerpt": string(0, 600),
                         "chars": {"type": "integer", "minimum": 0},
                         "truncated": {"type": "boolean"},
-                        "evidence_sha256": string(64, 64)
+                        "evidence_sha256": string(64, 64),
+                        "on_topic": {"type": "boolean"}
                     }})
             },
             max_input_bytes: 256,
@@ -169,7 +170,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "digest",
             kind: MethodKind::Model,
-            description: "Summarize articles read in this run, in `language`, with citations by article id (one model call)",
+            description: "Summarize articles read in this run, in `language`, with citations by article id (one model call). Off-topic articles are left out; for the `digest` task with a `focus`, the model also lists in `off_topic` the articles it found not about the focus, and nothing cites them",
             input: || {
                 json!({"type": "object", "additionalProperties": false,
                     "required": ["task", "language", "article_ids"],
@@ -182,7 +183,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
             },
             output: || {
                 json!({"type": "object", "additionalProperties": false,
-                    "required": ["task", "language", "summary", "points"],
+                    "required": ["task", "language", "summary", "points", "off_topic"],
                     "properties": {
                         "task": {"type": "string", "enum": DIGEST_TASKS},
                         "language": string(2, 16),
@@ -194,7 +195,8 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
                                 "text": string(1, 400),
                                 "citations": {"type": "array", "minItems": 1, "maxItems": 8, "items": string(1, 64)},
                                 "label": string(0, 40)
-                            }}}
+                            }}},
+                        "off_topic": {"type": "array", "maxItems": 8, "items": string(1, 64)}
                     }})
             },
             max_input_bytes: 2048,

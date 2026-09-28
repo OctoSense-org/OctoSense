@@ -16,16 +16,24 @@
 //!   excerpt and the evidence hash;
 //! - `digest` takes only articles read in this run, cites them by id, and a
 //!   model reply containing a URL or citing anything else is refused;
+//! - relevance, whatever the backend ([`relevance`]): search results whose
+//!   headline mentions the topic are listed first; `article` says
+//!   `on_topic: false` when a page in the search's language does not mention
+//!   the search's terms, and `digest` leaves such articles out; a `digest`
+//!   task with a `focus` also asks the model, in the same call, which
+//!   articles are not about it, and removes their citations;
 //! - provenance (URL, title, source, retrieval time, evidence hash) is kept by
 //!   the host and returned with each reply.
 
 #[cfg(feature = "live")]
 pub mod live;
+pub mod relevance;
 
 use crate::host::{CallContext, HostError, HostFuture, HostReply, Provenance, Usage};
 use crate::json::contains_url;
 use crate::library::hex;
 use crate::ToolboxHost;
+use relevance::Topic;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -73,6 +81,10 @@ pub struct FoundItem {
     /// first, and templates skip the rest instead of spending a read on them.
     #[serde(default = "readable_default", skip_serializing_if = "is_readable")]
     pub readable: bool,
+    /// The provider's description or snippet, if any. Used only to judge
+    /// relevance; never shown to the script.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub snippet: String,
 }
 
 fn readable_default() -> bool {
@@ -91,6 +103,10 @@ pub struct SearchResults {
     pub partial: bool,
     /// Feeds and API responses fetched.
     pub pages: u32,
+    /// What the backend wants the run's diagnostics to say: a provider that
+    /// failed or was skipped and why, items dropped as off topic.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// A page's main text as a backend read it.
@@ -153,6 +169,8 @@ pub trait ModelClient {
 #[derive(Default)]
 struct RunState {
     items: HashMap<String, FoundItem>,
+    /// The searches (terms, language) each item was found under.
+    topics: HashMap<String, Vec<(String, Option<String>)>>,
     articles: HashMap<String, ReadArticle>,
 }
 
@@ -160,6 +178,8 @@ struct RunState {
 struct ReadArticle {
     item: FoundItem,
     evidence: String,
+    /// The text mentions the terms of a search that found it.
+    on_topic: bool,
 }
 
 /// `mod.research` for the runner.
@@ -205,7 +225,9 @@ impl ResearchHost {
             task: ModelTask::TranslateQuery,
             system: format!(
                 "Translate the user's news search query into concise search terms in the \
-                 language with BCP 47 tag {language}. Keep names and numbers. Reply with JSON \
+                 language with BCP 47 tag {language}: the topic's key names and subjects only, \
+                 as a news article in that language would write them, without words such as \
+                 \"news\" or \"latest\". Keep names and numbers. Reply with JSON \
                  {{\"query\": \"...\"}} only. Do not add URLs."
             ),
             user: json!({"query": query, "language": language}).to_string(),
@@ -268,10 +290,15 @@ impl ResearchHost {
             max_age_hours,
             max_pages: MAX_SEARCH_FETCHES,
         };
-        let mut results = self.backend.search(ctx, query).await?;
-        // Readable items first (a stable sort keeps the backend's order within
-        // each group), so `limit` does not fill up with items no read can use.
-        results.items.sort_by_key(|item| !item.readable);
+        let topic = Topic::new(&query.topic);
+        let mut results = self.backend.search(ctx, query.clone()).await?;
+        // Readable items first, and within each group items whose headline
+        // or snippet mentions the topic (a stable sort keeps the backend's
+        // order otherwise), so `limit` fills with items worth a read.
+        results.items.sort_by_key(|item| {
+            let relevant = topic.matches(&format!("{} {}", item.title, item.snippet));
+            (!item.readable, !relevant)
+        });
         let queried_at = (self.clock)();
         let mut seen_urls = BTreeSet::new();
         let mut seen_titles = BTreeSet::new();
@@ -318,7 +345,14 @@ impl ResearchHost {
                 "published_at": clip(&item.published_at, 40),
                 "readable": item.readable,
             }));
-            self.state(&ctx.run_id, |s| s.items.insert(id, item));
+            self.state(&ctx.run_id, |s| {
+                let topics = s.topics.entry(id.clone()).or_default();
+                let searched = (query.topic.clone(), query.language.clone());
+                if !topics.contains(&searched) {
+                    topics.push(searched);
+                }
+                s.items.insert(id, item);
+            });
         }
         let mut providers = results.providers;
         providers.truncate(8);
@@ -332,7 +366,7 @@ impl ResearchHost {
                 model_calls: 0,
                 pages: results.pages,
             },
-            notes: Vec::new(),
+            notes: results.notes,
         })
     }
 
@@ -350,6 +384,39 @@ impl ResearchHost {
         let (evidence, truncated) = cap_evidence(&page.text, MAX_EVIDENCE_BYTES);
         if evidence.trim().is_empty() {
             return Err(HostError::Failed("no main text".into()));
+        }
+        // The relevance gate: the page must mention the terms of a search
+        // that found it (the whole page, not only the evidence kept). Only
+        // searches in the page's language judge it: a page in another
+        // language cannot be expected to use the search's words, and is left
+        // to the digest's model check.
+        let topics: Vec<Topic> = self
+            .state(&ctx.run_id, |s| s.topics.get(&id).cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter(|(_, language)| {
+                language
+                    .as_deref()
+                    .is_none_or(|l| item.language.is_empty() || same_language(l, &item.language))
+            })
+            .map(|(terms, _)| Topic::new(terms))
+            .collect();
+        let on_topic = Topic::mentioned_in_any(
+            &topics,
+            &format!(
+                "{}\n{}\n{}",
+                item.title,
+                page.title.as_deref().unwrap_or_default(),
+                page.text
+            ),
+        );
+        let mut notes = Vec::new();
+        if !on_topic {
+            let terms: Vec<String> = topics.iter().flat_map(Topic::terms).collect();
+            notes.push(format!(
+                "{id}: off topic, the page does not mention {}; not digested",
+                terms.join(" + ")
+            ));
         }
         let hash = hex(&Sha256::digest(evidence.as_bytes()));
         let retrieved_at = (self.clock)();
@@ -369,6 +436,7 @@ impl ResearchHost {
             "chars": evidence.chars().count(),
             "truncated": truncated,
             "evidence_sha256": hash,
+            "on_topic": on_topic,
         });
         let provenance = vec![Provenance {
             id: id.clone(),
@@ -382,7 +450,14 @@ impl ResearchHost {
             via: "article".into(),
         }];
         self.state(&ctx.run_id, |s| {
-            s.articles.insert(id, ReadArticle { item, evidence })
+            s.articles.insert(
+                id,
+                ReadArticle {
+                    item,
+                    evidence,
+                    on_topic,
+                },
+            )
         });
         Ok(HostReply {
             output,
@@ -391,7 +466,7 @@ impl ResearchHost {
                 model_calls: 0,
                 pages: 1,
             },
-            notes: Vec::new(),
+            notes,
         })
     }
 
@@ -416,10 +491,18 @@ impl ResearchHost {
             })
             .unwrap_or_default();
         let mut articles = Vec::new();
+        let mut notes = Vec::new();
+        let mut given = Vec::new();
         for id in &ids {
             let Some(article) = self.state(&ctx.run_id, |s| s.articles.get(id).cloned()) else {
                 return Err(HostError::Denied(format!("{id} was not read in this run")));
             };
+            // The relevance gate holds whatever the template passes.
+            if !article.on_topic {
+                notes.push(format!("digest: {id} left out: off topic"));
+                continue;
+            }
+            given.push(id.clone());
             articles.push(json!({
                 "id": id,
                 "title": article.item.title,
@@ -429,9 +512,17 @@ impl ResearchHost {
                 "text": article.evidence,
             }));
         }
+        if given.is_empty() {
+            return Err(HostError::Failed(
+                "no article given is about the topic".into(),
+            ));
+        }
+        // The model checks relevance for news digests with a focus (the
+        // other tasks use the focus to name their subjects).
+        let focused = task == "digest" && !focus.trim().is_empty();
         let request = ModelRequest {
             task: ModelTask::Digest,
-            system: digest_prompt(&task, &language),
+            system: digest_prompt(&task, &language, focused),
             user: json!({"task": task, "language": language, "focus": focus, "articles": articles})
                 .to_string(),
             max_output_tokens: None,
@@ -444,12 +535,41 @@ impl ResearchHost {
                         "text": {"type": "string", "minLength": 1, "maxLength": 400},
                         "citations": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string"}},
                         "label": {"type": "string", "maxLength": 40}
-                    }}}
+                    }}},
+                "off_topic": {"type": "array", "maxItems": 8, "items": {"type": "string"}}
             }}),
         };
         let reply = self.model.complete(ctx, request).await?;
         let parsed = parse_model_json(&reply)?;
-        let (output, notes) = validate_digest(&parsed, &task, &language, &ids)?;
+        // The model's own relevance check, folded into this one call: the
+        // articles it marks as not about the focus are left out.
+        let mut off_topic: Vec<String> = Vec::new();
+        if focused {
+            for id in parsed["off_topic"].as_array().into_iter().flatten() {
+                if let Some(id) = id.as_str().filter(|id| given.iter().any(|g| g == id)) {
+                    if !off_topic.iter().any(|o| o == id) {
+                        off_topic.push(id.to_owned());
+                    }
+                }
+            }
+        }
+        if !off_topic.is_empty() {
+            notes.push(format!(
+                "digest: the model marked {} of {} articles off topic: {}",
+                off_topic.len(),
+                given.len(),
+                off_topic.join(", ")
+            ));
+        }
+        if off_topic.len() == given.len() {
+            return Err(HostError::Failed(
+                "the model found no article about the topic".into(),
+            ));
+        }
+        let (mut output, point_notes) =
+            validate_digest(&parsed, &task, &language, &given, &off_topic)?;
+        notes.extend(point_notes);
+        output["off_topic"] = json!(off_topic);
         Ok(HostReply {
             output,
             provenance: Vec::new(),
@@ -495,6 +615,17 @@ impl ToolboxHost for ResearchHost {
     }
 }
 
+/// Whether two BCP 47 tags share their primary language (`zh`, `zh-CN`).
+pub fn same_language(a: &str, b: &str) -> bool {
+    let primary = |t: &str| {
+        t.split(['-', '_'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    };
+    primary(a) == primary(b)
+}
+
 /// The host-assigned id of a found item: stable for a URL, so recorded
 /// fixtures and both sides of an evaluation see the same ids.
 pub fn item_id(url: &str) -> String {
@@ -528,22 +659,33 @@ pub fn cap_evidence(text: &str, max: usize) -> (String, bool) {
     (head[..cut].trim_end().to_owned(), true)
 }
 
-fn digest_prompt(task: &str, language: &str) -> String {
+fn digest_prompt(task: &str, language: &str, focused: bool) -> String {
     let what = match task {
         "brief" => "a short briefing across the topics, one or two points per topic",
         "plan" => "a practical plan for the person based on what the sources say, with caveats where the sources are uncertain",
         "compare" => "a comparison of the subjects named in the focus; label each point with the subject it is about, or \"both\"",
         _ => "a digest of the news: the key facts, one point per development",
     };
+    let relevance = if focused {
+        "The `focus` is what the person asked about. First check each article: if it is not \
+         about the focus, put its id in `off_topic` and use nothing from it. "
+    } else {
+        ""
+    };
+    let shape = if focused {
+        ", \"off_topic\": [article id]"
+    } else {
+        ""
+    };
     format!(
-        "You write {what}. Write in the language with BCP 47 tag {language}, translating the \
+        "{relevance}You write {what}. Write in the language with BCP 47 tag {language}, translating the \
          sources as needed. Use only facts stated in the articles you are given. Every point \
          cites the ids of the articles it rests on in `citations`. Never write URLs or invent \
          sources. Keep within these limits, or the host drops what exceeds them: a summary of \
          at most 1000 characters; at most {MAX_POINTS} points; each point one or two sentences \
          of at most 300 characters, citing 1 to {MAX_CITATIONS} articles; a label of at most \
          30 characters. Reply with JSON only: {{\"summary\": string, \"points\": [{{\"text\": \
-         string, \"citations\": [article id], \"label\": optional string}}]}}."
+         string, \"citations\": [article id], \"label\": optional string}}]{shape}}}."
     )
 }
 
@@ -592,6 +734,7 @@ fn validate_digest(
     task: &str,
     language: &str,
     ids: &[String],
+    off_topic: &[String],
 ) -> Result<(Value, Vec<String>), HostError> {
     let reject = |why: &str| HostError::Failed(format!("model output rejected: {why}"));
     let summary = parsed["summary"]
@@ -607,6 +750,7 @@ fn validate_digest(
         .filter(|p| !p.is_empty())
         .ok_or_else(|| reject("no points"))?;
     let known: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
+    let excluded: BTreeSet<&str> = off_topic.iter().map(String::as_str).collect();
     let mut notes = Vec::new();
     let mut kept = Vec::new();
     for (index, point) in points.iter().enumerate() {
@@ -617,7 +761,7 @@ fn validate_digest(
             ));
             continue;
         }
-        match check_point(point, &known) {
+        match check_point(point, &known, &excluded) {
             Ok((record, label_note)) => {
                 if let Some(why) = label_note {
                     notes.push(format!("digest point {n}: label dropped: {why}"));
@@ -643,6 +787,7 @@ fn validate_digest(
 fn check_point(
     point: &Value,
     known: &BTreeSet<&str>,
+    excluded: &BTreeSet<&str>,
 ) -> Result<(Value, Option<&'static str>), &'static str> {
     let text = point["text"]
         .as_str()
@@ -657,14 +802,21 @@ fn check_point(
     }
     let raw = point["citations"].as_array().ok_or("it cites nothing")?;
     let mut citations: Vec<&str> = Vec::new();
+    let mut cites_off_topic = false;
     for citation in raw {
         let id = citation.as_str().ok_or("a citation is not an article id")?;
         if !known.contains(id) {
             return Err("it cites an article it was not given");
         }
-        if !citations.contains(&id) {
+        if excluded.contains(id) {
+            // A citation of an article marked off topic is removed.
+            cites_off_topic = true;
+        } else if !citations.contains(&id) {
             citations.push(id);
         }
+    }
+    if citations.is_empty() && cites_off_topic {
+        return Err("it cites only articles marked off topic");
     }
     if citations.is_empty() {
         return Err("it cites nothing");
@@ -708,18 +860,18 @@ mod tests {
     fn digests_cite_only_given_articles_and_carry_no_urls() {
         let ids = vec!["s1".to_owned()];
         let ok = json!({"summary": "S", "points": [{"text": "T", "citations": ["s1"]}]});
-        let (digest, notes) = validate_digest(&ok, "digest", "en", &ids).unwrap();
+        let (digest, notes) = validate_digest(&ok, "digest", "en", &ids, &[]).unwrap();
         assert_eq!(digest["points"].as_array().unwrap().len(), 1);
         assert!(notes.is_empty());
         // A digest whose only point cites a foreign article has nothing left.
         let foreign = json!({"summary": "S", "points": [{"text": "T", "citations": ["s9"]}]});
-        let error = validate_digest(&foreign, "digest", "en", &ids).unwrap_err();
+        let error = validate_digest(&foreign, "digest", "en", &ids, &[]).unwrap_err();
         assert!(error.to_string().contains("no valid point"), "{error}");
         // A URL in the summary refuses the whole digest.
         let url = json!({"summary": "see https://example.org", "points": [{"text": "T", "citations": ["s1"]}]});
-        assert!(validate_digest(&url, "digest", "en", &ids).is_err());
+        assert!(validate_digest(&url, "digest", "en", &ids, &[]).is_err());
         let blank = json!({"summary": " ", "points": [{"text": "T", "citations": ["s1"]}]});
-        assert!(validate_digest(&blank, "digest", "en", &ids).is_err());
+        assert!(validate_digest(&blank, "digest", "en", &ids, &[]).is_err());
     }
 
     #[test]
@@ -739,7 +891,7 @@ mod tests {
             {"text": "Kept, label dropped.", "citations": ["s2"], "label": "see https://x.invalid"},
             {"text": "Kept with label.", "citations": ["s2"], "label": "Label"}
         ]});
-        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids).unwrap();
+        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids, &[]).unwrap();
         let points = digest["points"].as_array().unwrap();
         assert_eq!(points.len(), 3, "{digest}");
         assert_eq!(points[0]["citations"], json!(["s1", "s2"]));
@@ -769,13 +921,32 @@ mod tests {
     }
 
     #[test]
+    fn citations_of_off_topic_articles_are_removed() {
+        let ids = vec!["s1".to_owned(), "s2".to_owned()];
+        let reply = json!({"summary": "S", "points": [
+            {"text": "Both.", "citations": ["s1", "s2"]},
+            {"text": "Off topic only.", "citations": ["s2"]}
+        ]});
+        let (digest, notes) =
+            validate_digest(&reply, "digest", "en", &ids, &["s2".to_owned()]).unwrap();
+        assert_eq!(
+            digest["points"],
+            json!([{"text": "Both.", "citations": ["s1"]}])
+        );
+        assert_eq!(
+            notes,
+            vec!["digest point 2 dropped: it cites only articles marked off topic"]
+        );
+    }
+
+    #[test]
     fn a_digest_keeps_at_most_twelve_points() {
         let ids = vec!["s1".to_owned()];
         let points: Vec<Value> = (0..14)
             .map(|i| json!({"text": format!("Point {i}."), "citations": ["s1"]}))
             .collect();
         let reply = json!({"summary": "S", "points": points});
-        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids).unwrap();
+        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids, &[]).unwrap();
         assert_eq!(digest["points"].as_array().unwrap().len(), 12);
         assert_eq!(notes.len(), 2);
     }

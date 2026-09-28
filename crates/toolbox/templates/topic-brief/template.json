@@ -1,8 +1,8 @@
 {
   "id": "topic-brief",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "title": "Topic brief across languages",
-  "description": "Search one topic in several languages (translating the search terms where asked), read at least one article per language whenever one is readable (skipping results the backend cannot read and replacing failed reads with the next candidate), read the rest round-robin up to read_top, and write one brief in the reader's language with citations.",
+  "description": "Search one topic in several languages (translating the search terms where asked), read at least one article per language whenever one is readable (skipping results the backend cannot read and replacing failed or off-topic reads with the next candidate), read the rest round-robin up to read_top, moving the share of languages with nothing left to those with more, leave out articles the model finds off topic, and write one brief in the reader's language with citations.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -16,7 +16,7 @@
           "language": {"type": "string", "minLength": 2, "maxLength": 16},
           "translate": {"type": "boolean"}
         }}},
-      "per_language": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3, "description": "Results to take from each language."},
+      "per_language": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3, "description": "Articles to read from each language before the unused share of read_top moves to languages with more readable results."},
       "read_top": {"type": "integer", "minimum": 1, "maximum": 6, "default": 4, "description": "Articles to read, at least one per language when there are as many languages."},
       "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 720, "default": 72}
     }
@@ -31,11 +31,12 @@
       "topic": {"type": "string"},
       "language": {"type": "string"},
       "queries": {"type": "array", "maxItems": 4, "items": {
-        "type": "object", "additionalProperties": false, "required": ["language", "terms", "found", "unreadable", "read"],
+        "type": "object", "additionalProperties": false, "required": ["language", "terms", "found", "unreadable", "read", "off_topic"],
         "properties": {"language": {"type": "string"}, "terms": {"type": "string"},
           "found": {"type": "integer", "minimum": 0, "description": "Results the search returned."},
           "unreadable": {"type": "integer", "minimum": 0, "description": "Results skipped because the backend cannot read them."},
-          "read": {"type": "integer", "minimum": 0, "description": "Articles read from this language."}}}},
+          "read": {"type": "integer", "minimum": 0, "description": "Articles read from this language and kept."},
+          "off_topic": {"type": "integer", "minimum": 0, "description": "Articles read from this language but left out as off topic."}}}},
       "brief": {"description": "research.digest's result, or null when nothing was read or the model failed."},
       "sources": {"type": "array", "maxItems": 6, "items": {
         "type": "object", "additionalProperties": false,

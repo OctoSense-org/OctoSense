@@ -1,8 +1,8 @@
 {
   "id": "news-digest",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "title": "News digest",
-  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read) and summarize them once in the requested language, citing each point's articles. Optionally translates the query into the search language first.",
+  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read), leave out pages that do not mention the topic and articles the model finds off topic, and summarize the rest once in the requested language, citing each point's articles. Optionally translates the query into the search language first.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -21,7 +21,7 @@
   "output": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["topic", "language", "digest", "sources", "missing", "unreadable"],
+    "required": ["topic", "language", "digest", "sources", "missing", "unreadable", "off_topic"],
     "properties": {
       "topic": {"type": "string"},
       "language": {"type": "string"},
@@ -35,7 +35,8 @@
           "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64}
         }}},
       "missing": {"type": "integer", "minimum": 0},
-      "unreadable": {"type": "integer", "minimum": 0, "description": "Results skipped because the backend cannot read them."}
+      "unreadable": {"type": "integer", "minimum": 0, "description": "Results skipped because the backend cannot read them."},
+      "off_topic": {"type": "integer", "minimum": 0, "description": "Articles read but left out as off topic: the page does not mention the topic's terms, or the model found it is not about the topic."}
     }
   },
   "provenance": true

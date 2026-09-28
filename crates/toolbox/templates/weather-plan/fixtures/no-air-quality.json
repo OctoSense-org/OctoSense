@@ -51,7 +51,7 @@
     ],
     "pages": {
       "https://example.invalid/weather/kansai-outlook": {
-        "text": "Remnants of a typhoon will bring showers to the Kansai region from Sunday to Tuesday. Temperatures stay mild, between 21°C and 26°C.",
+        "text": "Remnants of a typhoon will bring showers to the Kansai region, Kyoto included, from Sunday to Tuesday. Temperatures stay mild, between 21°C and 26°C.",
         "title": null,
         "delay_ms": 110,
         "error": null
@@ -81,6 +81,7 @@
       "missing": 0,
       "plan": {
         "language": "en",
+        "off_topic": [],
         "points": [
           {
             "citations": [
@@ -92,7 +93,7 @@
             "citations": [
               "s474cdb64a74a"
             ],
-            "text": "Remnants of a typhoon will bring showers to the Kansai region from Sunday to Tuesday."
+            "text": "Remnants of a typhoon will bring showers to the Kansai region, Kyoto included, from Sunday to Tuesday."
           }
         ],
         "summary": "Sources: Kyoto forecast: dry Saturday, rain from Sunday afternoon; Kansai outlook: typhoon remnants bring showers early next week",
@@ -109,7 +110,7 @@
           "url": "https://example.invalid/weather/kyoto-3day"
         },
         {
-          "evidence_sha256": "5d414bd64ca5c673e705c5b5183d1d23619c9f6b14bd5b6604981a08c005dcd9",
+          "evidence_sha256": "e65c8dedac56731718900b36a3ca263b7261754df5bb8a221bd8b5cd8254af3d",
           "id": "s474cdb64a74a",
           "kind": "forecast",
           "published_at": "2026-09-19T22:00:00Z",

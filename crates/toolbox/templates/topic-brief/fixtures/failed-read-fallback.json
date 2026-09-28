@@ -143,6 +143,7 @@
     "data": {
       "brief": {
         "language": "en",
+        "off_topic": [],
         "points": [
           {
             "citations": [
@@ -166,6 +167,7 @@
         {
           "found": 3,
           "language": "en",
+          "off_topic": 0,
           "read": 1,
           "terms": "river cleanup",
           "unreadable": 1
@@ -173,6 +175,7 @@
         {
           "found": 3,
           "language": "zh",
+          "off_topic": 0,
           "read": 1,
           "terms": "河流清理",
           "unreadable": 1

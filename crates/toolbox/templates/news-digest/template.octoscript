@@ -22,30 +22,50 @@ for item in found.items {
         unreadable = unreadable + 1
     }
 }
+// A page that does not mention the topic (the host says so with
+// `on_topic: false`) is counted, not digested.
 let ids = []
 let sources = []
 let missing = 0
+let off_topic = 0
 for task in tasks {
     let article = try task.await() catch nil
     if article == nil {
         missing = missing + 1
+    } elif article.on_topic == false {
+        off_topic = off_topic + 1
     } else {
         array.push(ids, article.id)
         array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
     }
 }
 
-// One model call, only when there is something to digest.
+// One model call, only when there is something to digest. With the topic
+// as its focus, the model also marks articles that are not about it; those
+// leave the sources.
 let digest = nil
 if array.len(ids) > 0 {
-    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids}).await() catch nil
+    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
     digest = resolved
 }
+if digest != nil {
+    let kept = []
+    for source in sources {
+        if array.contains(digest.off_topic, source.id) {
+            off_topic = off_topic + 1
+        } else {
+            array.push(kept, source)
+        }
+    }
+    sources = kept
+}
+// Partial when a search provider or a read failed, results were unreadable,
+// nothing was found, or nothing on the topic was read.
 let status = "ready"
-if missing > 0 || unreadable > 0 || found.source.partial || array.len(found.items) == 0 {
+if missing > 0 || unreadable > 0 || found.source.partial || array.len(found.items) == 0 || array.len(ids) == 0 {
     status = "partial"
 }
 if array.len(ids) > 0 && digest == nil {
     status = "partial"
 }
-{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable}}
+{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable, off_topic: off_topic}}
