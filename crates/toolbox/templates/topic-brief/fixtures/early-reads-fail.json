@@ -1,0 +1,293 @@
+{
+  "name": "early-reads-fail",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "zh",
+        "translate": true
+      }
+    ],
+    "max_age_hours": 72,
+    "per_language": 5,
+    "read_top": 4,
+    "topic": "Typhoon Surigae"
+  },
+  "fixture": {
+    "now": "2026-09-28T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Typhoon Surigae",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/surigae-en-1",
+            "title": "Typhoon Surigae nears Okinawa",
+            "source": "Harbor Wire",
+            "language": "en",
+            "published_at": "2026-09-28T06:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-en-2",
+            "title": "Typhoon Surigae: ferries cancelled",
+            "source": "Coast Daily",
+            "language": "en",
+            "published_at": "2026-09-28T05:30:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-en-3",
+            "title": "Typhoon Surigae weakens slightly",
+            "source": "Harbor Wire",
+            "language": "en",
+            "published_at": "2026-09-28T05:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-en-4",
+            "title": "Okinawa braces for Typhoon Surigae",
+            "source": "Island Times",
+            "language": "en",
+            "published_at": "2026-09-28T04:30:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-en-5",
+            "title": "Typhoon Surigae track shifts east",
+            "source": "Weather Desk",
+            "language": "en",
+            "published_at": "2026-09-28T04:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "台风 舒力基",
+        "language": "zh",
+        "delay_ms": 20,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/surigae-zh-1",
+            "title": "台风舒力基逼近冲绳",
+            "source": "海港报",
+            "language": "zh",
+            "published_at": "2026-09-28T06:10:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-zh-2",
+            "title": "台风舒力基减弱为强台风",
+            "source": "气象网",
+            "language": "zh",
+            "published_at": "2026-09-28T05:40:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-zh-3",
+            "title": "台风舒力基影响航班",
+            "source": "新闻社",
+            "language": "zh",
+            "published_at": "2026-09-28T05:10:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://news.google.com/rss/articles/surigae-zh-4",
+            "title": "台风舒力基路径更新",
+            "source": "海港报",
+            "language": "zh",
+            "published_at": "2026-09-28T04:40:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://news.google.com/rss/articles/surigae-en-1": {
+        "text": "",
+        "title": null,
+        "delay_ms": 30,
+        "error": "bot_challenge: a DataDome challenge (not bypassed) (final URL: https://www.harborwire.invalid/storm/surigae)"
+      },
+      "https://news.google.com/rss/articles/surigae-en-2": {
+        "text": "",
+        "title": null,
+        "delay_ms": 30,
+        "error": "http_403: stated by the page (the renderer reported no status) (final URL: https://coastdaily.invalid/2026/surigae-ferries)"
+      },
+      "https://news.google.com/rss/articles/surigae-en-3": {
+        "text": "Typhoon Surigae weakened slightly on Sunday but still carried winds of 180 km/h near its centre.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/surigae-en-4": {
+        "text": "Okinawa closed schools and suspended buses as Typhoon Surigae approached on Sunday.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/surigae-en-5": {
+        "text": "Forecasters shifted Typhoon Surigae's projected track east, away from the Kanto region.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/surigae-zh-1": {
+        "text": "",
+        "title": null,
+        "delay_ms": 30,
+        "error": "no_main_text: rendered (final URL: https://www.haigang.invalid/2026/0928/tf.html)"
+      },
+      "https://news.google.com/rss/articles/surigae-zh-2": {
+        "text": "台风舒力基周日减弱为强台风级，逐渐趋向日本以南洋面。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/surigae-zh-3": {
+        "text": "受台风舒力基影响，冲绳多个航班取消。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/surigae-zh-4": {
+        "text": "气象台更新台风舒力基路径，预计周二移出。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {
+      "Typhoon Surigae": "台风 舒力基"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "brief": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "sae7665a2ee31"
+            ],
+            "text": "台风舒力基周日减弱为强台风级，逐渐趋向日本以南洋面。"
+          },
+          {
+            "citations": [
+              "s7878a45dc2ab"
+            ],
+            "text": "Okinawa closed schools and suspended buses as Typhoon Surigae approached on Sunday."
+          },
+          {
+            "citations": [
+              "s13b6f3107467"
+            ],
+            "text": "受台风舒力基影响，冲绳多个航班取消。"
+          },
+          {
+            "citations": [
+              "sd14ae4f56783"
+            ],
+            "text": "Forecasters shifted Typhoon Surigae's projected track east, away from the Kanto region."
+          }
+        ],
+        "summary": "Sources: 台风舒力基减弱为强台风; Okinawa braces for Typhoon Surigae; 台风舒力基影响航班; Typhoon Surigae track shifts east",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 3,
+      "queries": [
+        {
+          "failed": 2,
+          "found": 5,
+          "language": "en",
+          "left": 1,
+          "off_topic": 0,
+          "read": 2,
+          "terms": "Typhoon Surigae",
+          "unreadable": 0
+        },
+        {
+          "failed": 1,
+          "found": 4,
+          "language": "zh",
+          "left": 1,
+          "off_topic": 0,
+          "read": 2,
+          "terms": "台风 舒力基",
+          "unreadable": 0
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "c03b951305cd3dacf550d62f912aef60e68b434007e40359139f8ce7d33af327",
+          "id": "sae7665a2ee31",
+          "language": "zh",
+          "published_at": "2026-09-28T05:40:00Z",
+          "source": "气象网",
+          "title": "台风舒力基减弱为强台风",
+          "url": "https://news.google.com/rss/articles/surigae-zh-2"
+        },
+        {
+          "evidence_sha256": "b7022b24c9d1cb19ed60d5405d66c6cc0df4f164194f2977209f6aa60bad7458",
+          "id": "s7878a45dc2ab",
+          "language": "en",
+          "published_at": "2026-09-28T04:30:00Z",
+          "source": "Island Times",
+          "title": "Okinawa braces for Typhoon Surigae",
+          "url": "https://news.google.com/rss/articles/surigae-en-4"
+        },
+        {
+          "evidence_sha256": "dbbd039906743eebd9e89791220825b0e48ccad09f7cc983a54379175ea480cf",
+          "id": "s13b6f3107467",
+          "language": "zh",
+          "published_at": "2026-09-28T05:10:00Z",
+          "source": "新闻社",
+          "title": "台风舒力基影响航班",
+          "url": "https://news.google.com/rss/articles/surigae-zh-3"
+        },
+        {
+          "evidence_sha256": "2a7e5153bb80e714c5c5d54dcca0ea4fb3d0598309b32a6dbd4207ddd8543496",
+          "id": "sd14ae4f56783",
+          "language": "en",
+          "published_at": "2026-09-28T04:00:00Z",
+          "source": "Weather Desk",
+          "title": "Typhoon Surigae track shifts east",
+          "url": "https://news.google.com/rss/articles/surigae-en-5"
+        }
+      ],
+      "topic": "Typhoon Surigae"
+    }
+  }
+}

@@ -574,6 +574,110 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
 }
 
 #[tokio::test]
+async fn topic_brief_replaces_early_failures_up_to_read_top() {
+    // Validation run 3 (28 Sep 2026): 4 of the typhoon brief's 7 reads
+    // failed and the old cap (`read_top` plus one per language) stopped it
+    // at 3 of 5 with candidates left. Now a failed publisher's other
+    // candidates wait until the rest are tried, and attempts go up to twice
+    // `read_top` plus one per language.
+    let template = template("topic-brief");
+    let case = case("topic-brief", "early-reads-fail");
+    let folder = temp_dir("early-fail");
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
+    assert_eq!(result.data["sources"].as_array().unwrap().len(), 4);
+    assert_eq!(result.data["missing"], 3);
+    assert_eq!(result.stats.reads, 7);
+    // The second Harbor Wire candidate (its publisher answered with a bot
+    // challenge) was left for last and never needed.
+    assert_eq!(result.data["queries"][0]["left"], 1);
+    assert!(result
+        .diagnostics
+        .iter()
+        .all(|d| !d.contains("host_skipped")));
+}
+
+#[tokio::test]
+async fn a_publisher_that_refused_a_read_is_not_read_again() {
+    // One language, two reads wanted. Harbor Wire answers the first read
+    // with a bot challenge; the only candidates left are its own (by source
+    // name, and by the host its first read ended on), so the host refuses
+    // them without reading. A page that merely had no main text does not
+    // mark its publisher.
+    let fixture: FixtureData = serde_json::from_value(json!({
+        "searches": [{"topic": "Typhoon Surigae", "language": "en", "items": [
+            {"url": "https://news.google.com/rss/articles/a", "title": "Typhoon Surigae 1", "source": "Harbor Wire", "language": "en", "published_at": ""},
+            {"url": "https://news.google.com/rss/articles/b", "title": "Typhoon Surigae 2", "source": "Coast Daily", "language": "en", "published_at": ""},
+            {"url": "https://news.google.com/rss/articles/c", "title": "Typhoon Surigae 3", "source": "Harbor Wire", "language": "en", "published_at": ""},
+            {"url": "https://harborwire.invalid/storm/2", "title": "Typhoon Surigae 4", "source": "HW Online", "language": "en", "published_at": ""},
+            {"url": "https://news.google.com/rss/articles/e", "title": "Typhoon Surigae 5", "source": "Coast Daily", "language": "en", "published_at": ""}
+        ]}],
+        "pages": {
+            "https://news.google.com/rss/articles/a": {"text": "", "error": "bot_challenge: a DataDome challenge (not bypassed) (final URL: https://www.harborwire.invalid/storm/1)"},
+            "https://news.google.com/rss/articles/b": {"text": "", "error": "no_main_text: rendered (final URL: https://coastdaily.invalid/1)"},
+            "https://news.google.com/rss/articles/c": {"text": "Typhoon Surigae neared Okinawa."},
+            "https://harborwire.invalid/storm/2": {"text": "Typhoon Surigae weakened."},
+            "https://news.google.com/rss/articles/e": {"text": "Typhoon Surigae shifted east."}
+        }
+    }))
+    .unwrap();
+    let params = json!({"topic": "Typhoon Surigae", "language": "en",
+        "languages": [{"language": "en", "translate": false}],
+        "per_language": 5, "read_top": 2});
+    let result = run(
+        &template("topic-brief"),
+        &app(&temp_dir("host-skip")),
+        params,
+        &fixture::host(&fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    // Round 1 reads a (bot challenge) and b (no main text); both mark
+    // their publisher in the template. Round 2 takes d first (HW Online has
+    // no failed read), then c: the host refuses both without reading, d by
+    // the host a's read ended on, c by its source name. The attempt cap
+    // (2 x 2 + 1) leaves one more: e, from Coast Daily, whose no-main-text
+    // failure did not make the host refuse it.
+    let mut skipped: Vec<&str> = result
+        .diagnostics
+        .iter()
+        .filter_map(|d| d.split_once("host_skipped: ").map(|(_, m)| m))
+        .collect();
+    skipped.sort();
+    assert_eq!(
+        skipped,
+        [
+            "host harborwire.invalid refused an earlier read in this run (bot_challenge); not read",
+            "source \"Harbor Wire\" refused an earlier read in this run (bot_challenge); not read",
+        ],
+        "{:?}",
+        result.diagnostics
+    );
+    assert_eq!(result.data["queries"][0]["failed"], 4);
+    let urls: Vec<&str> = result.data["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["url"].as_str().unwrap())
+        .collect();
+    assert_eq!(urls, ["https://news.google.com/rss/articles/e"]);
+}
+
+#[tokio::test]
 async fn a_template_cannot_emit_a_url_the_host_did_not_retrieve() {
     let template = probe(
         &["search"],
@@ -986,9 +1090,9 @@ async fn a_suspended_provider_is_a_diagnostic_not_a_gap() {
 
 #[tokio::test]
 async fn topic_brief_is_partial_when_a_language_or_the_read_count_falls_short() {
-    // Every English read fails and the attempts run out with an English
-    // candidate untried: English has no read, and the brief has one of the
-    // two articles asked for while a readable candidate remained.
+    // Every English read fails: all three English candidates are tried
+    // (the attempt cap, 2 x 2 + 2, leaves room), so English has no read and
+    // no candidate left.
     let template = template("topic-brief");
     let case = case("topic-brief", "failed-read-fallback");
     let mut data = case.fixture.clone();
@@ -1014,15 +1118,12 @@ async fn topic_brief_is_partial_when_a_language_or_the_read_count_falls_short() 
     assert_eq!(result.status, RunStatus::Partial);
     assert_eq!(
         result.status_reasons,
-        [
-            "language en: no article read (2 failed, 1 readable left untried)",
-            "read 1 of 2 articles while 1 readable candidates remained"
-        ]
+        ["language en: no article read (3 failed, 0 readable left untried)"]
     );
     let en = &result.data["queries"][0];
     assert_eq!(
         (&en["read"], &en["failed"], &en["left"]),
-        (&json!(0), &json!(2), &json!(1))
+        (&json!(0), &json!(3), &json!(0))
     );
     assert!(result.data["brief"].is_object());
 
@@ -1043,12 +1144,66 @@ async fn topic_brief_is_partial_when_a_language_or_the_read_count_falls_short() 
     assert!(result.data.is_null());
     assert_eq!(
         result.status_reasons.last().unwrap(),
-        "no article on the topic was read (4 reads failed)"
+        "no article on the topic was read (5 reads failed)"
     );
     assert!(result
         .status_reasons
         .iter()
         .any(|r| r.starts_with("language zh: no article read")));
+
+    // The attempts run out with candidates untried: five English reads
+    // fail, one Chinese read succeeds, and the cap (2 x 2 + 2 = 6) stops
+    // the run with one of the two articles asked for.
+    let items = |language: &str, source: &str| -> Vec<Value> {
+        (1..=5)
+            .map(|i| {
+                json!({"url": format!("https://example.invalid/{language}/{i}"),
+                "title": if language == "zh" { format!("台风舒力基逼近冲绳 {i}") } else { format!("Typhoon Surigae {i}") },
+                "source": format!("{source} {i}"), "language": language, "published_at": ""})
+            })
+            .collect()
+    };
+    let mut pages = serde_json::Map::new();
+    for i in 1..=5 {
+        pages.insert(
+            format!("https://example.invalid/en/{i}"),
+            json!({"text": "", "error": "no_main_text: rendered"}),
+        );
+        pages.insert(
+            format!("https://example.invalid/zh/{i}"),
+            json!({"text": "台风舒力基逼近冲绳。"}),
+        );
+    }
+    let data: FixtureData = serde_json::from_value(json!({
+        "searches": [
+            {"topic": "Typhoon Surigae", "language": "en", "items": items("en", "Wire")},
+            {"topic": "台风舒力基", "language": "zh", "items": items("zh", "报")}
+        ],
+        "pages": pages,
+        "translations": {"Typhoon Surigae": "台风舒力基"}
+    }))
+    .unwrap();
+    let params = json!({"topic": "Typhoon Surigae", "language": "en",
+        "languages": [{"language": "en", "translate": false}, {"language": "zh", "translate": true}],
+        "per_language": 5, "read_top": 2});
+    let result = run(
+        &template,
+        &app(&temp_dir("short")),
+        params,
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.stats.reads, 6, "{:?}", result.diagnostics);
+    assert_eq!(
+        result.status_reasons,
+        [
+            "language en: no article read (5 failed, 0 readable left untried)",
+            "read 1 of 2 articles while 4 readable candidates remained"
+        ]
+    );
 }
 
 #[tokio::test]
