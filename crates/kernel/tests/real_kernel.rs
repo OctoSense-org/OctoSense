@@ -465,8 +465,8 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
 
 /// What the system agent's turns were offered: `(stdio, host over Talk to
 /// Octos, external client)`. The scripted model logs the tool names each
-/// request offered. The profile is written with a widening tool policy: the
-/// kernel start writes its own.
+/// request offered. The profile carries an older OctoSense policy that allows
+/// `shell`: the kernel start replaces it with the current one.
 async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections::BTreeSet<String>; 3] {
     use std::collections::BTreeSet;
     use std::io::BufRead;
@@ -486,7 +486,7 @@ async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections
         "created_at":"2026-09-27T00:00:00Z", "updated_at":"2026-09-27T00:00:00Z",
         "config":{"llm":{"primary":{"family_id":"local", "model_id":"mock-model",
             "route":{"base_url":format!("http://127.0.0.1:{port}/v1"), "api_type":"openai"}}},
-            "tool_policy":{"allow":["*"]}}
+            "tool_policy":{"allow":["read_file","shell"],"owner":"octosense"}}
     }).to_string()).unwrap();
     std::fs::write(dir.join("web-client-origin.txt"), WEB).unwrap();
     let offered = |probe: &str| -> Option<BTreeSet<String>> {
@@ -528,8 +528,18 @@ async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections
     let mut native = core.connect().unwrap();
     let access = native.client_access().await.unwrap();
     call(&mut native, "open", "session/open", open.clone()).await;
-    call(&mut native, "turn", "turn/start", input("SYSTEM_TOOLS_HOST")).await;
+    let host_turn = input("SYSTEM_TOOLS_HOST");
+    call(&mut native, "turn", "turn/start", host_turn.clone()).await;
     let host = wait_for("SYSTEM_TOOLS_HOST").await;
+    // One turn at a time on a session: let the host's finish first.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let state = call(&mut native, "state", "turn/state/get", json!({
+                "session_id":SYSTEM_SESSION,"turn_id":host_turn["turn_id"]})).await;
+            if state["state"] == "completed" { break; }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }).await.expect("the host's turn completed");
     let mut browser = external(&access).await;
     ws_call(&mut browser, "open", "session/open", open).await;
     ws_call(&mut browser, "turn", "turn/start", input("SYSTEM_TOOLS_EXTERNAL")).await;
@@ -543,27 +553,25 @@ async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections
 }
 
 /// ADR 0004 §12, what is enforced today: a system-agent turn, whoever starts
-/// it, is offered no octos process tool (`shell` and the rest), sub-agent or
-/// administration tool, nothing outside the profile ceiling, and every tool
-/// of its own list octos registers; a Talk to Octos external client's turn
-/// keeps octos's external allowlist.
+/// it, is offered none of octos's shell (`group:runtime`: `shell`, `bash`,
+/// `exec_command`, `write_stdin`) and every tool of its own list octos
+/// registers; beyond that it is bounded only by the grantable ceiling
+/// (everything else), not its exact list. A Talk to Octos external client's
+/// turn keeps octos's external allowlist.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_system_agent_turn_is_offered_nothing_outside_the_ceiling_and_no_shell() {
-    use octosense_kernel::system_tools::{profile_ceiling, EXTERNAL_TURN_TOOLS, SYSTEM_AGENT_TOOLS};
+async fn a_system_agent_turn_is_offered_no_octos_shell() {
+    use octosense_kernel::system_tools::{EXTERNAL_TURN_TOOLS, SYSTEM_AGENT_TOOLS};
     use std::collections::BTreeSet;
     let Some(program) = kernel() else { return };
     let [stdio, host, external_tools] = offered_to_system_turns(&program, "ceiling").await;
-    let ceiling: BTreeSet<String> = profile_ceiling().into_iter().map(str::to_owned).collect();
     // `recall` (a session's evicted tool outputs) is registered only on
     // octos's session-actor turns, not on UI Protocol turns.
     let own: BTreeSet<String> = SYSTEM_AGENT_TOOLS.iter().filter(|t| **t != "recall")
         .map(|t| t.to_string()).collect();
     for (how, offered) in [("stdio", &stdio), ("Talk to Octos", &host)] {
-        for never in ["shell", "bash", "exec_command", "write_stdin", "check", "git", "spawn", "delegate",
-                      "peer_handoff", "cron", "configure_tool", "goal_grant"] {
-            assert!(!offered.contains(never), "{how}: {never} offered: {offered:?}");
+        for shell in ["shell", "bash", "exec_command", "write_stdin"] {
+            assert!(!offered.contains(shell), "{how}: {shell} offered: {offered:?}");
         }
-        assert!(offered.is_subset(&ceiling), "{how}: outside the ceiling: {:?}", offered - &ceiling);
         assert!(own.is_subset(offered), "{how}: missing its own tools: {:?}", &own - offered);
     }
     assert_eq!(stdio, host, "the same set over Talk to Octos");
@@ -572,11 +580,13 @@ async fn a_system_agent_turn_is_offered_nothing_outside_the_ceiling_and_no_shell
     assert_eq!(external_tools, &stdio & &allowlist, "external clients keep every allowlisted tool the kernel offers");
 }
 
-/// ADR 0004 §12, the target: a system-agent turn is offered EXACTLY the
-/// system agent's list. Needs a per-session tool list the host can set
-/// (octos#2567 item 5); until then the ceiling bounds it (above).
+/// ADR 0004 §12, the target, NOT yet enforced: a system-agent turn is
+/// offered EXACTLY its grants (its default list; nothing granted here).
+/// Needs session-targeted registration and tool lists in octos (octos#2567,
+/// reviewer item M1; our item 5); until then the grantable ceiling bounds it
+/// (above).
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs octos's per-session host tool list (octos#2567 item 5); today the system agent is bounded by the profile ceiling"]
+#[ignore = "needs session-targeted tool lists in octos (octos#2567 M1, our item 5); today the system agent is bounded by the grantable ceiling"]
 async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
     use octosense_kernel::system_tools::SystemAgentTools;
     use std::collections::BTreeSet;

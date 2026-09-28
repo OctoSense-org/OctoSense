@@ -1,64 +1,62 @@
-//! The system agent's tool set and the kernel profile's tool ceiling
+//! The system agent's tool set and the kernel profile's tool policy
 //! (ADR 0004 §12, plan step 4).
 //!
-//! Two lists live here, and only here:
-//!
 //! - [`SYSTEM_AGENT_TOOLS`]: the octos tools the system agent
-//!   (`_main:api:octosense#system`) is meant to be offered. With what it is
-//!   granted ([`SystemAgentTools`]: toolbox tools, other apps' shareable
-//!   tools, and command execution when the person turns it on in Settings)
-//!   that is its whole set.
-//! - [`profile_ceiling`]: every octos tool ANY `_main` session may be
-//!   offered: the system agent's list plus every octos generic tool an app
-//!   may declare and be granted ([`APP_GRANTABLE_OCTOS_TOOLS`]). Left out are
-//!   only the tools no grant gives: octos's own process tools (`shell`,
-//!   `bash`, `exec_command`, `write_stdin`, `check`, `git`), sub-agents and
-//!   ad-hoc peers, schedulers, goals and kernel administration
-//!   ([`NEVER_OFFERED`]). Command execution, when granted, is a HOST tool
-//!   (for example `terminal.run`) with a live approval, never octos's
-//!   `shell`.
+//!   (`_main:api:octosense#system`) gets by default. With what the person
+//!   grants it ([`SystemAgentTools`]: toolbox tools, other apps' shareable
+//!   tools, and command execution when turned on in Settings) that is its
+//!   whole set: ADR 0004 §12's "exactly its grants".
+//! - [`tool_policy`]: the `_main` profile's policy, the ceiling for every
+//!   `_main` session. It is every tool any grant can give: OctoSense
+//!   hard-codes no exclusions (§12) except ONE, octos's own shell
+//!   ([`OCTOS_SHELL`]). §12 delivers command execution only as a host tool
+//!   with a live approval (for example `terminal.run`), run by the shell
+//!   where it can be approved, audited and shown; octos's `shell` runs
+//!   commands inside the kernel with none of that, so no grant gives it.
+//!   (If a later reading of §12 makes octos's `shell` grantable too, this is
+//!   the one line to change: TODO(ADR 0004 §12).)
 //!
-//! **What is enforced today.** octos (the pinned rev) has no per-session tool
-//! list for an ordinary session; the only roster control a host has is the
-//! profile's `tool_policy` (allow/deny, deny wins), which octos re-applies to
-//! every turn's finished registry (after the per-turn `peer_*`, `spawn` and
-//! `send_file` tools are registered) and to kernel wake continuations alike.
-//! So before every kernel start ([`enforce`], from `launch::prepare`) the
-//! host writes the CEILING as the `_main` profile's policy, replacing any
-//! other; a policy change needs a kernel restart in octos, and every start
-//! writes it again. Consequences:
+//! **What is enforced today, and what is not.** octos (the pinned rev) has no
+//! tool list the host can set for one session; the only roster control a
+//! host has is the profile's `tool_policy` (allow/deny, deny wins), which
+//! octos re-applies to every turn's finished registry (after the per-turn
+//! `peer_*`, `spawn` and `send_file` tools) and to kernel wake continuations
+//! alike. So before every kernel start ([`enforce`], from `launch::prepare`)
+//! the host writes [`tool_policy`] into its OWN profile. Consequently:
 //!
-//! - **The system agent is bounded by the ceiling, not by its exact list**,
-//!   until octos lets the host set a session's tool list (the per-session
-//!   host tool list, octos#2567 item 5). No `shell` or other process tool,
-//!   no sub-agents, no administration reach it; generic tools an app may be
-//!   granted (for example `deep_search`, `browser`, `run_pipeline`) do, when
-//!   octos registers them. The real-kernel test that asserts the exact list
-//!   is ignored until then.
-//! - **App peers are not capped below what they can be granted**: the
-//!   ceiling holds every grantable octos tool, and each peer is narrowed to
-//!   its grants by its turns' `generic_tools` (octos#2567, plan step 6).
-//!   Host-routed tools (app, toolbox, cross-app tools, command execution)
-//!   are registered after the policy, so it never strips them.
-//! - **Talk to Octos external turns are unaffected**: the ceiling contains
-//!   octos's external allowlist ([`EXTERNAL_TURN_TOOLS`]), and octos confines
-//!   those turns to it on its own (UPCR-2026-036).
+//! - **§12's "exactly its grants" is NOT yet enforced for the system
+//!   agent.** It is bounded by the grantable ceiling: no octos shell, but
+//!   every other tool octos registers for it. Its exact list needs
+//!   session-targeted registration and tool lists in octos (octos#2567,
+//!   reviewer item M1; our item 5). The real-kernel exact-list test is kept,
+//!   ignored until then.
+//! - **App peers are not capped below what they can be granted**: each is
+//!   narrowed to its grants by its turns' `generic_tools` (octos#2567, plan
+//!   step 6). Host-routed tools (app, toolbox, cross-app tools, command
+//!   execution) are registered after the policy, so it never strips them.
+//! - **Talk to Octos external turns are unaffected**: octos confines them to
+//!   its external allowlist ([`EXTERNAL_TURN_TOOLS`]), none of which is the
+//!   shell (UPCR-2026-036).
+//!
+//! **Whose profile.** The kernel's core dir is OctoSense's own
+//! (`<OctoSense data dir>/octos-home/.octos`, see `dirs`), never the
+//! person's standalone octos home, and [`enforce`] replaces only a policy
+//! OctoSense wrote ([`POLICY_OWNER`]): it refuses, and warns, on a foreign
+//! policy and on the person's own octos home.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{json, Value};
 
-/// The octos tools the system agent is meant to be offered (its exact list
-/// once octos#2567 item 5 exists; until then it is bounded by
-/// [`profile_ceiling`]).
+/// The octos tools the system agent gets by default (not yet enforced as
+/// exact: see the module docs).
 ///
 /// - **Supervision** of app peers (ADR 0004 §6): `peer_send_input` briefs
 ///   and asks, `peer_gather` / `peer_list` read the blackboard,
 ///   `peer_respond` answers a peer's question (never its approvals, which
 ///   octos refuses), `peer_close` retires one. Not `peer_handoff`: app peers
-///   are prepared by the host (`peer/prepare`), and an ad-hoc peer would be
-///   an agent outside every grant.
+///   are prepared by the host (`peer/prepare`).
 /// - **Its workspace**, fenced by octos to the session's working directory:
 ///   read, search and edit files there.
 /// - **The person**: `ask_user_question`, media viewing.
@@ -67,9 +65,8 @@ use serde_json::{json, Value};
 ///   Octos clients also keep, until the toolbox (#108) grants the system
 ///   agent `toolbox.search` / `toolbox.web_read`.
 ///
-/// Not octos's `shell` or any process tool: command execution reaches the
-/// system agent only as a host tool the person grants in Settings
-/// ([`SystemAgentTools::grant_command_execution`]).
+/// Anything else it may have is by grant ([`SystemAgentTools`]); command
+/// execution only as a host tool the person turns on in Settings.
 pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     // Supervision.
     "peer_send_input",
@@ -106,73 +103,18 @@ pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     "tool_search",
 ];
 
-/// octos generic tools an app may declare and the person grant (ADR 0004
-/// §12: OctoSense hard-codes no exclusions among them), beyond
-/// [`SYSTEM_AGENT_TOOLS`]. Each app peer gets only its grants, through its
-/// turns' `generic_tools` (plan step 6); a name octos does not register is
-/// simply never offered.
-pub const APP_GRANTABLE_OCTOS_TOOLS: &[&str] = &[
-    // Research and the web.
-    "deep_search",
-    "deep_research",
-    "synthesize_research",
-    "deep_crawl",
-    "site_crawl",
-    "browser",
-    // Content generation and pipelines.
-    "image_generation",
-    "mofa_make",
-    "mofa_describe_content_type",
-    "run_pipeline",
-    "check_background_tasks",
-    "read_task_output",
-    // Messaging the person.
-    "send_file",
-    "message",
-    "request_user_input",
-    // Workspace history and planning.
-    "workspace_diff",
-    "workspace_log",
-    "workspace_show",
-    "update_plan",
-    "tool_suggest",
-    // Memory bookkeeping.
-    "record_memory_use",
-];
+/// octos's own shell: `group:runtime`, the `shell` tool and its aliases
+/// (`bash`, `exec_command` and its PTY input `write_stdin`). The one tool
+/// OctoSense never offers: command execution is granted as a host tool
+/// ([`COMMAND_EXECUTION_TOOL`]), each command approved live.
+pub const OCTOS_SHELL: &str = "group:runtime";
 
-/// octos tools no grant gives, denied outright (octos: deny wins over
-/// allow). They are also absent from the ceiling's allowlist, like every
-/// plugin and MCP tool.
-///
-/// - octos's own process tools: `group:runtime` (`shell`, `exec_command`,
-///   `write_stdin`, `bash`), `check` (runs build and test commands), `git`
-///   (runs git, whose hooks run code). Granted command execution is a host
-///   tool with a live approval instead.
-/// - Sub-agents and ad-hoc peers: `group:sessions`, `peer_handoff`.
-/// - Schedulers and goals, which start work outside any grant: `cron`,
-///   `monitor_*`, `goal_*`.
-/// - Kernel administration: `group:admin`.
-pub const NEVER_OFFERED: &[&str] = &[
-    "group:runtime",
-    "check",
-    "git",
-    "group:sessions",
-    "peer_handoff",
-    "cron",
-    "monitor_*",
-    "goal_*",
-    "group:admin",
-];
+/// Marks a `tool_policy` OctoSense wrote (`"owner"`, a field octos ignores).
+pub const POLICY_OWNER: &str = "octosense";
 
 /// The host tool granted command execution arrives as (the Terminal app's
 /// shareable tool, ADR 0004 §10 and §12): each command approved live.
 pub const COMMAND_EXECUTION_TOOL: &str = "terminal.run";
-
-/// Every octos tool a `_main` session may be offered:
-/// [`SYSTEM_AGENT_TOOLS`] ∪ [`APP_GRANTABLE_OCTOS_TOOLS`].
-pub fn profile_ceiling() -> BTreeSet<&'static str> {
-    SYSTEM_AGENT_TOOLS.iter().chain(APP_GRANTABLE_OCTOS_TOOLS).copied().collect()
-}
 
 /// octos's allowlist for a Talk to Octos external turn (octos
 /// `crates/octos-cli/src/api/host_managed.rs`, `EXTERNAL_TURN_TOOLS`, at the
@@ -202,9 +144,9 @@ pub const EXTERNAL_TURN_TOOLS: &[&str] = &[
 
 /// The system agent's tool set: [`SYSTEM_AGENT_TOOLS`] plus what it is
 /// granted. Granted tools are host-routed; registering them on the system
-/// session needs octos's per-session host tool list (octos#2567 items 5
-/// and 6), so today nothing grants any and [`SystemAgentTools::host_tools`]
-/// is what the shell will register then.
+/// session, like narrowing it to this set, needs octos's session-targeted
+/// registration (octos#2567 items 5 and 6), so today nothing grants any and
+/// [`SystemAgentTools::host_tools`] is what the shell will register then.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemAgentTools {
     toolbox: BTreeSet<String>,
@@ -233,7 +175,7 @@ impl SystemAgentTools {
     /// The person's Settings switch for the system agent's command
     /// execution (ADR 0004 §12; off by default). On, the system agent gets
     /// the host tool [`COMMAND_EXECUTION_TOOL`], each command approved live
-    /// (section 8); never octos's `shell`, which stays denied.
+    /// (section 8); never octos's shell.
     ///
     /// TODO(ADR 0004 plan steps 4/6): persist the switch in Settings →
     /// Assistant (no Settings plumbing for it exists yet) and register the
@@ -264,38 +206,57 @@ impl SystemAgentTools {
     }
 }
 
-/// The octos `ToolPolicy` the kernel runs `_main` with: allow
-/// [`profile_ceiling`], deny [`NEVER_OFFERED`].
+/// The octos `ToolPolicy` the kernel runs `_main` with: everything a grant
+/// can give (an empty allowlist is octos's "allow all") except octos's
+/// shell, marked as OctoSense's.
 pub fn tool_policy() -> Value {
-    json!({
-        "allow": profile_ceiling().into_iter().collect::<Vec<_>>(),
-        "deny": NEVER_OFFERED,
-    })
+    json!({ "allow": [], "deny": [OCTOS_SHELL], "owner": POLICY_OWNER })
+}
+
+/// What [`enforce`] did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Enforced {
+    /// The policy was written (or already current).
+    Written,
+    /// No profile yet: no provider, no turns, nothing to do.
+    NoProfile,
+    /// Refused: why (a foreign policy, the person's own octos home, an
+    /// unreadable profile). Logged as a warning.
+    Refused(String),
 }
 
 /// Write [`tool_policy`] into `<core_dir>/profiles/_main.json`
-/// (`config.tool_policy`), keeping every other key. No profile yet means no
-/// provider and no turns: nothing to do. An unreadable profile is left for
-/// the kernel to report (it cannot run turns from it either).
-pub fn enforce(core_dir: &Path) {
+/// (`config.tool_policy`), keeping every other key. It replaces only a
+/// policy OctoSense wrote (owner [`POLICY_OWNER`]) or none, and never
+/// touches the person's own octos home (`$HOME/octos-home/.octos`).
+pub fn enforce(core_dir: &Path) -> Enforced {
+    let outcome = enforce_unless_shared(core_dir, octosense_llm_config::profile::default_core_dir().as_deref());
+    if let Enforced::Refused(why) = &outcome {
+        log::warn!("octos-core: tool policy NOT written: {why}");
+    }
+    outcome
+}
+
+pub(crate) fn enforce_unless_shared(core_dir: &Path, shared: Option<&Path>) -> Enforced {
+    if shared.is_some_and(|shared| same_dir(shared, core_dir)) {
+        return Enforced::Refused(format!(
+            "{} is the person's own octos home, not OctoSense's",
+            core_dir.display()
+        ));
+    }
     let path = crate::dirs::profile_path(core_dir);
-    let Ok(bytes) = std::fs::read(&path) else { return };
-    let Ok(mut root) = serde_json::from_slice::<Value>(&bytes) else {
-        log::warn!("octos-core: {} is not JSON; tool policy NOT written", path.display());
-        return;
-    };
-    let Some(obj) = root.as_object_mut() else {
-        log::warn!("octos-core: {} is not a JSON object; tool policy NOT written", path.display());
-        return;
-    };
+    let Ok(bytes) = std::fs::read(&path) else { return Enforced::NoProfile };
+    let refused = |what: &str| Enforced::Refused(format!("{} {what}", path.display()));
+    let Ok(mut root) = serde_json::from_slice::<Value>(&bytes) else { return refused("is not JSON") };
+    let Some(obj) = root.as_object_mut() else { return refused("is not a JSON object") };
     let config = obj.entry("config").or_insert_with(|| json!({}));
-    let Some(config) = config.as_object_mut() else {
-        log::warn!("octos-core: {} `config` is not an object; tool policy NOT written", path.display());
-        return;
-    };
+    let Some(config) = config.as_object_mut() else { return refused("has a `config` that is not an object") };
     let policy = tool_policy();
-    if config.get("tool_policy") == Some(&policy) {
-        return;
+    match config.get("tool_policy") {
+        Some(current) if *current == policy => return Enforced::Written,
+        None | Some(Value::Null) => {}
+        Some(current) if current.get("owner").and_then(Value::as_str) == Some(POLICY_OWNER) => {}
+        Some(_) => return refused("has a tool policy OctoSense did not write; leaving it"),
     }
     config.insert("tool_policy".into(), policy);
     let result = serde_json::to_vec_pretty(&root)
@@ -306,9 +267,16 @@ pub fn enforce(core_dir: &Path) {
             crate::network::write_private(dir, name, &body).map_err(|e| e.to_string())
         });
     match result {
-        Ok(()) => log::info!("octos-core: wrote the tool ceiling to {}", path.display()),
-        Err(e) => log::warn!("octos-core: could not write the tool policy to {}: {e}", path.display()),
+        Ok(()) => {
+            log::info!("octos-core: wrote OctoSense's tool policy to {}", path.display());
+            Enforced::Written
+        }
+        Err(e) => Enforced::Refused(format!("could not write {}: {e}", path.display())),
     }
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    a == b || matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
 }
 
 #[cfg(test)]
@@ -322,46 +290,20 @@ mod tests {
         dir
     }
 
-    const PROCESS_AND_ADMIN: &[&str] = &[
-        "shell", "exec_command", "write_stdin", "bash", "check", "git", "spawn", "spawn_agent",
-        "send_input", "resume_agent", "wait_agent", "close_agent", "delegate", "peer_handoff", "cron",
-        "monitor_create", "goal_grant", "manage_skills", "configure_tool", "model_check",
-    ];
+    fn read(path: &Path) -> Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
 
-    fn policy_lists() -> (Vec<String>, Vec<String>) {
+    #[test]
+    fn only_octos_shell_is_excluded_and_the_system_agent_default_has_none_of_it() {
         let policy = tool_policy();
-        let list = |k: &str| policy[k].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_owned()).collect();
-        (list("allow"), list("deny"))
-    }
-
-    #[test]
-    fn no_octos_process_tool_sub_agent_or_admin_tool_is_ever_offered() {
-        let (allow, deny) = policy_lists();
-        for tool in PROCESS_AND_ADMIN {
-            assert!(!allow.iter().any(|a| a == tool), "{tool} is in the ceiling");
-            assert!(!SYSTEM_AGENT_TOOLS.contains(tool), "{tool} is in the system agent's list");
+        assert_eq!(policy["allow"], json!([]), "everything a grant can give");
+        assert_eq!(policy["deny"], json!(["group:runtime"]), "octos's shell, and nothing else");
+        for shell in ["shell", "bash", "exec_command", "write_stdin"] {
+            assert!(!SYSTEM_AGENT_TOOLS.contains(&shell));
+            assert!(!EXTERNAL_TURN_TOOLS.contains(&shell), "external clients lose nothing");
         }
-        for group in ["group:runtime", "group:sessions", "group:admin"] {
-            assert!(deny.iter().any(|d| d == group), "{group} is denied outright");
-        }
-        assert!(!allow.iter().any(|a| a.contains('*') || a.starts_with("group:")), "the ceiling names tools");
-    }
-
-    #[test]
-    fn the_ceiling_holds_the_system_agent_every_grantable_tool_and_the_external_allowlist() {
-        let ceiling = profile_ceiling();
-        for tool in SYSTEM_AGENT_TOOLS.iter().chain(APP_GRANTABLE_OCTOS_TOOLS).chain(EXTERNAL_TURN_TOOLS) {
-            assert!(ceiling.contains(tool), "{tool}");
-        }
-        // octos#2567's peer-safe generic tools, all grantable to an app.
-        for tool in [
-            "read_file", "list_dir", "glob", "grep", "web_search", "deep_search", "memory_search",
-            "memory_load", "recall_memory", "save_memory", "record_memory_use", "mofa_make",
-            "mofa_describe_content_type",
-        ] {
-            assert!(ceiling.contains(tool), "{tool} could not be granted to an app peer");
-        }
-        assert_eq!(ceiling.len(), SYSTEM_AGENT_TOOLS.len() + APP_GRANTABLE_OCTOS_TOOLS.len(), "no overlap");
+        assert!(!SYSTEM_AGENT_TOOLS.contains(&"peer_handoff"));
     }
 
     #[test]
@@ -369,7 +311,7 @@ mod tests {
         let shipped = SystemAgentTools::new();
         assert!(!shipped.command_execution(), "command execution is off by default");
         assert!(shipped.host_tools().is_empty());
-        assert_eq!(shipped.names().len(), SYSTEM_AGENT_TOOLS.len());
+        assert_eq!(shipped.names().len(), SYSTEM_AGENT_TOOLS.len(), "no duplicates");
         let mut granted = SystemAgentTools::new();
         granted
             .grant_toolbox("toolbox.search")
@@ -378,33 +320,48 @@ mod tests {
         let host: Vec<String> = granted.host_tools().into_iter().collect();
         assert_eq!(host, ["mail.send", COMMAND_EXECUTION_TOOL, "toolbox.search"]);
         assert!(!granted.names().contains("shell"), "never octos's shell");
-        assert!(!tool_policy()["allow"].as_array().unwrap().iter().any(|t| t == COMMAND_EXECUTION_TOOL));
     }
 
     #[test]
-    fn enforce_writes_the_policy_and_keeps_the_rest() {
+    fn enforce_writes_ours_keeps_the_rest_and_replaces_only_our_own() {
         let dir = tmp("keep");
         let path = dir.join("profiles/_main.json");
-        std::fs::write(
-            &path,
-            r#"{"id":"_main","config":{"llm":{"primary":{"family_id":"x"}},"tool_policy":{"allow":["shell"]}}}"#,
-        )
-        .unwrap();
-        enforce(&dir);
-        let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        std::fs::write(&path, r#"{"id":"_main","config":{"llm":{"primary":{"family_id":"x"}}}}"#).unwrap();
+        assert_eq!(enforce_unless_shared(&dir, None), Enforced::Written);
+        let v = read(&path);
         assert_eq!(v["id"], "_main");
         assert_eq!(v["config"]["llm"]["primary"]["family_id"], "x");
-        assert_eq!(v["config"]["tool_policy"], tool_policy(), "a widened policy is replaced");
+        assert_eq!(v["config"]["tool_policy"], tool_policy());
+        // An older policy of ours is replaced.
+        std::fs::write(&path, r#"{"config":{"tool_policy":{"allow":["read_file"],"owner":"octosense"}}}"#).unwrap();
+        assert_eq!(enforce_unless_shared(&dir, None), Enforced::Written);
+        assert_eq!(read(&path)["config"]["tool_policy"], tool_policy());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn enforce_refuses_a_foreign_policy_and_the_persons_own_octos_home() {
+        let dir = tmp("foreign");
+        let path = dir.join("profiles/_main.json");
+        let foreign = r#"{"config":{"tool_policy":{"allow":["*"]}}}"#;
+        std::fs::write(&path, foreign).unwrap();
+        assert!(matches!(enforce_unless_shared(&dir, None), Enforced::Refused(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), foreign, "untouched");
+        // The person's own octos home: never written, policy or not.
+        let own = r#"{"config":{"llm":{}}}"#;
+        std::fs::write(&path, own).unwrap();
+        assert!(matches!(enforce_unless_shared(&dir, Some(&dir)), Enforced::Refused(_)));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), own, "untouched");
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn enforce_without_a_profile_or_with_a_broken_one_leaves_it() {
         let dir = tmp("none");
-        enforce(&dir);
+        assert_eq!(enforce_unless_shared(&dir, None), Enforced::NoProfile);
         assert!(!dir.join("profiles/_main.json").exists(), "no profile is invented");
         std::fs::write(dir.join("profiles/_main.json"), "{not json").unwrap();
-        enforce(&dir);
+        assert!(matches!(enforce_unless_shared(&dir, None), Enforced::Refused(_)));
         assert_eq!(std::fs::read_to_string(dir.join("profiles/_main.json")).unwrap(), "{not json");
         let _ = std::fs::remove_dir_all(dir);
     }
