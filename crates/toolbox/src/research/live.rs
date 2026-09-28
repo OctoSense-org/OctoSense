@@ -126,13 +126,7 @@ impl reqwest::dns::Resolve for GuardedResolver {
     }
 }
 
-/// A configured RSS or Atom feed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Feed {
-    pub url: String,
-    pub name: String,
-    pub language: String,
-}
+pub use super::Feed;
 
 #[derive(Debug, Clone)]
 pub struct LiveConfig {

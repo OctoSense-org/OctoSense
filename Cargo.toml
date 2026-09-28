@@ -91,6 +91,10 @@ octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub
 # kernel artifact (liboctos.so) is built from this same revision.
 octos-core = { git = "https://github.com/octos-org/octos.git", rev = "60cf96e6c8719bd5f1b61ab5b537a88ffa314879" }
 octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "60cf96e6c8719bd5f1b61ab5b537a88ffa314879", default-features = false }
+# The research engine (the metasearch, the SSRF-safe polite reader and the
+# toolbox scope) for the toolbox's `octos-engine` feature. Same source and
+# revision as above; it resolves once the pin includes octos#2585.
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "60cf96e6c8719bd5f1b61ab5b537a88ffa314879", default-features = false }
 # --- Rinx (Matrix chats, Moments, articles, mini apps) as a hosted module:
 # the library only, never its standalone entry or its own kernel (Rinx ADR 0007).
 rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "a72e4b003a05ebcb31bc86c346d7dd06cdffbceb", default-features = false, features = ["octosense-module"] }

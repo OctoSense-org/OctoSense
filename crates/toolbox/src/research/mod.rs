@@ -3,7 +3,8 @@
 //! [`ResearchHost`] implements [`ToolboxHost`] for the `research` module over
 //! two pluggable parts: a [`ResearchBackend`] that finds and reads sources
 //! (the fixture backend in tests and evaluation; the interim [`live`] adapter;
-//! later the octos research engine, octos#2568, and metasearch, octos#2576)
+//! the octos research engine, octos#2568, in `octos` behind the
+//! `octos-engine` feature; later metasearch, octos#2582)
 //! and a [`ModelClient`] the host supplies for `query` and `digest`.
 //!
 //! The policy lives here, once, whatever the backend:
@@ -25,8 +26,12 @@
 //! - provenance (URL, title, source, retrieval time, evidence hash) is kept by
 //!   the host and returned with each reply.
 
+#[cfg(feature = "octos-engine")]
+pub mod chrome;
 #[cfg(feature = "live")]
 pub mod live;
+#[cfg(feature = "octos-engine")]
+pub mod octos;
 pub mod relevance;
 
 use crate::host::{CallContext, HostError, HostFuture, HostReply, Provenance, Usage};
@@ -107,6 +112,15 @@ pub struct SearchResults {
     /// failed or was skipped and why, items dropped as off topic.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+}
+
+/// A configured RSS or Atom feed (a publisher's own feed, not a search
+/// engine): the live backends keep only its items that mention the topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Feed {
+    pub url: String,
+    pub name: String,
+    pub language: String,
 }
 
 /// A page's main text as a backend read it.

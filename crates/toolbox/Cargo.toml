@@ -7,6 +7,11 @@
 # Features:
 # - `live`: the interim `mod.research` adapter (feeds, Google News RSS, GDELT,
 #   plain-HTTP article reading) until the octos research engine lands.
+# - `octos-engine`: `mod.research` over the octos research engine
+#   (`octos-research`: the metasearch of octos#2582, the polite reader of
+#   octos#2568, the toolbox scope of octos#2585) with headless Chrome for
+#   pages that need JavaScript. Resolves once the workspace's octos pin
+#   includes octos#2585.
 [package]
 name = "octosense-toolbox"
 description = "OctoSense system toolbox: workflow template library, runner, forks and evaluation"
@@ -18,6 +23,14 @@ license.workspace = true
 [features]
 default = []
 live = ["dep:reqwest", "dep:quick-xml", "dep:dom_smoothie", "dep:url"]
+octos-engine = [
+    "dep:octos-research",
+    "octos-research/extract",
+    "octos-research/http",
+    "dep:reqwest",
+    "dep:tokio-tungstenite",
+    "dep:url",
+]
 
 [dependencies]
 octoscript-core = { workspace = true }
@@ -33,6 +46,8 @@ reqwest = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 quick-xml = { version = "0.37", optional = true }
 dom_smoothie = { version = "0.18", optional = true }
+octos-research = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }

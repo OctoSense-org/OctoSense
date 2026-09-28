@@ -111,6 +111,18 @@ Backends:
     - no cookies, credentials or proxies, and 401/402/403 are failures, so there is no paywall or login bypass;
     - **SSRF blocking** on every fetch and every redirect hop. Loopback, private, link-local (including cloud-metadata 169.254.169.254 and `fd00:ec2::254`), unique-local, shared (CGNAT), multicast, reserved and IPv4-mapped forms are refused, both as URL literals and in DNS answers. A resolver filters the addresses the connection actually uses, so DNS rebinding cannot get past the check. `localhost` names are refused.
   - **Licenses**: `dom_smoothie`, `dom_query`, `gjson`, `html-escape` (MIT), `flagset` (Apache-2.0), `quick-xml` (MIT), and Mozilla's `cssparser` and `selectors` (MPL-2.0, unmodified; the workspace already links them through `scraper`). All of these are behind the `live` feature.
+- **The octos research engine** (`research::octos::OctosResearch`, feature `octos-engine`). It depends on `octos-research` through the workspace's one octos pin, and needs octos#2568 (reader), #2582 (metasearch) and #2585 (`octos_research::toolbox`). **Until the pin includes #2585, the feature does not resolve.** It only finds and reads; everything under "The policy" above stays in the host unchanged.
+  - **One definition of an app's reach.** The app's grant (`Scope`) is mapped onto `octos_research::toolbox::Scope` (`octos_scope`: languages, regions, domains, recency rounded up to days, no crawling). Each search is narrowed by octos's `Scope::search_args`, so a language, region or domain outside the grant is refused there and the recency is clamped. Each read is checked with `Scope::check_domain` twice: the link, then the page the browser ended on, the publisher for a Google News link.
+  - **Search** is the octos metasearch (`octos_research::metasearch`), category `news`: Google News in the language's own edition, GDELT, publisher feeds, Hacker News and Mastodon, plus keyed engines when their keys are set.
+    - Octos fans the query out under a 15 s deadline, then merges, deduplicates and ranks the results. It spaces requests per host, honours `Retry-After`, caches with ETags, and suspends a failing engine with doubling backoff. That backoff is how GDELT's 429s are handled.
+    - No results page is scraped.
+    - The toolbox's own `research.query` translation goes in as `query_by_lang`, so octos makes no model call.
+    - The diagnostics name every engine call (`engines: gdelt (zh) suspended, google_news (zh) 15, mastodon (zh) 13, publisher_feeds (zh) 0`) and each engine that failed, timed out, was suspended or was rate limited. They also count the results filtered out and give each result's engines and score by host id (`ranked: s1a2… google_news+gdelt 0.83`). The score is also in the search provenance's `via`.
+    - `source.partial` means an engine failed or timed out in this search. An engine octos had already suspended is reported but does not make the search partial.
+    - An item's language keeps the searched tag when the engine's is the same language (`zh-CN` for a `zh` search stays `zh`).
+  - **Reading** is octos's polite reader (`octos_research::reader`): SSRF check and DNS pinning on every hop, 1 s per host, one backoff on 429/503 honouring `Retry-After`, content-type and size caps, readability extraction, and octos's honest User-Agent. robots.txt is off unless the operator sets `OCTOS_RESPECT_ROBOTS=1`. When plain HTTP yields no main text (every Google News link, script-built pages), the page is rendered in headless Chrome and the reader re-checks where the browser went; a page the browser ends on outside the app's allowed domains is refused.
+  - **`readable`**: Google News links are readable only when a browser is available. Without Chrome (a phone, a server, or `OCTOSENSE_TOOLBOX_RENDER=off`) they say `readable: false`, as with the interim adapter.
+  - **Headless Chrome** (`research::chrome`), following octos `deep_crawl`'s discipline: `--headless=new`, a throwaway profile, no automation-hiding switches or scripts, Chrome's own User-Agent with the `octos-research/1.0` product token appended, and a bot challenge ends the attempt. Every request the tab makes is paused and continued only when `octos_research::net::check_url` passes (public address, DNS fail closed); images, media and fonts are not fetched. **Process hygiene**: one browser per process (`Chrome::shared`), at most 2 tabs at a time, 30 s per render, the tab closed however the render ends. Chrome runs in its own process group, and the guard that owns it kills the whole group and deletes the profile when it is dropped: when the last backend using it goes away, after 60 s idle, on `Chrome::shutdown`, or when the browser stops answering. A process killed with SIGKILL runs no destructor and leaves its browser. The tests start Chrome and check the group is gone after a drop, a hung render times out without a relaunch, an idle browser closes, four renders share one browser, and private addresses are refused inside the browser.
 
 ## Forks
 
@@ -172,15 +184,24 @@ This flow needs the wiring in [What remains](#what-remains):
 
 ## Commands
 
-All of these were run on 27 Sep 2026 (the test counts after the relevance, Google News and GDELT fixes).
+All of these were run on 27 Sep 2026. The `octos-engine` ones ran with octos#2585's head (5b9110be) in place of the pin, through an uncommitted override: `--config 'patch."https://github.com/octos-org/octos.git".octos-research.path="<octos checkout>/crates/octos-research"'` (**unverified** against the pin until it moves).
 
 ```sh
 cargo test --locked -p octosense-toolbox                     # 52 tests, fixtures only
 cargo test --locked -p octosense-toolbox --features live     # 66 tests (4 ignored): + adapter tests on a local server
                                                              # (robots.txt never requested by default; honoured when on; SSRF; backoff;
                                                              # Google News editions; the GDELT breaker; provider deadlines; the feed filter)
+cargo test --locked -p octosense-toolbox --features octos-engine        # 65 tests (4 ignored): + the scope mapping, engine notes,
+                                                             # and headless Chrome (skipped without Chrome): the process group is gone after
+                                                             # a drop, a hung render times out without a relaunch, an idle browser closes,
+                                                             # four renders share one browser, private addresses are refused in the browser
+cargo test --locked -p octosense-toolbox --features live,octos-engine   # 79 tests (5 ignored)
 cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
+cargo clippy --locked -p octosense-toolbox --all-targets --features live,octos-engine --no-deps -- -D warnings
 cargo fmt --check -p octosense-toolbox
+# The octos engine live: 台风 in the zh edition, Google News links read through
+# headless Chrome, the extractive stand-in model. Latest: 2 of 3 read, 23.2 s.
+cargo test -p octosense-toolbox --features octos-engine --test octos_engine -- --ignored --nocapture
 # The live smoke test: Google News RSS, GDELT and the BBC and Guardian technology
 # feeds, the extractive stand-in model. Latest: ready, 3 of 3 sources read,
 # 4 search fetches, 28.7 s.
@@ -189,6 +210,9 @@ cargo test -p octosense-toolbox --features live --test live -- --ignored --nocap
 # plus BBC 中文. The key is read only from DEEPSEEK_API_KEY; the tests skip
 # without it. Results below.
 DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features live --test live_model -- --ignored --nocapture --test-threads=1
+# The same with the octos research engine (LIVE_BACKEND=interim picks the
+# interim adapter when both features are on).
+DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features octos-engine --test live_model -- --ignored --nocapture --test-threads=1
 # Only the validation's twelve runs (six topics, both templates); LIVE_OUT keeps
 # each run's result, the pages read and token usage as JSON.
 DEEPSEEK_API_KEY=… LIVE_OUT=/tmp/live cargo test --locked -p octosense-toolbox --features live --test live_model c_validation_topics -- --ignored --nocapture
@@ -228,12 +252,51 @@ The deep-research validation of 27 Sep 2026 ran both research templates on six t
 
 What still limits the interim adapter: GDELT answered 429 from the first request (a direct probe also got 429 after 10.2 s), and every Google News result is a link that needs a browser. So outside the configured feeds' own stories nothing was readable, and 10 of 12 runs honestly read nothing. The octos research engine (octos#2568) reads Google News links through headless Chrome; the relevance gate, translation and citation checks stay in the host and apply to it unchanged.
 
+### The validation topics on the octos research engine (27 Sep 2026)
+
+These are the same twelve runs with the same model, on `OctosResearch` (feature `octos-engine`) instead of the interim adapter. The host and the templates are unchanged. Grounding was judged as in the first validation: `deepseek-v4-pro` against the evidence the host kept, one call per run.
+
+The engine ran in two versions:
+- the first searched octos-research's providers directly (Google News, GDELT, the feeds above);
+- the current one searches with the octos metasearch.
+
+| | Interim, before (0fcb511) | Interim, relevance fixes (d60891f) | octos deep-search (#2568) | Engine, providers | **Engine, metasearch (current)** |
+|---|---|---|---|---|---|
+| Runs with output | 7 of 12 | 2 of 12 | 6 of 6 | 12 of 12 | **12 of 12** |
+| Runs on topic | 3 of 12 | 2 of 12 | 6 of 6 | 10 of 12 | **12 of 12** |
+| Articles read, on topic | 26, 8 | 10, 10 | 12 (16 of 19 sources on topic) | 41, 36 | **39, 38** (26 Google News links read in Chrome, 10 direct, 3 Mastodon posts) |
+| Languages read | en | en | en, zh | en and zh in all 4 two-language runs | **en and zh in all 4 two-language runs** |
+| Strict / lenient grounding | 92–98% / 100% | not judged | 84% / 94% | 97–98% / 100% | **96–98% / 100%** (130 claims) |
+| Unsupported or wrongly cited | 0 | – | 6 | 0 | **0** |
+| Supported and on topic | 25–31% | – | 62% | 97% / 84% | **96% (news-digest), 98% (topic-brief)** |
+| Mean wall time | 34–36 s | mostly 0.3–2.8 s (nothing read) | 49 s | 26–28 s | **28–32 s** (search median 2.2 s) |
+| Model calls, cost | 10, $0.011 | 5, $0.0045 | 6, $0.006 | 15, $0.021 | **15, $0.020** |
+
+What still falls short:
+- **Every run is still `partial`.**
+  - With the metasearch, a search is partial only when an engine fails in that call. GDELT answered 429 or timed out on the first searches and then stayed suspended.
+  - Every run also had a failed read, and the runner downgrades `ready` to `partial` for any failed call.
+- **23 of 49 Google News reads failed** as `no_main_text`.
+  - 2 of them were bot challenges, which were not bypassed.
+  - The rest were Reuters, NYT, MarketWatch and similar pages with no extractable article.
+  - The reader does not say why.
+- **Mastodon posts are read as sources.** They are short and one was off topic (a game post in an "Nvidia earnings" run).
+- **Summaries added 11 statements no point backs** (2 unsupported by any source).
+- **Without Chrome, Google News links go back to `readable: false`.** That covers a phone, a server, or `OCTOSENSE_TOOLBOX_RENDER=off`.
+
+After the run, no Chrome process or profile was left.
+
 `octoscript-schema` turns on `serde_json`'s `arbitrary_precision` feature for any build that includes this crate. The shells do not link it today. Check this before they do.
 
 ## What remains
 
 - **Peer tool wiring**, after octos#2567 (host-registered peer tools): register `tool_descriptors()` for granted peers in `crates/ai-host`, route each call to `Toolbox::handle_json` with the peer's `AppContext`, and supply the real `ModelClient` from the person's providers.
-- **Engine swap**: replace the interim live adapter with the octos research engine (octos#2568) and metasearch (octos#2576) behind `ResearchBackend`, adding browser reading, SearXNG, structured weather and market sources, and `deep_crawl`.
+- **Engine**: the octos research engine is behind `ResearchBackend` (`octos-engine`). Still to do:
+  - drop the interim adapter once the shells use it;
+  - add metasearch (octos#2582) and publisher feeds (octos#2585);
+  - add structured weather and market sources;
+  - report why a read had no main text (final URL, consent page, bot challenge);
+  - stop a provider that the breaker skipped from making every run `partial`.
 - **Durable execution** through `octoscript-workflow` (checkpointed, resumable runs; queueing and batching by the system agent).
 - **App Hub**: the `research` and `crawl` capabilities with a scope in the manifest; pinning forks shipped in a bundle.
 - **Back upstream**: offering a winning fork to the library, with the person's consent.
