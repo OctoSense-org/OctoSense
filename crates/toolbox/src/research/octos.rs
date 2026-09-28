@@ -26,9 +26,13 @@
 //! - **Diagnostics**: each item's engines and score are in its provenance
 //!   (`via`: `search:metasearch[google_news+gdelt] 0.83`); every engine
 //!   that failed, timed out, was suspended or was rate limited, and every
-//!   result filtered out, is a note. `partial` means an engine failed or
-//!   timed out in this search; an engine octos had already suspended is
-//!   reported but does not make every search partial.
+//!   result filtered out, is a note ([`skipped_notes`]; feed entries octos
+//!   found not to be about the topic, `query_mismatch`, get their own).
+//!   A slow engine is dropped at octos's soft deadline
+//!   (`SearchRequest::straggler_grace`, octos's default) and noted as timed
+//!   out. `partial` means an engine failed or timed out in this search; an
+//!   engine octos had already suspended is reported but does not make every
+//!   search partial.
 //! - **Read**: SSRF check and DNS pinning on every hop, per-host spacing,
 //!   one backoff on 429/503 honouring `Retry-After`, content-type and size
 //!   caps, readability extraction, octos's honest User-Agent; robots.txt
@@ -52,7 +56,8 @@ use octos_research::metasearch::{
     EngineReport, EngineStatus, MetaItem, Metasearch, ReqwestFetch, SearchRequest,
 };
 use octos_research::reader::{self, Reader, ReaderConfig};
-use octos_research::{ItemKind, ReadError, ReadFailure};
+use octos_research::toolbox::ScopedSearch;
+use octos_research::{ItemKind, ReadError, ReadFailure, SkippedUrl};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -339,6 +344,53 @@ pub fn ranking_note(items: &[FoundItem]) -> Option<String> {
     })
 }
 
+/// The metasearch request for a scoped search. The soft deadline for slow
+/// engines is octos's default ([`SearchRequest::new`]).
+pub fn search_request(
+    scoped: &ScopedSearch,
+    config: &OctosConfig,
+    now: chrono::DateTime<chrono::Utc>,
+) -> SearchRequest {
+    let mut request = SearchRequest::new(&scoped.query, &scoped.category);
+    request.query_by_lang = scoped.query_by_lang.clone();
+    request.langs = scoped.langs.clone();
+    request.region = scoped.region.clone();
+    request.since = scoped.since.clone();
+    request.count = candidate_pool(scoped.count);
+    request.limit = request.count;
+    request.filters = scoped.filters.clone();
+    request.engines = config.engines.clone();
+    request.deadline = config.search_deadline;
+    request.now = now;
+    request
+}
+
+/// Notes for the results octos skipped: entries of a listing engine
+/// (publisher feeds) that were not about the topic (`query_mismatch`) in one
+/// note, every other reason (filters, dates, domains) counted in another.
+pub fn skipped_notes(skipped: &[SkippedUrl]) -> Vec<String> {
+    let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut mismatched = 0;
+    for s in skipped {
+        if s.reason == "query_mismatch" {
+            mismatched += 1;
+        } else {
+            *reasons.entry(s.reason.as_str()).or_default() += 1;
+        }
+    }
+    let mut notes = Vec::new();
+    if mismatched > 0 {
+        notes.push(format!(
+            "{mismatched} feed entries left out: not about the topic (query_mismatch)"
+        ));
+    }
+    if !reasons.is_empty() {
+        let parts: Vec<String> = reasons.iter().map(|(r, n)| format!("{r}: {n}")).collect();
+        notes.push(format!("results filtered out ({})", parts.join(", ")));
+    }
+    notes
+}
+
 /// The merged items that are articles, and a note counting the posts left
 /// out. Posts (Mastodon posts, discussion threads without a linked article;
 /// octos#2590 marks them `kind: post`) are signal about what people say, not
@@ -357,7 +409,7 @@ pub fn articles(items: &[MetaItem]) -> (Vec<&MetaItem>, Option<String>) {
 
 /// A failed read as a host error. The message is octos's reason as
 /// `<code>: <detail> (final URL: …)` (`bot_challenge`, `paywall`,
-/// `consent_page`, `http_403`, `redirect_unresolved`, `no_main_text`, …),
+/// `consent_page`, `stub_page`, `http_403`, `redirect_unresolved`, `no_main_text`, …),
 /// so the run's diagnostics say why a page could not be read and where the
 /// read ended. SSRF, scope and robots.txt refusals are denials; every other
 /// reason is a failure.
@@ -383,31 +435,14 @@ impl ResearchBackend for OctosResearch {
             let scoped = scope
                 .search_args(&search_args(&query, &self.config.category), now)
                 .map_err(HostError::Denied)?;
-            let mut request = SearchRequest::new(&scoped.query, &scoped.category);
-            request.query_by_lang = scoped.query_by_lang.clone();
-            request.langs = scoped.langs.clone();
-            request.region = scoped.region.clone();
-            request.since = scoped.since.clone();
-            request.count = candidate_pool(scoped.count);
-            request.limit = request.count;
-            request.filters = scoped.filters.clone();
-            request.engines = self.config.engines.clone();
-            request.deadline = self.config.search_deadline;
-            request.now = now;
+            let request = search_request(&scoped, &self.config, now);
             let response = self.metasearch.search(&request).await;
 
             let mut notes = scoped.notes.clone();
             notes.extend(engines_line(&response.engines));
             notes.extend(engine_notes(&response.engines));
             notes.extend(response.note.clone());
-            let mut skipped: BTreeMap<&str, usize> = BTreeMap::new();
-            for s in &response.skipped {
-                *skipped.entry(s.reason.as_str()).or_default() += 1;
-            }
-            if !skipped.is_empty() {
-                let parts: Vec<String> = skipped.iter().map(|(r, n)| format!("{r}: {n}")).collect();
-                notes.push(format!("results filtered out ({})", parts.join(", ")));
-            }
+            notes.extend(skipped_notes(&response.skipped));
             let failed_now = response
                 .engines
                 .iter()
@@ -760,6 +795,68 @@ mod tests {
                 HostError::Denied(_)
             ));
         }
+    }
+
+    #[test]
+    fn stub_pages_keep_their_reason() {
+        let stub = ReadError::new(ReadFailure::StubPage, "only a video caption")
+            .at("https://publisher.example/video/1");
+        match read_error(stub) {
+            HostError::Failed(m) => assert_eq!(
+                m,
+                "stub_page: only a video caption (final URL: https://publisher.example/video/1)"
+            ),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn feed_entries_off_the_topic_get_their_own_note() {
+        let skip = |url: &str, reason: &str| SkippedUrl::new(url, reason);
+        let skipped = [
+            skip("https://feed.example/terrorist-act", "query_mismatch"),
+            skip("https://feed.example/ai-in-schools", "query_mismatch"),
+            skip("https://old.example/a", "older_than_since"),
+        ];
+        assert_eq!(
+            skipped_notes(&skipped),
+            vec![
+                "2 feed entries left out: not about the topic (query_mismatch)".to_string(),
+                "results filtered out (older_than_since: 1)".to_string(),
+            ]
+        );
+        assert!(skipped_notes(&[]).is_empty());
+    }
+
+    #[test]
+    fn slow_engines_get_octos_soft_deadline() {
+        let grant: crate::AppContext = serde_json::from_value(json!({
+            "app_id": "os.news", "grants": ["research"], "folder": "/tmp",
+            "scope": {"langs": ["en"]}
+        }))
+        .unwrap();
+        let query = SearchQuery {
+            topic: "EU AI Act".into(),
+            language: Some("en".into()),
+            region: None,
+            limit: 5,
+            max_age_hours: None,
+            max_fetches: 8,
+        };
+        let now = chrono::Utc::now();
+        let scoped = grant
+            .scope
+            .search_args(&search_args(&query, "news"), now)
+            .unwrap();
+        let config = OctosConfig::default();
+        let request = search_request(&scoped, &config, now);
+        assert_eq!(
+            request.straggler_grace,
+            Some(octos_research::metasearch::DEFAULT_STRAGGLER_GRACE)
+        );
+        assert_eq!(request.deadline, config.search_deadline);
+        assert_eq!(request.count, candidate_pool(5));
+        assert_eq!(request.langs, vec!["en".to_string()]);
     }
 
     #[test]

@@ -228,6 +228,9 @@ SolidView{width: Fill height: Fill flow: Down draw_bg.color: page
                 draw_text.color: secondary draw_text.text_style.font_size: 13}
         }
         Big{text: "Add model" on_click: || add_model()}
+        Quiet{text: "Talk to Octos" on_click: || {
+            host.request("llm.connect_client", {}, fn(r){ if !r.is_ok { status(r.error) } })
+        }}
         View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{top: 4}
             Section{text: "SAVED MODELS"}
             View{width: Fill height: 1}

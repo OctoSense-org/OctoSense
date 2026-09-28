@@ -85,6 +85,44 @@ jobs:
           cargo clippy --locked -p octosense-toolbox --all-targets --no-deps -- -D warnings
           cargo clippy --locked -p octosense-toolbox --all-targets --features live,octos-engine --no-deps -- -D warnings
 
+  kernel-security:
+    # The Talk to Octos security checks against a REAL octos: the kernel's
+    # real-kernel tests (what the external token must not reach, pairing,
+    # revoke, a SIGKILLed host) and the app-peer real-kernel tests. The octos
+    # binary is built at the revision Cargo.lock pins and cached by it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 tools/setup.py
+      - name: The pinned octos revision
+        id: octos
+        run: echo "rev=$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("k","tools/kernel-artifact.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.octos_revision())')" >> "$GITHUB_OUTPUT"
+      # Outside target/: rust-cache restores and prunes target/.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/octos-kernel/target/release/octos
+          key: octos-kernel-${{ runner.os }}-${{ steps.octos.outputs.rev }}
+      - name: Build octos (unless cached)
+        run: |
+          if [ ! -x "$RUNNER_TEMP/octos-kernel/target/release/octos" ]; then
+            python3 tools/kernel-artifact.py --host --work "$RUNNER_TEMP/octos-kernel"
+          fi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: kernel-security
+      - name: Real-kernel tests
+        env:
+          OCTOS_CORE_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+          OCTOS_APP_PEERS_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+        run: |
+          cargo test --locked -p octosense-kernel --test real_kernel -- --test-threads=1 --nocapture
+          cargo test --locked -p octosense-app-peers --features octos-core --test real_kernel
+
   apps:
     # macOS: the host services and AppCard link App Hub and Makepad, whose
     # host system-dependency set is verified on macOS (what the dev machines run).

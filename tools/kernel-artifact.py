@@ -14,6 +14,7 @@ every shell build (desktop/ and phone/ alike):
   aarch64-linux-android with the cargo-makepad SDK's NDK clang (API 33,
   `--no-default-features --features api,git,ast`: the stdio server without
   the llama.cpp embedder);
+- `--host` builds it for this desktop instead (no SDK needed);
 - `--kernel <path>` takes a prebuilt aarch64-linux-android `octos` instead;
 - it records what it produced (source, revision, sha256) with `--receipt`;
 - with a command after `--` it runs that command (the packager) with
@@ -98,30 +99,37 @@ def build_command(sdk, target_dir, offline=False, required=True):
     return command
 
 
-def plan(revision, work, sdk, offline=False, required=True):
+def plan(revision, work, sdk, offline=False, required=True, host=False):
     """(steps, kernel): the (cwd, argv) steps that check the revision out into
-    `work/src` and cross-build it into `work/target`, and the binary's path."""
+    `work/src` and cross-build it into `work/target` (or, `host`, build it for
+    this machine), and the binary's path."""
     work = Path(work)
     src = work / "src"
     steps = [(work, ["git", "init", "--quiet", str(src)])]
     if not offline:
         steps.append((src, ["git", "fetch", "--quiet", "--no-tags", "--depth=1", OCTOS_URL, revision]))
     steps.append((src, ["git", "checkout", "--quiet", "--detach", revision]))
+    if host:
+        command = ["env", f"CARGO_TARGET_DIR={work / 'target'}", "cargo", "build", "--locked", "--release", *KERNEL_BUILD]
+        if offline:
+            command.append("--offline")
+        steps.append((src, command))
+        return steps, work / "target/release/octos"
     steps.append((src, build_command(sdk, work / "target", offline, required)))
     return steps, work / "target" / TARGET / "release/octos"
 
 
-def kernel_plan(*, lock=None, work=None, sdk=None, kernel=None, no_kernel=False, offline=False, required=True):
+def kernel_plan(*, lock=None, work=None, sdk=None, kernel=None, no_kernel=False, offline=False, required=True, host=False):
     """(steps, kernel path or None, source) for the kernel an APK bundles:
     none, a prebuilt one, or one built from the locked revision."""
     if no_kernel:
         return [], None, None
     if kernel:
         return [], Path(kernel), "prebuilt"
-    if not sdk:
+    if not sdk and not host:
         raise RuntimeError("An Android SDK dir (--sdk) is required to build the kernel (or pass --kernel / --no-kernel)")
     revision = octos_revision(lock)
-    steps, binary = plan(revision, work or ROOT / "target/octos-kernel", sdk, offline, required)
+    steps, binary = plan(revision, work or ROOT / "target/octos-kernel", sdk, offline, required, host)
     return steps, binary, f"{OCTOS_URL}@{revision}"
 
 
@@ -151,6 +159,7 @@ def main(argv=None):
         argv, command = argv[:i], argv[i + 1:]
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lock", type=Path, help="The Cargo.lock naming the octos revision (default: the workspace's)")
+    p.add_argument("--host", action="store_true", help="Build the kernel for this desktop instead of Android")
     p.add_argument("--sdk", type=Path, help="cargo-makepad's Android SDK dir (holds ndk/)")
     source = p.add_mutually_exclusive_group()
     source.add_argument("--kernel", type=Path, help="A prebuilt aarch64-linux-android octos to bundle")
@@ -165,12 +174,12 @@ def main(argv=None):
     try:
         steps, kernel, origin = kernel_plan(lock=args.lock, work=args.work and args.work.resolve(), sdk=args.sdk and args.sdk.resolve(),
                                             kernel=args.kernel, no_kernel=args.no_kernel, offline=args.offline,
-                                            required=not args.plan)
+                                            required=not args.plan, host=args.host)
     except RuntimeError as e:
         p.error(str(e))
     if args.plan:
         print(json.dumps({"kernel": str(kernel) if kernel else None, "source": origin,
-                          "android_env": {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
+                          "android_env": {} if args.host else {"MAKEPAD_ANDROID_EXTRA_LIBS": extra_libs(kernel)},
                           "steps": [{"cwd": str(cwd), "argv": c} for cwd, c in steps],
                           "then": command or None}, indent=2))
         return
@@ -185,7 +194,7 @@ def main(argv=None):
     if command:
         env = dict(os.environ)
         env.pop("MAKEPAD_ANDROID_EXTRA_LIBS", None)
-        if kernel:
+        if kernel and not args.host:
             env["MAKEPAD_ANDROID_EXTRA_LIBS"] = extra_libs(kernel)
         sys.exit(subprocess.run(command, env=env).returncode)
 

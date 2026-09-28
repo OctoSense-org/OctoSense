@@ -12,7 +12,9 @@ use tokio::sync::{mpsc, watch};
 
 use crate::launch::Launch;
 use crate::router::{ConnId, Router};
-use crate::{CloseReason, LogSink};
+use crate::network::Network;
+use crate::{ClientAccess, CloseReason, LogSink};
+use std::path::PathBuf;
 
 /// What a consumer's inbound channel carries.
 #[derive(Debug)]
@@ -31,6 +33,9 @@ pub(crate) enum Ctl {
 
 /// How long a stopping kernel may drain before it is killed.
 const STDIO_GRACE: Duration = Duration::from_secs(3);
+/// A host-managed server drains open WebSocket connections for up to 10 s
+/// after its stdin closes (octos `SERVE_SHUTDOWN_GRACE`).
+const SHARED_GRACE: Duration = Duration::from_secs(12);
 /// The embedded core drains owned turns on EOF (as AppCard allowed it).
 #[cfg(target_env = "ohos")]
 const EMBEDDED_GRACE: Duration = Duration::from_secs(12);
@@ -45,6 +50,10 @@ struct Io {
     writer: Pin<Box<dyn AsyncWrite + Send>>,
     lines: tokio::io::Lines<BufReader<Pin<Box<dyn AsyncRead + Send>>>>,
     running: Running,
+    /// Talk to Octos: the child's stdin, held open for its whole life. The
+    /// host-managed server stops when it reaches EOF, which also happens
+    /// when this process dies, so a crashed shell leaves no kernel behind.
+    lifeline: Option<tokio::process::ChildStdin>,
 }
 
 /// Keeps the last lines the kernel wrote to stderr, to say why it exited.
@@ -64,9 +73,10 @@ impl Tail {
     }
 }
 
-fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
+fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Result<Io, String> {
     match launch {
-        Launch::Stdio { program, args, env, cwd } => {
+        Launch::Stdio { program, args, env, cwd } | Launch::WebSocket { program, args, env, cwd } => {
+            let shared = matches!(launch, Launch::WebSocket { .. });
             let mut command = tokio::process::Command::new(program);
             command
                 .args(args)
@@ -76,6 +86,20 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 .kill_on_drop(true);
             for (k, v) in env {
                 command.env(k, v);
+            }
+            let mut secrets = Vec::new();
+            if shared {
+                // The tokens go on stdin (`prepare_network`), never in the
+                // environment: /proc/<pid>/environ is readable by every
+                // process of this app's user, octos's own tools included.
+                command
+                    .env("NO_COLOR", "1")
+                    .env_remove("OCTOS_AUTH_TOKEN")
+                    .env_remove("OCTOS_HOST_EXTERNAL_TOKEN")
+                    .env_remove("OCTOS_INSTANCE_DATA_DIR")
+                    .env_remove("OCTOS_SOLO_LOGIN");
+                secrets = vec![network.host_token().to_owned(), network.external_token()];
+                pass_listener(&mut command, network)?;
             }
             if let Some(cwd) = cwd {
                 command.current_dir(cwd);
@@ -92,15 +116,18 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 tokio::spawn(async move {
                     let mut lines = BufReader::new(stderr).lines();
                     while let Ok(Some(line)) = lines.next_line().await {
+                        let line = secrets.iter().fold(line, |line, secret| line.replace(secret.as_str(), "[redacted]"));
                         (log)(&format!("octos: {line}"));
                         tail.push(line);
                     }
                 });
             }
-            Ok(Io {
-                writer: Box::pin(stdin),
-                lines: BufReader::new(Box::pin(stdout) as Pin<Box<dyn AsyncRead + Send>>).lines(),
-                running: Running::Child(child),
+            let lines = BufReader::new(Box::pin(stdout) as Pin<Box<dyn AsyncRead + Send>>).lines();
+            Ok(if shared {
+                // Frames go over the WebSocket once it is up (`prepare_network`).
+                Io { writer: Box::pin(tokio::io::sink()), lines, running: Running::Child(child), lifeline: Some(stdin) }
+            } else {
+                Io { writer: Box::pin(stdin), lines, running: Running::Child(child), lifeline: None }
             })
         }
         #[cfg(target_env = "ohos")]
@@ -119,11 +146,75 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 writer: Box::pin(writer),
                 lines: BufReader::new(Box::pin(reader) as Pin<Box<dyn AsyncRead + Send>>).lines(),
                 running: Running::Embedded(task),
+                lifeline: None,
             })
         }
         #[cfg(not(target_env = "ohos"))]
         Launch::Embedded { .. } => Err("an embedded core exists only on OpenHarmony".into()),
     }
+}
+
+
+/// Unix: hand the listener this process keeps to the child as descriptor 3
+/// (`--listen-fd 3`). Elsewhere: `--port`, the previous one when still free.
+#[cfg(unix)]
+fn pass_listener(command: &mut tokio::process::Command, network: &Network) -> Result<(), String> {
+    let fd = network.listener_fd().map_err(|e| format!("cannot open the Talk to Octos listener: {e}"))?;
+    command.args(["--listen-fd", "3"]);
+    // SAFETY: between fork and exec only async-signal-safe dup2/fcntl run.
+    // They place the kept listener at descriptor 3 and clear its
+    // close-on-exec flag there (dup2 onto itself would keep the flag).
+    unsafe {
+        command.pre_exec(move || {
+            if fd != 3 && libc::dup2(fd, 3) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::fcntl(3, libc::F_SETFD, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn pass_listener(command: &mut tokio::process::Command, network: &Network) -> Result<(), String> {
+    command.args(["--port", &network.port_for_restart().to_string()]);
+    Ok(())
+}
+
+async fn prepare_network(
+    io: &mut Io, network: &Network, core_dir: &std::path::Path,
+    ready: &watch::Sender<Option<Result<ClientAccess, CloseReason>>>,
+) -> Result<(), String> {
+    let Some(lifeline) = io.lifeline.as_mut() else {
+        // The private pipe (Talk to Octos off, or the embedded core).
+        ready.send_replace(Some(Err(CloseReason::Failed("Talk to Octos is off.".into()))));
+        return Ok(());
+    };
+    // octos `serve --host-managed` reads its two tokens as the first two
+    // stdin lines; the pipe then stays open as the lifeline.
+    let tokens = format!("{}\n{}\n", network.host_token(), network.external_token());
+    lifeline.write_all(tokens.as_bytes()).await.map_err(|e| format!("cannot hand the kernel its tokens: {e}"))?;
+    lifeline.flush().await.map_err(|e| format!("cannot hand the kernel its tokens: {e}"))?;
+    tokio::time::timeout(Duration::from_secs(90), async {
+        loop {
+            let line = io.lines.next_line().await.map_err(|e| e.to_string())?
+                .ok_or_else(|| "the kernel exited before opening its WebSocket listener (it needs an octos with `serve --host-managed`)".to_owned())?;
+            if network.announced(&line).is_some() { break; }
+        }
+        let access = network.access();
+        let stream = crate::network::connect(&access, network.host_token()).await?;
+        let (reader, writer) = tokio::io::split(stream);
+        let stdout = std::mem::replace(&mut io.lines, BufReader::new(Box::pin(reader) as Pin<Box<dyn AsyncRead + Send>>).lines());
+        io.writer = Box::pin(writer);
+        // Keep draining the child's stdout; nothing more is parsed from it.
+        tokio::spawn(async move { let mut lines = stdout; while let Ok(Some(_)) = lines.next_line().await {} });
+        access.save(core_dir).map_err(|e| format!("cannot save the private client connection: {e}"))?;
+        ready.send_replace(Some(Ok(access)));
+        Ok(())
+    }).await.map_err(|_| "the kernel did not become ready within 90 seconds".to_owned())?
 }
 
 /// The embedded core logs through `tracing`; send it to the log sink, once
@@ -167,12 +258,16 @@ async fn exited(running: &mut Running) -> String {
 /// grace period, then kill it and wait, so its data-dir lock is released
 /// before a next generation starts.
 async fn stop(io: Io) {
-    let Io { writer, lines, mut running } = io;
+    // Closing stdin stops either kind of child: the stdio pipe drains owned
+    // turns on EOF; a host-managed server drains its connections and exits.
+    let Io { writer, lines, mut running, lifeline } = io;
+    let grace = if lifeline.is_some() { SHARED_GRACE } else { STDIO_GRACE };
     drop(writer);
     drop(lines);
+    drop(lifeline);
     match &mut running {
         Running::Child(child) => {
-            if tokio::time::timeout(STDIO_GRACE, child.wait()).await.is_err() {
+            if tokio::time::timeout(grace, child.wait()).await.is_err() {
                 let _ = child.start_kill();
                 let _ = child.wait().await;
             }
@@ -186,20 +281,29 @@ async fn stop(io: Io) {
     }
 }
 
-/// Run generation `generation` until it is stopped or its kernel ends.
+/// Settings that remain fixed for one kernel generation.
+pub(crate) struct GenerationConfig {
+    pub generation: u64,
+    pub launch: Launch,
+    pub network: Arc<Network>,
+    pub core_dir: PathBuf,
+    pub log: LogSink,
+}
+
+/// Run a generation until it is stopped or its kernel ends.
 pub(crate) async fn supervise(
-    generation: u64,
-    launch: Launch,
+    config: GenerationConfig,
+    ready: watch::Sender<Option<Result<ClientAccess, CloseReason>>>,
     mut ctl: mpsc::UnboundedReceiver<Ctl>,
     done: watch::Sender<bool>,
-    log: LogSink,
     ended: impl FnOnce() + Send,
 ) {
+    let GenerationConfig { generation, launch, network, core_dir, log } = config;
     let mut consumers: HashMap<ConnId, mpsc::UnboundedSender<Inbound>> = HashMap::new();
-    let mut router = Router::default();
+    let mut router = Router::new(&core_dir);
     let tail = Tail::default();
     (log)(&format!("octos-core: starting kernel {generation}: {}", describe(&launch)));
-    let started = start(&launch, &log, &tail);
+    let started = start(&launch, &network, &log, &tail);
     let reason = match started {
         Err(e) => {
             (log)(&format!("octos-core: kernel {generation} did not start: {e}"));
@@ -208,10 +312,30 @@ pub(crate) async fn supervise(
             CloseReason::Failed(e)
         }
         Ok(mut io) => {
-            let reason = loop {
+            let mut queued = VecDeque::new();
+            // Keep ownership of the child while waiting for startup so Stop
+            // can always kill AND reap it before the next generation starts.
+            let startup = {
+                let setup = prepare_network(&mut io, &network, &core_dir, &ready);
+                tokio::pin!(setup);
+                loop {
+                    tokio::select! {
+                        biased;
+                        msg = ctl.recv() => match msg {
+                            Some(Ctl::Attach(id, tx)) => { router.attach(id); consumers.insert(id, tx); }
+                            Some(Ctl::Detach(id)) => { router.detach(id); consumers.remove(&id); }
+                            Some(Ctl::Stop(reason)) => break Err(reason),
+                            Some(frame) => queued.push_back(frame),
+                            None => break Err(CloseReason::Shutdown),
+                        },
+                        result = &mut setup => break result.map_err(CloseReason::Failed),
+                    }
+                }
+            };
+            let reason = if let Err(reason) = startup { reason } else { loop {
                 tokio::select! {
                     biased;
-                    msg = ctl.recv() => match msg {
+                    msg = async { if queued.is_empty() { ctl.recv().await } else { queued.pop_front() } } => match msg {
                         Some(Ctl::Attach(id, tx)) => {
                             router.attach(id);
                             consumers.insert(id, tx);
@@ -251,12 +375,26 @@ pub(crate) async fn supervise(
                     },
                     why = exited(&mut io.running) => break CloseReason::Exited(with_tail(&why, &tail)),
                 }
-            };
+            }};
             (log)(&format!("octos-core: stopping kernel {generation}: {reason}"));
             stop(io).await;
-            reason
+            match reason {
+                CloseReason::Failed(why) => CloseReason::Failed(with_tail(&why, &tail)),
+                other => other,
+            }
         }
     };
+    let was_ready = matches!(&*ready.borrow(), Some(Ok(_)));
+    ready.send_replace(Some(Err(reason.clone())));
+    if matches!(launch, Launch::WebSocket { .. }) {
+        crate::network::remove_descriptor(&core_dir);
+        // Without an inherited listener, a server that never came up may
+        // have lost its port to another process: the next start takes a new
+        // port and a new external token.
+        if !was_ready && !matches!(reason, CloseReason::Restarted | CloseReason::Shutdown) && cfg!(not(unix)) {
+            network.fall_back();
+        }
+    }
     // Every consumer of this generation learns why it ended — including one
     // whose Attach is still queued.
     ctl.close();
@@ -283,7 +421,7 @@ fn with_tail(why: &str, tail: &Tail) -> String {
 
 fn describe(launch: &Launch) -> String {
     match launch {
-        Launch::Stdio { program, args, .. } => format!("{} {}", program.display(), args.join(" ")),
+        Launch::Stdio { program, args, .. } | Launch::WebSocket { program, args, .. } => format!("{} {}", program.display(), args.join(" ")),
         Launch::Embedded { home } => format!("embedded core, home {}", home.display()),
     }
 }

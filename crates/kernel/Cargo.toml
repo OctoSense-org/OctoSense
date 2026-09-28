@@ -1,16 +1,10 @@
 # octosense-kernel — the shell's octos kernel (one per process).
 #
-# The shell owns the octos agent kernel as a service: this crate resolves the
-# kernel's core dir (where the AI providers app's `llm` service writes
-# `profiles/_main.json`), starts ONE kernel lazily on the first `connect()`
-# (`octos serve --stdio` as a child on desktop and Android, the canonical core
-# in-process on OpenHarmony), multiplexes it between consumers (AppCard, and
-# later Rinx), restarts it when the providers change and stops it when the
-# last consumer leaves. See README.md.
-#
-# Explicit package fields (no `workspace = true`): the shells and AppCard's
-# workspace take this crate as a plain path dependency. The empty
-# `[workspace]` below lets it test on its own from this directory.
+# The shell starts ONE kernel lazily (`octos serve --stdio` as a child on
+# desktop and Android, the canonical core in-process on OpenHarmony) and
+# shares it between consumers over UI Protocol frames. When the person turns
+# on Talk to Octos, the child runs as `octos serve --host-managed` instead and
+# external clients attach to the same kernel. See README.md.
 [package]
 name        = "octosense-kernel"
 version     = "0.1.0"
@@ -23,11 +17,18 @@ publish     = false
 
 [dependencies]
 tokio      = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "process", "time", "macros"] }
+tokio-tungstenite = { workspace = true }
+futures-util = "0.3"
+uuid = { workspace = true }
+url = "2"
 serde_json = "1"
 log        = "0.4"
 # `default_core_dir()` — the one definition of where the kernel's profile
 # lives, shared with the `llm` host service that writes it.
 octosense-llm-config = { workspace = true }
+# `UI_PROTOCOL_STDIO_DEFAULT_FEATURES`: the feature set native consumers keep
+# when Talk to Octos moves them from the stdio pipe to the WebSocket.
+octos-core = { workspace = true }
 
 # OpenHarmony denies exec from HAP native libraries: the canonical core is
 # linked into the app and served over an in-memory pipe. Same single octos
@@ -36,6 +37,11 @@ octosense-llm-config = { workspace = true }
 [target.'cfg(target_env = "ohos")'.dependencies]
 octos-cli = { workspace = true, features = ["api", "git", "ast"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Passing the kept Talk to Octos listener to the kernel (`dup2` between fork
+# and exec).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

@@ -164,7 +164,7 @@ fn kill_group(pid: u32) {
     #[cfg(unix)]
     {
         let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
+            .args(kill_group_args(pid))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
@@ -177,6 +177,14 @@ fn kill_group(pid: u32) {
             .stderr(Stdio::null())
             .status();
     }
+}
+
+/// `kill` arguments that signal the whole process group `pgid`. The `--` is
+/// required: procps `kill` on Ubuntu 24.04 reads a bare `-<pgid>` as an
+/// option and keeps only its first digit, so `-1234` became `kill(-1)`, which
+/// signals every process of the user (it took down the CI runner).
+fn kill_group_args(pgid: u32) -> [String; 3] {
+    ["-KILL".into(), "--".into(), format!("-{pgid}")]
 }
 
 /// Whether a process with this id exists (tests and diagnostics).
@@ -784,5 +792,19 @@ mod tests {
     fn bot_challenges_are_recognised() {
         assert!(is_bot_challenge("Just a moment...\nChecking"));
         assert!(!is_bot_challenge("The strait was closed on Monday."));
+    }
+
+    #[test]
+    fn group_kill_passes_the_pgid_after_a_double_dash() {
+        assert_eq!(kill_group_args(1234), ["-KILL", "--", "-1234"]);
+    }
+
+    #[test]
+    fn no_negative_pid_kill_without_a_double_dash() {
+        // A bare `-<pid>` right after the signal is parsed as an option by
+        // some `kill` builds (see `kill_group_args`).
+        let src = include_str!("chrome.rs");
+        let needle = ["[\"-KILL\", &format!(\"-{", "pid}\")]"].concat();
+        assert!(!src.contains(&needle), "negative-pid kill without `--`");
     }
 }

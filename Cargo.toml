@@ -87,14 +87,15 @@ octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.g
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
-# merge of octos#2590). Move octos-core and octos-cli together; the Android
-# kernel artifact (liboctos.so) is built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "e200b072c307e54283e1222a13422c954ecf7522" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "e200b072c307e54283e1222a13422c954ecf7522", default-features = false }
+# merge of octos#2591, `serve --host-managed`). Move octos-core, octos-cli
+# and octos-research together; the Android kernel artifact (liboctos.so) is
+# built from this same revision.
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "e6223efcaa23daa22b876eb734ae98aa400c6240" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "e6223efcaa23daa22b876eb734ae98aa400c6240", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "e200b072c307e54283e1222a13422c954ecf7522", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "e6223efcaa23daa22b876eb734ae98aa400c6240", default-features = false }
 # --- Rinx (Matrix chats, Moments, articles, mini apps) as a hosted module:
 # the library only, never its standalone entry or its own kernel (Rinx ADR 0007).
 rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "68afcf796d303aaf646eeb832d65c450a56c92b5", default-features = false, features = ["octosense-module"] }

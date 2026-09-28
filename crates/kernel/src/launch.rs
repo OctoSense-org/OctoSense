@@ -14,6 +14,10 @@
 //!   Without one there is no kernel (a developer's own `octos serve` is never
 //!   touched).
 //! - **iOS**: no kernel (an app cannot exec a child).
+//!
+//! With Talk to Octos on (desktop and Android), `--stdio` becomes
+//! `--host 127.0.0.1 --host-managed`: octos's host-owned loopback server
+//! (see [`crate::network`]).
 
 use std::path::{Path, PathBuf};
 
@@ -22,6 +26,13 @@ use crate::dirs;
 /// A resolved way to start the kernel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Launch {
+    /// A loopback HTTP/WebSocket server shared by native and external clients.
+    WebSocket {
+        program: PathBuf,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        cwd: Option<PathBuf>,
+    },
     /// `program args…` speaking NDJSON JSON-RPC on stdin/stdout.
     Stdio {
         program: PathBuf,
@@ -31,6 +42,21 @@ pub enum Launch {
     },
     /// The canonical core served in-process from `home` (OpenHarmony).
     Embedded { home: PathBuf },
+}
+
+impl Launch {
+    pub(crate) fn websocket(self) -> Self {
+        match self {
+            Self::Stdio { program, mut args, env, cwd } => {
+                args.retain(|arg| arg != "--stdio");
+                // octos's host-owned server: mandatory tokens, profiles in
+                // this process, no solo login, stops on stdin EOF.
+                args.extend(["--host".into(), "127.0.0.1".into(), "--host-managed".into()]);
+                Self::WebSocket { program, args, env, cwd }
+            }
+            other => other,
+        }
+    }
 }
 
 /// Why no kernel can start here.
@@ -178,12 +204,12 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
         log::warn!("octos-core: could not create {}: {e}", core_dir.display());
     }
     match launch {
-        Launch::Stdio { cwd: Some(cwd), .. } => {
+        Launch::Stdio { cwd: Some(cwd), .. } | Launch::WebSocket { cwd: Some(cwd), .. } => {
             if let Err(e) = std::fs::create_dir_all(cwd) {
                 log::warn!("octos-core: could not create {}: {e}", cwd.display());
             }
         }
-        Launch::Stdio { .. } => {}
+        Launch::Stdio { .. } | Launch::WebSocket { .. } => {}
         Launch::Embedded { home } => {
             let _ = std::fs::create_dir_all(home);
         }
