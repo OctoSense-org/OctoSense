@@ -36,7 +36,7 @@
     {
       "id": "sheets",
       "crate": "makepad-sheets",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "4531e695251f03bf8b248075491691ecf77ecdaf", "local": ".sources/makepad/apps/sheets" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "7c2e458b5daa1744a016c6070f1457d6f004d784", "local": ".sources/makepad/apps/sheets" },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
       "default_features": false,
@@ -52,7 +52,7 @@
     {
       "id": "terminal",
       "crate": "makepad-terminal",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "4531e695251f03bf8b248075491691ecf77ecdaf", "local": ".sources/makepad/apps/terminal" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "7c2e458b5daa1744a016c6070f1457d6f004d784", "local": ".sources/makepad/apps/terminal" },
       "module": "makepad_terminal::TERMINAL_MODULE",
       "bin": "terminal",
       "default_features": true,
