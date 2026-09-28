@@ -52,6 +52,9 @@ pub mod theme;
 pub mod tile;
 pub mod wm_reply;
 pub mod ext;
+pub mod glance;
+pub mod glance_card;
+pub mod glance_panel;
 pub use octosense_ai_host as ai_host;
 
 // A package's `main.rs` is `octosense_main!()` (below); what only it does
@@ -190,6 +193,8 @@ script_mod! {
                         flow: Overlay
                         desktop_shelf := DesktopShelf{}
                         snap_overlay := SnapOverlay{}
+                        // Published glance cards (glance_panel.rs), F9.
+                        shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
                         shell_menu := ShellMenu{}
                         shell_notes := ShellNotifications{}
@@ -332,6 +337,9 @@ pub struct App {
     /// Which bar module's flyout is open, for the accent pill.
     #[rust]
     pub shell_panel_open: Option<BarModule>,
+    /// The glance cards' generation the surfaces last drew (glance.rs).
+    #[rust]
+    pub glance_generation: u64,
     #[rust]
     pub hub: Option<WmHub>,
     #[rust]
@@ -2893,6 +2901,31 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// Show or hide the desktop's glance panel (glance_panel.rs), clear of the bar.
+    fn set_glance_open(&mut self, cx: &mut Cx, open: bool) {
+        // The overlay starts under the bar already: no clearance to add.
+        if let Some(mut panel) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<glance_panel::ShellGlancePanel>() {
+            panel.open = open;
+        }
+        log!("wm: glance panel {}", if open { "open" } else { "closed" });
+        self.redraw_all(cx);
+    }
+
+    /// As `shell_panel_pointer`, for the glance panel: while it is open a
+    /// press on it (or outside it, which closes it) is its own.
+    fn shell_glance_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !matches!(event, Event::MouseDown(_)) {
+            return false;
+        }
+        let panel = self.ui.widget(cx, ids!(shell_glance));
+        if !panel.borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open) {
+            return false;
+        }
+        panel.handle_event(cx, event, &mut Scope::empty());
+        self.redraw_all(cx);
+        true
+    }
+
     /// Toggle a bar module's flyout, anchored to the module itself.
     fn toggle_shell_panel(&mut self, cx: &mut Cx, module: BarModule) {
         let Some(kind) = shell::panels::PanelKind::for_module(module) else {
@@ -3423,6 +3456,10 @@ impl App {
                 return;
             }
             WmAction::ToggleAi => self.toggle_ai_pane(cx),
+            WmAction::ToggleGlance => {
+                let open = self.ui.widget(cx, ids!(shell_glance)).borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open);
+                self.set_glance_open(cx, !open);
+            }
         }
         self.update_bar(cx);
         self.redraw_all(cx);
@@ -4103,6 +4140,7 @@ fn test_action(name: &str) -> Option<WmAction> {
         "theme" => Some(WmAction::ThemeMenu),
         "background" => Some(WmAction::BackgroundNext),
         "ai" => Some(WmAction::ToggleAi),
+        "glance" => Some(WmAction::ToggleGlance),
         "bar" => Some(WmAction::ToggleBar),
         "layout" => Some(WmAction::ToggleWorkspaceLayout),
         _ => None,
@@ -4528,6 +4566,8 @@ impl MatchEvent for App {
             }],
         });
 
+        // OCTOSENSE_GLANCE_DEMO=1: a sample News digest on the glance screen.
+        glance::publish_demo_if_asked();
         // Scripted verification: --test-action fires WM actions with no
         // keyboard involved (some chords belong to the host OS).
         self.run_test_actions(cx);
@@ -4547,6 +4587,11 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
+            if let glance_panel::ShellGlancePanelAction::Open { app, route } = wa.cast::<glance_panel::ShellGlancePanelAction>() {
+                log!("wm: glance card opens {} (route {:?})", app, route);
+                self.set_glance_open(cx, false);
+                self.launch_app(cx, &app);
+            }
             #[cfg(any(feature = "app-hub", native_mobile))]
             match wa.cast::<octosense_app_hub_app::AppHubAction>() {
                 octosense_app_hub_app::AppHubAction::Launch(id) => self.launch_app(cx, &id),
@@ -4785,6 +4830,8 @@ impl App {
         #[cfg(feature = "app-aichat")]
         makepad_aichat::script_mod(vm);
         shell::script_mod(vm);
+        glance_card::script_mod(vm);
+        glance_panel::script_mod(vm);
         desktop::script_mod(vm);
         snap::script_mod(vm);
         mobile_surface::script_mod(vm);
@@ -4879,7 +4926,7 @@ impl App {
                 event,
                 Event::TouchUpdate(_) | Event::MouseMove(_) | Event::MouseDown(_) | Event::MouseUp(_) | Event::Scroll(_)
             )
-            && (self.shell_menu_pointer(cx, event) || self.shell_panel_pointer(cx, event))
+            && (self.shell_menu_pointer(cx, event) || self.shell_panel_pointer(cx, event) || self.shell_glance_pointer(cx, event))
         {
             return;
         }
@@ -4981,6 +5028,12 @@ impl App {
                     self.do_action(cx, WmAction::ToggleAi);
                     return;
                 }
+                // F9: the glance panel (published cards), on a desktop style.
+                if e.key_code == KeyCode::F9 && bare_key(&e.modifiers) && !self.state_mut().style.target.mobile() {
+                    self.alt_armed = false;
+                    self.do_action(cx, WmAction::ToggleGlance);
+                    return;
+                }
                 if self.desktop_key(cx,e) {return;}
                 let armed = self.alt_armed;
                 if let Some(action) = match_bind_armed(e.key_code, &e.modifiers, armed) {
@@ -5035,6 +5088,11 @@ impl App {
             }
         }
         if let Event::Signal = event {
+            // A card was published, replaced or withdrawn (glance.rs).
+            if glance::generation() != self.glance_generation && self.state.is_some() {
+                self.glance_generation = glance::generation();
+                self.redraw_all(cx);
+            }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {
                 crate::run_view::trace_host("sig");
                 self.poll_backgrounds(cx);

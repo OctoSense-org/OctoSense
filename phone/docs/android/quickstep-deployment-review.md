@@ -14,7 +14,7 @@ experiment-only rollback plan below describe the initial experiment.
 
 ## Exact artifacts
 
-The native host `ubuntu@54.198.120.231` built the ROM-matched upstream baseline
+The native host `ubuntu@<build-host>` built the ROM-matched upstream baseline
 and the separate OctoSense adapter. Source checks cover all 1,145 pinned projects
 and the exact generated adapter files. Native compilation, DEX optimization and
 APK signing completed. The adapter build took 296 seconds using its populated

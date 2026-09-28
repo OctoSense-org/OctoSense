@@ -1,0 +1,5 @@
+{"articles": [
+ {"url": "https://www.example.de/wirtschaft/elektroautos-1.html", "url_mobile": "", "title": "Elektroautos: Absatz steigt deutlich", "seendate": "20260916T081500Z", "socialimage": "https://www.example.de/img/1.jpg", "domain": "example.de", "language": "German", "sourcecountry": "Germany"},
+ {"url": "https://news.example.fr/voitures-electriques", "url_mobile": "", "title": "Voitures électriques : les ventes progressent", "seendate": "20260916T070000Z", "socialimage": "", "domain": "news.example.fr", "language": "French", "sourcecountry": "France"},
+ {"url": "not a url", "title": "Skipped"}
+]}

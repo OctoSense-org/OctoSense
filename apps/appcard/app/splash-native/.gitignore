@@ -4,3 +4,7 @@
 .gradle/
 app/build/
 rust/target/
+
+# Native library built from rust/ (see README "Build"); never commit it —
+# a locally built .so embeds the build machine's paths.
+app/src/main/jniLibs/**/*.so

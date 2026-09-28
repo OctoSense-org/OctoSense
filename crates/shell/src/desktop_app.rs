@@ -57,6 +57,9 @@ impl App {
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_osd)).borrow_mut::<shell::osd::ShellOsd>() {
             w.set_material(material, palette);
         }
+        if let Some(mut w) = self.ui.widget(cx, ids!(shell_glance)).borrow_mut::<crate::glance_panel::ShellGlancePanel>() {
+            w.set_material(material, palette);
+        }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
             w.set_material(material);
         }

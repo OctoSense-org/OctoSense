@@ -96,8 +96,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: apps
-      - name: Host services (Mail, AI providers)
-        run: cargo test --locked -p octosense-mail-service -p octosense-llm-service
+      - name: Host services (Mail, AI providers, News)
+        run: |
+          cargo test --locked -p octosense-mail-service -p octosense-llm-service -p octosense-news-service
+          cargo clippy --locked -p octosense-news-service --all-targets --no-deps -- -D warnings
       - name: Shell AI services (crates/ai-host)
         run: |
           cargo test --locked -p octosense-ai-host

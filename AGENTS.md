@@ -25,6 +25,8 @@
 
 Start every session with `python3 tools/setup.py` (it prepares `.sources/`, and changes nothing that is already right).
 
+On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepad, never let setup clone them again: name the clones as a hub (`~/.config/octosense/sources.json`, `--hub DIR` or `OCTOSENSE_SOURCES_HUB`; see the README's Set up) so every `.sources/` entry is a `git worktree` of the one clone, and run `python3 tools/setup.py --remove-worktrees` before deleting a checkout of this repository.
+
 ## Rules
 
 1. **One change, one pull request.** Branch from `main`; the shell, its services and the apps change together, so there are no internal pins to move. Never push to or force-push `main`.

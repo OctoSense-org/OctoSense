@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 # The OctoSense repository: Home is phone/, the workspace lock and the
@@ -113,6 +114,36 @@ def build_plan(args):
     return plan + [(HOME / "android", gradle), (HOME, android)]
 
 
+def rustflags(env):
+    """RUSTFLAGS with the build's own paths remapped out of panic locations
+    and file!(): the checkout, CARGO_HOME (registry and git dependencies)
+    and the home directory."""
+    cargo_home = Path(env.get("CARGO_HOME") or Path.home() / ".cargo").resolve()
+    remaps = [f"--remap-path-prefix={Path.home()}=/build",
+              f"--remap-path-prefix={cargo_home}=/cargo",
+              f"--remap-path-prefix={REPO}=/octosense"]
+    return " ".join([env.get("RUSTFLAGS", "").strip(), *remaps]).strip()
+
+
+# What a published (ROM) Home must not carry in its native libraries.
+# `--remap-path-prefix` cannot reach env!("CARGO_MANIFEST_DIR"), which every
+# `script_mod!` compiles in, so a ROM build must run from a checkout (and
+# CARGO_HOME) outside any home directory.
+def personal_paths(apk, home=None):
+    """{library: [marker, ...]} for native libraries that carry a home
+    directory path."""
+    markers = [b"/Users/", str(home or Path.home()).encode()]
+    found = {}
+    with zipfile.ZipFile(apk) as archive:
+        for name in archive.namelist():
+            if name.startswith("lib/") and name.endswith(".so"):
+                data = archive.read(name)
+                hits = [m.decode() for m in markers if m in data]
+                if hits:
+                    found[name] = sorted(set(hits))
+    return found
+
+
 def certificate_digest(apksigner, apk, env):
     output = subprocess.check_output([str(apksigner), "verify", "--print-certs", str(apk)], env=env, text=True)
     match = re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-f]+)", output)
@@ -159,7 +190,7 @@ def main(argv=None):
     env.pop("CARGO_TARGET_DIR", None)
     if args.gradle_home:
         env["OCTOSENSE_GRADLE_HOME"] = str(args.gradle_home)
-    env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + f" --remap-path-prefix={REPO}=/octosense --remap-path-prefix={Path.home()}=/build").strip()
+    env["RUSTFLAGS"] = rustflags(env)
     env.pop("MAKEPAD_ANDROID_EXTRA_LIBS", None)
     if kernel:
         env["MAKEPAD_ANDROID_EXTRA_LIBS"] = extra_libs(kernel)
@@ -173,6 +204,11 @@ def main(argv=None):
         "OctoSenseHome.apk": HOME / "target/android/makepad-android-apk/octosense_home/apk/octo_sense.apk",
         "OctoSenseBridge.apk": HOME / "android/system-bridge/build/outputs/apk/release/system-bridge-release-unsigned.apk",
     }
+    if args.variant == "rom":
+        leaked = personal_paths(inputs["OctoSenseHome.apk"])
+        if leaked:
+            raise RuntimeError(f"ROM Home carries home-directory paths {leaked}: build from a checkout and "
+                               "CARGO_HOME outside /Users (script_mod! compiles CARGO_MANIFEST_DIR in)")
     args.output.mkdir(parents=True, exist_ok=True)
     apksigner = args.android_sdk / "build-tools/35.0.0/apksigner"
     artifacts = {}

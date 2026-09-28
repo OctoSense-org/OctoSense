@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+<head><title>Subscriptions</title></head>
+<body>
+<outline text="Science" title="Science">
+  <outline type="rss" text="NPR Science" title="NPR Science" xmlUrl="https://feeds.npr.org/1007/rss.xml" htmlUrl="https://www.npr.org/sections/science/"/>
+  <outline type="rss" text="Unknown Blog" xmlUrl="https://blog.unlisted.example/feed"/>
+</outline>
+<outline type="rss" text="BBC World again" xmlUrl="https://feeds.bbci.co.uk/news/world/rss.xml"/>
+<outline text="A folder with no feed"/>
+</body>
+</opml>

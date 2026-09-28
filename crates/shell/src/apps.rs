@@ -144,9 +144,13 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 
 /// The services contained apps call through `host.request` (ADR 0004)
 /// that are not the assistant's, registered once, before the first system
-/// app can open: `mail` keeps accounts and passwords for the Mail app.
+/// app can open: `mail` keeps accounts and passwords for the Mail app;
+/// `glance` takes the cards apps publish to the glance screen (glance.rs).
 /// `mail_demo` in MAKEPAD_APP_CONFIG serves a demo mailbox from a file vault
 /// instead (no keychain, no network): `MAKEPAD_APP_CONFIG='{"mail_demo":true}'`.
+/// `news` fetches News's feeds on a timer, with no model (ADR 0002), into
+/// the Card runner's host directory, so it keeps fetching while News is
+/// closed.
 ///
 /// The `llm` service (AI providers, `os.ai-providers`) is the assistant's
 /// and registers with the kernel in `ai_host::start`, at startup.
@@ -154,6 +158,7 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
+        crate::glance::register();
         let demo = std::env::var("MAKEPAD_APP_CONFIG")
             .ok()
             .and_then(|text| makepad_strict_json::parse(text.as_bytes()).ok())
@@ -164,7 +169,35 @@ fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        register_news();
     });
+}
+
+/// The `news` service, in the directory the Card runner hands every host
+/// service (`<apps root>/.host`), so the timer starts now rather than at
+/// News's first request. Without an apps root yet it attaches at that
+/// request instead.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn register_news() {
+    let mut options = octosense_news_service::Options::default().on_fetch(|report| {
+        // M3 routes this to News's peer, to wake its agent; logged for now.
+        let failed = report.sources.iter().filter(|s| s.status == "error").count();
+        makepad_widgets::log!(
+            "news: fetched {} new, {} kept, {} sources ({failed} failed)",
+            report.new,
+            report.total,
+            report.sources.len()
+        );
+    });
+    match octosense_app_hub_app::data_root_if_set() {
+        Some(root) => {
+            let host_dir = root.join(".host");
+            makepad_widgets::log!("news: service registered, host dir {}", host_dir.display());
+            options = options.host_dir(host_dir);
+        }
+        None => makepad_widgets::log!("news: service registered; starts at the first request"),
+    }
+    octosense_news_service::register_with(options);
 }
 
 /// Card apps App Hub installed: each is an app of its own in the launcher,
