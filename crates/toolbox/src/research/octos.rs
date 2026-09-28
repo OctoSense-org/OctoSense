@@ -34,7 +34,11 @@
 //!   caps, readability extraction, octos's honest User-Agent; robots.txt
 //!   only when the operator sets `OCTOS_RESPECT_ROBOTS=1`. When plain HTTP
 //!   yields no main text the browser renders the page, and the reader
-//!   re-checks where it went.
+//!   re-checks where it went. A failed read keeps octos's reason and final
+//!   URL ([`read_error`]: `paywall: … (final URL: …)`), so the run's
+//!   diagnostics say why.
+//! - **Posts are not evidence**: results octos marks `kind: post` (Mastodon
+//!   posts) are left out of the search results with a note ([`articles`]).
 //! - **`readable`**: a Google News article link is readable only when a
 //!   browser is available. Without Chrome (a phone, a server) such results
 //!   say `readable: false` and templates skip them.
@@ -46,6 +50,7 @@ use octos_research::metasearch::{
     EngineReport, EngineStatus, MetaItem, Metasearch, ReqwestFetch, SearchRequest,
 };
 use octos_research::reader::{self, Reader, ReaderConfig};
+use octos_research::{ItemKind, ReadError, ReadFailure};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -329,6 +334,38 @@ pub fn ranking_note(items: &[FoundItem]) -> Option<String> {
     })
 }
 
+/// The merged items that are articles, and a note counting the posts left
+/// out. Posts (Mastodon posts, discussion threads without a linked article;
+/// octos#2590 marks them `kind: post`) are signal about what people say, not
+/// evidence, so they are never offered for reading or citation.
+pub fn articles(items: &[MetaItem]) -> (Vec<&MetaItem>, Option<String>) {
+    let (articles, posts): (Vec<&MetaItem>, Vec<&MetaItem>) =
+        items.iter().partition(|i| i.kind == ItemKind::Article);
+    let note = (!posts.is_empty()).then(|| {
+        format!(
+            "{} results are social posts, not articles; not used as evidence",
+            posts.len()
+        )
+    });
+    (articles, note)
+}
+
+/// A failed read as a host error. The message is octos's reason as
+/// `<code>: <detail> (final URL: …)` (`bot_challenge`, `paywall`,
+/// `consent_page`, `http_403`, `redirect_unresolved`, `no_main_text`, …),
+/// so the run's diagnostics say why a page could not be read and where the
+/// read ended. SSRF, scope and robots.txt refusals are denials; every other
+/// reason is a failure.
+pub fn read_error(err: ReadError) -> HostError {
+    let message = err.to_string();
+    match err.reason {
+        ReadFailure::Blocked | ReadFailure::Robots | ReadFailure::RobotsUnreachable => {
+            HostError::Denied(message)
+        }
+        _ => HostError::Failed(message),
+    }
+}
+
 impl ResearchBackend for OctosResearch {
     fn search<'a>(
         &'a self,
@@ -383,8 +420,9 @@ impl ResearchBackend for OctosResearch {
                 )));
             }
             let renders = self.renders();
-            let mut items: Vec<FoundItem> = response
-                .items
+            let (articles, posts) = articles(&response.items);
+            notes.extend(posts);
+            let mut items: Vec<FoundItem> = articles
                 .iter()
                 .map(|item| found_item(item, query.language.as_deref(), renders))
                 .collect();
@@ -397,8 +435,7 @@ impl ResearchBackend for OctosResearch {
             // Readable first, keeping octos's ranking otherwise.
             items.sort_by_key(|i| !i.readable);
             notes.extend(ranking_note(&items));
-            let providers: Vec<String> = response
-                .items
+            let providers: Vec<String> = articles
                 .iter()
                 .flat_map(|i| i.engines.iter().cloned())
                 .collect::<BTreeSet<_>>()
@@ -441,13 +478,7 @@ impl ResearchBackend for OctosResearch {
                     "Google News article links need a browser to resolve; none available".into(),
                 ));
             }
-            let page = self.reader.read(&item.url).await.map_err(|reason| {
-                if reason.starts_with("ssrf_blocked") || reason.starts_with("robots") {
-                    HostError::Denied(reason)
-                } else {
-                    HostError::Failed(reason)
-                }
-            })?;
+            let page = self.reader.read(&item.url).await.map_err(read_error)?;
             // A Google News link is checked again where it ended up: the
             // publisher.
             scope
@@ -477,6 +508,7 @@ mod tests {
             score: 0.834,
             category: "news".into(),
             source_url: None,
+            kind: ItemKind::Article,
         }
     }
 
@@ -588,6 +620,49 @@ mod tests {
             engines_line(&reports).unwrap(),
             "engines: google_news (zh) 0, gdelt (zh) suspended, mastodon (zh) failed"
         );
+    }
+
+    #[test]
+    fn posts_are_left_out_of_the_results_with_a_note() {
+        let mut post = item("https://mastodon.social/@a/1", Some("en"));
+        post.kind = ItemKind::Post;
+        let article = item("https://x.example/a", Some("en"));
+        let all = [post, article];
+        let (kept, note) = articles(&all);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].url, "https://x.example/a");
+        assert_eq!(
+            note.as_deref(),
+            Some("1 results are social posts, not articles; not used as evidence")
+        );
+        assert!(articles(&all[1..]).1.is_none());
+    }
+
+    #[test]
+    fn read_failures_keep_octos_reason_and_final_url() {
+        let wall = ReadError::new(ReadFailure::Paywall, "subscriber-only")
+            .at("https://publisher.example/story");
+        match read_error(wall) {
+            HostError::Failed(m) => assert_eq!(
+                m,
+                "paywall: subscriber-only (final URL: https://publisher.example/story)"
+            ),
+            other => panic!("{other:?}"),
+        }
+        match read_error(ReadError::new(ReadFailure::Http(403), "")) {
+            HostError::Failed(m) => assert_eq!(m, "http_403"),
+            other => panic!("{other:?}"),
+        }
+        for denied in [
+            ReadFailure::Blocked,
+            ReadFailure::Robots,
+            ReadFailure::RobotsUnreachable,
+        ] {
+            assert!(matches!(
+                read_error(ReadError::new(denied, "")),
+                HostError::Denied(_)
+            ));
+        }
     }
 
     #[test]

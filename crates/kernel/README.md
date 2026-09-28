@@ -112,7 +112,7 @@ CI: `.github/workflows/apps.yml` (the `services` job tests this crate; the
 ## One octos
 
 On OpenHarmony this crate links `octos-cli` from git octos-org/octos at the
-one rev the root `Cargo.toml` pins for every octos crate (`7bec0918`). A
+one rev the root `Cargo.toml` pins for every octos crate (`e200b072`). A
 workspace that builds it for OpenHarmony also needs the `nix` patch (octos
 rev `18fcd3f1`, see the root `Cargo.toml` `[patch.crates-io]`). On every other target it
 links no octos crate at all: the kernel is a separate binary.
