@@ -132,9 +132,11 @@
     }
   },
   "expected": {
-    "status": "partial",
+    "status": "ready",
+    "reasons": [],
     "data": {
       "brief": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -164,22 +166,31 @@
           }
         ],
         "summary": "Sources: Nvidia shares swing after earnings call; Nvidia beats forecasts on data-center demand; Nvidia guides above estimates for next quarter; Nvidia says China sales fell to 8% of revenue",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",
       "missing": 0,
       "queries": [
         {
+          "failed": 0,
           "found": 4,
           "language": "en",
+          "left": 0,
           "off_topic": 0,
           "read": 4,
           "terms": "Nvidia earnings",
           "unreadable": 0
         },
         {
+          "failed": 0,
           "found": 2,
           "language": "zh",
+          "left": 0,
           "off_topic": 0,
           "read": 0,
           "terms": "英伟达 财报",

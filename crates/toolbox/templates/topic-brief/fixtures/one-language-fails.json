@@ -71,8 +71,12 @@
   },
   "expected": {
     "status": "partial",
+    "reasons": [
+      "language es: the search failed"
+    ],
     "data": {
       "brief": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -84,22 +88,31 @@
           }
         ],
         "summary": "Sources: Riverton paints 400 roofs white to cut summer heat",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",
       "missing": 0,
       "queries": [
         {
+          "failed": 0,
           "found": 1,
           "language": "en",
+          "left": 0,
           "off_topic": 0,
           "read": 1,
           "terms": "urban heat islands",
           "unreadable": 0
         },
         {
+          "failed": 0,
           "found": 0,
           "language": "es",
+          "left": 0,
           "off_topic": 0,
           "read": 0,
           "terms": "islas de calor urbano",

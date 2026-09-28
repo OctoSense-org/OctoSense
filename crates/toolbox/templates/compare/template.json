@@ -1,8 +1,8 @@
 {
   "id": "compare",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Compare two subjects",
-  "description": "Search the same aspect of two subjects together (two cities' weekend weather, two companies' news), read the results concurrently and write one comparison with citations. Without sources for both sides there is no comparison.",
+  "description": "Search the same aspect of two subjects together (two cities' weekend weather, two companies' news), read the results concurrently and write one comparison with citations. Without sources for both sides there is no comparison. Ready when both sides were read and the comparison kept every point; partial, with the reasons, otherwise; failed when nothing was read.",
   "params": {
     "type": "object",
     "additionalProperties": false,

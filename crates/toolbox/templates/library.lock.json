@@ -2,28 +2,28 @@
   "schema_version": 1,
   "templates": {
     "briefing": {
-      "version": "1.0.0",
-      "digest": "b071da9335e37121a20ee5b50a7afc0c557a89c0285b13962389f65478286c85"
+      "version": "1.1.0",
+      "digest": "9c67b07968a0079ed89f48f4a15ccd3c6a11c89d8dd7bae6254a1341fdb6bbbb"
     },
     "compare": {
-      "version": "1.0.0",
-      "digest": "a4d9e59bda1beab50437e9a11bbfaa66aec24b01668c54dc030cf4ff4ad52a16"
+      "version": "1.1.0",
+      "digest": "a62e9457387aa33a6165638c61381442f2a78bdf57b8ab30b49f28c841770cc6"
     },
     "market-brief": {
-      "version": "1.0.0",
-      "digest": "c013f5f598e54f412b8e92517780642ae8eaa314d52086f6aae90df65be995b6"
+      "version": "1.1.0",
+      "digest": "b9886ab78bf69459bf7c56720ee33871f026175b0870b746d5cc42314e953754"
     },
     "news-digest": {
-      "version": "1.2.0",
-      "digest": "28145339c96ee123a96d4f326a151ec235dcac78c1c0fcb5d7e93dba06df382f"
+      "version": "1.3.0",
+      "digest": "5f33dcd57b0bda7f40d01e50a1af4a96c82c29d5f0c075fd97a86dd7332dfe3f"
     },
     "topic-brief": {
-      "version": "1.2.0",
-      "digest": "c0015c0bc5302d2e8ed3180eb44a30d565e16a47bd625470c9c20b2063bfe7fe"
+      "version": "1.3.0",
+      "digest": "78ad4ec46b3e7aa9fb7dd31a6696f7bd533801c658a929223846194f4b22d1cc"
     },
     "weather-plan": {
-      "version": "1.0.0",
-      "digest": "a9c16b1ae4d3684e86f4b590ec0141a0a26d554bcf9c16e08c48eb0e2d5c2b80"
+      "version": "1.1.0",
+      "digest": "073b716f54a7319b0143d63010cbe4a88127971e71fb9156ef3a25a1a15b2fbf"
     }
   }
 }

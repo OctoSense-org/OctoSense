@@ -62,6 +62,9 @@
   },
   "expected": {
     "status": "partial",
+    "reasons": [
+      "subject Villaserena: nothing found"
+    ],
     "data": {
       "aspect": "weekend weather",
       "comparison": null,

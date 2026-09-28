@@ -79,9 +79,13 @@
     }
   },
   "expected": {
-    "status": "ready",
+    "status": "partial",
+    "reasons": [
+      "the digest dropped 3 invalid point(s)"
+    ],
     "data": {
       "digest": {
+        "dropped_points": 3,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -105,6 +109,11 @@
           }
         ],
         "summary": "Sources: Harbor City approves electric bus order; Ocho bibliotecas amplían su horario durante un piloto; Water utility reports early leak-detection results",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",

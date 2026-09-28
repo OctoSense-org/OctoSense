@@ -34,7 +34,7 @@ pub struct Manifest {
     pub modules: Vec<ModuleDecl>,
     pub budget: Budget,
     /// JSON Schema of the `data` the template returns (its result is
-    /// `{status: "ready" | "partial", data}`).
+    /// `{status: "ready" | "partial" | "failed", data, reasons?}`).
     pub output: Value,
     /// Host-kept provenance is attached to the result. Required for every
     /// template that reads external sources.

@@ -57,6 +57,9 @@
   },
   "expected": {
     "status": "failed",
+    "reasons": [
+      "the template's script failed; see diagnostics"
+    ],
     "data": null
   }
 }

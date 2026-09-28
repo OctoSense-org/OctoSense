@@ -140,8 +140,10 @@
   },
   "expected": {
     "status": "ready",
+    "reasons": [],
     "data": {
       "brief": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -171,22 +173,31 @@
           }
         ],
         "summary": "Sources: Riverton volunteers clear 12 km of riverbank; 清河市公布三年河道治理计划; Sensors will track river pollution in real time; 清理后河中鱼类回归",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",
       "missing": 0,
       "queries": [
         {
+          "failed": 0,
           "found": 3,
           "language": "en",
+          "left": 0,
           "off_topic": 0,
           "read": 2,
           "terms": "river cleanup",
           "unreadable": 1
         },
         {
+          "failed": 0,
           "found": 3,
           "language": "zh",
+          "left": 0,
           "off_topic": 0,
           "read": 2,
           "terms": "河流清理",

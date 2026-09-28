@@ -170,7 +170,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "digest",
             kind: MethodKind::Model,
-            description: "Summarize articles read in this run, in `language`, with citations by article id (one model call). Off-topic articles are left out; for the `digest` task with a `focus`, the model also lists in `off_topic` the articles it found not about the focus, and nothing cites them",
+            description: "Summarize articles read in this run, in `language`, with citations by article id (one model call). Off-topic articles are left out; for the `digest` task with a `focus`, the model also lists in `off_topic` the articles it found not about the focus, and nothing cites them. Invalid points are dropped (`dropped_points`); summary sentences no kept point backs are dropped and those carrying a number, name or phrase no point carries are flagged (`summary_check`)",
             input: || {
                 json!({"type": "object", "additionalProperties": false,
                     "required": ["task", "language", "article_ids"],
@@ -183,7 +183,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
             },
             output: || {
                 json!({"type": "object", "additionalProperties": false,
-                    "required": ["task", "language", "summary", "points", "off_topic"],
+                    "required": ["task", "language", "summary", "points", "off_topic", "dropped_points", "summary_check"],
                     "properties": {
                         "task": {"type": "string", "enum": DIGEST_TASKS},
                         "language": string(2, 16),
@@ -196,7 +196,15 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
                                 "citations": {"type": "array", "minItems": 1, "maxItems": 8, "items": string(1, 64)},
                                 "label": string(0, 40)
                             }}},
-                        "off_topic": {"type": "array", "maxItems": 8, "items": string(1, 64)}
+                        "off_topic": {"type": "array", "maxItems": 8, "items": string(1, 64)},
+                        "dropped_points": {"type": "integer", "minimum": 0},
+                        "summary_check": {"type": "object", "additionalProperties": false,
+                            "required": ["sentences", "dropped", "flagged"],
+                            "properties": {
+                                "sentences": {"type": "integer", "minimum": 0},
+                                "dropped": {"type": "integer", "minimum": 0},
+                                "flagged": {"type": "integer", "minimum": 0}
+                            }}
                     }})
             },
             max_input_bytes: 2048,

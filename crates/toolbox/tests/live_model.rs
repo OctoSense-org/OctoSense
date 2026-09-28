@@ -230,7 +230,7 @@ async fn go(host: &ResearchHost, template: &str, params: Value) -> RunResult {
         "\n===== {template} ({:.1}s wall) =====",
         started.elapsed().as_secs_f64()
     );
-    println!("status: {:?}", result.status);
+    println!("status: {:?} {:?}", result.status, result.status_reasons);
     println!("stats: {}", serde_json::to_string(&result.stats).unwrap());
     println!("diagnostics: {:#?}", result.diagnostics);
     println!("{}", serde_json::to_string_pretty(&result.data).unwrap());
@@ -396,6 +396,9 @@ async fn c_validation_topics() {
             result.data["off_topic"],
             result.data["queries"]
         );
+        for reason in &result.status_reasons {
+            println!("  reason: {reason}");
+        }
         for source in &sources {
             println!("  kept: [{}] {}", source["language"], source["title"]);
         }

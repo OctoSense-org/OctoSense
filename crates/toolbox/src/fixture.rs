@@ -114,6 +114,10 @@ pub struct FakeModelConfig {
     /// them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub off_topic: Vec<String>,
+    /// Add a summary sentence no point backs (the drift validation run 2
+    /// found). The host must drop it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub summary_drift: bool,
 }
 
 /// Replays recorded searches and pages.
@@ -265,6 +269,12 @@ impl ModelClient for FakeModel {
                     if summary.len() > 1100 {
                         summary = first_sentence(&summary);
                     }
+                    if self.config.summary_drift {
+                        if !summary.ends_with(['.', '。']) {
+                            summary.push('.');
+                        }
+                        summary.push_str(" Analysts expect a record harvest in 2031.");
+                    }
                     if self.config.inject_url {
                         summary.push_str(" More at https://model.invalid/story");
                     }
@@ -336,6 +346,9 @@ pub struct FixtureCase {
 #[serde(deny_unknown_fields)]
 pub struct Expected {
     pub status: crate::RunStatus,
+    /// The run's `status_reasons`.
+    #[serde(default)]
+    pub reasons: Vec<String>,
     pub data: Value,
 }
 

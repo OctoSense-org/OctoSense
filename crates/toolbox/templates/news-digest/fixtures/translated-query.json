@@ -79,8 +79,10 @@
   },
   "expected": {
     "status": "ready",
+    "reasons": [],
     "data": {
       "digest": {
+        "dropped_points": 0,
         "language": "zh-CN",
         "off_topic": [],
         "points": [
@@ -104,6 +106,11 @@
           }
         ],
         "summary": "Sources: Harbor City approves electric bus order; Ocho bibliotecas amplían su horario durante un piloto; Water utility reports early leak-detection results",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "zh-CN",
