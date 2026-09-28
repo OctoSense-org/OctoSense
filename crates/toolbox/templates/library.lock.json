@@ -3,27 +3,27 @@
   "templates": {
     "briefing": {
       "version": "1.0.0",
-      "digest": "7b65f65f1ae19ea6d46c7aa9faf2c8661c7820cc2feb8bd76a55461b7aed1fd4"
+      "digest": "b071da9335e37121a20ee5b50a7afc0c557a89c0285b13962389f65478286c85"
     },
     "compare": {
       "version": "1.0.0",
-      "digest": "9d7b57a17a8db4d516fdf7a1ba8b9e4cd1e4bccba34372a0de72b1fec438e0bd"
+      "digest": "a4d9e59bda1beab50437e9a11bbfaa66aec24b01668c54dc030cf4ff4ad52a16"
     },
     "market-brief": {
       "version": "1.0.0",
-      "digest": "55130cc64c927ae6b082e783fbb412929f2c31c1682021bc599ae42ea21e7fb3"
+      "digest": "c013f5f598e54f412b8e92517780642ae8eaa314d52086f6aae90df65be995b6"
     },
     "news-digest": {
       "version": "1.2.0",
-      "digest": "f33c30e4e1d0eeaf76700e751e3c4c085b25ef746c5750c88bd9a20ee2f31fd7"
+      "digest": "28145339c96ee123a96d4f326a151ec235dcac78c1c0fcb5d7e93dba06df382f"
     },
     "topic-brief": {
       "version": "1.2.0",
-      "digest": "78df9cefa5cc6ee645e9c5595483c4e0945c10c0e4b29b7acef35ba2f7b319b4"
+      "digest": "c0015c0bc5302d2e8ed3180eb44a30d565e16a47bd625470c9c20b2063bfe7fe"
     },
     "weather-plan": {
       "version": "1.0.0",
-      "digest": "4f72d89f5f72d79e6044da2f9b50543d52a5604a653477fb80b42476260d7644"
+      "digest": "a9c16b1ae4d3684e86f4b590ec0141a0a26d554bcf9c16e08c48eb0e2d5c2b80"
     }
   }
 }

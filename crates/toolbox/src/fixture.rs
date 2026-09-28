@@ -166,7 +166,7 @@ impl ResearchBackend for FixtureBackend {
                     .collect(),
                 providers: recorded.providers.clone(),
                 partial: recorded.partial,
-                pages: recorded.fetches,
+                fetches: recorded.fetches,
                 notes: recorded.notes.clone(),
             })
         })

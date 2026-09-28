@@ -45,7 +45,7 @@ pub const MAX_EVIDENCE_BYTES: usize = 6000;
 /// The excerpt a script sees.
 pub const MAX_EXCERPT_BYTES: usize = 400;
 /// Feeds and API responses one `search` may fetch. Searches are not charged
-/// to a run's `max_pages` (see [`crate::modules::MethodKind::Search`]); this
+/// to a run's `max_reads` (see [`crate::modules::MethodKind::Search`]); this
 /// caps the fan-out instead.
 pub const MAX_SEARCH_FETCHES: u32 = 8;
 
@@ -59,7 +59,7 @@ pub struct SearchQuery {
     pub max_age_hours: Option<u32>,
     /// Feeds and API responses the backend may fetch for this search, at
     /// most [`MAX_SEARCH_FETCHES`].
-    pub max_pages: u32,
+    pub max_fetches: u32,
 }
 
 /// One item a backend found. `via` names the provider.
@@ -102,7 +102,7 @@ pub struct SearchResults {
     /// Some provider failed or was skipped.
     pub partial: bool,
     /// Feeds and API responses fetched.
-    pub pages: u32,
+    pub fetches: u32,
     /// What the backend wants the run's diagnostics to say: a provider that
     /// failed or was skipped and why, items dropped as off topic.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -252,7 +252,7 @@ impl ResearchHost {
             provenance: Vec::new(),
             usage: Usage {
                 model_calls: 1,
-                pages: 0,
+                fetches: 0,
             },
             notes: Vec::new(),
         })
@@ -288,7 +288,7 @@ impl ResearchHost {
             region,
             limit,
             max_age_hours,
-            max_pages: MAX_SEARCH_FETCHES,
+            max_fetches: MAX_SEARCH_FETCHES,
         };
         let topic = Topic::new(&query.topic);
         let mut results = self.backend.search(ctx, query.clone()).await?;
@@ -364,7 +364,7 @@ impl ResearchHost {
             provenance,
             usage: Usage {
                 model_calls: 0,
-                pages: results.pages,
+                fetches: results.fetches,
             },
             notes: results.notes,
         })
@@ -464,7 +464,7 @@ impl ResearchHost {
             provenance,
             usage: Usage {
                 model_calls: 0,
-                pages: 1,
+                fetches: 1,
             },
             notes,
         })
@@ -575,7 +575,7 @@ impl ResearchHost {
             provenance: Vec::new(),
             usage: Usage {
                 model_calls: 1,
-                pages: 0,
+                fetches: 0,
             },
             notes,
         })

@@ -22,7 +22,7 @@
     }
   },
   "modules": [{"module": "research", "methods": ["query", "search", "article", "digest"]}],
-  "budget": {"max_calls": 20, "max_model_calls": 5, "max_pages": 10, "max_ms": 90000, "max_concurrency": 4},
+  "budget": {"max_calls": 20, "max_model_calls": 5, "max_reads": 10, "max_ms": 90000, "max_concurrency": 4},
   "output": {
     "type": "object",
     "additionalProperties": false,

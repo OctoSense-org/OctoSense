@@ -49,7 +49,7 @@ pub fn manifest(methods: &[&str]) -> Value {
         "id": "probe", "version": "1", "title": "Probe", "description": "",
         "params": {"type": "object"},
         "modules": [{"module": "research", "methods": methods}],
-        "budget": {"max_calls": 8, "max_model_calls": 2, "max_pages": 8, "max_ms": 5000, "max_concurrency": 4},
+        "budget": {"max_calls": 8, "max_model_calls": 2, "max_reads": 8, "max_ms": 5000, "max_concurrency": 4},
         "output": {"type": "object"},
         "provenance": true
     })

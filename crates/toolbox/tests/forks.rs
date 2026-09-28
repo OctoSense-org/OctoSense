@@ -98,7 +98,7 @@ fn a_fork_can_never_widen_its_parent() {
     for field in [
         "max_calls",
         "max_model_calls",
-        "max_pages",
+        "max_reads",
         "max_ms",
         "max_concurrency",
     ] {

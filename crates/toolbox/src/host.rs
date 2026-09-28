@@ -78,12 +78,6 @@ pub struct Scope {
     pub regions: Vec<String>,
     pub allowed_domains: Vec<String>,
     pub denied_domains: Vec<String>,
-    /// Articles one run may read (narrows the template's `max_pages`).
-    /// There is no depth limit: `mod.research` reads only this run's search
-    /// results and never follows a link from a page, so every read is at
-    /// depth one. A crawl method would bring one; an old scope that carries
-    /// `max_depth` still loads, and the field is ignored.
-    pub max_pages: Option<u32>,
     /// Oldest item age, in hours.
     pub recency_hours: Option<u32>,
 }
@@ -143,8 +137,8 @@ pub fn url_host(url: &str) -> Option<String> {
 pub struct Remaining {
     pub calls: u32,
     pub model_calls: u32,
-    /// Pages (article reads) left.
-    pub pages: u32,
+    /// Article reads left (`max_reads`).
+    pub reads: u32,
     pub ms: u64,
 }
 
@@ -167,10 +161,10 @@ pub struct CallContext {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub model_calls: u32,
-    /// For `article`: pages read, charged to `max_pages`. For `search`: the
-    /// feeds and API responses the backend fetched, reported in
-    /// `RunStats::search_fetches` and not charged to `max_pages`.
-    pub pages: u32,
+    /// Pages, feeds and API responses the call fetched. For `article`, each
+    /// beyond the first is charged to `max_reads` too; for `search`, they
+    /// are reported in `RunStats::search_fetches` and not charged.
+    pub fetches: u32,
 }
 
 /// One source the host read or listed, kept by the host outside the script.
@@ -282,12 +276,5 @@ mod tests {
         assert!(!scope.allows_url("https://bad.example.org/x"));
         assert!(!scope.allows_url("https://example.com/x"));
         assert!(!scope.allows_url("https://notexample.org/x"));
-    }
-
-    #[test]
-    fn an_old_scope_with_max_depth_still_loads() {
-        let scope: Scope =
-            serde_json::from_value(serde_json::json!({"max_depth": 2, "max_pages": 3})).unwrap();
-        assert_eq!(scope.max_pages, Some(3));
     }
 }
