@@ -269,6 +269,8 @@ DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features octos-engine --t
 # Only the validation's twelve runs (six topics, both templates); LIVE_OUT keeps
 # each run's result, the pages read and token usage as JSON.
 DEEPSEEK_API_KEY=… LIVE_OUT=/tmp/live cargo test --locked -p octosense-toolbox --features live --test live_model c_validation_topics -- --ignored --nocapture
+# A subset of the topics, on the octos engine (the check of 28 Sep 2026 below).
+DEEPSEEK_API_KEY=… LIVE_TOPICS=openai,hormuz,typhoon,vucic cargo test -p octosense-toolbox --features octos-engine --test live_model c_validation_topics -- --ignored --nocapture
 # After changing a template or a fixture: rewrite the lock and the expected
 # results from the current output, then review the diff.
 TOOLBOX_BLESS=1 cargo test -p octosense-toolbox --test templates
@@ -325,10 +327,10 @@ The engine ran in two versions:
 | Mean wall time | 34–36 s | mostly 0.3–2.8 s (nothing read) | 49 s | 26–28 s | **28–32 s** (search median 2.2 s) |
 | Model calls, cost | 10, $0.011 | 5, $0.0045 | 6, $0.006 | 15, $0.021 | **15, $0.020** |
 
-What still falls short:
-- **Every run is still `partial`.**
+What still fell short (the first two are fixed since; see the check below):
+- **Every run was `partial`.**
   - With the metasearch, a search is partial only when an engine fails in that call. GDELT answered 429 or timed out on the first searches and then stayed suspended.
-  - Every run also had a failed read, and the runner downgrades `ready` to `partial` for any failed call.
+  - Every run also had a failed read, and the runner downgraded `ready` to `partial` for any failed call.
 - **23 of 49 Google News reads failed** as `no_main_text`.
   - 2 of them were bot challenges, which were not bypassed.
   - The rest were Reuters, NYT, MarketWatch and similar pages with no extractable article.
@@ -338,6 +340,25 @@ What still falls short:
 - **Without Chrome, Google News links go back to `readable: false`.** That covers a phone, a server, or `OCTOSENSE_TOOLBOX_RENDER=off`.
 
 After the run, no Chrome process or profile was left.
+
+### The status rules and the summary check, live (28 Sep 2026)
+
+After the [status rules](#status) and the [summary check](#modresearch-v1): four of the six topics ("OpenAI" en+zh, "Strait of Hormuz" en+zh, "台风" zh+en, "Vucic resignation"), both templates, eight runs, on the octos engine (octos 7bec0918 through the override above) with `deepseek-v4-flash`, the same parameters as the validation. GDELT answered 429 on the first search and stayed suspended, as before.
+
+| Run | Status and reasons | Reads (failed) | Summary: sentences, dropped, flagged |
+|---|---|---|---|
+| news-digest OpenAI | `ready` | 5 (2) | 3, 0, 0 |
+| topic-brief OpenAI en+zh | `ready`: en 2, zh 3 | 6 (1) | 9, 0, 0 |
+| news-digest Hormuz | `ready` | 5 (0) | 7, 0, 1 |
+| topic-brief Hormuz en+zh | `ready`: en 3, zh 2 | 5 (0) | 7, 0, 1 |
+| news-digest 台风 | `ready` | 5 (2) | 3, 0, 0 |
+| topic-brief 台风 zh+en | `partial`: "read 4 of 5 articles while 3 readable candidates remained" (zh 2, en 2; 3 reads failed, and the attempts ran out at `read_top` + 2) | 7 (3) | 5, 0, 0 |
+| news-digest Vucic | `ready` | 5 (2) | 5, 0, 1 |
+| topic-brief Vucic | `ready`: 3 of `read_top` 4, the candidates ran out | 4 (1) | 5, 0, 0 |
+
+- **Status**: 7 `ready`, 1 `partial` with its reason, where validation run 2 had 12 of 12 `partial`. The suspended GDELT and the 11 failed reads are in the diagnostics; only the 台风 brief's shortfall counts against a run.
+- **Summaries**: no sentence dropped; 3 of 44 flagged, each for a name no point carries: `IRGC` (the points say Revolutionary Guards), `SNS` (the points spell out the party) and `Beijing` (the points say China). Not judged this time.
+- 8 runs, 11 model calls, 262 s in all, about $0.018 at the logged off-peak prices.
 
 `octoscript-schema` turns on `serde_json`'s `arbitrary_precision` feature for any build that includes this crate. The shells do not link it today. Check this before they do.
 

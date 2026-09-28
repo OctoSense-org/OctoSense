@@ -12,7 +12,8 @@
 //! `c_validation_topics` repeats the 27 Sep 2026 validation's toolbox runs
 //! (six topics, both research templates, twelve runs); set `LIVE_OUT` to a
 //! directory to keep each run's result, the pages read (first 600 bytes of
-//! evidence) and the model's token usage as JSON.
+//! evidence) and the model's token usage as JSON, and `LIVE_TOPICS` to a
+//! comma-separated subset (`openai,hormuz,typhoon,vucic`).
 
 #![cfg(any(feature = "live", feature = "octos-engine"))]
 
@@ -344,8 +345,15 @@ async fn c_validation_topics() {
         ("tb-typhoon", "台风", "zh", Some("en")),
         ("tb-vucic", "Vucic resignation", "en", None),
     ];
+    // `LIVE_TOPICS=openai,typhoon` runs only those topics.
+    let only: Option<Vec<String>> = std::env::var("LIVE_TOPICS")
+        .ok()
+        .map(|t| t.split(',').map(|s| format!("tb-{}", s.trim())).collect());
     let mut runs = Vec::new();
     for (label, topic, language, second) in topics {
+        if only.as_ref().is_some_and(|o| !o.iter().any(|l| l == label)) {
+            continue;
+        }
         let digest = json!({"topic": topic, "language": language, "search_language": language,
             "limit": 5, "max_age_hours": 72});
         let mut languages = vec![json!({"language": language, "translate": false})];
