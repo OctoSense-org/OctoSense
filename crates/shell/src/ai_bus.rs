@@ -370,7 +370,10 @@ impl AiBus {
                 }
             }
             if let ServiceDown::Call(call) = &down.msg {
-                if host_confirmed(self.rules.get(&target).copied(), &call.tool) && !card_shows_in_full(&call.args) {
+                // No card in developer mode (it answers the confirmation), so
+                // nothing needs to fit on one.
+                let dev = self.manifests.get(&target).is_some_and(|m| self.auto_approves(&m.id));
+                if !dev && host_confirmed(self.rules.get(&target).copied(), &call.tool) && !card_shows_in_full(&call.args) {
                     let refused = ToolResult::refused(
                         &call.call_id,
                         format!("the confirmation cannot show these arguments in full (over {CARD_ARGS_BYTES} bytes); send a shorter call"),
