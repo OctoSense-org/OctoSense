@@ -22,6 +22,7 @@ use makepad_widgets::*;
 
 pub mod ai_pane;
 pub mod bar;
+pub mod dev_banner;
 pub mod gallery;
 pub mod launcher;
 pub mod menu;
@@ -38,6 +39,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     bar::script_mod(vm);
     menu::script_mod(vm);
     osd::script_mod(vm);
+    dev_banner::script_mod(vm);
     notifications::script_mod(vm);
     panels::script_mod(vm);
     gallery::script_mod(vm);

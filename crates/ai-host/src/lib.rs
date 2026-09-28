@@ -477,22 +477,42 @@ pub struct Offer {
 /// the kernel is hosted, [`start`] ran, and the policy grants some of the
 /// `octos.*` services the module declares.
 pub fn offer(module: &dyn AppModule, scope: &InstanceScope) -> Offer {
+    offer_with(module, scope, false)
+}
+
+/// As [`offer`]; with `grant_all_declared` (the shell's developer mode, ADR
+/// 0004 §13) the instance gets every assistant service it declares, as if
+/// the person had granted them all. Nothing is added to the host policy, so
+/// the next instance after developer mode ends gets only real grants. The
+/// service is an app peer: external clients never reach its sessions.
+pub fn offer_with(module: &dyn AppModule, scope: &InstanceScope, grant_all_declared: bool) -> Offer {
     let scope = scope.to_string();
     #[cfg(kernel)]
     let assistant = STATE.get().is_none_or(|s| s.kernel).then(|| {
+        let developer_policy;
+        let policy = if grant_all_declared {
+            developer_policy = octosense_app_peers::hosted::HostPolicy::default();
+            developer_policy.allow(module.id(), octosense_app_peers::OCTOS_SERVICES);
+            &developer_policy
+        } else {
+            host_policy()
+        };
         // Before `start` (a module host's own tests) the kernel keeps its
         // defaults; after it, only a shell that hosts a kernel offers.
         let broker = octosense_app_peers::hosted::launch(
             module.id(),
             module.label(),
             module.capabilities().iter().copied(),
-            host_policy(),
+            policy,
         )?;
         octosense_app_peers::hosted::offer(module.id(), &scope, &broker);
         Some(Assistant { broker })
     }).flatten();
     #[cfg(not(kernel))]
-    let assistant = None;
+    let assistant = {
+        let _ = grant_all_declared;
+        None
+    };
     Offer { module: module.id(), scope, assistant }
 }
 

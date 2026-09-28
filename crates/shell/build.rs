@@ -6,7 +6,17 @@
 //! for any build with `--features mobile-only`. `native_mobile` is set for
 //! Android, iOS and OpenHarmony. Code reads them as `#[cfg(mobile_only)]` /
 //! `cfg!(native_mobile)`, never as the feature or the targets directly.
+//!
+//! `dev_mode` marks a development build (ADR 0004 §13, `src/dev_mode.rs`):
+//! any build with debug assertions (`cargo build`, `cargo run`, tests), or
+//! any build with `--features dev-mode`. A release build without the feature
+//! honours developer mode only with the `--dev-grant-all` launch flag.
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(dev_mode)");
+    if std::env::var_os("CARGO_FEATURE_DEV_MODE").is_some() || std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
+        println!("cargo:rustc-cfg=dev_mode");
+    }
+    println!("cargo:rerun-if-env-changed=OCTOSENSE_STORE_BUILD");
     println!("cargo:rustc-check-cfg=cfg(mobile_only)");
     let feature = std::env::var_os("CARGO_FEATURE_MOBILE_ONLY").is_some();
     println!("cargo:rustc-check-cfg=cfg(native_mobile)");

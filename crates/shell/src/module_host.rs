@@ -359,7 +359,9 @@ impl ModuleHost {
         let vm_id = cx.alloc_splash_vm_with_network(false);
         // The assistant is offered to THIS instance for the duration of its
         // create only; the module takes it there or never gets it.
-        let offer = crate::ai_host::offer(module, &scope);
+        // In developer mode a covered module gets every service it declares
+        // (dev_mode.rs); the grant lives and dies with this instance.
+        let offer = crate::ai_host::offer_with(module, &scope, crate::dev_mode::grants_all(module.id()));
         // Its storage (jail, account folders, secrets; ADR 0004 §11) the
         // same way, when it declares `storage` and the host has storage.
         let scope_key = scope.to_string();

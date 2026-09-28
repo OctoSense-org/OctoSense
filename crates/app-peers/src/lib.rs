@@ -20,6 +20,7 @@
 //! `peer/context/open|close`, `peer/model/set`).
 
 pub mod contract;
+pub mod host_approvals;
 pub mod injection;
 /// The app storage contract (ADR 0004 §11), handed off like the service.
 pub mod storage;

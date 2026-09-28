@@ -101,3 +101,8 @@ app-hub = ["dep:octosense-app-hub-app", "dep:octosense-appstore", "dep:octosense
 # END native-apps: features
 # The aichat module, seated in the pane in-process.
 app-aichat = ["dep:makepad-aichat"]
+# A development build for developer mode (ADR 0004 §13, src/dev_mode.rs):
+# Settings and OCTOSENSE_DEV_MODE may turn it on. Debug builds are
+# development builds without it (build.rs); a release build without it
+# honours only the `--dev-grant-all` launch flag.
+dev-mode = []
