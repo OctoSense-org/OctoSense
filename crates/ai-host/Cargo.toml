@@ -46,6 +46,9 @@ makepad-app-module = { workspace = true }
 octosense-llm-config = { workspace = true }
 # The contract (OCTOS_SERVICES, injection) always; the broker with `octos-core`.
 octosense-app-peers = { workspace = true }
+# The Card runner's host-service API: the `octos` service for contained apps.
+octosense-appstore = { workspace = true }
+serde_json = { workspace = true }
 octosense-kernel = { workspace = true, optional = true }
 octosense-llm-service = { workspace = true, optional = true }
 

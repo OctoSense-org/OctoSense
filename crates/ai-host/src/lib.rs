@@ -41,8 +41,13 @@
 //!   declares or is granted nothing gets nothing, and no peer is allocated.
 //!   Dropping the [`Assistant`] releases the instance's leases and
 //!   interrupts its peer's running work; the kernel and other apps go on.
+//! - **The `octos` host service** ([`contained`]): contained apps the Card
+//!   runner hosts that declare `octos.*` get their own peer (`card.<app id>`)
+//!   under the same contract, while [`Policy::contained_apps`] is on. Tool
+//!   approvals are declined until the Card runner has an approval sheet.
 
 mod bridge;
+pub mod contained;
 mod qr;
 
 pub use bridge::{Bridge, Done};
@@ -114,6 +119,8 @@ impl KernelSource {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Policy {
     grants: Vec<(String, Vec<String>)>,
+    /// Whether contained apps (the Card runner's) get the `octos` service.
+    contained_apps: bool,
 }
 
 impl Policy {
@@ -126,7 +133,19 @@ impl Policy {
     /// host serves these to reviewed mini apps). The person's AI provider
     /// choice lives in AI providers; a per-app toggle is future work.
     pub fn shipped() -> Self {
-        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES)
+        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_apps(true)
+    }
+
+    /// Turn the `octos` service for contained apps on or off (the shell's
+    /// switch; an app still gets only the services its manifest declares).
+    pub fn with_contained_apps(mut self, on: bool) -> Self {
+        self.contained_apps = on;
+        self
+    }
+
+    /// Whether contained apps get the `octos` service.
+    pub fn contained_apps(&self) -> bool {
+        self.contained_apps
     }
 
     /// Also grant `module` these services.
@@ -187,6 +206,7 @@ pub fn start(host: Host) -> &'static Started {
         grant_policy(&host.policy, kernel);
         let core_dir = core_dir(host.data_dir.clone());
         let llm = register_llm(core_dir.clone(), host.qr_import);
+        register_contained(kernel, &host.policy);
         State { qr_import: host.qr_import, kernel, started: Started { core_dir, kernel: kernel_status, llm } }
     });
     &state.started
@@ -258,6 +278,22 @@ pub fn core_dir(data_dir: Option<String>) -> Option<PathBuf> {
         }
     }
     octosense_llm_config::profile::default_core_dir()
+}
+
+/// The `octos` service for contained apps, where this shell hosts a kernel.
+/// Registered even with the switch off, so an app hears why it gets nothing.
+fn register_contained(kernel: bool, policy: &Policy) {
+    #[cfg(kernel)]
+    if kernel {
+        let on = policy.contained_apps();
+        octosense_appstore::services::register_host_service(Box::new(contained::ContainedOctos::new(
+            on,
+            std::sync::Arc::new(contained::KernelPeers),
+        )));
+        log!("octos: contained apps' service registered ({})", if on { "on" } else { "off" });
+        return;
+    }
+    let _ = (kernel, policy);
 }
 
 #[cfg(feature = "llm")]
