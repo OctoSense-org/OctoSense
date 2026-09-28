@@ -463,6 +463,141 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// What the system agent's turns were offered: `(stdio, host over Talk to
+/// Octos, external client)`. The scripted model logs the tool names each
+/// request offered. The profile carries an older OctoSense policy that allows
+/// `shell`: the kernel start replaces it with the current one.
+async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections::BTreeSet<String>; 3] {
+    use std::collections::BTreeSet;
+    use std::io::BufRead;
+    let dir = std::env::temp_dir().join(format!("octos-system-tools-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("profiles")).unwrap();
+    let log = dir.join("offered.jsonl");
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app-peers/tests/fixtures/mock_llm.py");
+    let mut model = std::process::Command::new("python3").arg(script).env("MOCK_LLM_TOOLS_LOG", &log)
+        .stdout(std::process::Stdio::piped()).spawn().unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(model.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let port: u16 = line.trim().parse().unwrap();
+    let _model = Defer(move || { let _ = model.kill(); let _ = model.wait(); });
+    std::fs::write(dir.join("profiles/_main.json"), json!({
+        "id":"_main", "name":"Main", "enabled":true,
+        "created_at":"2026-09-27T00:00:00Z", "updated_at":"2026-09-27T00:00:00Z",
+        "config":{"llm":{"primary":{"family_id":"local", "model_id":"mock-model",
+            "route":{"base_url":format!("http://127.0.0.1:{port}/v1"), "api_type":"openai"}}},
+            "tool_policy":{"allow":["read_file","shell"],"owner":"octosense"}}
+    }).to_string()).unwrap();
+    std::fs::write(dir.join("web-client-origin.txt"), WEB).unwrap();
+    let offered = |probe: &str| -> Option<BTreeSet<String>> {
+        let text = std::fs::read_to_string(&log).ok()?;
+        text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .filter(|v| v["user"].as_str().is_some_and(|u| u.contains(probe)))
+            .find(|v| v["tools"].as_array().is_some_and(|t| !t.is_empty()))
+            .map(|v| v["tools"].as_array().unwrap().iter().filter_map(Value::as_str).map(str::to_owned).collect())
+    };
+    let wait_for = |probe: &'static str| {
+        let offered = &offered;
+        async move {
+            tokio::time::timeout(Duration::from_secs(60), async {
+                loop {
+                    if let Some(tools) = offered(probe) { return tools; }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }).await.unwrap_or_else(|_| panic!("the model never saw the {probe} turn"))
+        }
+    };
+    let input = |text: &str| json!({"session_id":SYSTEM_SESSION,"turn_id":uuid::Uuid::new_v4(),
+        "input":[{"kind":"text","text":text}]});
+    let open = json!({"session_id":SYSTEM_SESSION,"profile_id":"_main"});
+
+    // The private stdio kernel (Talk to Octos off): the host's own turn.
+    let core = Core::new(Options::default().program(program).core_dir(&dir));
+    let mut native = core.connect().unwrap();
+    call(&mut native, "open", "session/open", open.clone()).await;
+    call(&mut native, "turn", "turn/start", input("SYSTEM_TOOLS_STDIO")).await;
+    let stdio = wait_for("SYSTEM_TOOLS_STDIO").await;
+    drop(native);
+    core.shutdown_within(Duration::from_secs(15));
+
+    // Talk to Octos on: the host's turn over the WebSocket, then an external
+    // client's turn on the same system conversation.
+    let core = Core::new(Options::default().program(program).core_dir(&dir));
+    let c = core.clone();
+    blocking(move || c.set_external_access(true)).await.unwrap();
+    let mut native = core.connect().unwrap();
+    let access = native.client_access().await.unwrap();
+    call(&mut native, "open", "session/open", open.clone()).await;
+    let host_turn = input("SYSTEM_TOOLS_HOST");
+    call(&mut native, "turn", "turn/start", host_turn.clone()).await;
+    let host = wait_for("SYSTEM_TOOLS_HOST").await;
+    // One turn at a time on a session: let the host's finish first.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let state = call(&mut native, "state", "turn/state/get", json!({
+                "session_id":SYSTEM_SESSION,"turn_id":host_turn["turn_id"]})).await;
+            if state["state"] == "completed" { break; }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }).await.expect("the host's turn completed");
+    let mut browser = external(&access).await;
+    ws_call(&mut browser, "open", "session/open", open).await;
+    ws_call(&mut browser, "turn", "turn/start", input("SYSTEM_TOOLS_EXTERNAL")).await;
+    let external_tools = wait_for("SYSTEM_TOOLS_EXTERNAL").await;
+    drop((native, browser));
+    let c = core.clone();
+    blocking(move || c.set_external_access(false)).await.unwrap();
+    core.shutdown_within(Duration::from_secs(15));
+    let _ = std::fs::remove_dir_all(dir);
+    [stdio, host, external_tools]
+}
+
+/// ADR 0004 §12, what is enforced today: a system-agent turn, whoever starts
+/// it, is offered none of octos's shell (`group:runtime`: `shell`, `bash`,
+/// `exec_command`, `write_stdin`) and every tool of its own list octos
+/// registers; beyond that it is bounded only by the grantable ceiling
+/// (everything else), not its exact list. A Talk to Octos external client's
+/// turn keeps octos's external allowlist.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_system_agent_turn_is_offered_no_octos_shell() {
+    use octosense_kernel::system_tools::{EXTERNAL_TURN_TOOLS, SYSTEM_AGENT_TOOLS};
+    use std::collections::BTreeSet;
+    let Some(program) = kernel() else { return };
+    let [stdio, host, external_tools] = offered_to_system_turns(&program, "ceiling").await;
+    // `recall` (a session's evicted tool outputs) is registered only on
+    // octos's session-actor turns, not on UI Protocol turns.
+    let own: BTreeSet<String> = SYSTEM_AGENT_TOOLS.iter().filter(|t| **t != "recall")
+        .map(|t| t.to_string()).collect();
+    for (how, offered) in [("stdio", &stdio), ("Talk to Octos", &host)] {
+        for shell in ["shell", "bash", "exec_command", "write_stdin"] {
+            assert!(!offered.contains(shell), "{how}: {shell} offered: {offered:?}");
+        }
+        assert!(own.is_subset(offered), "{how}: missing its own tools: {:?}", &own - offered);
+    }
+    assert_eq!(stdio, host, "the same set over Talk to Octos");
+    let allowlist: BTreeSet<String> = EXTERNAL_TURN_TOOLS.iter().map(|t| t.to_string()).collect();
+    assert!(external_tools.is_subset(&allowlist), "{external_tools:?}");
+    assert_eq!(external_tools, &stdio & &allowlist, "external clients keep every allowlisted tool the kernel offers");
+}
+
+/// ADR 0004 §12, the target, NOT yet enforced: a system-agent turn is
+/// offered EXACTLY its grants (its default list; nothing granted here).
+/// Needs session-targeted registration and tool lists in octos (octos#2567,
+/// reviewer item M1; our item 5); until then the grantable ceiling bounds it
+/// (above).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs session-targeted tool lists in octos (octos#2567 M1, our item 5); today the system agent is bounded by the grantable ceiling"]
+async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
+    use octosense_kernel::system_tools::SystemAgentTools;
+    use std::collections::BTreeSet;
+    let Some(program) = kernel() else { return };
+    let [stdio, host, _] = offered_to_system_turns(&program, "exact").await;
+    let expected: BTreeSet<String> = SystemAgentTools::new().names().into_iter()
+        .filter(|t| t != "recall").collect();
+    assert_eq!(stdio, expected);
+    assert_eq!(host, expected);
+}
+
 /// The kernel must not outlive a host that dies without stopping it
 /// (a crash or SIGKILL): its stdin closes and it stops. This test re-runs
 /// itself as the host in a child process and kills that process.

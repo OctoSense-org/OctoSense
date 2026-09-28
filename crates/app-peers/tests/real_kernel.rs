@@ -304,13 +304,20 @@ fn an_account_change_drops_a_late_reply_and_resume_keeps_the_peer_across_restart
 
 /// Criterion 3 of ADR 0007 with a scripted model: the system agent sends the
 /// app peer input, the peer asks a question, the kernel wakes the system
-/// agent, which answers, and the peer continues with the answer.
+/// agent, which answers, and the peer continues with the answer. Every model
+/// request on the way (the host's turn, the kernel's wake continuation, the
+/// peer's turns) is offered none of octos's shell (ADR 0004 §12: command
+/// execution is a granted host tool, never octos's `shell`).
 #[test]
 fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
     let Some(program) = kernel() else { return };
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let dir = temp("qa");
+    std::fs::create_dir_all(&dir).unwrap();
+    let offered_log = dir.join("offered.jsonl");
     let mut child = std::process::Command::new("python3")
         .arg(script)
+        .env("MOCK_LLM_TOOLS_LOG", &offered_log)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
         .spawn()
@@ -320,7 +327,6 @@ fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
         .read_line(&mut line)
         .unwrap();
     let model = Model(child, line.trim().parse().unwrap());
-    let dir = temp("qa");
     let core_dir = dir.join("octos-home/.octos");
     write_profile(&core_dir, model.1);
     let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
@@ -357,6 +363,27 @@ fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
     assert!(
         text.contains("PEER GOT 42"),
         "the peer continued with the system agent's answer: {text}"
+    );
+    let requests: Vec<Value> = std::fs::read_to_string(&offered_log)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    for request in &requests {
+        for tool in request["tools"].as_array().unwrap() {
+            let tool = tool.as_str().unwrap();
+            assert!(
+                !["shell", "bash", "exec_command", "write_stdin"].contains(&tool),
+                "{tool} offered: {request}"
+            );
+        }
+    }
+    assert!(
+        requests.iter().any(|r| {
+            !r["user"].as_str().unwrap().contains("TELL_PEER")
+                && r["tools"].as_array().unwrap().iter().any(|t| t == "peer_respond")
+        }),
+        "the system agent's wake continuation was seen and checked"
     );
 
     rinx.release();
@@ -553,13 +580,19 @@ fn a_second_input_to_an_answered_peer_runs() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// ADR 0007: a host-owned app peer's tool approval is the person's, answered
-/// in the app. The system agent hands the peer work that needs an approval;
-/// the kernel must not wake the system agent for it, and when the system
-/// agent tries to approve it anyway with `peer_respond` the kernel refuses.
-/// The approval stays pending until the person answers it through the host.
+/// ADR 0004 §12 (was ADR 0007's approval test): octos's own `shell` is
+/// offered to no `_main` session (the kernel profile's policy, written by
+/// `octosense-kernel` at every start, denies it and nothing else), so the system agent cannot
+/// get a command run through an app peer by asking or by "approving". The
+/// system agent handing the peer a command gets no tool approval parked and
+/// nothing run; its `peer_respond` "approval" finds nothing to approve.
+/// Command execution an app is granted arrives as a host tool with a live
+/// approval (for example `terminal.run`), registered by the shell (plan
+/// steps 6 and 7); approvals of app tools return here then. That octos
+/// refuses the system agent an app peer's approval is octos's own test
+/// (`ui_protocol_tests.rs`, ADR 0007).
 #[test]
-fn the_system_agent_cannot_approve_an_app_peers_tool() {
+fn the_system_agent_cannot_get_a_command_run_through_an_app_peer() {
     let Some(program) = kernel() else { return };
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
     let mut child = std::process::Command::new("python3")
@@ -612,74 +645,44 @@ fn the_system_agent_cannot_approve_an_app_peers_tool() {
     };
 
     start_system_turn(format!("TELL_PEER_SUDO:{slug}"));
-    let mut approvals = Vec::new();
+    let mut peer_text = String::new();
     for _ in 0..120 {
-        approvals = pending_approvals();
-        if !approvals.is_empty() {
+        peer_text = hydrate(&peer_session, &["messages"]).to_string();
+        if peer_text.contains("NO SHELL OFFERED") {
             break;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    assert_eq!(approvals.len(), 1, "the peer parked on one tool approval");
-    // Room for a wake to fire, were the kernel to send one.
-    std::thread::sleep(Duration::from_secs(3));
-    // A woken system agent acts on the wake (the scripted one reaches for
-    // peer_respond), which leaves a tool result beyond the peer_send_input one.
-    let system_text = hydrate(system, &["messages"]).to_string();
-    assert_eq!(
-        system_text.matches("\"role\":\"tool\"").count(),
-        1,
-        "the system agent was not woken for the app peer's approval: {system_text}"
+    assert!(
+        peer_text.contains("NO SHELL OFFERED"),
+        "the peer ran the system agent's input without a shell tool: {peer_text}"
     );
+    assert!(pending_approvals().is_empty(), "no tool approval parked");
 
     start_system_turn(format!("APPROVE_PEER:{slug}"));
     let mut system_text = String::new();
     for _ in 0..60 {
         system_text = hydrate(system, &["messages"]).to_string();
-        if system_text.contains("host-owned app peer") {
+        if system_text.contains("not awaiting input") {
             break;
         }
         std::thread::sleep(Duration::from_millis(500));
     }
     assert!(
-        system_text.contains("host-owned app peer"),
-        "peer_respond refused the system agent's approval: {system_text}"
+        system_text.contains("not awaiting input"),
+        "peer_respond had nothing to approve: {system_text}"
     );
-    assert_eq!(
-        pending_approvals().len(),
-        1,
-        "the approval is still the person's to answer"
-    );
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(pending_approvals().is_empty());
     assert!(
         !hydrate(&peer_session, &["messages"])
             .to_string()
             .contains("APPROVED_RAN"),
-        "the command did not run on the system agent's say-so"
+        "no command ran"
     );
-
-    // The person approves in the app; the peer's command then runs.
-    let approval_id = approvals[0]["approval_id"].as_str().unwrap().to_owned();
-    rinx.host_request(
-        "approval/respond",
-        json!({"session_id": peer_session, "approval_id": approval_id, "decision": "approve"}),
-    )
-    .expect("the person's approval");
-    let mut ran = false;
-    for _ in 0..60 {
-        if pending_approvals().is_empty()
-            && hydrate(&peer_session, &["messages"])
-                .to_string()
-                .contains("APPROVED_RAN")
-        {
-            ran = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
 
     rinx.release();
     drop(rinx);
     core.shutdown_within(Duration::from_secs(5));
-    assert!(ran, "the peer ran the command once the person approved it");
     let _ = std::fs::remove_dir_all(&dir);
 }

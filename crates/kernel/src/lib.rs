@@ -44,6 +44,7 @@ mod network;
 pub use network::{connection_file, pairing_link, ClientAccess, Pairing, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
 mod router;
+pub mod system_tools;
 
 pub use dirs::{kernel_home, profile_path, resolve_core_dir};
 pub use launch::{Launch, Unavailable};
@@ -86,8 +87,8 @@ impl Options {
         self.core_dir = Some(dir.into());
         self
     }
-    /// The app's data dir (`cx.get_data_dir()`): on a phone the core dir is
-    /// `<data dir>/octos-home/.octos`.
+    /// The app's data dir (`cx.get_data_dir()` on a phone, OctoSense's state
+    /// dir on a desktop): the core dir is `<data dir>/octos-home/.octos`.
     pub fn app_data_dir(mut self, dir: impl Into<PathBuf>) -> Self {
         self.app_data_dir = Some(dir.into());
         self
@@ -217,6 +218,7 @@ impl Default for Core {
 
 impl Core {
     pub fn new(options: Options) -> Self {
+        Self::adopt_shared_profile(&options);
         Core(Arc::new(Inner {
             state: Mutex::new(State {
                 options,
@@ -234,7 +236,24 @@ impl Core {
     /// Replace the options. A running kernel keeps its launch until it
     /// restarts; the core dir answers the new value at once.
     pub fn configure(&self, options: Options) {
+        Self::adopt_shared_profile(&options);
         self.0.state.lock().unwrap().options = options;
+    }
+
+    /// A desktop OctoSense's own core dir inherits, once, the provider and
+    /// model settings of the octos home it used to share with the person's
+    /// standalone octos (copy only; see [`dirs::migrate_shared_profile`]).
+    fn adopt_shared_profile(options: &Options) {
+        let Some(from) = dirs::shared_profile_source(options.core_dir.as_deref(), options.app_data_dir.as_deref()) else {
+            return;
+        };
+        let Some(to) = Self::core_dir_of(options) else { return };
+        match dirs::migrate_shared_profile(&from, &to) {
+            Ok(true) => Inner::log(options)(&format!(
+                "octos-core: copied the provider settings from {} to OctoSense's own {}", from.display(), to.display())),
+            Ok(false) => {}
+            Err(e) => Inner::log(options)(&format!("octos-core: provider settings not copied: {e}")),
+        }
     }
 
     /// The kernel's core dir (see [`resolve_core_dir`]).

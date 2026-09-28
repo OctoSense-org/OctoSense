@@ -198,7 +198,8 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
 
 /// Make what a start needs: the core dir, the cwd (a missing cwd fails the
 /// spawn's chdir with ENOENT, permanently, since the kernel would create it),
-/// and on Android the kernel config's memory budget (as AppCard did).
+/// on Android the kernel config's memory budget (as AppCard did), and the
+/// system agent's tool policy in the profile ([`crate::system_tools`]).
 pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
     if let Err(e) = std::fs::create_dir_all(core_dir) {
         log::warn!("octos-core: could not create {}: {e}", core_dir.display());
@@ -217,6 +218,9 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
     if cfg!(target_os = "android") {
         ensure_kernel_config(&dirs::kernel_home(core_dir));
     }
+    // Every start: the system agent's tool set (ADR 0004 §12) as the
+    // profile's tool policy, which octos reads at start.
+    crate::system_tools::enforce(core_dir);
 }
 
 /// Floor for `memory.max_inject_tokens` in the phone kernel's config.

@@ -17,7 +17,7 @@ the shared runtime piece the shells, AppCard (`apps/appcard/app`) and the
 
 | | |
 |---|---|
-| **Core dir** | octos's data dir: `<core_dir>/profiles/_main.json` is the profile the AI providers app writes. Resolved as: the shell's `Options::core_dir`, else `$OCTOS_APP_CORE_DIR`, else on Android/OpenHarmony `<app data dir>/octos-home/.octos` (the app-private octos home AppCard has always used), else `$HOME/octos-home/.octos` (`octosense_llm_config::profile::default_core_dir()`). |
+| **Core dir** | octos's data dir: `<core_dir>/profiles/_main.json` is the profile the AI providers app writes. Resolved as: the shell's `Options::core_dir`, else `$OCTOS_APP_CORE_DIR`, else `<app data dir>/octos-home/.octos`: OctoSense's own octos home (the platform's app data dir on a phone, the app-private home AppCard has always used; OctoSense's state dir `~/.octosense` on a desktop), else `$HOME/octos-home/.octos` (`octosense_llm_config::profile::default_core_dir()`, for a consumer that names nothing). A desktop OctoSense used to share `$HOME/octos-home/.octos` with the person's standalone octos; on first use it now copies only the provider and model settings (`llm`, `env_vars`) from there into its own profile, and never writes, moves or deletes anything there. |
 | **One kernel, lazily** | The first `connect()` starts it; later ones share it. octos holds a single-writer lock on its data dir, so a second kernel on the same dir could not run anyway. |
 | **Shared by frames** | A `Connection` carries UI Protocol (JSON-RPC) frames exactly as `octos serve --stdio` speaks them. Each consumer uses its own request ids and receives the replies to its requests and the notifications of the sessions it named (a notification for a session nobody named goes to every consumer). |
 | **Restart** | `restart()` stops a running kernel (a no-op when none runs). Connections then end with `CloseReason::Restarted`; a consumer connects again, which starts a fresh kernel that reads the new profile. The next kernel starts only after the old one has exited and released its data dir. |
@@ -154,6 +154,40 @@ its workspace is saved in `system-workspace.txt` so native opens and Web's
 scoped session agree. OpenHarmony (embedded core) and iOS (no kernel) have no
 Talk to Octos. See [ADR 0003](../../docs/adr/0003-shared-octos-client-access.md)
 for the threat model.
+
+## The system agent's tools
+
+[ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12: the
+system agent's tool set is its grants. Its default octos tools are
+`system_tools::SYSTEM_AGENT_TOOLS`: supervision (`peer_send_input`,
+`peer_gather`, `peer_list`, `peer_respond`, `peer_close`), its workspace's
+file tools (octos fences them to the session's working directory), memory,
+`ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
+toolbox grants replace them, #108) and `tool_search`. Granted toolbox and
+cross-app tools, and command execution when the person turns it on in
+Settings (off by default), join it as host tools through `SystemAgentTools`;
+command execution is a host tool with a live approval (`terminal.run`).
+
+**What the kernel enforces today.** octos has no tool list the host can set
+for one session, so every start writes the `_main` profile's `tool_policy`
+(`system_tools::tool_policy`): everything a grant can give, minus octos's own
+shell (`group:runtime`: `shell`, `bash`, `exec_command`, `write_stdin`), the
+one tool OctoSense never offers, since §12 grants command execution only as
+a host tool. octos applies it to every turn of the profile, wake
+continuations included. So:
+
+- **§12's "exactly its grants" is not yet enforced for the system agent**:
+  it gets no octos shell, but otherwise is bounded by the grantable ceiling,
+  not its list, until octos#2567 adds session-targeted registration and tool
+  lists (reviewer item M1; our item 5). The exact-list real-kernel test is
+  ignored until then;
+- app peers are narrowed to their grants by their turns' `generic_tools`
+  (plan step 6);
+- Talk to Octos external turns keep octos's own allowlist.
+
+The policy is written only into OctoSense's own core dir, and only over a
+policy OctoSense wrote (`"owner": "octosense"`): a foreign policy, or the
+person's own `$HOME/octos-home/.octos`, is refused with a warning.
 
 ## Testing
 

@@ -2,10 +2,14 @@
 """A scripted OpenAI-compatible model for kernel tests. No network, no keys.
 
 POST /v1/chat/completions answers "ECHO: <last user text>". A user text that
-contains SLOW waits 20 s first (for revocation tests). Prints its port on the
-first line of stdout, then serves until killed. Standard library only.
+contains SLOW waits 20 s first (for revocation tests). With
+MOCK_LLM_TOOLS_LOG set, each request appends one JSON line {"user": <last user
+text>, "tools": [<offered tool names>]} to that file (what a turn was offered).
+Prints its port on the first line of stdout, then serves until killed.
+Standard library only.
 """
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +39,11 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0"))
         body = json.loads(self.rfile.read(length) or b"{}")
         text = last_user_text(body)
+        log = os.environ.get("MOCK_LLM_TOOLS_LOG")
+        if log:
+            tools = [t.get("function", {}).get("name") for t in body.get("tools", []) or []]
+            with open(log, "a") as f:
+                f.write(json.dumps({"user": text, "tools": tools}) + "\n")
         if "SLOW" in text:
             time.sleep(20)
         reply = "ECHO: " + text.strip().splitlines()[-1] if text.strip() else "ECHO:"

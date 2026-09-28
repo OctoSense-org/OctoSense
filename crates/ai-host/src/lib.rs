@@ -167,8 +167,9 @@ impl Policy {
 /// What a shell tells [`start`].
 #[derive(Clone, Debug)]
 pub struct Host {
-    /// The app's data dir (`cx.get_data_dir()`): a phone's kernel home lives
-    /// under it.
+    /// The app's data dir (`cx.get_data_dir()` on a phone, OctoSense's state
+    /// dir on a desktop): the kernel's octos home lives under it, never the
+    /// person's own `~/octos-home`.
     pub data_dir: Option<String>,
     pub kernel: KernelSource,
     pub qr_import: QrImport,
@@ -262,8 +263,8 @@ fn configure_kernel(_host: &Host) -> (bool, Result<(), String>) {
 }
 
 /// The kernel's octos home, where the `llm` service writes: the kernel's core
-/// dir (`$OCTOS_APP_CORE_DIR`, else on a phone `<data dir>/octos-home/.octos`,
-/// else `$HOME/octos-home/.octos`).
+/// dir (`$OCTOS_APP_CORE_DIR`, else `<data dir>/octos-home/.octos`, OctoSense's
+/// own, else `$HOME/octos-home/.octos`).
 pub fn core_dir(data_dir: Option<String>) -> Option<PathBuf> {
     #[cfg(kernel)]
     {
@@ -277,10 +278,8 @@ pub fn core_dir(data_dir: Option<String>) -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("OCTOS_APP_CORE_DIR").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(dir));
     }
-    if cfg!(any(target_os = "android", target_env = "ohos")) {
-        if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
-            return Some(PathBuf::from(dir).join("octos-home").join(".octos"));
-        }
+    if let Some(dir) = data_dir.filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(dir).join("octos-home").join(".octos"));
     }
     octosense_llm_config::profile::default_core_dir()
 }
