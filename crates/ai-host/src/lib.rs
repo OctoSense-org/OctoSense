@@ -30,6 +30,9 @@
 //! - **The `llm` host service** (feature `llm`) the AI providers system app
 //!   (`os.ai-providers`) calls, writing the kernel's profile under
 //!   [`core_dir`], with the platform's [`QrImport`].
+//! - **The `model` host service** (feature `llm`): contained apps granted
+//!   `model` make one-shot, schema-checked calls to the person's providers
+//!   within a per-app budget (`octosense_llm_service::complete`).
 //! - **Apps' assistant access** (Rinx ADR 0007): when the shell creates a
 //!   native module instance whose declared `octos.*` services the host
 //!   [`Policy`] grants, [`offer`] makes ONE octos peer for that app (owned by
@@ -278,7 +281,13 @@ fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
     }
     // With `octos-core` the service itself restarts the kernel after a
     // change; its consumers reconnect.
-    octosense_llm_service::register_with(options);
+    octosense_llm_service::register_with(options.clone());
+    // `model` (ADR 0002, `model.complete`): contained apps' one-shot model
+    // calls over the same providers, with per-app budgets. Apps granted the
+    // `model` capability only; the ledger lives in the Card runner's host
+    // dir, attached at the first call.
+    octosense_llm_service::register_model(&options, octosense_llm_service::complete::Options::default());
+    log!("model: service registered (one-shot calls; granted apps only)");
     true
 }
 

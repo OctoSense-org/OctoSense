@@ -12,13 +12,13 @@
 | The desktop packaging: entry point, catalogs, WM sync | `desktop/` | `cargo check --locked -p octosense` (and `--features mobile-apps`), `bash tools/check-shell-graph.sh -p octosense`, `desktop.yml` |
 | Home's packaging: Settings, Android/OpenHarmony/iOS packaging, the phone side of the bridge | `phone/` (run cargo from `phone/`) | `cargo check --locked -p octosense-home --features mobile-apps`, `bash ../tools/check-shell-graph.sh -p octosense-home`, `phone.yml` |
 | The OnePlus 6 image: vendor, patches, flash/OTA, APK build scripts, web installer | `rom/` | from `rom/`: `python3 -m unittest discover -s tests`, `rom.yml`; image builds are not in CI |
-| The shell's AI services (kernel start, `llm` service, QR import, app peers) | `crates/ai-host/` | `cargo test --locked -p octosense-ai-host --features octos-core,llm`, `apps.yml` |
+| The shell's AI services (kernel start, `llm` and `model` services, QR import, app peers) | `crates/ai-host/` | `cargo test --locked -p octosense-ai-host --features octos-core,llm`, `apps.yml` |
 | The octos kernel service | `crates/kernel/` | `cargo test --locked -p octosense-kernel`, `apps.yml` |
 | The octos kernel an Android APK bundles | `tools/kernel-artifact.py` | `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | Apps' access to the assistant | `crates/app-peers/` | its README, `apps.yml` |
 | The system toolbox's workflow templates (library, runner, forks, evaluation, `mod.research`) | `crates/toolbox/` (templates in `crates/toolbox/templates/<id>/`) | `cargo test --locked -p octosense-toolbox`, its README, `apps.yml` |
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
-| A host service (`mail`, `llm`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |
+| A host service (`mail`, `llm`, `model`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |
 | AppCard (opt-in) | `apps/appcard/` | [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md), `apps.yml` |
 | An external pin (Makepad, OctoScript, App Hub, octos, Rinx) | root `Cargo.toml` `[workspace.dependencies]`, `native-runtime.lock.json`, `runtime-patches.lock.json` | `python3 tools/setup.py --update`, then `--check --cargo` |
 | A decision | `docs/adr/` (next free number) | — |
