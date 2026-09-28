@@ -408,10 +408,14 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
     let mut browser = external(&access).await;
     let open = json!({"session_id":SYSTEM_SESSION,"profile_id":"_main"});
     call(&mut native, "open", "session/open", open.clone()).await;
-    let mut web_open = open;
+    // An external client never chooses the workspace: a cwd is refused, and
+    // without one it lands in the workspace the system session is bound to.
+    let mut web_open = open.clone();
     web_open["cwd"] = reference[0].clone();
-    let opened = ws_call(&mut browser, "open", "session/open", web_open).await;
-    assert_eq!(opened["opened"]["workspace_root"], reference[0], "Web confirms the canonical saved-link workspace");
+    let refused = ws_frame(&mut browser, "open-cwd", "session/open", web_open).await;
+    assert_eq!(refused["error"]["data"]["kind"], "external_parameter_denied", "{refused}");
+    let opened = ws_call(&mut browser, "open", "session/open", open).await;
+    assert_eq!(opened["opened"]["workspace_root"], reference[0], "Web lands in the system workspace");
     let input = |text| json!({"session_id":SYSTEM_SESSION,"turn_id":uuid::Uuid::new_v4(),
         "input":[{"kind":"text","text":text}]});
     let first = input("hello from native");
@@ -432,6 +436,10 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }).await.expect("native turn completed");
+    // The browser cannot interrupt the host's turn on the shared session.
+    let interrupt = ws_frame(&mut browser, "int", "turn/interrupt", json!({
+        "session_id":SYSTEM_SESSION,"turn_id":first["turn_id"]})).await;
+    assert_eq!(interrupt["error"]["data"]["kind"], "external_turn_denied", "{interrupt}");
     ws_call(&mut browser, "turn", "turn/start", input("hello from browser")).await;
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
@@ -442,8 +450,8 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
     }).await.expect("native client sees browser turn");
     drop((native, browser));
     core.shutdown_within(Duration::from_secs(15));
-    // A Web cwd makes the session persistently scoped. After a full host
-    // restart with Talk to Octos off, native app peers still resume it.
+    // After a full host restart with Talk to Octos off, native app peers
+    // still resume the system session in its saved workspace.
     std::fs::remove_file(dir.join("external-access.json")).unwrap();
     let restarted = Core::new(Options::default().program(&program).core_dir(&dir));
     let mut native = restarted.connect().unwrap();

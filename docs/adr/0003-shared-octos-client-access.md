@@ -49,19 +49,36 @@ separate kernel would be a different assistant with different memory.
    `session/hydrate`, `session/messages_page`, `session/status.get`,
    `turn/start`, `turn/interrupt`, `turn/steer`, `turn/state/get`,
    `approval/respond`, `approval/scopes/list`, `user_question/respond` and
-   `diff/preview/get`. Everything else is refused. That covers provider, key
-   and model configuration (a redirected `base_url` would otherwise receive
-   the stored key), skills, snapshots, session fork and delete, every peer
-   method and `server/shutdown`. It also cannot name an app peer's session
-   (`peer-…`/`peerctx-…`) in any call. Those sessions carry the apps' memory
-   and workspaces, and their approvals and questions belong to the person in
-   the app, as UPCR-2026-034 already requires of the system agent. It answers
-   prompts only on sessions it opened itself, and names no profile but
-   `_main`. A turn it starts keeps only a fixed allowlist of built-in
-   workspace, web, question and memory tools. Everything else is absent: no
-   command or code execution, delegation, administration, peers (`peer_*`),
-   MCP or plugin tools. The model therefore cannot drive the apps' assistants
-   or read the host's processes on its behalf.
+   `diff/preview/get`. Every other method fails with `external_method_denied`.
+   That includes provider, key and model configuration (a redirected
+   `base_url` would otherwise receive the stored key), skills, snapshots,
+   session fork and delete, every peer method and `server/shutdown`.
+   Within those methods:
+
+   - no session of an app's assistant (`peer-…`/`peerctx-…`, under any
+     `*session*` key at any depth) and no profile but `_main`;
+   - no `topic`, `cwd` or `sandbox` parameter and no local media. The web
+     client's sessions stay in the workspace octos bound them to; for the
+     system conversation that is the saved system workspace;
+   - `turn/interrupt`, `turn/steer`, `approval/respond` and
+     `user_question/respond` only for turns this connection started. On the
+     shared system conversation the host's own turns are untouchable, and
+     an external approval is once-only (no approval scope is recorded);
+   - a turn it starts gets exactly this tool set, filtered on the finished
+     per-turn registry: `read_file`, `write_file`, `edit_file`, `diff_edit`,
+     `apply_patch`, `glob`, `grep`, `list_dir`, `code_structure`,
+     `check_workspace_contract`, `web_search`, `web_fetch`,
+     `ask_user_question`, `recall`, `recall_memory`, `memory_search`,
+     `memory_load`, `view_image`, `view_video` and `tool_search` (those the
+     kernel has registered). That means no shell or other code execution,
+     no git, no `spawn` or delegation, no `peer_*`, `send_file`, task, MCP or
+     plugin tool. The memory tools read the system agent's memory, not the
+     apps'. `web_fetch` refuses loopback (this server's port included),
+     private, link-local and metadata addresses;
+   - it runs no background continuations; the host's connection does.
+
+   The model therefore cannot drive the apps' assistants or read the host's
+   processes on the external client's behalf.
 
    The external token is minted when Talk to Octos turns on, and again on
    **Revoke all clients** (which restarts the server, ending open
@@ -73,10 +90,11 @@ separate kernel would be a different assistant with different memory.
    tools, file tools fenced to the session workspace (plus the a2app memory
    read-zone on Android), and sandbox `Auto`: Seatbelt on macOS, bubblewrap or
    Landlock on Linux when present, and on Android usually none, so the shell
-   tool runs unconfined as the app's user. Hence the tool restriction above
-   for external turns. For every session, no file tool opens
-   `/proc/<pid>/environ` or `/proc/<pid>/cmdline`, and the shell policy
-   refuses commands naming them.
+   tool runs unconfined as the app's user. Hence the external turn has no
+   shell at all. For every session, no file tool opens a process's private
+   view (`/proc/self`, `/proc/<pid>/…`, `/dev/fd`), judged on the raw,
+   normalized and canonical path. The shell policy's text check on
+   `/proc/<pid>/environ` is only a backstop for the host's own turns.
 3. **Pairing, not copying.** A web client gets the external token only
    through octos's pairing: an 8-character code shown on the trusted sheet
    (with a QR of the web client's link), valid for five minutes and one claim.

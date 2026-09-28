@@ -140,7 +140,7 @@ start_timeout(0.1, || refresh())
             Note{text: "Revoking disconnects every client and makes each pair again. It restarts the assistant, and Turn off does too: work in progress, in apps too, stops."}
             Plain{text: "Turn off" on_click: || enable(false)}
         }
-        Note{text: "A paired client can hold conversations with the assistant and answer its questions in them. It cannot see or drive the apps' assistants, change models, keys or skills, run commands, or stop the assistant. A computer reaches this device through a tunnel that keeps the port number."}
+        Note{text: "A paired client talks with the assistant in the system conversation and answers only its own requests' questions. It cannot see or drive the apps' assistants, touch this device's turns, change models, keys or skills, run commands or git, or stop the assistant. A computer reaches this device through a tunnel that keeps the port number."}
         status := Status{}"#,
     ));
     script
