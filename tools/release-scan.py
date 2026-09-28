@@ -16,7 +16,9 @@ It fails on:
 
 - a macOS or Windows user directory (`/Users/<anyone>`, `C:\\Users\\...`,
   also UTF-16), and a Linux home other than a CI runner's (`/home/runner`);
-- a `*.local` host name (mDNS: a build machine on a private network);
+- a `<name>.local` host name (mDNS: a build machine on a private network;
+  one label, as mDNS names are, so words glued together in a binary's
+  string data are not read as a dotted name);
 - a private IPv4 address (10/8, 172.16/12, 192.168/16);
 - the name of the account and host running the scan (skipped for generic CI
   accounts), and every regular expression in `--extra` or the
@@ -56,7 +58,7 @@ BASE_PATTERNS = [
     ("Windows user directory (UTF-16)", rb"(?:[A-Za-z]\x00):\x00(?:[\\/]\x00){1,2}U\x00s\x00e\x00r\x00s\x00"),
     ("Linux home directory", rb"/home/(?!runner/)[a-z_][a-z0-9_.-]*/"),
     ("mDNS .local host name", rb"(?<![A-Za-z0-9_.-])(?!(?:" + b"|".join(re.escape(n.encode()) for n in PRODUCT_LOCAL_NAMES)
-     + rb")(?![A-Za-z0-9_-]))[A-Za-z0-9][A-Za-z0-9.-]*\.local(?![A-Za-z0-9_-])"
+     + rb")(?![A-Za-z0-9_-]))[A-Za-z0-9][A-Za-z0-9-]*\.local(?![A-Za-z0-9_-])"
      # ~/.local/bin and friends glued to a neighbouring string are paths.
      rb"(?!/(?:bin|share|lib|state|include)(?![A-Za-z0-9_-]))"),
     ("private IPv4 address", rb"(?<![0-9.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![0-9.])"),
