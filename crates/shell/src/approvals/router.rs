@@ -3,9 +3,9 @@
 //!
 //! For each request, in this order:
 //!
-//! 1. **Developer mode** ([`DevModeHooks`]): it approves everything of the
-//!    apps it covers, `auto_approvable: false` and `confirm: app` included,
-//!    never for an external client.
+//! 1. **Developer mode** ([`DevModeHooks`], the shell's `dev_mode`): it
+//!    approves everything of the apps it covers, `auto_approvable: false`
+//!    and `confirm: app` included, never for an external client.
 //! 2. **`confirm: app`** tools go to the owning app's own sheet, with the
 //!    caller ([`AppConfirm`]); no rule answers them. An app that is not
 //!    running gets [`Router::app_wait_s`] to register, else the call is
@@ -21,10 +21,10 @@
 //! ([`AuditLog`]); every automatic one is also a notice for the person.
 
 use super::audit::{AuditLog, Entry};
-use super::dev_hooks::DevModeHooks;
+use super::dev_hooks::{DevKind, DevModeHooks};
 use super::facts;
 use super::relay::{ApprovalIntake, ApprovalRelay};
-use super::rules::{Contacts, PersonGesture, RuleDraft, RuleStore};
+use super::rules::{Contacts, ApprovalGesture, RuleDraft, RuleStore};
 use super::sheet::{app_label, caller_label, Answer, Line, Place, Sheet, Surfaced};
 use super::types::{Caller, Confirm, Connection, Decision, Request, RequestContext, RequestId, RuleId, ToolSpec};
 use serde_json::Value;
@@ -184,6 +184,14 @@ impl Router {
             self.hooks.answers_approval(app, req.tool.auto_approvable, req.context.connection)
         };
         if dev {
+            let kind = if req.tool.command {
+                DevKind::Command
+            } else if req.tool.confirm == Confirm::App {
+                DevKind::AppConfirm
+            } else {
+                DevKind::HostConfirm
+            };
+            self.hooks.audit_auto_approval(app, &req.tool.name, &req.args.to_string(), &req.caller.as_audit(), kind);
             self.decide(&req.id, Decision::ApproveOnce, "developer_mode", None, "developer mode", now);
             return Route::Approved(AutoBy::DeveloperMode);
         }
@@ -306,7 +314,7 @@ impl Router {
     }
 
     /// The person answered one line of a shell-drawn sheet.
-    pub fn answer(&mut self, sheet: u64, request: &RequestId, answer: Answer, gesture: &PersonGesture, now: u64) -> Result<Option<RuleId>, String> {
+    pub fn answer(&mut self, sheet: u64, request: &RequestId, answer: Answer, gesture: &ApprovalGesture, now: u64) -> Result<Option<RuleId>, String> {
         let s = self.sheets.iter().position(|s| s.id == sheet).ok_or("that sheet is closed")?;
         let l = self.sheets[s].lines.iter().position(|l| l.request == *request).ok_or("that line is not on the sheet")?;
         if self.sheets[s].lines[l].answer.is_some() {
@@ -353,7 +361,7 @@ impl Router {
     }
 
     /// The person creates a rule in Settings.
-    pub fn create_rule(&mut self, gesture: &PersonGesture, draft: RuleDraft, now: u64) -> Result<RuleId, String> {
+    pub fn create_rule(&mut self, gesture: &ApprovalGesture, draft: RuleDraft, now: u64) -> Result<RuleId, String> {
         let id = self.rules.create(gesture, draft, now)?;
         self.reconsider(now);
         self.sheets.retain(|s| !s.done());

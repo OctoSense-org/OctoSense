@@ -362,6 +362,16 @@ impl ModuleHost {
         // In developer mode a covered module gets every service it declares
         // (dev_mode.rs); the grant lives and dies with this instance.
         let offer = crate::ai_host::offer_with(module, &scope, crate::dev_mode::grants_all(module.id()));
+        // Consent at first use (ADR 0004 §4, approvals/consent.rs): a module
+        // the person has not allowed an agent is not offered one. The first
+        // time, the shell's first-use sheet asks; this instance goes without
+        // and the next one gets it once allowed. Developer mode asks nothing.
+        let offer = if offer.is_offered() && !crate::approvals::consent_for_module(module.id(), module.label(), module.capabilities()) {
+            let _ = offer.finish();
+            None
+        } else {
+            Some(offer)
+        };
         // Its storage (jail, account folders, secrets; ADR 0004 §11) the
         // same way, when it declares `storage` and the host has storage.
         let scope_key = scope.to_string();
@@ -386,7 +396,7 @@ impl ModuleHost {
         });
         // What the module did not take is withdrawn; what it took stays
         // with the instance until teardown.
-        let assistant = offer.finish();
+        let assistant = offer.and_then(|offer| offer.finish());
         crate::app_storage::withdraw(module.id(), &scope_key);
         let Some((parts, manifest)) = created else {
             // Already reported; the shell has no client to show it on, so

@@ -2094,6 +2094,12 @@ impl App {
                 self.send_to_pane(AiBus::os_reply(result));
             }
             Route::Local(client, msg) => self.on_local_frame(cx, client, msg),
+            // A `confirm: host` tool (the Terminal's `run`): the approval
+            // router answers, now (developer mode, a rule) or from its sheet.
+            Route::Approval(held) => {
+                approvals::bus_requested(&held);
+                self.approvals_changed(cx);
+            }
             Route::Drop => {}
         }
     }
@@ -2987,6 +2993,12 @@ impl App {
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
+        if target == shell::menu::APPROVALS_ROW {
+            self.close_shell_menu(cx);
+            approvals::open_settings();
+            self.approvals_changed(cx);
+            return;
+        }
         if target.starts_with("setup.developer.") {
             self.developer_options_activate(cx, target);
             return;
@@ -3113,6 +3125,12 @@ impl App {
     }
 
     fn approvals_changed(&mut self, cx: &mut Cx) {
+        // The AI bus's held calls the router has answered go on (or are
+        // refused to the pane).
+        for (id, decision, reason) in approvals::take_bus_decisions() {
+            let route = self.ai_bus.release(&id.0, decision.approved(), &reason);
+            self.on_bus_route(cx, route);
+        }
         for n in approvals::take_notices() {
             self.notify(cx, &n.title, &n.body);
         }

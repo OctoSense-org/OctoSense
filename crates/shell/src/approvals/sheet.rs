@@ -186,7 +186,7 @@ impl Sheet {
     pub fn subtitle(&self) -> String {
         match &self.place {
             Place::SystemChat { .. } => {
-                let n = self.lines.len();
+                let n = self.open_lines().count();
                 format!("In the system chat \u{00b7} {n} action{} to approve", if n == 1 { "" } else { "s" })
             }
             Place::AppConversation { app } => format!("In {}'s conversation", app_label(app)),

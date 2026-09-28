@@ -7,7 +7,7 @@
 //! [`granted`] is what #106's contained apps (`Policy::contained_apps` per
 //! app) and the Rinx/native offer path ask before handing an app its peer.
 
-use super::rules::PersonGesture;
+use super::rules::ApprovalGesture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -153,7 +153,7 @@ impl ConsentStore {
         self.asking.first().and_then(|a| self.known.get(a))
     }
     /// The person chose, on the first-use sheet or Settings' switch.
-    pub fn set(&mut self, _gesture: &PersonGesture, app: &str, allowed: bool, now: u64) {
+    pub fn set(&mut self, _gesture: &ApprovalGesture, app: &str, allowed: bool, now: u64) {
         self.decided.insert(app.to_string(), Record { allowed, at: now });
         self.asking.retain(|a| a != app);
         self.generation += 1;

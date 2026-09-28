@@ -39,6 +39,18 @@ pub const UNAVAILABLE: &str = "The assistant is not available on this device";
 pub const UNSUPPORTED_ARGS: &str = "Unsupported Octos arguments";
 pub const BAD_TEXT: &str = "Provide text (at most 32 KiB)";
 pub const NO_SHEET: &str = "The assistant has no sheet; octos calls come from the app";
+pub const NO_CONSENT: &str = "Waiting for the person to allow this app's agent (OctoSense asks the first time)";
+
+/// The shell's consent at first use (ADR 0004 §4): whether an app may have
+/// its agent now; asking the person the first time is the shell's part.
+/// Unset (a host without a consent surface, and this crate's tests): no
+/// gate beyond the policy switch.
+static CONSENT: std::sync::OnceLock<fn(&str) -> bool> = std::sync::OnceLock::new();
+
+/// The shell installs its consent check once, at startup.
+pub fn set_consent(check: fn(&str) -> bool) {
+    let _ = CONSENT.set(check);
+}
 
 /// Where contained apps' peers come from.
 pub trait PeerFactory: Send + Sync {
@@ -201,6 +213,9 @@ impl HostService for ContainedOctos {
         }
         if !self.enabled {
             return reply.send(Err(TURNED_OFF.into()));
+        }
+        if CONSENT.get().is_some_and(|granted| !granted(&call.app_id)) {
+            return reply.send(Err(NO_CONSENT.into()));
         }
         let op = match parse(&call.service, &call.args) {
             Ok(op) => op,

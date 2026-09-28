@@ -12,12 +12,12 @@
 //!   asks, a pill at the top says so, with the minutes left and Stop.
 //!
 //! A press on a button is the person's gesture: only here (and on the
-//! Settings page) is a [`PersonGesture`] made.
+//! Settings page) is a [`ApprovalGesture`] made.
 
 use makepad_widgets::*;
 
 use super::consent::AgentSummary;
-use super::rules::{PersonGesture, Rule};
+use super::rules::{ApprovalGesture, Rule};
 use super::sheet::{app_label, Answer, Line, Sheet};
 use super::types::{RequestId, RuleId};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
@@ -389,13 +389,13 @@ fn act(hit: Hit) {
     let now = super::now();
     match hit {
         Hit::Answer { sheet, request, answer } => {
-            let r = super::with(|a| a.router.answer(sheet, &request, answer, &PersonGesture::sheet_tap(), now));
+            let r = super::with(|a| a.router.answer(sheet, &request, answer, &ApprovalGesture::sheet_tap(), now));
             if let Some(Err(e)) = r {
                 log!("approvals: {e}");
             }
         }
         Hit::Consent { app, allow } => {
-            super::with(|a| a.consent.set(&PersonGesture::sheet_tap(), &app, allow, now));
+            super::with(|a| a.consent.set(&ApprovalGesture::sheet_tap(), &app, allow, now));
         }
         Hit::StopRule(id) => {
             super::with(|a| a.router.delete_rule(&id));

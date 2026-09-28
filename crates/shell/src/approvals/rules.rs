@@ -13,7 +13,7 @@
 //!   (the router checks those before any rule); runs started by incoming
 //!   content unless the rule opts in ([`Rule::include_incoming`]).
 //! - **Only the person creates one:** [`RuleStore::create`] takes a
-//!   [`PersonGesture`], which only the Settings page and the shell-drawn
+//!   [`ApprovalGesture`], which only the Settings page and the shell-drawn
 //!   sheet construct (a test scans the sources). No agent or app can.
 //! - **One tap turns every rule off** ([`RuleStore::all_off`]).
 //! - **Persisted per OctoSense home** in [`RULES_FILE`], owner-only.
@@ -34,18 +34,18 @@ const DAY_S: u64 = 86_400;
 /// Proof that the person, not an agent or app, asked for a rule. Only the
 /// shell's Settings page and the shell-drawn sheet construct one.
 #[derive(Debug)]
-pub struct PersonGesture {
+pub struct ApprovalGesture {
     origin: RuleOrigin,
 }
 
-impl PersonGesture {
+impl ApprovalGesture {
     /// A tap on Settings → Assistant → Approvals.
-    pub(crate) fn settings_tap() -> PersonGesture {
-        PersonGesture { origin: RuleOrigin::Settings }
+    pub(crate) fn settings_tap() -> ApprovalGesture {
+        ApprovalGesture { origin: RuleOrigin::Settings }
     }
     /// A tap on a shell-drawn approval sheet's "always for …".
-    pub(crate) fn sheet_tap() -> PersonGesture {
-        PersonGesture { origin: RuleOrigin::Sheet }
+    pub(crate) fn sheet_tap() -> ApprovalGesture {
+        ApprovalGesture { origin: RuleOrigin::Sheet }
     }
     pub fn origin(&self) -> RuleOrigin {
         self.origin
@@ -346,7 +346,7 @@ impl RuleStore {
     }
 
     /// Only the person creates a rule.
-    pub fn create(&mut self, gesture: &PersonGesture, draft: RuleDraft, now: u64) -> Result<RuleId, String> {
+    pub fn create(&mut self, gesture: &ApprovalGesture, draft: RuleDraft, now: u64) -> Result<RuleId, String> {
         let expires = match (&draft.scope, draft.minutes) {
             (RuleScope::Everything, None) => return Err("there is no \u{201c}everything, forever\u{201d} rule: choose how many minutes".into()),
             (RuleScope::Everything, Some(m)) if m == 0 || m > MAX_EVERYTHING_MINUTES => {
@@ -421,7 +421,7 @@ impl RuleStore {
     }
 
     /// Turn a rule back on: the person again.
-    pub fn enable(&mut self, _gesture: &PersonGesture, id: &RuleId) -> bool {
+    pub fn enable(&mut self, _gesture: &ApprovalGesture, id: &RuleId) -> bool {
         let Some(r) = self.rules.iter_mut().find(|r| r.id == *id) else { return false };
         r.enabled = true;
         self.save();

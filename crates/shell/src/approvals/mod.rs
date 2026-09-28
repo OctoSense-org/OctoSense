@@ -6,7 +6,7 @@
 //! | --- | --- |
 //! | the request, its caller and context; decisions | [`types`] |
 //! | the seam with the octos#2567 relay (`approval_requested` in, `approval_decided` out) | [`relay`] |
-//! | developer mode's hooks, asked first (adapter; stubbed until #118) | [`dev_hooks`] |
+//! | developer mode's hooks, asked first (the adapter to `dev_mode`) | [`dev_hooks`] |
 //! | the router: precedence, sheets, `confirm: app` hand-off, timeouts | [`router`] |
 //! | standing rules, their conditions, cap, time box, "all off", the person's gesture | [`rules`] |
 //! | what rules and sheets read from the exact arguments; redaction; digest | [`facts`] |
@@ -43,7 +43,7 @@ mod tests;
 
 use makepad_widgets::*;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub use relay::{ApprovalIntake, ApprovalRelay, RecordingRelay};
 pub use router::{AppConfirm, AppConfirmRequest, Notice, Route, Router};
@@ -55,8 +55,33 @@ pub struct Approvals {
     pub consent: consent::ConsentStore,
     /// Settings → Assistant → Approvals is open.
     pub settings_open: bool,
-    /// Decisions made before the relay was installed.
+    /// Decisions for requests other than the bus's, until the relay is
+    /// installed.
     queue: RecordingRelay,
+    /// Decisions for the AI bus's held calls (`bus:` ids), drained by the
+    /// shell ([`take_bus_decisions`]).
+    bus: RecordingRelay,
+    external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
+}
+
+/// Where the router's decisions go: the AI bus's own held calls to the
+/// shell, the rest to the octos#2567 relay (queued until it is installed).
+struct Dispatch {
+    bus: RecordingRelay,
+    queue: RecordingRelay,
+    external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
+}
+
+impl ApprovalRelay for Dispatch {
+    fn approval_decided(&mut self, id: &RequestId, decision: Decision, reason: &str) {
+        if id.0.starts_with(crate::ai_bus::HELD_PREFIX) {
+            return self.bus.approval_decided(id, decision, reason);
+        }
+        match self.external.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            Some(relay) => relay.approval_decided(id, decision, reason),
+            None => self.queue.approval_decided(id, decision, reason),
+        }
+    }
 }
 
 impl Approvals {
@@ -68,8 +93,11 @@ impl Approvals {
     }
     fn with_parts(rules: rules::RuleStore, audit: audit::AuditLog, consent: consent::ConsentStore) -> Approvals {
         let queue = RecordingRelay::default();
-        let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), Box::new(rules::NoContacts), Box::new(queue.clone()));
-        Approvals { router, consent, settings_open: false, queue }
+        let bus = RecordingRelay::default();
+        let external = Arc::new(Mutex::new(None));
+        let dispatch = Dispatch { bus: bus.clone(), queue: queue.clone(), external: external.clone() };
+        let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), Box::new(rules::NoContacts), Box::new(dispatch));
+        Approvals { router, consent, settings_open: false, queue, bus, external }
     }
     /// Sheets, rules, consent and the page: one number for "redraw".
     pub fn generation(&self) -> u64 {
@@ -94,6 +122,8 @@ pub fn with<R>(f: impl FnOnce(&mut Approvals) -> R) -> Option<R> {
 pub fn init(home: &Path) {
     let a = Approvals::in_home(home);
     *STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(a);
+    // Contained apps' `octos` service asks consent at first use too.
+    crate::ai_host::contained::set_consent(consent_for_contained);
 }
 
 /// For tests and headless runs: approvals kept in memory only.
@@ -118,8 +148,27 @@ pub fn set_relay(mut relay: Box<dyn ApprovalRelay>) {
         for (id, decision, reason) in a.queue.take() {
             relay.approval_decided(&id, decision, &reason);
         }
-        a.router.set_relay(relay);
+        *a.external.lock().unwrap_or_else(|e| e.into_inner()) = Some(relay);
     });
+}
+
+/// The AI bus's `confirm: host` calls (`ai_bus::Route::Approval`): each is
+/// a request like any other; the shell drains the answers here and
+/// releases the held call (`AiBus::release`).
+pub fn bus_requested(held: &crate::ai_bus::HeldCall) -> Route {
+    let mut tool = ToolSpec::host(&held.tool);
+    tool.auto_approvable = held.auto_approvable;
+    if held.command {
+        tool = tool.command();
+    }
+    let args = serde_json::from_str(&held.args).unwrap_or_else(|_| serde_json::Value::String(held.args.clone()));
+    // The pane is the person's own conversation with the system agent.
+    let context = RequestContext { call_id: held.key.clone(), trigger: Trigger::Person, ..RequestContext::default() };
+    approval_requested(&held.app, tool, args, Caller::SystemAgent, context)
+}
+
+pub fn take_bus_decisions() -> Vec<(RequestId, Decision, String)> {
+    with(|a| a.bus.take()).unwrap_or_default()
 }
 
 /// An app module registers its own confirmation sheet (`confirm: app`).
@@ -151,6 +200,35 @@ pub fn consent_ask(summary: consent::AgentSummary) -> consent::State {
         a.consent.ask(summary, all)
     })
     .unwrap_or(consent::State::Undecided)
+}
+
+/// The module host's gate for an in-process module's assistant: granted,
+/// or the first-use sheet is shown (once) and this instance goes without.
+pub fn consent_for_module(app: &str, label: &str, capabilities: &[&str]) -> bool {
+    // The module host's own tests run in parallel with these; the gate
+    // itself is tested on [`module_gate`].
+    if cfg!(test) {
+        return true;
+    }
+    with(|a| module_gate(a, app, label, capabilities)).unwrap_or(false)
+}
+
+/// [`consent_for_module`] on one `Approvals`.
+pub fn module_gate(a: &mut Approvals, app: &str, label: &str, capabilities: &[&str]) -> bool {
+    let all = a.router.hooks().grants_all(app);
+    if a.consent.granted(app, all) {
+        return true;
+    }
+    let manifest = serde_json::json!({ "capabilities": capabilities });
+    let granted: Vec<String> = capabilities.iter().map(|c| c.to_string()).collect();
+    let summary = consent::AgentSummary::from_manifest(app, label, &manifest, &granted, "The model set in AI providers");
+    a.consent.ask(summary, all) == consent::State::Allowed
+}
+
+/// #106's contained apps (`ai_host::contained`): the same gate, for a
+/// Card runner app asking the `octos` service.
+pub fn consent_for_contained(app: &str) -> bool {
+    consent_for_module(app, &sheet::app_label(app), &["octos.session.open", "octos.turn.start"])
 }
 
 // ------------------------------------------------------------ the shell

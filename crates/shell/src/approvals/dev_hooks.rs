@@ -4,13 +4,11 @@
 //! own sheet.
 //!
 //! The router asks through [`DevModeHooks`], so tests use [`FixedDevMode`].
-//! [`ShellDevMode`] is the adapter to the shell's developer mode.
-//!
-//! ADAPTER STUB (until OctoSense#118 lands): the shell has no `dev_mode`
-//! module yet, so [`ShellDevMode`] answers "no" to every question. Once
-//! #118 is merged it forwards to `crate::dev_mode::{answers_approval,
-//! overrides_app_confirm, approves_command, grants_all}`; nothing else in
-//! this module changes.
+//! [`ShellDevMode`] is the adapter to the shell's developer mode
+//! (`crate::dev_mode`, OctoSense#118): `answers_approval` (as
+//! `ApprovalKind::HostConfirm`), `overrides_app_confirm`, `approves_command`
+//! and `grants_all`, and every automatic approval it gives is also written
+//! to developer mode's own audit (`dev_mode::audit_auto_approval`).
 
 use super::types::Connection;
 
@@ -24,24 +22,49 @@ pub trait DevModeHooks: Send {
     fn approves_command(&self, owning_app: &str, connection: Connection) -> bool;
     /// Every grant, and no first-use consent prompt (§13).
     fn grants_all(&self, app: &str) -> bool;
+    /// Developer mode answered one: its own audit records it too.
+    fn audit_auto_approval(&self, _owning_app: &str, _tool: &str, _args: &str, _caller: &str, _kind: DevKind) {}
 }
 
-/// The shell's developer mode. STUB until #118: see the module docs.
+/// Which of developer mode's approval kinds the router answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DevKind {
+    HostConfirm,
+    AppConfirm,
+    Command,
+}
+
+fn connection(c: Connection) -> crate::dev_mode::Connection {
+    match c {
+        Connection::Host => crate::dev_mode::Connection::Host,
+        Connection::External => crate::dev_mode::Connection::External,
+    }
+}
+
+/// The shell's developer mode (`crate::dev_mode`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ShellDevMode;
 
 impl DevModeHooks for ShellDevMode {
-    fn answers_approval(&self, _owning_app: &str, _auto_approvable: bool, _connection: Connection) -> bool {
-        false
+    fn answers_approval(&self, owning_app: &str, auto_approvable: bool, c: Connection) -> bool {
+        crate::dev_mode::answers_approval(owning_app, crate::dev_mode::ApprovalKind::HostConfirm, auto_approvable, connection(c))
     }
-    fn overrides_app_confirm(&self, _owning_app: &str) -> bool {
-        false
+    fn overrides_app_confirm(&self, owning_app: &str) -> bool {
+        crate::dev_mode::overrides_app_confirm(owning_app)
     }
-    fn approves_command(&self, _owning_app: &str, _connection: Connection) -> bool {
-        false
+    fn approves_command(&self, owning_app: &str, c: Connection) -> bool {
+        crate::dev_mode::approves_command(owning_app, connection(c))
     }
-    fn grants_all(&self, _app: &str) -> bool {
-        false
+    fn grants_all(&self, app: &str) -> bool {
+        crate::dev_mode::grants_all(app)
+    }
+    fn audit_auto_approval(&self, owning_app: &str, tool: &str, args: &str, caller: &str, kind: DevKind) {
+        let kind = match kind {
+            DevKind::HostConfirm => crate::dev_mode::ApprovalKind::HostConfirm,
+            DevKind::AppConfirm => crate::dev_mode::ApprovalKind::AppConfirm,
+            DevKind::Command => crate::dev_mode::ApprovalKind::Command,
+        };
+        crate::dev_mode::audit_auto_approval(owning_app, tool, args, caller, kind);
     }
 }
 

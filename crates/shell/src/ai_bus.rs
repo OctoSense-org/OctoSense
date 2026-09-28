@@ -86,24 +86,56 @@ pub fn card_shows_in_full(args: &str) -> bool {
 
 /// The shell's rules for an app's assistant tools, from its native-apps.json
 /// entry (`agent.tool_policy`, ADR 0004 §8, §10): a `confirm: host` tool is
-/// registered as destructive with no claim that the app confirms it, so the
-/// pane parks every call on its live confirm card; and a call whose exact
-/// arguments that card cannot show whole never reaches the app. Nothing on
-/// the bus answers a confirmation for the person (there are no standing
-/// rules yet); `auto_approvable: false` is what keeps it so when there are.
+/// confirmed by the shell's approval router (`approvals/`), not by the
+/// pane's card. It is registered with no claim that the app confirms it and
+/// as `Act`, so the pane does not ask a second time; each call is held
+/// ([`Route::Approval`]) until the router answers: developer mode first,
+/// then the person on the shell's sheet, which shows the exact arguments in
+/// full, or a standing rule where the tool is `auto_approvable`. The
+/// Terminal's `run` is not, so every typed command asks the person (outside
+/// developer mode).
 fn host_rules(app: &str) -> Option<&'static crate::native_apps::NativeApp> {
     crate::native_apps::find(app).filter(|entry| !entry.tools.is_empty())
 }
 
-fn host_confirmed(rules: Option<&crate::native_apps::NativeApp>, tool: &str) -> bool {
-    rules.and_then(|entry| entry.tool(tool)).is_some_and(|rule| rule.confirm == crate::native_apps::Confirm::Host)
+fn host_confirmed(rules: Option<&'static crate::native_apps::NativeApp>, tool: &str) -> bool {
+    host_rule(rules, tool).is_some()
 }
 
+fn host_rule(rules: Option<&'static crate::native_apps::NativeApp>, tool: &str) -> Option<&'static crate::native_apps::ToolPolicy> {
+    rules?.tool(tool).filter(|rule| rule.confirm == crate::native_apps::Confirm::Host)
+}
+
+/// Tools that type a command for the person (ADR 0004 §10, §12): developer
+/// mode answers them through `approves_command`.
+const COMMAND_TOOLS: &[(&str, &str)] = &[("terminal", "run")];
+
+/// A pane call to a `confirm: host` tool, held until the shell's approval
+/// router answers it ([`AiBus::release`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeldCall {
+    /// The router's request id: `bus:<endpoint>:<call id>`.
+    pub key: String,
+    /// The owning app (its native-apps.json id).
+    pub app: String,
+    pub tool: String,
+    /// The exact arguments, as the pane sent them.
+    pub args: String,
+    pub auto_approvable: bool,
+    pub command: bool,
+}
+
+/// The router's request ids for the bus start with this.
+pub const HELD_PREFIX: &str = "bus:";
+
 /// Apply an app's rules to the manifest it registers.
-fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&crate::native_apps::NativeApp>) {
+fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&'static crate::native_apps::NativeApp>) {
     for tool in &mut manifest.tools {
         if host_confirmed(rules, &tool.name) {
-            tool.risk = Risk::Destructive;
+            // The router confirms each call; the pane must not ask again.
+            if tool.risk == Risk::Destructive {
+                tool.risk = Risk::Act;
+            }
             tool.self_confirm = None;
         }
     }
@@ -120,6 +152,9 @@ pub enum Route {
     /// A frame for an IN-PROCESS instance (a module the WM hosts itself):
     /// the host runs its executor and answers with `local_reply`.
     Local(ClientId, ServiceDown),
+    /// A `confirm: host` call: ask the approval router, then
+    /// [`AiBus::release`] it with the answer.
+    Approval(HeldCall),
     Drop,
 }
 
@@ -136,6 +171,8 @@ pub struct AiBus {
     /// process by the app id the WM launched it as, an in-process module by
     /// its (trusted) id.
     rules: HashMap<ClientId, &'static crate::native_apps::NativeApp>,
+    /// `confirm: host` calls waiting for the approval router, by key.
+    held: HashMap<String, (ClientId, ServiceDown)>,
     /// Tests only: answers `auto_approve` instead of the process's
     /// developer mode.
     #[cfg(test)]
@@ -370,15 +407,21 @@ impl AiBus {
                 }
             }
             if let ServiceDown::Call(call) = &down.msg {
-                // No card in developer mode (it answers the confirmation), so
-                // nothing needs to fit on one.
-                let dev = self.manifests.get(&target).is_some_and(|m| self.auto_approves(&m.id));
-                if !dev && host_confirmed(self.rules.get(&target).copied(), &call.tool) && !card_shows_in_full(&call.args) {
-                    let refused = ToolResult::refused(
-                        &call.call_id,
-                        format!("the confirmation cannot show these arguments in full (over {CARD_ARGS_BYTES} bytes); send a shorter call"),
-                    );
-                    return Route::ToPane(HostedUp { from: Some(self.endpoint_for(target)), msg: ServiceUp::Result(refused) }.to_json());
+                // A `confirm: host` tool waits for the approval router (the
+                // shell's sheet shows the arguments in full, so no length
+                // limit applies; developer mode answers it there first).
+                if let (Some(entry), Some(rule)) = (self.rules.get(&target).copied(), host_rule(self.rules.get(&target).copied(), &call.tool)) {
+                    let key = format!("{HELD_PREFIX}{}:{}", self.endpoint_for(target).as_str(), call.call_id);
+                    let held = HeldCall {
+                        key: key.clone(),
+                        app: entry.id.to_string(),
+                        tool: call.tool.clone(),
+                        args: call.args.clone(),
+                        auto_approvable: rule.auto_approvable,
+                        command: COMMAND_TOOLS.contains(&(entry.id, rule.tool)),
+                    };
+                    self.held.insert(key, (target, down.msg.clone()));
+                    return Route::Approval(held);
                 }
             }
             return if self.locals.contains(&target) { Route::Local(target, down.msg) } else { Route::ToClient(target, down.to_json()) };
@@ -405,12 +448,34 @@ impl AiBus {
         Route::ToPane(up.to_json())
     }
 
+    /// The approval router answered a held call: on to the app, or refused
+    /// to the pane. A call whose app has gone is dropped.
+    pub fn release(&mut self, key: &str, approved: bool, reason: &str) -> Route {
+        let Some((target, msg)) = self.held.remove(key) else { return Route::Drop };
+        if approved {
+            return if self.locals.contains(&target) {
+                Route::Local(target, msg)
+            } else {
+                Route::ToClient(target, HostedDown { to: Some(Self::endpoint_of(target)), msg }.to_json())
+            };
+        }
+        let ServiceDown::Call(call) = msg else { return Route::Drop };
+        let refused = ToolResult::refused(&call.call_id, format!("not approved: {reason}"));
+        Route::ToPane(HostedUp { from: Some(self.endpoint_for(target)), msg: ServiceUp::Result(refused) }.to_json())
+    }
+
+    /// Calls still waiting for the approval router.
+    pub fn held(&self) -> usize {
+        self.held.len()
+    }
+
     /// A client died: the pane hears an `Unregister` on its behalf.
     pub fn client_died(&mut self, client: ClientId) -> Option<String> {
         if self.is_pane(client) {
             self.pane_client = None;
             return None;
         }
+        self.held.retain(|_, (target, _)| *target != client);
         self.rules.remove(&client);
         self.manifests.remove(&client)?;
         let from = Some(self.endpoint_for(client));
@@ -462,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn the_terminal_types_only_behind_the_hosts_live_confirmation() {
+    fn the_terminal_types_only_behind_the_approval_routers_answer() {
         let terminal = |run: ToolDef| {
             ServiceManifest::new("terminal", "Terminal", "The live terminal.")
                 .with_tool(ToolDef::new("read_screen", "Read the screen.", r#"{"type":"object"}"#, Risk::Read))
@@ -477,39 +542,54 @@ mod tests {
         };
         let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
         // Process (w4) and in-process (m6) Terminals register the same way:
-        // `run` kept, destructive, confirmed by the host's card.
+        // `run` kept, confirmed by the shell's approval router (not the
+        // pane's card, and not the app's own sheet).
         let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(under()), port_tag: 0 } };
         let Route::ToPane(json) = bus.on_custom_from(4, Some("terminal"), &up.to_json()) else { panic!("expected ToPane") };
         let local = registered(&bus.register_local(6, terminal(own_sheet())));
         for manifest in [registered(&json), local] {
             assert_eq!(manifest.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["read_screen", "run"]);
             let run = manifest.tool("run").unwrap();
-            assert_eq!(run.risk, Risk::Destructive, "the pane parks every call on its confirm card");
+            assert_ne!(run.risk, Risk::Destructive, "the pane does not confirm a second time");
             assert!(!run.confirms_itself(), "the host draws the confirmation, not the app");
             assert_eq!(manifest.tool("read_screen").unwrap().risk, Risk::Read);
         }
         let rule = crate::native_apps::find("terminal").unwrap().tool("run").unwrap();
         assert_eq!((rule.confirm, rule.auto_approvable), (crate::native_apps::Confirm::Host, false));
-        // A confirmed command the card showed whole reaches the terminal.
-        let short = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("run", r#"{"command":"ls -la"}"#)) };
-        assert!(matches!(bus.on_custom(9, &short.to_json()), Route::ToClient(4, _)));
-        let local_short = HostedDown { to: Some(EndpointId("m6".into())), msg: ServiceDown::Call(call("run", r#"{"command":"ls -la"}"#)) };
-        assert!(matches!(bus.on_custom(9, &local_short.to_json()), Route::Local(6, _)));
-        // One the card could not show whole is refused to the pane, in either hosting.
+        // Every `run` is held for the router, whatever its length (the
+        // shell's sheet shows it in full), as a typed command no rule may
+        // approve; approved, it reaches the terminal in either hosting.
         let long = format!(r#"{{"command":"echo {}"}}"#, "x".repeat(80));
-        for to in ["w4", "m6"] {
-            let down = HostedDown { to: Some(EndpointId(to.into())), msg: ServiceDown::Call(call("run", &long)) };
-            let Route::ToPane(json) = bus.on_custom(9, &down.to_json()) else { panic!("expected a refusal for the pane") };
-            let up = HostedUp::parse(&json).unwrap();
-            assert_eq!(up.from, Some(EndpointId(to.into())));
-            assert!(matches!(up.msg, ServiceUp::Result(ToolResult { outcome: ToolOutcome::Refused, .. })));
+        for (to, args) in [("w4", r#"{"command":"ls -la"}"#.to_string()), ("m6", long.clone())] {
+            let down = HostedDown { to: Some(EndpointId(to.into())), msg: ServiceDown::Call(call("run", &args)) };
+            let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
+            assert_eq!(held.key, format!("{HELD_PREFIX}{to}:c"));
+            assert_eq!((held.app.as_str(), held.tool.as_str(), held.args.as_str()), ("terminal", "run", args.as_str()));
+            assert!(held.command && !held.auto_approvable);
+            match bus.release(&held.key, true, "approved on the sheet") {
+                Route::ToClient(4, _) => assert_eq!(to, "w4"),
+                Route::Local(6, _) => assert_eq!(to, "m6"),
+                _ => panic!("expected the call to go on"),
+            }
+            assert!(matches!(bus.release(&held.key, true, ""), Route::Drop), "released once");
         }
+        // Denied: refused to the pane, from the terminal's endpoint.
+        let down = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("run", r#"{"command":"rm -rf x"}"#)) };
+        let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
+        let Route::ToPane(json) = bus.release(&held.key, false, "denied on the sheet") else { panic!("expected a refusal") };
+        let up = HostedUp::parse(&json).unwrap();
+        assert_eq!(up.from, Some(EndpointId("w4".into())));
+        assert!(matches!(up.msg, ServiceUp::Result(ToolResult { outcome: ToolOutcome::Refused, .. })));
         // Reads pass whatever their length; another app's `run` keeps its declaration.
         let read = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("read_screen", &long)) };
         assert!(matches!(bus.on_custom(9, &read.to_json()), Route::ToClient(4, _)));
         let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(under()), port_tag: 0 } };
         let Route::ToPane(json) = bus.on_custom_from(5, Some("files"), &up.to_json()) else { panic!("expected ToPane") };
         assert_eq!(registered(&json).tool("run").unwrap().risk, Risk::Act);
+        // A held call of a client that dies is dropped.
+        let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
+        bus.client_died(4);
+        assert!(matches!(bus.release(&held.key, true, ""), Route::Drop));
     }
 
     #[test]

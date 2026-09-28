@@ -15,7 +15,7 @@ use makepad_widgets::*;
 
 use super::audit::Entry;
 use super::consent::State;
-use super::rules::{PersonGesture, Rule, RuleDraft, RuleOrigin, MAX_EVERYTHING_MINUTES};
+use super::rules::{ApprovalGesture, Rule, RuleDraft, RuleOrigin, MAX_EVERYTHING_MINUTES};
 use super::sheet::app_label;
 use super::types::RuleId;
 use super::view::Buttons;
@@ -339,12 +339,12 @@ fn act(hit: Hit) {
             a.router.delete_rule(&id);
         }
         Hit::Enable(id) => {
-            a.router.rules.enable(&PersonGesture::settings_tap(), &id);
+            a.router.rules.enable(&ApprovalGesture::settings_tap(), &id);
         }
         Hit::AgentOff(app) => a.consent.turn_off(&app, now),
-        Hit::AgentAllow(app) => a.consent.set(&PersonGesture::settings_tap(), &app, true, now),
+        Hit::AgentAllow(app) => a.consent.set(&ApprovalGesture::settings_tap(), &app, true, now),
         Hit::Everything(app) => {
-            if let Err(e) = a.router.create_rule(&PersonGesture::settings_tap(), RuleDraft::everything(&app, MAX_EVERYTHING_MINUTES), now) {
+            if let Err(e) = a.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::everything(&app, MAX_EVERYTHING_MINUTES), now) {
                 log!("approvals: {e}");
             }
         }

@@ -7,7 +7,7 @@ use super::consent::{AgentSummary, ConsentStore, State};
 use super::dev_hooks::FixedDevMode;
 use super::relay::RecordingRelay;
 use super::router::{make_request, AppConfirm, AppConfirmRequest, AutoBy, Route, Router};
-use super::rules::{Conditions, ContactList, PersonGesture, RuleDraft, RuleStore, DEFAULT_DAILY_CAP};
+use super::rules::{Conditions, ContactList, ApprovalGesture, RuleDraft, RuleStore, DEFAULT_DAILY_CAP};
 use super::sheet::{Answer, Place, Surfaced};
 use super::types::*;
 use serde_json::{json, Value};
@@ -36,7 +36,7 @@ fn send(id: &str, args: Value) -> Request {
     req(id, ToolSpec::host("mail.send"), args, Trigger::Person)
 }
 fn rule(r: &mut Router, draft: RuleDraft) -> RuleId {
-    r.create_rule(&PersonGesture::settings_tap(), draft, T0).expect("rule")
+    r.create_rule(&ApprovalGesture::settings_tap(), draft, T0).expect("rule")
 }
 fn contacts_rule() -> RuleDraft {
     RuleDraft::tool(MAIL, "mail.send", Conditions { recipients_in_contacts: true, ..Conditions::default() })
@@ -230,7 +230,7 @@ fn daily_cap_then_the_next_day() {
 #[test]
 fn time_boxed_everything_expires_and_is_never_forever() {
     let (mut r, _) = router();
-    let g = PersonGesture::settings_tap();
+    let g = ApprovalGesture::settings_tap();
     assert!(r.create_rule(&g, RuleDraft { minutes: None, ..RuleDraft::everything(MAIL, 1) }, T0).is_err(), "no forever");
     assert!(r.create_rule(&g, RuleDraft::everything(MAIL, 61), T0).is_err(), "60 minutes at most");
     let id = rule(&mut r, RuleDraft::everything(MAIL, 60));
@@ -268,7 +268,7 @@ fn one_tap_turns_every_rule_off() {
     assert!(!r.rules.get(&narrow).unwrap().enabled);
     assert!(matches!(r.request(send("1", json!({"to": "ana@example.org"})), T0), Route::Sheet(_)));
     // Only the person turns one back on.
-    assert!(r.rules.enable(&PersonGesture::settings_tap(), &narrow));
+    assert!(r.rules.enable(&ApprovalGesture::settings_tap(), &narrow));
     assert!(matches!(r.request(send("2", json!({"to": "ana@example.org"})), T0), Route::Approved(_)));
 }
 
@@ -317,7 +317,7 @@ fn a_batch_is_one_sheet_in_the_system_chat() {
     assert_eq!(sheet.subtitle(), "In the system chat \u{00b7} 2 actions to approve");
     assert_eq!(sheet.lines[1].caller, "The system agent");
     // Answered line by line.
-    let g = PersonGesture::sheet_tap();
+    let g = ApprovalGesture::sheet_tap();
     r.answer(sheet.id, &RequestId("b0".into()), Answer::Once, &g, T0).unwrap();
     assert_eq!(r.sheets().len(), 1, "one line still open");
     r.answer(sheet.id, &RequestId("b1".into()), Answer::Deny, &g, T0).unwrap();
@@ -332,7 +332,7 @@ fn always_for_makes_a_rule_and_answers_the_matching_open_lines() {
     let Route::Sheet(s1) = r.request(send("1", json!({"to": "ana@example.org"})), T0) else { panic!() };
     let Route::Sheet(_) = r.request(send("2", json!({"to": "bo@example.org"})), T0) else { panic!() };
     let Route::Sheet(_) = r.request(send("3", json!({"to": "eve@example.org"})), T0) else { panic!() };
-    let made = r.answer(s1, &RequestId("1".into()), Answer::Always(0), &PersonGesture::sheet_tap(), T0).unwrap().expect("a rule");
+    let made = r.answer(s1, &RequestId("1".into()), Answer::Always(0), &ApprovalGesture::sheet_tap(), T0).unwrap().expect("a rule");
     let rule = r.rules.get(&made).unwrap();
     assert!(rule.conditions.recipients_in_contacts && rule.conditions.no_attachments);
     assert_eq!(rule.daily_cap, Some(DEFAULT_DAILY_CAP));
@@ -446,10 +446,10 @@ fn rules_consent_and_audit_persist_per_home_owner_only() {
     {
         let mut a = super::Approvals::in_home(&home);
         a.router.set_contacts(Box::new(ContactList(vec!["ana@example.org".into()])));
-        let id = a.router.create_rule(&PersonGesture::settings_tap(), contacts_rule(), T0).unwrap();
+        let id = a.router.create_rule(&ApprovalGesture::settings_tap(), contacts_rule(), T0).unwrap();
         a.router.request(send("1", json!({"to": "ana@example.org"})), T0);
         assert_eq!(a.router.rules.get(&id).unwrap().used_today(T0), 1);
-        a.consent.set(&PersonGesture::sheet_tap(), "os.news", true, T0);
+        a.consent.set(&ApprovalGesture::sheet_tap(), "os.news", true, T0);
     }
     let a = super::Approvals::in_home(&home);
     assert_eq!(a.router.rules.rules().len(), 1);
@@ -497,7 +497,7 @@ fn consent_at_first_use_is_asked_once_and_remembered() {
     assert_eq!(c.ask(s.clone(), false), State::Undecided);
     assert_eq!(c.ask(s.clone(), false), State::Undecided);
     assert_eq!(c.prompt().map(|p| p.app.as_str()), Some("os.news"));
-    c.set(&PersonGesture::sheet_tap(), "os.news", true, T0);
+    c.set(&ApprovalGesture::sheet_tap(), "os.news", true, T0);
     assert!(c.prompt().is_none());
     assert!(c.granted("os.news", false));
     assert_eq!(c.ask(s, false), State::Allowed, "no second prompt");
@@ -518,7 +518,7 @@ fn developer_mode_skips_the_consent_prompt() {
 
 // ---------------------------------------------------------------- who may create
 
-/// Only the shell's Settings page and its sheet make a PersonGesture: no
+/// Only the shell's Settings page and its sheet make a ApprovalGesture: no
 /// agent-, app- or relay-facing code can create a rule or give consent.
 #[test]
 fn only_settings_and_the_sheet_make_a_person_gesture() {
@@ -539,8 +539,8 @@ fn only_settings_and_the_sheet_make_a_person_gesture() {
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap();
         let rel = f.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
-        if text.contains("PersonGesture::sheet_tap") || text.contains("PersonGesture::settings_tap") || text.contains("PersonGesture {") {
-            assert!(allowed.contains(&rel.as_str()), "{rel} makes a PersonGesture");
+        if text.contains("ApprovalGesture::sheet_tap") || text.contains("ApprovalGesture::settings_tap") || text.contains("ApprovalGesture {") {
+            assert!(allowed.contains(&rel.as_str()), "{rel} makes a ApprovalGesture");
         }
     }
 }
@@ -557,7 +557,7 @@ fn the_relay_gets_decisions_made_before_it_was_installed() {
         (s.id, s.lines[0].request.clone())
     })
     .unwrap();
-    super::with(|a| a.router.answer(sheet, &id, Answer::Deny, &PersonGesture::sheet_tap(), T0)).unwrap().unwrap();
+    super::with(|a| a.router.answer(sheet, &id, Answer::Deny, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
     let relay = RecordingRelay::default();
     super::set_relay(Box::new(relay.clone()));
     assert_eq!(relay.take(), vec![(RequestId("g1".into()), Decision::Deny, "denied on the sheet".into())]);
@@ -568,7 +568,45 @@ fn the_relay_gets_decisions_made_before_it_was_installed() {
         (s.id, s.lines[0].request.clone())
     })
     .unwrap();
-    super::with(|a| a.router.answer(sheet, &id, Answer::Once, &PersonGesture::sheet_tap(), T0)).unwrap().unwrap();
+    super::with(|a| a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
     assert_eq!(relay.take().len(), 1);
-    assert!(!super::consent_granted("os.news"), "the stub developer mode grants nothing");
+    // The AI bus's held `confirm: host` calls come back to the shell, not
+    // to the relay: the Terminal's `run` asks the person, never a rule.
+    super::with(|a| a.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::everything("terminal", 30), T0)).unwrap().unwrap();
+    let held = crate::ai_bus::HeldCall {
+        key: "bus:w4:c1".into(),
+        app: "terminal".into(),
+        tool: "run".into(),
+        args: r#"{"command":"ls"}"#.into(),
+        auto_approvable: false,
+        command: true,
+    };
+    assert!(matches!(super::bus_requested(&held), Route::Sheet(_)));
+    let (sheet, id, caller, args) = super::with(|a| {
+        let s = a.router.front_sheet().unwrap();
+        (s.id, s.lines[0].request.clone(), s.lines[0].caller.clone(), s.lines[0].args.join(" "))
+    })
+    .unwrap();
+    assert_eq!(id, RequestId("bus:w4:c1".into()));
+    assert_eq!(caller, "The system agent");
+    assert!(args.contains("\"command\": \"ls\""), "{args}");
+    super::with(|a| a.router.answer(sheet, &id, Answer::Once, &ApprovalGesture::sheet_tap(), T0)).unwrap().unwrap();
+    assert!(relay.take().is_empty());
+    assert_eq!(super::take_bus_decisions(), vec![(id, Decision::ApproveOnce, "approved on the sheet".into())]);
+    assert!(!super::consent_granted("os.news"), "developer mode is off in tests: nothing is granted");
+}
+
+/// The module host's gate: the first ask shows the first-use sheet and
+/// offers nothing; once allowed, the next instance gets its agent.
+#[test]
+fn the_module_gate_asks_once_then_follows_consent() {
+    let mut a = super::Approvals::memory();
+    assert!(!super::module_gate(&mut a, "rinx", "Rinx", &["octos.session.open", "octos.turn.start"]));
+    assert_eq!(a.consent.prompt().map(|p| p.name.as_str()), Some("Rinx"));
+    assert!(!super::module_gate(&mut a, "rinx", "Rinx", &["octos.session.open"]), "no second prompt, still no agent");
+    a.consent.set(&ApprovalGesture::sheet_tap(), "rinx", true, T0);
+    assert!(super::module_gate(&mut a, "rinx", "Rinx", &["octos.session.open"]));
+    a.consent.turn_off("rinx", T0);
+    assert!(!super::module_gate(&mut a, "rinx", "Rinx", &["octos.session.open"]));
+    assert!(a.consent.prompt().is_none(), "a person's no is not asked again");
 }
