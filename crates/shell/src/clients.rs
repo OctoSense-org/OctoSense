@@ -894,8 +894,12 @@ pub fn launch_argv(
             args.push("--release".to_string());
             // Never rewrite the checkout's Cargo.lock (the pinned Makepad
             // in .sources/ is shared and must stay as prepared): a stale
-            // lock fails the launch, visibly, instead.
-            args.push("--locked".to_string());
+            // lock fails the launch, visibly, instead. A checkout without a
+            // lock (Makepad ignores its own) can't be held to one: `--locked`
+            // there refuses to create it and every launch fails.
+            if root.join("Cargo.lock").is_file() {
+                args.push("--locked".to_string());
+            }
             args.push("--manifest-path".to_string());
             args.push(root.join(manifest).to_string_lossy().to_string());
             args.push("-p".to_string());
@@ -1162,8 +1166,7 @@ mod tests {
             .position(|a| a == "--release")
             .expect("no --release");
         assert!(release < sep, "--release must be a cargo flag: {:?}", args);
-        let locked = args.iter().position(|a| a == "--locked").expect("no --locked");
-        assert!(locked < sep, "the checkout's Cargo.lock is never rewritten: {:?}", args);
+        assert!(!args.contains(&"--locked".to_string()), "no lock to hold it to: {:?}", args);
         assert_eq!(args[0], "run");
         assert_eq!(
             args[sep + 1],
@@ -1181,6 +1184,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(&args[args.len() - 2..], &["--preview", "/a.png"]);
+        // A checkout with a lock is held to it, so a launch never rewrites it.
+        let locked_root = std::env::temp_dir().join(format!("os-locked-{}", std::process::id()));
+        std::fs::create_dir_all(&locked_root).unwrap();
+        std::fs::write(locked_root.join("Cargo.lock"), "").unwrap();
+        let (_, args) = launch_argv(&app, Some(&locked_root), &[]).unwrap();
+        let sep = args.iter().position(|a| a == "--").unwrap();
+        let locked = args.iter().position(|a| a == "--locked").expect("no --locked");
+        assert!(locked < sep, "the checkout's Cargo.lock is never rewritten: {:?}", args);
+        let _ = std::fs::remove_dir_all(&locked_root);
     }
 
     #[test]

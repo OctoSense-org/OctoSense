@@ -4588,6 +4588,7 @@ impl MatchEvent for App {
         // environment, or a developer profile's saved state; before any app
         // starts, so grants and approvals see it from the first call.
         dev_mode::init(&octosense::paths::home());
+        octosense::paths::scope_linked_app_data();
         self.dev_generation = dev_mode::generation();
         // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
         // and audit, before any app can ask for an approval.

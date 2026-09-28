@@ -35,6 +35,36 @@ pub fn home() -> PathBuf {
     }
 }
 
+/// The data folder a linked Rinx should use, if not its own default: under
+/// an explicitly chosen OctoSense home (`OCTOSENSE_HOME`, a test or developer
+/// profile), `<home>/apps/rinx/data`, so such a run never opens the person's
+/// real Matrix sessions. The default home keeps Rinx's standard folder until
+/// its data moves under ADR 0004 §11's layout (hagency-org/Rinx#37). An
+/// explicit `RINX_DATA_DIR` always wins.
+fn linked_rinx_data_dir(custom_home: Option<&Path>, explicit: bool) -> Option<PathBuf> {
+    if explicit {
+        return None;
+    }
+    custom_home.map(|home| home.join("apps").join("rinx").join("data"))
+}
+
+/// Point linked apps that keep their own data at the chosen OctoSense home.
+/// Runs once at startup, before any module is created (Rinx reads
+/// `RINX_DATA_DIR` once, on first use).
+pub fn scope_linked_app_data() {
+    let custom = std::env::var_os("OCTOSENSE_HOME")
+        .or_else(|| std::env::var_os("MAKEOS_HOME"))
+        .map(PathBuf::from)
+        .map(|p| if p.is_absolute() { p } else { std::env::current_dir().unwrap_or_default().join(p) });
+    let explicit = std::env::var_os("RINX_DATA_DIR").is_some() || std::env::var_os("ROBRIX_DATA_DIR").is_some();
+    if let Some(dir) = linked_rinx_data_dir(custom.as_deref(), explicit) {
+        if std::fs::create_dir_all(&dir).is_ok() {
+            makepad_widgets::log!("rinx: data folder {} (under OCTOSENSE_HOME)", dir.display());
+            std::env::set_var("RINX_DATA_DIR", &dir);
+        }
+    }
+}
+
 static PACKAGE_DIR: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
 /// The running package's source directory (desktop/ or phone/), set by its
@@ -68,6 +98,14 @@ pub fn project_root() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_linked_rinx_keeps_its_data_under_a_chosen_home_only() {
+        let home = Path::new("/tmp/os-home");
+        assert_eq!(linked_rinx_data_dir(Some(home), false), Some(home.join("apps/rinx/data")));
+        assert_eq!(linked_rinx_data_dir(None, false), None, "the default home keeps Rinx's own folder");
+        assert_eq!(linked_rinx_data_dir(Some(home), true), None, "an explicit RINX_DATA_DIR wins");
+    }
 
     #[test]
     fn octosense_state_is_separate_and_can_be_relocated() {

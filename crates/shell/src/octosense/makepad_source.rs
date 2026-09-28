@@ -72,6 +72,20 @@ pub fn makepad_root() -> Option<&'static Path> {
     static ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
     ROOT.get_or_init(|| {
         let project = crate::octosense::paths::project_root()?;
+        // The root Cargo.toml [patch]es every Makepad crate to the checkout
+        // tools/setup.py prepares in .sources/makepad: that is the answer
+        // whenever it exists, without running Cargo on the UI thread (which
+        // waits on Cargo's package-cache lock while any other build runs).
+        // `project` is the package (desktop/ or phone/); .sources/ sits at
+        // the repository root above it.
+        let prepared = project
+            .ancestors()
+            .take(3)
+            .map(|dir| dir.join(".sources/makepad"))
+            .find(|dir| dir.join("apps/wm/Cargo.toml").is_file());
+        if prepared.is_some() {
+            return prepared;
+        }
         // Offline on purpose: this binary's framework sources are already
         // on disk, either prepared by setup or fetched by Cargo. Never
         // reach the network on the way to opening a menu.
