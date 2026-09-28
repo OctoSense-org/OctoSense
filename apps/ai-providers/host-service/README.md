@@ -232,3 +232,27 @@ and the makepad one must carry the contained-app runtime the shells build with
 the manifest, pass a `--config` file with `[patch."https://github.com/OctoSense-org/makepad.git"]`
 entries pointing at it. The macOS keychain test runs only when asked:
 `cargo test -p octosense-llm-service -- --ignored keychain`.
+
+## The `model` service (`model.complete`)
+
+The same crate offers a second family, `model` ([src/complete](src/complete)):
+contained apps granted the `model` capability make a direct, one-shot,
+schema-checked call to the person's providers (OctoSense ADR 0002, "Direct
+one-shot model calls"). The app names a model class (`fast` or `strong`), a
+task, an input and a JSON Schema; the host picks the provider in the
+person's order, sends no output-token cap, validates the reply (retrying
+once), refuses URLs unless the app allows them, caps the reply at 16 KiB and
+charges a per-app daily budget (defaults: 6 calls a minute, 100 calls and
+100,000 tokens a UTC day) kept in `<host dir>/model/ledger.json`. The app
+never sees the provider, the model id or the key. The method table and the
+error codes are in [src/complete/mod.rs](src/complete/mod.rs).
+
+`crates/ai-host` registers it with the `llm` service:
+
+```rust
+octosense_llm_service::register_model(&options, octosense_llm_service::complete::Options::default());
+```
+
+Tests use a fake transport: `cargo test --locked -p octosense-llm-service --test complete`.
+A live check against DeepSeek (costs a fraction of a cent):
+`DEEPSEEK_API_KEY=… cargo run --locked -p octosense-llm-service --example model_complete_live`.

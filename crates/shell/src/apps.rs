@@ -153,7 +153,8 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 /// closed.
 ///
 /// The `llm` service (AI providers, `os.ai-providers`) is the assistant's
-/// and registers with the kernel in `ai_host::start`, at startup.
+/// and registers with the kernel in `ai_host::start`, at startup, with the
+/// `model` service (`model.complete`, ADR 0002) over the same providers.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();

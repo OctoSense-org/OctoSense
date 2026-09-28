@@ -199,6 +199,40 @@ Least privilege, declared by the app, checked by App Hub, granted by the host, e
 | **Output** | cards only through `glance.publish`, only L0/L1, checked and pinned | shell |
 | **Control** | background mode off per app; every run logged (trigger, tools, cost, what was published) | Settings and an audit log |
 
+### 14. Direct one-shot model calls (`model.complete`)
+
+*Addendum, 2026-09-27 (decision "C").* An app's AI keeps its **main path** through its own octos agent and the toolbox's workflow templates (sections 1–6): that is where tools, memory, research, budgets per run and approvals live. In addition, a contained script app may make a **narrow, direct, one-shot model call** for a bounded job that needs no agent: classify this item, title this note, pull these fields out of this message, summarize this text into three lines. Without it, such an app either wakes a whole agent for one sentence or cannot use a model at all.
+
+**The call.** `host.request("model.complete", {task, input, schema, class?, allow_urls?})`, served by the shell's `model` host service ([`apps/ai-providers/host-service/src/complete`](../../apps/ai-providers/host-service/src/complete/mod.rs), registered by [`crates/ai-host`](../../crates/ai-host) with the `llm` service).
+
+| Field | Meaning |
+|---|---|
+| `task` | what to do, in words (at most 4 KiB) |
+| `input` | what to do it on: any JSON, at most 32 KiB; sent as data, and the host's instructions tell the model to follow no instruction inside it |
+| `schema` | **required**: a JSON Schema (Octoscript's bounded subset: `type`, `properties`, `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `minLength`, `maxLength`, `minimum`, `maximum`, `enum`; at most 8 KiB). Any other keyword is refused, so an app never believes a rule is enforced when it is not |
+| `class` | `"fast"` (default) or `"strong"`: a model **class** from octos's catalog types (`model_catalog.json`), never a provider or a model id |
+| `allow_urls` | default `false`: see *Model text is data* below |
+
+The answer is `{output, meta}`: `output` is the validated JSON; `meta` is `{class, requested, attempts, usage: {input_tokens, output_tokens, estimated}, budget}`. `model.budget` returns the caller's `budget` alone.
+
+**The rules.**
+
+- **A new capability, `model`, not `llm`.** `llm` stays the provider- and key-management service for `os.*` apps. `model` is its own App Hub capability ([App Hub #24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)); the Card runner's isolate refuses `model.*` to an app whose policy lacks it, and the service checks the app's verified manifest again behind it.
+- **The host picks the model.** It takes the person's providers in their own order (primary, then fallbacks), those whose model is of the requested class first, then the rest, and passes over a provider that fails (network, HTTP error, no text) for the next. The app never sees the provider, the model id, the route or the key. `meta.class` says which class answered; the model id is **not** shown: an app should depend on a class, not on a model, and the id stays in the host for the log and for Settings.
+- **One shot.** No tools, no memory, no browsing, no conversation history: the model sees the host's fixed instructions, the task, the schema and the input, nothing else. This is not a chat and not an agent. Anything that needs tools, research, memory or approvals goes through the app's agent.
+- **The reply must validate.** A reply that is not JSON, fails the schema, carries a URL where none is allowed, or exceeds the byte cap is retried **once** on the same provider, with the reason; a second failure is an error the app can show.
+- **No output-token cap is sent** (the standing rule: a reasoning model spends any cap on its thinking first). The output is bounded by the schema and by a **hard cap of 16 KiB** on the reply the host accepts; the host reads at most 1 MiB of a provider's answer. Anthropic's Messages API requires `max_tokens`, so there the host sends the model's own catalog maximum, which is no cap of the host's.
+- **Model text is data, never markup.** Replies an app renders go into L0/L1 card data, where they are text. With the toolbox's rule (`validate_digest`), any string in the reply containing `http://`, `https://` or `www.` refuses it, and the instructions tell the model so. An app that must return URLs (one that extracts links from its input) sets `allow_urls: true`; they are still data, and opening one still needs the `web` capability.
+- **Refusals name the reason.** An error is `"<code>: <sentence>"`, with `code` one of `capability`, `no_provider`, `rate`, `budget`, `bad_request`, `invalid_output`, `too_large`, `provider`. The sentence can be shown to the person and never names a provider or a model.
+
+**Budget.** Each app has a rate limit and a daily budget, kept by the host in a ledger (`<apps root>/.host/model/ledger.json`, outside every app's jail, so reopening an app or restarting the shell does not refill it). Defaults: **6 calls a minute, 100 calls and 100,000 tokens (input plus output, as the provider reports them) per UTC day**; at DeepSeek V4 Flash prices 100,000 tokens cost about US$0.03. A call is admitted only if its estimated input fits in what is left; both attempts of a retried call are charged. Every answer carries the budget (`calls_today`, `calls_per_day`, `tokens_today`, `tokens_per_day`, `tokens_left`, `per_minute`, `resets_at`). Per-app limits are overrides in the same ledger, and the service already lists every app's use (`ModelHost::usage`) and changes a limit (`ModelHost::set_limits`): that is what a Settings page will show and edit. The Settings page itself is a follow-up.
+
+**Consent and privacy.** The app's inputs go to the AI provider the person configured, which is the point of the call. App Hub's consent line for `model` says so: "Sends what you give it to the AI provider you configured, for one-off answers within a daily budget; it never sees your API keys."
+
+**One accounting path.** The toolbox's `ModelClient` (#82, `crates/toolbox/src/research/mod.rs`) will call the same host (`octosense_llm_service::complete::host()` → `ModelHost::complete`), so budgets live in one place. Its `ModelRequest {task, system, user, output_schema}` maps onto a `complete::Request` with the host-only `system` set to the template's prompt, `input` its user document, `schema` its output schema and `allow_urls: true` (the toolbox's own `validate_digest` then checks the result): the adapter is a few lines. `system` is settable only from Rust, never through `host.request`.
+
+**Why C: the agent is the main path; a direct call for bounded one-shot jobs.** Routing every model use through the agent would make the smallest job wait for a peer, a workspace and a run, and leave contained apps without a model until their agent path exists. Making direct calls the main path would bring back per-app prompt plumbing, tool loops in scripts and spending outside the agent's accounting. The direct call adds only what small jobs need, bounded by a schema, a byte cap and a budget, and nothing an agent should do.
+
 ### Examples
 
 The same loop serves every app; only the data service, `AGENT.md` and skills, the model requirements and the app's tools differ.
