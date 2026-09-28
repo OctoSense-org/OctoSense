@@ -219,8 +219,11 @@ async fn talk_to_octos_admits_an_external_client_to_the_ui_protocol_only() {
     let mut native = core.connect().unwrap();
     assert_eq!(running_on(&mut native, "llm1").await.1, "deepseek-v4-flash");
     let mut browser = external(&access).await;
-    let list = ws_call(&mut browser, "llm1", "profile/llm/list", json!({"profile_id":"_main"})).await;
-    assert_eq!(list["primary"]["model"], "deepseek-v4-flash");
+    let open = ws_call(&mut browser, "open", "session/open", json!({"session_id": SYSTEM_SESSION, "profile_id": "_main"})).await;
+    assert_eq!(open["opened"]["session_id"], SYSTEM_SESSION);
+    // Profile configuration is not the external client's, not even to read.
+    let list = ws_frame(&mut browser, "llm1", "profile/llm/list", json!({"profile_id":"_main"})).await;
+    assert_eq!(list["error"]["data"]["kind"], "external_method_denied", "{list}");
 
     // What the external token must not reach.
     for path in ["/api/admin/overview", "/api/admin/stop-all", "/api/admin/token/rotate", "/api/admin/host/pairing"] {
@@ -242,7 +245,16 @@ async fn talk_to_octos_admits_an_external_client_to_the_ui_protocol_only() {
     // Nor manage host-owned app peers (octos UPCR-2026-036).
     let control = ws_frame(&mut browser, "ctx", "peer/context/open", json!({
         "session_id": SYSTEM_SESSION, "peer": "rinx", "context_id": "a"})).await;
-    assert_eq!(control["error"]["data"]["kind"], "host_owned_peer_control_denied", "{control}");
+    assert_eq!(control["error"]["data"]["kind"], "external_method_denied", "{control}");
+    // Nor configure providers (a redirected base_url would receive the key),
+    // skills or snapshots, nor open an app peer's session.
+    for method in ["profile/llm/upsert", "profile/sub_providers/upsert", "profile/skills/install", "snapshot/restore"] {
+        let denied = ws_frame(&mut browser, method, method, json!({"profile_id": "_main"})).await;
+        assert_eq!(denied["error"]["data"]["kind"], "external_method_denied", "{method}: {denied}");
+    }
+    let peer_open = ws_frame(&mut browser, "peer-open", "session/open", json!({
+        "session_id": "_main:api:octosense#peer-rinx", "profile_id": "_main"})).await;
+    assert_eq!(peer_open["error"]["data"]["kind"], "host_owned_peer_session_denied", "{peer_open}");
     // DNS rebinding and other local apps.
     let (status, _) = http(port, "GET", "/health", &format!("rebind.example:{port}"), None, "").await;
     assert_eq!(status, 421, "a foreign Host header is refused");
@@ -283,21 +295,32 @@ async fn talk_to_octos_admits_an_external_client_to_the_ui_protocol_only() {
     assert_eq!(restarted.origin, access.origin, "the same port");
     assert_eq!(restarted.token, access.token, "the same external token");
     let mut browser = external(&restarted).await;
-    let list = ws_call(&mut browser, "llm2", "profile/llm/list", json!({"profile_id":"_main"})).await;
-    assert_eq!(list["primary"]["model"], "kimi-k2.5");
+    ws_call(&mut browser, "open2", "session/open", json!({"session_id": SYSTEM_SESSION, "profile_id": "_main"})).await;
+    let mut native_check = core.connect().unwrap();
+    assert_eq!(running_on(&mut native_check, "llm2").await.1, "kimi-k2.5");
+    drop(native_check);
     drop(native);
     assert!(core.status().running, "external clients keep the server up");
 
-    // Rotating retires the old token.
+    // Rotating retires the old token and ends the live connection.
     let c = core.clone();
     blocking(move || c.rotate_external_access()).await.unwrap();
+    let ended = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            match browser.next().await {
+                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                Some(Ok(_)) => {}
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "Revoke all ends a live external session");
     let c = core.clone();
     let rotated = blocking(move || c.client_access()).await.unwrap();
     assert_ne!(rotated.token, access.token);
     let mut old = format!("{}?token={}", access.endpoint(), access.token).into_client_request().unwrap();
     old.headers_mut().insert("Origin", WEB.parse().unwrap());
     assert_eq!(ws_refused(old).await, 401, "the old token is dead");
-    drop(browser);
 
     // Turning it off stops external access: nothing listens any more.
     let c = core.clone();

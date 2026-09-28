@@ -103,12 +103,15 @@ child above and nothing listens. **AI providers → Talk to Octos** turns it on
 - restarts the kernel as `octos serve --host-managed` (octos
   [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/main/docs/HOST_MANAGED_SERVE.md));
   native consumers keep the same frames over its WebSocket with a host token
-  that never leaves this process, and request octos's stdio feature set
+  that never leaves this process (the kernel gets both tokens on its stdin,
+  never in its environment), and request octos's stdio feature set
   (`octos_core::ui_protocol::UI_PROTOCOL_STDIO_DEFAULT_FEATURES`);
 - mints an **external token**. It opens `/api/ui-protocol/ws` and nothing
-  else: no REST or admin route, no `server/shutdown`, no answers to the
-  approvals or questions of apps' assistants (host-owned app peers), and no
-  control of those peers;
+  else, and there only an allowlist of session, turn, answer and read-only
+  status methods: no configuration (providers, keys, skills, snapshots), no
+  `server/shutdown`, nothing on an app's assistant's sessions (host-owned app
+  peers), and answers only in sessions it opened. Its turns get no tool that
+  runs code, administers octos or reaches peers (octos UPCR-2026-036);
 - keeps the listener in this process (Unix) and hands it to every kernel
   generation, so a restart keeps the port and no other app can take it in
   between. Elsewhere a restart reuses the port when it is free, and otherwise
@@ -124,9 +127,9 @@ How clients get in:
   shown with a QR of the web client's link
   (`<web origin>/?octos=<server>&pair=<code>`). The code only works while
   that sheet is open (`end_pairing()` when it closes). The web origin saved on
-  the sheet is the only browser origin the server trusts: `https`, or `http`
-  only for localhost, 127.0.0.1 or [::1]. A malformed saved origin counts as
-  none; the kernel still starts.
+  the sheet is the only browser origin the server trusts: `https`, or on a
+  desktop also `http` for localhost, 127.0.0.1 or [::1] (Android: https
+  only). A malformed saved origin counts as none; the kernel still starts.
 - **Terminal.** The connection file `connection_file(core_dir)`
   (`<core_dir>/client-connection.json`, mode 0600; on Windows
   `%LOCALAPPDATA%\OctoSense\client-connection.json`, whose default ACL admits

@@ -106,13 +106,20 @@ pub(crate) fn validate_origin(origin: &str) -> Result<String, String> {
     let usage = "Enter a web client origin such as https://web.example or http://localhost:4173";
     let url = url::Url::parse(origin).map_err(|_| usage.to_string())?;
     let host = url.host().ok_or_else(|| usage.to_string())?;
+    // On Android any app can serve http://localhost, so a phone trusts https
+    // origins only; a desktop also takes a local http development server.
+    let loopback_http = !cfg!(target_os = "android");
     let scheme_ok = match url.scheme() {
         "https" => true,
-        "http" => is_loopback_host(&host),
+        "http" => loopback_http && is_loopback_host(&host),
         _ => false,
     };
     if !scheme_ok {
-        return Err("Use https, or http only for localhost, 127.0.0.1 or [::1].".into());
+        return Err(if loopback_http {
+            "Use https, or http only for localhost, 127.0.0.1 or [::1].".into()
+        } else {
+            "Use an https origin.".into()
+        });
     }
     if url.host_str().is_none_or(|h| h.contains('*'))
         || !url.username().is_empty()

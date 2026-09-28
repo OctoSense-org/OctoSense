@@ -33,32 +33,61 @@ separate kernel would be a different assistant with different memory.
    providers). Only then does the shell restart it as
    `octos serve --host-managed --host 127.0.0.1`. Turning it off restarts the
    kernel on the pipe: nothing listens, and the connection file is removed.
-2. **Two tokens.**
+2. **Two tokens, delivered on stdin.** The shell writes both as the first
+   two lines of the kernel's stdin; they never enter an environment or a
+   command line. `/proc/<pid>/environ` is readable by every process of the
+   same user, and on Android that includes the kernel's own tools.
 
    | Token | Holder | Grants |
    | --- | --- | --- |
-   | Host token | the shell process only, passed in the child's environment | everything a native consumer had on stdio (octos admin) |
-   | External token | a paired web client, or a terminal client of this user through the 0600 connection file | `/api/ui-protocol/ws` only, as user `_main` |
+   | Host token | the shell process only | everything a native consumer had on stdio (octos admin) |
+   | External token | a paired web client, or a terminal client of this user through the 0600 connection file | `/api/ui-protocol/ws` only, as user `_main`, and there only an allowlist of methods |
 
-   The external token gets no REST route (403), no admin route (401), no
-   `server/shutdown` (never offered on a host-managed server), and no answers
-   to approvals or questions of host-owned app peers (`peer-…`/`peerctx-…`
-   sessions), nor any call to their control plane (creating, resuming or
-   binding one, changing its model, opening or closing its request contexts). Those belong to the person in the app, as UPCR-2026-034 already
-   requires of the system agent. The external token is minted when Talk to
-   Octos turns on, and again on **Revoke all clients** (which restarts the
-   server, ending open connections). A new shell lifetime mints a new one.
-   Tokens are never printed, logged, copied to the clipboard or put in a
-   command line.
+   The external token gets no REST route (403) and no admin route (401). On
+   the socket it may call only these methods: `config/capabilities/list`,
+   `session/status/read`, `system/status.get`, `session/open`,
+   `session/hydrate`, `session/messages_page`, `session/status.get`,
+   `turn/start`, `turn/interrupt`, `turn/steer`, `turn/state/get`,
+   `approval/respond`, `approval/scopes/list`, `user_question/respond` and
+   `diff/preview/get`. Everything else is refused. That covers provider, key
+   and model configuration (a redirected `base_url` would otherwise receive
+   the stored key), skills, snapshots, session fork and delete, every peer
+   method and `server/shutdown`. It also cannot name an app peer's session
+   (`peer-…`/`peerctx-…`) in any call. Those sessions carry the apps' memory
+   and workspaces, and their approvals and questions belong to the person in
+   the app, as UPCR-2026-034 already requires of the system agent. It answers
+   prompts only on sessions it opened itself. A turn it starts gets no tool
+   that runs code or commands (`shell`, `exec_command`, `spawn*`, `browser`,
+   `git`, …), administers the server, profiles or skills, delegates, or
+   reaches peers (`peer_*`). The model therefore cannot drive the apps'
+   assistants or read the host's processes on its behalf.
+
+   The external token is minted when Talk to Octos turns on, and again on
+   **Revoke all clients** (which restarts the server, ending open
+   connections). A new shell lifetime mints a new one. Tokens are never
+   printed, logged or copied to the clipboard.
+
+   **What the profile runs.** OctoSense configures neither the tool set nor
+   the sandbox: the kernel runs octos's defaults. That means all built-in
+   tools, file tools fenced to the session workspace (plus the a2app memory
+   read-zone on Android), and sandbox `Auto`: Seatbelt on macOS, bubblewrap or
+   Landlock on Linux when present, and on Android usually none, so the shell
+   tool runs unconfined as the app's user. Hence the tool restriction above
+   for external turns. For every session, no file tool opens
+   `/proc/<pid>/environ` or `/proc/<pid>/cmdline`, and the shell policy
+   refuses commands naming them.
 3. **Pairing, not copying.** A web client gets the external token only
    through octos's pairing: an 8-character code shown on the trusted sheet
    (with a QR of the web client's link), valid for five minutes and one claim.
    It works only while the sheet is open; the shell turns pairing off when the
-   sheet closes. There is no "copy token" action.
+   sheet closes (including the phone's Back, which calls the sheet's
+   `cancel()`), in order: a late "off" cannot cancel a newer code. Failed
+   claims are rate-limited, not burned, and every claim is audited without the
+   code. There is no "copy token" action.
 4. **Browser guards.** The server answers only requests whose `Host` names
    its own loopback listener (DNS rebinding). It trusts only the web origin
-   the person saved: `https`, or `http` only for localhost, 127.0.0.1 or
-   [::1]. A malformed saved origin counts as none, and the kernel still
+   the person saved: `https`, or on a desktop also `http` for localhost,
+   127.0.0.1 or [::1] (never on Android, where any app can serve localhost). A malformed saved origin counts as none, and the kernel still
    starts. Origin protects a browser that holds a token from other pages. It
    is not authentication; the token is.
 5. **The host owns the lifecycle.** The kernel's stdin is its lifeline: when
@@ -110,8 +139,10 @@ Real-kernel tests (a scripted local model, no external calls) check that:
 
 - nothing listens while Talk to Octos is off;
 - when it is on, the external token gets 401/403 on `/api/admin/*` and REST,
-  cannot call `server/shutdown` (not advertised either), and cannot answer a
-  peer approval;
+  cannot call `server/shutdown` (not advertised either), provider, skill or
+  snapshot methods, or profile reads, cannot open an app peer's session, and
+  cannot answer a peer approval;
+- **Revoke all clients** ends a live external session;
 - a foreign `Host`, a missing token, a spoofed profile header, solo login and
   untrusted origins are refused;
 - pairing is single use and hands out the external token;
@@ -119,5 +150,7 @@ Real-kernel tests (a scripted local model, no external calls) check that:
 - native and web clients share the system conversation;
 - a shell killed with SIGKILL takes its kernel with it, in both modes.
 
-The six app-peer real-kernel tests pass with Talk to Octos off. A
+The six app-peer real-kernel tests pass with Talk to Octos off. CI runs
+these real-kernel tests (`apps.yml`, job `kernel-security`) against octos
+built at the pinned revision. A
 hidden-window desktop run turned Talk to Octos on and off from the sheet.

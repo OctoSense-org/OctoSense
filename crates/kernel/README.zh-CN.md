@@ -90,10 +90,13 @@ Talk to Octos 让 Web 客户端或终端界面与本设备的助手对话。它*
 
 - 内核以 `octos serve --host-managed` 重启（见 octos
   [`docs/HOST_MANAGED_SERVE.md`](https://github.com/octos-org/octos/blob/main/docs/HOST_MANAGED_SERVE.md)，英文）；
-  原生使用方通过其 WebSocket 继续收发同样的帧，使用从不离开本进程的宿主令牌，并请求
+  原生使用方通过其 WebSocket 继续收发同样的帧，使用从不离开本进程的宿主令牌（内核从 stdin
+  读取两个令牌，从不经过环境变量），并请求
   octos 的 stdio 功能集（`octos_core::ui_protocol::UI_PROTOCOL_STDIO_DEFAULT_FEATURES`）；
-- 生成一个**外部令牌**。它只能打开 `/api/ui-protocol/ws`：不能访问 REST 或管理接口，
-  不能调用 `server/shutdown`，不能回答应用助手（宿主拥有的应用 peer）的审批或提问，也不能管理这些 peer；
+- 生成一个**外部令牌**。它只能打开 `/api/ui-protocol/ws`，且在其中只能调用白名单内的会话、
+  轮次、回答和只读状态方法：不能修改配置（服务商、密钥、技能、快照），不能调用
+  `server/shutdown`，不能操作应用助手（宿主拥有的应用 peer）的会话，只能在自己打开的会话中
+  回答提问。它发起的轮次没有执行代码、管理 octos 或访问 peer 的工具（octos UPCR-2026-036）；
 - 监听套接字保存在本进程中（Unix）并交给每一代内核，因此重启保持端口不变，中间也没有
   其他应用能占用它。其他平台上，端口空闲时重启沿用原端口，否则换到新端口并生成新的外部令牌；
 - 原生使用方离开后服务仍保持运行，直到关闭该功能或 Shell 退出。内核的 stdin 是它的生命线：
@@ -105,7 +108,7 @@ Talk to Octos 让 Web 客户端或终端界面与本设备的助手对话。它*
   配对码，五分钟内有效，只能使用一次，同时显示 Web 客户端链接
   （`<web origin>/?octos=<server>&pair=<code>`）的二维码。配对码只在该面板打开期间有效
   （面板关闭时调用 `end_pairing()`）。面板上保存的 Web origin 是服务唯一信任的浏览器
-  来源：`https`，或仅限 localhost、127.0.0.1、[::1] 的 `http`。保存的 origin 格式错误时视为
+  来源：`https`，桌面上还可使用 localhost、127.0.0.1、[::1] 的 `http`（Android 只允许 https）。保存的 origin 格式错误时视为
   没有 origin，内核照常启动。
 - **终端。** 连接文件 `connection_file(core_dir)`（`<core_dir>/client-connection.json`，
   权限 0600；Windows 上为 `%LOCALAPPDATA%\OctoSense\client-connection.json`，其默认 ACL

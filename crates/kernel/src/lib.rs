@@ -169,6 +169,9 @@ struct Inner {
     state: Mutex<State>,
     runtime: OnceLock<tokio::runtime::Runtime>,
     network: Arc<network::Network>,
+    /// Serializes pairing on and off; counts every `pairing()`, so a late
+    /// "off" from a closed sheet cannot turn off a newer code.
+    pairing_epoch: Mutex<u64>,
 }
 
 impl Inner {
@@ -224,6 +227,7 @@ impl Core {
             }),
             runtime: OnceLock::new(),
             network: Arc::default(),
+            pairing_epoch: Mutex::new(0),
         }))
     }
 
@@ -422,13 +426,30 @@ impl Core {
     /// one claim). Call while the pairing UI is open; [`Self::end_pairing`]
     /// when it closes.
     pub fn pairing(&self) -> Result<Pairing, String> {
+        let mut epoch = self.0.pairing_epoch.lock().unwrap();
+        *epoch += 1;
         self.with_ready_server(Duration::from_secs(100), |access, network| {
             Box::pin(async move { network::start_pairing(&access, network.host_token()).await })
         })
     }
 
+    /// The current pairing epoch: capture it when a sheet closes and pass it
+    /// to [`Self::end_pairing_if`].
+    pub fn pairing_epoch(&self) -> u64 {
+        *self.0.pairing_epoch.lock().unwrap()
+    }
+
     /// Turn pairing off again (best effort; codes also expire on their own).
     pub fn end_pairing(&self) {
+        self.end_pairing_if(self.pairing_epoch());
+    }
+
+    /// Turn pairing off unless a newer code was minted since `epoch`.
+    pub fn end_pairing_if(&self, epoch: u64) {
+        let current = self.0.pairing_epoch.lock().unwrap();
+        if *current != epoch {
+            return;
+        }
         if self.external_access() && self.status().running {
             let _ = self.with_ready_server(Duration::from_secs(15), |access, network| {
                 Box::pin(async move {
@@ -667,6 +688,16 @@ pub fn pairing() -> Result<Pairing, String> {
 /// Turn the pairing code off (host worker only).
 pub fn end_pairing() {
     global().end_pairing()
+}
+
+/// See [`Core::pairing_epoch`].
+pub fn pairing_epoch() -> u64 {
+    global().pairing_epoch()
+}
+
+/// See [`Core::end_pairing_if`] (host worker only).
+pub fn end_pairing_if(epoch: u64) {
+    global().end_pairing_if(epoch)
 }
 
 /// A credential-free link to the system conversation (host worker only).

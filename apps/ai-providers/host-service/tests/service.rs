@@ -695,6 +695,9 @@ fn no_sheet_arms_a_timer_that_outlives_it() {
     ] {
         assert!(!body.contains("start_interval"), "{body}");
         assert!(!body.contains("fn tick"), "{body}");
+        // The phone's Back calls cancel(): without it the sheet is only
+        // hidden and its service never hears that it closed.
+        assert!(body.contains("fn cancel("), "every sheet defines cancel(): {body}");
     }
     assert!(sheets::export_waiting().contains("host.request(\"llm.sheet.show\", {}, nil)"));
     assert!(sheets::connect_client().contains("host.request(\"llm.sheet.client_pair_show\", {}, nil)"));

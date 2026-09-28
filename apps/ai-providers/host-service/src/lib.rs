@@ -1002,10 +1002,14 @@ fn pairing_sheet(_lifetime: u64) -> Result<String, String> {
     Err("This build does not include the Octos kernel service.".into())
 }
 
-/// The pairing code's sheet is up or being prepared: turn pairing off.
+/// The pairing code's sheet is up or being prepared: turn pairing off. The
+/// epoch is taken now, so a newer code minted before the worker runs stays.
 fn end_pairing() {
     #[cfg(feature = "octos-core")]
-    work(octosense_kernel::end_pairing);
+    {
+        let epoch = octosense_kernel::pairing_epoch();
+        work(move || octosense_kernel::end_pairing_if(epoch));
+    }
 }
 
 impl LlmService {

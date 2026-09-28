@@ -89,14 +89,16 @@ fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Resu
             }
             let mut secrets = Vec::new();
             if shared {
-                let external = network.external_token();
+                // The tokens go on stdin (`prepare_network`), never in the
+                // environment: /proc/<pid>/environ is readable by every
+                // process of this app's user, octos's own tools included.
                 command
-                    .env("OCTOS_AUTH_TOKEN", network.host_token())
-                    .env("OCTOS_HOST_EXTERNAL_TOKEN", &external)
                     .env("NO_COLOR", "1")
+                    .env_remove("OCTOS_AUTH_TOKEN")
+                    .env_remove("OCTOS_HOST_EXTERNAL_TOKEN")
                     .env_remove("OCTOS_INSTANCE_DATA_DIR")
                     .env_remove("OCTOS_SOLO_LOGIN");
-                secrets = vec![network.host_token().to_owned(), external];
+                secrets = vec![network.host_token().to_owned(), network.external_token()];
                 pass_listener(&mut command, network)?;
             }
             if let Some(cwd) = cwd {
@@ -186,11 +188,16 @@ async fn prepare_network(
     io: &mut Io, network: &Network, core_dir: &std::path::Path,
     ready: &watch::Sender<Option<Result<ClientAccess, CloseReason>>>,
 ) -> Result<(), String> {
-    if io.lifeline.is_none() {
+    let Some(lifeline) = io.lifeline.as_mut() else {
         // The private pipe (Talk to Octos off, or the embedded core).
         ready.send_replace(Some(Err(CloseReason::Failed("Talk to Octos is off.".into()))));
         return Ok(());
-    }
+    };
+    // octos `serve --host-managed` reads its two tokens as the first two
+    // stdin lines; the pipe then stays open as the lifeline.
+    let tokens = format!("{}\n{}\n", network.host_token(), network.external_token());
+    lifeline.write_all(tokens.as_bytes()).await.map_err(|e| format!("cannot hand the kernel its tokens: {e}"))?;
+    lifeline.flush().await.map_err(|e| format!("cannot hand the kernel its tokens: {e}"))?;
     tokio::time::timeout(Duration::from_secs(90), async {
         loop {
             let line = io.lines.next_line().await.map_err(|e| e.to_string())?

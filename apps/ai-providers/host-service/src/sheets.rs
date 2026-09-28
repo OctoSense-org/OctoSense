@@ -104,6 +104,8 @@ fn poll_pair(){
 }
 fn pair(){ status("Preparing a pairing code…") host.request("llm.sheet.client_pair", {}, fn(r){ if r.is_ok { poll_pair() } else { status(r.error) } }) }
 fn close(){ host.request("llm.sheet.cancel", {}, nil) }
+// The host's Back (phone) calls cancel(): closing ends any pairing code.
+fn cancel(){ close() }
 start_timeout(0.1, || refresh())
 "#);
     script.push_str(STYLES);
@@ -117,12 +119,14 @@ start_timeout(0.1, || refresh())
             state := Label{text: "" draw_text.color: #x1c1c1e draw_text.text_style: theme.font_bold{font_size: 13}}
         }
         turn_on := Primary{text: "Turn on" on_click: || enable(true)}
+        Note{text: "Turning on restarts the assistant: work in progress, in apps too, stops."}
         on_box := View{visible: false width: Fill height: Fit flow: Down spacing: 8
             Primary{text: "Pair a web client" on_click: || pair()}
             Note{text: "Shows a one-time code and a QR of the web link. A code works once, for five minutes, only while its sheet is open."}
             Caption{text: "Web client origin · https, or http only for localhost"}
             web_origin := Field{empty_text: "https://web.example"}
             Plain{text: "Save origin" on_click: || save_origin()}
+            Note{text: "Saving a changed origin restarts the assistant: work in progress, in apps too, stops."}
             Plain{text: "Open web client" on_click: || open_web()}
             Caption{text: "Server · the web client pairs with it"}
             origin := Field{is_read_only: true}
@@ -133,10 +137,10 @@ start_timeout(0.1, || refresh())
             Caption{text: "System-agent conversation · profile _main"}
             session := Field{is_read_only: true}
             Plain{text: "Revoke all clients" on_click: || rotate()}
-            Note{text: "Revoking gives clients a new token to pair for. Turning off stops the server; nothing then listens for external clients."}
+            Note{text: "Revoking disconnects every client and makes each pair again. It restarts the assistant, and Turn off does too: work in progress, in apps too, stops."}
             Plain{text: "Turn off" on_click: || enable(false)}
         }
-        Note{text: "External clients cannot answer approvals for apps' assistants, change settings or stop the assistant. A computer reaches this device through a tunnel that keeps the port number."}
+        Note{text: "A paired client can hold conversations with the assistant and answer its questions in them. It cannot see or drive the apps' assistants, change models, keys or skills, run commands, or stop the assistant. A computer reaches this device through a tunnel that keeps the port number."}
         status := Status{}"#,
     ));
     script
@@ -167,6 +171,7 @@ fn poll(){{
     }})
 }}
 fn close(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
+fn cancel(){{ close() }}
 fn count_down(){{
     if closing {{ return }}
     left = left - 1
@@ -927,6 +932,7 @@ fn close(){{
     closing = true
     host.request("llm.sheet.cancel", {{}}, nil)
 }}
+fn cancel(){{ close() }}
 fn count_down(){{
     if closing {{ return }}
     left = left - 1
