@@ -73,9 +73,9 @@ move that touches `tools/cargo_makepad` is the usual trigger):
 cargo install --path .sources/makepad/tools/cargo_makepad --force
 ```
 
-The shared release selects Makepad main `b0cbc9bc`, which includes App Hub's
+The shared release selects Makepad main `75e3e24d`, which includes App Hub's
 isolate containment (#22), contained script apps (#30), the QR scanner
-(#31), Splash `reapply_text` (#35) self-confirmed assistant tools (#36) and the one-call-site Slug, cursor and glass shaders (#37, #39), the terminal's confirmed runs (#41) and trackpad scrolling (#42); the consumer lock
+(#31), Splash `reapply_text` (#35) self-confirmed assistant tools (#36) and the one-call-site Slug, cursor and glass shaders (#37, #39), the terminal's confirmed runs (#41), trackpad scrolling (#42) and gestures (#46), and WebReader's close ending the page (#43); the consumer lock
 needs no `makepad_override`.
 
 To see which checkout an installed tool reads its Java from:
