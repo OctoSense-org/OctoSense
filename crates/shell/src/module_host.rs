@@ -176,6 +176,52 @@ impl ServiceExecutor for StoppedExecutor {
 /// What a tool call to a failed instance answers.
 pub const STOPPED_REASON: &str = "the app stopped after an error; restart it to use it again";
 
+/// What `data` says on an outcome-unknown answer, for a router or a model
+/// that reads it rather than the text.
+pub const OUTCOME_UNKNOWN_DATA: &str = r#"{"outcome":"unknown","reason":"app_panicked","retry":"only_after_checking_with_the_person"}"#;
+
+/// The answer to a call that may have partly run when its app panicked:
+/// an `Act` or `Destructive` tool (or one the manifest does not name)
+/// that was executing, or had answered `Pending`, when the module failed.
+/// It must never look succeeded, and never like a plain, safely retryable
+/// error: the effect may have happened, half-happened or not happened.
+///
+/// The wire has no `Unknown` outcome yet, so this is `TimedOut` — the
+/// wire's one existing "the service never finished answering; what it did
+/// is unknown" outcome, which is never `is_ok()` — with text and `data`
+/// that say so and `Disposition::EndTurn`, so the turn stops with the
+/// person rather than the model retrying on its own. A proper
+/// `ToolOutcome::Unknown` (slug `unknown`) in makepad-ai-services' wire is
+/// the Makepad change that would replace this; see the PR.
+pub fn outcome_unknown(call_id: &str, tool: &str, label: &str) -> makepad_ai_services::wire::ToolResult {
+    makepad_ai_services::wire::ToolResult::timed_out(
+        call_id,
+        format!(
+            "Outcome unknown: {label} stopped after an error while `{tool}` was running. It may have partly \
+             happened. Do not retry it; check with the person what actually changed first."
+        ),
+    )
+    .with_data(OUTCOME_UNKNOWN_DATA)
+    .with_disposition(makepad_ai_services::wire::Disposition::EndTurn)
+}
+
+/// Whether a call to `tool` can have changed something: anything but a
+/// declared `Read`. A tool the manifest does not name counts as able to.
+fn may_have_acted(manifest: &ServiceManifest, tool: &str) -> bool {
+    manifest.tools.iter().find(|t| t.name == tool)
+        .is_none_or(|t| t.risk != makepad_ai_services::wire::Risk::Read)
+}
+
+/// The answer to a call interrupted by its app's panic: outcome unknown
+/// when it may have acted, plainly unavailable when it only read.
+fn interrupted(manifest: &ServiceManifest, label: &str, call_id: &str, tool: &str) -> makepad_ai_services::wire::ToolResult {
+    if may_have_acted(manifest, tool) {
+        outcome_unknown(call_id, tool, label)
+    } else {
+        makepad_ai_services::wire::ToolResult::unavailable(call_id, STOPPED_REASON)
+    }
+}
+
 pub struct AppInstance {
     pub client: ClientId,
     pub module: &'static dyn AppModule,
@@ -200,6 +246,13 @@ pub struct AppInstance {
     failed: Option<String>,
     /// A failed instance's shutdown ran and its isolate is freed.
     released: bool,
+    /// Calls its executor answered `Pending` and has not answered yet:
+    /// (call id, tool). What is still here when the module panics is
+    /// answered for it ([`outcome_unknown`]).
+    in_flight: Vec<(String, String)>,
+    /// Answers the host owes the pane for a failed instance's interrupted
+    /// calls, handed out by `drain_upstream`.
+    owed: Vec<makepad_ai_services::wire::ToolResult>,
 }
 
 impl AppInstance {
@@ -365,6 +418,8 @@ impl ModuleHost {
                 manifest,
                 failed: None,
                 released: false,
+                in_flight: Vec::new(),
+                owed: Vec::new(),
             },
         );
         Ok(())
@@ -469,23 +524,36 @@ impl ModuleHost {
     /// the instance's isolate, as the tile dispatches events: an executor
     /// reaches into its app's widgets (AppCard's `ask` is the composer).
     ///
-    /// A failed instance, or one whose executor panics on this call,
-    /// answers "unavailable" rather than nothing.
+    /// A failed instance answers "unavailable": the call never ran. One
+    /// whose executor panics ON this call answers [`outcome_unknown`] when
+    /// the tool may have acted (it may have partly run), "unavailable"
+    /// when it only reads. A `Pending` call is remembered until its answer
+    /// comes up, so a later panic can answer it the same way.
     pub fn execute(&mut self, cx: &mut Cx, client: ClientId, call: &ServiceCall) -> Option<ExecOutcome> {
         let instance = self.instances.get_mut(&client)?;
-        let stopped = || ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, STOPPED_REASON));
-        if instance.failed.is_some() {
-            return Some(stopped());
+        // Failed, or panicked earlier in this event and not yet taken by
+        // the shell: the call never runs, so it is plainly unavailable.
+        if instance.failed.is_some() || is_failed(cx, instance.vm_id) {
+            return Some(ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, STOPPED_REASON)));
         }
         let vm_id = instance.vm_id;
         let executor = &mut instance.executor;
-        Some(contain(cx, vm_id, "a tool call", |cx| executor.execute(cx, call)).unwrap_or_else(stopped))
+        match contain(cx, vm_id, "a tool call", |cx| executor.execute(cx, call)) {
+            Some(ExecOutcome::Pending) => {
+                instance.in_flight.push((call.call_id.clone(), call.tool.clone()));
+                Some(ExecOutcome::Pending)
+            }
+            Some(done) => Some(done),
+            None => Some(ExecOutcome::Done(interrupted(&instance.manifest, instance.module.label(), &call.call_id, &call.tool))),
+        }
     }
 
     pub fn cancel(&mut self, cx: &mut Cx, client: ClientId, call_id: &str) {
         if let Some(instance) = self.instances.get_mut(&client).filter(|i| i.failed.is_none()) {
             let executor = &mut instance.executor;
             contain_outside(cx, instance.vm_id, "a cancel", |cx| executor.cancel(cx, call_id));
+            // The router answered it `Cancelled` already.
+            instance.in_flight.retain(|(id, _)| id != call_id);
         }
     }
 
@@ -544,11 +612,28 @@ impl ModuleHost {
     }
 
     /// Every result or publication an executor sent later, with its client.
+    ///
+    /// A failed instance yields what its executor sent before the panic
+    /// for calls still in flight (a real answer beats an unknown one), then
+    /// the outcome-unknown answers owed for the rest — and nothing after:
+    /// an answer arriving late for a call already answered is dropped.
     pub fn drain_upstream(&mut self) -> Vec<(ClientId, ModuleUpstream)> {
         let mut out = Vec::new();
-        for (client, instance) in self.instances.iter().filter(|(_, i)| i.failed.is_none()) {
+        for (client, instance) in self.instances.iter_mut() {
             while let Ok(message) = instance.upstream.try_recv() {
+                if let ModuleUpstream::Result(result) = &message {
+                    let before = instance.in_flight.len();
+                    instance.in_flight.retain(|(id, _)| *id != result.call_id);
+                    if instance.failed.is_some() && instance.in_flight.len() == before {
+                        continue;
+                    }
+                } else if instance.failed.is_some() {
+                    continue;
+                }
                 out.push((*client, message));
+            }
+            for result in instance.owed.drain(..) {
+                out.push((*client, ModuleUpstream::Result(result)));
             }
         }
         out
@@ -615,6 +700,21 @@ impl ModuleHost {
                 instance.module.id(), instance.label(), instance.client, fault.what, fault.message
             );
             instance.failed = Some(fault.message);
+            // Answers the executor already sent are genuine: take them
+            // before the in-flight rest is declared unknown.
+            while let Ok(message) = instance.upstream.try_recv() {
+                if let ModuleUpstream::Result(result) = message {
+                    if let Some(at) = instance.in_flight.iter().position(|(id, _)| *id == result.call_id) {
+                        instance.in_flight.remove(at);
+                        instance.owed.push(result);
+                    }
+                }
+            }
+            let label = instance.module.label();
+            for (call_id, tool) in std::mem::take(&mut instance.in_flight) {
+                let answer = interrupted(&instance.manifest, label, &call_id, &tool);
+                instance.owed.push(answer);
+            }
             out.push((instance.client, instance.module.label().to_string()));
         }
         out

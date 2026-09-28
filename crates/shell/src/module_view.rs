@@ -383,6 +383,39 @@ impl Widget for MpModuleView {
             // module into a shifted capture.
             let outer = std::mem::replace(&mut cx.global::<ModalBounds>().0, Some(rect));
             // What a panicking draw leaves open is cut back to here.
+            //
+            // WHAT A MID-DRAW PANIC LEAVES BEHIND. A Makepad draw only
+            // RECORDS: no GPU call is made during `Event::Draw` — the
+            // platform walks the recorded passes and lists after the event
+            // returns, binding textures and render targets itself. So a
+            // guest's panic cannot leave a texture bound or a render pass
+            // open on the GPU. What it can leave is CPU-side state the next
+            // GPU submission reads:
+            //
+            // Restored here: the draw context's stacks — turtles, finished
+            // rows and walks, clips, the alignment list, the draw-call
+            // parent chain, the pass stack, the draw-list stack, the
+            // overlay scope, the nesting depth (`unwind_to`); the gauss
+            // capture scope (`unwind_scope_to`); `ModalBounds`; and the
+            // isolate and script VM (`with_isolate`). The desk's own
+            // `end_*` calls then pair and its frame ends.
+            //
+            // NOT restored, and possibly inconsistent for the next frame:
+            // - instances the guest already appended to the tile's (the
+            //   desk's) draw list this frame stay in it for THIS frame, and
+            //   a draw list or pass the guest began is left half-recorded —
+            //   the platform may render that partial list once; they go when
+            //   the root is dropped at release and the tile redraws;
+            // - render-target textures a guest pass created or resized, and
+            //   draw lists it owns, stay allocated until that root drops;
+            // - process-wide caches mutated mid-operation: the font atlas
+            //   (a glyph slot reserved but only partly rasterized; its dirty
+            //   rect is still uploaded next frame), the shaper and layout
+            //   caches, shader/geometry pools. Makepad's std Mutexes there
+            //   tolerate poisoning, but a half-written atlas region can show
+            //   as a garbled glyph until the atlas resets;
+            // - any GPU call a module makes itself (FFI, a native layer)
+            //   is outside all of this.
             let mark = cx.unwind_mark();
             let captures = CaptureGauss::scope_depth(cx);
             let drawn = contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()));

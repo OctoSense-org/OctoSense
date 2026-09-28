@@ -165,7 +165,7 @@ fn setup() -> (Cx, ModuleHost) {
     (cx, ModuleHost::default())
 }
 
-fn create(cx: &mut Cx, host: &mut ModuleHost, client: u64, module: &'static ProbeModule) -> Result<(), String> {
+fn create(cx: &mut Cx, host: &mut ModuleHost, client: u64, module: &'static dyn AppModule) -> Result<(), String> {
     host.create(cx, client, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0))
 }
 
@@ -240,12 +240,17 @@ fn a_panic_in_an_event_stops_only_that_instance_and_its_second_panics_are_contai
 }
 
 #[test]
-fn a_panicking_tool_call_answers_unavailable_and_fails_the_instance() {
+fn a_panicking_tool_call_answers_outcome_unknown_and_fails_the_instance() {
     let (mut cx, mut host) = setup();
     create(&mut cx, &mut host, 1, &TOOL_BOMB).unwrap();
     create(&mut cx, &mut host, 2, &CALM).unwrap();
+    // `ping` is not in the probe's manifest: a tool of unknown risk counts
+    // as one that may have acted.
     match host.execute(&mut cx, 1, &call("c1")) {
-        Some(ExecOutcome::Done(result)) => assert_eq!(result.outcome, ToolOutcome::Unavailable),
+        Some(ExecOutcome::Done(result)) => {
+            assert_eq!(result.outcome, ToolOutcome::TimedOut);
+            assert_eq!(result.data, module_host::OUTCOME_UNKNOWN_DATA);
+        }
         _ => panic!("the call is answered"),
     }
     assert_eq!(host.take_faults(&mut cx), vec![(1, "Probe".to_string())]);
@@ -391,4 +396,139 @@ fn a_root_that_panics_in_an_event_stops_only_its_own_tile() {
     host.release_failed(&mut cx, 1);
     drop(calm);
     assert!(host.teardown(&mut cx, 1) && host.teardown(&mut cx, 2));
+}
+
+// ---- in-flight tool calls when the module panics ----
+
+/// A module with a read, an act and a destructive tool. `move` and `wipe`
+/// answer `Pending` (they finish later through the reply sink, as a tool
+/// behind the app's own confirm sheet does); `crash_move` panics while it
+/// acts; `crash_look` panics while it reads; `quick_move` answers later
+/// but has already sent its answer when the app panics.
+struct FlightModule;
+struct FlightExecutor(ReplySink);
+
+impl AppModule for FlightModule {
+    fn id(&self) -> &'static str {
+        "flight-probe"
+    }
+    fn label(&self) -> &'static str {
+        "Flight"
+    }
+    fn capabilities(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn open_schema(&self) -> OpenSchema {
+        OpenSchema::new(1)
+    }
+    fn register(&self, vm: &mut ScriptVm) {
+        self::script_mod(vm);
+    }
+    fn create(&self, vm: &mut ScriptVm, _open: ValidatedOpen, handles: InstanceHandles) -> InstanceParts {
+        let value = script_eval!(vm, { use mod.widgets.* PanicProbe {} });
+        let root = WidgetRef::script_from_value(vm, value);
+        root.borrow_mut::<PanicProbe>().unwrap().faults = Faults { event: true, ..Default::default() };
+        InstanceParts { root, executor: Box::new(FlightExecutor(handles.replies)), shutdown: Box::new(|_| {}) }
+    }
+}
+
+impl ServiceExecutor for FlightExecutor {
+    fn manifest(&self) -> ServiceManifest {
+        use makepad_ai_services::wire::{Risk, ToolDef};
+        let mut manifest = ServiceManifest::new("flight", "Flight", "test");
+        for (name, risk) in [("look", Risk::Read), ("crash_look", Risk::Read), ("move", Risk::Act),
+                             ("crash_move", Risk::Act), ("quick_move", Risk::Act), ("wipe", Risk::Destructive)] {
+            manifest.tools.push(ToolDef::new(name, "test", r#"{"type":"object"}"#, risk));
+        }
+        manifest
+    }
+    fn execute(&mut self, _cx: &mut Cx, call: &ServiceCall) -> ExecOutcome {
+        use makepad_ai_services::wire::ToolResult;
+        match call.tool.as_str() {
+            "look" => ExecOutcome::Done(ToolResult::ok(&call.call_id, "seen", "seen")),
+            "crash_look" => panic!("probe: panic while reading"),
+            "crash_move" => panic!("probe: panic halfway through a move"),
+            "quick_move" => {
+                self.0.reply(ToolResult::ok(&call.call_id, "moved", "moved"));
+                ExecOutcome::Pending
+            }
+            _ => ExecOutcome::Pending,
+        }
+    }
+}
+
+static FLIGHT: FlightModule = FlightModule;
+
+fn flight_call(id: &str, tool: &str) -> ServiceCall {
+    ServiceCall { call_id: id.into(), tool: tool.into(), args: "{}".into() }
+}
+
+fn is_outcome_unknown(result: &makepad_ai_services::wire::ToolResult) -> bool {
+    !result.outcome.is_ok()
+        && result.outcome == ToolOutcome::TimedOut
+        && result.data == module_host::OUTCOME_UNKNOWN_DATA
+        && result.text.starts_with("Outcome unknown")
+        && result.disposition == makepad_ai_services::wire::Disposition::EndTurn
+}
+
+fn done(outcome: Option<ExecOutcome>) -> makepad_ai_services::wire::ToolResult {
+    match outcome {
+        Some(ExecOutcome::Done(result)) => result,
+        _ => panic!("expected an answer now"),
+    }
+}
+
+#[test]
+fn a_call_its_executor_panics_in_answers_outcome_unknown_when_it_may_have_acted() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &FLIGHT).unwrap();
+    create(&mut cx, &mut host, 2, &FLIGHT).unwrap();
+    let acted = done(host.execute(&mut cx, 1, &flight_call("a1", "crash_move")));
+    assert!(is_outcome_unknown(&acted), "a half-run act is neither success nor retryable: {acted:?}");
+    assert_eq!(acted.call_id, "a1");
+    let read = done(host.execute(&mut cx, 2, &flight_call("r1", "crash_look")));
+    assert_eq!(read.outcome, ToolOutcome::Unavailable, "a read that crashed changed nothing");
+    // After the failure nothing runs: those calls are plainly unavailable.
+    let after = done(host.execute(&mut cx, 1, &flight_call("a2", "wipe")));
+    assert_eq!(after.outcome, ToolOutcome::Unavailable);
+    assert_eq!(host.take_faults(&mut cx).len(), 2);
+    for client in [1, 2] {
+        host.release_failed(&mut cx, client);
+        assert!(host.teardown(&mut cx, client));
+    }
+}
+
+#[test]
+fn in_flight_act_and_destructive_calls_answer_outcome_unknown_when_their_app_panics() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &FLIGHT).unwrap();
+    create(&mut cx, &mut host, 2, &FLIGHT).unwrap();
+    assert!(matches!(host.execute(&mut cx, 1, &flight_call("m1", "move")), Some(ExecOutcome::Pending)));
+    assert!(matches!(host.execute(&mut cx, 1, &flight_call("w1", "wipe")), Some(ExecOutcome::Pending)));
+    assert!(matches!(host.execute(&mut cx, 1, &flight_call("q1", "quick_move")), Some(ExecOutcome::Pending)));
+    assert!(matches!(host.execute(&mut cx, 1, &flight_call("c1", "move")), Some(ExecOutcome::Pending)));
+    host.cancel(&mut cx, 1, "c1");
+    assert!(matches!(host.execute(&mut cx, 2, &flight_call("m2", "move")), Some(ExecOutcome::Pending)));
+    assert_eq!(done(host.execute(&mut cx, 1, &flight_call("l1", "look"))).outcome, ToolOutcome::Ok);
+    // The app panics in an event while three of its calls are in flight.
+    host.send_custom(&mut cx, 1, "panic".into());
+    assert_eq!(host.take_faults(&mut cx), vec![(1, "Flight".to_string())]);
+    host.release_failed(&mut cx, 1);
+    let mut answers: Vec<_> = host.drain_upstream().into_iter().map(|(client, up)| match up {
+        ModuleUpstream::Result(result) => (client, result),
+        ModuleUpstream::Message { .. } => panic!("no publications here"),
+    }).collect();
+    answers.sort_by(|a, b| a.1.call_id.cmp(&b.1.call_id));
+    let ids: Vec<(u64, &str)> = answers.iter().map(|(c, r)| (*c, r.call_id.as_str())).collect();
+    assert_eq!(ids, [(1, "m1"), (1, "q1"), (1, "w1")], "each in-flight call answered once; the cancelled one not at all");
+    let by_id = |id: &str| &answers.iter().find(|(_, r)| r.call_id == id).unwrap().1;
+    assert!(is_outcome_unknown(by_id("m1")), "an in-flight act: {:?}", by_id("m1"));
+    assert!(is_outcome_unknown(by_id("w1")), "an in-flight destructive call: {:?}", by_id("w1"));
+    assert_eq!(by_id("q1").outcome, ToolOutcome::Ok, "an answer sent before the panic is the real one");
+    assert!(host.drain_upstream().is_empty(), "nothing is answered twice");
+    // The other instance's call is untouched: still in flight, still its own.
+    assert!(!host.is_failed(2));
+    for client in [1, 2] {
+        assert!(host.teardown(&mut cx, client));
+    }
 }

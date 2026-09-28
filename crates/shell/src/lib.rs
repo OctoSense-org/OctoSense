@@ -2151,12 +2151,20 @@ impl App {
     }
 
     /// The instances whose module panicked since the last event
-    /// (module_host.rs, "PANIC CONTAINMENT"): their extra windows close,
+    /// (module_host.rs, "PANIC CONTAINMENT"): their in-flight tool calls
+    /// are answered (outcome unknown where they may have acted), their
+    /// extra windows close,
     /// the tile lets go of the root and shows the app closed with a
     /// Restart, the assistant loses its tools, and the instance's
     /// resources are freed. The shell and every other app go on.
     pub(crate) fn contain_module_faults(&mut self, cx: &mut Cx) {
         let failed = self.module_host.take_faults(cx);
+        if !failed.is_empty() {
+            // The failed instances' in-flight calls are answered now —
+            // outcome unknown where they may have acted (module_host.rs,
+            // `outcome_unknown`) — while their endpoints still exist.
+            self.drain_module_upstream();
+        }
         for (client, label) in failed {
             let windows: Vec<ClientId> = self.module_windows.iter()
                 .filter(|(_, (owner, _))| *owner == client).map(|(w, _)| *w).collect();
