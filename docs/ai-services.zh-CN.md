@@ -26,6 +26,7 @@
 | 宿主拥有的应用 peer：每个获授权的原生应用一个 octos peer，归系统 Agent 所有 | 目前可用，仅限原生模块（Rinx） | [`crates/app-peers`](../crates/app-peers/README.md)、[Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) |
 | 在 Shell 内核上运行的 AppCard（"Ask anything"） | 目前可用，需主动开启（`--features app-appcard`），不随产品发布 | [`apps/appcard`](../apps/appcard) |
 | 隔离运行的脚本应用（系统应用或商店应用）向助手提问 | **不可用。** 没有任何 Shell 向 Card runner 提供 `octos.*`，而 `llm` 是只供 `os.*` 应用使用的提供方管理服务 | [见下文](#隔离运行的脚本应用系统应用和商店应用) |
+| 供隔离应用使用的一次性模型调用（`model`，`model.complete`） | 即将到来：权限已合入 App Hub（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)）；OctoSense 的 `model` 服务尚未实现 | [见下文](#隔离运行的脚本应用系统应用和商店应用) |
 | News 数据服务（`news`，不使用模型） | 已合入（[#69](https://github.com/OctoSense-org/OctoSense/pull/69)）；只响应 `os.*` 应用 | [`apps/news/host-service`](../apps/news/host-service/README.md) |
 | `glance.publish`：glance 屏幕上的 L0 卡片 | 已合入（[#72](https://github.com/OctoSense-org/OctoSense/pull/72)）；隔离运行的应用暂时无法调用。进行中：`glance` 权限（[#86](https://github.com/OctoSense-org/OctoSense/pull/86)）和 `sys.digest` 数据源（[#87](https://github.com/OctoSense-org/OctoSense/pull/87)） | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs) |
 | 应用自己的 Agent：`tools.json`、`AGENT.md`、skills、模型需求、触发器 | 规划中（[ADR 0002](adr/0002-event-driven-app-agents.md)，Proposed）。App Hub 接受这些文件（[App-Hub#18](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/18)）；没有 Shell 运行它们；内核一侧尚未合并（[octos#2567](https://github.com/octos-org/octos/pull/2567)） | [见下文](#规划中事件驱动的应用-agentadr-0002) |
@@ -161,6 +162,7 @@ flowchart TB
 | `llm` | 仅 `os.*` 应用 | 管理助手的提供方（`llm.providers`、`llm.add_provider`、`llm.test`、`llm.import_qr` 等）；**没有提示词或补全方法** |
 | `news` | 仅 `os.*` 应用 | News 的数据服务（订阅源、已读记录、`news.list`、`news.read` 等），不使用模型。Shell 锁定的 App Hub 还没有 `news` 权限，所以 News 应用包仍自己抓取 |
 | `glance` | 仅 `os.*` 应用，并且在 Shell 锁定的 App Hub 下没有 manifest 能申请 `glance` | 向 glance 屏幕发布 L0 卡片。目前只有 Shell 的 `OCTOSENSE_GLANCE_DEMO=1` 演示卡片会用到它；权限见 [#86](https://github.com/OctoSense-org/OctoSense/pull/86) |
+| `model` | – | **尚未注册。** App Hub `main` 接受 `model` 权限（[App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)），用于一次性的 `model.complete {task, input, schema, class}`（`class` 为 `fast` 或 `strong`；宿主从用户的提供方中挑选模型，按 schema 校验回复，按应用管理每日预算；没有工具和记忆）。OctoSense 服务尚未实现；调用返回 `no service answers "model" on this device`（在 App Hub `e8601b8` 的 `card-host` 中运行），而且 Shell 锁定的 App Hub 不认识这个名称 |
 | `octos.*` | – | **未注册。** App Hub 的准入检查接受四个 `octos.*` 名称（[App-Hub#14](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/14)），但在 OctoSense Shell 中调用会返回 `no service answers "octos" on this device` |
 
 因此，**隔离运行的应用目前在 OctoSense 中没有任何途径使用助手**，无论是商店应用还是系统应用。它会收到：
