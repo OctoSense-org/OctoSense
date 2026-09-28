@@ -330,3 +330,14 @@ Mail follows as the first app with approvals (`mail.send`), reusing M2–M7.
 - Budget defaults per app, and how cost is shown.
 - Whether a card may carry a short-lived action (Act) or only open its app's conversation.
 - How approvals behave across devices (approve on the phone a run that happened on the desktop).
+
+## Amendment, 2026-09-28 ([ADR 0004](0004-native-apps-hosting-and-peers.md))
+
+ADR 0004 supplies the hosting and transport this ADR assumes and changes it in these places:
+
+- **§1 (system agent and app agents).** The system agent talks to app agents through octos's peer mechanism (`peer_send_input`, the blackboard, `peer_respond`). A turn it starts on an app peer must run with the app's tools, memory and context; octos#2567 as written gives kernel continuations none, so OctoSense asks octos for originator-driven host turns and, until then, the shell relays those turns (ADR 0004 §6).
+- **§4 (tools).** The system agent does not call app tools to make changes: it delegates to the owning app's agent, which acts with its own tools and, where granted, other apps' shareable tools. The shell routes those cross-app calls. Read-only questions may use shareable read tools directly (proposed). ADR 0004 §7.
+- **§7 and §8 (cards).** App agents publish with `glance.publish` themselves; the system agent curates and announces completed cross-app requests. A card and its follow-up conversation are kept by reference (card and context id) by the app's host service.
+- **§10 (approvals).** "Only the person approves" becomes "only the person approves, **live or in advance through standing rules the shell enforces**; never the system agent". The system agent may batch one request's approvals into one sheet in its chat. Standing rules are per app and tool, conditioned, capped, time-boxed at their broadest, notified and audited; tools marked `auto_approvable: false`, unknown outcomes and (by default) runs started by incoming content always ask. ADR 0004 §8.
+- **§12 (native modules and script apps).** How each hosting kind reaches its agent (injection, the peer link, `host.request`) is ADR 0004 §4 and §5; every app's agent needs the person's consent at first use.
+- **§13 (autonomy).** Adds the `auto_approvable` flag and the incoming-content rule.
