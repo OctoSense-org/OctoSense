@@ -25,7 +25,7 @@ This page is about the assistant *inside* OctoSense. Building an app needs no AI
 | The shell's AI entry point (`start`, policy, per-instance offer, QR import) | Works today | [`crates/ai-host`](../crates/ai-host/README.md) |
 | Host-owned app peers: one octos peer per granted native app, owned by the system agent | Works today, for native modules (Rinx) | [`crates/app-peers`](../crates/app-peers/README.md), [Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) |
 | AppCard ("Ask anything") on the shell's kernel | Works today, opt-in (`--features app-appcard`), not shipped | [`apps/appcard`](../apps/appcard) |
-| A contained script app (system or store) asking the assistant | **Not available.** No shell serves `octos.*` to the Card runner, and `llm` is provider management for `os.*` apps only | [below](#contained-script-apps-system-and-store) |
+| A contained script app (system or store) asking the assistant | Available where the shell hosts a kernel: the `octos` host service gives each app its own peer (`card.<app id>`); tool approvals are declined until the Card runner has an approval sheet. `llm` stays provider management for `os.*` apps only | [below](#contained-script-apps-system-and-store) |
 | One-shot model calls for contained apps (`model`, `model.complete`) | Coming: the capability is merged in App Hub ([App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)); the OctoSense `model` service is not written yet | [below](#contained-script-apps-system-and-store) |
 | News data service (`news`, no model) | Merged ([#69](https://github.com/OctoSense-org/OctoSense/pull/69)); answers `os.*` apps only | [`apps/news/host-service`](../apps/news/host-service/README.md) |
 | `glance.publish`: L0 cards on the glance screen | Merged ([#72](https://github.com/OctoSense-org/OctoSense/pull/72)); contained apps cannot reach it yet. In progress: the `glance` capability ([#86](https://github.com/OctoSense-org/OctoSense/pull/86)) and `sys.digest` sources ([#87](https://github.com/OctoSense-org/OctoSense/pull/87)) | [`crates/shell/src/glance.rs`](../crates/shell/src/glance.rs) |
@@ -42,7 +42,7 @@ flowchart TB
     llm["llm host service<br/>writes the provider profile"]
     aihost["crates/ai-host<br/>start, policy, offer"]
     broker["crates/app-peers broker<br/>one peer per granted native app"]
-    runner["Card runner (App Hub)<br/>host services: mail, news, glance, llm"]
+    runner["Card runner (App Hub)<br/>host services: mail, news, glance, llm, octos"]
     rinx["Rinx (native module)"]
     appcard["AppCard (native, opt-in)"]
     scripts["Script apps (system and store)"]
@@ -163,18 +163,22 @@ A script app runs in App Hub's Card runner and reaches the shell only through `h
 | `news` | `os.*` apps only | News's data service (feeds, ledger, `news.list`, `news.read`, …); no model. The shells' App Hub pin has no `news` capability yet, so the News bundle still fetches on its own |
 | `glance` | `os.*` apps only, and no manifest can request `glance` at the shells' App Hub pin | Publishing L0 cards to the glance screen. Today only the shell's `OCTOSENSE_GLANCE_DEMO=1` card reaches it; the capability is [#86](https://github.com/OctoSense-org/OctoSense/pull/86) |
 | `model` | – | **Not registered yet.** App Hub `main` admits the `model` capability ([App-Hub#24](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/24)) for a one-shot `model.complete {task, input, schema, class}` (`class` `fast` or `strong`; the host picks the model from the person's providers, validates the reply against the schema, keeps a per-app daily budget; no tools or memory). The OctoSense service is still to come; a call answers `no service answers "model" on this device` (run in `card-host` at App Hub `e8601b8`), and the shells' App Hub pin does not know the name |
-| `octos.*` | – | **Not registered.** App Hub's gate accepts the four `octos.*` names ([App-Hub#14](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/14)), but in an OctoSense shell a call answers `no service answers "octos" on this device` |
+| `octos` | any app whose manifest declares the exact `octos.*` names, while the shell hosts a kernel and `Policy::contained_apps` is on (off in the shipped policy until first-use consent lands, ADR 0004 section 4; set `OCTOSENSE_CONTAINED_APPS=1` to try it) | The assistant, through the app's own host-owned peer `card.<app id>` (`crates/ai-host/src/contained.rs`): the four `octos.*` calls with Rinx's argument rules (`octos.turn.start` takes only `text`, non-blank, at most 32 KiB; the others take `{}`). Tool approvals the peer raises are declined, since the Card runner has no approval sheet yet, and listed in the reply's `denied_approvals`; replies over 2 MiB are refused |
 
-So **a contained app has no path to the assistant in OctoSense today**, whether a store app or a system app. What it hears:
+So a contained app, store or system, reaches the assistant only through `octos.*`, in a shell that hosts a kernel. What it hears:
 
-| Call | Answer (`r.error`) |
+| Call | Answer |
 | --- | --- |
-| a family the manifest did not grant | `this app was not granted "<family>", which "<service>" needs` (at once, from the isolate) |
-| `octos.*` with the capability granted | `no service answers "octos" on this device` |
+| a family the manifest did not grant | `r.error`: `this app was not granted "<family>", which "<service>" needs` (at once, from the isolate) |
+| `octos.turn.start {text}`, granted, kernel and provider configured | `r.data`: `{turn_id, text}`, the reply of the app's peer |
+| `octos.*` with arguments beyond the rules | `r.error`: `Unsupported Octos arguments`, or `Provide text (at most 32 KiB)` |
+| `octos.*` with `Policy::contained_apps` off | `r.error`: `The assistant is turned off for apps on this device` |
+| `octos.*` on a desktop without `OCTOS_APP_CORE_BIN` | `r.error`: `no octos kernel: no kernel binary configured (OCTOS_APP_CORE_BIN)` |
+| `octos.*` in a build that links no kernel (iOS) | `r.error`: `no service answers "octos" on this device` (**unverified**) |
 | `llm.*` from a store app granted `llm` | `llm is for OctoSense's own apps.` |
 | anything in App Hub's `card-host` | `no service answers "<family>" on this device` (`card-host` registers no services) |
 
-The first two rows and the last were run in `card-host` (App Hub `362d832`) on 2026-09-27; the shells use the same dispatch (`octosense_appstore::services::dispatch`) with the services above registered. OctoScript-App-Design-Flow's [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md) has the example app and the argument and answer shapes of the four `octos.*` calls as Rinx serves them.
+The first row, the `llm` row and the `card-host` row were run in `card-host` (App Hub `362d832`) on 2026-09-27. The reply, the unsupported-arguments answer and the missing-kernel answer were run on macOS on 2026-09-28 in a release desktop with hidden windows, through a system app declaring `octos.session.open` and `octos.turn.start` opened from the launcher; with a kernel built at the then-pinned octos `7bec0918` and the person's provider, the reply came from the peer `card.<app id>`, whose memory namespace `app/card.<app id>/…` appeared in the kernel's data. The text-length and switch-off answers are covered by `cargo test -p octosense-ai-host`, through the same dispatch. OctoScript-App-Design-Flow's [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md) has the example app and the argument and answer shapes of the four `octos.*` calls as Rinx serves them.
 
 The manifest's `agent` field (a permission profile, generic tools, iteration and token limits) is admitted and clamped by App Hub, but **nothing in the shells runs an agent for it**, and Rinx refuses to import a bundle that declares one. An app must not depend on it.
 
@@ -224,7 +228,7 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
    The log says `octos: kernel service ready (starts on first use), core dir …`. Without `OCTOS_APP_CORE_BIN` it says there is no kernel, and AI providers still saves providers.
 
 3. Open **Start → Settings → AI providers**, add a model (family, model, route, key, **Test connection**, save). The profile is `$T/octos-home/.octos/profiles/_main.json`; with the file vault the key is in it, so delete `$T` afterwards.
-4. Use the assistant through a consumer: Rinx (linked by default; `-- --module rinx` opens it; sign in to Matrix, then use its assistant), or AppCard (`--features app-appcard -- --module appcard`). A contained app cannot reach it ([above](#contained-script-apps-system-and-store)).
+4. Use the assistant through a consumer: Rinx (linked by default; `-- --module rinx` opens it; sign in to Matrix, then use its assistant), or AppCard (`--features app-appcard -- --module appcard`). A contained app reaches it through the `octos` host service ([above](#contained-script-apps-system-and-store)).
 
 **Hidden windows.** Add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>` to drive the shell over the remote bridge without taking the screen ([desktop README § Remote-control bridge](../desktop/README.md#remote-control-bridge)). `desktop/scripts/ai_providers_remote.sh` runs AI providers end to end this way with fake keys and outbound HTTPS denied, and `desktop/scripts/glance_remote.sh` does the same for the glance panel.
 
