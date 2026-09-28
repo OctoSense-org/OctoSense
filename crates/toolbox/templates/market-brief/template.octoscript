@@ -1,0 +1,91 @@
+use mod.research
+use mod.std.array
+use mod.std.text
+
+// Market brief (adapted from the experiment's stock workflow, which read a
+// quote, a baseline and headlines concurrently): one news search per symbol,
+// all started together, the top articles per symbol read concurrently, then
+// one brief with citations. v1 has no quote method: prices appear only as
+// the cited sources state them.
+let searches = []
+for entry in request.symbols {
+    array.push(searches, research.search({topic: entry.name + " " + entry.symbol + " stock", language: request.search_language, limit: request.per_symbol, max_age_hours: request.max_age_hours}))
+}
+let symbols = []
+let reads = []
+let read_symbols = []
+let reasons = []
+let index = 0
+for pending in searches {
+    let entry = request.symbols[index]
+    let found = try pending.await() catch nil
+    if found == nil {
+        array.push(reasons, "symbol " + entry.symbol + ": the search failed")
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: 0, read: 0})
+    } else {
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: array.len(found.items), read: 0})
+        if array.len(found.items) == 0 {
+            array.push(reasons, "symbol " + entry.symbol + ": nothing found")
+        }
+        for item in found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_symbols, index)
+        }
+    }
+    index = index + 1
+}
+
+let ids = []
+let sources = []
+let missing = 0
+index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    let s = read_symbols[index]
+    if article == nil {
+        missing = missing + 1
+    } else {
+        symbols[s].read = symbols[s].read + 1
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, symbol: symbols[s].symbol, title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let names = []
+for entry in request.symbols {
+    array.push(names, entry.name + " (" + entry.symbol + ")")
+}
+let task = "brief"
+if array.len(request.symbols) > 1 {
+    task = "compare"
+}
+let brief = nil
+if array.len(ids) > 0 {
+    let focus = "What recent news says about " + text.join(names, ", ") + ": developments and the risks the sources name. No price predictions or advice."
+    let resolved = try research.digest({task: task, language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    brief = resolved
+}
+// Ready when every symbol was read and the brief kept every point. A failed
+// read matters only when it leaves a symbol unread; a suspended provider is
+// in the diagnostics.
+for entry in symbols {
+    if entry.found > 0 && entry.read == 0 {
+        array.push(reasons, "symbol " + entry.symbol + ": no article read (" + entry.found + " failed)")
+    }
+}
+if array.len(ids) > 0 && brief == nil {
+    array.push(reasons, "the brief failed; the sources are listed without it")
+}
+if brief != nil && brief.dropped_points > 0 {
+    array.push(reasons, "the brief dropped " + brief.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if array.len(ids) == 0 {
+    status = "failed"
+    array.push(reasons, "no article was read")
+}
+{status: status, reasons: reasons, data: {symbols: symbols, language: request.language, brief: brief, sources: sources, missing: missing}}

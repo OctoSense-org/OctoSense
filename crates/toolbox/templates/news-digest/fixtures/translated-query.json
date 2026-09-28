@@ -1,0 +1,149 @@
+{
+  "name": "translated-query",
+  "params": {
+    "language": "zh-CN",
+    "limit": 3,
+    "search_language": "en",
+    "topic": "城市基础设施",
+    "translate_query": true
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "city infrastructure",
+        "language": "en",
+        "delay_ms": 40,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/news/buses",
+            "title": "Harbor City approves electric bus order",
+            "source": "Harbor Daily",
+            "language": "en",
+            "published_at": "2026-09-19T10:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/news/libraries",
+            "title": "Ocho bibliotecas amplían su horario durante un piloto",
+            "source": "Diario de Puerto Claro",
+            "language": "es",
+            "published_at": "2026-09-19T08:30:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/news/water",
+            "title": "Water utility reports early leak-detection results",
+            "source": "Clearwater Courier",
+            "language": "en",
+            "published_at": "2026-09-18T16:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/news/buses": {
+        "text": "Harbor City's council approved an order for 120 electric buses on Tuesday. The city will spend $18 million from an existing transport fund, with no increase in fares planned. Deliveries are scheduled to begin in March 2027 and finish by December 2027.",
+        "title": null,
+        "delay_ms": 120,
+        "error": null
+      },
+      "https://example.invalid/news/libraries": {
+        "text": "Ocho bibliotecas de Puerto Claro abrirán los domingos durante un programa piloto de tres meses. El piloto comenzará el 4 de octubre de 2026 y tendrá un presupuesto de 240.000 euros.",
+        "title": null,
+        "delay_ms": 60,
+        "error": null
+      },
+      "https://example.invalid/news/water": {
+        "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks in the city water network across two districts. Water loss in those districts was 12% lower than in the same months last year.",
+        "title": null,
+        "delay_ms": 90,
+        "error": null
+      }
+    },
+    "translations": {
+      "城市基础设施": "city infrastructure"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "digest": {
+        "dropped_points": 0,
+        "language": "zh-CN",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "s72ee00603e06"
+            ],
+            "text": "Harbor City's council approved an order for 120 electric buses on Tuesday."
+          },
+          {
+            "citations": [
+              "s39327104dbcc"
+            ],
+            "text": "Ocho bibliotecas de Puerto Claro abrirán los domingos durante un programa piloto de tres meses."
+          },
+          {
+            "citations": [
+              "s3820b1dec583"
+            ],
+            "text": "Clearwater Utilities reported that a six-month sensor pilot detected 43 underground leaks in the city water network across two districts."
+          }
+        ],
+        "summary": "Sources: Harbor City approves electric bus order; Ocho bibliotecas amplían su horario durante un piloto; Water utility reports early leak-detection results",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "zh-CN",
+      "missing": 0,
+      "off_topic": 0,
+      "sources": [
+        {
+          "evidence_sha256": "d7006e8135e503bb16aedc89b4f5e6848da09c42d82097795a84fcbc609d8ba8",
+          "id": "s72ee00603e06",
+          "published_at": "2026-09-19T10:00:00Z",
+          "source": "Harbor Daily",
+          "title": "Harbor City approves electric bus order",
+          "url": "https://example.invalid/news/buses"
+        },
+        {
+          "evidence_sha256": "fb9bd23cf16648691f79ed6f64b5add1fb35506cf838dac8785f428be7c102bd",
+          "id": "s39327104dbcc",
+          "published_at": "2026-09-19T08:30:00Z",
+          "source": "Diario de Puerto Claro",
+          "title": "Ocho bibliotecas amplían su horario durante un piloto",
+          "url": "https://example.invalid/news/libraries"
+        },
+        {
+          "evidence_sha256": "df81c69700483080f018a0650f903a899908bc9c302881f1a58a4e70199c730a",
+          "id": "s3820b1dec583",
+          "published_at": "2026-09-18T16:00:00Z",
+          "source": "Clearwater Courier",
+          "title": "Water utility reports early leak-detection results",
+          "url": "https://example.invalid/news/water"
+        }
+      ],
+      "topic": "城市基础设施",
+      "unreadable": 0
+    }
+  }
+}

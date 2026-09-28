@@ -6,7 +6,8 @@
 #              `octosense-home`; the APK keeps the dev.makepad.octosense id)
 #   crates/    shell (octosense-shell: window manager, hosting, phone layer —
 #              both packages link it) and its services: ai-host, kernel,
-#              app-peers
+#              app-peers, toolbox (workflow templates; not linked by the
+#              shells yet)
 #   apps/      system apps and their host services, native modules, AppCard
 #
 # Every external dependency is pinned ONCE, below, in [workspace.dependencies];
@@ -24,6 +25,7 @@ members = [
     "crates/app-peers",
     "crates/ai-host",
     "crates/shell",
+    "crates/toolbox",
     "apps/reference",
     "apps/news/native",
     "apps/photos/native",
@@ -73,6 +75,11 @@ makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "
 # --- OctoScript (Octoscript 68f6a9df) and its Makepad runtime
 # (Octoscript-Makepad 65d30a09, native-runtime.lock.json).
 octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "68f6a9df55692b5d8ef8873a12721e279a3f40d6" }
+# The bounded VM, capability-leased host modules and executable JSON schemas
+# (the system toolbox's workflow templates, crates/toolbox).
+octoscript-core = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "68f6a9df55692b5d8ef8873a12721e279a3f40d6" }
+octoscript-capabilities = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "68f6a9df55692b5d8ef8873a12721e279a3f40d6" }
+octoscript-schema = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "68f6a9df55692b5d8ef8873a12721e279a3f40d6" }
 octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6351524b77a49a382c96373d7bfe6a105f142dbc" }
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6351524b77a49a382c96373d7bfe6a105f142dbc" }
 # --- App Hub: the shells' store/Card runner/system apps crate and the host
@@ -97,6 +104,7 @@ octosense-kernel = { path = "crates/kernel" }
 octosense-app-peers = { path = "crates/app-peers" }
 octosense-ai-host = { path = "crates/ai-host" }
 octosense-shell = { path = "crates/shell" }
+octosense-toolbox = { path = "crates/toolbox" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
@@ -205,6 +213,8 @@ octoscript-ui-l0 = { path = ".sources/octoscript/crates/octoscript-ui-l0" }
 # octos-research (metasearch) runs its engines on the bounded OctoScript
 # core; it resolves to the same checkout, so the graph keeps one OctoScript.
 octoscript-core = { path = ".sources/octoscript/crates/octoscript-core" }
+octoscript-capabilities = { path = ".sources/octoscript/crates/octoscript-capabilities" }
+octoscript-schema = { path = ".sources/octoscript/crates/octoscript-schema" }
 
 [patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
 octoscript-makepad = { path = ".sources/octoscript-makepad/crates/octoscript-makepad" }

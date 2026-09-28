@@ -1,0 +1,227 @@
+use mod.research
+use mod.std.array
+
+// Topic brief across languages: search terms per language (the topic, or its
+// translation), one search per language, then reads chosen so that every
+// language is read whenever it found a readable article on the topic, then
+// one digest with citations.
+
+// 1. Every translation starts before any is awaited.
+let translations = []
+for entry in request.languages {
+    if entry.translate {
+        array.push(translations, research.query({query: request.topic, language: entry.language}))
+    } else {
+        array.push(translations, nil)
+    }
+}
+
+// 2. Each language's search starts as soon as its terms are known. It asks
+// for enough results to fill `read_top` alone, in case the other languages
+// have nothing readable.
+let search_limit = request.per_language
+if request.read_top > search_limit {
+    search_limit = request.read_top
+}
+let searches = []
+let queries = []
+let reasons = []
+let index = 0
+for entry in request.languages {
+    let terms = request.topic
+    let pending = translations[index]
+    if pending != nil {
+        let translated = try pending.await() catch nil
+        if translated != nil {
+            terms = translated.query
+        } else {
+            array.push(reasons, "language " + entry.language + ": the query translation failed; searched the topic as given")
+        }
+    }
+    array.push(queries, {language: entry.language, terms: terms, found: 0, unreadable: 0, read: 0, off_topic: 0, failed: 0, left: 0})
+    array.push(searches, research.search({topic: terms, language: entry.language, limit: search_limit, max_age_hours: request.max_age_hours}))
+    index = index + 1
+}
+
+// 3. Each language's candidates: its readable results, in the host's order,
+// each article once across languages. Results the backend cannot read (it
+// says so with `readable: false`) are counted and skipped, not read. A
+// provider that failed or was suspended while others answered
+// (`source.partial`) is in the diagnostics; it does not make the brief
+// incomplete.
+let pools = []
+let cursors = []
+let seen = []
+let searched = []
+index = 0
+for pending in searches {
+    let found = try pending.await() catch nil
+    let pool = []
+    array.push(searched, found != nil)
+    if found == nil {
+        array.push(reasons, "language " + queries[index].language + ": the search failed")
+    } else {
+        queries[index].found = array.len(found.items)
+        for item in found.items {
+            if array.contains(seen, item.id) == false {
+                array.push(seen, item.id)
+                if item.readable {
+                    array.push(pool, item.id)
+                } else {
+                    queries[index].unreadable = queries[index].unreadable + 1
+                }
+            }
+        }
+    }
+    array.push(pools, pool)
+    array.push(cursors, 0)
+    index = index + 1
+}
+
+// 4. Read in rounds. Each round starts its reads together: first one for
+// every language not read yet, then round-robin until `read_top` would be
+// reached, at most `per_language` candidates from one language. When no
+// language has a candidate left within that share and `read_top` still has
+// room, the share is lifted: the unused budget goes to the languages that
+// have more readable results. A failed or off-topic read (the host says
+// `on_topic: false` when the page does not mention the search's terms) is
+// replaced in the next round by that language's next candidate. Attempts
+// are capped at `read_top` plus one per language.
+let languages = array.len(request.languages)
+let max_attempts = request.read_top + languages
+let attempts = 0
+let share = request.per_language
+let ids = []
+let sources = []
+let source_languages = []
+let missing = 0
+while array.len(ids) < request.read_top && attempts < max_attempts {
+    let order = []
+    for l in array.range(0, languages) {
+        if queries[l].read == 0 {
+            array.push(order, l)
+        }
+    }
+    for l in array.range(0, languages) {
+        if queries[l].read > 0 {
+            array.push(order, l)
+        }
+    }
+    let want = request.read_top - array.len(ids)
+    if want > max_attempts - attempts {
+        want = max_attempts - attempts
+    }
+    let batch = []
+    let batch_languages = []
+    let picked = true
+    while picked && array.len(batch) < want {
+        picked = false
+        for l in order {
+            if array.len(batch) < want && cursors[l] < array.len(pools[l]) && cursors[l] < share {
+                array.push(batch, research.article({id: pools[l][cursors[l]]}))
+                array.push(batch_languages, l)
+                cursors[l] = cursors[l] + 1
+                picked = true
+            }
+        }
+        if picked == false && share < search_limit {
+            share = search_limit
+            picked = true
+        }
+    }
+    if array.len(batch) == 0 {
+        break
+    }
+    attempts = attempts + array.len(batch)
+    index = 0
+    for pending in batch {
+        let l = batch_languages[index]
+        let article = try pending.await() catch nil
+        if article == nil {
+            missing = missing + 1
+            queries[l].failed = queries[l].failed + 1
+        } elif article.on_topic == false {
+            queries[l].off_topic = queries[l].off_topic + 1
+        } else {
+            queries[l].read = queries[l].read + 1
+            array.push(ids, article.id)
+            array.push(source_languages, l)
+            array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+        }
+        index = index + 1
+    }
+}
+
+// 5. One digest in the reader's language, citing article ids. The model
+// also marks articles that are not about the topic; those leave the
+// sources and count as off topic for their language.
+let brief = nil
+if array.len(ids) > 0 {
+    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
+    brief = resolved
+}
+if brief != nil {
+    let kept = []
+    index = 0
+    for source in sources {
+        let l = source_languages[index]
+        if array.contains(brief.off_topic, source.id) {
+            queries[l].off_topic = queries[l].off_topic + 1
+            queries[l].read = queries[l].read - 1
+        } else {
+            array.push(kept, source)
+        }
+        index = index + 1
+    }
+    sources = kept
+}
+
+// The status says whether the brief is complete, and `reasons` why not:
+// - ready: every language that had a readable candidate was read, and the
+//   run read `read_top` articles or ran out of candidates, and the digest
+//   kept every point. Failed reads that another candidate replaced,
+//   unreadable or off-topic results, and suspended providers are counted in
+//   `queries` and the diagnostics, not held against it.
+// - partial: a search or translation failed; a language with readable
+//   candidates has no read (its reads failed, or candidates were left
+//   untried); fewer than `read_top` articles were kept while readable
+//   candidates remained; the digest failed or dropped points.
+// - failed: nothing on the topic was read, so there is no brief and no
+//   source.
+let left_total = 0
+index = 0
+for query in queries {
+    let left = array.len(pools[index]) - cursors[index]
+    queries[index].left = left
+    left_total = left_total + left
+    if searched[index] && query.read == 0 && (query.failed > 0 || left > 0) {
+        array.push(reasons, "language " + query.language + ": no article read (" + query.failed + " failed, " + left + " readable left untried)")
+    }
+    index = index + 1
+}
+if array.len(sources) > 0 && array.len(sources) < request.read_top && left_total > 0 {
+    array.push(reasons, "read " + array.len(sources) + " of " + request.read_top + " articles while " + left_total + " readable candidates remained")
+}
+if array.len(ids) > 0 && brief == nil {
+    array.push(reasons, "the digest failed; the sources are listed without a brief")
+}
+if brief != nil && brief.dropped_points > 0 {
+    array.push(reasons, "the digest dropped " + brief.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if array.len(sources) == 0 && brief == nil {
+    status = "failed"
+    let found_total = 0
+    for query in queries {
+        found_total = found_total + query.found
+    }
+    if found_total == 0 {
+        array.push(reasons, "nothing was found in any language")
+    } else {
+        array.push(reasons, "no article on the topic was read (" + missing + " reads failed)")
+    }
+}
+{status: status, reasons: reasons, data: {topic: request.topic, language: request.language, queries: queries, brief: brief, sources: sources, missing: missing}}

@@ -1,0 +1,41 @@
+# octosense-toolbox — the system toolbox's workflow template library (ADR 0002
+# section 6, "Workflow templates"): OctoScript procedures with a manifest, run
+# in the bounded OctoScript VM with only their declared host modules, every
+# module call dispatched to the caller's `ToolboxHost` under the calling app's
+# identity, grants, scope and budget.
+#
+# Features:
+# - `live`: the interim `mod.research` adapter (feeds, Google News RSS, GDELT,
+#   plain-HTTP article reading) until the octos research engine lands.
+[package]
+name = "octosense-toolbox"
+description = "OctoSense system toolbox: workflow template library, runner, forks and evaluation"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+live = ["dep:reqwest", "dep:quick-xml", "dep:dom_smoothie", "dep:url"]
+
+[dependencies]
+octoscript-core = { workspace = true }
+octoscript-capabilities = { workspace = true }
+octoscript-schema = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+tokio = { workspace = true }
+sha2 = "0.10"
+reqwest = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+quick-xml = { version = "0.37", optional = true }
+dom_smoothie = { version = "0.18", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,179 @@
+{
+  "name": "two-symbols",
+  "params": {
+    "language": "en",
+    "symbols": [
+      {
+        "name": "Northwind Semiconductors",
+        "symbol": "NRTH"
+      },
+      {
+        "name": "Contoso Chips",
+        "symbol": "CNTS"
+      }
+    ]
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Northwind Semiconductors NRTH stock",
+        "language": "en",
+        "delay_ms": 45,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/markets/northwind-fab",
+            "title": "Northwind delays second fab by six months",
+            "source": "Market Wire",
+            "language": "en",
+            "published_at": "2026-09-19T14:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/markets/northwind-orders",
+            "title": "Northwind reports record data-center orders",
+            "source": "Chip Journal",
+            "language": "en",
+            "published_at": "2026-09-18T15:30:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Contoso Chips CNTS stock",
+        "language": "en",
+        "delay_ms": 35,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/markets/contoso-export",
+            "title": "Contoso Chips faces new export review",
+            "source": "Market Wire",
+            "language": "en",
+            "published_at": "2026-09-19T11:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/markets/contoso-export": {
+        "text": "Contoso Chips said regulators opened a review of its export licences for two product lines. The company said the lines account for about 8% of sales.",
+        "title": null,
+        "delay_ms": 60,
+        "error": null
+      },
+      "https://example.invalid/markets/northwind-fab": {
+        "text": "Northwind Semiconductors said its second fabrication plant will open six months later than planned, citing equipment delivery delays. The company kept its annual revenue guidance unchanged.",
+        "title": null,
+        "delay_ms": 70,
+        "error": null
+      },
+      "https://example.invalid/markets/northwind-orders": {
+        "text": "Northwind reported record orders from data-center customers in the third quarter. Analysts quoted in the report cautioned that orders may not convert to revenue until 2027.",
+        "title": null,
+        "delay_ms": 100,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "brief": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "s2b9965416f88"
+            ],
+            "text": "Northwind Semiconductors said its second fabrication plant will open six months later than planned, citing equipment delivery delays."
+          },
+          {
+            "citations": [
+              "sc7a4b3751db8"
+            ],
+            "text": "Northwind reported record orders from data-center customers in the third quarter."
+          },
+          {
+            "citations": [
+              "sf8561bf15e50"
+            ],
+            "text": "Contoso Chips said regulators opened a review of its export licences for two product lines."
+          }
+        ],
+        "summary": "Sources: Northwind delays second fab by six months; Northwind reports record data-center orders; Contoso Chips faces new export review",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "compare"
+      },
+      "language": "en",
+      "missing": 0,
+      "sources": [
+        {
+          "evidence_sha256": "b30ab5a34687677de22116b935595abb40d0f98fa9ea13c7105315c04d628810",
+          "id": "s2b9965416f88",
+          "published_at": "2026-09-19T14:00:00Z",
+          "source": "Market Wire",
+          "symbol": "NRTH",
+          "title": "Northwind delays second fab by six months",
+          "url": "https://example.invalid/markets/northwind-fab"
+        },
+        {
+          "evidence_sha256": "aab8c2f7e86e2bcc911dc8db8b44f38c43331235e71ec80b3b77a342e354ce42",
+          "id": "sc7a4b3751db8",
+          "published_at": "2026-09-18T15:30:00Z",
+          "source": "Chip Journal",
+          "symbol": "NRTH",
+          "title": "Northwind reports record data-center orders",
+          "url": "https://example.invalid/markets/northwind-orders"
+        },
+        {
+          "evidence_sha256": "588df74a9a3011af013c97dc7a51291ab1f7a5df48f7e7729949b15febab3bf1",
+          "id": "sf8561bf15e50",
+          "published_at": "2026-09-19T11:00:00Z",
+          "source": "Market Wire",
+          "symbol": "CNTS",
+          "title": "Contoso Chips faces new export review",
+          "url": "https://example.invalid/markets/contoso-export"
+        }
+      ],
+      "symbols": [
+        {
+          "found": 2,
+          "name": "Northwind Semiconductors",
+          "read": 2,
+          "symbol": "NRTH"
+        },
+        {
+          "found": 1,
+          "name": "Contoso Chips",
+          "read": 1,
+          "symbol": "CNTS"
+        }
+      ]
+    }
+  }
+}

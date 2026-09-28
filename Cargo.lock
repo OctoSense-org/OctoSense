@@ -7179,6 +7179,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "octoscript-capabilities"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "getrandom 0.3.4",
+ "makepad-script",
+ "octoscript-core",
+ "octoscript-protocol",
+ "octoscript-schema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "octoscript-core"
 version = "0.1.0"
 dependencies = [
@@ -7201,11 +7215,29 @@ name = "octoscript-node"
 version = "0.1.0"
 
 [[package]]
+name = "octoscript-protocol"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "constant_time_eq 0.4.2",
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "octoscript-render"
 version = "0.1.0"
 dependencies = [
  "makepad-script",
  "octoscript-node",
+ "serde_json",
+]
+
+[[package]]
+name = "octoscript-schema"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 
@@ -7495,6 +7527,25 @@ dependencies = [
  "rinx",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-toolbox"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dom_smoothie",
+ "futures-util",
+ "octoscript-capabilities",
+ "octoscript-core",
+ "octoscript-schema",
+ "quick-xml",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "url",
 ]
 
 [[package]]

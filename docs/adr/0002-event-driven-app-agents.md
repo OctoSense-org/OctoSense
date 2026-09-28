@@ -88,6 +88,20 @@ Gathering information beyond an app's own data (searching, deep research, crawli
 
 **Granted per app, scoped.** An app asks for `research` and/or `crawl` in its manifest, with a scope: languages, regions, allowed or denied domains, maximum depth and pages, recency. App Hub checks and pins the request; the person or the store grants it, possibly narrower. The kernel offers the app's peer only the granted toolbox tools (the peer's registered tool set), and the host checks every call against the app's scope before running it.
 
+**The scope is octos's `Scope`.** The grant's scope schema is exactly `octos_research::toolbox::Scope` (octos#2585), with its field names and units; OctoSense has no parallel definition. Unknown fields are refused. Empty lists mean no restriction.
+
+| Field | Meaning |
+|---|---|
+| `langs` | BCP-47 languages the app may search in (normalized on load) |
+| `regions` | ISO 3166-1 alpha-2 regions |
+| `domains_allow`, `domains_deny` | domains results and reads must stay inside, and must avoid (subdomains included) |
+| `max_age_days` | oldest material the app may ask for, in days; a search asking for older is clamped |
+| `categories` | metasearch categories (`news`, `general`, `science`, `it`, `social`) |
+| `max_results` | most results per search (default 20) |
+| `max_depth`, `max_pages` | the `crawl` capability's limits for one `deep_crawl`; 0 means crawling is not granted |
+
+The host parses a grant with `Scope::from_grant` and narrows every call with its methods (`search_args`, `research_args`, `crawl_args`, `check_domain`), the same rules octos applies to its own toolbox tools. **How much one run may do is not part of the grant:** a run's budget (articles read, `max_reads`; host calls; model calls; wall-clock time; concurrency) belongs to the workflow template, narrowed by the app's own budget. `max_pages` in the scope counts pages of one crawl, never articles a template reads.
+
 **Executed by the host, charged to the app.** Toolbox calls are host-routed tools: the kernel sends the call to the host, which runs the engine with the app's scope and budget and writes the results as **structured items** (title, URL, source, language, date, summary, citations) into the **calling app's folder**, returning a summary and item references to the agent. The system agent charges the work to the app's budget, runs heavy jobs when it is cheap (charging, Wi-Fi), and can queue or batch jobs across apps.
 
 **One policy, enforced once.** Because every app goes through the toolbox, the rules below are implemented in one place and cannot be bypassed by an app:

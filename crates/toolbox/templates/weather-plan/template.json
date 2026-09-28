@@ -1,0 +1,44 @@
+{
+  "id": "weather-plan",
+  "version": "1.1.0",
+  "title": "Weather plan",
+  "description": "Search published forecasts and air-quality reports for a place concurrently, read them concurrently and write a plan for an activity over the next days, with citations. v1 reads published forecasts through research.search; structured weather APIs arrive with the research engine's providers. Ready when a forecast and an air-quality report were read and the plan kept every point; partial, with the reasons, without air quality or when the plan failed or dropped points; failed without a forecast.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["location", "language"],
+    "properties": {
+      "location": {"type": "string", "minLength": 1, "maxLength": 80, "description": "A place name, for example \"Kyoto\"."},
+      "language": {"type": "string", "minLength": 2, "maxLength": 16, "description": "BCP 47 tag of the plan's language."},
+      "activity": {"type": "string", "minLength": 1, "maxLength": 80, "default": "outdoor sightseeing"},
+      "days": {"type": "integer", "minimum": 1, "maximum": 7, "default": 3},
+      "search_language": {"type": "string", "minLength": 2, "maxLength": 16, "default": "en"},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 3, "default": 2, "description": "Forecast pages to read."},
+      "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 168, "default": 48}
+    }
+  },
+  "modules": [{"module": "research", "methods": ["search", "article", "digest"]}],
+  "budget": {"max_calls": 7, "max_model_calls": 1, "max_reads": 6, "max_ms": 60000, "max_concurrency": 4},
+  "output": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["location", "activity", "days", "language", "plan", "sources", "missing"],
+    "properties": {
+      "location": {"type": "string"},
+      "activity": {"type": "string"},
+      "days": {"type": "integer"},
+      "language": {"type": "string"},
+      "plan": {"description": "research.digest's result (task plan), or null without a forecast."},
+      "sources": {"type": "array", "maxItems": 4, "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "kind", "title", "url", "source", "published_at", "evidence_sha256"],
+        "properties": {
+          "id": {"type": "string"}, "kind": {"type": "string", "enum": ["forecast", "air_quality"]},
+          "title": {"type": "string"}, "url": {"type": "string"}, "source": {"type": "string"},
+          "published_at": {"type": "string"}, "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64}
+        }}},
+      "missing": {"type": "integer", "minimum": 0}
+    }
+  },
+  "provenance": true
+}

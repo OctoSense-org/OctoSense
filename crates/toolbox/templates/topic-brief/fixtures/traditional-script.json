@@ -1,0 +1,208 @@
+{
+  "name": "traditional-script",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "zh",
+        "translate": true
+      }
+    ],
+    "max_age_hours": 72,
+    "per_language": 2,
+    "read_top": 3,
+    "topic": "typhoon"
+  },
+  "fixture": {
+    "now": "2026-09-27T08:00:00Z",
+    "searches": [
+      {
+        "topic": "typhoon",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/en/typhoon-landfall",
+            "title": "Typhoon Haikui nears Guangdong",
+            "source": "Coastal News",
+            "language": "en",
+            "published_at": "2026-09-26T12:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "台风",
+        "language": "zh",
+        "delay_ms": 20,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/zh-hant/typhoon",
+            "title": "海葵逼近廣東沿海",
+            "source": "中文新聞",
+            "language": "zh",
+            "published_at": "2026-09-26T11:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/zh-hant/beijing-rain",
+            "title": "北京週末暴雨預警",
+            "source": "中文新聞",
+            "language": "zh",
+            "published_at": "2026-09-26T10:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/zh-hant/fishermen",
+            "title": "漁民陸續返港",
+            "source": "中文新聞",
+            "language": "zh",
+            "published_at": "2026-09-26T09:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/en/typhoon-landfall": {
+        "text": "Typhoon Haikui is expected to make landfall in Guangdong on Sunday with winds of 160 km/h.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/zh-hant/beijing-rain": {
+        "text": "北京週末將迎來暴雨，氣象部門發佈黃色預警。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/zh-hant/fishermen": {
+        "text": "颱風過後，漁民陸續返港檢查漁船。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/zh-hant/typhoon": {
+        "text": "超強颱風海葵預計週日在廣東登陸，最大風速每小時160公里。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {
+      "typhoon": "台风"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "brief": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "sabc82ec42d77"
+            ],
+            "text": "Typhoon Haikui is expected to make landfall in Guangdong on Sunday with winds of 160 km/h."
+          },
+          {
+            "citations": [
+              "s9829ca0d332b"
+            ],
+            "text": "超強颱風海葵預計週日在廣東登陸，最大風速每小時160公里。"
+          },
+          {
+            "citations": [
+              "s38bd79c8db20"
+            ],
+            "text": "颱風過後，漁民陸續返港檢查漁船。"
+          }
+        ],
+        "summary": "Sources: Typhoon Haikui nears Guangdong; 海葵逼近廣東沿海; 漁民陸續返港",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 0,
+      "queries": [
+        {
+          "failed": 0,
+          "found": 1,
+          "language": "en",
+          "left": 0,
+          "off_topic": 0,
+          "read": 1,
+          "terms": "typhoon",
+          "unreadable": 0
+        },
+        {
+          "failed": 0,
+          "found": 3,
+          "language": "zh",
+          "left": 0,
+          "off_topic": 1,
+          "read": 2,
+          "terms": "台风",
+          "unreadable": 0
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "8db6d77914bb2369f836f63e08a94fa3a9f77bdf212171e7a52ff482ccdfab49",
+          "id": "sabc82ec42d77",
+          "language": "en",
+          "published_at": "2026-09-26T12:00:00Z",
+          "source": "Coastal News",
+          "title": "Typhoon Haikui nears Guangdong",
+          "url": "https://example.invalid/en/typhoon-landfall"
+        },
+        {
+          "evidence_sha256": "5449c0db38c1c5463f3f86a08d13a36faf43df8eef0375cca57402a4ebd0dda7",
+          "id": "s9829ca0d332b",
+          "language": "zh",
+          "published_at": "2026-09-26T11:00:00Z",
+          "source": "中文新聞",
+          "title": "海葵逼近廣東沿海",
+          "url": "https://example.invalid/zh-hant/typhoon"
+        },
+        {
+          "evidence_sha256": "d81d779a62d6af7148eba46e55cce9b42ae780509f7e0dd669b432a3d6a2ae25",
+          "id": "s38bd79c8db20",
+          "language": "zh",
+          "published_at": "2026-09-26T09:00:00Z",
+          "source": "中文新聞",
+          "title": "漁民陸續返港",
+          "url": "https://example.invalid/zh-hant/fishermen"
+        }
+      ],
+      "topic": "typhoon"
+    }
+  }
+}
