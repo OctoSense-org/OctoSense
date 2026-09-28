@@ -1065,7 +1065,7 @@ impl Widget for MpRunView {
                         cx,
                         target.client,
                         vec![StudioToApp::Scroll(RemoteScroll {
-                            is_mouse: e.device.is_mouse(),
+                            is_mouse: e.is_mouse,
                             time: e.time,
                             x: local.x,
                             y: local.y,
