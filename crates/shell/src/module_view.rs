@@ -13,11 +13,23 @@
 //! The root is set by the host after `create` and cleared BEFORE the
 //! instance's isolate is freed: the tile outlives the instance by its
 //! close animation, and a widget whose heap is gone must not be drawn.
+//!
+//! The tile is also the fault line (ADR 0004 plan step 9). The root's
+//! events and draw run under `module_host::contain`: a panic there is
+//! caught HERE, not by the platform. The isolate and the script VM come
+//! back on their own on the way up (`with_isolate`); a draw cuts the draw
+//! context's stacks — turtles, clips, draw lists, passes, the overlay
+//! scope, gauss captures — back to where the tile's own draw stood
+//! (`Cx2d::unwind_mark` / `unwind_to`) and restores the modal bounds, so
+//! the desk's frame still ends. The tile lets go of the root and the
+//! keyboard at once; the shell then shows the app closed with a Restart
+//! (`show_failed`) and frees the instance in the host's order.
 
 use crate::hub::ClientId;
+use crate::module_host::{contain, is_failed};
 use crate::run_view::MpRunViewAction;
 use crate::tile::TileHost;
-use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
+use makepad_widgets::gauss_view::CaptureGauss;
 use makepad_widgets::*;
 
 script_mod! {
@@ -32,6 +44,17 @@ script_mod! {
         // The instance's ground: the theme's window background, so a root
         // that paints only its own chrome still sits on the desk's colour.
         draw_bg +: { color: mod.wm_theme.background }
+        // The app closed after an error: a line saying so, and Restart.
+        draw_note +: {
+            text_style: theme.font_regular
+            text_style.font_size: 13
+        }
+        draw_button +: { color: #0a84ff }
+        draw_button_text +: {
+            color: #fff
+            text_style: theme.font_regular
+            text_style.font_size: 13
+        }
     }
 }
 
@@ -72,6 +95,19 @@ pub struct MpModuleView {
     /// fade, so the ground follows it and the root draws solid.
     #[rust(1.0f32)]
     fade: f32,
+    #[live]
+    draw_note: DrawText,
+    #[live]
+    draw_button: DrawColor,
+    #[live]
+    draw_button_text: DrawText,
+    /// The instance panicked: nothing reaches its root again. `Some` with
+    /// the line the tile shows once the shell has named the app.
+    #[rust]
+    stopped: Option<String>,
+    /// Where the Restart button was drawn.
+    #[rust]
+    restart_rect: Option<Rect>,
 }
 
 impl MpModuleView {
@@ -83,7 +119,71 @@ impl MpModuleView {
         self.client = Some(client);
         self.vm_id = vm_id;
         self.drawn = false;
+        self.stopped = None;
+        self.restart_rect = None;
         self.draw_bg.redraw(cx);
+    }
+
+    /// The instance's module panicked (here or in a host call): let go of
+    /// the root and of the keyboard — nothing draws or dispatches to it
+    /// again — and show the app closed. The shell names it (`label`) when
+    /// it drains the fault; until then the tile says so plainly.
+    pub fn show_failed(&mut self, cx: &mut Cx, label: &str) {
+        self.stop(cx);
+        self.stopped = Some(format!("{label} stopped after an error"));
+    }
+
+    /// Whether this tile shows a failed instance.
+    pub fn failed(&self) -> bool {
+        self.stopped.is_some()
+    }
+
+    fn stop(&mut self, cx: &mut Cx) {
+        if self.root.take().is_some() || self.focused {
+            // A field inside the root may hold the keyboard (and the IME).
+            if self.focused {
+                cx.set_key_focus(Area::Empty);
+            }
+        }
+        self.focused = false;
+        if self.stopped.is_none() {
+            self.stopped = Some("The app stopped after an error".to_string());
+        }
+        self.draw_bg.redraw(cx);
+    }
+
+    /// The closed face: a line and a Restart button, centred.
+    fn draw_stopped(&mut self, cx: &mut Cx2d, rect: Rect) {
+        let Some(line) = self.stopped.clone() else { return };
+        let ground = self.draw_bg.color;
+        let luminance = 0.299 * ground.x + 0.587 * ground.y + 0.114 * ground.z;
+        self.draw_note.color = if luminance > 0.5 { vec4(0.11, 0.11, 0.12, 1.0) } else { vec4(0.94, 0.94, 0.96, 1.0) };
+        cx.begin_turtle(Walk::abs_rect(rect), Layout { align: Align { x: 0.5, y: 0.5 }, spacing: 14.0, ..Layout::flow_down() });
+        self.draw_note.draw_walk(cx, Walk::fit(), Align::default(), &line);
+        let button = cx.walk_turtle(Walk::fixed(120.0, 36.0));
+        self.draw_button.draw_abs(cx, button);
+        cx.begin_turtle(Walk::abs_rect(button), Layout { align: Align { x: 0.5, y: 0.5 }, ..Layout::default() });
+        self.draw_button_text.draw_walk(cx, Walk::fit(), Align::default(), "Restart");
+        cx.end_turtle();
+        self.restart_rect = Some(button);
+        cx.end_turtle();
+    }
+
+    /// A press on the closed face: Restart, or just focus the tile.
+    fn handle_stopped_event(&mut self, cx: &mut Cx, event: &Event) {
+        let abs = match event {
+            Event::MouseDown(e) => Some(e.abs),
+            Event::TouchUpdate(update) => update.touches.iter()
+                .find(|point| point.state == makepad_platform::event::TouchState::Start)
+                .map(|point| point.abs),
+            _ => None,
+        };
+        let (Some(abs), Some(client)) = (abs, self.client) else { return };
+        if self.restart_rect.is_some_and(|r| r.contains(abs)) {
+            cx.widget_action(self.uid, MpRunViewAction::Restart { client });
+        } else if self.area.is_valid(cx) && self.area.rect(cx).contains(abs) {
+            cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
+        }
     }
 
     /// Drop the root — called by the host right before the instance's
@@ -203,9 +303,18 @@ fn unclaimed_press(event: &Event) -> Option<&std::cell::Cell<Area>> {
 
 impl Widget for MpModuleView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.stopped.is_some() {
+            self.handle_stopped_event(cx, event);
+            return;
+        }
         let Some(root) = self.root.clone() else {
             return;
         };
+        // Failed through another path (a host call) since the last event.
+        if is_failed(cx, self.vm_id) {
+            self.stop(cx);
+            return;
+        }
         // Keys only while the WM focus is here: a text field inside a tile
         // in the background must not eat what the person types elsewhere.
         if matches!(event, Event::KeyDown(_) | Event::KeyUp(_) | Event::TextInput(_)) && !self.focused {
@@ -233,9 +342,10 @@ impl Widget for MpModuleView {
                 cx.widget_action(self.uid, MpRunViewAction::Clicked { client });
             }
         }
-        let entry = enter_isolate(cx, self.vm_id);
-        root.handle_event(cx, event, scope);
-        leave_isolate(cx, entry);
+        if contain(cx, self.vm_id, "an event", |cx| root.handle_event(cx, event, scope)).is_none() {
+            self.stop(cx);
+            return;
+        }
         // A press inside this tile is this tile's, even where none of the
         // app's widgets took it, so no window behind reacts to it.
         if let Some(handled) = press {
@@ -248,26 +358,79 @@ impl Widget for MpModuleView {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let rect = cx.turtle().rect();
+        if self.root.is_some() && is_failed(cx, self.vm_id) {
+            self.stop(cx);
+        }
         if self.root.is_some() {
             // Read the instance's current theme: the host's module-view
             // template was registered before mobile/light styles were applied.
             // Transparent app roots must not get dark text on an old dark ground.
-            if let Some(color) = cx.with_script_vm_id_trusted(self.vm_id,
-                |vm| script_eval!(vm, {mod.theme.color_bg_app})).as_color() {
-                self.draw_bg.color = Vec4f::from_u32(color);
+            let vm_id = self.vm_id;
+            let ground = contain(cx, vm_id, "its theme", |cx| {
+                cx.with_script_vm_id_trusted(vm_id, |vm| script_eval!(vm, {mod.theme.color_bg_app})).as_color()
+            });
+            match ground {
+                Some(Some(color)) => self.draw_bg.color = Vec4f::from_u32(color),
+                Some(None) => {}
+                None => self.stop(cx),
             }
         }
         self.draw_bg.draw_abs(cx, rect);
         if let Some(root) = self.root.clone() {
-            let entry = enter_isolate(cx, self.vm_id);
             // The instance's modals dim and centre within this tile: app
             // overlays (Rinx's mini-app and editor modals) stay in this
             // viewport, including its origin when the phone shell draws the
             // module into a shifted capture.
             let outer = std::mem::replace(&mut cx.global::<ModalBounds>().0, Some(rect));
-            root.draw_walk_all(cx, scope, Walk::fill());
+            // What a panicking draw leaves open is cut back to here.
+            //
+            // WHAT A MID-DRAW PANIC LEAVES BEHIND. A Makepad draw only
+            // RECORDS: no GPU call is made during `Event::Draw` — the
+            // platform walks the recorded passes and lists after the event
+            // returns, binding textures and render targets itself. So a
+            // guest's panic cannot leave a texture bound or a render pass
+            // open on the GPU. What it can leave is CPU-side state the next
+            // GPU submission reads:
+            //
+            // Restored here: the draw context's stacks — turtles, finished
+            // rows and walks, clips, the alignment list, the draw-call
+            // parent chain, the pass stack, the draw-list stack, the
+            // overlay scope, the nesting depth (`unwind_to`); the gauss
+            // capture scope (`unwind_scope_to`); `ModalBounds`; and the
+            // isolate and script VM (`with_isolate`). The desk's own
+            // `end_*` calls then pair and its frame ends.
+            //
+            // NOT restored, and possibly inconsistent for the next frame:
+            // - instances the guest already appended to the tile's (the
+            //   desk's) draw list this frame stay in it for THIS frame, and
+            //   a draw list or pass the guest began is left half-recorded —
+            //   the platform may render that partial list once; they go when
+            //   the root is dropped at release and the tile redraws;
+            // - render-target textures a guest pass created or resized, and
+            //   draw lists it owns, stay allocated until that root drops;
+            // - process-wide caches mutated mid-operation: the font atlas
+            //   (a glyph slot reserved but only partly rasterized; its dirty
+            //   rect is still uploaded next frame), the shaper and layout
+            //   caches, shader/geometry pools. Makepad's std Mutexes there
+            //   tolerate poisoning, but a half-written atlas region can show
+            //   as a garbled glyph until the atlas resets;
+            // - any GPU call a module makes itself (FFI, a native layer)
+            //   is outside all of this.
+            let mark = cx.unwind_mark();
+            let captures = CaptureGauss::scope_depth(cx);
+            let drawn = contain(cx, self.vm_id, "its draw", |cx| root.draw_walk_all(cx, scope, Walk::fill()));
+            if drawn.is_none() {
+                cx.unwind_to(mark);
+                CaptureGauss::unwind_scope_to(cx, captures);
+            }
             cx.global::<ModalBounds>().0 = outer;
-            leave_isolate(cx, entry);
+            if drawn.is_none() {
+                self.stop(cx);
+            }
+            self.drawn = true;
+        }
+        if self.stopped.is_some() {
+            self.draw_stopped(cx, rect);
             self.drawn = true;
         }
         cx.end_turtle_with_area(&mut self.area);

@@ -17,14 +17,210 @@
 //! the scope token does NOT yet reach — native timers, audio lanes,
 //! native layers, HTTP requests the instance opened through the platform
 //! — is the InstanceScope gap the next phase closes.
+//!
+//! PANIC CONTAINMENT (ADR 0004 §2, plan step 9). An in-process module is
+//! a crash domain of its own: every call the shell makes into one — its
+//! `register` and `create`, the events and the draw its tile gives the
+//! root (`module_view.rs`), the host's own `Event::Custom`s, Back and
+//! keyboard deliveries, the executor's `execute` / `cancel` / `subscribe`
+//! / `unsubscribe` / `chat_open`, a restyle, its `shutdown` — goes through
+//! [`contain`] or [`contain_outside`], which run it under `catch_unwind`
+//! (inside the isolate for the first, restored on the way up by Makepad's
+//! `with_isolate`). A panic there does not reach the platform: the
+//! instance's isolate is marked failed on `Cx` ([`ModuleFaults`]) so
+//! NOTHING dispatches to it again, even before the shell has looked, and
+//! the fault is queued. The shell drains the queue after every event
+//! ([`ModuleHost::take_faults`], `App::contain_module_faults`): it logs the
+//! module id and message, lets the tile show the app closed with a
+//! Restart, drops the instance's extra windows and its tools, and calls
+//! [`ModuleHost::release_failed`], which frees what the instance held.
+//!
+//! A second panic is the one that used to abort the process (2026-09-27:
+//! the terminal's font panic, then one in the recovery path). So after a
+//! fault nothing of the failed module runs unguarded: its shutdown runs
+//! under a catch of its own, its executor — native state last seen
+//! mid-panic — is LEAKED rather than dropped (a panic inside a drop that
+//! is itself unwinding is an abort no catch can stop), every other drop
+//! and the isolate's free run under a catch, and a panic payload whose own
+//! `Drop` panics is forgotten. What stays out of reach: a panic raised
+//! while the module's own frames are already unwinding (Rust aborts
+//! before any catch runs), a `panic = "abort"` build, and FFI.
 
 use crate::hub::ClientId;
 use makepad_ai_services::wire::{ServiceCall, ServiceManifest};
-use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 use makepad_app_module::*;
 use makepad_widgets::*;
-use std::collections::HashMap;
+use makepad_widgets::widget_async::{with_isolate, IsolateCx};
+use std::collections::{HashMap, HashSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::Receiver;
+
+// ---- panic containment ----
+
+/// Isolates whose module panicked, and the faults the shell has not taken
+/// yet. On `Cx`, so the tile (which knows only its isolate) and the host
+/// see one answer to "may this instance run?".
+#[derive(Default)]
+pub struct ModuleFaults {
+    failed: HashSet<SplashVmId>,
+    pending: Vec<ModuleFault>,
+}
+
+/// One contained panic: which isolate, in what, and what it said.
+#[derive(Clone, Debug)]
+pub struct ModuleFault {
+    pub vm_id: SplashVmId,
+    pub what: &'static str,
+    pub message: String,
+}
+
+/// What a panic said, for the log and the tile.
+pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "a panic with no message".to_string()
+    }
+}
+
+/// Drop a caught payload without letting its `Drop` panic out of here: a
+/// payload that panics while dropping is forgotten, and so is that one's.
+pub fn discard_payload(payload: Box<dyn std::any::Any + Send>) {
+    if let Err(again) = catch_unwind(AssertUnwindSafe(move || drop(payload))) {
+        std::mem::forget(again);
+    }
+}
+
+/// Whether the module in `vm_id` has panicked: nothing may call into it.
+pub fn is_failed(cx: &mut Cx, vm_id: SplashVmId) -> bool {
+    cx.global::<ModuleFaults>().failed.contains(&vm_id)
+}
+
+/// Record that the module in `vm_id` panicked in `what`: its isolate is
+/// closed to every later call from now on, and the shell hears of it after
+/// this event. Returns the message.
+pub fn report_fault(cx: &mut Cx, vm_id: SplashVmId, what: &'static str, payload: Box<dyn std::any::Any + Send>) -> String {
+    let message = panic_message(&*payload);
+    discard_payload(payload);
+    let faults = cx.global::<ModuleFaults>();
+    // The first fault is the one that says why; later ones (a restyle
+    // walking every instance, the same event reaching a second tile of it)
+    // cannot happen once the isolate is closed, but are dropped if they do.
+    if faults.failed.insert(vm_id) {
+        faults.pending.push(ModuleFault { vm_id, what, message: message.clone() });
+    }
+    error!("wm: contained a module panic in isolate {vm_id:?} ({what}): {message}");
+    message
+}
+
+/// Run `f` inside the module isolate `vm_id` with its panics contained:
+/// `None` when the instance has already failed (nothing runs) or `f`
+/// panicked (the fault is reported). The isolate is left and the outer VM
+/// restored either way (`with_isolate`). The one choke point every call
+/// into a module's widgets goes through.
+pub fn contain<C: IsolateCx, R>(cx: &mut C, vm_id: SplashVmId, what: &'static str, f: impl FnOnce(&mut C) -> R) -> Option<R> {
+    if is_failed(cx.isolate_cx(), vm_id) {
+        return None;
+    }
+    match catch_unwind(AssertUnwindSafe(|| with_isolate(cx, vm_id, f))) {
+        Ok(out) => Some(out),
+        Err(payload) => {
+            report_fault(cx.isolate_cx(), vm_id, what, payload);
+            None
+        }
+    }
+}
+
+/// [`contain`] for module code the host calls outside the isolate (the
+/// executor's bookkeeping, a restyle that enters the isolate itself).
+pub fn contain_outside<R>(cx: &mut Cx, vm_id: SplashVmId, what: &'static str, f: impl FnOnce(&mut Cx) -> R) -> Option<R> {
+    if is_failed(cx, vm_id) {
+        return None;
+    }
+    match catch_unwind(AssertUnwindSafe(|| f(cx))) {
+        Ok(out) => Some(out),
+        Err(payload) => {
+            report_fault(cx, vm_id, what, payload);
+            None
+        }
+    }
+}
+
+/// Run cleanup that must not take the shell down with it: a panic is
+/// logged and its payload discarded. False when it panicked.
+fn guarded_cleanup(what: &str, f: impl FnOnce()) -> bool {
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(()) => true,
+        Err(payload) => {
+            error!("wm: contained a panic while {what}: {}", panic_message(&*payload));
+            discard_payload(payload);
+            false
+        }
+    }
+}
+
+/// What a failed instance's tools answer: the executor that panicked is
+/// gone (leaked), and every call says so.
+struct StoppedExecutor(ServiceManifest);
+impl ServiceExecutor for StoppedExecutor {
+    fn manifest(&self) -> ServiceManifest {
+        self.0.clone()
+    }
+    fn execute(&mut self, _cx: &mut Cx, call: &ServiceCall) -> ExecOutcome {
+        ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, STOPPED_REASON))
+    }
+}
+
+/// What a tool call to a failed instance answers.
+pub const STOPPED_REASON: &str = "the app stopped after an error; restart it to use it again";
+
+/// What `data` says on an outcome-unknown answer, for a router or a model
+/// that reads it rather than the text.
+pub const OUTCOME_UNKNOWN_DATA: &str = r#"{"outcome":"unknown","reason":"app_panicked","retry":"only_after_checking_with_the_person"}"#;
+
+/// The answer to a call that may have partly run when its app panicked:
+/// an `Act` or `Destructive` tool (or one the manifest does not name)
+/// that was executing, or had answered `Pending`, when the module failed.
+/// It must never look succeeded, and never like a plain, safely retryable
+/// error: the effect may have happened, half-happened or not happened.
+///
+/// The wire has no `Unknown` outcome yet, so this is `TimedOut` — the
+/// wire's one existing "the service never finished answering; what it did
+/// is unknown" outcome, which is never `is_ok()` — with text and `data`
+/// that say so and `Disposition::EndTurn`, so the turn stops with the
+/// person rather than the model retrying on its own. A proper
+/// `ToolOutcome::Unknown` (slug `unknown`) in makepad-ai-services' wire is
+/// the Makepad change that would replace this; see the PR.
+pub fn outcome_unknown(call_id: &str, tool: &str, label: &str) -> makepad_ai_services::wire::ToolResult {
+    makepad_ai_services::wire::ToolResult::timed_out(
+        call_id,
+        format!(
+            "Outcome unknown: {label} stopped after an error while `{tool}` was running. It may have partly \
+             happened. Do not retry it; check with the person what actually changed first."
+        ),
+    )
+    .with_data(OUTCOME_UNKNOWN_DATA)
+    .with_disposition(makepad_ai_services::wire::Disposition::EndTurn)
+}
+
+/// Whether a call to `tool` can have changed something: anything but a
+/// declared `Read`. A tool the manifest does not name counts as able to.
+fn may_have_acted(manifest: &ServiceManifest, tool: &str) -> bool {
+    manifest.tools.iter().find(|t| t.name == tool)
+        .is_none_or(|t| t.risk != makepad_ai_services::wire::Risk::Read)
+}
+
+/// The answer to a call interrupted by its app's panic: outcome unknown
+/// when it may have acted, plainly unavailable when it only read.
+fn interrupted(manifest: &ServiceManifest, label: &str, call_id: &str, tool: &str) -> makepad_ai_services::wire::ToolResult {
+    if may_have_acted(manifest, tool) {
+        outcome_unknown(call_id, tool, label)
+    } else {
+        makepad_ai_services::wire::ToolResult::unavailable(call_id, STOPPED_REASON)
+    }
+}
 
 pub struct AppInstance {
     pub client: ClientId,
@@ -43,11 +239,35 @@ pub struct AppInstance {
     /// The instance's scoped assistant service (Rinx ADR 0007), when the
     /// module declares and is granted `octos.*` services.
     assistant: Option<crate::ai_host::Assistant>,
+    /// The executor's manifest, read once (contained) at creation: the
+    /// shell asks for it again after a failure, when the executor is gone.
+    manifest: ServiceManifest,
+    /// The module panicked, with what it said: nothing calls into it again.
+    failed: Option<String>,
+    /// A failed instance's shutdown ran and its isolate is freed.
+    released: bool,
+    /// Calls its executor answered `Pending` and has not answered yet:
+    /// (call id, tool). What is still here when the module panics is
+    /// answered for it ([`outcome_unknown`]).
+    in_flight: Vec<(String, String)>,
+    /// Answers the host owes the pane for a failed instance's interrupted
+    /// calls, handed out by `drain_upstream`.
+    owed: Vec<makepad_ai_services::wire::ToolResult>,
 }
 
 impl AppInstance {
     pub fn manifest(&self) -> ServiceManifest {
-        self.executor.manifest()
+        self.manifest.clone()
+    }
+
+    /// What the module's panic said, once it has panicked.
+    pub fn failure(&self) -> Option<&str> {
+        self.failed.as_deref()
+    }
+
+    /// `module.instance_no`, as the log names it.
+    pub fn label(&self) -> String {
+        format!("{}.{}", self.module.id(), self.instance_no)
     }
 }
 
@@ -140,19 +360,39 @@ impl ModuleHost {
         // The assistant is offered to THIS instance for the duration of its
         // create only; the module takes it there or never gets it.
         let offer = crate::ai_host::offer(module, &scope);
-        let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
-            // The isolate came up with the stock theme; the WM's palette
-            // retints it exactly as it retints a child process's.
-            if let Some(sheet)=&self.style {
-                apply_module_style(vm, sheet);
-            }
-            makepad_wm_theme::apply(vm);
-            module.register(vm);
-            module.create(vm, open, handles)
+        // The module's `register`, `create` and first `manifest` run under
+        // the containment every later call gets: a module that panics here
+        // never becomes an instance, and its isolate goes at once.
+        let style = self.style.as_ref();
+        let created = contain_outside(cx, vm_id, "create", |cx| {
+            let parts = cx.with_script_vm_id_trusted(vm_id, |vm| {
+                // The isolate came up with the stock theme; the WM's palette
+                // retints it exactly as it retints a child process's.
+                if let Some(sheet) = style {
+                    apply_module_style(vm, sheet);
+                }
+                makepad_wm_theme::apply(vm);
+                module.register(vm);
+                module.create(vm, open, handles)
+            });
+            let manifest = parts.executor.manifest();
+            (parts, manifest)
         });
         // What the module did not take is withdrawn; what it took stays
         // with the instance until teardown.
         let assistant = offer.finish();
+        let Some((parts, manifest)) = created else {
+            // Already reported; the shell has no client to show it on, so
+            // the fault is taken here and the launch fails with it.
+            let fault = take_fault_of(cx, vm_id);
+            let message = fault.map(|f| f.message).unwrap_or_default();
+            if let Some(assistant) = assistant {
+                guarded_cleanup("releasing a failed create's assistant", || assistant.release());
+            }
+            guarded_cleanup("freeing a failed create's isolate", || cx.free_splash_vm(vm_id));
+            error!("wm: module {} panicked in create: {message}", module.id());
+            return Err(format!("{} panicked while starting: {message}", module.label()));
+        };
         log!(
             "wm: module instance {}.{} for client {} in isolate {:?} (scope {})",
             module.id(),
@@ -175,6 +415,11 @@ impl ModuleHost {
                 upstream,
                 windows,
                 assistant,
+                manifest,
+                failed: None,
+                released: false,
+                in_flight: Vec::new(),
+                owed: Vec::new(),
             },
         );
         Ok(())
@@ -182,17 +427,20 @@ impl ModuleHost {
 
     pub fn apply_style(&mut self,cx:&mut Cx,sheet:&desktop_style::StyleSheet) {
         self.style=Some(sheet.clone());
-        for instance in self.instances.values_mut() {
-            cx.with_script_vm_id_trusted(instance.vm_id,|vm| {
-                apply_module_style(vm, sheet);
-                vm.with_reload(|vm| {
-                    makepad_wm_theme::apply(vm);
-                    instance.module.register(vm);
+        for instance in self.instances.values_mut().filter(|i| i.failed.is_none()) {
+            let vm_id = instance.vm_id;
+            contain_outside(cx, vm_id, "a restyle", |cx| {
+                cx.with_script_vm_id_trusted(vm_id,|vm| {
+                    apply_module_style(vm, sheet);
+                    vm.with_reload(|vm| {
+                        makepad_wm_theme::apply(vm);
+                        instance.module.register(vm);
+                    });
+                    let source=instance.root.widget_type_id().and_then(|ty|vm.bx.heap.type_default_for_id(ty)).unwrap_or_else(||instance.root.script_source());
+                    instance.root.script_apply(vm,&Apply::ScriptReapply,&mut Scope::empty(),source.into());
                 });
-                let source=instance.root.widget_type_id().and_then(|ty|vm.bx.heap.type_default_for_id(ty)).unwrap_or_else(||instance.root.script_source());
-                instance.root.script_apply(vm,&Apply::ScriptReapply,&mut Scope::empty(),source.into());
+                instance.root.redraw(cx);
             });
-            instance.root.redraw(cx);
         }
     }
 
@@ -240,13 +488,28 @@ impl ModuleHost {
     /// isolate: the module half of what `send_wm_event` does for a process.
     /// False when no instance has this client id.
     pub fn send_custom(&mut self, cx: &mut Cx, client: ClientId, json: String) -> bool {
-        let Some((root, vm_id)) = self.instances.get(&client).map(|i| (i.root.clone(), i.vm_id)) else {
+        if !self.instances.contains_key(&client) {
             return false;
-        };
-        let entry = enter_isolate(cx, vm_id);
-        root.handle_event(cx, &Event::Custom(json), &mut Scope::empty());
-        leave_isolate(cx, entry);
+        }
+        self.dispatch(cx, client, "a host message", |cx, root| {
+            root.handle_event(cx, &Event::Custom(json), &mut Scope::empty())
+        });
         true
+    }
+
+    /// Run host code against an instance's root inside its isolate, with
+    /// its panics contained: how the shell hands a module anything outside
+    /// its tile's own event and draw (a face, the keyboard, Back, a host
+    /// message). `None` when there is no live instance or it panicked.
+    pub fn dispatch<R>(&mut self, cx: &mut Cx, client: ClientId, what: &'static str, f: impl FnOnce(&mut Cx, &WidgetRef) -> R) -> Option<R> {
+        let instance = self.instances.get(&client).filter(|i| i.failed.is_none())?;
+        let (root, vm_id) = (instance.root.clone(), instance.vm_id);
+        contain(cx, vm_id, what, |cx| f(cx, &root))
+    }
+
+    /// Whether `client` is an instance whose module panicked.
+    pub fn is_failed(&self, client: ClientId) -> bool {
+        self.instances.get(&client).is_some_and(|i| i.failed.is_some())
     }
 
     pub fn len(&self) -> usize {
@@ -260,17 +523,37 @@ impl ModuleHost {
     /// One of the assistant's calls, to the instance's executor — inside
     /// the instance's isolate, as the tile dispatches events: an executor
     /// reaches into its app's widgets (AppCard's `ask` is the composer).
+    ///
+    /// A failed instance answers "unavailable": the call never ran. One
+    /// whose executor panics ON this call answers [`outcome_unknown`] when
+    /// the tool may have acted (it may have partly run), "unavailable"
+    /// when it only reads. A `Pending` call is remembered until its answer
+    /// comes up, so a later panic can answer it the same way.
     pub fn execute(&mut self, cx: &mut Cx, client: ClientId, call: &ServiceCall) -> Option<ExecOutcome> {
         let instance = self.instances.get_mut(&client)?;
-        let entry = enter_isolate(cx, instance.vm_id);
-        let outcome = instance.executor.execute(cx, call);
-        leave_isolate(cx, entry);
-        Some(outcome)
+        // Failed, or panicked earlier in this event and not yet taken by
+        // the shell: the call never runs, so it is plainly unavailable.
+        if instance.failed.is_some() || is_failed(cx, instance.vm_id) {
+            return Some(ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, STOPPED_REASON)));
+        }
+        let vm_id = instance.vm_id;
+        let executor = &mut instance.executor;
+        match contain(cx, vm_id, "a tool call", |cx| executor.execute(cx, call)) {
+            Some(ExecOutcome::Pending) => {
+                instance.in_flight.push((call.call_id.clone(), call.tool.clone()));
+                Some(ExecOutcome::Pending)
+            }
+            Some(done) => Some(done),
+            None => Some(ExecOutcome::Done(interrupted(&instance.manifest, instance.module.label(), &call.call_id, &call.tool))),
+        }
     }
 
     pub fn cancel(&mut self, cx: &mut Cx, client: ClientId, call_id: &str) {
-        if let Some(instance) = self.instances.get_mut(&client) {
-            instance.executor.cancel(cx, call_id);
+        if let Some(instance) = self.instances.get_mut(&client).filter(|i| i.failed.is_none()) {
+            let executor = &mut instance.executor;
+            contain_outside(cx, instance.vm_id, "a cancel", |cx| executor.cancel(cx, call_id));
+            // The router answered it `Cancelled` already.
+            instance.in_flight.retain(|(id, _)| id != call_id);
         }
     }
 
@@ -282,27 +565,30 @@ impl ModuleHost {
         topic: &str,
         filter: Option<&str>,
     ) {
-        if let Some(instance) = self.instances.get_mut(&client) {
-            instance.executor.subscribe(cx, sub_id, topic, filter);
+        if let Some(instance) = self.instances.get_mut(&client).filter(|i| i.failed.is_none()) {
+            let executor = &mut instance.executor;
+            contain_outside(cx, instance.vm_id, "a subscribe", |cx| executor.subscribe(cx, sub_id, topic, filter));
         }
     }
 
     pub fn unsubscribe(&mut self, cx: &mut Cx, client: ClientId, sub_id: &str) {
-        if let Some(instance) = self.instances.get_mut(&client) {
-            instance.executor.unsubscribe(cx, sub_id);
+        if let Some(instance) = self.instances.get_mut(&client).filter(|i| i.failed.is_none()) {
+            let executor = &mut instance.executor;
+            contain_outside(cx, instance.vm_id, "an unsubscribe", |cx| executor.unsubscribe(cx, sub_id));
         }
     }
 
     pub fn chat_open(&mut self, cx: &mut Cx, open: bool) {
-        for instance in self.instances.values_mut() {
-            instance.executor.chat_open(cx, open);
+        for instance in self.instances.values_mut().filter(|i| i.failed.is_none()) {
+            let executor = &mut instance.executor;
+            contain_outside(cx, instance.vm_id, "chat_open", |cx| executor.chat_open(cx, open));
         }
     }
 
     /// Instances' pending window requests: (owner, its isolate, its app id, request).
     pub fn take_window_requests(&mut self) -> Vec<(ClientId, SplashVmId, &'static str, WindowRequest)> {
         let mut out = Vec::new();
-        for (client, instance) in &self.instances {
+        for (client, instance) in self.instances.iter().filter(|(_, i)| i.failed.is_none()) {
             for request in instance.windows.take_requests() {
                 out.push((*client, instance.vm_id, instance.module.id(), request));
             }
@@ -320,17 +606,34 @@ impl ModuleHost {
 
     /// The person closed `owner`'s window `key`.
     pub fn notify_window_closed(&self, owner: ClientId, key: LiveId) {
-        if let Some(instance) = self.instances.get(&owner) {
+        if let Some(instance) = self.instances.get(&owner).filter(|i| i.failed.is_none()) {
             instance.windows.notify_closed(key);
         }
     }
 
     /// Every result or publication an executor sent later, with its client.
+    ///
+    /// A failed instance yields what its executor sent before the panic
+    /// for calls still in flight (a real answer beats an unknown one), then
+    /// the outcome-unknown answers owed for the rest — and nothing after:
+    /// an answer arriving late for a call already answered is dropped.
     pub fn drain_upstream(&mut self) -> Vec<(ClientId, ModuleUpstream)> {
         let mut out = Vec::new();
-        for (client, instance) in &self.instances {
+        for (client, instance) in self.instances.iter_mut() {
             while let Ok(message) = instance.upstream.try_recv() {
+                if let ModuleUpstream::Result(result) = &message {
+                    let before = instance.in_flight.len();
+                    instance.in_flight.retain(|(id, _)| *id != result.call_id);
+                    if instance.failed.is_some() && instance.in_flight.len() == before {
+                        continue;
+                    }
+                } else if instance.failed.is_some() {
+                    continue;
+                }
                 out.push((*client, message));
+            }
+            for result in instance.owed.drain(..) {
+                out.push((*client, ModuleUpstream::Result(result)));
             }
         }
         out
@@ -338,25 +641,126 @@ impl ModuleHost {
 
     /// End the instance: its shutdown runs in its isolate, then the isolate
     /// is freed. The caller has already cleared the tile's root.
+    ///
+    /// A failed instance was released when it failed; this only forgets
+    /// it. A live one's shutdown, drops and free each run guarded, so a
+    /// module that panics while being closed still closes.
     pub fn teardown(&mut self, cx: &mut Cx, client: ClientId) -> bool {
         let Some(mut instance) = self.instances.remove(&client) else {
             return false;
         };
+        let label = instance.label();
+        if instance.failed.is_some() {
+            if !instance.released {
+                self.release_instance(cx, &mut instance);
+            }
+            // Its executor was leaked at release; the rest holds nothing
+            // of the module's.
+            guarded_cleanup("dropping a failed instance", move || drop(instance));
+            log!("wm: failed module instance {label} closed");
+            return true;
+        }
+        let vm_id = instance.vm_id;
         if let Some(shutdown) = instance.shutdown.take() {
-            cx.with_script_vm_id_trusted(instance.vm_id, |vm| shutdown(vm));
+            if contain_outside(cx, vm_id, "shutdown", |cx| cx.with_script_vm_id_trusted(vm_id, |vm| shutdown(vm))).is_none() {
+                // Closed anyway; the fault stays queued only for the log.
+                take_fault_of(cx, vm_id);
+                error!("wm: module instance {label} panicked in shutdown; freeing its isolate anyway");
+            }
         }
         // Release the app's assistant leases; the shared kernel stays.
         if let Some(assistant) = instance.assistant.take() {
-            assistant.release();
+            guarded_cleanup("releasing an instance's assistant", || assistant.release());
         }
-        let vm_id = instance.vm_id;
-        let label = format!("{}.{}", instance.module.id(), instance.instance_no);
         // The last refs into the isolate's heap go before the heap does.
-        drop(instance);
-        cx.free_splash_vm(vm_id);
+        guarded_cleanup("dropping a module instance", move || drop(instance));
+        guarded_cleanup("freeing a module isolate", || cx.free_splash_vm(vm_id));
         log!("wm: module instance {label} torn down; isolate {vm_id:?} freed");
         true
     }
+
+    /// The faults contained since the last call, attributed: each instance
+    /// whose module panicked is marked failed (once) and named with its
+    /// label, for the shell to show and then [`release_failed`](Self::release_failed).
+    /// Faults of isolates no instance owns (one already torn down) are
+    /// logged and dropped.
+    pub fn take_faults(&mut self, cx: &mut Cx) -> Vec<(ClientId, String)> {
+        let pending = std::mem::take(&mut cx.global::<ModuleFaults>().pending);
+        let mut out = Vec::new();
+        for fault in pending {
+            let Some(instance) = self.instances.values_mut().find(|i| i.vm_id == fault.vm_id) else {
+                log!("wm: a panic in isolate {:?} ({}) belongs to no live instance: {}", fault.vm_id, fault.what, fault.message);
+                continue;
+            };
+            if instance.failed.is_some() {
+                continue;
+            }
+            error!(
+                "wm: module {} (instance {}, client {}) panicked in {}: {}; the instance is stopped, the shell goes on",
+                instance.module.id(), instance.label(), instance.client, fault.what, fault.message
+            );
+            instance.failed = Some(fault.message);
+            // Answers the executor already sent are genuine: take them
+            // before the in-flight rest is declared unknown.
+            while let Ok(message) = instance.upstream.try_recv() {
+                if let ModuleUpstream::Result(result) = message {
+                    if let Some(at) = instance.in_flight.iter().position(|(id, _)| *id == result.call_id) {
+                        instance.in_flight.remove(at);
+                        instance.owed.push(result);
+                    }
+                }
+            }
+            let label = instance.module.label();
+            for (call_id, tool) in std::mem::take(&mut instance.in_flight) {
+                let answer = interrupted(&instance.manifest, label, &call_id, &tool);
+                instance.owed.push(answer);
+            }
+            out.push((instance.client, instance.module.label().to_string()));
+        }
+        out
+    }
+
+    /// Free what a failed instance held, once its tiles have let go of its
+    /// root: its shutdown runs (guarded), its assistant leases go, its
+    /// executor is leaked (see the module doc), and its isolate is freed.
+    /// The entry stays, failed, until the shell closes or restarts it.
+    pub fn release_failed(&mut self, cx: &mut Cx, client: ClientId) {
+        let Some(mut instance) = self.instances.remove(&client) else { return };
+        if instance.failed.is_some() && !instance.released {
+            self.release_instance(cx, &mut instance);
+        }
+        self.instances.insert(client, instance);
+    }
+
+    fn release_instance(&mut self, cx: &mut Cx, instance: &mut AppInstance) {
+        let vm_id = instance.vm_id;
+        instance.released = true;
+        // Its own last word, for the resources it opened (a pty, a
+        // socket); run in the isolate even though that is marked failed.
+        if let Some(shutdown) = instance.shutdown.take() {
+            let ran = catch_unwind(AssertUnwindSafe(|| cx.with_script_vm_id_trusted(vm_id, |vm| shutdown(vm))));
+            if let Err(payload) = ran {
+                error!("wm: failed module instance {} panicked again in shutdown: {}", instance.label(), panic_message(&*payload));
+                discard_payload(payload);
+            }
+        }
+        if let Some(assistant) = instance.assistant.take() {
+            guarded_cleanup("releasing a failed instance's assistant", || assistant.release());
+        }
+        let executor = std::mem::replace(&mut instance.executor, Box::new(StoppedExecutor(instance.manifest.clone())));
+        std::mem::forget(executor);
+        let root = std::mem::replace(&mut instance.root, WidgetRef::empty());
+        guarded_cleanup("dropping a failed instance's root", move || drop(root));
+        guarded_cleanup("freeing a failed instance's isolate", || cx.free_splash_vm(vm_id));
+        log!("wm: failed module instance {} released; isolate {vm_id:?} freed, executor leaked", instance.label());
+    }
+}
+
+/// Take the queued fault of `vm_id`, if any (one the host handles itself).
+fn take_fault_of(cx: &mut Cx, vm_id: SplashVmId) -> Option<ModuleFault> {
+    let pending = &mut cx.global::<ModuleFaults>().pending;
+    let at = pending.iter().position(|f| f.vm_id == vm_id)?;
+    Some(pending.remove(at))
 }
 
 #[cfg(test)]

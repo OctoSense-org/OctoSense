@@ -14,7 +14,7 @@ impl App{
     fn close_caption_scope(&mut self,cx:&mut Cx){if let Some((_,visit))=self.settings_runtime.caption_custom.active.take(){self.android_command_id(cx,"launcher","caption_custom_close",vec![("visit",Value::Int(visit))]);}self.settings_runtime.caption_custom.retire_read();}
     pub(crate) fn settings_caption_custom_focus(&mut self,cx:&mut Cx,focused:Option<bool>){let Some(focused)=focused else{return;};if self.settings_runtime.caption_custom.focused==focused{return;}
         self.settings_runtime.caption_custom.focused=focused;self.close_caption_scope(cx);
-        if let Some(instance)=self.module_host.settings_instance(){let(root,vm)=(instance.root.clone(),instance.vm_id);let isolate=makepad_widgets::widget_async::enter_isolate(cx,vm);if let Some(mut view)=root.borrow_mut::<SettingsView>(){if view.caption_visit().is_some(){view.renew_caption_visit(cx);}}makepad_widgets::widget_async::leave_isolate(cx,isolate);}
+        if let Some(client)=self.module_host.settings_instance().map(|i|i.client){self.module_host.dispatch(cx,client,"a caption visit",|cx,root|if let Some(mut view)=root.borrow_mut::<SettingsView>(){if view.caption_visit().is_some(){view.renew_caption_visit(cx);}});}
         self.refresh_settings_app(cx);
     }
     pub(crate) fn settings_caption_custom_read_request(&mut self,cx:&mut Cx,owner:Owner,request:&SettingsRequest)->bool{
@@ -32,7 +32,7 @@ impl App{
         let desired=visible.filter(|_|self.settings_runtime.caption_custom.focused).and_then(|owner|self.current_caption_visit().map(|visit|(owner,visit)));
         if self.settings_runtime.caption_custom.active!=desired{
             let lost_visibility=self.settings_runtime.caption_custom.active.is_some()&&desired.is_none();self.close_caption_scope(cx);
-            if lost_visibility{if let Some(instance)=self.module_host.settings_instance(){let(root,vm)=(instance.root.clone(),instance.vm_id);let isolate=makepad_widgets::widget_async::enter_isolate(cx,vm);if let Some(mut view)=root.borrow_mut::<SettingsView>(){if view.caption_visit().is_some(){view.renew_caption_visit(cx);}}makepad_widgets::widget_async::leave_isolate(cx,isolate);}}
+            if lost_visibility{if let Some(client)=self.module_host.settings_instance().map(|i|i.client){self.module_host.dispatch(cx,client,"a caption visit",|cx,root|if let Some(mut view)=root.borrow_mut::<SettingsView>(){if view.caption_visit().is_some(){view.renew_caption_visit(cx);}});}}
             self.settings_runtime.caption_custom.active=desired;self.settings_runtime.caption_custom.error.clear();self.refresh_settings_app(cx);
         }
         let Some((owner,visit))=desired else{return;};

@@ -3,7 +3,6 @@ use crate::{mobile::*, mobile_surface::PhoneSurface, mobile_tiles::{self, Face, 
 use crate::mobile_shade::{ShadeHit, ShadeState, Toggle};
 use crate::mobile_gestures::{Dir, FingerPhase, GestureContext, GestureKind, SafeInsets, ShellGesture};
 use makepad_widgets::makepad_platform::ime::{HostedKeyboard, InputMode};
-use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PhonePointerPhase { Down, Move, Up, Scroll }
@@ -137,11 +136,9 @@ impl App {
     fn send_face(&mut self, cx: &mut Cx, client: ClientId, face: Face, viewport: Vec2d) -> bool {
         let json = face.mode().to_json();
         if self.module_host.is_module(client) {
-            if let Some((root, vm_id)) = self.module_host.get(client).map(|i| (i.root.clone(), i.vm_id)) {
-                let entry = enter_isolate(cx, vm_id);
-                root.handle_event(cx, &Event::Custom(json), &mut Scope::empty());
-                leave_isolate(cx, entry);
-            }
+            self.module_host.dispatch(cx, client, "a tile face", |cx, root| {
+                root.handle_event(cx, &Event::Custom(json), &mut Scope::empty())
+            });
             // A module draws inside the desk's own capture at exactly the
             // rect asked for: the face is confirmed the moment it is sent.
             let tiles = &mut self.state_mut().phone.tiles;
@@ -435,14 +432,10 @@ impl App {
         let keyboard=HostedKeyboard {height,dismiss};
         if self.module_host.is_module(client) {
             if dismiss {cx.text_ime_was_dismissed();}
-            if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
-                let time=cx.seconds_since_app_start();
-                let event=if height>0.0 {VirtualKeyboardEvent::WillShow{time,height,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}}
-                    else{VirtualKeyboardEvent::WillHide{time,height:0.0,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}};
-                let entry=enter_isolate(cx,vm_id);
-                root.handle_event(cx,&Event::VirtualKeyboard(event),&mut Scope::empty());
-                leave_isolate(cx,entry);
-            }
+            let time=cx.seconds_since_app_start();
+            let event=if height>0.0 {VirtualKeyboardEvent::WillShow{time,height,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}}
+                else{VirtualKeyboardEvent::WillHide{time,height:0.0,duration:0.22,ease:makepad_platform::event::Ease::OutCubic}};
+            self.module_host.dispatch(cx,client,"the keyboard",|cx,root|root.handle_event(cx,&Event::VirtualKeyboard(event),&mut Scope::empty()));
         }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
             send_to_app(sender,vec![StudioToApp::Custom(keyboard.to_json())]);
         }
@@ -611,8 +604,9 @@ impl App {
             return;
         }
         let Some(client)=self.state_mut().phone.client else{return};
-        if let Some((module,root,vm_id))=self.module_host.get(client).map(|i|(i.module.id(),i.root.clone(),i.vm_id)) {
-            if crate::mobile_back::offer_back_to_module(cx,module,&root,vm_id) {return;}
+        if let Some(module)=self.module_host.get(client).map(|i|i.module.id()) {
+            // A failed instance cannot take Back: the phone leaves it.
+            if self.module_host.dispatch(cx,client,"Back",|cx,root|crate::mobile_back::offer_back_to_module(cx,module,root)).unwrap_or(false) {return;}
             let return_to=self.state_mut().phone.return_to;
             let clients=&self.state_mut().clients;
             let origin=crate::mobile_back::leave_target(return_to,client,|c|clients.get(&c).is_some_and(|s|s.closing.is_none()));
@@ -657,12 +651,10 @@ impl App {
         }
         let Some(client)=self.state_mut().phone.foreground() else{return};
         if self.module_host.is_module(client) {
-            if let Some((root,vm_id))=self.module_host.get(client).map(|i|(i.root.clone(),i.vm_id)) {
-                let entry=enter_isolate(cx,vm_id);
+            self.module_host.dispatch(cx,client,"a typed key",|cx,root| {
                 root.handle_event(cx,&event,&mut Scope::empty());
-                if let Event::KeyDown(key)=event {root.handle_event(cx,&Event::KeyUp(key),&mut Scope::empty());}
-                leave_isolate(cx,entry);
-            }
+                if let Event::KeyDown(key)=&event {root.handle_event(cx,&Event::KeyUp(key.clone()),&mut Scope::empty());}
+            });
         }else if let Some(sender)=self.state_mut().clients.get(&client).and_then(|s|s.sender.as_ref()) {
             match event {
                 Event::KeyDown(key)=>send_to_app(sender,vec![StudioToApp::KeyDown(key.clone()),StudioToApp::KeyUp(key)]),
