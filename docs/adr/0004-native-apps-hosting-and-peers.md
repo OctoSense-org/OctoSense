@@ -11,7 +11,7 @@
 
 | | Native app | Script system app |
 | --- | --- | --- |
-| Today | App Hub (the store and the Card runner), Rinx, Terminal; opt-in Sheets, Reference, AppCard; native News, Maps and Photos crates kept "for comparison" | News, Maps, Photos, Camera, Mail, AI providers |
+| Today | App Hub (the store and the Card runner), Rinx, Terminal; opt-in Sheets, Reference, AppCard; the native News, Maps and Photos crates once kept "for comparison" were deleted by [#113](https://github.com/OctoSense-org/OctoSense/pull/113) (the script apps are the only versions) | News, Maps, Photos, Camera, Mail, AI providers |
 | Source | a crate pinned in the root `Cargo.toml` | `apps/<name>/bundle/`, packed from the same commit (`desktop/system-apps.json`) |
 | Code | Rust: full process rights, `unsafe`, files, PTYs, threads | OctoScript in App Hub's Card runner; reaches the shell only through `host.request` for families its manifest was granted |
 | Runs | in the shell process, one splash isolate per instance (`crates/shell/src/module_host.rs`); the isolate separates the script heap only | in the shell process, a nested isolate per instance with `mod.res` and `mod.run` stripped |

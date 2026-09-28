@@ -92,7 +92,6 @@ cargo run --release -p octosense
 已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx、AppCard、Reference 和 Sheets 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上（以及 Vulkan 构建且处于 Wayland 会话的 Linux 上）作为独立进程运行。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
 
 ```sh
-cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets
 cargo run --release -p octosense -- --module terminal
 ```
 

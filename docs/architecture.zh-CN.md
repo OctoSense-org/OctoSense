@@ -430,7 +430,7 @@ sequenceDiagram
 2. **崩溃进程应用的重启。** ADR 0004 §2 说它的磁贴会显示已关闭并提供重启。Shell 实际上移除客户端并发出 “App stopped” 通知；Restart 界面只用于进程内模块（`module_view.rs`）。
 3. **Agent 工作区 = 账号目录。** ADR 0004 §11 说它就是 `peer/prepare` 的 `cwd`。broker 不向 `peer/prepare` 发送 `cwd`，把 peer 绑定到内核分配的工作区；存储 API 的 `agent_workspace` 没有与之连接。账号目录名（`account_hash`，SHA-256）和记忆命名空间标签（`broker.rs` 中的 FNV-1a）也是对账号的两种不同 hash。
 4. **ADR 0003 的 “What the profile runs”** 说 OctoSense 既不配置工具集也不配置沙箱。自 [#117](https://github.com/OctoSense-org/OctoSense/pull/117) 起，Shell 每次启动前都向 `_main` profile 写入拒绝 `group:runtime` 的 `tool_policy`，因此宿主自己的回合也没有 octos shell。
-5. **过时的背景描述。** ADR 0004 的背景表格和根 README 的目录结构表仍提到原生 News、Maps 和 Photos 对比模块（`apps/*/native`）；ADR 0004 步骤 1 已删除它们。[ai-services.zh-CN.md](ai-services.zh-CN.md) 的日期是 2026-09-27：其架构图显示 Card runner “没有 `octos.*` 服务”（#106 已合入），并说脚本应用“在首次使用同意落地之前”关闭（同意机制已在 #120 落地；`Policy::contained_apps` 开关默认仍关闭）。
+5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。仍未修复：[ai-services.zh-CN.md](ai-services.zh-CN.md) 的日期是 2026-09-27：其架构图显示 Card runner “没有 `octos.*` 服务”（#106 已合入），并说脚本应用“在首次使用同意落地之前”关闭（同意机制已在 #120 落地；`Policy::contained_apps` 开关默认仍关闭）。
 6. **“在 Settings 中开启”命令执行。** 文档已修复：`crates/kernel/README.md` 和 `system_tools.rs` 现在说明它尚在计划中（没有 Settings 开关调用 `SystemAgentTools::grant_command_execution`；宿主工具需要 octos#2567）。
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都应通过 `peer/tool/call` 到达路由；目前只有 AI 总线向它提交请求（见上文）。没有应用注册自己的 `confirm: app` 面板，因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。

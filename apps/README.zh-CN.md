@@ -26,7 +26,7 @@ OctoSense-System-Apps 仓库（已归档）。
 - **Reference**（`reference`）：Shell 通过 `app-reference` 链接的 Rust
   模块（手机上始终链接）。Shell 链接的所有原生应用都在
   [`../native-apps.json`](../native-apps.json) 中声明。News、Photos 和 Maps
-  只有脚本应用版本：早期的原生模块已删除（原生应用 ADR 0004 §1，[#110](https://github.com/OctoSense-org/OctoSense/pull/110)）。Home 挂载的
+  只有脚本应用版本：早期的原生模块已删除（原生应用 ADR 0004 §1，[#113](https://github.com/OctoSense-org/OctoSense/pull/113)）。Home 挂载的
   Photos 示例图库位于 `photos/resources/`。
 
 这些应用依赖的 Shell 服务就在旁边：
@@ -131,7 +131,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 
 ```
 <name>/bundle/               隔离运行的脚本应用：manifest.json、main.splash、图片资源
-<name>/native/               原生对比模块（news、photos、maps）；Photos 的原图库
+photos/resources/            Home 挂载的 Photos 示例图库
 mail/host-service/           octosense-mail-service，`mail` 宿主服务（Rust）
 ai-providers/                `llm` 宿主服务（host-service/）和 octosense-llm-config（config/：
                              octos 模型目录与服务商注册表、profile 合并、OCTOS1/OCTOS1E 二维码）
