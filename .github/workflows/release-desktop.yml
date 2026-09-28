@@ -82,6 +82,8 @@ jobs:
       # linuxdeploy (AppImage) runs without FUSE on the runner.
       APPIMAGE_EXTRACT_AND_RUN: '1'
       CARGO_TERM_COLOR: always
+      # Cargo's JSON is UTF-8; Windows' Python would decode it as cp1252.
+      PYTHONUTF8: '1'
     steps:
       - name: Check out byte for byte
         # Windows' Git converts to CRLF by default, which breaks the
