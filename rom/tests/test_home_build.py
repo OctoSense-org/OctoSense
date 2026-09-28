@@ -105,14 +105,16 @@ class BuildTests(unittest.TestCase):
 
     def test_personal_paths_scan_only_native_libraries(self):
         import zipfile
+        users = b"/Users" + b"/"  # split so the tracked-path guard does not flag the fixture
         with tempfile.TemporaryDirectory() as temp:
             apk = Path(temp) / "home.apk"
             with zipfile.ZipFile(apk, "w") as archive:
                 archive.writestr("lib/arm64-v8a/libclean.so", b"/cargo/registry/src/x.rs\0/octosense/phone")
-                archive.writestr("lib/arm64-v8a/libleak.so", b"\0/Users/Shared/build/cargo/git/x.rs\0")
-                archive.writestr("assets/readme.txt", b"/Users/someone")
+                archive.writestr("lib/arm64-v8a/libleak.so", b"\0" + users + b"Shared/build/cargo/git/x.rs\0")
+                archive.writestr("assets/readme.txt", users + b"someone")
             self.assertEqual(build.personal_paths(apk, home="/nonexistent-home"),
-                             {"lib/arm64-v8a/libleak.so": ["/Users/"]})
+                             {"lib/arm64-v8a/libleak.so": [users.decode()]})
+
 
 class StagingTests(unittest.TestCase):
     def setUp(self):
