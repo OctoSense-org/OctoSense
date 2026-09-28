@@ -89,7 +89,7 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
-A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx and AppCard in-process everywhere, the Terminal as a process on macOS and Windows, Reference and Sheets as processes on the desktop. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
+A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx and AppCard in-process everywhere, Reference and Sheets in-process everywhere, the Terminal as a process on macOS and Windows (and on Linux with a Vulkan build in a Wayland session). `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
 ```sh
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets

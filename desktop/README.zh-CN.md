@@ -89,7 +89,7 @@ cargo run --release -p octosense
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
 | `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
 
-已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx 和 AppCard 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上作为独立进程运行，Reference 和 Sheets 在桌面端作为独立进程运行。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
+已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx、AppCard、Reference 和 Sheets 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上（以及 Vulkan 构建且处于 Wayland 会话的 Linux 上）作为独立进程运行。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
 
 ```sh
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets

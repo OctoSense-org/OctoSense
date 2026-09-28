@@ -21,10 +21,12 @@ and the whole of `crates/shell/src/native_apps.rs`: what `linked_modules()`
 pushes under which feature, and each app's hosting per target (the default
 the shell uses when the person has not switched an app).
 
-It refuses `process` hosting on mobile or wasm targets, `process` without a
-`bin`, and two revisions of one git repository in the root pins. After a
-write, Cargo.lock is brought in step by cargo itself (`cargo update -p` for
-a pin that changed, then `cargo metadata`); --no-lock skips that.
+It refuses `process` hosting on mobile or wasm targets, plain `process` on
+Linux (non-Vulkan Linux runs every app in-process: `process-if-vulkan`),
+`process` without a `bin`, and two revisions of one git repository in the
+root pins. After a write, Cargo.lock is brought in step by cargo itself
+(`cargo update -p` for a pin that changed, then `cargo metadata`); --no-lock
+skips that.
 
   python3 tools/native_apps.py            # regenerate after editing the manifest
   python3 tools/native_apps.py --check    # CI: exit 1 when anything drifted
@@ -142,6 +144,9 @@ def validate(data):
                     problems.append(f"{where}: hosting.{target}: {value!r} is not one of {', '.join(HOSTINGS)}")
                 elif value != "module" and target in MODULE_ONLY:
                     problems.append(f"{where}: hosting.{target}: {target} has no processes; only 'module'")
+                elif value == "process" and target == "linux":
+                    problems.append(f"{where}: hosting.linux: 'process' would run without Vulkan+Wayland; "
+                                    "use 'process-if-vulkan' (ADR 0004 §2)")
                 elif value != "module" and not app["bin"]:
                     problems.append(f"{where}: hosting.{target}: '{value}' needs a bin")
         shells = app["shells"]
