@@ -56,11 +56,12 @@ separate kernel would be a different assistant with different memory.
    (`peer-…`/`peerctx-…`) in any call. Those sessions carry the apps' memory
    and workspaces, and their approvals and questions belong to the person in
    the app, as UPCR-2026-034 already requires of the system agent. It answers
-   prompts only on sessions it opened itself. A turn it starts gets no tool
-   that runs code or commands (`shell`, `exec_command`, `spawn*`, `browser`,
-   `git`, …), administers the server, profiles or skills, delegates, or
-   reaches peers (`peer_*`). The model therefore cannot drive the apps'
-   assistants or read the host's processes on its behalf.
+   prompts only on sessions it opened itself, and names no profile but
+   `_main`. A turn it starts keeps only a fixed allowlist of built-in
+   workspace, web, question and memory tools. Everything else is absent: no
+   command or code execution, delegation, administration, peers (`peer_*`),
+   MCP or plugin tools. The model therefore cannot drive the apps' assistants
+   or read the host's processes on its behalf.
 
    The external token is minted when Talk to Octos turns on, and again on
    **Revoke all clients** (which restarts the server, ending open
