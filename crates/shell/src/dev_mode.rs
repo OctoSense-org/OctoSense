@@ -31,11 +31,29 @@
 //! home (JSON lines; [`audit_tool_call`], [`audit_auto_approval`],
 //! [`audit_dev_run`]).
 //!
-//! **Consumers.** [`grants_all`] and [`auto_approve`] are what grant and
-//! approval code consults. The AI bus (`ai_bus.rs`) auto-approves a granted
-//! app's destructive tools and audits every call; the module host offers a
-//! granted module every assistant service it declares. The approval router
-//! (ADR 0004 step 7) will consult [`auto_approve`].
+//! **Approvals: none.** Developer mode overrides EVERY approval for the apps
+//! it covers (ADR 0004 §13, decided on #110): the shell answers each one
+//! itself, with no live sheet, no standing rule and no app's own
+//! `confirm: app` sheet, destructive, outward and `auto_approvable: false`
+//! tools included (Terminal commands, granted command execution, `dev.run`,
+//! deletes, payments). Every approval path asks [`answers_approval`] (one
+//! decision for every [`ApprovalKind`]) and logs each answer with
+//! [`audit_auto_approval`]. The paths today:
+//!
+//! - the chat pane's confirm card for a destructive tool, the Terminal's
+//!   `run` among them (`ai_bus.rs` over the socket, `pane_links.rs` in
+//!   process): a covered app is announced with every tool pre-approved, and
+//!   re-announced whenever the mode changes;
+//! - octos's own `approval/requested` in an app agent's context: the app
+//!   peer broker asks the shell's hook ([`answer_octos_approval`]) and
+//!   answers `approve` itself instead of handing it to the app.
+//!
+//! Seams for what octos#2567 and ADR 0004 step 7 add: the `confirm: app`
+//! hand-off asks [`overrides_app_confirm`] and skips the owning app's sheet;
+//! granted command execution (`terminal.run`, the system agent's granted
+//! commands, `dev.run`) asks [`approves_command`]; the approval router asks
+//! [`answers_approval`] before any standing rule. The module host offers a
+//! covered module every assistant service it declares ([`grants_all`]).
 //!
 //! **Never for external clients** (ADR 0003): developer grants and `dev.run`
 //! go only to app peer sessions on the shell's host connection
@@ -237,6 +255,36 @@ impl Launch {
 pub struct DevTag {
     pub profile_id: String,
     pub since: u64,
+}
+
+/// Every kind of approval there is (ADR 0004 §8, §10, §12). Developer mode
+/// answers them all alike; the kind is recorded in the audit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ApprovalKind {
+    /// The chat pane's confirm card for a destructive tool (the Terminal's
+    /// `run` included).
+    PaneConfirm,
+    /// A `confirm: app` tool: the owning app's own sheet.
+    AppConfirm,
+    /// octos's `approval/requested` in an app agent's context.
+    OctosApproval,
+    /// A shell-drawn sheet the approval router would evaluate against
+    /// standing rules (step 7).
+    HostConfirm,
+    /// Command execution: `terminal.run`, granted commands, `dev.run`.
+    Command,
+}
+
+impl ApprovalKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ApprovalKind::PaneConfirm => "pane_confirm",
+            ApprovalKind::AppConfirm => "app_confirm",
+            ApprovalKind::OctosApproval => "octos_approval",
+            ApprovalKind::HostConfirm => "host_confirm",
+            ApprovalKind::Command => "command",
+        }
+    }
 }
 
 /// Which connection a session is reached on.
@@ -492,6 +540,14 @@ impl Controller {
     pub fn auto_approve(&self, app: &str, now: u64) -> bool {
         self.grants_all(app, now)
     }
+    /// Whether developer mode answers this approval itself: for every kind,
+    /// whatever the tool declares (`auto_approvable: false` changes
+    /// nothing), when it covers the owning app and the call came over the
+    /// shell's host connection. A Talk to Octos client's approvals are its
+    /// own (ADR 0003) and never answered here.
+    pub fn answers_approval(&self, owning_app: &str, _kind: ApprovalKind, _auto_approvable: bool, connection: Connection, now: u64) -> bool {
+        connection == Connection::Host && self.grants_all(owning_app, now)
+    }
     pub fn profile(&self) -> ProfileKind {
         self.profile
     }
@@ -532,6 +588,8 @@ fn with<R>(f: impl FnOnce(&mut Controller) -> R) -> Option<R> {
 
 /// At startup, once: this home and this process's launch.
 pub fn init(home: &Path) {
+    // octos approvals in app agents' contexts ask developer mode first.
+    octosense_ai_host::app_peers::host_approvals::set_override(answer_octos_approval);
     let c = Controller::start(home, Launch::from_process(), now());
     if let Some(a) = c.active(now()) {
         eprintln!("dev-mode: ON ({:?}, from {}); audit: {}", a.scope, a.origin.as_str(), c.audit.path().display());
@@ -564,6 +622,43 @@ pub fn grants_all(app: &str) -> bool {
 /// Whether an approval for `app`'s tool is answered yes automatically.
 pub fn auto_approve(app: &str) -> bool {
     with(|c| c.auto_approve(app, now())).unwrap_or(false)
+}
+/// See [`Controller::answers_approval`]. The caller that gets `true` answers
+/// yes itself and logs it with [`audit_auto_approval`].
+pub fn answers_approval(owning_app: &str, kind: ApprovalKind, auto_approvable: bool, connection: Connection) -> bool {
+    with(|c| c.answers_approval(owning_app, kind, auto_approvable, connection, now())).unwrap_or(false)
+}
+/// Every approval of `app`'s tools, on the host connection (the pane and
+/// the app peers are the shell's own).
+pub fn overrides_every_approval(app: &str) -> bool {
+    answers_approval(app, ApprovalKind::PaneConfirm, false, Connection::Host)
+}
+/// Seam for the `confirm: app` hand-off (ADR 0004 §8, octos#2567): when this
+/// is true the shell does NOT hand the confirmation to the owning app's
+/// sheet; it answers the call approved, logs it
+/// (`audit_auto_approval(.., ApprovalKind::AppConfirm)`), and passes the call
+/// on marked as confirmed. Today's in-process modules that confirm a tool
+/// themselves still show their sheet: the module contract has no field to
+/// carry a host's confirmation yet.
+pub fn overrides_app_confirm(owning_app: &str) -> bool {
+    answers_approval(owning_app, ApprovalKind::AppConfirm, false, Connection::Host)
+}
+/// Seam for granted command execution (`terminal.run`, the system agent's
+/// granted commands, `dev.run`): whether a command runs without its live
+/// approval. `auto_approvable: false` does not stop it; an external client
+/// never gets it. The caller logs the command ([`audit_dev_run`] or
+/// [`audit_auto_approval`] with [`ApprovalKind::Command`]).
+pub fn approves_command(owning_app: &str, connection: Connection) -> bool {
+    answers_approval(owning_app, ApprovalKind::Command, false, connection)
+}
+/// The app peers' hook (`octosense_app_peers::host_approvals`): octos asked
+/// an app agent's context for an approval; developer mode answers it.
+pub fn answer_octos_approval(app_id: &str, tool: &str, params: &Value) -> bool {
+    if !answers_approval(app_id, ApprovalKind::OctosApproval, false, Connection::Host) {
+        return false;
+    }
+    audit_auto_approval(app_id, tool, &params.to_string(), "octos", ApprovalKind::OctosApproval);
+    true
 }
 pub fn generation() -> u64 {
     with(|c| c.generation()).unwrap_or(0)
@@ -604,9 +699,12 @@ fn audit_if_on(kind: &str, entry: Value) {
 pub fn audit_tool_call(owning_app: &str, tool: &str, args: &str, caller: &str) {
     audit_if_on("tool_call", json!({"app": owning_app, "tool": tool, "args": args, "caller": caller}));
 }
-/// One automatic approval developer mode gave.
-pub fn audit_auto_approval(owning_app: &str, tool: &str, args: &str, caller: &str) {
-    audit_if_on("auto_approval", json!({"app": owning_app, "tool": tool, "args": args, "caller": caller}));
+/// One automatic approval developer mode gave, and of which kind.
+pub fn audit_auto_approval(owning_app: &str, tool: &str, args: &str, caller: &str, kind: ApprovalKind) {
+    audit_if_on(
+        "auto_approval",
+        json!({"app": owning_app, "tool": tool, "args": args, "caller": caller, "approval": kind.as_str()}),
+    );
 }
 /// One `dev.run` command and how it ended.
 pub fn audit_dev_run(app: &str, command: &str, cwd: Option<&str>, exit: Option<i32>) {
@@ -715,6 +813,26 @@ mod tests {
             assert_eq!(c.settings_available(), allowed);
             assert_eq!(c.active(T0).is_some(), allowed);
         }
+    }
+
+    /// Developer mode answers every kind of approval for a covered app,
+    /// `auto_approvable: false` included; never an uncovered app's, never an
+    /// external client's, and nothing once it is off.
+    #[test]
+    fn every_approval_is_answered_for_a_covered_app() {
+        use ApprovalKind::*;
+        let home = Home::new("approvals");
+        let mut c = Controller::start(&home.0, launch(BuildKind::Development, Some("terminal,os.mail"), false), T0);
+        for kind in [PaneConfirm, AppConfirm, OctosApproval, HostConfirm, Command] {
+            for auto_approvable in [true, false] {
+                assert!(c.answers_approval("terminal", kind, auto_approvable, Connection::Host, T0), "{kind:?}");
+                assert!(c.answers_approval("mail", kind, auto_approvable, Connection::Host, T0), "{kind:?}");
+                assert!(!c.answers_approval("os.photos", kind, auto_approvable, Connection::Host, T0), "{kind:?}");
+                assert!(!c.answers_approval("terminal", kind, auto_approvable, Connection::External, T0), "{kind:?}");
+            }
+        }
+        c.turn_off("test", T0);
+        assert!(!c.answers_approval("terminal", Command, false, Connection::Host, T0));
     }
 
     #[test]

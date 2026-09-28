@@ -2944,6 +2944,7 @@ impl App {
         for frame in self.ai_bus.reannounce() {
             self.send_to_pane(frame);
         }
+        self.pane_links.reannounce();
         for notice in dev_mode::take_notices() {
             self.notify(cx, "Developer mode", &notice);
         }

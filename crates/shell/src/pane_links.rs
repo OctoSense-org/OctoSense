@@ -45,6 +45,10 @@ pub enum PaneCall {
 pub struct PaneLinks {
     os: Option<ServiceLinkHost>,
     instances: HashMap<ClientId, ServiceLinkHost>,
+    /// Each instance's manifest as the module declared it: developer mode
+    /// (`ai_bus::dev_approved`) announces a changed copy, and the audit
+    /// reads the real risks from this one.
+    manifests: HashMap<ClientId, ServiceManifest>,
 }
 
 impl PaneLinks {
@@ -72,12 +76,27 @@ impl PaneLinks {
     /// A module instance joins: its link waits in the lot until the chat
     /// root is up, and is adopted the moment it is.
     pub fn open_instance(&mut self, cx: &mut Cx, client: ClientId, manifest: ServiceManifest) {
-        let host = Self::open(cx.global::<PendingServiceLinks>(), manifest);
+        let approves = crate::dev_mode::overrides_every_approval(&manifest.id);
+        let host = Self::open(cx.global::<PendingServiceLinks>(), crate::ai_bus::dev_approved(&manifest, approves));
         self.instances.insert(client, host);
+        self.manifests.insert(client, manifest);
+    }
+
+    /// Developer mode changed: every instance registers again, so the
+    /// chat's registry sees what it must confirm now.
+    pub fn reannounce(&self) {
+        for (client, host) in &self.instances {
+            if let Some(manifest) = self.manifests.get(client) {
+                let approves = crate::dev_mode::overrides_every_approval(&manifest.id);
+                let manifest = crate::ai_bus::dev_approved(manifest, approves);
+                let _ = host.up.send(HostedUp { from: None, msg: ServiceUp::Register { manifest, port_tag: 0 } });
+            }
+        }
     }
 
     /// The instance is gone: closing its link is the unregistration.
     pub fn close_instance(&mut self, client: ClientId) -> bool {
+        self.manifests.remove(&client);
         self.instances.remove(&client).is_some()
     }
 
@@ -94,7 +113,10 @@ impl PaneLinks {
         if let Some(os) = &self.os {
             loop {
                 match os.down.try_recv() {
-                    Ok(HostedDown { msg: ServiceDown::Call(call), .. }) => out.push(PaneCall::Os(call)),
+                    Ok(HostedDown { msg: ServiceDown::Call(call), .. }) => {
+                        crate::ai_bus::audit_dev_call(crate::ai_bus::OS_ENDPOINT, None, &call, false);
+                        out.push(PaneCall::Os(call))
+                    }
                     Ok(_) => {}
                     Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
                 }
@@ -103,7 +125,13 @@ impl PaneLinks {
         for (client, host) in &self.instances {
             loop {
                 match host.down.try_recv() {
-                    Ok(HostedDown { msg: ServiceDown::Call(call), .. }) => out.push(PaneCall::Instance(*client, call)),
+                    Ok(HostedDown { msg: ServiceDown::Call(call), .. }) => {
+                        if let Some(manifest) = self.manifests.get(client) {
+                            let approves = crate::dev_mode::overrides_every_approval(&manifest.id);
+                            crate::ai_bus::audit_dev_call(&manifest.id, Some(manifest), &call, approves);
+                        }
+                        out.push(PaneCall::Instance(*client, call))
+                    }
                     Ok(HostedDown { msg: ServiceDown::Cancel { call_id }, .. }) => out.push(PaneCall::Cancel(*client, call_id)),
                     Ok(HostedDown { msg: ServiceDown::Subscribe { sub_id, topic, filter }, .. }) => {
                         out.push(PaneCall::Subscribe { client: *client, sub_id, topic, filter })

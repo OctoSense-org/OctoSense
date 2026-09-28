@@ -879,6 +879,23 @@ impl ContextInner {
                 }
             }
         }
+        // The host may answer octos's approval itself (developer mode): then
+        // the app hears that it was answered, and is never asked.
+        let session = match (params["session_id"].as_str(), params["topic"].as_str()) {
+            (Some(id), Some(topic)) if !id.contains('#') => format!("{id}#{topic}"),
+            (Some(id), _) => id.to_owned(),
+            _ => String::new(),
+        };
+        let mut method = method;
+        if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
+            let broker = inner.clone();
+            inner.rt().spawn(async move {
+                if let Err(e) = broker.request("approval/respond", respond).await {
+                    eprintln!("app-peers: the host's approval answer failed: {e}");
+                }
+            });
+            method = crate::host_approvals::ANSWERED_BY_HOST;
+        }
         let turn_id = params.get("turn_id").and_then(Value::as_str);
         let mut text_so_far = None;
         {
