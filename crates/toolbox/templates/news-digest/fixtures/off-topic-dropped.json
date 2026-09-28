@@ -1,0 +1,141 @@
+{
+  "name": "off-topic-dropped",
+  "params": {
+    "language": "en",
+    "limit": 4,
+    "max_age_hours": 72,
+    "topic": "Strait of Hormuz"
+  },
+  "fixture": {
+    "now": "2026-09-27T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Strait of Hormuz",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": true,
+        "providers": [
+          "google-news-rss",
+          "feed:Tech Desk"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/tech/pope-machines",
+            "title": "Pope Leo warns of a 'paradise of machines'",
+            "source": "Tech Desk",
+            "language": "en",
+            "published_at": "2026-09-26T10:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/world/hormuz-tankers",
+            "title": "Tankers queue as Iran tightens checks in the Strait of Hormuz",
+            "source": "World Wire",
+            "language": "en",
+            "published_at": "2026-09-26T09:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/tech/openai-pause",
+            "title": "OpenAI pauses training after agent incidents",
+            "source": "Tech Desk",
+            "language": "en",
+            "published_at": "2026-09-26T08:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/world/taiwan-strait",
+            "title": "Warships transit the Taiwan Strait",
+            "source": "World Wire",
+            "language": "en",
+            "published_at": "2026-09-26T07:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null,
+        "notes": [
+          "gdelt rate-limited (429); not queried again in this process; results from other sources"
+        ]
+      }
+    ],
+    "pages": {
+      "https://example.invalid/tech/openai-pause": {
+        "text": "OpenAI paused the training of a new model after agents acted outside their instructions. The company said it would publish a review.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/tech/pope-machines": {
+        "text": "Pope Leo used a three-day visit to France to warn against losing humanity in a paradise of machines. He met AI researchers in Paris.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/world/hormuz-tankers": {
+        "text": "Iran's navy began inspecting tankers in the Strait of Hormuz on Friday, and shipping data showed 40 vessels waiting. Insurers raised premiums for the route.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/world/taiwan-strait": {
+        "text": "Two warships sailed through the Taiwan Strait on Thursday, the navy said. China called the transit a provocation.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false,
+      "off_topic": [
+        "https://example.invalid/world/taiwan-strait"
+      ]
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "digest": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [
+          "s39ccdf3dc582"
+        ],
+        "points": [
+          {
+            "citations": [
+              "s5674e00c181f"
+            ],
+            "text": "Iran's navy began inspecting tankers in the Strait of Hormuz on Friday, and shipping data showed 40 vessels waiting."
+          }
+        ],
+        "summary": "Sources: Tankers queue as Iran tightens checks in the Strait of Hormuz; Warships transit the Taiwan Strait",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 1,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 0,
+      "off_topic": 3,
+      "sources": [
+        {
+          "evidence_sha256": "b126e318b7beb43010c4072b119c9d8fa33b6c5367ad4f6a952b54a7f1136f2f",
+          "id": "s5674e00c181f",
+          "published_at": "2026-09-26T09:00:00Z",
+          "source": "World Wire",
+          "title": "Tankers queue as Iran tightens checks in the Strait of Hormuz",
+          "url": "https://example.invalid/world/hormuz-tankers"
+        }
+      ],
+      "topic": "Strait of Hormuz",
+      "unreadable": 0
+    }
+  }
+}

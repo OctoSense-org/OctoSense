@@ -1,0 +1,100 @@
+use mod.research
+use mod.std.array
+
+// News digest (from the splash-research experiment): translate the query if
+// asked, discover sources, read every article concurrently, then summarize
+// once in the requested language with citations by article id.
+let reasons = []
+let topic = request.topic
+if request.translate_query {
+    let translated = try research.query({query: request.topic, language: request.search_language}).await() catch nil
+    if translated == nil {
+        array.push(reasons, "the query translation failed; searched the topic as given")
+    } else {
+        topic = translated.query
+    }
+}
+let found = try research.search({topic: topic, language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours}).await() catch nil
+let items = []
+if found != nil {
+    items = found.items
+}
+
+// Start every read before awaiting any: the host runs them concurrently.
+// Results the backend says it cannot read are counted, not read.
+let tasks = []
+let unreadable = 0
+for item in items {
+    if item.readable {
+        array.push(tasks, research.article({id: item.id}))
+    } else {
+        unreadable = unreadable + 1
+    }
+}
+// A page that does not mention the topic (the host says so with
+// `on_topic: false`) is counted, not digested.
+let ids = []
+let sources = []
+let missing = 0
+let off_topic = 0
+for task in tasks {
+    let article = try task.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } elif article.on_topic == false {
+        off_topic = off_topic + 1
+    } else {
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+}
+
+// One model call, only when there is something to digest. With the topic
+// as its focus, the model also marks articles that are not about it; those
+// leave the sources.
+let digest = nil
+if array.len(ids) > 0 {
+    let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
+    digest = resolved
+}
+if digest != nil {
+    let kept = []
+    for source in sources {
+        if array.contains(digest.off_topic, source.id) {
+            off_topic = off_topic + 1
+        } else {
+            array.push(kept, source)
+        }
+    }
+    sources = kept
+}
+
+// The status says whether the digest is complete, and `reasons` why not:
+// - ready: articles on the topic were read and the digest kept every point.
+//   Failed, unreadable or off-topic results and suspended providers are
+//   counted (`missing`, `unreadable`, `off_topic`) and in the diagnostics,
+//   not held against it.
+// - partial: the translation or the digest failed, or the digest dropped
+//   points.
+// - failed: the search failed or nothing on the topic was read.
+if array.len(ids) > 0 && digest == nil {
+    array.push(reasons, "the digest failed; the sources are listed without a digest")
+}
+if digest != nil && digest.dropped_points > 0 {
+    array.push(reasons, "the digest dropped " + digest.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if array.len(ids) == 0 {
+    status = "failed"
+    if found == nil {
+        array.push(reasons, "the search failed")
+    } elif array.len(items) == 0 {
+        array.push(reasons, "the search found nothing")
+    } else {
+        array.push(reasons, "no article on the topic was read (" + missing + " failed, " + unreadable + " unreadable, " + off_topic + " off topic)")
+    }
+}
+{status: status, reasons: reasons, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable, off_topic: off_topic}}

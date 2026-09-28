@@ -1,0 +1,201 @@
+{
+  "name": "two-languages",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "es",
+        "translate": true
+      }
+    ],
+    "per_language": 2,
+    "read_top": 3,
+    "topic": "urban heat islands"
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "urban heat islands",
+        "language": "en",
+        "delay_ms": 50,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/en/cool-roofs",
+            "title": "Riverton paints 400 roofs white to cut summer heat",
+            "source": "Riverton Record",
+            "language": "en",
+            "published_at": "2026-09-19T07:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/shared/heat-map",
+            "title": "New heat map shows 6°C gap between districts",
+            "source": "Metro Science",
+            "language": "en",
+            "published_at": "2026-09-18T12:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "islas de calor urbano",
+        "language": "es",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/es/arboles",
+            "title": "Villaserena plantará 5.000 árboles en barrios sin sombra",
+            "source": "Noticias de Villaserena",
+            "language": "es",
+            "published_at": "2026-09-19T09:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/shared/heat-map",
+            "title": "Nuevo mapa de calor muestra 6 °C de diferencia",
+            "source": "Metro Science",
+            "language": "es",
+            "published_at": "2026-09-18T12:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/en/cool-roofs": {
+        "text": "Riverton will paint 400 public roofs with reflective coating before next summer. The city estimates indoor temperatures in those buildings will drop by up to 3°C.",
+        "title": null,
+        "delay_ms": 80,
+        "error": null
+      },
+      "https://example.invalid/es/arboles": {
+        "text": "Villaserena plantará 5.000 árboles en los barrios con menos sombra para reducir el calor antes de marzo de 2027. El plan costará 2,1 millones de euros.",
+        "title": null,
+        "delay_ms": 70,
+        "error": null
+      },
+      "https://example.invalid/shared/heat-map": {
+        "text": "A satellite heat map published by the regional observatory shows surface temperatures up to 6°C higher in dense districts than in parks. The observatory will update the map monthly.",
+        "title": null,
+        "delay_ms": 60,
+        "error": null
+      }
+    },
+    "translations": {
+      "urban heat islands": "islas de calor urbano"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "brief": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "sc5bdf393ab2c"
+            ],
+            "text": "Riverton will paint 400 public roofs with reflective coating before next summer."
+          },
+          {
+            "citations": [
+              "s8adaf2c6a048"
+            ],
+            "text": "Villaserena plantará 5.000 árboles en los barrios con menos sombra para reducir el calor antes de marzo de 2027."
+          },
+          {
+            "citations": [
+              "sfe44c683dd79"
+            ],
+            "text": "A satellite heat map published by the regional observatory shows surface temperatures up to 6°C higher in dense districts than in parks."
+          }
+        ],
+        "summary": "Sources: Riverton paints 400 roofs white to cut summer heat; Villaserena plantará 5.000 árboles en barrios sin sombra; New heat map shows 6°C gap between districts",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 0,
+      "queries": [
+        {
+          "failed": 0,
+          "found": 2,
+          "language": "en",
+          "left": 0,
+          "off_topic": 0,
+          "read": 2,
+          "terms": "urban heat islands",
+          "unreadable": 0
+        },
+        {
+          "failed": 0,
+          "found": 2,
+          "language": "es",
+          "left": 0,
+          "off_topic": 0,
+          "read": 1,
+          "terms": "islas de calor urbano",
+          "unreadable": 0
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "4732c9d98a6c1c9a0cb913b3822eb41ec832f0946c3945fff6c344b6c546fc46",
+          "id": "sc5bdf393ab2c",
+          "language": "en",
+          "published_at": "2026-09-19T07:00:00Z",
+          "source": "Riverton Record",
+          "title": "Riverton paints 400 roofs white to cut summer heat",
+          "url": "https://example.invalid/en/cool-roofs"
+        },
+        {
+          "evidence_sha256": "73f2aaa7321ba3b89e2efb914274bc13f5e95ce37acc150fe2e6dc8b81a185b2",
+          "id": "s8adaf2c6a048",
+          "language": "es",
+          "published_at": "2026-09-19T09:00:00Z",
+          "source": "Noticias de Villaserena",
+          "title": "Villaserena plantará 5.000 árboles en barrios sin sombra",
+          "url": "https://example.invalid/es/arboles"
+        },
+        {
+          "evidence_sha256": "9a31a69ea35b8177aaf4403f0d49447ea23442462d82bfad4e98c85bf9b9b33f",
+          "id": "sfe44c683dd79",
+          "language": "en",
+          "published_at": "2026-09-18T12:00:00Z",
+          "source": "Metro Science",
+          "title": "New heat map shows 6°C gap between districts",
+          "url": "https://example.invalid/shared/heat-map"
+        }
+      ],
+      "topic": "urban heat islands"
+    }
+  }
+}

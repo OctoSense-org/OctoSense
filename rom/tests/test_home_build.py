@@ -96,6 +96,26 @@ class BuildTests(unittest.TestCase):
                 build.octos_revision(lock)
 
 
+    def test_rustflags_remap_the_checkout_and_cargo_home(self):
+        flags = build.rustflags({"RUSTFLAGS": "-C debuginfo=0", "CARGO_HOME": "/opt/cargo"})
+        self.assertTrue(flags.startswith("-C debuginfo=0 "))
+        self.assertIn("--remap-path-prefix=/opt/cargo=/cargo", flags)
+        # rustc applies the last matching remap: the checkout wins over home.
+        self.assertTrue(flags.endswith(f"--remap-path-prefix={build.REPO}=/octosense"))
+
+    def test_personal_paths_scan_only_native_libraries(self):
+        import zipfile
+        users = b"/Users" + b"/"  # split so the tracked-path guard does not flag the fixture
+        with tempfile.TemporaryDirectory() as temp:
+            apk = Path(temp) / "home.apk"
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("lib/arm64-v8a/libclean.so", b"/cargo/registry/src/x.rs\0/octosense/phone")
+                archive.writestr("lib/arm64-v8a/libleak.so", b"\0" + users + b"Shared/build/cargo/git/x.rs\0")
+                archive.writestr("assets/readme.txt", users + b"someone")
+            self.assertEqual(build.personal_paths(apk, home="/nonexistent-home"),
+                             {"lib/arm64-v8a/libleak.so": [users.decode()]})
+
+
 class StagingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

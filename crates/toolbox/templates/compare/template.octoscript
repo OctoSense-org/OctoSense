@@ -1,0 +1,78 @@
+use mod.research
+use mod.std.array
+
+// Compare (from the experiment's composition set, "compare"): the same
+// aspect of two subjects searched together, read concurrently, one
+// comparison with citations. Both sides are needed: a missing side leaves the
+// comparison out and marks the result partial.
+let first = request.subjects[0]
+let second = request.subjects[1]
+let first_search = research.search({topic: first + " " + request.aspect, language: request.search_language, limit: request.per_subject, max_age_hours: request.max_age_hours})
+let second_search = research.search({topic: second + " " + request.aspect, language: request.search_language, limit: request.per_subject, max_age_hours: request.max_age_hours})
+let first_found = try first_search.await() catch nil
+let second_found = try second_search.await() catch nil
+
+let reads = []
+let read_subjects = []
+let reasons = []
+for side in [{subject: first, found: first_found}, {subject: second, found: second_found}] {
+    if side.found == nil {
+        array.push(reasons, "subject " + side.subject + ": the search failed")
+    } else {
+        for item in side.found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_subjects, side.subject)
+        }
+    }
+}
+
+let ids = []
+let sources = []
+let covered = []
+let missing = 0
+let index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    if article == nil {
+        missing = missing + 1
+    } else {
+        array.push(ids, article.id)
+        if array.contains(covered, read_subjects[index]) == false {
+            array.push(covered, read_subjects[index])
+        }
+        array.push(sources, {id: article.id, subject: read_subjects[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let comparison = nil
+if array.len(covered) == 2 {
+    let focus = "Compare " + first + " and " + second + ": " + request.aspect
+    let resolved = try research.digest({task: "compare", language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    comparison = resolved
+}
+// Ready when both sides were read and the comparison kept every point. A
+// failed read matters only when it leaves a side unread; a suspended
+// provider is in the diagnostics.
+for side in [{subject: first, found: first_found}, {subject: second, found: second_found}] {
+    if side.found != nil && array.len(side.found.items) == 0 {
+        array.push(reasons, "subject " + side.subject + ": nothing found")
+    } elif side.found != nil && array.contains(covered, side.subject) == false {
+        array.push(reasons, "subject " + side.subject + ": no article read (" + array.len(side.found.items) + " failed)")
+    }
+}
+if array.len(covered) == 2 && comparison == nil {
+    array.push(reasons, "the comparison failed; the sources are listed without it")
+}
+if comparison != nil && comparison.dropped_points > 0 {
+    array.push(reasons, "the comparison dropped " + comparison.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if array.len(ids) == 0 {
+    status = "failed"
+    array.push(reasons, "no article was read")
+}
+{status: status, reasons: reasons, data: {subjects: request.subjects, aspect: request.aspect, language: request.language, comparison: comparison, sources: sources, missing: missing}}

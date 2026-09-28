@@ -1,0 +1,81 @@
+use mod.research
+use mod.std.array
+use mod.std.text
+
+// Daily briefing (from the experiment's composition set, "briefing"): a few
+// topics searched together, the top articles of each read concurrently, one
+// briefing with a point or two per topic and citations.
+let searches = []
+for topic in request.topics {
+    array.push(searches, research.search({topic: topic, language: request.search_language, limit: request.per_topic, max_age_hours: request.max_age_hours}))
+}
+let topics = []
+let reads = []
+let read_topics = []
+let reasons = []
+let index = 0
+for pending in searches {
+    let topic = request.topics[index]
+    let found = try pending.await() catch nil
+    if found == nil {
+        array.push(reasons, "topic " + topic + ": the search failed")
+        array.push(topics, {topic: topic, found: 0, read: 0})
+    } else {
+        array.push(topics, {topic: topic, found: array.len(found.items), read: 0})
+        if array.len(found.items) == 0 {
+            array.push(reasons, "topic " + topic + ": nothing found")
+        }
+        for item in found.items {
+            array.push(reads, research.article({id: item.id}))
+            array.push(read_topics, index)
+        }
+    }
+    index = index + 1
+}
+
+let ids = []
+let sources = []
+let missing = 0
+index = 0
+for pending in reads {
+    let article = try pending.await() catch nil
+    let t = read_topics[index]
+    if article == nil {
+        missing = missing + 1
+    } else {
+        topics[t].read = topics[t].read + 1
+        array.push(ids, article.id)
+        array.push(sources, {id: article.id, topic: request.topics[t], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+    }
+    index = index + 1
+}
+
+let briefing = nil
+if array.len(ids) > 0 {
+    let focus = "A briefing on: " + text.join(request.topics, "; ")
+    let resolved = try research.digest({task: "brief", language: request.language, article_ids: ids, focus: focus}).await() catch nil
+    briefing = resolved
+}
+// Ready when every topic was read and the briefing kept every point. A
+// failed read is counted in `missing`; it matters only when it leaves a
+// topic unread. A suspended provider is in the diagnostics.
+for entry in topics {
+    if entry.found > 0 && entry.read == 0 {
+        array.push(reasons, "topic " + entry.topic + ": no article read (" + entry.found + " failed)")
+    }
+}
+if array.len(ids) > 0 && briefing == nil {
+    array.push(reasons, "the briefing failed; the sources are listed without it")
+}
+if briefing != nil && briefing.dropped_points > 0 {
+    array.push(reasons, "the briefing dropped " + briefing.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if array.len(ids) == 0 {
+    status = "failed"
+    array.push(reasons, "no article was read")
+}
+{status: status, reasons: reasons, data: {topics: topics, language: request.language, briefing: briefing, sources: sources, missing: missing}}

@@ -12,7 +12,11 @@ workspace) after `python3 tools/setup.py`.
 If you are building a new OctoSense app rather than changing these, you are in
 the wrong place: follow OctoScript-App-Design-Flow's
 [AGENTS.md](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/AGENTS.md)
-and use the bundles here only as read-only examples.
+and use the bundles here only as read-only examples. For AI in an app (the
+`octos.*` and `model` capabilities, why `llm` is for system apps only, an
+app's own agent and `tools.json`, the system toolbox, `glance.publish` and
+`sys.digest`, and which of these are available or still coming), read its
+[AI in your app](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md).
 
 - An app is `apps/<name>/bundle/`: `manifest.json` + `main.splash` (+ artwork).
   Learn the language, the APIs and the development loop from

@@ -1,0 +1,133 @@
+{
+  "name": "no-air-quality",
+  "params": {
+    "activity": "gardens and walks",
+    "days": 3,
+    "language": "en",
+    "location": "Kyoto"
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Kyoto weather forecast",
+        "language": "en",
+        "delay_ms": 40,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/weather/kyoto-3day",
+            "title": "Kyoto forecast: dry Saturday, rain from Sunday afternoon",
+            "source": "Kansai Weather Desk",
+            "language": "en",
+            "published_at": "2026-09-20T05:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/weather/kansai-outlook",
+            "title": "Kansai outlook: typhoon remnants bring showers early next week",
+            "source": "Japan Weather Notes",
+            "language": "en",
+            "published_at": "2026-09-19T22:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Kyoto air quality",
+        "language": "en",
+        "delay_ms": 20,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [],
+        "error": "timeout"
+      }
+    ],
+    "pages": {
+      "https://example.invalid/weather/kansai-outlook": {
+        "text": "Remnants of a typhoon will bring showers to the Kansai region, Kyoto included, from Sunday to Tuesday. Temperatures stay mild, between 21°C and 26°C.",
+        "title": null,
+        "delay_ms": 110,
+        "error": null
+      },
+      "https://example.invalid/weather/kyoto-3day": {
+        "text": "Saturday will be dry and sunny in Kyoto with a high of 27°C. Rain is expected from Sunday afternoon, heavy at times, easing on Monday morning.",
+        "title": null,
+        "delay_ms": 90,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "reasons": [
+      "air quality: the search failed"
+    ],
+    "data": {
+      "activity": "gardens and walks",
+      "days": 3,
+      "language": "en",
+      "location": "Kyoto",
+      "missing": 0,
+      "plan": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "sa70b84c88c3c"
+            ],
+            "text": "Saturday will be dry and sunny in Kyoto with a high of 27°C."
+          },
+          {
+            "citations": [
+              "s474cdb64a74a"
+            ],
+            "text": "Remnants of a typhoon will bring showers to the Kansai region, Kyoto included, from Sunday to Tuesday."
+          }
+        ],
+        "summary": "Sources: Kyoto forecast: dry Saturday, rain from Sunday afternoon; Kansai outlook: typhoon remnants bring showers early next week",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "plan"
+      },
+      "sources": [
+        {
+          "evidence_sha256": "c560c70a27a446e42a6d9dca69e36bcc536c5b565df969c2e03c5f51e45421da",
+          "id": "sa70b84c88c3c",
+          "kind": "forecast",
+          "published_at": "2026-09-20T05:00:00Z",
+          "source": "Kansai Weather Desk",
+          "title": "Kyoto forecast: dry Saturday, rain from Sunday afternoon",
+          "url": "https://example.invalid/weather/kyoto-3day"
+        },
+        {
+          "evidence_sha256": "e65c8dedac56731718900b36a3ca263b7261754df5bb8a221bd8b5cd8254af3d",
+          "id": "s474cdb64a74a",
+          "kind": "forecast",
+          "published_at": "2026-09-19T22:00:00Z",
+          "source": "Japan Weather Notes",
+          "title": "Kansai outlook: typhoon remnants bring showers early next week",
+          "url": "https://example.invalid/weather/kansai-outlook"
+        }
+      ]
+    }
+  }
+}

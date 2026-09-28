@@ -1,0 +1,43 @@
+{
+  "id": "news-digest",
+  "version": "1.3.0",
+  "title": "News digest",
+  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read), leave out pages that do not mention the topic and articles the model finds off topic, and summarize the rest once in the requested language, citing each point's articles. Optionally translates the query into the search language first. Ready when articles on the topic were read and the digest kept every point; partial, with the reasons, when the translation or the digest failed or the digest dropped points; failed when the search failed or nothing on the topic was read.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["topic", "language"],
+    "properties": {
+      "topic": {"type": "string", "minLength": 1, "maxLength": 160, "description": "What to search for, in the person's words."},
+      "language": {"type": "string", "minLength": 2, "maxLength": 16, "description": "BCP 47 tag of the digest's language."},
+      "search_language": {"type": "string", "minLength": 2, "maxLength": 16, "default": "en", "description": "BCP 47 tag of the sources to search."},
+      "translate_query": {"type": "boolean", "default": false, "description": "Translate the topic into the search language first (one model call)."},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 5, "default": 3, "description": "Articles to read."},
+      "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 720, "default": 72}
+    }
+  },
+  "modules": [{"module": "research", "methods": ["query", "search", "article", "digest"]}],
+  "budget": {"max_calls": 8, "max_model_calls": 2, "max_reads": 7, "max_ms": 60000, "max_concurrency": 4},
+  "output": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["topic", "language", "digest", "sources", "missing", "unreadable", "off_topic"],
+    "properties": {
+      "topic": {"type": "string"},
+      "language": {"type": "string"},
+      "digest": {"description": "research.digest's result, or null when nothing was read or the model failed."},
+      "sources": {"type": "array", "maxItems": 5, "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "title", "url", "source", "published_at", "evidence_sha256"],
+        "properties": {
+          "id": {"type": "string"}, "title": {"type": "string"}, "url": {"type": "string"},
+          "source": {"type": "string"}, "published_at": {"type": "string"},
+          "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64}
+        }}},
+      "missing": {"type": "integer", "minimum": 0},
+      "unreadable": {"type": "integer", "minimum": 0, "description": "Results skipped because the backend cannot read them."},
+      "off_topic": {"type": "integer", "minimum": 0, "description": "Articles read but left out as off topic: the page does not mention the topic's terms, or the model found it is not about the topic."}
+    }
+  },
+  "provenance": true
+}

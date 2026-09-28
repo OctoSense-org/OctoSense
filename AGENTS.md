@@ -16,6 +16,7 @@
 | The octos kernel service | `crates/kernel/` | `cargo test --locked -p octosense-kernel`, `apps.yml` |
 | The octos kernel an Android APK bundles | `tools/kernel-artifact.py` | `python3 -m unittest discover -s tools -p 'test_*.py'` |
 | Apps' access to the assistant | `crates/app-peers/` | its README, `apps.yml` |
+| The system toolbox's workflow templates (library, runner, forks, evaluation, `mod.research`) | `crates/toolbox/` (templates in `crates/toolbox/templates/<id>/`) | `cargo test --locked -p octosense-toolbox`, its README, `apps.yml` |
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
 | A host service (`mail`, `llm`, `model`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |
 | AppCard (opt-in) | `apps/appcard/` | [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md), `apps.yml` |
@@ -23,6 +24,8 @@
 | A decision | `docs/adr/` (next free number) | — |
 
 Start every session with `python3 tools/setup.py` (it prepares `.sources/`, and changes nothing that is already right).
+
+On a machine that already has clones of Makepad, OctoScript or Octoscript-Makepad, never let setup clone them again: name the clones as a hub (`~/.config/octosense/sources.json`, `--hub DIR` or `OCTOSENSE_SOURCES_HUB`; see the README's Set up) so every `.sources/` entry is a `git worktree` of the one clone, and run `python3 tools/setup.py --remove-worktrees` before deleting a checkout of this repository.
 
 ## Rules
 
