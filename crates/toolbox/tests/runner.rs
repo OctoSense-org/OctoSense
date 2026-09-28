@@ -184,25 +184,29 @@ async fn the_model_budget_is_enforced_and_leaves_a_partial_result() {
 async fn the_page_and_call_budgets_are_enforced() {
     let (case, template) = city();
     let folder = temp_dir("page-budget");
-    // The scope's page limit: the search and one article.
+    // The scope's page limit: pages are articles read, so two of the three.
+    // The search is not charged to it, however many feeds it fetched.
     let scoped = app(&folder).with_scope(Scope {
         max_pages: Some(2),
         ..Scope::default()
     });
+    let mut data = case.fixture.clone();
+    data.searches[0].fetches = 5;
     let result = run(
         &template,
         &scoped,
         case.params.clone(),
-        &fixture::host(&case.fixture),
+        &fixture::host(&data),
         RunOptions::default(),
     )
     .await
     .unwrap();
     assert_eq!(result.status, RunStatus::Partial);
     assert_eq!(result.stats.pages, 2);
-    assert_eq!(result.stats.denied, 2);
-    assert_eq!(result.data["missing"], 2);
-    assert_eq!(result.data["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(result.stats.search_fetches, 5);
+    assert_eq!(result.stats.denied, 1);
+    assert_eq!(result.data["missing"], 1);
+    assert_eq!(result.data["sources"].as_array().unwrap().len(), 2);
 
     // The call limit: the search and two articles, then nothing.
     let limited = app(&folder).with_budget(Budget {
@@ -315,11 +319,50 @@ async fn provenance_is_host_kept_and_model_urls_are_refused() {
         }
     }
 
-    // A model reply carrying a URL, or citing an article it was not given,
-    // is refused by the host: the digest is dropped, the sources stay.
+    // A summary carrying a URL is refused by the host: the digest is
+    // dropped, the sources stay.
+    let mut data = case.fixture.clone();
+    data.model.inject_url = true;
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert!(result.data["digest"].is_null());
+    assert_eq!(result.data["sources"].as_array().unwrap().len(), 3);
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("model output rejected: the summary contains a URL")));
+    assert!(!serde_json::to_string(&result.data)
+        .unwrap()
+        .contains("model.invalid"));
+}
+
+#[tokio::test]
+async fn one_bad_point_does_not_sink_the_digest() {
+    // The live failure of 27 Sep 2026: one point without text used to
+    // refuse the whole digest. Now invalid points are dropped with a
+    // diagnostic, and the valid ones are kept.
+    let (case, template) = city();
+    let folder = temp_dir("bad-point");
+    let good = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
     for model in [
         fixture::FakeModelConfig {
-            inject_url: true,
+            malformed_points: true,
             ..Default::default()
         },
         fixture::FakeModelConfig {
@@ -328,7 +371,7 @@ async fn provenance_is_host_kept_and_model_urls_are_refused() {
         },
     ] {
         let mut data = case.fixture.clone();
-        data.model = model;
+        data.model = model.clone();
         let result = run(
             &template,
             &app(&folder),
@@ -338,16 +381,134 @@ async fn provenance_is_host_kept_and_model_urls_are_refused() {
         )
         .await
         .unwrap();
-        assert_eq!(result.status, RunStatus::Partial);
-        assert!(result.data["digest"].is_null());
-        assert!(result
+        assert_eq!(result.status, RunStatus::Ready, "{:?}", result.diagnostics);
+        // Exactly the valid points survive.
+        assert_eq!(result.data["digest"], good.data["digest"], "{model:?}");
+        let dropped: Vec<&String> = result
             .diagnostics
             .iter()
-            .any(|d| d.contains("model output rejected")));
-        assert!(!serde_json::to_string(&result.data)
-            .unwrap()
-            .contains("model.invalid"));
+            .filter(|d| d.starts_with("research.digest") && d.contains("dropped"))
+            .collect();
+        let expected = if model.malformed_points { 3 } else { 1 };
+        assert_eq!(dropped.len(), expected, "{:?}", result.diagnostics);
+        let text = serde_json::to_string(&result).unwrap();
+        assert!(!text.contains("model.invalid"));
+        assert!(!text.contains("Invented."));
+        // Every citation is an article read in this run.
+        let read: Vec<&str> = result.provenance.iter().map(|p| p.id.as_str()).collect();
+        for point in result.data["digest"]["points"].as_array().unwrap() {
+            for citation in point["citations"].as_array().unwrap() {
+                assert!(read.contains(&citation.as_str().unwrap()));
+            }
+        }
     }
+}
+
+#[tokio::test]
+async fn news_digest_skips_results_the_backend_cannot_read() {
+    // The live run of 27 Sep 2026 on "China" spent all three reads on
+    // Google News links. The host lists readable results first; the
+    // template counts the rest and does not read them.
+    let (case, template) = city();
+    let mut data = case.fixture.clone();
+    data.searches[0].items[0].readable = false;
+    let folder = temp_dir("unreadable");
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.data["unreadable"], 1);
+    assert_eq!(result.data["missing"], 0);
+    assert_eq!((result.stats.pages, result.stats.failed), (2, 0));
+    assert_eq!(result.data["sources"].as_array().unwrap().len(), 2);
+    assert!(result.data["digest"].is_object());
+}
+
+#[tokio::test]
+async fn topic_brief_reads_every_language_that_has_a_readable_article() {
+    // The live failure of 27 Sep 2026: two searches fetching four feeds
+    // each used up `max_pages`, the zh results were all Google News links
+    // (unreadable without a browser), and the brief rested on one en
+    // article. Searches are no longer charged to `max_pages`, unreadable
+    // results are skipped, and each language gets a read.
+    let template = template("topic-brief");
+    let case = case("topic-brief", "unreadable-skipped");
+    let folder = temp_dir("languages");
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Ready, "{:?}", result.diagnostics);
+    assert_eq!(result.stats.search_fetches, 8);
+    assert_eq!(result.stats.pages, 4);
+    assert_eq!((result.stats.denied, result.stats.failed), (0, 0));
+    for query in result.data["queries"].as_array().unwrap() {
+        assert_eq!(query["read"], 2, "{query}");
+        assert_eq!(query["unreadable"], 1, "{query}");
+    }
+    let languages: Vec<&str> = result.data["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["language"].as_str().unwrap())
+        .collect();
+    assert_eq!(languages, ["en", "zh", "en", "zh"]);
+
+    // A failed read is replaced by that language's next candidate.
+    let case = common::case("topic-brief", "failed-read-fallback");
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    // Partial: a read failed, even though the fallback recovered.
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.data["missing"], 1);
+    assert_eq!(result.stats.pages, 3);
+    let reads: Vec<u64> = result.data["queries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|q| q["read"].as_u64().unwrap())
+        .collect();
+    assert_eq!(reads, [1, 1]);
+    assert!(result.data["brief"].is_object());
+
+    // With no readable result in a language, it goes unread and the run
+    // says so.
+    let mut data = case.fixture.clone();
+    for item in &mut data.searches[1].items {
+        item.readable = false;
+    }
+    let result = run(
+        &template,
+        &app(&folder),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.stats.failed, 0);
+    assert_eq!(result.data["queries"][1]["read"], 0);
+    assert_eq!(result.data["queries"][1]["unreadable"], 3);
+    assert_eq!(result.data["queries"][0]["read"], 2);
 }
 
 #[tokio::test]
@@ -510,6 +671,7 @@ impl ToolboxHost for Recorder {
                     model_calls: 0,
                     pages: 1,
                 },
+                notes: Vec::new(),
             })
         })
     }

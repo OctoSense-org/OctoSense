@@ -133,7 +133,8 @@
           "url": "https://example.invalid/news/water"
         }
       ],
-      "topic": "city infrastructure"
+      "topic": "city infrastructure",
+      "unreadable": 0
     }
   }
 }

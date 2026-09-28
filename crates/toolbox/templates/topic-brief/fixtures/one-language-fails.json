@@ -91,12 +91,16 @@
         {
           "found": 1,
           "language": "en",
-          "terms": "urban heat islands"
+          "read": 1,
+          "terms": "urban heat islands",
+          "unreadable": 0
         },
         {
           "found": 0,
           "language": "es",
-          "terms": "islas de calor urbano"
+          "read": 0,
+          "terms": "islas de calor urbano",
+          "unreadable": 0
         }
       ],
       "sources": [

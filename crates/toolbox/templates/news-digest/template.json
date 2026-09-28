@@ -1,8 +1,8 @@
 {
   "id": "news-digest",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "News digest",
-  "description": "Search news on a topic, read the top articles concurrently and summarize them once in the requested language, citing each point's articles. Optionally translates the query into the search language first.",
+  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read) and summarize them once in the requested language, citing each point's articles. Optionally translates the query into the search language first.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -21,7 +21,7 @@
   "output": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["topic", "language", "digest", "sources", "missing"],
+    "required": ["topic", "language", "digest", "sources", "missing", "unreadable"],
     "properties": {
       "topic": {"type": "string"},
       "language": {"type": "string"},
@@ -34,7 +34,8 @@
           "source": {"type": "string"}, "published_at": {"type": "string"},
           "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64}
         }}},
-      "missing": {"type": "integer", "minimum": 0}
+      "missing": {"type": "integer", "minimum": 0},
+      "unreadable": {"type": "integer", "minimum": 0, "description": "Results skipped because the backend cannot read them."}
     }
   },
   "provenance": true

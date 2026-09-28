@@ -1,0 +1,204 @@
+{
+  "name": "failed-read-fallback",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "zh",
+        "translate": true
+      }
+    ],
+    "per_language": 3,
+    "read_top": 2,
+    "topic": "river cleanup"
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "river cleanup",
+        "language": "en",
+        "delay_ms": 40,
+        "partial": false,
+        "providers": [
+          "gdelt",
+          "google-news-rss",
+          "feed:Riverton Record",
+          "feed:Metro Science"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/CBMiRIVERen1",
+            "title": "Volunteers pull 3 tonnes of plastic from the Riverton",
+            "source": "Riverton Record",
+            "language": "en",
+            "published_at": "2026-09-19T10:00:00Z",
+            "via": "google-news-rss",
+            "readable": false
+          },
+          {
+            "url": "https://example.invalid/en/river-volunteers",
+            "title": "Riverton volunteers clear 12 km of riverbank",
+            "source": "Riverton Record",
+            "language": "en",
+            "published_at": "2026-09-19T08:00:00Z",
+            "via": "gdelt"
+          },
+          {
+            "url": "https://example.invalid/en/river-sensors",
+            "title": "Sensors will track river pollution in real time",
+            "source": "Metro Science",
+            "language": "en",
+            "published_at": "2026-09-18T15:00:00Z",
+            "via": "gdelt"
+          }
+        ],
+        "error": null,
+        "fetches": 4
+      },
+      {
+        "topic": "河流清理",
+        "language": "zh",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "gdelt",
+          "google-news-rss",
+          "feed:Riverton Record",
+          "feed:Metro Science"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/CBMiRIVERzh1",
+            "title": "清河市启动河道清理行动",
+            "source": "清河日报",
+            "language": "zh",
+            "published_at": "2026-09-19T06:00:00Z",
+            "via": "google-news-rss",
+            "readable": false
+          },
+          {
+            "url": "https://example.invalid/zh/river-plan",
+            "title": "清河市公布三年河道治理计划",
+            "source": "清河日报",
+            "language": "zh",
+            "published_at": "2026-09-19T04:00:00Z",
+            "via": "gdelt"
+          },
+          {
+            "url": "https://example.invalid/zh/river-fish",
+            "title": "清理后河中鱼类回归",
+            "source": "清河晚报",
+            "language": "zh",
+            "published_at": "2026-09-18T09:00:00Z",
+            "via": "gdelt"
+          }
+        ],
+        "error": null,
+        "fetches": 4
+      }
+    ],
+    "pages": {
+      "https://example.invalid/en/river-sensors": {
+        "text": "Twenty sensors will report the river's pollution levels every ten minutes from November. The data will be published online.",
+        "title": null,
+        "delay_ms": 50,
+        "error": null
+      },
+      "https://example.invalid/en/river-volunteers": {
+        "text": "Some 400 volunteers cleared 12 km of the Riverton's banks on Saturday. The city will repeat the cleanup every spring.",
+        "title": null,
+        "delay_ms": 60,
+        "error": null
+      },
+      "https://example.invalid/zh/river-fish": {
+        "text": "河道清理完成后，监测人员记录到十二种本地鱼类回归。专家称水质明显改善。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/zh/river-plan": {
+        "text": "",
+        "title": null,
+        "delay_ms": 70,
+        "error": "HTTP 403"
+      }
+    },
+    "translations": {
+      "river cleanup": "河流清理"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "data": {
+      "brief": {
+        "language": "en",
+        "points": [
+          {
+            "citations": [
+              "saf6238e4fb1f"
+            ],
+            "text": "Some 400 volunteers cleared 12 km of the Riverton's banks on Saturday."
+          },
+          {
+            "citations": [
+              "saaa2157c4499"
+            ],
+            "text": "河道清理完成后，监测人员记录到十二种本地鱼类回归。"
+          }
+        ],
+        "summary": "Sources: Riverton volunteers clear 12 km of riverbank; 清理后河中鱼类回归",
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 1,
+      "queries": [
+        {
+          "found": 3,
+          "language": "en",
+          "read": 1,
+          "terms": "river cleanup",
+          "unreadable": 1
+        },
+        {
+          "found": 3,
+          "language": "zh",
+          "read": 1,
+          "terms": "河流清理",
+          "unreadable": 1
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "0889d4d7ce9d4fccae723a6983f008fcc68ee2cb4104225e9b5809e57d678ae8",
+          "id": "saf6238e4fb1f",
+          "language": "en",
+          "published_at": "2026-09-19T08:00:00Z",
+          "source": "Riverton Record",
+          "title": "Riverton volunteers clear 12 km of riverbank",
+          "url": "https://example.invalid/en/river-volunteers"
+        },
+        {
+          "evidence_sha256": "06baf68093714b5b7ebb543fb0b0ef35de595caf92882e97b1a7d9396e430ce5",
+          "id": "saaa2157c4499",
+          "language": "zh",
+          "published_at": "2026-09-18T09:00:00Z",
+          "source": "清河晚报",
+          "title": "清理后河中鱼类回归",
+          "url": "https://example.invalid/zh/river-fish"
+        }
+      ],
+      "topic": "river cleanup"
+    }
+  }
+}

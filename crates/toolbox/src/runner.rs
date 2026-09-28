@@ -59,7 +59,13 @@ pub struct RunStats {
     /// Host calls dispatched.
     pub calls: u32,
     pub model_calls: u32,
+    /// Pages charged to `max_pages`: article reads dispatched, whether or not
+    /// they succeeded.
     pub pages: u32,
+    /// Feeds and API responses the backend fetched for searches. Reported,
+    /// not charged to `max_pages` (see [`MethodKind::Search`]).
+    #[serde(default)]
+    pub search_fetches: u32,
     /// Calls refused by the budget before dispatch.
     pub denied: u32,
     /// Calls the host failed or that timed out.
@@ -297,11 +303,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                     Some(MethodKind::Model) if used.model_calls >= budget.max_model_calls => {
                         Some("max_model_calls")
                     }
-                    Some(MethodKind::Page | MethodKind::Search)
-                        if used.pages >= budget.max_pages =>
-                    {
-                        Some("max_pages")
-                    }
+                    Some(MethodKind::Page) if used.pages >= budget.max_pages => Some("max_pages"),
                     None => Some("undeclared method"),
                     _ => None,
                 }
@@ -349,8 +351,8 @@ pub async fn run<H: ToolboxHost + ?Sized>(
             used.calls += 1;
             match kind {
                 Some(MethodKind::Model) => used.model_calls += 1,
-                Some(MethodKind::Page | MethodKind::Search) => used.pages += 1,
-                None => {}
+                Some(MethodKind::Page) => used.pages += 1,
+                Some(MethodKind::Search) | None => {}
             }
             let ctx = CallContext {
                 app: app.clone(),
@@ -401,8 +403,12 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                     Ok(reply) => {
                         match kind {
                             Some(MethodKind::Model) => used.model_calls += reply.usage.model_calls.saturating_sub(1),
-                            Some(MethodKind::Page | MethodKind::Search) => used.pages += reply.usage.pages.saturating_sub(1),
+                            Some(MethodKind::Page) => used.pages += reply.usage.pages.saturating_sub(1),
+                            Some(MethodKind::Search) => stats.search_fetches += reply.usage.pages,
                             None => {}
+                        }
+                        for note in reply.notes {
+                            diagnostics.push(format!("{tool} (call {index}): {note}"));
                         }
                         for record in reply.provenance {
                             match provenance.get_mut(&record.id) {

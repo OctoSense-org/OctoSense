@@ -139,6 +139,7 @@ pub fn url_host(url: &str) -> Option<String> {
 pub struct Remaining {
     pub calls: u32,
     pub model_calls: u32,
+    /// Pages (article reads) left.
     pub pages: u32,
     pub ms: u64,
 }
@@ -162,6 +163,9 @@ pub struct CallContext {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub model_calls: u32,
+    /// For `article`: pages read, charged to `max_pages`. For `search`: the
+    /// feeds and API responses the backend fetched, reported in
+    /// `RunStats::search_fetches` and not charged to `max_pages`.
     pub pages: u32,
 }
 
@@ -197,6 +201,10 @@ pub struct HostReply {
     pub output: Value,
     pub provenance: Vec<Provenance>,
     pub usage: Usage,
+    /// Things the host corrected or dropped while still succeeding (a digest
+    /// point that failed validation, say). The runner adds each to the run's
+    /// diagnostics.
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

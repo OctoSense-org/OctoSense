@@ -57,6 +57,18 @@ pub struct RecordedSearch {
     /// Replay a provider failure instead of results.
     #[serde(default)]
     pub error: Option<String>,
+    /// Feeds and API responses this search reports it fetched (default 1).
+    /// A recording of a backend that queries several providers sets more.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub fetches: u32,
+}
+
+fn one() -> u32 {
+    1
+}
+
+fn is_one(n: &u32) -> bool {
+    *n == 1
 }
 
 fn fixture_providers() -> Vec<String> {
@@ -85,8 +97,14 @@ pub struct FakeModelConfig {
     pub fail: bool,
     /// Put a URL into the digest summary (the host must refuse it).
     pub inject_url: bool,
-    /// Cite an article id the digest was not given (the host must refuse it).
+    /// Add a point citing an article id the digest was not given (the host
+    /// must drop it).
     pub cite_unknown: bool,
+    /// Add three invalid points after the valid ones: no text, a URL in the
+    /// text, and a citation to an article it was not given. The host must
+    /// drop them and keep the rest.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub malformed_points: bool,
 }
 
 /// Replays recorded searches and pages.
@@ -139,7 +157,7 @@ impl ResearchBackend for FixtureBackend {
                     .collect(),
                 providers: recorded.providers.clone(),
                 partial: recorded.partial,
-                pages: 1,
+                pages: recorded.fetches,
             })
         })
     }
@@ -248,6 +266,16 @@ impl ModelClient for FakeModel {
                         })
                         .collect();
                     if self.config.cite_unknown {
+                        points.push(json!({"text": "Invented.", "citations": ["s000000000000"]}));
+                    }
+                    if self.config.malformed_points {
+                        let cite = articles
+                            .first()
+                            .map(|a| a["id"].clone())
+                            .unwrap_or_default();
+                        points.push(json!({"text": "", "citations": [cite.clone()]}));
+                        points.push(json!({"text": "More at https://model.invalid/story",
+                            "citations": [cite]}));
                         points.push(json!({"text": "Invented.", "citations": ["s000000000000"]}));
                     }
                     Ok(json!({"summary": summary, "points": points}).to_string())

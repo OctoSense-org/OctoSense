@@ -11,10 +11,16 @@ use serde_json::{json, Value};
 pub enum MethodKind {
     /// Runs a model: one `max_model_calls` each.
     Model,
-    /// Reads one page: one `max_pages` each.
+    /// Reads one page: one `max_pages` each, so `max_pages` is the number of
+    /// articles a run may try to read.
     Page,
-    /// Queries sources: charged the pages (feeds, API responses) the host
-    /// reports; needs at least one page left.
+    /// Queries sources: one call. The feeds and API responses the backend
+    /// fetched are reported (`RunStats::search_fetches`) but not charged to
+    /// `max_pages`: how many providers a backend queries is its own
+    /// configuration (one for the fixture, four for the interim adapter), and
+    /// charging it would make the same template read fewer articles on a
+    /// broader backend. The fan-out is capped per search by
+    /// `research::MAX_SEARCH_FETCHES`.
     Search,
 }
 
@@ -65,14 +71,15 @@ fn string(min: usize, max: usize) -> Value {
 
 fn search_item() -> Value {
     json!({"type": "object", "additionalProperties": false,
-    "required": ["id", "title", "url", "source", "language", "published_at"],
+    "required": ["id", "title", "url", "source", "language", "published_at", "readable"],
     "properties": {
         "id": string(1, 64),
         "title": string(0, 400),
         "url": string(1, 2048),
         "source": string(0, 200),
         "language": string(0, 16),
-        "published_at": string(0, 40)
+        "published_at": string(0, 40),
+        "readable": {"type": "boolean"}
     }})
 }
 
@@ -104,7 +111,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "search",
             kind: MethodKind::Search,
-            description: "One query through the provider chain; structured items with host-assigned ids",
+            description: "One query through the provider chain; structured items with host-assigned ids, readable items first (`readable: false` marks one the backend cannot read)",
             input: || {
                 json!({"type": "object", "additionalProperties": false, "required": ["topic"],
                     "properties": {
@@ -191,7 +198,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
                     }})
             },
             max_input_bytes: 2048,
-            max_output_bytes: 16 * 1024,
+            max_output_bytes: 32 * 1024,
         },
     ],
 };

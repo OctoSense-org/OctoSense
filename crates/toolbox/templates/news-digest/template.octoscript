@@ -12,9 +12,15 @@ if request.translate_query {
 let found = research.search({topic: topic, language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours}).await()
 
 // Start every read before awaiting any: the host runs them concurrently.
+// Results the backend says it cannot read are counted, not read.
 let tasks = []
+let unreadable = 0
 for item in found.items {
-    array.push(tasks, research.article({id: item.id}))
+    if item.readable {
+        array.push(tasks, research.article({id: item.id}))
+    } else {
+        unreadable = unreadable + 1
+    }
 }
 let ids = []
 let sources = []
@@ -36,10 +42,10 @@ if array.len(ids) > 0 {
     digest = resolved
 }
 let status = "ready"
-if missing > 0 || found.source.partial || array.len(found.items) == 0 {
+if missing > 0 || unreadable > 0 || found.source.partial || array.len(found.items) == 0 {
     status = "partial"
 }
 if array.len(ids) > 0 && digest == nil {
     status = "partial"
 }
-{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing}}
+{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable}}

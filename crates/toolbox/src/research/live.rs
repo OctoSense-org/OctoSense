@@ -573,6 +573,13 @@ fn encode(text: &str) -> String {
     url::form_urlencoded::byte_serialize(text.as_bytes()).collect()
 }
 
+/// Links this adapter cannot read without a browser: Google News article
+/// links resolve to the publisher only through JavaScript. Search marks them
+/// `readable: false` so templates skip them, and `read` refuses them.
+pub fn needs_browser(url: &str) -> bool {
+    url_host(url).as_deref() == Some("news.google.com")
+}
+
 fn gdelt_language(code: &str) -> Option<&'static str> {
     Some(
         match code.split('-').next()?.to_ascii_lowercase().as_str() {
@@ -630,6 +637,7 @@ pub fn parse_feed(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                         language: feed_language.clone(),
                         published_at: String::new(),
                         via: String::new(),
+                        readable: true,
                     });
                 } else if name == "link" {
                     if let Some(item) = current.as_mut() {
@@ -724,6 +732,7 @@ pub fn parse_gdelt(bytes: &[u8]) -> Result<Vec<FoundItem>, HostError> {
                             .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
                             .unwrap_or_default(),
                         via: "gdelt".into(),
+                        readable: true,
                     })
                 })
                 .collect()
@@ -801,8 +810,22 @@ impl ResearchBackend for InterimResearch {
                 match result {
                     Ok(items) => {
                         providers.push(name.clone());
+                        // GDELT's `sourcelang:` and Google News's `hl` select
+                        // the query's language, so their items are in it.
+                        let tagged = match name.as_str() {
+                            "gdelt" => gdelt_language(&language).is_some(),
+                            "google-news-rss" => true,
+                            _ => false,
+                        };
                         let items: Vec<FoundItem> = items
                             .into_iter()
+                            .map(|mut i| {
+                                i.readable = !needs_browser(&i.url);
+                                if tagged && i.language.is_empty() {
+                                    i.language = language.clone();
+                                }
+                                i
+                            })
                             .filter(|i| normalize_date(&i.published_at).is_none_or(|d| d >= cutoff))
                             .filter(|i| {
                                 // Configured feeds are not search engines: keep
@@ -837,6 +860,8 @@ impl ResearchBackend for InterimResearch {
                     }
                 }
             }
+            // Items this adapter can read first, so the cut keeps them.
+            items.sort_by_key(|i| !i.readable);
             items.truncate((query.limit * 3) as usize);
             Ok(SearchResults {
                 items,
@@ -853,7 +878,7 @@ impl ResearchBackend for InterimResearch {
         item: &'a FoundItem,
     ) -> HostFuture<'a, Result<PageText, HostError>> {
         Box::pin(async move {
-            if url_host(&item.url).as_deref() == Some("news.google.com") {
+            if needs_browser(&item.url) {
                 return Err(failed(
                     "Google News article links need a browser to resolve; not read",
                 ));
@@ -887,6 +912,15 @@ impl ResearchBackend for InterimResearch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_news_links_need_a_browser() {
+        assert!(needs_browser(
+            "https://news.google.com/rss/articles/CBMiXYZ?oc=5"
+        ));
+        assert!(!needs_browser("https://www.bbc.co.uk/news/articles/x"));
+        assert!(!needs_browser("https://news.google.com.example.org/x"));
+    }
 
     #[test]
     fn robots_groups_and_longest_match() {

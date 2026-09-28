@@ -133,7 +133,8 @@
           "url": "https://example.invalid/news/water"
         }
       ],
-      "topic": "城市基础设施"
+      "topic": "城市基础设施",
+      "unreadable": 0
     }
   }
 }

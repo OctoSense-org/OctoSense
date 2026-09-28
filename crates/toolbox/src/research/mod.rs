@@ -36,6 +36,10 @@ use std::sync::{Arc, Mutex};
 pub const MAX_EVIDENCE_BYTES: usize = 6000;
 /// The excerpt a script sees.
 pub const MAX_EXCERPT_BYTES: usize = 400;
+/// Feeds and API responses one `search` may fetch. Searches are not charged
+/// to a run's `max_pages` (see [`crate::modules::MethodKind::Search`]); this
+/// caps the fan-out instead.
+pub const MAX_SEARCH_FETCHES: u32 = 8;
 
 /// One search as the backend receives it, already within the app's scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,7 +49,8 @@ pub struct SearchQuery {
     pub region: Option<String>,
     pub limit: u32,
     pub max_age_hours: Option<u32>,
-    /// Pages (feeds, API responses) the backend may fetch for this search.
+    /// Feeds and API responses the backend may fetch for this search, at
+    /// most [`MAX_SEARCH_FETCHES`].
     pub max_pages: u32,
 }
 
@@ -62,6 +67,20 @@ pub struct FoundItem {
     pub published_at: String,
     #[serde(default)]
     pub via: String,
+    /// Whether the backend can read this item. `false` when it knows up front
+    /// that reading would fail (the interim adapter cannot resolve Google
+    /// News article links without a browser). The host lists readable items
+    /// first, and templates skip the rest instead of spending a read on them.
+    #[serde(default = "readable_default", skip_serializing_if = "is_readable")]
+    pub readable: bool,
+}
+
+fn readable_default() -> bool {
+    true
+}
+
+fn is_readable(readable: &bool) -> bool {
+    *readable
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,7 +89,7 @@ pub struct SearchResults {
     pub providers: Vec<String>,
     /// Some provider failed or was skipped.
     pub partial: bool,
-    /// Pages fetched.
+    /// Feeds and API responses fetched.
     pub pages: u32,
 }
 
@@ -199,7 +218,7 @@ impl ResearchHost {
         let translated = parsed["query"]
             .as_str()
             .map(str::trim)
-            .filter(|q| !q.is_empty() && q.len() <= 160 && !q.contains('\n'))
+            .filter(|q| !q.is_empty() && q.chars().count() <= 160 && !q.contains('\n'))
             .ok_or_else(|| HostError::Failed("model output rejected: no usable query".into()))?;
         if contains_url(translated) {
             return Err(HostError::Failed(
@@ -213,6 +232,7 @@ impl ResearchHost {
                 model_calls: 1,
                 pages: 0,
             },
+            notes: Vec::new(),
         })
     }
 
@@ -246,9 +266,12 @@ impl ResearchHost {
             region,
             limit,
             max_age_hours,
-            max_pages: ctx.remaining.pages.max(1),
+            max_pages: MAX_SEARCH_FETCHES,
         };
-        let results = self.backend.search(ctx, query).await?;
+        let mut results = self.backend.search(ctx, query).await?;
+        // Readable items first (a stable sort keeps the backend's order within
+        // each group), so `limit` does not fill up with items no read can use.
+        results.items.sort_by_key(|item| !item.readable);
         let queried_at = (self.clock)();
         let mut seen_urls = BTreeSet::new();
         let mut seen_titles = BTreeSet::new();
@@ -293,6 +316,7 @@ impl ResearchHost {
                 "source": clip(&item.source, 200),
                 "language": clip(&item.language, 16),
                 "published_at": clip(&item.published_at, 40),
+                "readable": item.readable,
             }));
             self.state(&ctx.run_id, |s| s.items.insert(id, item));
         }
@@ -306,8 +330,9 @@ impl ResearchHost {
             provenance,
             usage: Usage {
                 model_calls: 0,
-                pages: results.pages.max(1),
+                pages: results.pages,
             },
+            notes: Vec::new(),
         })
     }
 
@@ -366,6 +391,7 @@ impl ResearchHost {
                 model_calls: 0,
                 pages: 1,
             },
+            notes: Vec::new(),
         })
     }
 
@@ -423,7 +449,7 @@ impl ResearchHost {
         };
         let reply = self.model.complete(ctx, request).await?;
         let parsed = parse_model_json(&reply)?;
-        let output = validate_digest(&parsed, &task, &language, &ids)?;
+        let (output, notes) = validate_digest(&parsed, &task, &language, &ids)?;
         Ok(HostReply {
             output,
             provenance: Vec::new(),
@@ -431,6 +457,7 @@ impl ResearchHost {
                 model_calls: 1,
                 pages: 0,
             },
+            notes,
         })
     }
 }
@@ -512,71 +539,155 @@ fn digest_prompt(task: &str, language: &str) -> String {
         "You write {what}. Write in the language with BCP 47 tag {language}, translating the \
          sources as needed. Use only facts stated in the articles you are given. Every point \
          cites the ids of the articles it rests on in `citations`. Never write URLs or invent \
-         sources. Reply with JSON only: {{\"summary\": string, \"points\": [{{\"text\": string, \
-         \"citations\": [article id], \"label\": optional string}}]}}."
+         sources. Keep within these limits, or the host drops what exceeds them: a summary of \
+         at most 1000 characters; at most {MAX_POINTS} points; each point one or two sentences \
+         of at most 300 characters, citing 1 to {MAX_CITATIONS} articles; a label of at most \
+         30 characters. Reply with JSON only: {{\"summary\": string, \"points\": [{{\"text\": \
+         string, \"citations\": [article id], \"label\": optional string}}]}}."
     )
 }
 
+/// Parses a model reply as JSON. A reply wrapped in a code fence, or with a
+/// line of prose around the object, is accepted: the object between the first
+/// `{` and the last `}` is tried when the whole reply is not JSON. What it
+/// contains is validated afterwards either way.
 fn parse_model_json(reply: &str) -> Result<Value, HostError> {
     let trimmed = reply.trim();
     let body = trimmed
         .strip_prefix("```json")
         .or_else(|| trimmed.strip_prefix("```"))
         .and_then(|s| s.strip_suffix("```"))
-        .unwrap_or(trimmed);
-    serde_json::from_str(body.trim())
-        .map_err(|e| HostError::Failed(format!("model output rejected: not JSON ({e})")))
+        .unwrap_or(trimmed)
+        .trim();
+    serde_json::from_str(body).or_else(|e| {
+        match (body.find('{'), body.rfind('}')) {
+            (Some(start), Some(end)) if start < end => {
+                serde_json::from_str(&body[start..=end]).ok()
+            }
+            _ => None,
+        }
+        .ok_or_else(|| HostError::Failed(format!("model output rejected: not JSON ({e})")))
+    })
 }
 
+/// The most points a digest keeps.
+const MAX_POINTS: usize = 12;
+/// The most citations one point may carry.
+const MAX_CITATIONS: usize = 8;
+
+/// Checks a model's digest.
+///
+/// The summary is checked first: a digest without a valid summary, or whose
+/// summary carries a URL, is refused. Each point is then checked on its own.
+/// One with no text or too much, no citation or too many, a citation to an
+/// article it was not given, or a URL is dropped, with a note, and the rest
+/// are kept. A label that is too long or carries a URL is dropped from its
+/// point. A digest with no valid point left is refused.
+///
+/// The security properties hold for every point kept: it cites only the ids
+/// in `ids` (articles read in this run), and no string in the output carries
+/// a URL. Notes never quote the model's text.
 fn validate_digest(
     parsed: &Value,
     task: &str,
     language: &str,
     ids: &[String],
-) -> Result<Value, HostError> {
+) -> Result<(Value, Vec<String>), HostError> {
     let reject = |why: &str| HostError::Failed(format!("model output rejected: {why}"));
     let summary = parsed["summary"]
         .as_str()
         .map(str::trim)
-        .filter(|s| !s.is_empty() && s.len() <= 1200)
+        .filter(|s| !s.is_empty() && s.chars().count() <= 1200)
         .ok_or_else(|| reject("no summary"))?;
+    if contains_url(summary) {
+        return Err(reject("the summary contains a URL"));
+    }
     let points = parsed["points"]
         .as_array()
-        .filter(|p| !p.is_empty() && p.len() <= 12)
-        .ok_or_else(|| reject("points must be 1–12"))?;
+        .filter(|p| !p.is_empty())
+        .ok_or_else(|| reject("no points"))?;
     let known: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
-    let mut out_points = Vec::new();
-    for point in points {
-        let text = point["text"]
-            .as_str()
-            .map(str::trim)
-            .filter(|t| !t.is_empty() && t.len() <= 400)
-            .ok_or_else(|| reject("a point has no text"))?;
-        let citations: Vec<&str> = point["citations"]
-            .as_array()
-            .map(|c| c.iter().filter_map(Value::as_str).collect())
-            .unwrap_or_default();
-        if citations.is_empty() || citations.len() > 8 {
-            return Err(reject("every point cites 1–8 articles"));
+    let mut notes = Vec::new();
+    let mut kept = Vec::new();
+    for (index, point) in points.iter().enumerate() {
+        let n = index + 1;
+        if kept.len() == MAX_POINTS {
+            notes.push(format!(
+                "digest point {n} dropped: more than {MAX_POINTS} points"
+            ));
+            continue;
         }
-        if let Some(bad) = citations.iter().find(|c| !known.contains(*c)) {
-            return Err(reject(&format!("it cites {bad}, which it was not given")));
-        }
-        let mut record = json!({"text": text, "citations": citations});
-        if let Some(label) = point["label"].as_str().filter(|l| !l.is_empty()) {
-            if label.len() > 40 {
-                return Err(reject("a label is longer than 40 bytes"));
+        match check_point(point, &known) {
+            Ok((record, label_note)) => {
+                if let Some(why) = label_note {
+                    notes.push(format!("digest point {n}: label dropped: {why}"));
+                }
+                kept.push(record);
             }
-            record["label"] = json!(label);
+            Err(why) => notes.push(format!("digest point {n} dropped: {why}")),
         }
-        out_points.push(record);
     }
-    let output =
-        json!({"task": task, "language": language, "summary": summary, "points": out_points});
+    if kept.is_empty() {
+        return Err(reject(&format!("no valid point ({})", notes.join("; "))));
+    }
+    let output = json!({"task": task, "language": language, "summary": summary, "points": kept});
+    // Each part was checked above; this guards the assembled whole.
     if crate::json::strings(&output).into_iter().any(contains_url) {
         return Err(reject("it contains a URL"));
     }
-    Ok(output)
+    Ok((output, notes))
+}
+
+/// One digest point: the record to keep and, if its label was dropped, why;
+/// or why the point is dropped.
+fn check_point(
+    point: &Value,
+    known: &BTreeSet<&str>,
+) -> Result<(Value, Option<&'static str>), &'static str> {
+    let text = point["text"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("it has no text")?;
+    if text.chars().count() > 400 {
+        return Err("its text is longer than 400 characters");
+    }
+    if contains_url(text) {
+        return Err("its text contains a URL");
+    }
+    let raw = point["citations"].as_array().ok_or("it cites nothing")?;
+    let mut citations: Vec<&str> = Vec::new();
+    for citation in raw {
+        let id = citation.as_str().ok_or("a citation is not an article id")?;
+        if !known.contains(id) {
+            return Err("it cites an article it was not given");
+        }
+        if !citations.contains(&id) {
+            citations.push(id);
+        }
+    }
+    if citations.is_empty() {
+        return Err("it cites nothing");
+    }
+    if citations.len() > MAX_CITATIONS {
+        return Err("it cites more than 8 articles");
+    }
+    let mut record = json!({"text": text, "citations": citations});
+    let mut label_note = None;
+    if let Some(label) = point["label"]
+        .as_str()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        if label.chars().count() > 40 {
+            label_note = Some("longer than 40 characters");
+        } else if contains_url(label) {
+            label_note = Some("it contains a URL");
+        } else {
+            record["label"] = json!(label);
+        }
+    }
+    Ok((record, label_note))
 }
 
 #[cfg(test)]
@@ -597,10 +708,90 @@ mod tests {
     fn digests_cite_only_given_articles_and_carry_no_urls() {
         let ids = vec!["s1".to_owned()];
         let ok = json!({"summary": "S", "points": [{"text": "T", "citations": ["s1"]}]});
-        assert!(validate_digest(&ok, "digest", "en", &ids).is_ok());
+        let (digest, notes) = validate_digest(&ok, "digest", "en", &ids).unwrap();
+        assert_eq!(digest["points"].as_array().unwrap().len(), 1);
+        assert!(notes.is_empty());
+        // A digest whose only point cites a foreign article has nothing left.
         let foreign = json!({"summary": "S", "points": [{"text": "T", "citations": ["s9"]}]});
-        assert!(validate_digest(&foreign, "digest", "en", &ids).is_err());
+        let error = validate_digest(&foreign, "digest", "en", &ids).unwrap_err();
+        assert!(error.to_string().contains("no valid point"), "{error}");
+        // A URL in the summary refuses the whole digest.
         let url = json!({"summary": "see https://example.org", "points": [{"text": "T", "citations": ["s1"]}]});
         assert!(validate_digest(&url, "digest", "en", &ids).is_err());
+        let blank = json!({"summary": " ", "points": [{"text": "T", "citations": ["s1"]}]});
+        assert!(validate_digest(&blank, "digest", "en", &ids).is_err());
+    }
+
+    #[test]
+    fn invalid_points_are_dropped_and_valid_ones_kept() {
+        let ids = vec!["s1".to_owned(), "s2".to_owned()];
+        let long = "x".repeat(401);
+        let reply = json!({"summary": "S", "points": [
+            {"text": "Kept.", "citations": ["s1", "s1", "s2"]},
+            {"text": "", "citations": ["s1"]},
+            {"citations": ["s1"]},
+            {"text": "Invented.", "citations": ["s1", "s9"]},
+            {"text": "More at https://model.invalid/story", "citations": ["s1"]},
+            {"text": "More at www.model.invalid", "citations": ["s2"]},
+            {"text": "No sources.", "citations": []},
+            {"text": "Bad citation.", "citations": [3]},
+            {"text": long, "citations": ["s1"]},
+            {"text": "Kept, label dropped.", "citations": ["s2"], "label": "see https://x.invalid"},
+            {"text": "Kept with label.", "citations": ["s2"], "label": "Label"}
+        ]});
+        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids).unwrap();
+        let points = digest["points"].as_array().unwrap();
+        assert_eq!(points.len(), 3, "{digest}");
+        assert_eq!(points[0]["citations"], json!(["s1", "s2"]));
+        assert!(points[1].get("label").is_none());
+        assert_eq!(points[2]["label"], "Label");
+        assert_eq!(
+            notes.iter().filter(|n| n.contains("dropped:")).count(),
+            9,
+            "{notes:?}"
+        );
+        assert!(notes
+            .iter()
+            .any(|n| n.starts_with("digest point 2 dropped: it has no text")));
+        assert!(notes
+            .iter()
+            .any(|n| n.starts_with("digest point 4 dropped: it cites an article")));
+        assert!(notes
+            .iter()
+            .any(|n| n.starts_with("digest point 5 dropped: its text contains a URL")));
+        assert!(notes
+            .iter()
+            .any(|n| n.starts_with("digest point 10: label dropped")));
+        // Notes never quote the model.
+        assert!(!notes
+            .iter()
+            .any(|n| n.contains("model.invalid") || n.contains("s9")));
+    }
+
+    #[test]
+    fn a_digest_keeps_at_most_twelve_points() {
+        let ids = vec!["s1".to_owned()];
+        let points: Vec<Value> = (0..14)
+            .map(|i| json!({"text": format!("Point {i}."), "citations": ["s1"]}))
+            .collect();
+        let reply = json!({"summary": "S", "points": points});
+        let (digest, notes) = validate_digest(&reply, "digest", "en", &ids).unwrap();
+        assert_eq!(digest["points"].as_array().unwrap().len(), 12);
+        assert_eq!(notes.len(), 2);
+    }
+
+    #[test]
+    fn model_json_may_be_fenced_or_wrapped_in_prose() {
+        assert_eq!(parse_model_json("{\"a\": 1}").unwrap(), json!({"a": 1}));
+        assert_eq!(
+            parse_model_json("```json\n{\"a\": 1}\n```").unwrap(),
+            json!({"a": 1})
+        );
+        assert_eq!(
+            parse_model_json("Here is the digest:\n{\"a\": {\"b\": 2}}\nDone.").unwrap(),
+            json!({"a": {"b": 2}})
+        );
+        assert!(parse_model_json("no json here").is_err());
+        assert!(parse_model_json("{\"a\": ").is_err());
     }
 }

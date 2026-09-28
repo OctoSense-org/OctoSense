@@ -2,8 +2,9 @@ use mod.research
 use mod.std.array
 
 // Topic brief across languages: search terms per language (the topic, or its
-// translation), one search per language, a round-robin merge, the top N
-// articles read concurrently, then one digest with citations.
+// translation), one search per language, then reads chosen so that every
+// language is read whenever it found a readable article, then one digest
+// with citations.
 
 // 1. Every translation starts before any is awaited.
 let translations = []
@@ -28,57 +29,101 @@ for entry in request.languages {
             terms = translated.query
         }
     }
-    array.push(queries, {language: entry.language, terms: terms})
+    array.push(queries, {language: entry.language, terms: terms, found: 0, unreadable: 0, read: 0})
     array.push(searches, research.search({topic: terms, language: entry.language, limit: request.per_language, max_age_hours: request.max_age_hours}))
     index = index + 1
 }
-let lists = []
+
+// 3. Each language's candidates: its readable results, in the host's order,
+// each article once across languages. Results the backend cannot read (it
+// says so with `readable: false`) are counted and skipped, not read.
+let pools = []
+let cursors = []
+let seen = []
 let incomplete = false
 index = 0
 for pending in searches {
     let found = try pending.await() catch nil
+    let pool = []
     if found == nil {
         incomplete = true
-        array.push(lists, [])
-        queries[index].found = 0
     } else {
         if found.source.partial {
             incomplete = true
         }
-        array.push(lists, found.items)
         queries[index].found = array.len(found.items)
-    }
-    index = index + 1
-}
-
-// 3. Round-robin across languages so every language is represented.
-let chosen = []
-for round in array.range(0, request.per_language) {
-    for items in lists {
-        if round < array.len(items) && array.len(chosen) < request.read_top {
-            let item = items[round]
-            if array.contains(chosen, item.id) == false {
-                array.push(chosen, item.id)
+        for item in found.items {
+            if array.contains(seen, item.id) == false {
+                array.push(seen, item.id)
+                if item.readable {
+                    array.push(pool, item.id)
+                } else {
+                    queries[index].unreadable = queries[index].unreadable + 1
+                }
             }
         }
     }
+    array.push(pools, pool)
+    array.push(cursors, 0)
+    index = index + 1
 }
 
-// 4. Read concurrently.
-let reads = []
-for id in chosen {
-    array.push(reads, research.article({id: id}))
-}
+// 4. Read in rounds. Each round starts its reads together: first one for
+// every language not read yet, then round-robin until `read_top` would be
+// reached. A failed read is replaced in the next round by that language's
+// next candidate. Attempts are capped at `read_top` plus one per language.
+let languages = array.len(request.languages)
+let max_attempts = request.read_top + languages
+let attempts = 0
 let ids = []
 let sources = []
 let missing = 0
-for pending in reads {
-    let article = try pending.await() catch nil
-    if article == nil {
-        missing = missing + 1
-    } else {
-        array.push(ids, article.id)
-        array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+while array.len(ids) < request.read_top && attempts < max_attempts {
+    let order = []
+    for l in array.range(0, languages) {
+        if queries[l].read == 0 {
+            array.push(order, l)
+        }
+    }
+    for l in array.range(0, languages) {
+        if queries[l].read > 0 {
+            array.push(order, l)
+        }
+    }
+    let want = request.read_top - array.len(ids)
+    if want > max_attempts - attempts {
+        want = max_attempts - attempts
+    }
+    let batch = []
+    let batch_languages = []
+    let picked = true
+    while picked && array.len(batch) < want {
+        picked = false
+        for l in order {
+            if array.len(batch) < want && cursors[l] < array.len(pools[l]) {
+                array.push(batch, research.article({id: pools[l][cursors[l]]}))
+                array.push(batch_languages, l)
+                cursors[l] = cursors[l] + 1
+                picked = true
+            }
+        }
+    }
+    if array.len(batch) == 0 {
+        break
+    }
+    attempts = attempts + array.len(batch)
+    index = 0
+    for pending in batch {
+        let l = batch_languages[index]
+        let article = try pending.await() catch nil
+        if article == nil {
+            missing = missing + 1
+        } else {
+            queries[l].read = queries[l].read + 1
+            array.push(ids, article.id)
+            array.push(sources, {id: article.id, title: article.title, url: article.url, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+        }
+        index = index + 1
     }
 }
 
@@ -88,8 +133,24 @@ if array.len(ids) > 0 {
     let resolved = try research.digest({task: "digest", language: request.language, article_ids: ids, focus: request.topic}).await() catch nil
     brief = resolved
 }
+
+// Partial when a search failed, a read failed, nothing was read, the model
+// failed, or a language that found results went unread while `read_top`
+// still had room for it.
+let covered = 0
+let uncovered = false
+for query in queries {
+    if query.read > 0 {
+        covered = covered + 1
+    } elif query.found > 0 {
+        uncovered = true
+    }
+}
 let status = "ready"
-if incomplete || missing > 0 || array.len(chosen) == 0 {
+if incomplete || missing > 0 || array.len(ids) == 0 {
+    status = "partial"
+}
+if uncovered && covered < request.read_top {
     status = "partial"
 }
 if array.len(ids) > 0 && brief == nil {

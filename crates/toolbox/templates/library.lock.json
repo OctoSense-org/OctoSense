@@ -14,12 +14,12 @@
       "digest": "55130cc64c927ae6b082e783fbb412929f2c31c1682021bc599ae42ea21e7fb3"
     },
     "news-digest": {
-      "version": "1.0.0",
-      "digest": "07290bd7400d75a33021f9a53d0c35841cfd30a739732fea4f0281039733a11e"
+      "version": "1.1.0",
+      "digest": "92ab809c79d8b83c370efeb37b9a7c6de632d313c45456fd1e91e45c43261f02"
     },
     "topic-brief": {
-      "version": "1.0.0",
-      "digest": "238475146da769d8576eb76d065c8cc5b298f50c0b5e29296af3ec644c4e79bb"
+      "version": "1.1.0",
+      "digest": "1757adf500bb2d0c94ffb8ddcfb9657b1e92990fa3a2d504b6b953a84ca77ff9"
     },
     "weather-plan": {
       "version": "1.0.0",
