@@ -14,6 +14,24 @@
 
 > **要开发 OctoSense 应用？** 开发、检查或发布应用都不需要本仓库。请从 [OctoSense-org 主页](https://github.com/OctoSense-org)的阅读列表开始：[OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow)（先读 `AGENTS.md`，再读 `docs/QUICKSTART.md`）和 [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub)。[`apps/`](apps/README.zh-CN.md) 中的系统应用是同样应用结构的完整示例（`apps/<name>/bundle/`）。只有想在发布前先在 Shell 里看到自己的应用时，才需要从这里构建桌面端 Shell（[PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)）。
 
+## 整体如何运作
+
+```
+ 用户 ──> OctoSense Shell（一个进程）──── OUP（stdio）────> octos 内核（每个 Shell 一个）
+          ├─ 原生模块：App Hub、Rinx                ├─ 系统 Agent 会话
+          ├─ Card runner：脚本应用各在隔离环境中    └─ 每个（应用，账号）一个应用 Agent（peer）
+          ├─ 审批路由、宿主面板、存储
+          └─ hub ──> 进程应用（桌面端：Terminal）
+```
+
+- **一个 Shell 进程**承载窗口管理器、原生模块（App Hub、Rinx）和 App Hub 的 Card runner，每个脚本应用都在自己的隔离环境中运行。桌面端的 Terminal 作为独立进程运行，通过 Shell 的 hub 连接。
+- **每个 Shell 一个 octos 内核**，首次使用时启动：桌面端和 Android 上是子进程，OpenHarmony 上在进程内，iOS 上没有。Shell 是它的宿主连接并持有宿主 token；应用从不直接与内核通信。
+- **Agent 是这个内核中的会话**：系统 Agent，以及每个应用、每个账号一个应用 Agent（octos peer），各自有独立的工作区、记忆和对话记录。系统 Agent 向应用 Agent 下达任务，并在 peer 黑板上读取它们的结果。
+- **应用通过 Shell 使用自己的 Agent**：原生模块用注入的服务，脚本应用用 `host.request("octos.*")`。Talk to Octos（需手动开启）让网页或终端客户端以受限 token 使用系统对话，但永远接触不到应用 Agent。
+- **由用户批准**：对外和破坏性的工具调用都经过 Shell 的审批路由，在面板上实时批准，或由用户设定的常设规则批准。
+
+进程、Agent、协议、工具、审批、存储和信任边界，以及哪些已在 `main` 上、哪些还在规划中：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)。
+
 ## 目录结构
 
 | 路径 | 内容 |
@@ -53,7 +71,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 
 目前可用的：原生模块（Rinx）使用自己的 peer；AppCard（需主动开启）直接使用内核。隔离运行的脚本应用，无论系统应用还是商店应用，在托管了内核的 Shell 中通过 `octos` 宿主服务使用助手：每个应用有自己的、由宿主拥有的 peer（`card.<应用 id>`），在 Card runner 有审批面板之前工具审批一律被拒绝。`llm` 服务只为 `os.*` 应用管理提供方。应用自己的 Agent（`tools.json`、`AGENT.md`、skills、触发器、glance 卡片）见 [ADR 0002](docs/adr/0002-event-driven-app-agents.md)（Proposed），其中最早的几部分已合入或正在评审。
 
-架构、信任模型、各类应用能用什么、规划及其状态，以及如何在本地运行和测试：[docs/ai-services.zh-CN.md](docs/ai-services.zh-CN.md)。面向应用开发者：OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
+架构、信任模型、各类应用能用什么、规划及其状态，以及如何在本地运行和测试：[docs/ai-services.zh-CN.md](docs/ai-services.zh-CN.md)。它在整个系统中的位置：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)。面向应用开发者：OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
 
 ## 环境准备
 

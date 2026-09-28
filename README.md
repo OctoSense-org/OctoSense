@@ -14,6 +14,24 @@ It was OctoSense-Desktop; OctoSense-ROM (retired; merged into this repository) a
 
 > **Building an OctoSense app?** You do not need this repository to build, check or publish one. Start at the [OctoSense-org profile](https://github.com/OctoSense-org)'s reading list: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (`AGENTS.md`, then `docs/QUICKSTART.md`) and [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub). The system apps in [`apps/`](apps/README.md) are complete examples of the same app shape (`apps/<name>/bundle/`). Build the desktop shell from here only to see your app in a shell before it is published ([PUBLISHING §4](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/PUBLISHING.md#4-rehearse-the-store-path-locally)).
 
+## How it fits together
+
+```
+ person ──> OctoSense shell (one process) ──── OUP (stdio) ────> octos kernel (one per shell)
+            ├─ native modules: App Hub, Rinx          ├─ system agent session
+            ├─ Card runner: script apps in isolates   └─ one app agent (peer) per (app, account)
+            ├─ approval router, host sheets, storage
+            └─ hub ──> process apps (desktop: Terminal)
+```
+
+- **One shell process** hosts the window manager, the native modules (App Hub, Rinx) and App Hub's Card runner, where every script app runs in its own isolate. On the desktop the Terminal runs as its own process, attached over the shell's hub.
+- **One octos kernel per shell**, started on first use: a child process on the desktop and Android, in process on OpenHarmony, none on iOS. The shell is its host connection and holds the host token; apps never talk to the kernel.
+- **Agents are sessions in that kernel**: the system agent, and one app agent (an octos peer) per app and account, each with its own workspace, memory and transcript. The system agent briefs app agents and reads their results on the peers' blackboard.
+- **Apps reach their agent through the shell**: an injected service for native modules, `host.request("octos.*")` for script apps. Talk to Octos (opt-in) lets a web or terminal client use the system conversation with a limited token, never the app agents.
+- **The person approves**: outward and destructive tool calls go through the shell's approval router, live on a sheet or by a standing rule the person set.
+
+Processes, agents, protocols, tools, approvals, storage and trust boundaries, with what is on `main` and what is planned: [docs/architecture.md](docs/architecture.md).
+
 ## Layout
 
 | Path | What it is |
@@ -53,7 +71,7 @@ Each shell runs one [octos](https://github.com/octos-org/octos) agent kernel, st
 
 What works today: native modules (Rinx) use their peer; AppCard (opt-in) uses the kernel directly. Contained script apps, system or store, reach it through the `octos` host service in a shell that hosts a kernel: each app gets its own host-owned peer (`card.<app id>`), and tool approvals are declined until the Card runner has an approval sheet. The `llm` service manages providers for `os.*` apps only. An app's own agent (`tools.json`, `AGENT.md`, skills, triggers, glance cards) is [ADR 0002](docs/adr/0002-event-driven-app-agents.md), Proposed, with its first pieces merged or in review.
 
-The architecture, the trust model, what each kind of app can use, the plan with its status, and how to run and test it locally: [docs/ai-services.md](docs/ai-services.md). For app developers: OctoScript-App-Design-Flow's [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md).
+The architecture, the trust model, what each kind of app can use, the plan with its status, and how to run and test it locally: [docs/ai-services.md](docs/ai-services.md). How it fits into the whole system: [docs/architecture.md](docs/architecture.md). For app developers: OctoScript-App-Design-Flow's [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.md).
 
 ## Set up
 

@@ -4,6 +4,8 @@
 
 OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面、手机和 ROM 三种打包形态。新的 ADR 放在这里，编号接在下表最后一条之后。
 
+这些决策在 `main` 的代码中如何组合在一起、哪些部分仍在规划中：[OctoSense 架构](../architecture.zh-CN.md)。
+
 | ADR | 标题 | 状态 |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md)（英文） | 用一个 OctoSense 仓库承载 Shell、Shell 服务、系统应用和两种打包形态 | 已接受 |

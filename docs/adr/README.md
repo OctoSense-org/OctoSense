@@ -4,6 +4,8 @@ English | [简体中文](README.zh-CN.md)
 
 Decisions for the OctoSense repository: the shell, its services, the system apps and the desktop, phone and ROM packagings. New ADRs go here, numbered after the last one in this table.
 
+How these decisions fit together in the code on `main`, and which parts are still planned: [OctoSense architecture](../architecture.md).
+
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md) | One OctoSense repository for the shell, its services, the system apps and both packagings | Accepted |
