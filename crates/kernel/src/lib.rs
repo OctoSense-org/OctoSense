@@ -86,7 +86,8 @@ impl Options {
         self
     }
     /// The kernel binary (desktop; on Android it overrides the bundled
-    /// `liboctos.so`). Default: `$OCTOS_APP_CORE_BIN`.
+    /// `liboctos.so`). Desktop default: `$OCTOS_APP_CORE_BIN`, then the
+    /// packaged `octos-kernel[.exe]` beside this process's executable.
     pub fn program(mut self, program: impl Into<PathBuf>) -> Self {
         self.program = Some(program.into());
         self

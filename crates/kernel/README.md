@@ -36,8 +36,9 @@ How it starts, per platform (`src/launch.rs`):
 - **Desktop**: `<program> serve --stdio --data-dir <core_dir>` (plus
   `--config <core_dir>/config.json` when that file exists) with
   `OCTOS_HOME=<core_dir>`; the program is the shell's `Options::program` or
-  `$OCTOS_APP_CORE_BIN`. With neither there is no kernel: a developer's own
-  `octos serve` is never touched.
+  `$OCTOS_APP_CORE_BIN`, falling back to `octos-kernel[.exe]` beside the shell
+  executable. `tools/build-desktop.py` stages the locked runtime there. No
+  PATH search or attachment to another running kernel occurs.
 - **iOS**: no kernel.
 
 The kernel and the frame pump run on the crate's own Tokio runtime, so a

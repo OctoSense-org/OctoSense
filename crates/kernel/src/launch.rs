@@ -10,9 +10,9 @@
 //!   (`octos_cli::embedded::serve_io`); HAP native libraries cannot exec.
 //! - **Desktop**: `<program> serve --stdio --data-dir <core_dir> --config
 //!   <core_dir>/config.json` with `OCTOS_HOME=<core_dir>`, where the program
-//!   is the shell's [`crate::Options::program`] or `$OCTOS_APP_CORE_BIN`.
-//!   Without one there is no kernel (a developer's own `octos serve` is never
-//!   touched).
+//!   is the shell's [`crate::Options::program`], `$OCTOS_APP_CORE_BIN`, or
+//!   the packaged `octos-kernel[.exe]` beside the shell executable, in that
+//!   order. No PATH search or connection to another running kernel occurs.
 //! - **iOS**: no kernel (an app cannot exec a child).
 
 use std::path::{Path, PathBuf};
@@ -96,18 +96,34 @@ pub(crate) fn resolve(inputs: &Inputs) -> Result<Launch, Unavailable> {
     }
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
     {
-        let program = match inputs.program {
-            Some(p) => p.to_path_buf(),
-            None => std::env::var_os("OCTOS_APP_CORE_BIN")
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from)
-                .ok_or_else(|| Unavailable::NoKernel("no kernel binary configured (OCTOS_APP_CORE_BIN)".into()))?,
-        };
-        if !program.is_file() {
-            return Err(Unavailable::NoKernel(format!("{} is not a file", program.display())));
-        }
+        let env = std::env::var_os("OCTOS_APP_CORE_BIN").filter(|v| !v.is_empty()).map(PathBuf::from);
+        let executable = std::env::current_exe().ok();
+        let program = desktop_program(inputs.program, env.as_deref(), executable.as_deref())?;
         Ok(desktop_stdio(program, core_dir, inputs.env))
     }
+}
+
+/// Overrides are authoritative: a broken override must not silently choose
+/// another version. The sibling travels with the shell, independent of cwd.
+#[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+fn desktop_program(explicit: Option<&Path>, env: Option<&Path>, executable: Option<&Path>) -> Result<PathBuf, Unavailable> {
+    let packaged = executable.and_then(Path::parent).map(|dir| {
+        dir.join(if cfg!(windows) { "octos-kernel.exe" } else { "octos-kernel" })
+    });
+    let program = explicit.or(env).or(packaged.as_deref()).ok_or_else(|| {
+        Unavailable::NoKernel("no packaged kernel or OCTOS_APP_CORE_BIN override".into())
+    })?;
+    if !program.is_file() {
+        return Err(Unavailable::NoKernel(format!("{} is not a file; build the desktop runtime with tools/build-desktop.py", program.display())));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::metadata(program).map(|m| m.permissions().mode() & 0o111 == 0).unwrap_or(true) {
+            return Err(Unavailable::NoKernel(format!("{} is not executable", program.display())));
+        }
+    }
+    Ok(program.to_owned())
 }
 
 /// The desktop launch: an explicit data dir, as AppCard's local core mode has
@@ -336,6 +352,48 @@ mod tests {
         assert_eq!(v["memory"]["max_inject_tokens"], 90000);
         assert_eq!(v["appui"]["sessions_in_cwd"], true);
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]
+    #[test]
+    fn desktop_finds_its_sibling_and_keeps_overrides_authoritative() {
+        let dir = tmp("packaged");
+        let shell = dir.join("octosense");
+        let bundled = dir.join(if cfg!(windows) { "octos-kernel.exe" } else { "octos-kernel" });
+        let explicit = dir.join("explicit");
+        let env = dir.join("environment");
+        for p in [&bundled, &explicit, &env] {
+            std::fs::write(p, "fixture").unwrap();
+            #[cfg(unix)] {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+        assert_eq!(desktop_program(None, None, Some(&shell)).unwrap(), bundled);
+        assert_eq!(desktop_program(None, Some(&env), Some(&shell)).unwrap(), env);
+        assert_eq!(desktop_program(Some(&explicit), Some(&env), Some(&shell)).unwrap(), explicit);
+        let missing = dir.join("missing");
+        assert!(desktop_program(Some(&missing), Some(&env), Some(&shell)).is_err());
+        assert!(desktop_program(None, Some(&missing), Some(&shell)).is_err());
+        // Discovery follows the installed executable after a directory move.
+        let moved = dir.with_extension("moved");
+        std::fs::rename(&dir, &moved).unwrap();
+        let sibling = moved.join(bundled.file_name().unwrap());
+        assert_eq!(desktop_program(None, None, Some(&moved.join("octosense"))).unwrap(), sibling);
+        std::fs::remove_file(sibling).unwrap();
+        assert!(desktop_program(None, None, Some(&moved.join("octosense"))).is_err());
+        assert!(desktop_program(None, None, None).is_err());
+        std::fs::remove_dir_all(moved).unwrap();
+    }
+
+    #[cfg(all(unix, not(any(target_env = "ohos", target_os = "ios", target_os = "android"))))]
+    #[test]
+    fn desktop_rejects_a_nonexecutable_runtime() {
+        let dir = tmp("not-executable");
+        let program = dir.join("octos-kernel");
+        std::fs::write(&program, "fixture").unwrap();
+        assert!(desktop_program(None, None, Some(&dir.join("octosense"))).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[cfg(not(any(target_env = "ohos", target_os = "ios", target_os = "android")))]

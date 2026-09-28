@@ -303,7 +303,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
  "x11rb",
 ]
 
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=197d5170892d64046ba8e291e80aa326c4e4c87a#197d5170892d64046ba8e291e80aa326c4e4c87a"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=197d5170892d64046ba8e291e80aa326c4e4c87a#197d5170892d64046ba8e291e80aa326c4e4c87a"
 dependencies = [
  "article-core",
  "libc",
@@ -2057,7 +2057,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8508,7 +8508,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=197d5170892d64046ba8e291e80aa326c4e4c87a#197d5170892d64046ba8e291e80aa326c4e4c87a"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8554,6 +8554,7 @@ dependencies = [
  "rangemap",
  "rfd",
  "rinx-miniapp-core",
+ "rinx-system-apps",
  "robius-directories",
  "robius-file-picker",
  "robius-location",
@@ -8580,8 +8581,18 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=197d5170892d64046ba8e291e80aa326c4e4c87a#197d5170892d64046ba8e291e80aa326c4e4c87a"
 dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rinx-system-apps"
+version = "0.1.0"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=197d5170892d64046ba8e291e80aa326c4e4c87a#197d5170892d64046ba8e291e80aa326c4e4c87a"
+dependencies = [
+ "octosense-app-policy",
  "serde",
  "serde_json",
 ]
@@ -10916,7 +10927,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
