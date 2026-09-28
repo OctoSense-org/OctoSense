@@ -1,0 +1,27 @@
+# octosense-news-service — the `news` host service (ADR 0002, milestone M1).
+#
+# News as a data service: feeds are fetched on a timer by code, with no model,
+# into the host's own directory (`<host_dir>/news`), with a seen-items ledger,
+# and served to the News app (and, from M2, to its agent) as `news.*` tools.
+# The app's script no longer has to fetch anything itself, so News opens from
+# cache, and the fetching goes on while the app is closed.
+[package]
+name = "octosense-news-service"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+# The same App Hub rev as Mail and llm: one appstore, one service registry.
+octosense-appstore = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+sha2 = "0.10"
+# Feeds and OPML: a small DOM parser with no network or file access, which
+# bounds entity expansion.
+roxmltree = "0.21"
+# One blocking request at a time on the fetch thread, as the llm service does.
+ureq = { version = "2", default-features = false, features = ["tls"] }

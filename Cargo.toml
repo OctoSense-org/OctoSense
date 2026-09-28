@@ -28,6 +28,7 @@ members = [
     "apps/news/native",
     "apps/photos/native",
     "apps/maps/native",
+    "apps/news/host-service",
     "apps/mail/host-service",
     "apps/ai-providers/config",
     "apps/ai-providers/host-service",
@@ -99,6 +100,7 @@ octosense-shell = { path = "crates/shell" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 octosense-llm-service = { path = "apps/ai-providers/host-service" }
 octosense-mail-service = { path = "apps/mail/host-service" }
+octosense-news-service = { path = "apps/news/host-service" }
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard/module" }
 octosense-news = { path = "apps/news/native" }

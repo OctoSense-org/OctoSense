@@ -14,7 +14,12 @@
     "hosts": [
       "hn.algolia.com",
       "www.techmeme.com",
-      "news.google.com"
+      "news.google.com",
+      "api.gdeltproject.org",
+      "feeds.bbci.co.uk",
+      "feeds.npr.org",
+      "www.theguardian.com",
+      "feeds.arstechnica.com"
     ]
   },
   "schema": 1,

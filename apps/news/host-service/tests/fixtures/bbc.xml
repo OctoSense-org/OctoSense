@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+<channel>
+<title><![CDATA[BBC News]]></title>
+<link>https://www.bbc.co.uk/news/world</link>
+<item>
+<title><![CDATA[Markets rally as rates hold]]></title>
+<description><![CDATA[Central banks kept rates where they were, and shares rose.]]></description>
+<link>https://www.bbc.com/news/articles/c1?at_medium=RSS&amp;at_campaign=rss</link>
+<guid isPermaLink="false">https://www.bbc.com/news/articles/c1#0</guid>
+<pubDate>Wed, 16 Sep 2026 12:40:00 GMT</pubDate>
+<media:thumbnail width="240" height="135" url="http://ichef.bbci.co.uk/images/c1.jpg"/>
+</item>
+<item>
+<title><![CDATA[Storm season starts early across the Atlantic this year]]></title>
+<description><![CDATA[Forecasters warn of an active season.]]></description>
+<link>https://www.bbc.com/news/articles/c2</link>
+<pubDate>Wed, 16 Sep 2026 10:00:00 GMT</pubDate>
+<media:content medium="image" url="https://ichef.bbci.co.uk/images/c2.jpg"/>
+</item>
+<item>
+<title>Enclosure and inline image</title>
+<link>http://example.org/enclosure</link>
+<description>&lt;img src="https://pixel.example/p.gif" width="1" height="1"&gt;&lt;img src="https://img.example/big.jpg"&gt; Text after.</description>
+<enclosure url="https://cdn.example/audio.mp3" type="audio/mpeg" length="1"/>
+<pubDate>Wed, 16 Sep 2026 09:00:00 UTC</pubDate>
+</item>
+</channel>
+</rss>

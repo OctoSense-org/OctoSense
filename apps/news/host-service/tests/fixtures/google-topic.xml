@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:media="http://search.yahoo.com/mrss/" version="2.0">
+<channel>
+<title>"electric cars" - Google News</title>
+<item>
+<title>Elektroautos: Absatz steigt deutlich - Example</title>
+<link>https://news.google.com/rss/articles/CBMitopic1?oc=5</link>
+<pubDate>Wed, 16 Sep 2026 08:20:00 GMT</pubDate>
+<source url="https://www.example.de">Example</source>
+</item>
+<item>
+<title>Neue Ladesäulen an Autobahnen - Tagesblatt</title>
+<link>https://news.google.com/rss/articles/CBMitopic2?oc=5</link>
+<pubDate>Wed, 16 Sep 2026 06:00:00 GMT</pubDate>
+<source url="https://tagesblatt.example">Tagesblatt</source>
+</item>
+</channel>
+</rss>
