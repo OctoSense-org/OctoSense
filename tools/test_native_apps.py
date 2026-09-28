@@ -131,7 +131,8 @@ class Generation(Fixture):
         self.save()
         self.assertEqual(self.run_main("--no-lock"), 0)
         root = (self.root / "Cargo.toml").read_text()
-        self.assertIn('makepad-notes = { git = "https://github.com/OctoSense-org/makepad.git", rev = "75e3e24dbfb37381edb2745f62eba3615b335897", default-features = false }', root)
+        rev = extra["source"]["rev"]  # the Makepad pin, whatever it is today
+        self.assertIn(f'makepad-notes = {{ git = "https://github.com/OctoSense-org/makepad.git", rev = "{rev}", default-features = false }}', root)
         self.assertIn('makepad-notes = { path = ".sources/makepad/apps/notes" }', root)
         shell = (self.root / "crates/shell/Cargo.toml").read_text()
         self.assertIn('makepad-notes = { workspace = true, optional = true }', shell)
