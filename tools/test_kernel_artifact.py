@@ -13,7 +13,7 @@ spec = importlib.util.spec_from_file_location("kernel_artifact", ROOT / "tools/k
 kernel = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kernel)
 
-REV = "e200b072c307e54283e1222a13422c954ecf7522"
+REV = "5e7577f0cb92cf618b965745434b0200e2b82865"
 
 
 def lock_with(*revs):
@@ -41,6 +41,24 @@ class RevisionTests(unittest.TestCase):
 
 
 class PlanTests(unittest.TestCase):
+    def test_the_desktop_plan_builds_the_locked_revision_unpatched(self):
+        steps, binary, source = kernel.kernel_plan(host=True, work=Path("/w"))
+        self.assertEqual(source, f"{kernel.OCTOS_URL}@{kernel.octos_revision()}")
+        self.assertEqual(binary, Path("/w/target/release/octos"))
+        build = steps[-1][1]
+        self.assertIn("--locked", build)
+        self.assertNotIn("--target", build)
+        self.assertNotIn("--offline", build)
+        # octos ships `serve --host-managed` itself: no overlay step, no lock.
+        self.assertFalse(any("--apply-host-patch" in argv for _, argv in steps))
+        self.assertFalse((ROOT / "octos-runtime-patches.lock.json").exists())
+        self.assertFalse((ROOT / "tools/runtime-patches/octos-host-managed.patch").exists())
+
+    def test_an_offline_desktop_plan_stays_offline(self):
+        steps, _, _ = kernel.kernel_plan(host=True, work=Path("/w"), offline=True)
+        self.assertFalse(any(argv[:2] == ["git", "fetch"] for _, argv in steps))
+        self.assertIn("--offline", steps[-1][1])
+
     def test_the_plan_checks_out_and_cross_builds_the_kernel(self):
         work = Path("/w")
         steps, binary = kernel.plan("a" * 40, work, Path("/sdk with spaces"), required=False)

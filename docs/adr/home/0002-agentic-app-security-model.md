@@ -132,3 +132,11 @@ Running a real compiled card (`apps/calendar/cards/calendar-01`) through the ref
 
 - [ADR 0001: Hybrid Android launcher and system bridge](0001-hybrid-android-launcher-and-system-bridge.md)
 - Mini-program containment as prior art: dual-thread split with a host-owned bridge, per-app storage isolation with a size cap, and a registered domain allowlist per app — [container architecture](https://dev.to/ai_superapp/mini-program-container-architecture-how-dual-thread-rendering-works-3if7), [storage](https://developers.weixin.qq.com/miniprogram/en/dev/framework/ability/storage.html), [network](https://developers.weixin.qq.com/miniprogram/en/dev/framework/ability/network.html), [native renderer](https://developers.weixin.qq.com/miniprogram/en/dev/framework/runtime/skyline/introduction.html).
+
+## Amendment, 2026-09-28 ([ADR 0004](../0004-native-apps-hosting-and-peers.md))
+
+- **Native trust tier.** Native Rust apps are first-party and reviewed only, declared in `native-apps.json`; anything from the store is a script app. An in-process native module is trusted code: a splash isolate does not contain native Rust.
+- **Process isolation on desktops.** Native apps run in their own process on macOS, Windows and Linux with Vulkan and Wayland, under an OS sandbox declared per app (files, network, child processes). Mobile, wasm and Linux without Vulkan host them in-process.
+- **App agents for every app,** reached through the shell only (a process app never talks to the kernel), with the person's consent at first use.
+- **Standing approvals.** The person may approve in advance through narrow, time-boxed, audited rules that the shell enforces; the system agent never approves.
+- **Storage.** Every app, script or native, uses one host layout (`apps/<app id>/accounts/<hash>/`, `common/`, `cache/`; secrets under `secrets/<app id>/`, never in a jail), declared in its manifest's `storage` block. The agent's workspace is its account folder, as this ADR's `SessionProfile` already makes it the jail.

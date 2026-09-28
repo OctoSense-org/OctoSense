@@ -147,6 +147,8 @@ AI providers (`os.ai-providers`) edits the octos kernel's LLM providers through 
 
 **The octos kernel** is a shell service, not part of any app: `octosense-kernel` ([`../crates/kernel`](../crates/kernel), feature `octos-core`, default). The shell starts it through its AI services at startup ([`../crates/ai-host`](../crates/ai-host/README.md), `octosense_ai_host::start`); nothing runs until a consumer connects, then one kernel per process (`<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core dir>` on a desktop, the APK's `liboctos.so` on Android; none on iOS or on a desktop without `OCTOS_APP_CORE_BIN`). AppCard's agent connects to it; Rinx reaches it through the app-agent broker. It stops when the last consumer leaves and when the shell exits.
 
+**Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
+
 New app features that need a password, PIN or token belong in a host service and a host sheet, never in the app's own UI.
 
 ### Store apps (App Hub)

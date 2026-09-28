@@ -389,7 +389,9 @@ impl AppRegistry {
         }
         // Modules that are module-hosted by default on a desktop too, unless
         // the person switched them.
-        if matches!(id, "robrix" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+        // (Rinx is Robrix renamed: under the old id the desktop fell through
+        // to a process launch and failed with "binary not found: rinx".)
+        if matches!(id, "rinx" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
         // A system or installed app has no process form anywhere: the `card`
@@ -601,6 +603,14 @@ mod tests {
             assert!(registry.linked_ids().contains(&"sheets"));
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
+        }
+    }
+
+    #[test]
+    fn rinx_is_module_hosted_on_the_desktop_by_default() {
+        let plain = AppRegistry::default();
+        if plain.module("rinx").is_some() {
+            assert_eq!(plain.hosting("rinx"), Hosting::Module, "Rinx ships only as a linked module");
         }
     }
 

@@ -64,3 +64,7 @@ Found by building these three apps; each fix is general, not app-specific.
 - Photos: pinch-to-zoom is wired but unverified on a device; there is no device photo library, which would need its own capability and service.
 - Maps: no offline archives; places, routes and guidance come from the same keyless services as before.
 - Runtime: a view that starts hidden does not draw its `show_bg` background (use `SolidView`); string-keyed object maps with long keys are pathologically slow.
+
+## Amendment, 2026-09-28 ([ADR 0004](../0004-native-apps-hosting-and-peers.md))
+
+The native exceptions to this ADR, and why they stay native: **App Hub** (the store and the Card runner every script app runs in), **Rinx** (a separate product with its own repository) and **Terminal** (a PTY and child processes, which the script sandbox deliberately forbids). They are declared in `native-apps.json`. The native News, Maps and Photos crates kept for comparison are deleted; the script apps are the only versions.
