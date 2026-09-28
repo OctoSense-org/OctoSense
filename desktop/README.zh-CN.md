@@ -83,7 +83,6 @@ cargo run --release -p octosense
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
 | `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell，默认在进程内运行（在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Process` 可改为独立进程）。助手只获得读取工具（`read_screen`、`read_scrollback`），不提供 `run`。在 macOS 上，Shell 的 PTY 辅助程序就是 `octosense` 本身，因此无需在旁边附带第二个二进制文件。 |
-| `app-photos` | 关 | 链接 Makepad 的原生 Photos 模块；它会替换同 id 的相册系统应用（用于对比）。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
 | `mobile-apps` | 关 | `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
@@ -184,7 +183,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 - 从 `apps` 中删除某个 id 即可不打包它；把 `OCTOSENSE_SYSTEM_APPS` 指向另一个文件即可换一套选择。没有这个变量时，构建不包含任何系统应用。
 - 修改应用包就在 `../apps/<name>/bundle` 中修改并重新构建；它会随下一次桌面构建发布，与 Shell 的修改放在同一个 pull request 中。
 - 桌面端没有挂载照片库，因此相册显示的是应用包自带的缩略图。要提供原尺寸照片，添加 `"assets": {"photos": {"photos": "<dir>"}}`。
-- 同 id 的原生模块会覆盖系统应用（例如 `--features app-photos`）。
+- 同 id 的已链接原生模块会覆盖系统应用；目前没有这样的模块（原生 News、Photos 和 Maps 模块已删除）。
 
 ### 开发者程序与目录
 

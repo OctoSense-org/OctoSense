@@ -5330,10 +5330,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "makepad-map-nav"
-version = "0.1.0"
-
-[[package]]
 name = "makepad-markdown"
 version = "0.1.0"
 dependencies = [
@@ -7460,33 +7456,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "octosense-maps"
-version = "0.1.0"
-dependencies = [
- "libc",
- "makepad-ai-services",
- "makepad-app-module",
- "makepad-map-nav",
- "makepad-widgets",
- "makepad-wm-api",
- "makepad-wm-theme",
- "reqwest 0.12.28",
- "rustls",
- "tokio",
-]
-
-[[package]]
-name = "octosense-news"
-version = "0.1.0"
-dependencies = [
- "makepad-ai-services",
- "makepad-app-module",
- "makepad-widgets",
- "makepad-wm-api",
- "makepad-wm-theme",
-]
-
-[[package]]
 name = "octosense-news-service"
 version = "0.1.0"
 dependencies = [
@@ -7498,16 +7467,6 @@ dependencies = [
  "sha2 0.10.9",
  "ureq 2.12.1",
  "url",
-]
-
-[[package]]
-name = "octosense-photos"
-version = "0.1.0"
-dependencies = [
- "makepad-app-module",
- "makepad-widgets",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -7541,10 +7500,7 @@ dependencies = [
  "octosense-appcard",
  "octosense-appstore",
  "octosense-mail-service",
- "octosense-maps",
- "octosense-news",
  "octosense-news-service",
- "octosense-photos",
  "octosense-reference",
  "rinx",
  "serde",

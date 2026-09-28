@@ -19,7 +19,7 @@ The landscape JPEGs were downloaded from Unsplash on September 16, 2026. Downloa
 | `sunlit-woods.jpg` | [Unsplash image](https://images.unsplash.com/photo-1447752875215-b2761acb3c5d) |
 | `desert.jpg` | [Unsplash image](https://images.unsplash.com/photo-1509316785289-025f5b846b35) |
 
-Names, dates, places, titles, and groupings in `catalog.json` are demonstration metadata, not inferred identities or original capture metadata. People collections use explicit catalog tags; the app does not perform face recognition.
+Names, dates, places, titles, and groupings the Photos app shows are demonstration metadata, not inferred identities or original capture metadata. People collections use explicit catalog tags; the app does not perform face recognition.
 
 ## Everyday scenes generated September 18, 2026
 

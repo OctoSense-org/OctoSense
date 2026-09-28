@@ -27,9 +27,6 @@ members = [
     "crates/shell",
     "crates/toolbox",
     "apps/reference",
-    "apps/news/native",
-    "apps/photos/native",
-    "apps/maps/native",
     "apps/news/host-service",
     "apps/mail/host-service",
     "apps/ai-providers/config",
@@ -70,7 +67,6 @@ makepad-strict-json = { git = "https://github.com/OctoSense-org/makepad.git", re
 makepad-app-module = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0" }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0" }
 makepad-wm-theme = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0" }
-makepad-map-nav = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0", default-features = false }
 makepad-aichat = { git = "https://github.com/OctoSense-org/makepad.git", rev = "f08eec5378fa3f83902a2794dacda03e829a0ef0", default-features = false }
 # --- OctoScript (Octoscript 68f6a9df) and its Makepad runtime
@@ -117,9 +113,6 @@ octosense-mail-service = { path = "apps/mail/host-service" }
 octosense-news-service = { path = "apps/news/host-service" }
 octosense-reference = { path = "apps/reference" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-news = { path = "apps/news/native" }
-octosense-photos = { path = "apps/photos/native" }
-octosense-maps = { path = "apps/maps/native" }
 octos-app = { path = "apps/appcard/app/app", default-features = false }
 octos-app-store = { path = "apps/appcard/app/crates/octos-app-store" }
 octos-app-transport = { path = "apps/appcard/app/crates/octos-app-transport" }
@@ -199,7 +192,6 @@ makepad-strict-json = { path = ".sources/makepad/libs/strict_json" }
 makepad-app-module = { path = ".sources/makepad/libs/app_module" }
 makepad-terminal = { path = ".sources/makepad/apps/terminal" }
 makepad-wm-theme = { path = ".sources/makepad/libs/wm_theme" }
-makepad-map-nav = { path = ".sources/makepad/libs/map_nav" }
 makepad-sheets = { path = ".sources/makepad/apps/sheets" }
 makepad-aichat = { path = ".sources/makepad/apps/aichat" }
 # Rinx's article editor: the Markdown and math components.

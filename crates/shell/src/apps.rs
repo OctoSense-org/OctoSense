@@ -65,19 +65,9 @@ fn linked_modules() -> Vec<&'static dyn AppModule> {
     // `Cx::pre_start`), so it needs no second binary shipped beside it.
     #[cfg(feature = "app-terminal")]
     out.push(&makepad_terminal::TERMINAL_MODULE);
-    // The native Photos library, albums and Memories. Without it Photos is
-    // the system app (`os.photos`); a linked module of the same id wins.
-    #[cfg(feature = "app-photos")]
-    out.push(&octosense_photos::PHOTOS_MODULE);
     // AppCard is opt-in on every target (not shipped by default for now).
     #[cfg(feature = "app-appcard")]
     out.push(&octosense_appcard::APPCARD_MODULE);
-    // The native News and OctosMap modules, for comparison with their
-    // system apps (`os.news`, `os.maps`).
-    #[cfg(feature = "app-news")]
-    out.push(&octosense_news::NEWS_MODULE);
-    #[cfg(feature = "app-maps")]
-    out.push(&octosense_maps::MAPS_MODULE);
     // The trust anchor stays native: the store, and the runner every system
     // and installed app is hosted by.
     #[cfg(any(feature = "app-hub", native_mobile))]
@@ -127,8 +117,7 @@ fn card_row(id: String, label: String, args: Vec<String>) -> crate::clients::App
 /// keeps its short launcher id (`mail` for `os.mail`), so its icon, home
 /// tile and dock place are the ones that id always had. They take
 /// precedence over catalog rows of the same id (`clients::registry`); a
-/// linked native module of the same id wins, for comparison builds
-/// (`app-news`, `app-photos`, `app-maps`).
+/// linked native module of the same id would win.
 pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
     #[cfg(any(feature = "app-hub", native_mobile))]
     {

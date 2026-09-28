@@ -44,7 +44,6 @@ octoscript-makepad = { workspace = true }
 # The L0 checker the glance service admits published cards with (glance.rs).
 octoscript-ui-l0 = { workspace = true }
 octosense-ai-host = { workspace = true }
-octosense-photos = { workspace = true, optional = true }
 octosense-reference = { workspace = true, optional = true }
 octosense-mail-service = { workspace = true, optional = true }
 octosense-news-service = { workspace = true, optional = true }
@@ -54,13 +53,11 @@ octosense-news-service = { workspace = true, optional = true }
 rinx = { workspace = true, features = ["octosense-module"], optional = true }
 # Not shipped for now: strictly opt-in with `app-appcard`, on every target.
 octosense-appcard = { workspace = true, optional = true }
-octosense-news = { workspace = true, optional = true }
 # App Hub's shell integration (store, Card runner, system apps, icons); its
 # build packs the system apps OCTOSENSE_SYSTEM_APPS names.
 octosense-app-hub-app = { workspace = true, optional = true }
 # App Hub's host-service registry: the `glance` service registers into it.
 octosense-appstore = { workspace = true, optional = true }
-octosense-maps = { workspace = true, optional = true }
 makepad-aichat = { workspace = true, optional = true }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries: native mobile
@@ -81,7 +78,7 @@ default = []
 mobile-only = []
 # The embedded apps, usable on a desktop with --module too. AppCard is not
 # among them: it ships only with `app-appcard`.
-mobile-apps = ["app-rinx", "app-reference", "app-sheets", "app-photos", "app-news", "app-maps", "app-hub", "octos-core"]
+mobile-apps = ["app-rinx", "app-reference", "app-sheets", "app-hub", "octos-core"]
 # The octos kernel as a shell service (octosense-kernel, via octosense-ai-host).
 octos-core = ["octosense-ai-host/octos-core"]
 # Rinx as a native module; its assistant is the shell's (implies `octos-core`).
@@ -92,11 +89,6 @@ app-sheets = ["dep:makepad-sheets"]
 # The terminal as a system app: linked in-process and module-hosted by
 # default on the desktop (apps.rs), unlike the other desktop modules.
 app-terminal = ["dep:makepad-terminal"]
-# Native Photos, News and OctosMap modules; without them these are the system
-# script apps (`os.photos`, `os.news`, `os.maps`, ADR 0004).
-app-photos = ["dep:octosense-photos"]
-app-news = ["dep:octosense-news"]
-app-maps = ["dep:octosense-maps"]
 # The AppCard module (the assistant in a tile), opt-in only (implies `octos-core`).
 app-appcard = ["dep:octosense-appcard", "octos-core"]
 # The aichat module, seated in the pane in-process.

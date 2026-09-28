@@ -61,10 +61,6 @@ app-reference = ["octosense-shell/app-reference"]
 app-sheets = ["octosense-shell/app-sheets"]
 # The Terminal system app: a login shell in a tile, in-process by default.
 app-terminal = ["octosense-shell/app-terminal"]
-# Native Photos, News and OctosMap modules instead of the system script apps.
-app-photos = ["octosense-shell/app-photos"]
-app-news = ["octosense-shell/app-news"]
-app-maps = ["octosense-shell/app-maps"]
 # The AppCard module, opt-in only (implies `octos-core`).
 app-appcard = ["octosense-shell/app-appcard"]
 app-aichat = ["octosense-shell/app-aichat"]

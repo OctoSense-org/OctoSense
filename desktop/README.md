@@ -83,7 +83,6 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
 | `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile, in-process by default (a `terminal: Process` line in `wm/apps.splash` under the state directory switches it to a process). The assistant gets its read tools (`read_screen`, `read_scrollback`); `run` is not offered. On macOS the shell's PTY helper is `octosense` itself, so no second binary ships beside it. |
-| `app-photos` | off | Links Makepad's native Photos module; it replaces the Photos system app of the same id (for comparison). |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `mobile-apps` | off | `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
@@ -184,7 +183,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 - Remove an id from `apps` to leave it out; point `OCTOSENSE_SYSTEM_APPS` at another file for a different selection. Without that variable the build ships no system apps.
 - To change a bundle, edit it in `../apps/<name>/bundle` and rebuild; it ships with the next desktop build, in the same pull request.
 - The desktop mounts no photo library, so Photos shows the thumbnails its bundle ships. To give it full-size photos, add `"assets": {"photos": {"photos": "<dir>"}}`.
-- A native module of the same id overrides a system app (for example `--features app-photos`).
+- A linked native module of the same id would override a system app; none does (the native News, Photos and Maps modules are deleted).
 
 ### Developer programs and the catalog
 
