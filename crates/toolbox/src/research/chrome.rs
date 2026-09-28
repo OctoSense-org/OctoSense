@@ -605,6 +605,9 @@ impl Tab<'_> {
             final_url: page.href,
             html,
             navigations: std::mem::take(&mut self.navigations),
+            // Not tracked over CDP: the reader classifies error pages and
+            // walls from the document itself.
+            status: None,
         })
     }
 
