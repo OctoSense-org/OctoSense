@@ -73,18 +73,44 @@ At run time the VM also installs **only** the declared methods, so a call the ch
 
 The result also carries `diagnostics`, `stats` (calls, model calls, reads, search fetches, denied, failed, peak concurrency, elapsed) and a `trace` of start, complete, denied and timed-out events. The future is not `Send`, because the VM stays on the calling thread.
 
+## The app's grant: octos's `Scope`
+
+The scope an app is granted with `research` and `crawl` (ADR 0002 section 6) is `octos_research::toolbox::Scope` (octos#2585): the same JSON, field names and units, with unknown fields refused and empty lists meaning no limit.
+
+```json
+{"langs": ["en", "zh"], "regions": ["US"], "domains_allow": [], "domains_deny": ["example.com"],
+ "max_age_days": 3, "categories": ["news"], "max_results": 10, "max_depth": 0, "max_pages": 0}
+```
+
+| Field | Meaning | How `mod.research` applies it |
+|---|---|---|
+| `langs` | BCP-47 languages (normalized: `zh-hant` → `zh-Hant`) | searches, translations, digests and results outside it are refused or dropped (primary subtags compared) |
+| `regions` | ISO 3166-1 alpha-2 | a search for another region is refused |
+| `domains_allow`, `domains_deny` | domains, subdomains included | results outside are dropped; `article` checks the link and, with the octos engine, the page it ended on |
+| `max_age_days` | oldest material, in days | a search's `max_age_hours` is clamped to it; a search without one gets it |
+| `categories` | metasearch categories | `mod.research` searches `news`; a grant without it refuses every search |
+| `max_results` | results per search (default 20) | caps a search's `limit` |
+| `max_depth`, `max_pages` | the `crawl` capability: depth and pages of one crawl (0: not granted) | unused: `mod.research` does not crawl |
+
+`scope::parse` reads a grant and `AppContext` deserializes its `scope` through it; `scope::unrestricted()` is the empty grant (`Scope::default()` is not: its `max_results` is 0).
+
+- **With `octos-engine`**, `Scope` is octos's type. A grant is parsed by `Scope::from_grant`, each search is narrowed by `Scope::search_args` and each read checked by `Scope::check_domain`. There is no toolbox definition of the scope.
+- **Without it**, `Scope` is `scope::compat::Scope`, a thin parser of the same JSON with the same validation, normalization, domain matching and narrowing, so the fixture and interim backends enforce the same grant. It is not a second definition to maintain: a test built with the feature (`scope::tests::the_thin_parser_matches_octos`) runs both on the same grants, URLs, languages and searches and fails on any difference. Gating the scope on the feature instead would leave the default build, the fixtures and the evaluation with no scope checks at all.
+- **The run budget is not in the grant.** Articles read per run are the template's `max_reads`, narrowed by the app's own budget. The scope's `max_pages` counts pages of one crawl.
+- **Grants in the old shape are refused, not converted.** The toolbox's own scope (`languages`, `allowed_domains`, `denied_domains`, `recency_hours`, and `max_pages` as articles per run) is refused with an error naming each replacement (`` `languages` is now `langs` ``, …). Converting would round hours up to days, widening what the person granted, and would read the old `max_pages` as a crawl limit. No grant in the old shape was ever stored (the toolbox is not wired into App Hub yet), so App Hub pins and the person grants the scope again in the new shape.
+
 ## `mod.research` v1
 
 | Method | Input | Output | Charged |
 |---|---|---|---|
 | `query` | `{query, language?}` | `{query, language}`: search terms in `language` | 1 model call |
 | `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at, readable}], source: {partial, providers, queried_at}}`, readable items first | 1 call; its fetches are reported, not charged to `max_reads` |
-| `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256, on_topic}` | 1 page |
+| `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256, on_topic}` | 1 read (`max_reads`) |
 | `digest` | `{task: digest\|brief\|plan\|compare, language, article_ids, focus?}` (articles read in **this run**) | `{task, language, summary, points: [{text, citations, label?}], off_topic: [id]}` | 1 model call |
 
 `research::ResearchHost` implements `ToolboxHost` for this module over two parts: a `ResearchBackend` (finds and reads sources) and a `ModelClient` (supplied by the host). The policy is enforced here, once, whatever the backend:
 
-- **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit. The scope does not limit how many articles a run reads; that is the budget's `max_reads`. `mod.research` reads only this run's search results and never follows a link from a page, so every read is at depth one.
+- **Scope**: every call is checked against the app's grant, octos's `Scope` (see [The app's grant](#the-apps-grant-octoss-scope)). A search in a language, region or category outside it is refused; its recency is clamped to `max_age_days` and its `limit` to `max_results`, with a note in the run's diagnostics. Results on denied domains, outside the allowed ones or in a language outside `langs` are dropped, and `article` refuses them. `query` and `digest` refuse an output language outside `langs`. The scope does not limit how many articles a run reads; that is the budget's `max_reads`. `mod.research` reads only this run's search results and never follows a link from a page, so every read is at depth one and it needs no crawl grant.
 - **Ids**: search results get host-assigned ids derived from their URLs. `article` reads only this run's ids, so a template cannot fetch an arbitrary URL.
 - **Evidence**: article text stays in the host, capped at 6000 bytes on a paragraph boundary and hashed. The script sees a 400-byte excerpt and the hash.
 - **Relevance** (`research::relevance`, in the host so it survives the engine swap): topics are split into terms, stop-words ("of", "the", "news", "de", "新闻" …) ignored; words match whole words, case- and accent-insensitively, with a light suffix stemmer; runs of Han, kana, Hangul or Thai match as substrings after both sides are folded to Simplified Chinese with a small character table (common news vocabulary, about 540 characters; a character outside it matches only its own script).
@@ -111,8 +137,8 @@ Backends:
     - no cookies, credentials or proxies, and 401/402/403 are failures, so there is no paywall or login bypass;
     - **SSRF blocking** on every fetch and every redirect hop. Loopback, private, link-local (including cloud-metadata 169.254.169.254 and `fd00:ec2::254`), unique-local, shared (CGNAT), multicast, reserved and IPv4-mapped forms are refused, both as URL literals and in DNS answers. A resolver filters the addresses the connection actually uses, so DNS rebinding cannot get past the check. `localhost` names are refused.
   - **Licenses**: `dom_smoothie`, `dom_query`, `gjson`, `html-escape` (MIT), `flagset` (Apache-2.0), `quick-xml` (MIT), and Mozilla's `cssparser` and `selectors` (MPL-2.0, unmodified; the workspace already links them through `scraper`). All of these are behind the `live` feature.
-- **The octos research engine** (`research::octos::OctosResearch`, feature `octos-engine`). It depends on `octos-research` through the workspace's one octos pin, and needs octos#2568 (reader), #2582 (metasearch) and #2585 (`octos_research::toolbox`). **Until the pin includes #2585, the feature does not resolve.** It only finds and reads; everything under "The policy" above stays in the host unchanged.
-  - **One definition of an app's reach.** The app's grant (`Scope`) is mapped onto `octos_research::toolbox::Scope` (`octos_scope`: languages, regions, domains, recency rounded up to days, no crawling). Each search is narrowed by octos's `Scope::search_args`, so a language, region or domain outside the grant is refused there and the recency is clamped. Each read is checked with `Scope::check_domain` twice: the link, then the page the browser ended on, the publisher for a Google News link.
+- **The octos research engine** (`research::octos::OctosResearch`, feature `octos-engine`). It depends on `octos-research` through the workspace's one octos pin, and needs octos#2568 (reader), #2582 (metasearch) and #2585 (`octos_research::toolbox`, merged as octos 7bec0918). **Until the workspace's octos pin moves to include #2585, the workspace does not resolve `octos-research`.** It only finds and reads; everything under "The policy" above stays in the host unchanged.
+  - **One definition of an app's reach.** The app's grant **is** `octos_research::toolbox::Scope`; nothing is mapped. Each search is narrowed by octos's `Scope::search_args`, in the host (above) and again here, so a language, region, category or domain outside the grant is refused there and the recency is clamped. The search asks the engines for a candidate pool of three times the app's `limit` (at most 30, `candidate_pool`) so the host's filters still leave `limit`; `max_results` bounds what the app gets, not the pool. Each read is checked with `Scope::check_domain` twice: the link, then the page the browser ended on, the publisher for a Google News link.
   - **Search** is the octos metasearch (`octos_research::metasearch`), category `news`: Google News in the language's own edition, GDELT, publisher feeds, Hacker News and Mastodon, plus keyed engines when their keys are set.
     - Octos fans the query out under a 15 s deadline, then merges, deduplicates and ranks the results. It spaces requests per host, honours `Retry-After`, caches with ETags, and suspends a failing engine with doubling backoff. That backoff is how GDELT's 429s are handled.
     - No results page is scraped.
@@ -184,18 +210,18 @@ This flow needs the wiring in [What remains](#what-remains):
 
 ## Commands
 
-All of these were run on 27 Sep 2026. The `octos-engine` ones ran with octos#2585's head (5b9110be) in place of the pin, through an uncommitted override: `--config 'patch."https://github.com/octos-org/octos.git".octos-research.path="<octos checkout>/crates/octos-research"'` (**unverified** against the pin until it moves).
+All of these were run on 28 Sep 2026 with octos's merge of #2585 (7bec0918) in place of the pin, through an uncommitted override (the pin's octos has no `octos-research` toolbox, so every build needs it until the pin moves, and `--locked` needs the lock file updated locally for it): `--config 'patch."https://github.com/octos-org/octos.git".octos-research.path="<octos checkout>/crates/octos-research"'` (**unverified** against the pin until it moves).
 
 ```sh
-cargo test --locked -p octosense-toolbox                     # 52 tests, fixtures only
-cargo test --locked -p octosense-toolbox --features live     # 66 tests (4 ignored): + adapter tests on a local server
+cargo test --locked -p octosense-toolbox                     # 56 tests, fixtures only (the thin scope parser)
+cargo test --locked -p octosense-toolbox --features live     # 70 tests (4 ignored): + adapter tests on a local server
                                                              # (robots.txt never requested by default; honoured when on; SSRF; backoff;
                                                              # Google News editions; the GDELT breaker; provider deadlines; the feed filter)
-cargo test --locked -p octosense-toolbox --features octos-engine        # 65 tests (4 ignored): + the scope mapping, engine notes,
+cargo test --locked -p octosense-toolbox --features octos-engine        # 70 tests (4 ignored): + octos's Scope, the thin parser against it, engine notes,
                                                              # and headless Chrome (skipped without Chrome): the process group is gone after
                                                              # a drop, a hung render times out without a relaunch, an idle browser closes,
                                                              # four renders share one browser, private addresses are refused in the browser
-cargo test --locked -p octosense-toolbox --features live,octos-engine   # 79 tests (5 ignored)
+cargo test --locked -p octosense-toolbox --features live,octos-engine   # 84 tests (5 ignored)
 cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
 cargo clippy --locked -p octosense-toolbox --all-targets --features live,octos-engine --no-deps -- -D warnings
 cargo fmt --check -p octosense-toolbox

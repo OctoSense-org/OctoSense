@@ -35,6 +35,7 @@ pub mod manifest;
 pub mod modules;
 pub mod research;
 pub mod runner;
+pub mod scope;
 
 pub use api::Toolbox;
 pub use evaluate::{evaluate, EvalCase, EvaluationReport, QualityScorer, Verdict, VerdictOutcome};

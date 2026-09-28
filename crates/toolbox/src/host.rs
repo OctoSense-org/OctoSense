@@ -3,6 +3,7 @@
 //! fixture or live backend here.
 
 use crate::manifest::Budget;
+pub use crate::scope::Scope;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -23,8 +24,12 @@ pub struct AppContext {
     pub app_id: String,
     /// App Hub capabilities granted to the app (`research`, `crawl`, …).
     pub grants: BTreeSet<String>,
-    /// The research scope granted with those capabilities.
-    #[serde(default)]
+    /// The scope granted with the `research` and `crawl` capabilities:
+    /// octos's `Scope` ([`crate::scope`]), parsed with `Scope::from_grant`.
+    #[serde(
+        default = "crate::scope::unrestricted",
+        deserialize_with = "crate::scope::deserialize"
+    )]
     pub scope: Scope,
     /// The app's own budget per run, if narrower than the templates'.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -39,7 +44,7 @@ impl AppContext {
         Self {
             app_id: app_id.into(),
             grants: BTreeSet::new(),
-            scope: Scope::default(),
+            scope: crate::scope::unrestricted(),
             budget: None,
             folder: folder.into(),
         }
@@ -66,59 +71,6 @@ impl AppContext {
 
     pub fn runs_dir(&self) -> PathBuf {
         self.folder.join("toolbox").join("runs")
-    }
-}
-
-/// The research scope App Hub pinned and the person or store granted (ADR
-/// 0002 section 6, "Granted per app, scoped"). Empty lists mean no limit.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Scope {
-    pub languages: Vec<String>,
-    pub regions: Vec<String>,
-    pub allowed_domains: Vec<String>,
-    pub denied_domains: Vec<String>,
-    /// Oldest item age, in hours.
-    pub recency_hours: Option<u32>,
-}
-
-impl Scope {
-    fn domain_matches(host: &str, domain: &str) -> bool {
-        let domain = domain.trim_start_matches('.').to_ascii_lowercase();
-        let host = host.to_ascii_lowercase();
-        host == domain || host.ends_with(&format!(".{domain}"))
-    }
-
-    /// Whether a URL's host is within the allowed and outside the denied
-    /// domains.
-    pub fn allows_url(&self, url: &str) -> bool {
-        let Some(host) = url_host(url) else {
-            return false;
-        };
-        if self
-            .denied_domains
-            .iter()
-            .any(|d| Self::domain_matches(&host, d))
-        {
-            return false;
-        }
-        self.allowed_domains.is_empty()
-            || self
-                .allowed_domains
-                .iter()
-                .any(|d| Self::domain_matches(&host, d))
-    }
-
-    pub fn allows_language(&self, language: &str) -> bool {
-        self.languages.is_empty()
-            || self
-                .languages
-                .iter()
-                .any(|l| l.eq_ignore_ascii_case(language))
-    }
-
-    pub fn allows_region(&self, region: &str) -> bool {
-        self.regions.is_empty() || self.regions.iter().any(|r| r.eq_ignore_ascii_case(region))
     }
 }
 
@@ -261,20 +213,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hosts_and_domains() {
+    fn hosts() {
         assert_eq!(
             url_host("https://User@News.Example.org:443/a?b").as_deref(),
             Some("news.example.org")
         );
         assert_eq!(url_host("ftp://x"), None);
-        let scope = Scope {
-            allowed_domains: vec!["example.org".into()],
-            denied_domains: vec!["bad.example.org".into()],
-            ..Scope::default()
-        };
-        assert!(scope.allows_url("https://news.example.org/x"));
-        assert!(!scope.allows_url("https://bad.example.org/x"));
-        assert!(!scope.allows_url("https://example.com/x"));
-        assert!(!scope.allows_url("https://notexample.org/x"));
     }
 }

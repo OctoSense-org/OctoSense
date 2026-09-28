@@ -9,11 +9,11 @@
 //! ids, evidence caps, relevance gate, translation, citations, budgets,
 //! provenance) is unchanged: this module only finds and reads.
 //!
-//! - **One definition of an app's reach.** The app's grant is mapped onto
-//!   `octos_research::toolbox::Scope` ([`octos_scope`]), and every search is
-//!   narrowed by `Scope::search_args` and every page read checked by
-//!   `Scope::check_domain`, the same rules octos applies to its own toolbox
-//!   tools.
+//! - **One definition of an app's reach.** The app's grant **is**
+//!   `octos_research::toolbox::Scope` ([`crate::scope`]), parsed by
+//!   `Scope::from_grant`; every search is narrowed by `Scope::search_args`
+//!   and every page read checked by `Scope::check_domain`, the same rules
+//!   octos applies to its own toolbox tools.
 //! - **Search**: the engines of the `news` category (by default Google News
 //!   in the language's own edition, GDELT, publisher feeds, Hacker News,
 //!   Mastodon; keyed engines when their keys are set), fanned out in
@@ -46,7 +46,6 @@ use octos_research::metasearch::{
     EngineReport, EngineStatus, MetaItem, Metasearch, ReqwestFetch, SearchRequest,
 };
 use octos_research::reader::{self, Reader, ReaderConfig};
-use octos_research::toolbox::Scope as OctosScope;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -118,32 +117,17 @@ impl OctosConfig {
     }
 }
 
-/// The app's grant as octos's toolbox scope: languages, regions, domains
-/// and recency carry over (recency rounded up to whole days, octos's unit);
-/// the host's own per-search limit is at most [`MAX_RESULTS`]; crawling is
-/// not part of `mod.research`, so it is not granted here.
-pub fn octos_scope(scope: &crate::host::Scope) -> Result<OctosScope, HostError> {
-    OctosScope::from_grant(&json!({
-        "langs": scope.languages,
-        "regions": scope.regions,
-        "domains_allow": scope.allowed_domains,
-        "domains_deny": scope.denied_domains,
-        "max_age_days": scope.recency_hours.map(|h| h.div_ceil(24)),
-        "max_results": MAX_RESULTS,
-        "max_depth": 0,
-        "max_pages": 0,
-    }))
-    .map_err(HostError::Denied)
-}
-
 /// A toolbox search as octos toolbox `search` arguments. The topic is
 /// already in the search's language (the host's `research.query`
 /// translated it), so it is also that language's `query_by_lang` entry.
+/// `count` is the results the app gets, already within the grant's
+/// `max_results` (the host narrowed it); the engines' candidate pool is
+/// [`candidate_pool`].
 pub fn search_args(query: &SearchQuery, category: &str) -> Value {
     let mut args = json!({
         "query": query.topic,
         "category": category,
-        "count": (query.limit * 3).min(MAX_RESULTS as u32),
+        "count": query.limit,
     });
     if let Some(language) = query.language.as_deref().filter(|l| !l.is_empty()) {
         args["lang"] = json!([language]);
@@ -156,6 +140,14 @@ pub fn search_args(query: &SearchQuery, category: &str) -> Value {
         args["since"] = json!(format!("{hours}h"));
     }
     args
+}
+
+/// Merged results asked of the metasearch for a search whose app gets
+/// `count`: three times as many, at most [`MAX_RESULTS`], so the host's
+/// relevance, readability and domain filters still leave `count`. The
+/// grant's `max_results` bounds what the app gets, not this pool.
+pub fn candidate_pool(count: usize) -> usize {
+    (count * 3).min(MAX_RESULTS).max(count)
 }
 
 /// The octos research engine as a toolbox backend.
@@ -345,7 +337,7 @@ impl ResearchBackend for OctosResearch {
     ) -> HostFuture<'a, Result<SearchResults, HostError>> {
         Box::pin(async move {
             let now = chrono::Utc::now();
-            let scope = octos_scope(&ctx.app.scope)?;
+            let scope = &ctx.app.scope;
             let scoped = scope
                 .search_args(&search_args(&query, &self.config.category), now)
                 .map_err(HostError::Denied)?;
@@ -354,8 +346,8 @@ impl ResearchBackend for OctosResearch {
             request.langs = scoped.langs.clone();
             request.region = scoped.region.clone();
             request.since = scoped.since.clone();
-            request.count = scoped.count;
-            request.limit = scoped.count;
+            request.count = candidate_pool(scoped.count);
+            request.limit = request.count;
             request.filters = scoped.filters.clone();
             request.engines = self.config.engines.clone();
             request.deadline = self.config.search_deadline;
@@ -412,7 +404,7 @@ impl ResearchBackend for OctosResearch {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
-            let pages = response
+            let fetches = response
                 .engines
                 .iter()
                 .filter(|r| {
@@ -430,7 +422,7 @@ impl ResearchBackend for OctosResearch {
                 items,
                 providers,
                 partial: failed_now > 0,
-                pages,
+                fetches,
                 notes,
             })
         })
@@ -442,7 +434,7 @@ impl ResearchBackend for OctosResearch {
         item: &'a FoundItem,
     ) -> HostFuture<'a, Result<PageText, HostError>> {
         Box::pin(async move {
-            let scope = octos_scope(&ctx.app.scope)?;
+            let scope = &ctx.app.scope;
             scope.check_domain(&item.url).map_err(HostError::Denied)?;
             if !self.renders() && needs_browser(&item.url) {
                 return Err(HostError::Failed(
@@ -527,15 +519,13 @@ mod tests {
     }
 
     #[test]
-    fn the_app_grant_becomes_the_octos_scope() {
-        let grant = crate::host::Scope {
-            languages: vec!["en".into(), "zh".into()],
-            denied_domains: vec!["example.com".into()],
-            recency_hours: Some(30),
-            ..Default::default()
-        };
-        let scope = octos_scope(&grant).unwrap();
-        assert_eq!(scope.max_age_days, Some(2));
+    fn the_app_grant_is_the_octos_scope() {
+        let grant: crate::AppContext = serde_json::from_value(json!({
+            "app_id": "os.news", "grants": ["research"], "folder": "/tmp",
+            "scope": {"langs": ["en", "zh"], "domains_deny": ["example.com"], "max_age_days": 2}
+        }))
+        .unwrap();
+        let scope = &grant.scope;
         assert_eq!((scope.max_depth, scope.max_pages), (0, 0));
         assert!(scope
             .check_domain("https://news.example.com/a")
@@ -547,7 +537,7 @@ mod tests {
             region: None,
             limit: 5,
             max_age_hours: Some(72),
-            max_pages: 8,
+            max_fetches: 8,
         };
         let now = chrono::Utc::now();
         let scoped = scope
@@ -558,6 +548,9 @@ mod tests {
             scoped.query_by_lang.get("zh").map(String::as_str),
             Some("台风")
         );
+        assert_eq!(scoped.count, 5);
+        assert_eq!(candidate_pool(scoped.count), 15);
+        assert_eq!(candidate_pool(20), MAX_RESULTS);
         // The grant's 2 days narrow the search's 72 hours.
         assert!(scoped.since.unwrap().cutoff >= now - chrono::Duration::days(2));
         // A language outside the grant is refused by octos's narrowing.
