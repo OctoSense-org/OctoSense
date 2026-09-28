@@ -164,9 +164,12 @@ system agent's tool set is its grants. Its default octos tools are
 file tools (octos fences them to the session's working directory), memory,
 `ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
 toolbox grants replace them, #108) and `tool_search`. Granted toolbox and
-cross-app tools, and command execution when the person turns it on in
-Settings (off by default), join it as host tools through `SystemAgentTools`;
-command execution is a host tool with a live approval (`terminal.run`).
+cross-app tools join it as host tools through `SystemAgentTools`. Command
+execution is **planned, not available**: it is to be a host tool with a live
+approval (`terminal.run`), off by default and turned on by a Settings
+switch. `SystemAgentTools::grant_command_execution` is the seam, but no
+Settings switch sets it yet, and the host tool cannot be registered on the
+system session until octos can register tools per session (octos#2567).
 
 **What the kernel enforces today.** octos has no tool list the host can set
 for one session, so every start writes the `_main` profile's `tool_policy`

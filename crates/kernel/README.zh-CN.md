@@ -134,8 +134,9 @@ adb -s SERIAL forward tcp:PORT tcp:PORT
 [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12：系统智能体的工具集就是它获得的授权。它默认的 octos
 工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`、
 `peer_close`）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
-`web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。授予的工具箱工具和跨应用工具，以及用户在设置中开启
-（默认关闭）的命令执行，通过 `SystemAgentTools` 作为宿主工具加入；命令执行是需要实时批准的宿主工具（`terminal.run`）。
+`web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。授予的工具箱工具和跨应用工具通过 `SystemAgentTools` 作为宿主工具加入。命令执行**尚在计划中，目前不可用**：
+它将是需要实时批准的宿主工具（`terminal.run`），默认关闭，由设置中的开关开启。`SystemAgentTools::grant_command_execution`
+是预留接口，但目前还没有设置开关调用它，而且在 octos 支持按会话注册工具（octos#2567）之前，无法在系统会话上注册该宿主工具。
 
 **内核今天执行的内容。** octos 没有宿主可为单个会话设置的工具名单，因此每次启动都写入 `_main` profile 的 `tool_policy`
 （`system_tools::tool_policy`）：任何授权可给予的一切，唯独去掉 octos 自己的 shell（`group:runtime`：`shell`、`bash`、
