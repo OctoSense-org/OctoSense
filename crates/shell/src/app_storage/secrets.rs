@@ -4,12 +4,17 @@
 //! - macOS and iOS: the keychain (the `keyring` crate, as Mail's vault),
 //!   one item per (profile, app, key); the key names are listed in
 //!   `secrets/<app id>/.keychain-index` so uninstalling can delete them.
-//! - Elsewhere, and with `OCTOSENSE_SECRETS=file` (unsigned development
-//!   builds, where macOS asks again for every rebuilt binary): one
-//!   owner-only (0600) file per key in `secrets/<app id>/`, a 0700
-//!   directory. TODO: the platform vault on Windows (Credential Manager),
-//!   Linux (Secret Service) and Android (Keystore-wrapped files, as Mail's
-//!   vault does).
+//! - Elsewhere: one owner-only (0600) file per key in `secrets/<app id>/`,
+//!   a 0700 directory. TODO: the platform vault on Windows (Credential
+//!   Manager), Linux (Secret Service) and Android (Keystore-wrapped files,
+//!   as Mail's vault does).
+//!
+//! The keychain can prompt (macOS asks again for every rebuilt, unsigned
+//! binary) and so hang a run nobody watches. [`select_backend`] therefore
+//! picks the file store for the shell's own tests (always; no test touches
+//! the login keychain), for `OCTOSENSE_SECRETS=file`, and for headless runs
+//! (`CI`, `GITHUB_ACTIONS`, `MAKEPAD_HIDE_WINDOWS`, an SSH session), unless
+//! `OCTOSENSE_SECRETS=keychain` asks for the keychain outside tests.
 
 use super::{validate_app_id, StorageError};
 use crate::ai_host::app_peers::storage::SecretStore;
@@ -95,23 +100,61 @@ impl SecretStore for FileSecrets {
     }
 }
 
-/// The store for this platform (see the module docs).
+/// Where an app's secrets go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backend {
+    /// Owner-only files under `secrets/<app id>/`.
+    File,
+    /// The platform keychain (macOS, iOS).
+    Keychain,
+}
+
+/// Environment variables that mark a run nobody can answer a keychain
+/// prompt in.
+pub const HEADLESS_VARS: &[&str] = &["CI", "GITHUB_ACTIONS", "MAKEPAD_HIDE_WINDOWS", "SSH_CONNECTION", "SSH_TTY"];
+
+/// The backend for a platform with (`vault`) or without a keychain, in or
+/// out of the shell's tests, given the environment `var`.
+pub fn select_backend(vault: bool, in_test: bool, var: impl Fn(&str) -> Option<String>) -> Backend {
+    if !vault || in_test {
+        return Backend::File;
+    }
+    match var("OCTOSENSE_SECRETS").as_deref() {
+        Some("file") => return Backend::File,
+        Some("keychain") => return Backend::Keychain,
+        _ => {}
+    }
+    if HEADLESS_VARS.iter().any(|name| var(name).is_some_and(|v| !v.is_empty())) {
+        return Backend::File;
+    }
+    Backend::Keychain
+}
+
+/// This process's backend.
+pub fn backend() -> Backend {
+    select_backend(cfg!(any(target_os = "macos", target_os = "ios")), cfg!(test), |name| std::env::var(name).ok())
+}
+
+/// The store for this platform and run (see [`select_backend`]).
 pub fn platform(secrets_root: &Path, app_id: &str) -> Arc<dyn SecretStore> {
     #[cfg(any(target_os = "macos", target_os = "ios"))]
-    if !std::env::var("OCTOSENSE_SECRETS").is_ok_and(|v| v == "file") {
+    if backend() == Backend::Keychain {
         return Arc::new(keychain::Keychain::new(secrets_root, app_id));
     }
     Arc::new(FileSecrets::new(secrets_root, app_id))
 }
 
-/// Delete every secret of `app_id`: its vault items (those the index
-/// names). The caller removes `secrets/<app id>/` itself.
+/// Delete every secret of `app_id`: its keychain items (those the index
+/// names), only when this run uses the keychain. The caller removes
+/// `secrets/<app id>/` itself.
 pub fn purge(secrets_root: &Path, app_id: &str) {
     if validate_app_id(app_id).is_err() {
         return;
     }
     #[cfg(any(target_os = "macos", target_os = "ios"))]
-    keychain::Keychain::new(secrets_root, app_id).purge();
+    if backend() == Backend::Keychain {
+        keychain::Keychain::new(secrets_root, app_id).purge();
+    }
     let _ = secrets_root;
 }
 

@@ -67,6 +67,14 @@ pub fn normalize_account(account: &str) -> String {
 /// The name of an account's folder: the first [`ACCOUNT_HASH_LEN`] lowercase
 /// hex digits of `SHA-256("octosense.account.v1\0" ‖ normalize_account(id))`.
 ///
+/// **A compatibility contract.** The hash IS the name of every app's
+/// per-account folder, i.e. that account's data and its agent's workspace.
+/// Changing the domain string (the salt), [`normalize_account`] or the
+/// truncation ([`ACCOUNT_HASH_LEN`]) renames every account folder: all
+/// existing per-account data and agent workspaces are orphaned (still on
+/// disk, no longer found). A change needs a migration that renames the
+/// folders, shipped with it; `tests.rs` pins a value to catch it.
+///
 /// Stable (same id, same folder, on every device and build), non-reversible
 /// (the folder name does not reveal the id; an unsalted hash still lets
 /// someone who guesses the id confirm it), and never [`DEVICE`] (not hex).
@@ -480,11 +488,9 @@ pub fn init(data_dir: Option<PathBuf>) -> Option<&'static Arc<Storage>> {
             return None;
         }
     };
-    let storage = if std::env::var("OCTOSENSE_SECRETS").is_ok_and(|v| v == "file") {
-        Storage::with_file_secrets(layout)
-    } else {
-        Storage::new(layout)
-    };
+    // The secrets backend (keychain or files) is chosen per run by
+    // `secrets::select_backend`: never the keychain headless or in tests.
+    let storage = Storage::new(layout);
     let report = storage.startup_check();
     report.log();
     Some(HOST.get_or_init(|| storage))

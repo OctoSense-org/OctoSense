@@ -88,7 +88,10 @@ fn app_ids_are_single_plain_path_components() {
 #[test]
 fn the_account_hash_is_stable_normalized_and_opaque() {
     let h = account_hash("alice@example.org");
-    // Pinned: a change here moves every account's folder.
+    // COMPATIBILITY CONTRACT: this value names real folders on people's
+    // devices. If it changes (salt, normalization or truncation), every
+    // app's per-account data and agent workspace is orphaned. Do not update
+    // the pin without a migration that renames existing account folders.
     assert_eq!(h, PINNED_ALICE);
     assert_eq!(h.len(), ACCOUNT_HASH_LEN);
     assert!(h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
@@ -460,4 +463,47 @@ fn a_module_claims_the_storage_offered_to_it() {
     assert_eq!(claimed.app_id(), "sheets");
     assert_eq!(claimed.jail(), home.0.join("apps/sheets"));
     withdraw("sheets", "i7g7");
+}
+
+// ---- the secrets backend --------------------------------------------------
+
+/// The keychain can prompt and hang an unattended run: tests and headless
+/// runs always get the file store.
+#[test]
+fn the_keychain_is_never_used_in_tests_or_headless_runs() {
+    use secrets::{select_backend, Backend};
+    let env = |pairs: &'static [(&'static str, &'static str)]| {
+        move |name: &str| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+    };
+    // This test binary itself.
+    assert_eq!(secrets::backend(), Backend::File, "cfg(test) never reaches the login keychain");
+    assert_eq!(select_backend(true, true, env(&[("OCTOSENSE_SECRETS", "keychain")])), Backend::File);
+    // No vault on the platform.
+    assert_eq!(select_backend(false, false, env(&[("OCTOSENSE_SECRETS", "keychain")])), Backend::File);
+    // A person's desktop session.
+    assert_eq!(select_backend(true, false, env(&[])), Backend::Keychain);
+    assert_eq!(select_backend(true, false, env(&[("CI", "")])), Backend::Keychain, "an empty variable is unset");
+    assert_eq!(select_backend(true, false, env(&[("OCTOSENSE_SECRETS", "file")])), Backend::File);
+    for headless in secrets::HEADLESS_VARS {
+        let pairs: &'static [(&'static str, &'static str)] = Box::leak(vec![(*headless, "1")].into_boxed_slice());
+        assert_eq!(select_backend(true, false, env(pairs)), Backend::File, "{headless}");
+    }
+    assert_eq!(select_backend(true, false, env(&[("CI", "true"), ("OCTOSENSE_SECRETS", "keychain")])), Backend::Keychain, "explicit opt-in");
+    // The platform store in this binary writes owner-only files.
+    let home = Scratch::new("backend");
+    let store = secrets::platform(&home.0.join("secrets"), "probe");
+    store.put("k", b"v").unwrap();
+    assert!(home.0.join("secrets/probe/k").is_file());
+}
+
+/// A host built with `Storage::new` (the platform store, as `init` does)
+/// keeps secrets in files under the scratch home in tests.
+#[test]
+fn a_platform_host_in_tests_keeps_secrets_in_files() {
+    let home = Scratch::new("platformhost");
+    let host = Storage::new(Layout::new(&home.0).unwrap());
+    host.open("probe").unwrap().secrets().put("k", b"v").unwrap();
+    assert!(home.0.join("secrets/probe/k").is_file());
+    host.uninstall("probe").unwrap();
+    assert!(!home.0.join("secrets/probe").exists());
 }
