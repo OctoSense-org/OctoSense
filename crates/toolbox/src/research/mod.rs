@@ -193,6 +193,9 @@ struct RunState {
     /// The searches (terms, language) each item was found under.
     topics: HashMap<String, Vec<(String, Option<String>)>>,
     articles: HashMap<String, ReadArticle>,
+    /// Publishers that refused a read in this run (see [`refusal_code`]),
+    /// by [`publisher_keys`], with the refusal's reason code.
+    refused: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -397,7 +400,40 @@ impl ResearchHost {
         if let Err(why) = ctx.app.scope.check_domain(&item.url) {
             return Err(HostError::Denied(why));
         }
-        let page = self.backend.read(ctx, &item).await?;
+        // A publisher that refused an earlier read in this run (a bot
+        // challenge or HTTP 403) is not asked again: the answer would be the
+        // same, and a browser render costs seconds.
+        let keys = publisher_keys(&item);
+        let refused = self.state(&ctx.run_id, |s| {
+            keys.iter()
+                .find_map(|k| s.refused.get(k).map(|code| (k.clone(), code.clone())))
+        });
+        if let Some((key, code)) = refused {
+            return Err(HostError::Failed(format!(
+                "host_skipped: {key} refused an earlier read in this run ({code}); not read"
+            )));
+        }
+        let page = match self.backend.read(ctx, &item).await {
+            Ok(page) => page,
+            Err(err) => {
+                if let HostError::Failed(message) = &err {
+                    if let Some(code) = refusal_code(message) {
+                        let mut keys = keys;
+                        keys.extend(
+                            final_url(message)
+                                .and_then(host_of)
+                                .map(|h| format!("host {h}")),
+                        );
+                        self.state(&ctx.run_id, |s| {
+                            for key in keys {
+                                s.refused.entry(key).or_insert_with(|| code.to_owned());
+                            }
+                        });
+                    }
+                }
+                return Err(err);
+            }
+        };
         let (evidence, truncated) = cap_evidence(&page.text, MAX_EVIDENCE_BYTES);
         if evidence.trim().is_empty() {
             return Err(HostError::Failed("no main text".into()));
@@ -909,9 +945,94 @@ fn check_point(
     Ok((record, label_note))
 }
 
+/// Hosts whose article links stand for many publishers (the publisher is
+/// known only after the read resolves the link), so they never identify one.
+const AGGREGATOR_HOSTS: &[&str] = &["news.google.com"];
+
+/// Read failures that say the publisher refuses this reader, as octos's
+/// reason codes (octos#2590): the same publisher would refuse the next read
+/// too. Other failures (no main text, a timeout) may be the page's alone.
+fn refusal_code(message: &str) -> Option<&'static str> {
+    ["bot_challenge", "http_403"]
+        .into_iter()
+        .find(|code| message.starts_with(code))
+}
+
+/// The page a failed read ended on, from octos's `(final URL: …)` suffix.
+fn final_url(message: &str) -> Option<&str> {
+    let start = message.rfind("(final URL: ")? + "(final URL: ".len();
+    message[start..].split(')').next()
+}
+
+/// A URL's host, lowercased and without `www.`.
+fn host_of(url: &str) -> Option<String> {
+    let rest = url.split_once("://")?.1;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit('@').next()?.split(':').next()?;
+    let host = host.to_ascii_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host).to_owned();
+    (!host.is_empty()).then_some(host)
+}
+
+/// What identifies an item's publisher before it is read: its source name,
+/// and its link's host unless that is an aggregator's.
+fn publisher_keys(item: &FoundItem) -> Vec<String> {
+    let mut keys = Vec::new();
+    let source = item.source.trim();
+    if !source.is_empty() {
+        keys.push(format!("source \"{source}\""));
+    }
+    if let Some(host) = host_of(&item.url).filter(|h| !AGGREGATOR_HOSTS.contains(&h.as_str())) {
+        keys.push(format!("host {host}"));
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refusals_mark_the_publisher_and_the_host_the_read_ended_on() {
+        let bot = "bot_challenge: a DataDome challenge (not bypassed) (final URL: https://www.nytimes.com/a/b.html?x=1)";
+        assert_eq!(refusal_code(bot), Some("bot_challenge"));
+        assert_eq!(
+            refusal_code("http_403: stated by the page"),
+            Some("http_403")
+        );
+        assert_eq!(refusal_code("no_main_text: rendered"), None);
+        assert_eq!(refusal_code("HTTP 403"), None);
+        assert_eq!(
+            final_url(bot).and_then(host_of).as_deref(),
+            Some("nytimes.com")
+        );
+        assert_eq!(final_url("bot_challenge: blocked by a bot challenge"), None);
+        assert_eq!(
+            host_of("https://user@News.CN:443/x").as_deref(),
+            Some("news.cn")
+        );
+        let item = |url: &str, source: &str| FoundItem {
+            url: url.into(),
+            title: String::new(),
+            source: source.into(),
+            language: String::new(),
+            published_at: String::new(),
+            via: String::new(),
+            readable: true,
+            snippet: String::new(),
+        };
+        assert_eq!(
+            publisher_keys(&item(
+                "https://news.google.com/rss/articles/x",
+                "The New York Times"
+            )),
+            ["source \"The New York Times\""]
+        );
+        assert_eq!(
+            publisher_keys(&item("https://www.nytimes.com/a", " ")),
+            ["host nytimes.com"]
+        );
+    }
 
     #[test]
     fn evidence_is_capped_at_paragraphs() {

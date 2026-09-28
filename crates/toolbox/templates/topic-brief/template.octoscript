@@ -44,19 +44,21 @@ for entry in request.languages {
 }
 
 // 3. Each language's candidates: its readable results, in the host's order,
-// each article once across languages. Results the backend cannot read (it
-// says so with `readable: false`) are counted and skipped, not read. A
-// provider that failed or was suspended while others answered
-// (`source.partial`) is in the diagnostics; it does not make the brief
-// incomplete.
+// each article once across languages, with the publisher (`source`) of each.
+// Results the backend cannot read (it says so with `readable: false`) are
+// counted and skipped, not read. A provider that failed or was suspended
+// while others answered (`source.partial`) is in the diagnostics; it does not
+// make the brief incomplete.
 let pools = []
-let cursors = []
+let pool_sources = []
+let taken = []
 let seen = []
 let searched = []
 index = 0
 for pending in searches {
     let found = try pending.await() catch nil
     let pool = []
+    let pool_source = []
     array.push(searched, found != nil)
     if found == nil {
         array.push(reasons, "language " + queries[index].language + ": the search failed")
@@ -67,6 +69,7 @@ for pending in searches {
                 array.push(seen, item.id)
                 if item.readable {
                     array.push(pool, item.id)
+                    array.push(pool_source, item.source)
                 } else {
                     queries[index].unreadable = queries[index].unreadable + 1
                 }
@@ -74,7 +77,8 @@ for pending in searches {
         }
     }
     array.push(pools, pool)
-    array.push(cursors, 0)
+    array.push(pool_sources, pool_source)
+    array.push(taken, 0)
     index = index + 1
 }
 
@@ -85,12 +89,27 @@ for pending in searches {
 // room, the share is lifted: the unused budget goes to the languages that
 // have more readable results. A failed or off-topic read (the host says
 // `on_topic: false` when the page does not mention the search's terms) is
-// replaced in the next round by that language's next candidate. Attempts
-// are capped at `read_top` plus one per language.
+// replaced in the next round by that language's next candidate.
+//
+// A failed read marks its publisher: that language's (and every other
+// language's) next candidate is the first untried one from a publisher with
+// no failed read in this run, and a marked publisher's candidates are tried
+// only when nothing else is left. (The host itself refuses, without reading,
+// an article from a publisher that answered an earlier read with a bot
+// challenge or HTTP 403.)
+//
+// Attempts are capped at twice `read_top` plus one per language, so a run
+// can replace every failed read even at a high failure rate, and at the
+// template's `max_reads` budget (10).
 let languages = array.len(request.languages)
-let max_attempts = request.read_top + languages
+let max_attempts = 2 * request.read_top + languages
+if max_attempts > 10 {
+    max_attempts = 10
+}
 let attempts = 0
 let share = request.per_language
+let tried = []
+let failed_sources = []
 let ids = []
 let sources = []
 let source_languages = []
@@ -113,14 +132,34 @@ while array.len(ids) < request.read_top && attempts < max_attempts {
     }
     let batch = []
     let batch_languages = []
+    let batch_sources = []
     let picked = true
     while picked && array.len(batch) < want {
         picked = false
         for l in order {
-            if array.len(batch) < want && cursors[l] < array.len(pools[l]) && cursors[l] < share {
-                array.push(batch, research.article({id: pools[l][cursors[l]]}))
+            if array.len(batch) < want && taken[l] < array.len(pools[l]) && taken[l] < share {
+                let pick = nil
+                let fallback = nil
+                let i = 0
+                for id in pools[l] {
+                    if array.contains(tried, id) == false {
+                        if fallback == nil {
+                            fallback = i
+                        }
+                        if pick == nil && array.contains(failed_sources, pool_sources[l][i]) == false {
+                            pick = i
+                        }
+                    }
+                    i = i + 1
+                }
+                if pick == nil {
+                    pick = fallback
+                }
+                array.push(tried, pools[l][pick])
+                array.push(batch, research.article({id: pools[l][pick]}))
                 array.push(batch_languages, l)
-                cursors[l] = cursors[l] + 1
+                array.push(batch_sources, pool_sources[l][pick])
+                taken[l] = taken[l] + 1
                 picked = true
             }
         }
@@ -140,6 +179,10 @@ while array.len(ids) < request.read_top && attempts < max_attempts {
         if article == nil {
             missing = missing + 1
             queries[l].failed = queries[l].failed + 1
+            let source = batch_sources[index]
+            if source != "" && array.contains(failed_sources, source) == false {
+                array.push(failed_sources, source)
+            }
         } elif article.on_topic == false {
             queries[l].off_topic = queries[l].off_topic + 1
         } else {
@@ -191,7 +234,7 @@ if brief != nil {
 let left_total = 0
 index = 0
 for query in queries {
-    let left = array.len(pools[index]) - cursors[index]
+    let left = array.len(pools[index]) - taken[index]
     queries[index].left = left
     left_total = left_total + left
     if searched[index] && query.read == 0 && (query.failed > 0 || left > 0) {
