@@ -83,6 +83,10 @@ jobs:
       APPIMAGE_EXTRACT_AND_RUN: '1'
       CARGO_TERM_COLOR: always
     steps:
+      - name: Check out byte for byte
+        # Windows' Git converts to CRLF by default, which breaks the
+        # runtime patch's recorded digest and the system apps' packed ones.
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
