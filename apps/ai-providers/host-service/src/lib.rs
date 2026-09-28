@@ -18,6 +18,7 @@
 //! | `llm.test` | `{id}` | `{ok, ms, error?}` after one tiny request to the provider (`ok` is a Splash keyword: a script tests `error == nil`) |
 //! | `llm.export_qr` | `{ids?}` | `{}` when the person closes the sheet that shows the phone QR (all providers, or `ids`) |
 //! | `llm.import_qr` | – | `{applied, added, updated, message}` once a scanned, picked, dropped or pasted code is imported on the sheet: `applied` labels every provider the code names, `added` those appended (or saved, into an empty list), `updated` the saved ones whose key it changed; `message` says so in a sentence |
+//! | `llm.connect_client` | – | `{}` when the person closes the Talk to Octos sheet (`os.ai-providers` only; the app receives no connection detail) |
 //!
 //! The app never sees a key, a PIN or a QR. `add_provider`, `edit_provider`,
 //! `export_qr` and `import_qr` raise the host's sheet, a separate isolate
@@ -56,6 +57,17 @@
 //! testing"; `reason`: `HTTP 401 · invalid key`, `unreachable`, …);
 //! `llm.sheet.fetch_models` answers `{models: [{id, label}]}` from the
 //! endpoint's model list (`GET {base}/models`, Anthropic `GET /v1/models`).
+//!
+//! Talk to Octos (`llm.connect_client`, feature `octos-core`) is off by
+//! default. Its sheet, and only its sheet, calls `llm.sheet.client_info`,
+//! `client_enable {on}`, `client_rotate`, `client_origin {origin}`,
+//! `client_open`, `client_pair` (then `client_pair_ready` /
+//! `client_pair_show`, the export sheet's pattern) and `client_back`. They
+//! answer `{enabled, origin, endpoint, descriptor, profile_id, session_id,
+//! web_origin}`; no token ever reaches a script, the clipboard or a link. A
+//! web client pairs with a one-time code drawn on a host sheet with a QR of
+//! its link ([`sheets::pair_client`]); leaving that sheet or closing the Talk
+//! to Octos sheet turns pairing off. See `crates/kernel/README.md`.
 //!
 //! Only `os.` apps are served: the provider set is the device's.
 //!
@@ -139,6 +151,14 @@ pub trait QrImagePicker: Send + Sync {
 /// `octos-core`). Runs on whichever thread made the change.
 pub type OnChanged = Arc<dyn Fn() + Send + Sync>;
 
+/// Trusted host UI actions for Talk to Octos. No token ever reaches a
+/// script, the clipboard or a link: a web client pairs with a one-time code.
+pub enum ClientUiAction {
+    /// Open the web client (a credential-free link) in the browser.
+    OpenWeb(String),
+}
+pub type ClientUi = Arc<dyn Fn(ClientUiAction) + Send + Sync>;
+
 /// What a shell hands the service. `Options::default()` is what
 /// [`register`] uses.
 #[derive(Clone, Default)]
@@ -164,6 +184,7 @@ pub struct Options {
     /// [`QR_LIFETIME_SECS`], which is the default). `None`: the
     /// [`QR_LIFETIME_ENV`] variable, else the default.
     pub qr_lifetime_secs: Option<u64>,
+    pub client_ui: Option<ClientUi>,
 }
 
 impl Options {
@@ -217,8 +238,10 @@ pub fn register_with(options: Options) {
         image_drops: options.image_drops,
         pending: Arc::default(),
         export: Arc::default(),
+        pair: Arc::default(),
         generation: 0,
         qr_lifetime: qr_lifetime(options.qr_lifetime_secs),
+        client_ui: options.client_ui,
     }));
 }
 
@@ -314,6 +337,7 @@ struct Pending {
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     Add,
+    Connect,
     Edit(String),
     Export(u64),
     Import { scanned: Option<String> },
@@ -385,8 +409,11 @@ pub struct LlmService {
     /// Shared with the workers: they answer the app on success.
     pending: Arc<Mutex<Option<Pending>>>,
     export: Arc<Mutex<Option<ExportJob>>>,
+    /// The pairing sheet being prepared, like `export`.
+    pair: Arc<Mutex<Option<ExportJob>>>,
     generation: u64,
     qr_lifetime: u64,
+    client_ui: Option<ClientUi>,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -909,6 +936,121 @@ fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning:
     }
 }
 
+
+/// The Talk to Octos sheet's controls (a worker thread: they wait on the
+/// kernel). What they answer never carries a token.
+#[cfg(feature = "octos-core")]
+fn client_action(method: &str, args: &Value, ui: Option<ClientUi>) -> Result<Value, String> {
+    use octosense_kernel as kernel;
+    match method {
+        "sheet.client_enable" => kernel::set_external_access(args["on"] == true)?,
+        "sheet.client_rotate" => kernel::rotate_external_access()?,
+        "sheet.client_origin" => kernel::set_web_client_origin(text(args, "origin"))?,
+        "sheet.client_open" => {
+            let ui = ui.ok_or("The host cannot open a browser.")?;
+            ui(ClientUiAction::OpenWeb(kernel::web_client_url()?));
+            return Ok(json!({}));
+        }
+        _ => {}
+    }
+    client_info()
+}
+
+#[cfg(feature = "octos-core")]
+fn client_info() -> Result<Value, String> {
+    use octosense_kernel as kernel;
+    let enabled = kernel::external_access();
+    let web_origin = kernel::web_client_origin();
+    let (origin, endpoint, descriptor) = if enabled {
+        let access = kernel::client_access()?;
+        let descriptor = kernel::core_dir().map(|d| kernel::connection_file(&d).display().to_string()).unwrap_or_default();
+        (access.origin.clone(), access.endpoint(), descriptor)
+    } else {
+        Default::default()
+    };
+    Ok(json!({"enabled": enabled, "origin": origin, "endpoint": endpoint, "descriptor": descriptor,
+        "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION, "web_origin": web_origin}))
+}
+
+/// Mint a pairing code and build its sheet: the code, and a QR of the web
+/// client's pairing link.
+#[cfg(feature = "octos-core")]
+fn pairing_sheet(lifetime: u64) -> Result<String, String> {
+    use octosense_kernel as kernel;
+    let web_origin = kernel::web_client_origin();
+    let pairing = kernel::pairing()?;
+    let link = if web_origin.is_empty() {
+        None
+    } else {
+        let system = kernel::system_reference().ok().map(|(_, reference)| reference);
+        Some(kernel::pairing_link(&web_origin, &pairing, system.as_deref())?)
+    };
+    let qr = match &link {
+        Some(link) => Some(qr::render_matrix(link).map_err(|e| e.to_string())?),
+        None => None,
+    };
+    Ok(sheets::pair_client(&pairing.code, &pairing.server_origin, qr.as_ref().map(|(n, m)| (*n, m.as_slice())), pairing.expires_in_secs.min(lifetime)))
+}
+
+#[cfg(not(feature = "octos-core"))]
+fn client_action(_method: &str, _args: &Value, _ui: Option<ClientUi>) -> Result<Value, String> {
+    Err("This build does not include the Octos kernel service.".into())
+}
+
+#[cfg(not(feature = "octos-core"))]
+fn pairing_sheet(_lifetime: u64) -> Result<String, String> {
+    Err("This build does not include the Octos kernel service.".into())
+}
+
+/// The pairing code's sheet is up or being prepared: turn pairing off. The
+/// epoch is taken now, so a newer code minted before the worker runs stays.
+fn end_pairing() {
+    #[cfg(feature = "octos-core")]
+    {
+        let epoch = octosense_kernel::pairing_epoch();
+        work(move || octosense_kernel::end_pairing_if(epoch));
+    }
+}
+
+impl LlmService {
+    /// `llm.sheet.client_pair`: prepare the pairing sheet on a worker; the
+    /// connect sheet polls `sheet.client_pair_ready`, then asks for
+    /// `sheet.client_pair_show` (the export sheet's pattern).
+    fn client_pair(&mut self, reply: Replier) {
+        self.generation += 1;
+        let generation = self.generation;
+        *self.pair.lock().unwrap() = Some((generation, None));
+        let pair = self.pair.clone();
+        let lifetime = self.qr_lifetime.max(60);
+        work(move || {
+            let sheet = pairing_sheet(lifetime);
+            if let Some(job) = pair.lock().unwrap().as_mut().filter(|job| job.0 == generation) {
+                job.1 = Some(sheet);
+            }
+        });
+        reply.send(Ok(json!({})));
+    }
+
+    fn client_pair_ready(&self, reply: Replier) {
+        match self.pair.lock().unwrap().as_ref() {
+            None => reply.send(Err("No pairing code is being prepared.".into())),
+            Some((_, None)) => reply.send(Ok(json!({"ready": false}))),
+            Some((_, Some(Ok(_)))) => reply.send(Ok(json!({"ready": true}))),
+            Some((_, Some(Err(e)))) => reply.send(Err(e.clone())),
+        }
+    }
+
+    fn client_pair_show(&mut self, reply: Replier, host: &mut dyn ServiceHost) {
+        match self.pair.lock().unwrap().take() {
+            Some((_, Some(Ok(sheet)))) => {
+                host.open_sheet(sheet);
+                reply.send(Ok(json!({})));
+            }
+            _ => reply.send(Err("The pairing code is not ready.".into())),
+        }
+    }
+}
+
 impl HostService for LlmService {
     fn family(&self) -> &'static str {
         "llm"
@@ -920,6 +1062,33 @@ impl HostService for LlmService {
         }
         let id = text(&call.args, "id").to_string();
         match call.method() {
+            "connect_client" => {
+                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI providers to connect a client.".into())); }
+                self.raise(&call.app_id, reply, Kind::Connect, sheets::connect_client(), host);
+            }
+            method if method.starts_with("sheet.client_") => {
+                // Only the Talk to Octos sheet this app raised, never the app.
+                let permitted = call.from_sheet && self.pending.lock().unwrap().as_ref()
+                    .is_some_and(|p| p.kind == Kind::Connect && p.app_id == call.app_id);
+                if !permitted { return reply.send(Err("Open the Talk to Octos sheet first.".into())); }
+                match method {
+                    "sheet.client_pair" => self.client_pair(reply),
+                    "sheet.client_pair_ready" => self.client_pair_ready(reply),
+                    "sheet.client_pair_show" => self.client_pair_show(reply, host),
+                    "sheet.client_back" => {
+                        // Leaving the code's sheet ends pairing.
+                        end_pairing();
+                        host.open_sheet(sheets::connect_client());
+                        reply.send(Ok(json!({})));
+                    }
+                    "sheet.client_info" | "sheet.client_enable" | "sheet.client_rotate" | "sheet.client_origin" | "sheet.client_open" => {
+                        let method = method.to_owned();
+                        let ui = self.client_ui.clone();
+                        work(move || reply.send(client_action(&method, &call.args, ui)));
+                    }
+                    other => reply.send(Err(format!("llm has no method {other:?}"))),
+                }
+            }
             "providers" => {
                 let (shared, scanner, image_picker) = (self.shared.clone(), self.scanner.is_some(), self.image_picker.is_some());
                 work(move || {
@@ -1002,10 +1171,14 @@ impl HostService for LlmService {
             "sheet.cancel" => {
                 host.close_sheet();
                 *self.export.lock().unwrap() = None;
+                if self.pair.lock().unwrap().take().is_some() || self.pending_kind() == Some(Kind::Connect) {
+                    // The Talk to Octos sheet closed: no pairing code outlives it.
+                    end_pairing();
+                }
                 IMAGE_WAITER.lock().unwrap().take();
                 if let Some(waiting) = self.pending.lock().unwrap().take() {
                     // Closing the QR is how an export ends.
-                    let answer = if matches!(waiting.kind, Kind::Export(_)) { Ok(json!({})) } else { Err("Cancelled.".into()) };
+                    let answer = if matches!(waiting.kind, Kind::Export(_) | Kind::Connect) { Ok(json!({})) } else { Err("Cancelled.".into()) };
                     waiting.reply.send(answer);
                 }
                 reply.send(Ok(json!({})));

@@ -1,6 +1,6 @@
-//! Sharing one kernel pipe between consumers.
+//! Sharing one kernel frame stream between native consumers.
 //!
-//! `octos serve --stdio` (and `serve_io`) speaks one NDJSON JSON-RPC stream.
+//! The WebSocket adapter (or private stdio/embedded mode) presents NDJSON JSON-RPC.
 //! Each consumer speaks the same protocol as if it owned that stream; the
 //! router keeps them apart:
 //!
@@ -13,7 +13,8 @@
 //! - frames without an id to rewrite (a consumer's notification, its
 //!   response to a kernel request) pass through untouched.
 //!
-//! Pure bookkeeping, no I/O, so it is tested frame by frame.
+//! Only the system workspace is persisted: Web opens it with an explicit cwd,
+//! so native clients must send the same cwd when resuming after a restart.
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -33,9 +34,13 @@ pub(crate) struct Router {
     pending: HashMap<String, Pending>,
     sessions: HashMap<String, BTreeSet<ConnId>>,
     conns: BTreeSet<ConnId>,
+    system_workspace_file: Option<std::path::PathBuf>,
 }
 
 impl Router {
+    pub(crate) fn new(core_dir: &std::path::Path) -> Self {
+        Self { system_workspace_file: Some(core_dir.join(crate::network::SYSTEM_WORKSPACE_FILE)), ..Self::default() }
+    }
     pub(crate) fn attach(&mut self, conn: ConnId) {
         self.conns.insert(conn);
     }
@@ -62,6 +67,20 @@ impl Router {
         let Some(obj) = frame.as_object_mut() else {
             return Some(text.to_owned());
         };
+        if obj.get("method").and_then(Value::as_str) == Some("session/open") {
+            if let Some(params) = obj.get_mut("params").and_then(Value::as_object_mut) {
+                if params.get("session_id").and_then(Value::as_str) == Some(crate::SYSTEM_SESSION)
+                    && !params.contains_key("cwd")
+                {
+                    if let Some(workspace) = self.system_workspace_file.as_ref()
+                        .and_then(|path| std::fs::read_to_string(path).ok())
+                        .filter(|path| std::path::Path::new(path).is_absolute())
+                    {
+                        params.insert("cwd".into(), workspace.into());
+                    }
+                }
+            }
+        }
         if let Some(session) = obj.get("params").and_then(session_of) {
             self.subscribe(session, conn);
         }
