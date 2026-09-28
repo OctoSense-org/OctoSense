@@ -28,7 +28,7 @@ class PatternTests(unittest.TestCase):
             self.assertTrue(findings(b"at " + leak + b" end"), leak)
 
     def test_ci_and_system_paths_are_fine(self):
-        for fine in (b"/home/runner/work/OctoSense", b"/usr/local/lib", b"/rustc/abc/library/std", b"~/.cargo/registry",
+        for fine in (b"/home/runner/work/OctoSense", b"C:\\Users\\runneradmin\\.cargo\\registry", b"/usr/local/lib", b"/rustc/abc/library/std", b"~/.cargo/registry",
                      b"./crates/shell/src/lib.rs", b"localhost.localdomain", b"127.0.0.1", b"1.10.0.7",
                      b"version 10.2.3.4.5", b"/cargo/registry/src", b"EHLO octosense.local\r\n",
                      b"fleet-worker@octos.local", b"e2e@test.local",

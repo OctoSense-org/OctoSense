@@ -14,8 +14,10 @@ fails the scan rather than being skipped.
 
 It fails on:
 
-- a macOS or Windows user directory (`/Users/<anyone>`, `C:\\Users\\...`,
-  also UTF-16), and a Linux home other than a CI runner's (`/home/runner`);
+- a macOS user directory (`/Users/<anyone>`), a Windows one other than a
+  CI runner's (`C:\\Users\\runneradmin`, which the prebuilt NSIS plugin
+  cargo-packager bundles carries; also UTF-16), and a Linux home other than
+  a CI runner's (`/home/runner`);
 - a `<name>.local` host name (mDNS: a build machine on a private network;
   one label, as mDNS names are, so words glued together in a binary's
   string data are not read as a dotted name);
@@ -60,7 +62,7 @@ GLUED_LOCAL_SUFFIXES = (b"utf-8.local",)
 
 BASE_PATTERNS = [
     ("macOS user directory", rb"/Users/[^/\s\x00\"']+"),
-    ("Windows user directory", rb"[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}[^\\/\s\x00\"']+"),
+    ("Windows user directory", rb"[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!runneradmin[\\/])[^\\/\s\x00\"']+"),
     ("Windows user directory (UTF-16)", rb"(?:[A-Za-z]\x00):\x00(?:[\\/]\x00){1,2}U\x00s\x00e\x00r\x00s\x00"),
     ("Linux home directory", rb"/home/(?!runner/)[a-z_][a-z0-9_.-]*/"),
     ("mDNS .local host name", rb"(?<![A-Za-z0-9_.-])(?!(?:" + b"|".join(re.escape(n.encode()) for n in PRODUCT_LOCAL_NAMES)
