@@ -169,8 +169,8 @@ impl ModuleHost {
                 vm_id,
                 scope,
                 instance_no,
+                executor: host_executor(module, &parts.root, parts.executor),
                 root: parts.root,
-                executor: parts.executor,
                 shutdown: Some(parts.shutdown),
                 upstream,
                 windows,
@@ -573,5 +573,71 @@ mod assistant_tests {
         assert_eq!(service.settings_entry(), octosense_ai_host::app_peers::SettingsEntry::Host);
         assert!(!octosense_ai_host::kernel_running(), "creating Rinx starts no kernel");
         assert!(host.teardown(&mut cx, 7));
+    }
+}
+
+/// The executor the shell runs for an instance: the module's own, except
+/// the Terminal's. Its module answers the read tools only, while ADR 0004
+/// §10 gives the Terminal's AI the same tools in every hosting: read, and
+/// type a command (`run`), each command behind the shell's live
+/// confirmation (`confirm: host` in native-apps.json; `ai_bus` registers it
+/// destructive, so the pane parks every call). So the in-process Terminal
+/// offers makepad-terminal's full tool set, answered from the live
+/// emulator, exactly as its process form does.
+fn host_executor(module: &dyn AppModule, root: &WidgetRef, own: Box<dyn ServiceExecutor>) -> Box<dyn ServiceExecutor> {
+    #[cfg(feature = "app-terminal")]
+    if module.id() == "terminal" {
+        return Box::new(TerminalExecutor { root: root.clone() });
+    }
+    let _ = (module, root);
+    own
+}
+
+#[cfg(feature = "app-terminal")]
+struct TerminalExecutor {
+    root: WidgetRef,
+}
+
+#[cfg(feature = "app-terminal")]
+impl ServiceExecutor for TerminalExecutor {
+    fn manifest(&self) -> ServiceManifest {
+        makepad_terminal::ai::manifest()
+    }
+
+    fn execute(&mut self, _cx: &mut Cx, call: &ServiceCall) -> ExecOutcome {
+        let result = self
+            .root
+            .borrow_mut::<makepad_terminal::widget::MpTerm>()
+            .map(|mut term| makepad_terminal::ai::answer(call, &mut *term))
+            .unwrap_or_else(|| makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, "the terminal is not open"));
+        ExecOutcome::Done(result)
+    }
+}
+
+#[cfg(all(test, feature = "app-terminal"))]
+mod terminal_tests {
+    /// The in-process Terminal offers what its process offers: the reads
+    /// and `run`, which the bus then puts behind the host's confirmation.
+    #[test]
+    fn the_in_process_terminal_offers_the_process_tool_set() {
+        use makepad_app_module::ServiceExecutor;
+        use makepad_widgets::WidgetRef;
+        struct ReadsOnly;
+        impl ServiceExecutor for ReadsOnly {
+            fn manifest(&self) -> makepad_ai_services::wire::ServiceManifest {
+                makepad_terminal::ai::read_only_manifest()
+            }
+            fn execute(&mut self, _cx: &mut makepad_widgets::Cx, call: &makepad_ai_services::wire::ServiceCall) -> makepad_app_module::ExecOutcome {
+                makepad_app_module::ExecOutcome::Done(makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, "test"))
+            }
+        }
+        let names = |m: makepad_ai_services::wire::ServiceManifest| m.tools.into_iter().map(|t| t.name).collect::<Vec<_>>();
+        let terminal = super::host_executor(&makepad_terminal::TERMINAL_MODULE, &WidgetRef::empty(), Box::new(ReadsOnly));
+        assert_eq!(names(terminal.manifest()), names(makepad_terminal::ai::manifest()));
+        assert!(names(terminal.manifest()).contains(&"run".to_string()));
+        // On the bus it is `run` behind the host's card, as a process's is.
+        let mut bus = crate::ai_bus::AiBus::default();
+        let frame = bus.register_local(1, terminal.manifest());
+        assert!(frame.contains("\"run\""));
     }
 }

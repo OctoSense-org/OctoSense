@@ -158,9 +158,30 @@ def validate(data):
                 problems.append(f"{where}: {key} must be an object")
         if isinstance(app["agent"], dict) and not isinstance(app["agent"].get("octos"), list):
             problems.append(f"{where}: agent.octos must be a list")
+        if isinstance(app["agent"], dict):
+            problems += [f"{where}: {p}" for p in tool_policy_problems(app["agent"].get("tool_policy", {}))]
     if problems:
         raise ManifestError(f"{MANIFEST}:\n  " + "\n  ".join(problems))
     return data["apps"]
+
+
+def tool_policy_problems(policy):
+    """`agent.tool_policy`: {tool: {"confirm": "host"|"app", "auto_approvable": bool}}
+    (ADR 0004 §8). A tool the shell confirms live and no standing rule may
+    approve is `confirm: host`, `auto_approvable: false`."""
+    if not isinstance(policy, dict):
+        return ["agent.tool_policy must be an object"]
+    problems = []
+    for tool, rule in policy.items():
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", tool):
+            problems.append(f"agent.tool_policy: {tool!r} is not a tool name")
+        elif not isinstance(rule, dict) or set(rule) != {"confirm", "auto_approvable"}:
+            problems.append(f"agent.tool_policy.{tool}: needs exactly confirm and auto_approvable")
+        elif rule["confirm"] not in ("host", "app"):
+            problems.append(f"agent.tool_policy.{tool}.confirm must be 'host' or 'app'")
+        elif not isinstance(rule["auto_approvable"], bool):
+            problems.append(f"agent.tool_policy.{tool}.auto_approvable must be true or false")
+    return problems
 
 
 def feature_of(app):
@@ -310,6 +331,25 @@ def render_rust(apps):
         "    ProcessIfVulkan,",
         "}",
         "",
+        "/// Who shows the person a tool's live confirmation (ADR 0004 §8).",
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]",
+        "pub enum Confirm {",
+        "    /// The shell's own sheet (the assistant's confirm card).",
+        "    Host,",
+        "    /// The owning app's own sheet.",
+        "    App,",
+        "}",
+        "",
+        "/// How the shell treats one of an app's assistant tools.",
+        "#[derive(Debug)]",
+        "pub struct ToolPolicy {",
+        "    pub tool: &'static str,",
+        "    pub confirm: Confirm,",
+        "    /// Whether a standing rule may answer its confirmation; `false`:",
+        "    /// only the person, live, every time (outside developer mode).",
+        "    pub auto_approvable: bool,",
+        "}",
+        "",
         "/// One `native-apps.json` entry, as far as the shell reads it.",
         "#[derive(Debug)]",
         "pub struct NativeApp {",
@@ -327,6 +367,8 @@ def render_rust(apps):
         "    pub wasm: Hosting,",
         "    /// The `octos.*` services its reviewed entry grants it.",
         "    pub octos: &'static [&'static str],",
+        "    /// Its assistant tools' confirmation rules (`agent.tool_policy`).",
+        "    pub tools: &'static [ToolPolicy],",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -343,6 +385,16 @@ def render_rust(apps):
         for target in TARGETS + ("wasm",):
             out.append(f"        {target}: {rust_hosting(hosting[target])},")
         out.append(f"        octos: &[{octos}],")
+        policy = app["agent"].get("tool_policy", {})
+        if policy:
+            out.append("        tools: &[")
+            for tool, rule in policy.items():
+                confirm = "Confirm::Host" if rule["confirm"] == "host" else "Confirm::App"
+                auto = "true" if rule["auto_approvable"] else "false"
+                out.append(f"            ToolPolicy {{ tool: {s(tool)}, confirm: {confirm}, auto_approvable: {auto} }},")
+            out.append("        ],")
+        else:
+            out.append("        tools: &[],")
         out.append("    },")
     out += [
         "];",
@@ -365,6 +417,13 @@ def render_rust(apps):
         "        } else {",
         "            self.linux",
         "        }",
+        "    }",
+        "}",
+        "",
+        "impl NativeApp {",
+        "    /// The rule for one of its tools, if the manifest sets one.",
+        "    pub fn tool(&self, name: &str) -> Option<&'static ToolPolicy> {",
+        "        self.tools.iter().find(|rule| rule.tool == name)",
         "    }",
         "}",
         "",

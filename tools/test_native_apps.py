@@ -90,6 +90,18 @@ class Validation(Fixture):
         self.app("rinx")["source"]["rev"] = "68afcf79"
         self.assertRefused(r"(?s)source\.rev must be a full commit id.*duplicate id")
 
+    def test_tool_policy_is_checked(self):
+        self.app("terminal")["agent"]["tool_policy"] = {"run": {"confirm": "maybe", "auto_approvable": False}}
+        self.assertRefused(r"tool_policy\.run\.confirm must be 'host' or 'app'")
+        self.app("terminal")["agent"]["tool_policy"] = {"run": {"confirm": "host"}}
+        self.assertRefused(r"tool_policy\.run: needs exactly confirm and auto_approvable")
+
+    def test_the_terminals_commands_are_host_confirmed_and_never_auto_approved(self):
+        self.assertEqual(self.app("terminal")["agent"]["tool_policy"],
+                         {"run": {"confirm": "host", "auto_approvable": False}})
+        rust = native_apps.render_rust(native_apps.validate(self.data))
+        self.assertIn('ToolPolicy { tool: "run", confirm: Confirm::Host, auto_approvable: false }', rust)
+
     def test_refuses_unknown_keys(self):
         self.app("reference")["hosted"] = "yes"
         self.assertRefused(r"reference: unknown hosted")

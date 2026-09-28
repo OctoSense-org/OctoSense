@@ -19,6 +19,25 @@ pub enum Hosting {
     ProcessIfVulkan,
 }
 
+/// Who shows the person a tool's live confirmation (ADR 0004 §8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirm {
+    /// The shell's own sheet (the assistant's confirm card).
+    Host,
+    /// The owning app's own sheet.
+    App,
+}
+
+/// How the shell treats one of an app's assistant tools.
+#[derive(Debug)]
+pub struct ToolPolicy {
+    pub tool: &'static str,
+    pub confirm: Confirm,
+    /// Whether a standing rule may answer its confirmation; `false`:
+    /// only the person, live, every time (outside developer mode).
+    pub auto_approvable: bool,
+}
+
 /// One `native-apps.json` entry, as far as the shell reads it.
 #[derive(Debug)]
 pub struct NativeApp {
@@ -36,6 +55,8 @@ pub struct NativeApp {
     pub wasm: Hosting,
     /// The `octos.*` services its reviewed entry grants it.
     pub octos: &'static [&'static str],
+    /// Its assistant tools' confirmation rules (`agent.tool_policy`).
+    pub tools: &'static [ToolPolicy],
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -51,6 +72,7 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
+        tools: &[],
     },
     NativeApp {
         id: "reference",
@@ -64,6 +86,7 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &[],
+        tools: &[],
     },
     NativeApp {
         id: "sheets",
@@ -77,6 +100,7 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &[],
+        tools: &[],
     },
     NativeApp {
         id: "terminal",
@@ -90,6 +114,9 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &[],
+        tools: &[
+            ToolPolicy { tool: "run", confirm: Confirm::Host, auto_approvable: false },
+        ],
     },
     NativeApp {
         id: "appcard",
@@ -103,6 +130,7 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &[],
+        tools: &[],
     },
     NativeApp {
         id: "apphub",
@@ -116,6 +144,7 @@ pub const APPS: &[NativeApp] = &[
         ohos: Hosting::Module,
         wasm: Hosting::Module,
         octos: &[],
+        tools: &[],
     },
 ];
 
@@ -137,6 +166,13 @@ impl NativeApp {
         } else {
             self.linux
         }
+    }
+}
+
+impl NativeApp {
+    /// The rule for one of its tools, if the manifest sets one.
+    pub fn tool(&self, name: &str) -> Option<&'static ToolPolicy> {
+        self.tools.iter().find(|rule| rule.tool == name)
     }
 }
 

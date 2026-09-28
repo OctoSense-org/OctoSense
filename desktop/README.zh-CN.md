@@ -84,7 +84,7 @@ cargo run --release -p octosense
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
-| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell。在 macOS 和 Windows 上它作为独立进程运行（`terminal`，从固定版本的 Makepad 检出中用 `cargo run` 构建，否则使用 `octosense` 旁边的二进制文件），因此它崩溃不会影响 Shell；在 Linux 上只有 Vulkan 构建且处于 Wayland 会话时才如此。无法启动进程时（没有检出也没有二进制文件：发布包目前还不附带它，见 [#94](https://github.com/OctoSense-org/OctoSense/pull/94)），它在进程内打开，与手机上相同；在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Module` 或 `terminal: Process` 可覆盖默认值。无论哪种托管方式，助手都只获得读取工具（`read_screen`、`read_scrollback`），从不提供 `run`。在 macOS 上进程内运行时，Shell 的 PTY 辅助程序就是 `octosense` 本身。 |
+| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell。在 macOS 和 Windows 上它作为独立进程运行（`terminal`，从固定版本的 Makepad 检出中用 `cargo run` 构建，否则使用 `octosense` 旁边的二进制文件），因此它崩溃不会影响 Shell；在 Linux 上只有 Vulkan 构建且处于 Wayland 会话时才如此。无法启动进程时（没有检出也没有二进制文件：发布包目前还不附带它，见 [#94](https://github.com/OctoSense-org/OctoSense/pull/94)），它在进程内打开，与手机上相同；在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Module` 或 `terminal: Process` 可覆盖默认值。无论哪种托管方式，助手获得的工具都相同（ADR 0004 §10）：它可以读取（`read_screen`、`read_scrollback`），也可以输入命令（`run`），每条命令都要等待用户在助手的确认卡片上实时确认（`native-apps.json` 中为 `confirm: host`、`auto_approvable: false`）；确认卡片无法完整显示的过长命令会被拒绝。在 macOS 上进程内运行时，Shell 的 PTY 辅助程序就是 `octosense` 本身。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
 | `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |

@@ -63,7 +63,7 @@
       "native_mobile": "feature",
       "sandbox": { "network": "any", "processes": true },
       "storage": { "accounts": false, "agent_workspace": "none", "external": ["home:rw"] },
-      "agent": { "octos": [], "tools": null }
+      "agent": { "octos": [], "tools": null, "tool_policy": { "run": { "confirm": "host", "auto_approvable": false } } }
     },
     {
       "id": "appcard",
