@@ -306,8 +306,8 @@ fn an_account_change_drops_a_late_reply_and_resume_keeps_the_peer_across_restart
 /// app peer input, the peer asks a question, the kernel wakes the system
 /// agent, which answers, and the peer continues with the answer. Every model
 /// request on the way (the host's turn, the kernel's wake continuation, the
-/// peer's turns) is offered only tools of the system agent's set (ADR 0004
-/// §12), never `shell`.
+/// peer's turns) is offered only tools inside the kernel profile's ceiling
+/// (ADR 0004 §12), never octos's `shell`.
 #[test]
 fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
     let Some(program) = kernel() else { return };
@@ -364,10 +364,7 @@ fn the_system_agent_and_the_app_peer_exchange_a_question_and_answer() {
         text.contains("PEER GOT 42"),
         "the peer continued with the system agent's answer: {text}"
     );
-    let allowed: BTreeSet<&str> = octosense_kernel::system_tools::SYSTEM_AGENT_TOOLS
-        .iter()
-        .copied()
-        .collect();
+    let allowed = octosense_kernel::system_tools::profile_ceiling();
     let requests: Vec<Value> = std::fs::read_to_string(&offered_log)
         .unwrap()
         .lines()
@@ -581,16 +578,17 @@ fn a_second_input_to_an_answered_peer_runs() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// ADR 0004 §12 (was ADR 0007's approval test): an app peer has no command
-/// execution, so the system agent cannot get a command run through it, by
-/// asking or by "approving". The kernel profile's tool policy (the system
-/// agent's set, written by `octosense-kernel` at every start) leaves `shell`
-/// out of every `_main` session. The system agent handing the peer a
-/// command gets no tool approval parked and nothing run; its `peer_respond`
-/// "approval" finds nothing to approve. That octos refuses the system agent
-/// an app peer's approval is octos's own test
-/// (`ui_protocol_tests.rs`, ADR 0007); approvals return here with host-routed
-/// app tools (octos#2567, ADR 0004 plan steps 6 and 7).
+/// ADR 0004 §12 (was ADR 0007's approval test): octos's own `shell` is
+/// offered to no `_main` session (the kernel profile's ceiling, written by
+/// `octosense-kernel` at every start, denies it), so the system agent cannot
+/// get a command run through an app peer by asking or by "approving". The
+/// system agent handing the peer a command gets no tool approval parked and
+/// nothing run; its `peer_respond` "approval" finds nothing to approve.
+/// Command execution an app is granted arrives as a host tool with a live
+/// approval (for example `terminal.run`), registered by the shell (plan
+/// steps 6 and 7); approvals of app tools return here then. That octos
+/// refuses the system agent an app peer's approval is octos's own test
+/// (`ui_protocol_tests.rs`, ADR 0007).
 #[test]
 fn the_system_agent_cannot_get_a_command_run_through_an_app_peer() {
     let Some(program) = kernel() else { return };

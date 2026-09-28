@@ -463,18 +463,14 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// ADR 0004 §12: a system-agent turn is offered exactly the system agent's
-/// tool set (no `shell`), whoever starts it, and a Talk to Octos external
-/// client's turn keeps octos's external allowlist. The scripted model logs
-/// the tool names each request offered. The profile is written WITHOUT a
-/// tool policy, and with a widening one: the kernel start writes its own.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
-    use octosense_kernel::system_tools::{EXTERNAL_TURN_TOOLS, SYSTEM_AGENT_TOOLS};
+/// What the system agent's turns were offered: `(stdio, host over Talk to
+/// Octos, external client)`. The scripted model logs the tool names each
+/// request offered. The profile is written with a widening tool policy: the
+/// kernel start writes its own.
+async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections::BTreeSet<String>; 3] {
     use std::collections::BTreeSet;
     use std::io::BufRead;
-    let Some(program) = kernel() else { return };
-    let dir = std::env::temp_dir().join(format!("octos-system-tools-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("octos-system-tools-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("profiles")).unwrap();
     let log = dir.join("offered.jsonl");
@@ -511,48 +507,85 @@ async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
             }).await.unwrap_or_else(|_| panic!("the model never saw the {probe} turn"))
         }
     };
-    // `recall` (a session's evicted tool outputs) is registered only on
-    // octos's session-actor turns, not on UI Protocol turns: allowed, never
-    // offered here.
-    let expected: BTreeSet<String> = SYSTEM_AGENT_TOOLS.iter().filter(|t| **t != "recall")
-        .map(|t| t.to_string()).collect();
     let input = |text: &str| json!({"session_id":SYSTEM_SESSION,"turn_id":uuid::Uuid::new_v4(),
         "input":[{"kind":"text","text":text}]});
+    let open = json!({"session_id":SYSTEM_SESSION,"profile_id":"_main"});
 
     // The private stdio kernel (Talk to Octos off): the host's own turn.
-    let core = Core::new(Options::default().program(&program).core_dir(&dir));
+    let core = Core::new(Options::default().program(program).core_dir(&dir));
     let mut native = core.connect().unwrap();
-    call(&mut native, "open", "session/open", json!({"session_id":SYSTEM_SESSION,"profile_id":"_main"})).await;
+    call(&mut native, "open", "session/open", open.clone()).await;
     call(&mut native, "turn", "turn/start", input("SYSTEM_TOOLS_STDIO")).await;
     let stdio = wait_for("SYSTEM_TOOLS_STDIO").await;
-    assert!(!stdio.contains("shell"), "{stdio:?}");
-    assert_eq!(stdio, expected, "a system-agent turn is offered exactly the system agent's tools");
     drop(native);
     core.shutdown_within(Duration::from_secs(15));
 
     // Talk to Octos on: the host's turn over the WebSocket, then an external
     // client's turn on the same system conversation.
-    let core = Core::new(Options::default().program(&program).core_dir(&dir));
+    let core = Core::new(Options::default().program(program).core_dir(&dir));
     let c = core.clone();
     blocking(move || c.set_external_access(true)).await.unwrap();
     let mut native = core.connect().unwrap();
     let access = native.client_access().await.unwrap();
-    let open = json!({"session_id":SYSTEM_SESSION,"profile_id":"_main"});
     call(&mut native, "open", "session/open", open.clone()).await;
     call(&mut native, "turn", "turn/start", input("SYSTEM_TOOLS_HOST")).await;
-    assert_eq!(wait_for("SYSTEM_TOOLS_HOST").await, expected, "the same set over Talk to Octos");
+    let host = wait_for("SYSTEM_TOOLS_HOST").await;
     let mut browser = external(&access).await;
     ws_call(&mut browser, "open", "session/open", open).await;
     ws_call(&mut browser, "turn", "turn/start", input("SYSTEM_TOOLS_EXTERNAL")).await;
     let external_tools = wait_for("SYSTEM_TOOLS_EXTERNAL").await;
-    let allowlist: BTreeSet<String> = EXTERNAL_TURN_TOOLS.iter().map(|t| t.to_string()).collect();
-    assert!(external_tools.is_subset(&allowlist), "{external_tools:?}");
-    assert_eq!(external_tools, &expected & &allowlist, "external clients keep every allowlisted tool the kernel offers");
     drop((native, browser));
     let c = core.clone();
     blocking(move || c.set_external_access(false)).await.unwrap();
     core.shutdown_within(Duration::from_secs(15));
     let _ = std::fs::remove_dir_all(dir);
+    [stdio, host, external_tools]
+}
+
+/// ADR 0004 §12, what is enforced today: a system-agent turn, whoever starts
+/// it, is offered no octos process tool (`shell` and the rest), sub-agent or
+/// administration tool, nothing outside the profile ceiling, and every tool
+/// of its own list octos registers; a Talk to Octos external client's turn
+/// keeps octos's external allowlist.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_system_agent_turn_is_offered_nothing_outside_the_ceiling_and_no_shell() {
+    use octosense_kernel::system_tools::{profile_ceiling, EXTERNAL_TURN_TOOLS, SYSTEM_AGENT_TOOLS};
+    use std::collections::BTreeSet;
+    let Some(program) = kernel() else { return };
+    let [stdio, host, external_tools] = offered_to_system_turns(&program, "ceiling").await;
+    let ceiling: BTreeSet<String> = profile_ceiling().into_iter().map(str::to_owned).collect();
+    // `recall` (a session's evicted tool outputs) is registered only on
+    // octos's session-actor turns, not on UI Protocol turns.
+    let own: BTreeSet<String> = SYSTEM_AGENT_TOOLS.iter().filter(|t| **t != "recall")
+        .map(|t| t.to_string()).collect();
+    for (how, offered) in [("stdio", &stdio), ("Talk to Octos", &host)] {
+        for never in ["shell", "bash", "exec_command", "write_stdin", "check", "git", "spawn", "delegate",
+                      "peer_handoff", "cron", "configure_tool", "goal_grant"] {
+            assert!(!offered.contains(never), "{how}: {never} offered: {offered:?}");
+        }
+        assert!(offered.is_subset(&ceiling), "{how}: outside the ceiling: {:?}", offered - &ceiling);
+        assert!(own.is_subset(offered), "{how}: missing its own tools: {:?}", &own - offered);
+    }
+    assert_eq!(stdio, host, "the same set over Talk to Octos");
+    let allowlist: BTreeSet<String> = EXTERNAL_TURN_TOOLS.iter().map(|t| t.to_string()).collect();
+    assert!(external_tools.is_subset(&allowlist), "{external_tools:?}");
+    assert_eq!(external_tools, &stdio & &allowlist, "external clients keep every allowlisted tool the kernel offers");
+}
+
+/// ADR 0004 §12, the target: a system-agent turn is offered EXACTLY the
+/// system agent's list. Needs a per-session tool list the host can set
+/// (octos#2567 item 5); until then the ceiling bounds it (above).
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs octos's per-session host tool list (octos#2567 item 5); today the system agent is bounded by the profile ceiling"]
+async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
+    use octosense_kernel::system_tools::SystemAgentTools;
+    use std::collections::BTreeSet;
+    let Some(program) = kernel() else { return };
+    let [stdio, host, _] = offered_to_system_turns(&program, "exact").await;
+    let expected: BTreeSet<String> = SystemAgentTools::new().names().into_iter()
+        .filter(|t| t != "recall").collect();
+    assert_eq!(stdio, expected);
+    assert_eq!(host, expected);
 }
 
 /// The kernel must not outlive a host that dies without stopping it

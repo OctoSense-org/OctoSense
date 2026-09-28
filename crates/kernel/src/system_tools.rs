@@ -1,44 +1,57 @@
-//! The system agent's tool set (ADR 0004 §12, plan step 4).
+//! The system agent's tool set and the kernel profile's tool ceiling
+//! (ADR 0004 §12, plan step 4).
 //!
-//! The system agent (`_main:api:octosense#system`) gets an explicit list of
-//! tools, not octos's full default set: no command execution, no file writes
-//! outside its workspace, no delegation to unconfined sub-agents, no kernel
-//! administration. This module is the ONE definition of that list, and the
-//! kernel enforces it.
+//! Two lists live here, and only here:
 //!
-//! **How it is enforced.** octos (the pinned rev) has no per-session or
-//! per-turn tool roster for an ordinary session; the only roster control a
-//! host has is the profile's `tool_policy` (allow/deny, deny wins), which
-//! octos re-applies to every turn's FINISHED registry, after the per-turn
-//! `peer_*`, `spawn` and `send_file` tools are registered, and to kernel
-//! continuation turns alike. So before every kernel start ([`enforce`], from
-//! `launch::prepare`) the host writes [`tool_policy`] into
-//! `<core_dir>/profiles/_main.json`, replacing whatever policy is there. A
-//! `tool_policy` change needs a kernel restart in octos, and every start
-//! re-writes it, so a stale or edited profile never runs without it.
+//! - [`SYSTEM_AGENT_TOOLS`]: the octos tools the system agent
+//!   (`_main:api:octosense#system`) is meant to be offered. With what it is
+//!   granted ([`SystemAgentTools`]: toolbox tools, other apps' shareable
+//!   tools, and command execution when the person turns it on in Settings)
+//!   that is its whole set.
+//! - [`profile_ceiling`]: every octos tool ANY `_main` session may be
+//!   offered: the system agent's list plus every octos generic tool an app
+//!   may declare and be granted ([`APP_GRANTABLE_OCTOS_TOOLS`]). Left out are
+//!   only the tools no grant gives: octos's own process tools (`shell`,
+//!   `bash`, `exec_command`, `write_stdin`, `check`, `git`), sub-agents and
+//!   ad-hoc peers, schedulers, goals and kernel administration
+//!   ([`NEVER_OFFERED`]). Command execution, when granted, is a HOST tool
+//!   (for example `terminal.run`) with a live approval, never octos's
+//!   `shell`.
 //!
-//! **What else it bounds.** The policy is the profile's, so it is the
-//! ceiling for every session of `_main`, not only the system agent: app
-//! peers (which ADR 0004 §12 also denies command execution; octos#2567's
-//! host tools are added after the policy, so it never strips them), AppCard
-//! and Rinx sessions, and peers the system agent reaches. Talk to Octos
-//! external turns are unaffected: [`SYSTEM_AGENT_TOOLS`] contains every tool
-//! of octos's external allowlist ([`EXTERNAL_TURN_TOOLS`]), and octos
-//! confines those turns further on its own (UPCR-2026-036).
+//! **What is enforced today.** octos (the pinned rev) has no per-session tool
+//! list for an ordinary session; the only roster control a host has is the
+//! profile's `tool_policy` (allow/deny, deny wins), which octos re-applies to
+//! every turn's finished registry (after the per-turn `peer_*`, `spawn` and
+//! `send_file` tools are registered) and to kernel wake continuations alike.
+//! So before every kernel start ([`enforce`], from `launch::prepare`) the
+//! host writes the CEILING as the `_main` profile's policy, replacing any
+//! other; a policy change needs a kernel restart in octos, and every start
+//! writes it again. Consequences:
 //!
-//! **Granted tools.** Toolbox tools (OctoSense#108) and cross-app tools
-//! (ADR 0004 §7) the system agent is granted are host-routed tools. They
-//! join the set through [`SystemAgentTools::grant_toolbox`] and
-//! [`SystemAgentTools::grant_cross_app`]; nothing grants any yet, and octos
-//! has no way yet to register host-routed tools on the system session
-//! (octos#2567 registers them per app peer only).
+//! - **The system agent is bounded by the ceiling, not by its exact list**,
+//!   until octos lets the host set a session's tool list (the per-session
+//!   host tool list, octos#2567 item 5). No `shell` or other process tool,
+//!   no sub-agents, no administration reach it; generic tools an app may be
+//!   granted (for example `deep_search`, `browser`, `run_pipeline`) do, when
+//!   octos registers them. The real-kernel test that asserts the exact list
+//!   is ignored until then.
+//! - **App peers are not capped below what they can be granted**: the
+//!   ceiling holds every grantable octos tool, and each peer is narrowed to
+//!   its grants by its turns' `generic_tools` (octos#2567, plan step 6).
+//!   Host-routed tools (app, toolbox, cross-app tools, command execution)
+//!   are registered after the policy, so it never strips them.
+//! - **Talk to Octos external turns are unaffected**: the ceiling contains
+//!   octos's external allowlist ([`EXTERNAL_TURN_TOOLS`]), and octos confines
+//!   those turns to it on its own (UPCR-2026-036).
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{json, Value};
 
-/// The kernel tools the system agent is offered, and nothing else.
+/// The octos tools the system agent is meant to be offered (its exact list
+/// once octos#2567 item 5 exists; until then it is bounded by
+/// [`profile_ceiling`]).
 ///
 /// - **Supervision** of app peers (ADR 0004 §6): `peer_send_input` briefs
 ///   and asks, `peer_gather` / `peer_list` read the blackboard,
@@ -54,12 +67,9 @@ use serde_json::{json, Value};
 ///   Octos clients also keep, until the toolbox (#108) grants the system
 ///   agent `toolbox.search` / `toolbox.web_read`.
 ///
-/// Absent on purpose: `shell`, `exec_command`, `write_stdin`, `bash` and
-/// every other code or command execution (`group:runtime`); `spawn`,
-/// `delegate` and the sub-agent tools (`group:sessions`); skill, tool and
-/// model administration (`group:admin`); `browser`, `deep_search`,
-/// `deep_crawl`, pipelines; plugin and MCP tools (they are not named here,
-/// so the allowlist drops them whatever they are called).
+/// Not octos's `shell` or any process tool: command execution reaches the
+/// system agent only as a host tool the person grants in Settings
+/// ([`SystemAgentTools::grant_command_execution`]).
 pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     // Supervision.
     "peer_send_input",
@@ -96,9 +106,73 @@ pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     "tool_search",
 ];
 
-/// Denied whatever the allowlist says (octos: deny always wins): command
-/// execution, sub-agents and administration, as octos's own groups.
-pub const SYSTEM_AGENT_DENIED: &[&str] = &["group:runtime", "group:sessions", "group:admin"];
+/// octos generic tools an app may declare and the person grant (ADR 0004
+/// §12: OctoSense hard-codes no exclusions among them), beyond
+/// [`SYSTEM_AGENT_TOOLS`]. Each app peer gets only its grants, through its
+/// turns' `generic_tools` (plan step 6); a name octos does not register is
+/// simply never offered.
+pub const APP_GRANTABLE_OCTOS_TOOLS: &[&str] = &[
+    // Research and the web.
+    "deep_search",
+    "deep_research",
+    "synthesize_research",
+    "deep_crawl",
+    "site_crawl",
+    "browser",
+    // Content generation and pipelines.
+    "image_generation",
+    "mofa_make",
+    "mofa_describe_content_type",
+    "run_pipeline",
+    "check_background_tasks",
+    "read_task_output",
+    // Messaging the person.
+    "send_file",
+    "message",
+    "request_user_input",
+    // Workspace history and planning.
+    "workspace_diff",
+    "workspace_log",
+    "workspace_show",
+    "update_plan",
+    "tool_suggest",
+    // Memory bookkeeping.
+    "record_memory_use",
+];
+
+/// octos tools no grant gives, denied outright (octos: deny wins over
+/// allow). They are also absent from the ceiling's allowlist, like every
+/// plugin and MCP tool.
+///
+/// - octos's own process tools: `group:runtime` (`shell`, `exec_command`,
+///   `write_stdin`, `bash`), `check` (runs build and test commands), `git`
+///   (runs git, whose hooks run code). Granted command execution is a host
+///   tool with a live approval instead.
+/// - Sub-agents and ad-hoc peers: `group:sessions`, `peer_handoff`.
+/// - Schedulers and goals, which start work outside any grant: `cron`,
+///   `monitor_*`, `goal_*`.
+/// - Kernel administration: `group:admin`.
+pub const NEVER_OFFERED: &[&str] = &[
+    "group:runtime",
+    "check",
+    "git",
+    "group:sessions",
+    "peer_handoff",
+    "cron",
+    "monitor_*",
+    "goal_*",
+    "group:admin",
+];
+
+/// The host tool granted command execution arrives as (the Terminal app's
+/// shareable tool, ADR 0004 §10 and §12): each command approved live.
+pub const COMMAND_EXECUTION_TOOL: &str = "terminal.run";
+
+/// Every octos tool a `_main` session may be offered:
+/// [`SYSTEM_AGENT_TOOLS`] ∪ [`APP_GRANTABLE_OCTOS_TOOLS`].
+pub fn profile_ceiling() -> BTreeSet<&'static str> {
+    SYSTEM_AGENT_TOOLS.iter().chain(APP_GRANTABLE_OCTOS_TOOLS).copied().collect()
+}
 
 /// octos's allowlist for a Talk to Octos external turn (octos
 /// `crates/octos-cli/src/api/host_managed.rs`, `EXTERNAL_TURN_TOOLS`, at the
@@ -127,15 +201,19 @@ pub const EXTERNAL_TURN_TOOLS: &[&str] = &[
 ];
 
 /// The system agent's tool set: [`SYSTEM_AGENT_TOOLS`] plus what it is
-/// granted.
+/// granted. Granted tools are host-routed; registering them on the system
+/// session needs octos's per-session host tool list (octos#2567 items 5
+/// and 6), so today nothing grants any and [`SystemAgentTools::host_tools`]
+/// is what the shell will register then.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemAgentTools {
     toolbox: BTreeSet<String>,
     cross_app: BTreeSet<String>,
+    command_execution: bool,
 }
 
 impl SystemAgentTools {
-    /// The set as shipped: no grants.
+    /// The set as shipped: no grants, command execution off.
     pub fn new() -> Self {
         Self::default()
     }
@@ -152,31 +230,50 @@ impl SystemAgentTools {
         self
     }
 
-    /// Every tool name a system-agent turn may be offered.
+    /// The person's Settings switch for the system agent's command
+    /// execution (ADR 0004 §12; off by default). On, the system agent gets
+    /// the host tool [`COMMAND_EXECUTION_TOOL`], each command approved live
+    /// (section 8); never octos's `shell`, which stays denied.
+    ///
+    /// TODO(ADR 0004 plan steps 4/6): persist the switch in Settings →
+    /// Assistant (no Settings plumbing for it exists yet) and register the
+    /// host tool on the system session once octos can (octos#2567 item 6).
+    pub fn grant_command_execution(&mut self, on: bool) -> &mut Self {
+        self.command_execution = on;
+        self
+    }
+
+    /// Whether the person granted command execution.
+    pub fn command_execution(&self) -> bool {
+        self.command_execution
+    }
+
+    /// The host-routed tools the system agent is granted.
+    pub fn host_tools(&self) -> BTreeSet<String> {
+        let mut tools: BTreeSet<String> = self.toolbox.union(&self.cross_app).cloned().collect();
+        if self.command_execution {
+            tools.insert(COMMAND_EXECUTION_TOOL.to_owned());
+        }
+        tools
+    }
+
+    /// Every tool name a system-agent turn is meant to be offered: its octos
+    /// tools and its host tools.
     pub fn names(&self) -> BTreeSet<String> {
-        SYSTEM_AGENT_TOOLS
-            .iter()
-            .map(|t| t.to_string())
-            .chain(self.toolbox.iter().cloned())
-            .chain(self.cross_app.iter().cloned())
-            .collect()
-    }
-
-    /// The octos `ToolPolicy` that enforces the set.
-    pub fn tool_policy(&self) -> Value {
-        json!({
-            "allow": self.names().into_iter().collect::<Vec<_>>(),
-            "deny": SYSTEM_AGENT_DENIED,
-        })
+        SYSTEM_AGENT_TOOLS.iter().map(|t| t.to_string()).chain(self.host_tools()).collect()
     }
 }
 
-/// The policy the kernel runs with (no grants yet).
+/// The octos `ToolPolicy` the kernel runs `_main` with: allow
+/// [`profile_ceiling`], deny [`NEVER_OFFERED`].
 pub fn tool_policy() -> Value {
-    SystemAgentTools::new().tool_policy()
+    json!({
+        "allow": profile_ceiling().into_iter().collect::<Vec<_>>(),
+        "deny": NEVER_OFFERED,
+    })
 }
 
-/// Write the system agent's policy into `<core_dir>/profiles/_main.json`
+/// Write [`tool_policy`] into `<core_dir>/profiles/_main.json`
 /// (`config.tool_policy`), keeping every other key. No profile yet means no
 /// provider and no turns: nothing to do. An unreadable profile is left for
 /// the kernel to report (it cannot run turns from it either).
@@ -209,7 +306,7 @@ pub fn enforce(core_dir: &Path) {
             crate::network::write_private(dir, name, &body).map_err(|e| e.to_string())
         });
     match result {
-        Ok(()) => log::info!("octos-core: wrote the system agent's tool policy to {}", path.display()),
+        Ok(()) => log::info!("octos-core: wrote the tool ceiling to {}", path.display()),
         Err(e) => log::warn!("octos-core: could not write the tool policy to {}: {e}", path.display()),
     }
 }
@@ -225,37 +322,63 @@ mod tests {
         dir
     }
 
-    #[test]
-    fn no_command_execution_and_no_unconfined_agents() {
-        for denied in [
-            "shell", "exec_command", "write_stdin", "bash", "spawn", "spawn_agent", "delegate",
-            "peer_handoff", "browser", "deep_search", "deep_crawl", "run_pipeline", "manage_skills",
-            "configure_tool", "model_check",
-        ] {
-            assert!(!SYSTEM_AGENT_TOOLS.contains(&denied), "{denied}");
-        }
+    const PROCESS_AND_ADMIN: &[&str] = &[
+        "shell", "exec_command", "write_stdin", "bash", "check", "git", "spawn", "spawn_agent",
+        "send_input", "resume_agent", "wait_agent", "close_agent", "delegate", "peer_handoff", "cron",
+        "monitor_create", "goal_grant", "manage_skills", "configure_tool", "model_check",
+    ];
+
+    fn policy_lists() -> (Vec<String>, Vec<String>) {
         let policy = tool_policy();
-        let deny: Vec<&str> = policy["deny"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-        assert!(deny.contains(&"group:runtime"), "command execution is denied outright");
+        let list = |k: &str| policy[k].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_owned()).collect();
+        (list("allow"), list("deny"))
     }
 
     #[test]
-    fn talk_to_octos_clients_keep_their_tools() {
-        for tool in EXTERNAL_TURN_TOOLS {
-            assert!(SYSTEM_AGENT_TOOLS.contains(tool), "{tool} would be taken from external clients");
+    fn no_octos_process_tool_sub_agent_or_admin_tool_is_ever_offered() {
+        let (allow, deny) = policy_lists();
+        for tool in PROCESS_AND_ADMIN {
+            assert!(!allow.iter().any(|a| a == tool), "{tool} is in the ceiling");
+            assert!(!SYSTEM_AGENT_TOOLS.contains(tool), "{tool} is in the system agent's list");
         }
+        for group in ["group:runtime", "group:sessions", "group:admin"] {
+            assert!(deny.iter().any(|d| d == group), "{group} is denied outright");
+        }
+        assert!(!allow.iter().any(|a| a.contains('*') || a.starts_with("group:")), "the ceiling names tools");
     }
 
     #[test]
-    fn the_list_has_no_duplicates_and_grants_join_it() {
-        let names = SystemAgentTools::new().names();
-        assert_eq!(names.len(), SYSTEM_AGENT_TOOLS.len());
+    fn the_ceiling_holds_the_system_agent_every_grantable_tool_and_the_external_allowlist() {
+        let ceiling = profile_ceiling();
+        for tool in SYSTEM_AGENT_TOOLS.iter().chain(APP_GRANTABLE_OCTOS_TOOLS).chain(EXTERNAL_TURN_TOOLS) {
+            assert!(ceiling.contains(tool), "{tool}");
+        }
+        // octos#2567's peer-safe generic tools, all grantable to an app.
+        for tool in [
+            "read_file", "list_dir", "glob", "grep", "web_search", "deep_search", "memory_search",
+            "memory_load", "recall_memory", "save_memory", "record_memory_use", "mofa_make",
+            "mofa_describe_content_type",
+        ] {
+            assert!(ceiling.contains(tool), "{tool} could not be granted to an app peer");
+        }
+        assert_eq!(ceiling.len(), SYSTEM_AGENT_TOOLS.len() + APP_GRANTABLE_OCTOS_TOOLS.len(), "no overlap");
+    }
+
+    #[test]
+    fn grants_join_the_system_agents_set_as_host_tools() {
+        let shipped = SystemAgentTools::new();
+        assert!(!shipped.command_execution(), "command execution is off by default");
+        assert!(shipped.host_tools().is_empty());
+        assert_eq!(shipped.names().len(), SYSTEM_AGENT_TOOLS.len());
         let mut granted = SystemAgentTools::new();
-        granted.grant_toolbox("toolbox.search").grant_cross_app("mail.send");
-        let policy = granted.tool_policy();
-        let allow: Vec<&str> = policy["allow"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
-        assert!(allow.contains(&"toolbox.search") && allow.contains(&"mail.send"));
-        assert_eq!(allow.len(), SYSTEM_AGENT_TOOLS.len() + 2);
+        granted
+            .grant_toolbox("toolbox.search")
+            .grant_cross_app("mail.send")
+            .grant_command_execution(true);
+        let host: Vec<String> = granted.host_tools().into_iter().collect();
+        assert_eq!(host, ["mail.send", COMMAND_EXECUTION_TOOL, "toolbox.search"]);
+        assert!(!granted.names().contains("shell"), "never octos's shell");
+        assert!(!tool_policy()["allow"].as_array().unwrap().iter().any(|t| t == COMMAND_EXECUTION_TOOL));
     }
 
     #[test]

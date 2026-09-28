@@ -9,8 +9,8 @@ Rules, looking at the request's messages and offered tools:
     "QUESTION_ME" ("TELL_PEER_HOLD:<slug>": "QUESTION_HOLD", never answered);
   - "TELL_PEER_AGAIN:<slug>": send the peer "SECOND_INPUT";
   - "TELL_PEER_SUDO:<slug>": send the peer "RUN_SUDO", on which the peer runs
-    a shell command when it is offered `shell` (it never is: ADR 0004 §12),
-    else says "NO SHELL OFFERED";
+    a shell command when it is offered octos's `shell` (the kernel profile's
+    ceiling denies it: ADR 0004 §12), else says "NO SHELL OFFERED";
   - "APPROVE_PEER:<slug>": try to approve a peer's tool with peer_respond;
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
