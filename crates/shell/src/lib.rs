@@ -10,6 +10,7 @@
 #![allow(dead_code)] // shell surface (icons, OSD, panels) built ahead of the flows that use it
 
 pub mod ai_bus;
+pub mod app_storage;
 pub mod apps;
 pub mod binds;
 pub mod clients;
@@ -4438,9 +4439,15 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // Where App Hub keeps what it installs: `$OCTOSENSE_APP_DATA`, else
         // `apps/` in the platform data directory or OctoSense's own state.
+        // App storage (ADR 0004 §11): the one source of every app's jail,
+        // account folders and secrets; the startup check refuses any agent
+        // workspace that reaches the secrets.
+        let storage = app_storage::init(cx.get_data_dir().map(std::path::PathBuf::from));
         #[cfg(any(feature = "app-hub", native_mobile))]
-        octosense_app_hub_app::set_data_root(cx.get_data_dir().map(std::path::PathBuf::from)
-            .unwrap_or_else(octosense::paths::home).join("apps"));
+        octosense_app_hub_app::set_data_root(storage.map(|s| s.layout().apps_root().to_path_buf())
+            .unwrap_or_else(|| cx.get_data_dir().map(std::path::PathBuf::from)
+                .unwrap_or_else(octosense::paths::home).join("apps")));
+        let _ = storage;
         // The assistant's services (octosense-ai-host): the octos kernel,
         // configured here and started when a consumer (AppCard, Rinx)
         // connects, and AI providers' `llm` service, which writes its profile

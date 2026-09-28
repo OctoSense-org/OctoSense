@@ -360,6 +360,10 @@ impl ModuleHost {
         // The assistant is offered to THIS instance for the duration of its
         // create only; the module takes it there or never gets it.
         let offer = crate::ai_host::offer(module, &scope);
+        // Its storage (jail, account folders, secrets; ADR 0004 §11) the
+        // same way, when it declares `storage` and the host has storage.
+        let scope_key = scope.to_string();
+        crate::app_storage::offer(module.id(), module.capabilities(), &scope_key);
         // The module's `register`, `create` and first `manifest` run under
         // the containment every later call gets: a module that panics here
         // never becomes an instance, and its isolate goes at once.
@@ -381,6 +385,7 @@ impl ModuleHost {
         // What the module did not take is withdrawn; what it took stays
         // with the instance until teardown.
         let assistant = offer.finish();
+        crate::app_storage::withdraw(module.id(), &scope_key);
         let Some((parts, manifest)) = created else {
             // Already reported; the shell has no client to show it on, so
             // the fault is taken here and the launch fails with it.

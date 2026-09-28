@@ -7481,6 +7481,7 @@ dependencies = [
 name = "octosense-shell"
 version = "0.1.0"
 dependencies = [
+ "keyring",
  "libc",
  "makepad-ai-services",
  "makepad-aichat",
@@ -7505,6 +7506,7 @@ dependencies = [
  "rinx",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
