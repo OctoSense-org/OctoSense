@@ -89,3 +89,4 @@ app-appcard = ["octosense-shell/app-appcard"]
 app-hub = ["dep:octosense-app-hub-app", "octosense-shell/app-hub"]
 # END native-apps: features
 app-aichat = ["dep:makepad-aichat", "octosense-shell/app-aichat"]
+dev-mode = ["octosense-shell/dev-mode"]

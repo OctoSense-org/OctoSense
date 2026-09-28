@@ -11,6 +11,7 @@
 
 pub mod ai_bus;
 pub mod app_storage;
+pub mod dev_mode;
 pub mod apps;
 pub mod binds;
 pub mod clients;
@@ -203,6 +204,9 @@ script_mod! {
                         shell_menu := ShellMenu{}
                         shell_notes := ShellNotifications{}
                         shell_osd := ShellOsd{}
+                        // Developer mode's banner (dev_mode.rs): over
+                        // everything, drawn only while the mode is on.
+                        shell_dev_banner := ShellDevBanner{}
                     }
                     }
                     // `wm --gallery`: every ported omarchy surface with
@@ -350,6 +354,9 @@ pub struct App {
     /// The glance cards' generation the surfaces last drew (glance.rs).
     #[rust]
     pub glance_generation: u64,
+    /// The developer-mode generation last acted on (dev_mode.rs).
+    #[rust]
+    pub dev_generation: u64,
     #[rust]
     pub hub: Option<WmHub>,
     #[rust]
@@ -2906,9 +2913,74 @@ impl App {
         true
     }
 
+    /// The developer-mode banner owns presses on itself: Turn off ends the
+    /// mode at once; the rest of the strip swallows the press.
+    fn dev_banner_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let Event::MouseDown(e) = event else { return false };
+        let (off, claims) = {
+            let banner = self.ui.widget(cx, ids!(shell_dev_banner));
+            let banner = banner.borrow::<shell::dev_banner::ShellDevBanner>();
+            match banner.as_ref() {
+                Some(b) => (b.off_hit(e.abs), b.claims(e.abs)),
+                None => (false, false),
+            }
+        };
+        if off {
+            dev_mode::turn_off("banner");
+            self.dev_mode_changed(cx);
+        }
+        claims
+    }
+
+    /// Developer mode moved (on, off, expired): re-announce every app's
+    /// tools to the pane so its approvals follow, and redraw the banner.
+    fn dev_mode_changed(&mut self, cx: &mut Cx) {
+        let generation = dev_mode::generation();
+        if generation == self.dev_generation {
+            return;
+        }
+        self.dev_generation = generation;
+        log!("wm: developer mode {}", if dev_mode::is_on() { "on" } else { "off" });
+        for frame in self.ai_bus.reannounce() {
+            self.send_to_pane(frame);
+        }
+        for notice in dev_mode::take_notices() {
+            self.notify(cx, "Developer mode", &notice);
+        }
+        self.redraw_all(cx);
+    }
+
+    /// Settings → Developer options (`setup.developer.*`, shell/menu.rs).
+    /// The one place outside dev_mode.rs that turns developer mode on: the
+    /// person typed the confirmation phrase into the menu and chose the row.
+    fn developer_options_activate(&mut self, cx: &mut Cx, target: &str) {
+        self.close_shell_menu(cx);
+        if let Some(typed) = target.strip_prefix("setup.developer.on:") {
+            match dev_mode::PersonGesture::settings_phrase(typed) {
+                None => self.notify(
+                    cx,
+                    "Developer mode is off",
+                    &format!("To turn it on, type \u{201c}{}\u{201d} in Developer options, then choose Turn on.", dev_mode::CONFIRM_PHRASE),
+                ),
+                Some(gesture) => {
+                    if let Err(why) = dev_mode::turn_on(gesture, dev_mode::Scope::AllApps) {
+                        self.notify(cx, "Developer mode is off", &why);
+                    }
+                }
+            }
+        } else if target == "setup.developer.off" {
+            dev_mode::turn_off("settings");
+        }
+        self.dev_mode_changed(cx);
+    }
+
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
+        if target.starts_with("setup.developer.") {
+            self.developer_options_activate(cx, target);
+            return;
+        }
         if target=="start.documents" {self.launch_app(cx,"files");return;}
         if target=="start.power" {self.toggle_shell_panel(cx,BarModule::Power);return;}
         #[cfg(not(mobile_only))]
@@ -4457,6 +4529,11 @@ impl MatchEvent for App {
         ai_host::start(ai_host::Host::platform(cx.get_data_dir().or_else(|| {
             Some(octosense::paths::home().to_string_lossy().into_owned())
         })));
+        // Developer mode (ADR 0004 §13): from this launch's flag or
+        // environment, or a developer profile's saved state; before any app
+        // starts, so grants and approvals see it from the first call.
+        dev_mode::init(&octosense::paths::home());
+        self.dev_generation = dev_mode::generation();
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4607,6 +4684,9 @@ impl MatchEvent for App {
         if let Err(error) = octosense::catalog::loaded() {
             log!("octosense: {error}");
             self.notify(cx, "Could not load apps", error);
+        }
+        for notice in dev_mode::take_notices() {
+            self.notify(cx, "Developer mode", &notice);
         }
 
         // Start EMPTY like omarchy — booting children is slow (first-exec
@@ -5017,7 +5097,10 @@ impl App {
                 event,
                 Event::TouchUpdate(_) | Event::MouseMove(_) | Event::MouseDown(_) | Event::MouseUp(_) | Event::Scroll(_)
             )
-            && (self.shell_menu_pointer(cx, event) || self.shell_panel_pointer(cx, event) || self.shell_glance_pointer(cx, event))
+            && (self.dev_banner_pointer(cx, event)
+                || self.shell_menu_pointer(cx, event)
+                || self.shell_panel_pointer(cx, event)
+                || self.shell_glance_pointer(cx, event))
         {
             return;
         }
@@ -5166,6 +5249,8 @@ impl App {
                 self.update_status(cx);
                 self.update_bar(cx);
                 self.phone_tick(cx);
+                dev_mode::tick();
+                self.dev_mode_changed(cx);
                 // The pool fills itself here: at startup, after an
                 // adoption, and after any death it healed from. One spawn
                 // per second, so a cold desktop never forks four cargo

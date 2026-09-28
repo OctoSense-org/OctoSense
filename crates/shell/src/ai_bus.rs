@@ -17,6 +17,13 @@
 //! The `os` service is the WM as an app: list, launch, focus, close, and
 //! open — a file in its associated app, through the same typed
 //! `OpenRequest` a file browser's double-click takes.
+//!
+//! Developer mode (`dev_mode.rs`, ADR 0004 §13) is consulted here, never
+//! set: an app it covers is announced to the pane with its destructive
+//! tools approved in advance (sent as `Act`, so the pane runs them without
+//! its confirm card), and while it is on every call the pane makes is
+//! audited, those automatic approvals included. When the mode changes the
+//! shell sends [`AiBus::reannounce`] so the pane's view follows at once.
 
 use crate::hub::ClientId;
 use makepad_ai_services::wire::*;
@@ -88,9 +95,62 @@ pub struct AiBus {
     /// process by the app id the WM launched it as, an in-process module by
     /// its (trusted) id.
     rules: HashMap<ClientId, &'static crate::native_apps::NativeApp>,
+    /// Tests only: answers `auto_approve` instead of the process's
+    /// developer mode.
+    #[cfg(test)]
+    dev_check: Option<fn(&str) -> bool>,
 }
 
 impl AiBus {
+    /// Whether developer mode approves `service`'s calls automatically.
+    fn auto_approves(&self, service: &str) -> bool {
+        #[cfg(test)]
+        if let Some(check) = self.dev_check {
+            return check(service);
+        }
+        crate::dev_mode::auto_approve(service)
+    }
+
+    /// The manifest the pane is told: as registered, or in developer mode
+    /// with every destructive tool approved in advance.
+    fn effective(&self, manifest: &ServiceManifest) -> ServiceManifest {
+        let mut manifest = manifest.clone();
+        if self.auto_approves(&manifest.id) {
+            for tool in &mut manifest.tools {
+                if tool.risk == Risk::Destructive {
+                    tool.risk = Risk::Act;
+                    tool.self_confirm = None;
+                }
+            }
+        }
+        manifest
+    }
+
+    /// Every client's registration again, as the pane must now see it: sent
+    /// when developer mode turns on, off or expires.
+    pub fn reannounce(&self) -> Vec<String> {
+        self.registered_clients()
+            .into_iter()
+            .map(|client| {
+                HostedUp {
+                    from: Some(self.endpoint_for(client)),
+                    msg: ServiceUp::Register { manifest: self.effective(&self.manifests[&client]), port_tag: 0 },
+                }
+                .to_json()
+            })
+            .collect()
+    }
+
+    /// While developer mode is on: the call, and, for a destructive tool it
+    /// approved in advance, the automatic approval.
+    fn audit_call(&self, service: &str, manifest: Option<&ServiceManifest>, call: &ServiceCall) {
+        crate::dev_mode::audit_tool_call(service, &call.tool, &call.args, "assistant");
+        let destructive = manifest.and_then(|m| m.tool(&call.tool)).is_some_and(|t| t.risk == Risk::Destructive);
+        if destructive && self.auto_approves(service) {
+            crate::dev_mode::audit_auto_approval(service, &call.tool, &call.args, "assistant");
+        }
+    }
+
     pub fn endpoint_of(client: ClientId) -> EndpointId {
         EndpointId(format!("w{client}"))
     }
@@ -125,6 +185,7 @@ impl AiBus {
         }
         apply_rules(&mut manifest, self.rules.get(&client).copied());
         self.manifests.insert(client, manifest.clone());
+        let manifest = self.effective(&manifest);
         HostedUp { from: Some(self.endpoint_for(client)), msg: ServiceUp::Register { manifest, port_tag: 0 } }.to_json()
     }
 
@@ -225,7 +286,7 @@ impl AiBus {
             out.push(
                 HostedUp {
                     from: Some(self.endpoint_for(client)),
-                    msg: ServiceUp::Register { manifest: self.manifests[&client].clone(), port_tag: 0 },
+                    msg: ServiceUp::Register { manifest: self.effective(&self.manifests[&client]), port_tag: 0 },
                 }
                 .to_json(),
             );
@@ -266,7 +327,10 @@ impl AiBus {
             let Some(to) = down.to.clone() else { return Route::Drop };
             if to.as_str() == OS_ENDPOINT {
                 return match down.msg {
-                    ServiceDown::Call(call) => Route::Os(call),
+                    ServiceDown::Call(call) => {
+                        self.audit_call(OS_ENDPOINT, None, &call);
+                        Route::Os(call)
+                    }
                     _ => Route::Drop,
                 };
             }
@@ -275,6 +339,11 @@ impl AiBus {
                 Some((false, target)) if !self.locals.contains(&target) && self.manifests.contains_key(&target) => target,
                 _ => return Route::Drop,
             };
+            if let ServiceDown::Call(call) = &down.msg {
+                if let Some(manifest) = self.manifests.get(&target) {
+                    self.audit_call(&manifest.id, Some(manifest), call);
+                }
+            }
             if let ServiceDown::Call(call) = &down.msg {
                 if host_confirmed(self.rules.get(&target).copied(), &call.tool) && !card_shows_in_full(&call.args) {
                     let refused = ToolResult::refused(
@@ -298,6 +367,7 @@ impl AiBus {
                 manifest.clear_self_confirm();
                 apply_rules(manifest, self.rules.get(&client).copied());
                 self.manifests.insert(client, manifest.clone());
+                *manifest = self.effective(manifest);
             }
             ServiceUp::Unregister => {
                 self.manifests.remove(&client);
@@ -642,6 +712,49 @@ mod local_tests {
         let replay = bus.replay(AiBus::os_manifest(&[]));
         assert!(registered(&replay[1]).tool("send").unwrap().confirms_itself(), "m4 keeps it");
         assert!(!registered(&replay[2]).tool("send").unwrap().confirms_itself(), "w5 does not");
+    }
+
+    /// Developer mode approves a covered app's destructive tools in advance:
+    /// the pane is told `Act` (so it shows no confirm card), for that app
+    /// only, and is told again when the mode changes.
+    #[test]
+    fn developer_mode_approves_a_covered_apps_destructive_tools_in_advance() {
+        let manifest = |id: &str| {
+            ServiceManifest::new(id, "App", "An app.")
+                .with_tool(ToolDef::new("send", "Send.", r#"{"type":"object","properties":{}}"#, Risk::Destructive).confirmed_by_app())
+                .with_tool(ToolDef::new("peek", "Look.", r#"{"type":"object","properties":{}}"#, Risk::Read))
+        };
+        let registered = |json: &str| match HostedUp::parse(json).expect("valid").msg {
+            ServiceUp::Register { manifest, .. } => manifest,
+            _ => panic!("expected a registration"),
+        };
+        fn only_mail(service: &str) -> bool {
+            service == "mail"
+        }
+        let mut bus = AiBus { pane_client: Some(9), dev_check: Some(only_mail), ..Default::default() };
+        let up = |id: &str| HostedUp { from: None, msg: ServiceUp::Register { manifest: manifest(id), port_tag: 0 } }.to_json();
+        let Route::ToPane(mail) = bus.on_custom(4, &up("mail")) else { panic!("expected ToPane") };
+        let Route::ToPane(news) = bus.on_custom(5, &up("news")) else { panic!("expected ToPane") };
+        let local = bus.register_local(6, manifest("mail"));
+        for json in [&mail, &local] {
+            let m = registered(json);
+            assert_eq!(m.tool("send").unwrap().risk, Risk::Act, "approved in advance");
+            assert!(m.validate().is_ok(), "and still a valid manifest");
+        }
+        assert_eq!(registered(&news).tool("send").unwrap().risk, Risk::Destructive, "an app it does not cover");
+        assert_eq!(registered(&bus.replay(AiBus::os_manifest(&[]))[1]).tool("send").unwrap().risk, Risk::Act);
+        // Off: the pane is told the real risk again, and a module keeps its own sheet.
+        fn nobody(_: &str) -> bool {
+            false
+        }
+        bus.dev_check = Some(nobody);
+        let again = bus.reannounce();
+        assert_eq!(again.len(), 3);
+        for json in &again {
+            assert_eq!(registered(json).tool("send").unwrap().risk, Risk::Destructive);
+        }
+        assert!(registered(&again[2]).tool("send").unwrap().confirms_itself(), "m6 keeps its own confirmation");
+        assert!(!registered(&again[0]).tool("send").unwrap().confirms_itself());
     }
 
     /// End to end through the pane's engine: a module's self-confirmed tool

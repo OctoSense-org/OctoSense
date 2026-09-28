@@ -520,6 +520,12 @@ impl MenuModel {
             items.push(MenuItem::new("desktop.windows-dark","Windows · Dark",MenuKind::Action));
             items.push(MenuItem::new("desktop.octosense-dark","OctoSense · Dark",MenuKind::Action));
         }
+        if crate::dev_mode::settings_available() {
+            let developer = developer_items(&items);
+            // Setup keeps its jsonc place, after Style.
+            let at = items.iter().position(|item| item.id == "style").map_or(items.len(), |i| i + 1);
+            items.splice(at..at, developer);
+        }
         if path.starts_with("style.theme") {
             items.extend(theme_items());
         }
@@ -755,6 +761,9 @@ impl MenuModel {
             }
             MenuKind::Inert | MenuKind::Link => None,
             MenuKind::Action | MenuKind::App => Some(match row.target.as_str() {
+                // The typed confirmation travels with the row (lib.rs
+                // `developer_options_activate` checks it).
+                DEVELOPER_ON => format!("{DEVELOPER_ON}:{}", self.filter),
                 "workspace.files" => "apps.files".into(),
                 "workspace.tools.terminal" => "apps.terminal".into(),
                 "workspace.tools.task" => "apps.task".into(),
@@ -763,6 +772,53 @@ impl MenuModel {
             }),
         }
     }
+}
+
+/// Settings → Developer options' Turn on row.
+const DEVELOPER_ON: &str = "setup.developer.on";
+
+/// Settings (the menu's Setup, alias "settings") → Developer options, in
+/// builds where Settings may turn developer mode on (dev_mode.rs). Turning
+/// it on needs the confirmation phrase typed into the menu's filter: the
+/// row carries the phrase as an alias, so typing it keeps the row listed,
+/// and choosing it passes what was typed.
+fn developer_items(existing: &[MenuItem]) -> Vec<MenuItem> {
+    use crate::dev_mode;
+    let mut items = Vec::new();
+    if !existing.iter().any(|item| item.id == "setup") {
+        items.push(MenuItem::new("setup", "Setup", MenuKind::Menu).icon(Ico::Keyboard).aliases(&["settings"]));
+    }
+    items.push(
+        MenuItem::new("setup.developer", "Developer options", MenuKind::Menu)
+            .icon(Ico::Keyboard)
+            .aliases(&["developer", "dev mode"])
+            .describe("Every app gets every grant, for building apps"),
+    );
+    match dev_mode::status() {
+        Some((active, profile)) => {
+            items.push(
+                MenuItem::new("setup.developer.off", "Turn off developer mode", MenuKind::Action)
+                    .icon(Ico::Close)
+                    .describe(&format!("{} · {}", dev_mode::banner_text(&active), dev_mode::lasts_text(&active, profile, dev_mode::now()))),
+            );
+        }
+        None => {
+            items.push(
+                MenuItem::new(DEVELOPER_ON, "Turn on for all apps", MenuKind::Action)
+                    .icon(Ico::Check)
+                    .aliases(&[dev_mode::CONFIRM_PHRASE])
+                    .describe(&format!("Type \u{201c}{}\u{201d}, then choose this", dev_mode::CONFIRM_PHRASE)),
+            );
+            let mut profile = MenuItem::new("setup.developer.profile", "Real accounts: ends after 8 hours", MenuKind::Inert)
+                .describe("For longer, use a developer profile: its own OCTOSENSE_HOME with a developer-profile file");
+            if std::path::Path::new(&crate::octosense::paths::home()).join(dev_mode::PROFILE_MARKER).exists() {
+                profile.label = "Developer profile: stays on until turned off".into();
+                profile.description = String::new();
+            }
+            items.push(profile);
+        }
+    }
+    items
 }
 
 /// The launcher row of the AI providers system app (`os.ai-providers`).
@@ -1611,6 +1667,31 @@ mod tests {
         assert_eq!(centered_card_top(smaller, 280.0, 8.0, Some(300.0)), 138.0);
     }
 
+    /// Settings → Developer options: the Turn on row stays listed while the
+    /// person types the confirmation phrase, and carries what was typed to
+    /// the shell (which checks it; lib.rs `developer_options_activate`).
+    #[test]
+    fn developer_options_carry_the_typed_phrase() {
+        assert!(crate::dev_mode::settings_available(), "a test build is a development build");
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.sel = model.rows.iter().position(|r| r.target == "setup").expect("Setup is listed");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == "setup.developer").expect("Developer options");
+        assert_eq!(model.activate(), None);
+        assert_eq!(model.path, "setup.developer");
+        // Chosen without the phrase: the row passes an empty confirmation.
+        model.sel = model.rows.iter().position(|r| r.target == DEVELOPER_ON).expect("Turn on");
+        assert_eq!(model.activate().as_deref(), Some("setup.developer.on:"));
+        for (i, ch) in crate::dev_mode::CONFIRM_PHRASE.chars().enumerate() {
+            model.filter.push(ch);
+            model.rebuild();
+            assert!(model.rows.iter().any(|r| r.target == DEVELOPER_ON), "listed after {} chars", i + 1);
+        }
+        model.sel = model.rows.iter().position(|r| r.target == DEVELOPER_ON).unwrap();
+        assert_eq!(model.activate().as_deref(), Some("setup.developer.on:turn on developer mode"));
+    }
+
     /// Start > Settings is Appearance alone until the build ships the AI
     /// providers system app; then it is a submenu that also opens it.
     #[test]
@@ -1676,10 +1757,15 @@ mod tests {
         m.open_at("", MenuSkin::Menu);
         // The standalone shell offers no Desktop style row.
         let styles = if crate::MOBILE_ONLY { 0 } else { 1 };
-        assert_eq!(m.rows.len(), 4 + styles);
+        // A development build lists Setup (Developer options) after Style.
+        let setup = usize::from(crate::dev_mode::settings_available());
+        assert_eq!(m.rows.len(), 4 + setup + styles);
         assert_eq!(m.rows.iter().any(|r| r.target == "desktop"), styles == 1);
         assert_eq!(m.rows[0].label, "Apps");
-        assert_eq!(m.rows[3].label, "System");
+        if setup == 1 {
+            assert_eq!(m.rows[3].label, "Setup");
+        }
+        assert_eq!(m.rows[3 + setup].label, "System");
         assert!(m.rows.iter().all(|r| !r.disabled));
         // Submenu rows carry the chevron.
         assert!(m.rows[0].has_children);

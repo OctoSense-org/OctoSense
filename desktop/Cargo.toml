@@ -63,3 +63,6 @@ mobile-only = ["octosense-shell/mobile-only"]
 # The octos kernel as a shell service (octosense-kernel, via octosense-ai-host).
 octos-core = ["octosense-shell/octos-core"]
 app-aichat = ["octosense-shell/app-aichat"]
+# Developer mode from Settings and OCTOSENSE_DEV_MODE in a release build
+# (debug builds have it already; ADR 0004 §13).
+dev-mode = ["octosense-shell/dev-mode"]
