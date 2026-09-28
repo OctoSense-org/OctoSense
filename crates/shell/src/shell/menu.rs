@@ -526,6 +526,11 @@ impl MenuModel {
             let at = items.iter().position(|item| item.id == "style").map_or(items.len(), |i| i + 1);
             items.splice(at..at, developer);
         }
+        // Settings → Assistant → Approvals (approvals/settings_page.rs), in
+        // every build: rules, app agents' consent, recent auto-approvals.
+        let assistant = assistant_items(&items);
+        let at = items.iter().rposition(|item| item.id == "setup" || item.id.starts_with("setup.")).map_or(items.len(), |i| i + 1);
+        items.splice(at..at, assistant);
         if path.starts_with("style.theme") {
             items.extend(theme_items());
         }
@@ -776,6 +781,25 @@ impl MenuModel {
 
 /// Settings → Developer options' Turn on row.
 const DEVELOPER_ON: &str = "setup.developer.on";
+
+/// The Approvals page's row (lib.rs opens `approvals::open_settings`).
+pub const APPROVALS_ROW: &str = "setup.assistant.approvals";
+
+/// Settings (Setup) → Assistant → Approvals.
+fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
+    let mut items = Vec::new();
+    if !existing.iter().any(|item| item.id == "setup") {
+        items.push(MenuItem::new("setup", "Setup", MenuKind::Menu).icon(Ico::Keyboard).aliases(&["settings"]));
+    }
+    items.push(MenuItem::new("setup.assistant", "Assistant", MenuKind::Menu).icon(Ico::Cpu).aliases(&["assistant", "agents"]));
+    items.push(
+        MenuItem::new(APPROVALS_ROW, "Approvals", MenuKind::Action)
+            .icon(Ico::Check)
+            .aliases(&["approvals", "rules", "consent"])
+            .describe("Standing rules, app agents and recent automatic approvals"),
+    );
+    items
+}
 
 /// Settings (the menu's Setup, alias "settings") → Developer options, in
 /// builds where Settings may turn developer mode on (dev_mode.rs). Turning
@@ -1690,6 +1714,19 @@ mod tests {
         }
         model.sel = model.rows.iter().position(|r| r.target == DEVELOPER_ON).unwrap();
         assert_eq!(model.activate().as_deref(), Some("setup.developer.on:turn on developer mode"));
+    }
+
+    /// Setup → Assistant → Approvals opens the Approvals page.
+    #[test]
+    fn setup_assistant_offers_the_approvals_page() {
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.sel = model.rows.iter().position(|r| r.target == "setup").expect("Setup is listed");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == "setup.assistant").expect("Assistant");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == APPROVALS_ROW).expect("Approvals");
+        assert_eq!(model.activate().as_deref(), Some(APPROVALS_ROW));
     }
 
     /// Start > Settings is Appearance alone until the build ships the AI

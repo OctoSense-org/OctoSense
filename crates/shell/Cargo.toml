@@ -23,7 +23,8 @@ doctest = false
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
-# App storage (ADR 0004 §11): the account hash that names account folders.
+# App storage (ADR 0004 §11): the account hash that names account folders;
+# the approvals audit's digest of each call's arguments.
 sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
