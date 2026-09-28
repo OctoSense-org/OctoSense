@@ -103,7 +103,7 @@ def compile_patterns(extra=(), identity=True):
 
 def mask(match):
     text = match.decode("utf-8", "replace").replace("\x00", "")
-    return text if len(text) <= 4 else text[:3] + "*" * min(len(text) - 3, 12)
+    return text if len(text) <= 4 else text[:3] + "*" * min(len(text) - 3, 12) + f" ({len(text)} chars)"
 
 
 def scan_bytes(data, where, patterns, findings):
