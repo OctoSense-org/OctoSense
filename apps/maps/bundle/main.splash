@@ -7,7 +7,9 @@ let screen = "search"   // search | place | route | drive | origin
 let mode = "drive"
 let recents = []
 let shown_route = ""
-let finding = ""        // "" | "origin": the search picks the start instead
+let finding = ""        // "" | "origin" | "stop": the search picks the start or a stop instead
+let stops = []          // up to two stops on the way, in order
+let view3d = true       // drive view: 3D follow camera, or the flat 2D map
 
 fn fix_origin(){
     if origin.picked { return }
@@ -48,6 +50,12 @@ fn read_hits(){
     ui.results.render()
 }
 fn pick(p){
+    if finding == "stop" {
+        stops.push({lat: p.lat lon: p.lon name: p.name})
+        finding = ""
+        show("route")
+        return
+    }
     if finding == "origin" {
         origin = {lat: p.lat lon: p.lon name: p.name picked: true}
         finding = ""
@@ -55,6 +63,7 @@ fn pick(p){
         return
     }
     place = p
+    stops = []
     remember(p)
     show("place")
 }
@@ -64,10 +73,48 @@ fn use_my_location(){
     finding = ""
     show("route")
 }
+// The stops as the routing helpers take them: "lat,lon;lat,lon", or "".
+fn vias(){
+    let out = ""
+    for st in stops {
+        if out != "" { out = out + ";" }
+        out = out + st.lat + "," + st.lon
+    }
+    out
+}
+fn markers(){
+    let out = "" + origin.lat + "," + origin.lon + ",0"
+    for st in stops { out = out + ";" + st.lat + "," + st.lon + ",1" }
+    out + ";" + place.lat + "," + place.lon + ",2"
+}
+fn find_for(what){
+    finding = what
+    q = ""
+    hits = []
+    ui.search.set_text("")
+    show(what)
+}
+fn add_stop(){ find_for("stop") }
+fn remove_stop(i){
+    stops.remove(i)
+    show("route")
+}
+fn set_view(three){
+    view3d = three
+    shown_route = ""
+    ui.drive_3d.set_visible(view3d)
+    ui.drive_2d.set_visible(!view3d)
+    ui.views.render()
+    tick()
+}
+fn active_drive_map(){
+    if view3d { return ui.drive_map }
+    ui.drive_map_2d
+}
 fn show(s){
     screen = s
     shown_route = ""
-    ui.search_panel.set_visible(s == "search" || s == "origin")
+    ui.search_panel.set_visible(s == "search" || s == "origin" || s == "stop")
     ui.place_panel.set_visible(s == "place")
     ui.route_panel.set_visible(s == "route")
     ui.plan_box.set_visible(s != "drive")
@@ -83,9 +130,17 @@ fn show(s){
         ui.rfrom.set_text(origin.name)
         ui.rto.set_text(place.name)
         ui.modes.render()
+        ui.stop_rows.render()
     }
-    if s == "search" || s == "origin" {
-        if s == "origin" { ui.search_hint.set_text("Choose a start") } else { ui.search_hint.set_text("Where to?") }
+    if s == "drive" {
+        ui.drive_3d.set_visible(view3d)
+        ui.drive_2d.set_visible(!view3d)
+        ui.views.render()
+    }
+    if s == "search" || s == "origin" || s == "stop" {
+        if s == "origin" { ui.search_hint.set_text("Choose a start") }
+        else if s == "stop" { ui.search_hint.set_text("Add a stop") }
+        else { ui.search_hint.set_text("Where to?") }
         ui.results.render()
     }
     tick()
@@ -96,45 +151,47 @@ fn eta_field(){
     if mode == "bike" { return "bike" }
     "min"
 }
-fn route_key(){ "" + origin.lat + "," + origin.lon + ">" + place.lat + "," + place.lon + ":" + mode }
+fn route_key(){ "" + origin.lat + "," + origin.lon + ">" + vias() + ">" + place.lat + "," + place.lon + ":" + mode }
 fn draw_route(map){
     let key = route_key()
     if shown_route == key { return }
-    let line = sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "polyline")
-    if line == "" { return }
+    let line = sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "polyline", vias())
+    // "—" while the route loads, "n/a" once it failed: not a line yet.
+    if line == "" || line == "—" || line == "n/a" { return }
     map.set_nav_polyline(line)
-    map.set_route_markers("" + origin.lat + "," + origin.lon + ",0;" + place.lat + "," + place.lon + ",2")
+    map.set_route_markers(markers())
     shown_route = key
 }
 fn progress(){
     if sys.gps("ok") >= 1 {
-        return sys.navprog(origin.lat, origin.lon, place.lat, place.lon, sys.gps("lat"), sys.gps("lon"))
+        return sys.navprog(origin.lat, origin.lon, place.lat, place.lon, sys.gps("lat"), sys.gps("lon"), vias())
     }
     // No fix: the demo vehicle drives the route at 34 mph.
-    let km = sys.navroutenum(origin.lat, origin.lon, place.lat, place.lon, "km", "")
+    let km = sys.navroutenum(origin.lat, origin.lon, place.lat, place.lon, "km", vias())
     if km <= 0 { return 0 }
     sys.navsecs(km * 1000 / 15.2) * 15.2
 }
 fn tick(){
     fix_origin()
-    if screen == "search" || screen == "origin" { read_hits() }
+    if screen == "search" || screen == "origin" || screen == "stop" { read_hits() }
     if screen == "place" {
         ui.peta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "min") + "  ·  " + sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km"))
         draw_route(ui.plan_map)
     }
     if screen == "route" {
-        ui.reta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, eta_field()))
-        ui.rdist.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km"))
+        ui.reta.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, eta_field(), vias()))
+        ui.rdist.set_text(sys.navroute(origin.lat, origin.lon, place.lat, place.lon, "km", vias()))
         ui.rfrom.set_text(origin.name)
         draw_route(ui.plan_map)
     }
     if screen == "drive" {
-        draw_route(ui.drive_map)
+        draw_route(active_drive_map())
         let d = progress()
-        ui.instr.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "instr"))
-        ui.arrow.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "arrow"))
-        ui.ndist.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "dist"))
-        ui.remain.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "remmin") + " min  ·  " + sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "rem"))
+        let v = vias()
+        ui.instr.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "instr", v))
+        ui.arrow.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "arrow", v))
+        ui.ndist.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "dist", v))
+        ui.remain.set_text(sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "remmin", v) + " min  ·  " + sys.navstep(origin.lat, origin.lon, place.lat, place.lon, d, "rem", v))
     }
 }
 fn boot(){
@@ -178,14 +235,20 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
         plan_map := MapView{width: Fill height: Fill nav_mode: "plan" nav_route_width: 36.0 zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
             center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
     }
-    drive_box := View{visible: false width: Fill height: Fill
-        drive_map := MapView{width: Fill height: Fill nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
-            center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+    drive_box := View{visible: false width: Fill height: Fill flow: Overlay
+        drive_3d := View{width: Fill height: Fill
+            drive_map := MapView{width: Fill height: Fill nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0
+                center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+        }
+        drive_2d := View{visible: false width: Fill height: Fill
+            drive_map_2d := MapView{width: Fill height: Fill nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0
+                center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+        }
     }
     View{width: Fill height: Fill flow: Down padding: Inset{left: 10 right: 10 top: 10 bottom: 16}
         search_panel := Panel{
             search_hint := Label{text: "Where to?" draw_text.color: secondary draw_text.text_style.font_size: 12}
-            TextInput{width: Fill height: 40 empty_text: "Search Maps"
+            search := TextInput{width: Fill height: 40 empty_text: "Search Maps"
                 on_return: |text| search_for(text)
                 draw_bg +: {color: #xf1f3f4 color_hover: #xf1f3f4 color_focus: #xf1f3f4 color_empty: #xf1f3f4
                     border_color: #x00000000 border_color_hover: #x00000000 border_color_focus: #x00000000 border_color_empty: #x00000000
@@ -194,6 +257,7 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }
             results := View{width: Fill height: Fit flow: Down on_render: || {
                 if screen == "origin" { Link{text: "◎  Your location" on_click: || use_my_location()} }
+                if screen == "origin" || screen == "stop" { Link{text: "‹ Back to route" on_click: || { finding = ""; show("route") }} }
                 if q != "" && loaded_q != q { Label{text: "Searching…" draw_text.color: secondary draw_text.text_style.font_size: 12} }
                 else if q != "" && hits.len() == 0 { Label{text: "No places found." draw_text.color: secondary draw_text.text_style.font_size: 12} }
                 for h in hits { HitRow{on_tap: |x, y| pick(h) name.text: h.name label.text: h.label} }
@@ -227,8 +291,18 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
                 Label{text: "From  " draw_text.color: secondary draw_text.text_style.font_size: 12}
                 rfrom := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
-                Link{text: "Change" on_click: || { finding = "origin"; q = ""; hits = []; show("origin") }}
+                Link{text: "Change" on_click: || find_for("origin")}
             }
+            stop_rows := View{width: Fill height: Fit flow: Down on_render: || {
+                for i st in stops {
+                    View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
+                        Label{text: "Stop  " draw_text.color: secondary draw_text.text_style.font_size: 12}
+                        Label{width: Fill text: st.name max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
+                        Link{text: "Remove" on_click: || remove_stop(i)}
+                    }
+                }
+                if stops.len() < 2 { Link{text: "+ Add stop" on_click: || add_stop()} }
+            }}
             View{width: Fill height: Fit flow: Right align: Align{y: 0.5}
                 Label{text: "To  " draw_text.color: secondary draw_text.text_style.font_size: 12}
                 rto := Label{width: Fill text: "" max_lines: 1 draw_text.color: ink draw_text.text_style.font_size: 14}
@@ -249,8 +323,12 @@ View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eae
             }
         }
         View{width: Fill height: Fill}
-        Panel{flow: Right align: Align{y: 0.5}
+        Panel{flow: Right align: Align{y: 0.5} spacing: 6
             remain := Label{width: Fill text: "" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 16}}
+            views := View{width: Fit height: Fit flow: Right spacing: 4 on_render: || {
+                if view3d { Pill{text: "2D" on_click: || set_view(false)} PillOn{text: "3D"} }
+                else { PillOn{text: "2D"} Pill{text: "3D" on_click: || set_view(true)} }
+            }}
             Link{text: "End" on_click: || show("route")}
         }
     }

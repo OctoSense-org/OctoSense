@@ -50,7 +50,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News、TechMeme 和 Google News 的订阅源，分标签页（Today、HN、TechMeme、Google、Saved），带文章阅读器 | `storage`、`net`、`images`、`web` | `hn.algolia.com`、`www.techmeme.com`、`news.google.com` | 无 |
 | [Photos](photos/bundle) | `os.photos` | 示例相册：回忆、相簿、人物、收藏、可多选的网格、全屏查看器 | `storage` | 无 | 无（原图来自 Shell 的资源挂载，见下文） |
-| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、路线和驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
+| [Maps](maps/bundle) | `os.maps` | `MapView` 地图、地点搜索、地点详情、可更改起点并最多添加两个途经点的路线，以及带逐向导航和 2D/3D 视图的驾驶模式；有 GPS 定位时从当前位置开始 | `storage`、`net`、`location` | `photon.komoot.io`、`router.project-osrm.org`、`overpass-api.de`、`overpass.kumi.systems`、`maps.mail.ru`、`overpass.openstreetmap.fr` | 无 |
 | [Camera](camera/bundle) | `os.camera` | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library` | 无 | 无 |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信 | `storage`、`mail` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
@@ -70,7 +70,10 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
   显示的原图只有在 Shell 挂载后才会出现在 `{{assets}}/photos/...`：Home
   挂载 `photos/native/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
   桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图。
-- **News、Maps**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
+- **Maps**：在 OnePlus 6 上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、
+  逐向导航驾驶以及 2D 视图都正常。3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面
+  上都是如此，途经点改动前后一样。
+- **News**：开发时在 `card-host` 中运行过，但在 Shell PR 的测试中没有
   端到端验证（测试手机没有网络）。
 - **Mail**：已在桌面和 OnePlus 6 上用演示邮箱验证。Mail 与 `llm` 两个宿主服务使用根目录
   `Cargo.toml` 固定的唯一 App Hub 版本（`46d67e51`，OctoSense-App-Hub#15 合并后的 main；#11 新增了 `llm` 能力，#14 新增了 Matrix 与 Octos 宿主服务能力），与 Shell 链接的版本相同，

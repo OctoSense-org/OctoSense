@@ -56,7 +56,7 @@ OctoScript-App-Design-Flow:
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com` | none |
 | [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage` | none | none (full-size files come from a shell asset mount, see below) |
-| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes and a drive mode; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
+| [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one | `storage`, `net`, `location` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr` | none |
 | [Camera](camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
@@ -80,7 +80,11 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
   `photos/native/resources/photos` (about 87 MB, `phone/system-apps.json`);
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
   no full-size image there.
-- **News, Maps**: run in `card-host` during development, but not exercised
+- **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
+  removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
+  drive view draws the route but no map tiles, on the phone and on the
+  desktop, before and after the stops change.
+- **News**: runs in `card-host` during development, but not exercised
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
   Mail's and the `llm` host services use the one App Hub revision the root
