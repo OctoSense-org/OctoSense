@@ -657,7 +657,7 @@ requested the native x86 Linux host. The emulated process was stopped cleanly
 with SIGTERM and zero OOM events; sources and build cache are retained. The
 first provided host was reachable, but rejected the supplied SSH public key after its
 local permissions were corrected. The user subsequently supplied
-`ubuntu@54.198.120.231` with `octosense.pem`; authentication succeeded. The
+`ubuntu@<build-host>` with `octosense.pem`; authentication succeeded. The
 approved Ubuntu builder userspace is now running natively on that 72-CPU,
 approximately 139-GiB host. Sync completed in 923 seconds and all 1,145 projects
 pass the ROM source audit. The native `aapt2` preflight passed in 324 seconds,
