@@ -69,10 +69,10 @@ outside the app's jail, where the glance screen's `sys.digest` (OctoSense
 #87) reads them.
 
 **Grants.** `research`/`crawl` in the manifest's `capabilities`, the scope
-in octos's `Scope` shape under the manifest's `research` object
-(provisional: App Hub has no such capability yet). **Temporary:** until App
-Hub verifies these capabilities only system apps (`os.*`) get what they
-declare; any other app's declaration is ignored.
+in octos's `Scope` shape under the manifest's top-level `research` object
+(App Hub #26's shape). **Temporary:** until the shells' App Hub pin includes
+#26 and the host reads its verified grant, only system apps (`os.*`) get
+what they declare; any other app's declaration is ignored.
 
 **Turning it on** needs octos#2567 on the workspace's octos pin: a kernel
 without it refuses `peer/tools/register`, and the broker then starts no

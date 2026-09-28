@@ -27,8 +27,10 @@
 //! `Scope` shape, under the manifest's [`SCOPE_KEY`] object (absent: no
 //! narrowing beyond octos's defaults, and no crawl limits, so no crawling).
 //!
-//! **TEMPORARY, until App Hub admits the `research` and `crawl` capabilities
-//! (checks, pins and lets the person grant them):** only system apps
+//! **TEMPORARY, until the shells' App Hub pin includes App Hub #26 (which
+//! admits the `research` and `crawl` capabilities: checks, pins and lets the
+//! person grant them) and the host reads its verified `AppPolicy::research`:**
+//! only system apps
 //! (`os.*`, shipped inside the shell and reviewed with it) get what they
 //! declare. Any other app's declaration is ignored, so a store app cannot
 //! grant itself research by writing it into its manifest. Remove
@@ -51,8 +53,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
 /// The manifest object that holds the `research`/`crawl` scope (octos's
-/// `Scope` fields). Provisional: App Hub has no such capability yet; when it
-/// adds one, change this reader to its shape.
+/// `Scope` fields): App Hub #26's shape (`capabilities: ["research",
+/// "crawl"]` plus one top-level `research` object).
 pub const SCOPE_KEY: &str = "research";
 
 /// How long the kernel waits for one toolbox call: the most octos allows

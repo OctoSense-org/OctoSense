@@ -707,6 +707,20 @@ fn the_system_agent_cannot_approve_an_app_peers_tool() {
 #[cfg(feature = "peer-tools")]
 #[test]
 fn a_registered_host_tool_is_called_by_a_real_turn() {
+    host_tool_round_trip(false);
+}
+
+/// The same over the host-managed server (`serve --host-managed`, Talk to
+/// Octos on): the broker's link is the host-token WebSocket connection, and
+/// registration and results work there too.
+#[cfg(feature = "peer-tools")]
+#[test]
+fn a_registered_host_tool_is_called_by_a_real_turn_on_the_host_managed_server() {
+    host_tool_round_trip(true);
+}
+
+#[cfg(feature = "peer-tools")]
+fn host_tool_round_trip(host_managed: bool) {
     use octosense_app_peers::peer_tools::{Cancel, HostTools, Registration, ToolCall, ToolFuture};
     struct Echo;
     impl HostTools for Echo {
@@ -737,10 +751,18 @@ fn a_registered_host_tool_is_called_by_a_real_turn() {
         .read_line(&mut line)
         .unwrap();
     let model = Model(child, line.trim().parse().unwrap());
-    let dir = temp("host-tools");
+    let dir = temp(if host_managed {
+        "host-tools-managed"
+    } else {
+        "host-tools"
+    });
     let core_dir = dir.join("octos-home/.octos");
     write_profile(&core_dir, model.1);
     let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    if host_managed {
+        core.set_external_access(true)
+            .expect("the host-managed server");
+    }
 
     let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
     let mut cfg = BrokerConfig::new(
