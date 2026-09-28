@@ -16,9 +16,11 @@ pub const APPROVAL_REQUESTED: &str = "approval/requested";
 /// What the app sees instead when the host answered.
 pub const ANSWERED_BY_HOST: &str = "approval/answered_by_host";
 
-/// `(app id, tool name, the event's params) -> answer it approved here`.
-/// The host logs what it answers.
-pub type ApprovalOverride = fn(&str, &str, &Value) -> bool;
+/// `(app id, tool name, session, the event's params) -> answer it approved
+/// here`. The session is the one the approval was raised on; the host answers
+/// only on sessions no Talk to Octos client can reach (ADR 0003). The host
+/// logs what it answers.
+pub type ApprovalOverride = fn(&str, &str, &str, &Value) -> bool;
 
 static OVERRIDE: OnceLock<ApprovalOverride> = OnceLock::new();
 
@@ -40,7 +42,7 @@ fn answer_with(hook: Option<ApprovalOverride>, app_id: &str, method: &str, sessi
     let approval_id = params.get("approval_id").and_then(Value::as_str)?;
     let tool = params.get("tool_name").and_then(Value::as_str).unwrap_or("");
     let hook = hook?;
-    hook(app_id, tool, params).then(|| {
+    hook(app_id, tool, session, params).then(|| {
         json!({"session_id": session, "approval_id": approval_id, "decision": "approve"})
     })
 }
@@ -49,8 +51,8 @@ fn answer_with(hook: Option<ApprovalOverride>, app_id: &str, method: &str, sessi
 mod tests {
     use super::*;
 
-    fn dev_app_only(app: &str, _tool: &str, _params: &Value) -> bool {
-        app == "dev.app"
+    fn dev_app_only(app: &str, _tool: &str, session: &str, _params: &Value) -> bool {
+        app == "dev.app" && session.contains("#peerctx-")
     }
 
     #[test]
@@ -62,6 +64,10 @@ mod tests {
             Some(json!({"session_id": session, "approval_id": "a7", "decision": "approve"}))
         );
         assert_eq!(answer_with(Some(dev_app_only), "other.app", APPROVAL_REQUESTED, session, &event), None);
+        // The hook sees the session: one a Talk to Octos client can reach
+        // (the system conversation) keeps the normal path.
+        let system = "_main:api:octosense#system";
+        assert_eq!(answer_with(Some(dev_app_only), "dev.app", APPROVAL_REQUESTED, system, &event), None);
         assert_eq!(answer_with(None, "dev.app", APPROVAL_REQUESTED, session, &event), None, "no override: the app asks");
         assert_eq!(answer_with(Some(dev_app_only), "dev.app", "message/delta", session, &event), None);
         assert_eq!(answer_with(Some(dev_app_only), "dev.app", APPROVAL_REQUESTED, session, &json!({})), None, "no id, nothing to answer");

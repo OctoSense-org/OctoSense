@@ -548,6 +548,19 @@ impl Controller {
     pub fn answers_approval(&self, owning_app: &str, _kind: ApprovalKind, _auto_approvable: bool, connection: Connection, now: u64) -> bool {
         connection == Connection::Host && self.grants_all(owning_app, now)
     }
+    /// octos's `approval/requested`, seen by an app peer broker: answered
+    /// here only on an app agent's own peer session. A turn on any session a
+    /// Talk to Octos client can reach (the system conversation, a web
+    /// client's own) keeps its normal path: the client that started it
+    /// answers, even with developer mode on for all apps.
+    pub fn answers_octos_approval(&self, app_id: &str, session_key: &str, now: u64) -> bool {
+        is_app_peer_session(session_key)
+            && self.answers_approval(app_id, ApprovalKind::OctosApproval, false, Connection::Host, now)
+    }
+    /// See [`may_register_dev_run`](fn@may_register_dev_run).
+    pub fn may_register_dev_run(&self, app: &str, connection: Connection, session_key: &str, now: u64) -> bool {
+        self.grants_all(app, now) && dev_grants_allowed_on(connection, session_key).is_ok()
+    }
     pub fn profile(&self) -> ProfileKind {
         self.profile
     }
@@ -653,8 +666,8 @@ pub fn approves_command(owning_app: &str, connection: Connection) -> bool {
 }
 /// The app peers' hook (`octosense_app_peers::host_approvals`): octos asked
 /// an app agent's context for an approval; developer mode answers it.
-pub fn answer_octos_approval(app_id: &str, tool: &str, params: &Value) -> bool {
-    if !answers_approval(app_id, ApprovalKind::OctosApproval, false, Connection::Host) {
+pub fn answer_octos_approval(app_id: &str, tool: &str, session_key: &str, params: &Value) -> bool {
+    if !with(|c| c.answers_octos_approval(app_id, session_key, now())).unwrap_or(false) {
         return false;
     }
     audit_auto_approval(app_id, tool, &params.to_string(), "octos", ApprovalKind::OctosApproval);
@@ -682,7 +695,7 @@ pub fn tag_valid(tag: &DevTag) -> bool {
 /// `false`, and withdraws the tool when [`generation`] moves and this turns
 /// false).
 pub fn may_register_dev_run(app: &str, connection: Connection, session_key: &str) -> bool {
-    grants_all(app) && dev_grants_allowed_on(connection, session_key).is_ok()
+    with(|c| c.may_register_dev_run(app, connection, session_key, now())).unwrap_or(false)
 }
 
 fn audit_if_on(kind: &str, entry: Value) {
@@ -833,6 +846,38 @@ mod tests {
         }
         c.turn_off("test", T0);
         assert!(!c.answers_approval("terminal", Command, false, Connection::Host, T0));
+    }
+
+    /// ADR 0003 × §13: with developer mode on for ALL apps, a Talk to Octos
+    /// external connection still gets no developer grant, no `dev.run`, no
+    /// command approval, and no automatic answer to an approval raised on a
+    /// turn it can reach; app agents' own peer sessions do.
+    #[test]
+    fn external_connections_get_nothing_even_with_developer_mode_on_for_all() {
+        use ApprovalKind::*;
+        let home = Home::new("external-all");
+        let c = Controller::start(&home.0, launch(BuildKind::Development, Some("all"), false), T0);
+        assert!(c.grants_all("anything", T0), "on for all apps");
+        let system = "_main:api:octosense#system";
+        let web = "_main:api:web#chat-1";
+        let peer = "_main:api:octosense#peer-k3f9";
+        let context = "_main:api:octosense#peerctx-k3f9-1";
+        for session in [system, web, peer, context, "_main"] {
+            assert!(!c.may_register_dev_run("os.mail", Connection::External, session, T0), "{session}");
+            for kind in [PaneConfirm, AppConfirm, OctosApproval, HostConfirm, Command] {
+                assert!(!c.answers_approval("os.mail", kind, false, Connection::External, T0), "{kind:?}");
+            }
+        }
+        // An approval on a turn an external client can reach goes to its
+        // normal path; only an app agent's own sessions are answered here.
+        for session in [system, web, "_main", "_main:api:octosense#peer"] {
+            assert!(!c.answers_octos_approval("os.mail", session, T0), "{session}");
+            assert!(!c.may_register_dev_run("os.mail", Connection::Host, session, T0), "{session}");
+        }
+        for session in [peer, context] {
+            assert!(c.answers_octos_approval("os.mail", session, T0), "{session}");
+            assert!(c.may_register_dev_run("os.mail", Connection::Host, session, T0), "{session}");
+        }
     }
 
     #[test]
