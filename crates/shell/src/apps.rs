@@ -5,11 +5,13 @@
 //! The launch table (`clients::registry()`: package, directory, binary,
 //! launch policy — everything a PROCESS needs) stays where it is; this is
 //! the overlay keyed by the same ids: the linked `AppModule`, and the
-//! hosting each app gets. Desktop default is Process (decision 5): a
-//! linked module is still launched as a process unless
-//! `~/.makepad/wm/apps.splash` says otherwise (a settings file, never an
-//! environment variable) or a dev run passes `--module <id>`. The uber
-//! builds ignore the switch: everything is a module there.
+//! hosting each app gets. A linked native app is hosted on a desktop as its
+//! `native-apps.json` entry says for this target (ADR 0004 §2: the Terminal
+//! is a process on macOS and Windows, App Hub and Rinx are in-process),
+//! unless `~/.makepad/wm/apps.splash` says otherwise (a settings file, never
+//! an environment variable) or a dev run passes `--module <id>`; any other
+//! linked module is a process unless switched. The uber builds ignore the
+//! switch: everything is a module there.
 //!
 //! App Hub (feature `app-hub`, on by default; always on native mobile) adds
 //! the apps its Card runner hosts: the system apps this build ships as
@@ -46,41 +48,17 @@ pub fn is_linked(id: &str) -> bool {
     linked_modules().iter().any(|m| m.id() == id) || is_card_app(id)
 }
 
-/// Mobile includes its bundled modules automatically; desktop opts in with
-/// `app-*` features and continues to use process hosting by default.
+/// The native apps this build links (`native-apps.json`, generated into
+/// `native_apps.rs` by tools/native_apps.py; ADR 0004 §1), then what the
+/// product links beyond the shell (the phone's Settings). Native mobile
+/// targets link App Hub, Reference and Sheets without flags; the rest come
+/// with their `app-*` features. Rinx's assistant is the shell's, given at
+/// creation (ai_host); it never starts a kernel of its own. The in-process
+/// Terminal's PTY helper on macOS is this executable (`--exec-pty`, handled
+/// in `Cx::pre_start`), so it needs no second binary shipped beside it.
 fn linked_modules() -> Vec<&'static dyn AppModule> {
-    #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
-    // Rinx: Matrix chats, Moments, articles and mini apps. Its assistant is
-    // the shell's, given at creation (ai_host); it never starts a kernel of
-    // its own.
-    #[cfg(feature = "app-rinx")]
-    out.push(&rinx::module::RINX_MODULE);
-    #[cfg(any(feature = "app-reference", native_mobile))]
-    out.push(&octosense_reference::REFERENCE_MODULE);
-    #[cfg(any(feature = "app-sheets", native_mobile))]
-    out.push(&makepad_sheets::SHEETS_MODULE);
-    // The native Photos library, albums and Memories. Without it Photos is
-    // the system app (`os.photos`); a linked module of the same id wins.
-    #[cfg(feature = "app-photos")]
-    out.push(&octosense_photos::PHOTOS_MODULE);
-    // AppCard is opt-in on every target (not shipped by default for now).
-    #[cfg(feature = "app-appcard")]
-    out.push(&octosense_appcard::APPCARD_MODULE);
-    // The native News and OctosMap modules, for comparison with their
-    // system apps (`os.news`, `os.maps`).
-    #[cfg(feature = "app-news")]
-    out.push(&octosense_news::NEWS_MODULE);
-    #[cfg(feature = "app-maps")]
-    out.push(&octosense_maps::MAPS_MODULE);
-    // The trust anchor stays native: the store, and the runner every system
-    // and installed app is hosted by.
-    #[cfg(any(feature = "app-hub", native_mobile))]
-    {
-        out.push(&octosense_app_hub_app::APP_HUB_MODULE);
-        out.push(&octosense_app_hub_app::CARD_MODULE);
-    }
-    // What the product links beyond the shell (the phone's Settings).
+    crate::native_apps::link(&mut out);
     out.extend(crate::ext::linked_modules());
     out
 }
@@ -122,8 +100,7 @@ fn card_row(id: String, label: String, args: Vec<String>) -> crate::clients::App
 /// keeps its short launcher id (`mail` for `os.mail`), so its icon, home
 /// tile and dock place are the ones that id always had. They take
 /// precedence over catalog rows of the same id (`clients::registry`); a
-/// linked native module of the same id wins, for comparison builds
-/// (`app-news`, `app-photos`, `app-maps`).
+/// linked native module of the same id would win.
 pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
@@ -339,6 +316,35 @@ pub fn is_launchable(app: &crate::clients::AppDef) -> bool {
     }
 }
 
+/// A linked native app's hosting when the person has not switched it: what
+/// its `native-apps.json` entry declares for this target. A declared process
+/// runs in-process instead where it has no process form to start
+/// (`process_form`: no checkout to `cargo run` it from and no sibling binary;
+/// release packages do not ship process apps' binaries yet, OctoSense #94),
+/// and `process-if-vulkan` only outside a Vulkan build in a Wayland session.
+pub fn manifest_default(declared: crate::native_apps::Hosting, process_form: impl FnOnce() -> bool, vulkan_wayland: bool) -> Hosting {
+    use crate::native_apps::Hosting as Declared;
+    let wants_process = match declared {
+        Declared::Module => false,
+        Declared::Process => true,
+        Declared::ProcessIfVulkan => vulkan_wayland,
+    };
+    if wants_process && process_form() { Hosting::Process } else { Hosting::Module }
+}
+
+/// Whether `id` can start as a process here: its launcher row resolves to a
+/// checkout `cargo run` builds it from, or to a binary beside this one.
+pub fn process_form(id: &str) -> bool {
+    crate::clients::find_app(id).is_some_and(|app| app.is_available())
+}
+
+/// A Makepad Vulkan build (`MAKEPAD=vulkan`, crates/shell/build.rs) running
+/// in a Wayland session: where Linux shares a child's frames zero-copy
+/// (DMA-BUF). Vulkan windowing panics on X11.
+pub fn vulkan_wayland() -> bool {
+    cfg!(all(target_os = "linux", makepad_vulkan)) && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 impl AppRegistry {
     /// The registry with the person's overrides: the settings file first,
     /// then the command line's `--module <id>` flags on top.
@@ -375,10 +381,12 @@ impl AppRegistry {
         None
     }
 
-    /// How a launch of `id` is hosted. On a desktop: Module only when a
-    /// module is linked AND the person (or the dev flag) asked for it. In a
-    /// build without processes (mobile/web): every linked module is a module,
-    /// and everything else is simply not there.
+    /// How a launch of `id` is hosted. On a desktop: a linked native app as
+    /// the person switched it, else as `native-apps.json` says for this
+    /// target ([`manifest_default`]); any other linked module is a Module
+    /// only when the person (or the dev flag) asked for it. In a build
+    /// without processes (mobile/web): every linked module is a module, and
+    /// everything else is simply not there.
     pub fn hosting(&self, id: &str) -> Hosting {
         if !crate::host::processes_available() {
             return if self.module(id).is_some() { Hosting::Module } else { Hosting::Process };
@@ -387,12 +395,10 @@ impl AppRegistry {
         if matches!(id, "apphub" | "settings") && self.module(id).is_some() {
             return Hosting::Module;
         }
-        // Modules that are module-hosted by default on a desktop too, unless
-        // the person switched them.
-        // (Rinx is Robrix renamed: under the old id the desktop fell through
-        // to a process launch and failed with "binary not found: rinx".)
-        if matches!(id, "rinx" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
-            return Hosting::Module;
+        if self.modules.iter().any(|m| m.id() == id) && !self.overrides.contains_key(id) {
+            if let Some(app) = crate::native_apps::find(id) {
+                return manifest_default(app.on_this_target(), || process_form(id), vulkan_wayland());
+            }
         }
         // A system or installed app has no process form anywhere: the `card`
         // module hosts it on every platform, no switch needed.
@@ -582,6 +588,47 @@ mod tests {
         }
     }
 
+    /// native-apps.json is the one declaration: every native module this
+    /// build links is an entry under its own id (App Hub's runner `card`
+    /// rides on `apphub`), linked by the entry's feature, and the host
+    /// ships exactly the `octos.*` grants the entries record.
+    #[test]
+    fn the_linked_native_modules_are_the_manifests() {
+        let mut linked = Vec::new();
+        crate::native_apps::link(&mut linked);
+        for module in &linked {
+            let id = if module.id() == "card" { "apphub" } else { module.id() };
+            let app = crate::native_apps::find(id).unwrap_or_else(|| panic!("{id} is not in native-apps.json"));
+            assert!(app.feature.starts_with("app-"), "{id} is linked by an app-* feature");
+        }
+        let shipped = octosense_ai_host::Policy::shipped();
+        for app in crate::native_apps::APPS {
+            let granted: Vec<&str> = shipped
+                .grants()
+                .find(|(module, _)| *module == app.id)
+                .map(|(_, services)| services.iter().map(String::as_str).collect())
+                .unwrap_or_default();
+            assert_eq!(granted, app.octos, "{}'s agent grants", app.id);
+        }
+    }
+
+    /// A declared process runs in-process where it cannot start one;
+    /// `process-if-vulkan` is a process only on Vulkan with Wayland.
+    #[test]
+    fn manifest_hosting_falls_back_in_process() {
+        use crate::native_apps::Hosting as Declared;
+        assert_eq!(manifest_default(Declared::Module, || panic!("a module never asks"), true), Hosting::Module);
+        assert_eq!(manifest_default(Declared::Process, || true, false), Hosting::Process);
+        assert_eq!(manifest_default(Declared::Process, || false, true), Hosting::Module, "no binary: in-process");
+        assert_eq!(manifest_default(Declared::ProcessIfVulkan, || true, false), Hosting::Module, "OpenGL or X11");
+        assert_eq!(manifest_default(Declared::ProcessIfVulkan, || true, true), Hosting::Process);
+        // App Hub and Rinx stay in-process everywhere (ADR 0004 §2).
+        for id in ["apphub", "rinx"] {
+            let app = crate::native_apps::find(id).unwrap();
+            assert_eq!(manifest_default(app.on_this_target(), || true, true), Hosting::Module, "{id}");
+        }
+    }
+
     #[test]
     fn overrides_parse_the_settings_shape_and_ignore_noise() {
         let text = "// which apps run in-process\n{\n  sheets: Module,\n  Terminal: process\n  files: Sideways\n  nonsense\n}\n";
@@ -596,14 +643,47 @@ mod tests {
         let registry = AppRegistry::load(Path::new("/nonexistent/apps.splash"), &["--module".to_string(), "sheets".to_string(), "--module".to_string(), "files".to_string()]);
         // files has no linked module: the flag cannot make it one.
         assert_eq!(registry.hosting("files"), Hosting::Process);
-        assert_eq!(registry.hosting("terminal"), Hosting::Process);
+        #[cfg(not(feature = "app-terminal"))]
+        assert_eq!(registry.hosting("terminal"), Hosting::Process, "no linked terminal: a process");
         #[cfg(feature = "app-sheets")]
         {
             assert_eq!(registry.hosting("sheets"), Hosting::Module);
             assert!(registry.linked_ids().contains(&"sheets"));
             let plain = AppRegistry::default();
-            assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
+            let expected = if process_form("sheets") { Hosting::Process } else { Hosting::Module };
+            assert_eq!(plain.hosting("sheets"), expected, "desktop default is a process where it can start");
         }
+    }
+
+    /// Terminal is a system app: linked, it is hosted as native-apps.json
+    /// says (its own process on macOS and Windows where it can start one,
+    /// in-process on phones), and a person who switched it keeps that.
+    #[cfg(feature = "app-terminal")]
+    #[test]
+    fn the_linked_terminal_is_hosted_as_the_manifest_says() {
+        use crate::native_apps::Hosting as Declared;
+        let plain = AppRegistry::default();
+        assert!(plain.linked_ids().contains(&"terminal"));
+        let app = crate::native_apps::find("terminal").expect("Terminal is in native-apps.json");
+        assert_eq!((app.macos, app.windows, app.linux), (Declared::Process, Declared::Process, Declared::ProcessIfVulkan));
+        let expected = if !crate::host::processes_available() {
+            Hosting::Module
+        } else {
+            manifest_default(app.on_this_target(), || process_form("terminal"), vulkan_wayland())
+        };
+        assert_eq!(plain.hosting("terminal"), expected);
+        if cfg!(target_os = "macos") && process_form("terminal") {
+            assert_eq!(plain.hosting("terminal"), Hosting::Process, "a process on macOS");
+        }
+        for switch in [Hosting::Module, Hosting::Process] {
+            let mut switched = AppRegistry::default();
+            switched.overrides.insert("terminal".into(), switch);
+            if crate::host::processes_available() {
+                assert_eq!(switched.hosting("terminal"), switch, "the person's switch wins");
+            }
+        }
+        let term: &'static dyn AppModule = &makepad_terminal::TERMINAL_MODULE;
+        assert!(module_open(term, &card_row("terminal".into(), "Terminal".into(), Vec::new())).is_ok());
     }
 
     #[test]

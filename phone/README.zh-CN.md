@@ -103,7 +103,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 ## 系统应用
 
-News、Photos、Maps、Camera、Mail 和 AI 提供商都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/native/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
+News、Photos、Maps、Camera、Mail 和 AI 提供商都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
 
 Mail 通过 `mail` 宿主服务（[`apps/mail/host-service`](../apps/mail/host-service)）收发邮件：用户在宿主自己的面板上登录，密码保存在钥匙串中或由 Android Keystore 密钥保护，应用本身从不持有套接字或密码。使用演示邮箱（密码为 `demo`）：
 
@@ -114,7 +114,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-`app-news`、`app-photos` 和 `app-maps` 会链接早期的原生模块来替代对应的脚本应用，用于在脚本应用完成真机测量之前进行对比；相关说明见 [docs/photos.md（英文）](docs/photos.md) 和 [docs/maps.md（英文）](docs/maps.md)。Mail 和 Camera 已不再有原生模块。
+早期的原生 News、Photos 和 Maps 模块已删除（原生应用 ADR 0004 §1，[#110](https://github.com/OctoSense-org/OctoSense/pull/110)）；所有系统应用都不再有原生模块。
 
 ### octos 内核
 
@@ -170,7 +170,6 @@ cargo run --release -p octosense-home --features mobile-only -- --test-action is
 - `../crates/shell/resources/icons/apps/<style>/`：Shell 为 News 和 OctosMap 自带的图标，每种框架风格一个 64x64 的 SVG，由 `python3 tools/build_app_icons.py` 生成（`--sheet <path>` 还会用 `rsvg-convert` 渲染一张审阅图；迁移后**未验证**：该脚本仍写入 `phone/resources/icons/apps/`）。渲染器不支持裁剪路径、蒙版、滤镜或文字，因此图形在设计上就不会超出磁贴；有一项测试负责确保文件满足这一点。
 - `../apps/appcard/module`：托管 AppCard 助手（`octos-app`，位于 `../apps/appcard/app/app`）。在所有目标平台上都需显式启用：`--features app-appcard`（它隐含 `octos-core`；助手连接 Home 的内核）。默认构建、`mobile-apps` 和原生移动端构建不包含 AppCard 界面，但包含内核服务。
 - `../apps/reference`：参考模块。
-- `../apps/news/native`、`../apps/photos/native`、`../apps/maps/native`：用于对比的原生模块（feature 分别为 `app-news`、`app-photos`、`app-maps`）。它们的设计说明位于 `docs/plans/`。
 - `android/`：System Bridge、契约、Quickstep 和 SystemUI 项目（[android/README.md](android/README.zh-CN.md)）。
 - `docs/`：记录和操作指南；`docs/android/` 存放性能和启动器相关记录。Home 的决策记录（ADR 0001–0006）位于 [`../docs/adr/home/`](../docs/adr/README.zh-CN.md)。
 

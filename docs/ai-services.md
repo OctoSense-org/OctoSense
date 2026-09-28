@@ -228,7 +228,7 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
    The log says `octos: kernel service ready (starts on first use), core dir …`. Without `OCTOS_APP_CORE_BIN` it says there is no kernel, and AI providers still saves providers.
 
 3. Open **Start → Settings → AI providers**, add a model (family, model, route, key, **Test connection**, save). The profile is `$T/octos-home/.octos/profiles/_main.json`; with the file vault the key is in it, so delete `$T` afterwards.
-4. Use the assistant through a consumer: Rinx (linked by default; `-- --module rinx` opens it; sign in to Matrix, then use its assistant), or AppCard (`--features app-appcard -- --module appcard`). A contained app reaches it through the `octos` host service ([above](#contained-script-apps-system-and-store)).
+4. Use the assistant through a consumer: Rinx (linked by default and in-process; open it from the launcher; sign in to Matrix, then use its assistant), or AppCard (`--features app-appcard`). A contained app reaches it through the `octos` host service ([above](#contained-script-apps-system-and-store)).
 
 **Hidden windows.** Add `MAKEPAD_HIDE_WINDOWS=1 MAKEPAD_REMOTE=<port>` to drive the shell over the remote bridge without taking the screen ([desktop README § Remote-control bridge](../desktop/README.md#remote-control-bridge)). `desktop/scripts/ai_providers_remote.sh` runs AI providers end to end this way with fake keys and outbound HTTPS denied, and `desktop/scripts/glance_remote.sh` does the same for the glance panel.
 

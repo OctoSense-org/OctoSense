@@ -892,6 +892,10 @@ pub fn launch_argv(
                 .unwrap_or_else(|| "Cargo.toml".to_string());
             args.push("run".to_string());
             args.push("--release".to_string());
+            // Never rewrite the checkout's Cargo.lock (the pinned Makepad
+            // in .sources/ is shared and must stay as prepared): a stale
+            // lock fails the launch, visibly, instead.
+            args.push("--locked".to_string());
             args.push("--manifest-path".to_string());
             args.push(root.join(manifest).to_string_lossy().to_string());
             args.push("-p".to_string());
@@ -1158,6 +1162,8 @@ mod tests {
             .position(|a| a == "--release")
             .expect("no --release");
         assert!(release < sep, "--release must be a cargo flag: {:?}", args);
+        let locked = args.iter().position(|a| a == "--locked").expect("no --locked");
+        assert!(locked < sep, "the checkout's Cargo.lock is never rewritten: {:?}", args);
         assert_eq!(args[0], "run");
         assert_eq!(
             args[sep + 1],

@@ -13,6 +13,7 @@ on:
       - 'crates/**'
       - 'apps/**'
       - 'Cargo.toml'
+      - 'native-apps.json'
       - 'Cargo.lock'
       - '.cargo/**'
       - 'native-runtime.lock.json'
@@ -25,6 +26,7 @@ on:
       - 'crates/**'
       - 'apps/**'
       - 'Cargo.toml'
+      - 'native-apps.json'
       - 'Cargo.lock'
       - '.cargo/**'
       - 'native-runtime.lock.json'
@@ -61,7 +63,7 @@ jobs:
           # default and mobile-apps builds link it, on desktop and Android.
           cargo check --locked -p octosense-home
           cargo check --locked -p octosense-home --features mobile-apps
-          cargo check --locked -p octosense-home -p octosense-reference -p octosense-appcard -p octosense-news -p octosense-photos -p octosense-maps --features mobile-apps,app-appcard
+          cargo check --locked -p octosense-home -p octosense-reference -p octosense-appcard --features mobile-apps,app-appcard
           # The graph guards every shell passes (tools/check-shell-graph.sh):
           # the AI services (octosense-ai-host, the octos kernel, app-peers)
           # in the default and mobile-apps graphs, host and Android; AppCard's
@@ -70,10 +72,12 @@ jobs:
           bash ../tools/check-shell-graph.sh -p octosense-home
       - name: Verify the single runtime graph
         run: python3 tools/setup.py --check --cargo
+      - name: The native apps' generated places match native-apps.json
+        run: python3 tools/native_apps.py --check
       - name: Build Home, App Hub admission and runtime policy tests
         working-directory: phone
         timeout-minutes: 60
-        run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard -p octosense-ai-host --no-run
+        run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host --no-run
       - name: Test Home, App Hub admission and runtime policy
         working-directory: phone
         timeout-minutes: 30
@@ -81,11 +85,8 @@ jobs:
           # octosense-app-hub-app is App Hub's shared shell crate, a git
           # dependency with dev-dependencies: cargo cannot test it from here;
           # OctoSense-App-Hub's CI tests it.
-          cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard -p octosense-ai-host
+          cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host
           # The opt-in AppCard build: its module registers into the shell.
           cargo test --locked --features mobile-apps,app-appcard -p octosense-shell appcard
-          # Maps' isolate tests need init_cx_os(), whose macOS game-input setup
-          # traps off the main thread, where libtest runs tests (RUNTIME-01).
-          cargo test --locked -p octosense-maps -- --skip view::tests --skip module::tests
           cargo test --locked -p makepad-widgets splash_policy
           cargo test --locked -p makepad-script-std gate::tests

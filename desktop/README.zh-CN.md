@@ -75,6 +75,8 @@ cargo run --release -p octosense
 
 ### Cargo features
 
+原生应用的 feature（`app-hub`、`app-rinx`、`app-reference`、`app-sheets`、`app-terminal`、`app-appcard`）、默认集合和 `mobile-apps` 都来自 [`native-apps.json`](../native-apps.json)（ADR 0004 §1）：修改清单后运行 `python3 tools/native_apps.py`，不要手动修改各 `Cargo.toml` 中生成的区块。
+
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及宿主服务 `octosense-mail-service`（邮件）和 `octosense-llm-service`（AI 提供商）。没有它，构建中既没有 App Hub 也没有系统应用。 |
@@ -82,20 +84,19 @@ cargo run --release -p octosense
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
-| `app-photos` | 关 | 链接 Makepad 的原生 Photos 模块；它会替换同 id 的相册系统应用（用于对比）。 |
+| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell。在 macOS 和 Windows 上它作为独立进程运行（`terminal`，从固定版本的 Makepad 检出中用 `cargo run` 构建，否则使用 `octosense` 旁边的二进制文件），因此它崩溃不会影响 Shell；在 Linux 上只有 Vulkan 构建且处于 Wayland 会话时才如此。无法启动进程时（没有检出也没有二进制文件：发布包目前还不附带它，见 [#94](https://github.com/OctoSense-org/OctoSense/pull/94)），它在进程内打开，与手机上相同；在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Module` 或 `terminal: Process` 可覆盖默认值。无论哪种托管方式，助手获得的工具都相同（ADR 0004 §10）：它可以读取（`read_screen`、`read_scrollback`），也可以输入命令（`run`），每条命令都要等待用户在助手的确认卡片上实时确认（`native-apps.json` 中为 `confirm: host`、`auto_approvable: false`）；确认卡片无法完整显示的过长命令会被拒绝。在 macOS 上进程内运行时，Shell 的 PTY 辅助程序就是 `octosense` 本身。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
-| `mobile-apps` | 关 | `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
+| `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
 
-已链接的模块用 `--module <id>` 打开（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）：
+已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx 和 AppCard 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上作为独立进程运行，Reference 和 Sheets 在桌面端作为独立进程运行。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
 
 ```sh
-cargo run --release -p octosense --features app-appcard -- --module appcard
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets
-cargo run --release -p octosense -- --module rinx
+cargo run --release -p octosense -- --module terminal
 ```
 
-App Hub 的模块是例外：它们没有进程形态，总是在进程内打开。
+App Hub 的模块没有进程形态，总是在进程内打开。
 
 ### 命令行参数与环境变量
 
@@ -183,11 +184,11 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 - 从 `apps` 中删除某个 id 即可不打包它；把 `OCTOSENSE_SYSTEM_APPS` 指向另一个文件即可换一套选择。没有这个变量时，构建不包含任何系统应用。
 - 修改应用包就在 `../apps/<name>/bundle` 中修改并重新构建；它会随下一次桌面构建发布，与 Shell 的修改放在同一个 pull request 中。
 - 桌面端没有挂载照片库，因此相册显示的是应用包自带的缩略图。要提供原尺寸照片，添加 `"assets": {"photos": {"photos": "<dir>"}}`。
-- 同 id 的原生模块会覆盖系统应用（例如 `--features app-photos`）。
+- 同 id 的已链接原生模块会覆盖系统应用；目前没有这样的模块（原生 News、Photos 和 Maps 模块已删除）。
 
 ### 开发者程序与目录
 
-`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
+`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Terminal 同时以链接方式提供（`app-terminal`，默认开启）；它在 `config/apps.json` 中的条目是它在 macOS 和 Windows 上使用的独立进程形式，链接的模块是进程内形式。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
 
 目录查找顺序：给了 `--apps <file>` 就用它；否则若存在 `~/.octosense/apps.json` 就用它；否则用 `config/apps.json`。目录是一个 JSON 数组，每个条目选择一种启动目标：
 

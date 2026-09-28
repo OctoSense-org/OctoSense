@@ -44,6 +44,7 @@ pub mod layout;
 pub mod octosense;
 pub mod module_host;
 pub mod module_view;
+pub mod native_apps;
 pub mod pane_links;
 pub mod preview;
 pub mod run_view;
@@ -311,6 +312,12 @@ pub struct App {
     /// re-asserted when that client's first frame arrives.
     #[rust]
     pub pending_focus: Option<ClientId>,
+    /// The client whose tile last took the keyboard. It lets go before
+    /// another tile takes it: a module tile never moves key focus itself
+    /// (its widgets claim it), so without this the hidden tab of a group
+    /// kept holding the keyboard and every key was dropped.
+    #[rust]
+    pub keyboard_holder: Option<ClientId>,
     /// `--gallery`: the shell-surface gallery instead of a desktop.
     #[rust]
     pub gallery: bool,
@@ -772,7 +779,10 @@ impl App {
             if octosense::policy::requested("--demo-home") {
                 crate::demo_home::ensure_demo_home()
             } else {
-                None
+                // Otherwise the person's home, like any terminal: never the
+                // directory the launch happens to run in (a process
+                // Terminal is started from its catalog row's checkout).
+                user_home()
             }
         })
     }
@@ -1702,12 +1712,22 @@ impl App {
         // Area only after its first draw — a focus at launch time lands on
         // nothing. Keep it pending and re-assert when the child's first
         // frame arrives (the PresentableDraw path below).
+        if let Some(previous) = self.keyboard_holder.filter(|previous| *previous != client) {
+            let _ = self
+                .desk(cx)
+                .borrow_mut::<WmDesk>()
+                .and_then(|mut d| d.with_tile(cx, previous, |cx, v| v.release_keyboard(cx)));
+            self.keyboard_holder = None;
+        }
         let focused = self
             .desk(cx)
             .borrow_mut::<WmDesk>()
             .and_then(|mut d| d.with_tile(cx, client, |cx, v| v.focus_keyboard(cx)))
             .unwrap_or(false);
         self.pending_focus = if focused { None } else { Some(client) };
+        if focused {
+            self.keyboard_holder = Some(client);
+        }
         self.update_bar(cx);
         self.redraw_all(cx);
     }
@@ -2611,7 +2631,8 @@ impl App {
                     }
                     return;
                 }
-                let route = self.ai_bus.on_custom(client, &json);
+                let app = self.state_mut().clients.get(&client).map(|slot| slot.app.clone());
+                let route = self.ai_bus.on_custom_from(client, app.as_deref(), &json);
                 self.on_bus_route(cx, route);
             }
             AppToStudio::LogItem(item) => {
@@ -5114,6 +5135,24 @@ impl App {
         } else {
             self.ui.handle_event(cx, event, &mut Scope::empty());
         }
+        // A focus that couldn't land at launch (tile not yet drawn) is
+        // re-asserted for a process tile when its first frame arrives
+        // (PresentableDraw). A module tile sends no frame, so retry after the
+        // draw that may have created it; nothing forces a redraw, so a tile
+        // that still cannot take it just tries again on the next draw.
+        if let (Event::Draw(_), Some(client)) = (event, self.pending_focus) {
+            if self.module_host.is_module(client) {
+                let focused = self
+                    .desk(cx)
+                    .borrow_mut::<WmDesk>()
+                    .and_then(|mut d| d.with_tile(cx, client, |cx, v| v.focus_keyboard(cx)))
+                    .unwrap_or(false);
+                if focused {
+                    self.pending_focus = None;
+                    self.keyboard_holder = Some(client);
+                }
+            }
+        }
         self.sync_phone_keyboard(cx);
         // Style reloads and phone capture teardown may retire draw lists during
         // this event. Remove their pass roots before upstream scans GPU demand.
@@ -5174,4 +5213,11 @@ app_main!(
     }
 );
     };
+}
+
+/// The person's home directory (`HOME`; `USERPROFILE` on Windows), where a
+/// new terminal with no directory to inherit opens.
+fn user_home() -> Option<std::path::PathBuf> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var).filter(|home| !home.is_empty()).map(std::path::PathBuf::from).filter(|home| home.is_dir())
 }

@@ -26,6 +26,41 @@ use std::collections::{HashMap, HashSet};
 /// The WM's own service endpoint.
 pub const OS_ENDPOINT: &str = "os";
 
+/// How much of a call's arguments the pane's confirm card shows: its title
+/// is the arguments with the outer braces trimmed, cut at this many bytes
+/// (makepad-ai-services `EngineCore::card`).
+pub const CARD_ARGS_BYTES: usize = 60;
+
+/// The arguments as the confirm card shows them, when it shows them whole.
+pub fn card_shows_in_full(args: &str) -> bool {
+    args.trim().trim_start_matches('{').trim_end_matches('}').trim().len() <= CARD_ARGS_BYTES
+}
+
+/// The shell's rules for an app's assistant tools, from its native-apps.json
+/// entry (`agent.tool_policy`, ADR 0004 §8, §10): a `confirm: host` tool is
+/// registered as destructive with no claim that the app confirms it, so the
+/// pane parks every call on its live confirm card; and a call whose exact
+/// arguments that card cannot show whole never reaches the app. Nothing on
+/// the bus answers a confirmation for the person (there are no standing
+/// rules yet); `auto_approvable: false` is what keeps it so when there are.
+fn host_rules(app: &str) -> Option<&'static crate::native_apps::NativeApp> {
+    crate::native_apps::find(app).filter(|entry| !entry.tools.is_empty())
+}
+
+fn host_confirmed(rules: Option<&crate::native_apps::NativeApp>, tool: &str) -> bool {
+    rules.and_then(|entry| entry.tool(tool)).is_some_and(|rule| rule.confirm == crate::native_apps::Confirm::Host)
+}
+
+/// Apply an app's rules to the manifest it registers.
+fn apply_rules(manifest: &mut ServiceManifest, rules: Option<&crate::native_apps::NativeApp>) {
+    for tool in &mut manifest.tools {
+        if host_confirmed(rules, &tool.name) {
+            tool.risk = Risk::Destructive;
+            tool.self_confirm = None;
+        }
+    }
+}
+
 /// What the bus wants the WM to do with a frame.
 pub enum Route {
     /// Send this JSON to that client's studio socket.
@@ -49,6 +84,10 @@ pub struct AiBus {
     /// endpoints): no socket, their frames are made and answered here.
     /// This leg is what the web superbuild runs everything on.
     locals: HashSet<ClientId>,
+    /// Clients whose app's native-apps.json entry sets tool rules: a
+    /// process by the app id the WM launched it as, an in-process module by
+    /// its (trusted) id.
+    rules: HashMap<ClientId, &'static crate::native_apps::NativeApp>,
 }
 
 impl AiBus {
@@ -79,8 +118,12 @@ impl AiBus {
     /// An in-process instance joins the bus: remembered like any client's
     /// registration (so the replay carries it) and announced to the pane
     /// now with the frame this returns.
-    pub fn register_local(&mut self, client: ClientId, manifest: ServiceManifest) -> String {
+    pub fn register_local(&mut self, client: ClientId, mut manifest: ServiceManifest) -> String {
         self.locals.insert(client);
+        if let Some(rules) = host_rules(&manifest.id) {
+            self.rules.insert(client, rules);
+        }
+        apply_rules(&mut manifest, self.rules.get(&client).copied());
         self.manifests.insert(client, manifest.clone());
         HostedUp { from: Some(self.endpoint_for(client)), msg: ServiceUp::Register { manifest, port_tag: 0 } }.to_json()
     }
@@ -207,6 +250,17 @@ impl AiBus {
     /// A `Custom` frame from `client`. The WM's own `WmRequest` envelope is
     /// not ours and yields `Drop`.
     pub fn on_custom(&mut self, client: ClientId, json: &str) -> Route {
+        self.on_custom_from(client, None, json)
+    }
+
+    /// `on_custom` for a client the WM launched as `app`: its registration
+    /// and calls follow that app's tool rules (`host_rules`).
+    pub fn on_custom_from(&mut self, client: ClientId, app: Option<&str>, json: &str) -> Route {
+        if let Some(rules) = app.and_then(host_rules) {
+            if !self.is_pane(client) && !self.locals.contains(&client) {
+                self.rules.insert(client, rules);
+            }
+        }
         if self.is_pane(client) {
             let Some(down) = HostedDown::parse(json) else { return Route::Drop };
             let Some(to) = down.to.clone() else { return Route::Drop };
@@ -216,13 +270,21 @@ impl AiBus {
                     _ => Route::Drop,
                 };
             }
-            return match Self::client_of(&to) {
-                Some((true, target)) if self.locals.contains(&target) => Route::Local(target, down.msg),
-                Some((false, target)) if !self.locals.contains(&target) && self.manifests.contains_key(&target) => {
-                    Route::ToClient(target, down.to_json())
-                }
-                _ => Route::Drop,
+            let target = match Self::client_of(&to) {
+                Some((true, target)) if self.locals.contains(&target) => target,
+                Some((false, target)) if !self.locals.contains(&target) && self.manifests.contains_key(&target) => target,
+                _ => return Route::Drop,
             };
+            if let ServiceDown::Call(call) = &down.msg {
+                if host_confirmed(self.rules.get(&target).copied(), &call.tool) && !card_shows_in_full(&call.args) {
+                    let refused = ToolResult::refused(
+                        &call.call_id,
+                        format!("the confirmation cannot show these arguments in full (over {CARD_ARGS_BYTES} bytes); send a shorter call"),
+                    );
+                    return Route::ToPane(HostedUp { from: Some(self.endpoint_for(target)), msg: ServiceUp::Result(refused) }.to_json());
+                }
+            }
+            return if self.locals.contains(&target) { Route::Local(target, down.msg) } else { Route::ToClient(target, down.to_json()) };
         }
         let Some(mut up) = HostedUp::parse(json) else { return Route::Drop };
         // The sender's claim is never used: the link IS the identity.
@@ -234,6 +296,7 @@ impl AiBus {
                 // in-process modules (`register_local`, trusted native code)
                 // keep a tool's claim that its own sheet confirms it.
                 manifest.clear_self_confirm();
+                apply_rules(manifest, self.rules.get(&client).copied());
                 self.manifests.insert(client, manifest.clone());
             }
             ServiceUp::Unregister => {
@@ -250,6 +313,7 @@ impl AiBus {
             self.pane_client = None;
             return None;
         }
+        self.rules.remove(&client);
         self.manifests.remove(&client)?;
         let from = Some(self.endpoint_for(client));
         self.locals.remove(&client);
@@ -297,6 +361,57 @@ mod tests {
 
     fn call(tool: &str, args: &str) -> ServiceCall {
         ServiceCall { call_id: "c".into(), tool: tool.into(), args: args.into() }
+    }
+
+    #[test]
+    fn the_terminal_types_only_behind_the_hosts_live_confirmation() {
+        let terminal = |run: ToolDef| {
+            ServiceManifest::new("terminal", "Terminal", "The live terminal.")
+                .with_tool(ToolDef::new("read_screen", "Read the screen.", r#"{"type":"object"}"#, Risk::Read))
+                .with_tool(run)
+        };
+        // A process that under-declares `run`; a module that claims its own sheet.
+        let under = || ToolDef::new("run", "Type a line.", r#"{"type":"object"}"#, Risk::Act);
+        let own_sheet = || ToolDef::new("run", "Type a line.", r#"{"type":"object"}"#, Risk::Destructive).confirmed_by_app();
+        let registered = |json: &str| match HostedUp::parse(json).expect("valid").msg {
+            ServiceUp::Register { manifest, .. } => manifest,
+            _ => panic!("expected a registration"),
+        };
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        // Process (w4) and in-process (m6) Terminals register the same way:
+        // `run` kept, destructive, confirmed by the host's card.
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(under()), port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(4, Some("terminal"), &up.to_json()) else { panic!("expected ToPane") };
+        let local = registered(&bus.register_local(6, terminal(own_sheet())));
+        for manifest in [registered(&json), local] {
+            assert_eq!(manifest.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["read_screen", "run"]);
+            let run = manifest.tool("run").unwrap();
+            assert_eq!(run.risk, Risk::Destructive, "the pane parks every call on its confirm card");
+            assert!(!run.confirms_itself(), "the host draws the confirmation, not the app");
+            assert_eq!(manifest.tool("read_screen").unwrap().risk, Risk::Read);
+        }
+        let rule = crate::native_apps::find("terminal").unwrap().tool("run").unwrap();
+        assert_eq!((rule.confirm, rule.auto_approvable), (crate::native_apps::Confirm::Host, false));
+        // A confirmed command the card showed whole reaches the terminal.
+        let short = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("run", r#"{"command":"ls -la"}"#)) };
+        assert!(matches!(bus.on_custom(9, &short.to_json()), Route::ToClient(4, _)));
+        let local_short = HostedDown { to: Some(EndpointId("m6".into())), msg: ServiceDown::Call(call("run", r#"{"command":"ls -la"}"#)) };
+        assert!(matches!(bus.on_custom(9, &local_short.to_json()), Route::Local(6, _)));
+        // One the card could not show whole is refused to the pane, in either hosting.
+        let long = format!(r#"{{"command":"echo {}"}}"#, "x".repeat(80));
+        for to in ["w4", "m6"] {
+            let down = HostedDown { to: Some(EndpointId(to.into())), msg: ServiceDown::Call(call("run", &long)) };
+            let Route::ToPane(json) = bus.on_custom(9, &down.to_json()) else { panic!("expected a refusal for the pane") };
+            let up = HostedUp::parse(&json).unwrap();
+            assert_eq!(up.from, Some(EndpointId(to.into())));
+            assert!(matches!(up.msg, ServiceUp::Result(ToolResult { outcome: ToolOutcome::Refused, .. })));
+        }
+        // Reads pass whatever their length; another app's `run` keeps its declaration.
+        let read = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("read_screen", &long)) };
+        assert!(matches!(bus.on_custom(9, &read.to_json()), Route::ToClient(4, _)));
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(under()), port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(5, Some("files"), &up.to_json()) else { panic!("expected ToPane") };
+        assert_eq!(registered(&json).tool("run").unwrap().risk, Risk::Act);
     }
 
     #[test]

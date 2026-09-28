@@ -3,6 +3,6 @@
   "source": "../apps",
   "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
   "assets": {
-    "photos": { "photos": "../apps/photos/native/resources/photos" }
+    "photos": { "photos": "../apps/photos/resources/photos" }
   }
 }

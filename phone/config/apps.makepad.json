@@ -8,22 +8,6 @@
     "policy": "new"
   },
   {
-    "id": "news",
-    "label": "News",
-    "manifest": "../../apps/news/native/Cargo.toml",
-    "package": "octosense-news",
-    "bin": "octosense-news",
-    "policy": "focus"
-  },
-  {
-    "id": "maps",
-    "label": "OctosMap",
-    "manifest": "../../apps/maps/native/Cargo.toml",
-    "package": "octosense-maps",
-    "bin": "octosense-maps",
-    "policy": "focus"
-  },
-  {
     "id": "browser",
     "label": "Browser",
     "manifest": "../../.sources/makepad/Cargo.toml",

@@ -23,10 +23,11 @@ OctoSense-System-Apps 仓库（已归档）。
   一个由 Shell 进程内链接的 Rust 模块（`octos-app`），运行在 Shell 的
   octos 内核之上。它**需显式启用**：两个 Shell 只有在使用 `--features app-appcard`
   时才链接它，默认不随产品发布。
-- **原生对比模块**（`news/native`、`photos/native`、`maps/native`）和
-  **Reference**（`reference`）：Home 通过 feature（`app-news`、`app-photos`、
-  `app-maps`、`app-reference`）链接的 Rust 模块；桌面端只以这种方式链接
-  Reference（它的 `app-photos` 是 Makepad 自带的 Photos 模块）。
+- **Reference**（`reference`）：Shell 通过 `app-reference` 链接的 Rust
+  模块（手机上始终链接）。Shell 链接的所有原生应用都在
+  [`../native-apps.json`](../native-apps.json) 中声明。News、Photos 和 Maps
+  只有脚本应用版本：早期的原生模块已删除（原生应用 ADR 0004 §1，[#110](https://github.com/OctoSense-org/OctoSense/pull/110)）。Home 挂载的
+  Photos 示例图库位于 `photos/resources/`。
 
 这些应用依赖的 Shell 服务就在旁边：
 [`../crates/kernel`](../crates/kernel)（octos 内核服务，见 [octos 内核](#octos-内核)）和
@@ -68,7 +69,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
   提供相机，因此其他环境下拍摄未经测试。
 - **Photos**：bundle 只带 75 张缩略图（`bundle/thumbs/`，约 2 MB）。查看器
   显示的原图只有在 Shell 挂载后才会出现在 `{{assets}}/photos/...`：Home
-  挂载 `photos/native/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
+  挂载 `photos/resources/photos`（约 87 MB，见 `phone/system-apps.json`）；
   桌面端不挂载任何目录（`desktop/system-apps.json`），所以那里的查看器没有原图。
 - **Maps**：在 OnePlus 6 上（2026-09-27）搜索、地点详情、路线、添加和移除途经点、
   逐向导航驾驶以及 2D 视图都正常。3D 驾驶视图会画出路线但没有地图瓦片，手机和桌面
@@ -102,7 +103,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
      "schema": 1,
      "source": "../apps",
      "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
-     "assets": { "photos": { "photos": "../apps/photos/native/resources/photos" } }
+     "assets": { "photos": { "photos": "../apps/photos/resources/photos" } }
    }
    ```
 

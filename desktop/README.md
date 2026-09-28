@@ -75,6 +75,8 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 
 ### Cargo features
 
+The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`, `app-terminal`, `app-appcard`), the default set and `mobile-apps` come from [`native-apps.json`](../native-apps.json) (ADR 0004 §1): edit the manifest and run `python3 tools/native_apps.py`, never the generated blocks in the `Cargo.toml`s.
+
 | Feature | Default | Effect |
 | --- | --- | --- |
 | `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the host services `octosense-mail-service` (Mail) and `octosense-llm-service` (AI providers). Without it the build has no App Hub and no system apps. |
@@ -82,20 +84,19 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
-| `app-photos` | off | Links Makepad's native Photos module; it replaces the Photos system app of the same id (for comparison). |
+| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile. On macOS and Windows it runs as its own process (`terminal`, built from the pinned Makepad checkout with `cargo run`, else the binary beside `octosense`), so a crash in it leaves the shell running; on Linux only with a Vulkan build in a Wayland session. Where it cannot start a process (no checkout and no binary: release packages do not ship it yet, [#94](https://github.com/OctoSense-org/OctoSense/pull/94)) it opens in-process, as it does on phones; a `terminal: Module` or `terminal: Process` line in `wm/apps.splash` under the state directory overrides that. In either hosting the assistant gets the same tools (ADR 0004 §10): it reads (`read_screen`, `read_scrollback`) and may type a command (`run`), and every command waits for the person's live confirmation on the assistant's confirm card (`confirm: host`, `auto_approvable: false` in `native-apps.json`); a command too long for the card to show in full is refused. In-process on macOS, the shell's PTY helper is `octosense` itself. |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
-| `mobile-apps` | off | `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
+| `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
-A linked module opens with `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory):
+A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx and AppCard in-process everywhere, the Terminal as a process on macOS and Windows, Reference and Sheets as processes on the desktop. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
 ```sh
-cargo run --release -p octosense --features app-appcard -- --module appcard
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets
-cargo run --release -p octosense -- --module rinx
+cargo run --release -p octosense -- --module terminal
 ```
 
-App Hub's modules are the exception: they have no process form and always open in-process.
+App Hub's modules have no process form and always open in-process.
 
 ### Flags and environment
 
@@ -183,11 +184,11 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 - Remove an id from `apps` to leave it out; point `OCTOSENSE_SYSTEM_APPS` at another file for a different selection. Without that variable the build ships no system apps.
 - To change a bundle, edit it in `../apps/<name>/bundle` and rebuild; it ships with the next desktop build, in the same pull request.
 - The desktop mounts no photo library, so Photos shows the thumbnails its bundle ships. To give it full-size photos, add `"assets": {"photos": {"photos": "<dir>"}}`.
-- A native module of the same id overrides a system app (for example `--features app-photos`).
+- A linked native module of the same id would override a system app; none does (the native News, Photos and Maps modules are deleted).
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
+`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 

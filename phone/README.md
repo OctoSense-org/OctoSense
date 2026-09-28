@@ -165,7 +165,7 @@ News, Photos, Maps, Camera, Mail and AI providers are contained script apps
 bundles live in [`apps/`](../apps/README.md) (`apps/<name>/bundle/`);
 this directory's `system-apps.json` names which this Home ships and
 mounts the artwork Home owns (Photos' sample library,
-`apps/photos/native/resources/photos`). App Hub's Card runner runs each in its own
+`apps/photos/resources/photos`). App Hub's Card runner runs each in its own
 isolate under its manifest's policy, in the standalone Home and in the ROM
 alike. Each keeps its short launcher id (`news` for `os.news`), so icons,
 tiles and the dock are unchanged.
@@ -182,10 +182,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-`app-news`, `app-photos` and `app-maps` link the earlier native modules in
-place of their script apps, for comparison until the script apps are measured
-on a device; their notes are [docs/photos.md](docs/photos.md) and
-[docs/maps.md](docs/maps.md). Mail and Camera have no native module any more.
+The earlier native News, Photos and Maps modules are deleted (native-apps ADR 0004 §1, [#110](https://github.com/OctoSense-org/OctoSense/pull/110));
+none of the system apps has a native module any more.
 
 ### The octos kernel
 
@@ -303,9 +301,6 @@ Records: [docs/android/](docs/android/README.md) (gap analysis, plan, launcher p
   to Home's kernel). Default, `mobile-apps` and native mobile builds leave
   the AppCard UI out, not the kernel service.
 - `../apps/reference`: the reference module.
-- `../apps/news/native`, `../apps/photos/native`, `../apps/maps/native`: the
-  native comparison modules (features `app-news`, `app-photos`, `app-maps`).
-  Their design notes are in `docs/plans/`.
 - `android/`: the System Bridge, contracts, Quickstep and SystemUI projects
   ([android/README.md](android/README.md)).
 - `docs/`: records and recipes; `docs/android/` the performance and launcher
