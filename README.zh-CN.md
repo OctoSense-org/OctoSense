@@ -60,6 +60,23 @@ python3 tools/setup.py --check --cargo  # verify: one Makepad, App Hub, octos an
 
 锁文件变化后，`--update` 会把没有本地修改的检出移到新版本；`--cache DIR` 从已有克隆（`DIR/makepad`、`DIR/octoscript`、`DIR/octoscript-makepad`）借用 Git 对象。`.sources/` 中的本地修改会被保留。
 
+**本机已有这些仓库的克隆？** 每个仓库在本机只保留一个克隆，`.sources/` 中的每一项都作为它的 `git worktree`，这样每个仓库只有一个对象库，不会出现过时的副本。在 `~/.config/octosense/sources.json` 中一次性写明存放克隆的目录（其中为 `<dir>/makepad`、`<dir>/octoscript`、`<dir>/octoscript-makepad`）：
+
+```json
+{ "hub": "/path/to/clones" }
+```
+
+也可以每次运行时用 `--hub DIR` 或 `OCTOSENSE_SOURCES_HUB=DIR` 指定；`OCTOSENSE_MAKEPAD_HUB=CLONE`（以及 `_OCTOSCRIPT_`、`_OCTOSCRIPT_MAKEPAD_`）或文件中的 `"repositories": {"makepad": "CLONE"}` 可单独指定某一个克隆。之后环境准备脚本会把锁定的版本 fetch 到该克隆，并运行 `git worktree add --detach .sources/<name> <rev>`，而不是重新克隆；`--update` 会移动这些 worktree。未配置时（CI、新机器）仍像以前一样克隆，`--no-hub` 可强制如此。`.sources/` 中已经是完整克隆的项只会被报告，不会被删除；其中没有本地工作时，`--convert` 会把它替换为 worktree。
+
+删除本仓库的某个检出之前，先移除它的 `.sources/` worktree，免得各克隆里留下失效的记录：
+
+```sh
+python3 tools/setup.py --remove-worktrees   # git worktree remove + prune in each clone; stops on local work
+git worktree remove <this checkout>         # if it is itself a worktree
+```
+
+手动操作等价于 `git -C <clone> worktree remove --force .sources/<name>`（经审查的 Makepad 补丁处于暂存状态，因此需要 `--force`；先检查 `git status`）以及 `git -C <clone> worktree prune`。
+
 ## 构建
 
 **桌面端**（在根目录或 `desktop/` 中运行；详见 [desktop/README.zh-CN.md](desktop/README.zh-CN.md)）：
