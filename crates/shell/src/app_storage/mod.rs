@@ -245,6 +245,15 @@ pub fn ensure_private_dir(root: &Path, dir: &Path) -> io::Result<()> {
     if !root.is_dir() {
         std::fs::create_dir_all(root)?;
     }
+    // The root itself (`apps/`, `secrets/`) is the host's, and owner-only
+    // like everything below it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if !std::fs::symlink_metadata(root)?.file_type().is_symlink() {
+            std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
     let mut at = root.to_path_buf();
     for part in rel.components() {
         let Component::Normal(part) = part else {
