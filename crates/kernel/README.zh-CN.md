@@ -129,6 +129,24 @@ adb -s SERIAL forward tcp:PORT tcp:PORT
 和 iOS（没有内核）没有 Talk to Octos。威胁模型见
 [ADR 0003（英文）](../../docs/adr/0003-shared-octos-client-access.md)。
 
+## 系统智能体的工具
+
+系统智能体只拿到一组明确定义的工具，而不是 octos 的全部默认工具
+（[ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12）：
+唯一的清单是 `system_tools::SYSTEM_AGENT_TOOLS`。监督（`peer_send_input`、
+`peer_gather`、`peer_list`、`peer_respond`、`peer_close`）、其工作区内的文件工具
+（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
+`web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。
+没有命令执行（`shell`、`bash`、`exec_command`、`write_stdin`）、子智能体、
+`peer_handoff`、管理、浏览器、流水线、插件或 MCP 工具。授予的工具箱工具和跨应用工具通过
+`SystemAgentTools` 加入。
+
+octos 没有按会话的工具名单，因此内核把该清单作为 `_main` profile 的 `tool_policy`
+（允许列表，并拒绝 `group:runtime`、`group:sessions`、`group:admin`）来执行：每次启动都把它写入
+`<core_dir>/profiles/_main.json`，替换任何其他策略。octos 对该 profile 的每个回合（包括内核唤醒的续接回合）
+都应用它，所以它也是应用 peer、AppCard 和 Rinx 会话的上限。Talk to Octos 外部回合保留 octos
+自己的允许列表，该清单包含它。真实内核测试检查一个回合被提供了哪些工具。
+
 ## 测试
 
 在仓库根目录：

@@ -155,6 +155,28 @@ scoped session agree. OpenHarmony (embedded core) and iOS (no kernel) have no
 Talk to Octos. See [ADR 0003](../../docs/adr/0003-shared-octos-client-access.md)
 for the threat model.
 
+## The system agent's tools
+
+The system agent gets a defined tool set, not octos's full default one
+([ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12):
+`system_tools::SYSTEM_AGENT_TOOLS` is the one list. Supervision (`peer_send_input`,
+`peer_gather`, `peer_list`, `peer_respond`, `peer_close`), its workspace's
+file tools (octos fences them to the session's working directory), memory,
+`ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
+toolbox grants replace them, #108) and `tool_search`. No command execution
+(`shell`, `bash`, `exec_command`, `write_stdin`), sub-agents, `peer_handoff`,
+administration, browser, pipelines, plugin or MCP tools. Granted toolbox and
+cross-app tools join it through `SystemAgentTools`.
+
+octos has no per-session tool roster, so the kernel enforces the list as the
+`_main` profile's `tool_policy` (allowlist, plus `group:runtime`,
+`group:sessions` and `group:admin` denied): every start writes it into
+`<core_dir>/profiles/_main.json`, replacing any other policy. octos applies it
+to every turn of the profile, kernel wake continuations included, so it is also
+the ceiling for app peers, AppCard and Rinx sessions. Talk to Octos external
+turns keep octos's own allowlist, which the list contains. The real-kernel
+tests check what a turn is offered.
+
 ## Testing
 
 From the repository root:

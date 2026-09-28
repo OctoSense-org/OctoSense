@@ -9,13 +9,15 @@ Rules, looking at the request's messages and offered tools:
     "QUESTION_ME" ("TELL_PEER_HOLD:<slug>": "QUESTION_HOLD", never answered);
   - "TELL_PEER_AGAIN:<slug>": send the peer "SECOND_INPUT";
   - "TELL_PEER_SUDO:<slug>": send the peer "RUN_SUDO", on which the peer runs
-    a shell command that needs the person's approval;
-  - "APPROVE_PEER:<slug>": try to approve the peer's pending tool approval
-    with peer_respond (the kernel must refuse it for a host-owned peer);
+    a shell command when it is offered `shell` (it never is: ADR 0004 §12),
+    else says "NO SHELL OFFERED";
+  - "APPROVE_PEER:<slug>": try to approve a peer's tool with peer_respond;
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
-Prints its port, then serves until killed. Logs each decision to stderr.
+Prints its port, then serves until killed. Logs each decision to stderr and,
+with MOCK_LLM_TOOLS_LOG set, appends {"user": <last user text>, "tools":
+[<offered tool names>]} per request to that file.
 """
 import itertools
 import json
@@ -61,6 +63,8 @@ def decide(body):
         return {"tool": "peer_send_input", "args": {"slug": sudo.group(1), "message": "RUN_SUDO"}}
     if "RUN_SUDO" in last_user and "shell" in tools:
         return {"tool": "shell", "args": {"command": "rm -rf ./approval-probe && echo APPROVED_RAN"}}
+    if "RUN_SUDO" in last_user:
+        return {"text": "NO SHELL OFFERED"}
     approve = re.search(r"APPROVE_PEER:([a-z0-9-]+)", last_user)
     if approve and "peer_respond" in tools:
         return {"tool": "peer_respond", "args": {"slug": approve.group(1), "decision": "approve"}}
@@ -86,6 +90,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))) or b"{}")
         decision = decide(body)
+        log = os.environ.get("MOCK_LLM_TOOLS_LOG")
+        if log:
+            user = next((text_of(m) for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "")
+            tools = [t.get("function", {}).get("name") for t in body.get("tools", []) or []]
+            with open(log, "a") as f:
+                f.write(json.dumps({"user": user, "tools": tools}) + "\n")
         last = (body.get("messages") or [{}])[-1]
         print("decision:", json.dumps(decision), "after:", text_of(last)[:300].replace("\n", " "), file=sys.stderr, flush=True)
         if "tool" in decision:

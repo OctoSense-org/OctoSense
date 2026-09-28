@@ -44,6 +44,7 @@ mod network;
 pub use network::{connection_file, pairing_link, ClientAccess, Pairing, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
 mod router;
+pub mod system_tools;
 
 pub use dirs::{kernel_home, profile_path, resolve_core_dir};
 pub use launch::{Launch, Unavailable};
