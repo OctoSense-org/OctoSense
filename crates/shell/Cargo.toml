@@ -23,6 +23,8 @@ doctest = false
 [dependencies]
 # The status clock is formatted in-process (localtime_r + strftime), not by forking `date`.
 libc = "0.2"
+# App storage (ADR 0004 §11): the account hash that names account folders.
+sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,
@@ -59,6 +61,10 @@ makepad-terminal = { workspace = true, optional = true }
 octosense-appcard = { workspace = true, optional = true }
 octosense-app-hub-app = { workspace = true, optional = true }
 # END native-apps: deps
+
+# The host secrets API keeps apps' secrets in the keychain (app_storage/secrets.rs).
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+keyring = { workspace = true, features = ["apple-native"] }
 
 # A phone cannot spawn the desktop catalog's Cargo binaries: native mobile
 # builds link these without flags.

@@ -21,6 +21,8 @@
 
 pub mod contract;
 pub mod injection;
+/// The app storage contract (ADR 0004 §11), handed off like the service.
+pub mod storage;
 
 #[cfg(feature = "broker")]
 pub mod broker;
