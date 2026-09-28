@@ -311,6 +311,12 @@ pub struct App {
     /// re-asserted when that client's first frame arrives.
     #[rust]
     pub pending_focus: Option<ClientId>,
+    /// The client whose tile last took the keyboard. It lets go before
+    /// another tile takes it: a module tile never moves key focus itself
+    /// (its widgets claim it), so without this the hidden tab of a group
+    /// kept holding the keyboard and every key was dropped.
+    #[rust]
+    pub keyboard_holder: Option<ClientId>,
     /// `--gallery`: the shell-surface gallery instead of a desktop.
     #[rust]
     pub gallery: bool,
@@ -1702,12 +1708,22 @@ impl App {
         // Area only after its first draw — a focus at launch time lands on
         // nothing. Keep it pending and re-assert when the child's first
         // frame arrives (the PresentableDraw path below).
+        if let Some(previous) = self.keyboard_holder.filter(|previous| *previous != client) {
+            let _ = self
+                .desk(cx)
+                .borrow_mut::<WmDesk>()
+                .and_then(|mut d| d.with_tile(cx, previous, |cx, v| v.release_keyboard(cx)));
+            self.keyboard_holder = None;
+        }
         let focused = self
             .desk(cx)
             .borrow_mut::<WmDesk>()
             .and_then(|mut d| d.with_tile(cx, client, |cx, v| v.focus_keyboard(cx)))
             .unwrap_or(false);
         self.pending_focus = if focused { None } else { Some(client) };
+        if focused {
+            self.keyboard_holder = Some(client);
+        }
         self.update_bar(cx);
         self.redraw_all(cx);
     }
@@ -5128,6 +5144,7 @@ impl App {
                     .unwrap_or(false);
                 if focused {
                     self.pending_focus = None;
+                    self.keyboard_holder = Some(client);
                 }
             }
         }
