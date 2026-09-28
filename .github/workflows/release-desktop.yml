@@ -1,0 +1,264 @@
+name: Release desktop
+
+# The OctoSense desktop as installable packages (desktop/scripts/package.py):
+# macOS .app (zipped) and .dmg (arm64), Windows NSIS installer (x64), Linux
+# .deb and .AppImage (x86_64, built on Ubuntu 22.04 for an older glibc).
+#
+# - A pushed `desktop-v<version>` tag builds, scans and attaches the packages
+#   and SHA256SUMS to a DRAFT release for that tag, not marked latest (the
+#   `home-v*` and `rom-v*` releases share this repository). A person reviews
+#   and publishes the draft.
+# - Run it by hand (workflow_dispatch) for a dry run: the same builds and
+#   scans, the packages kept as workflow artifacts, nothing released. With
+#   dry_run off and an existing desktop-v tag it (re)attaches to that tag's
+#   draft.
+# - A pull request that changes the packaging itself gets the same dry run.
+#
+# Unsigned until the signing secrets exist; each signing step is skipped
+# when its secret is absent. Secrets (see desktop/README.md, "Release
+# builds"):
+#   APPLE_CERTIFICATE             base64 of the Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD    its password
+#   APPLE_SIGNING_IDENTITY        "Developer ID Application: <name> (<team id>)"
+#   APPLE_API_KEY                 App Store Connect API key id (notarytool)
+#   APPLE_API_ISSUER              its issuer id
+#   APPLE_API_KEY_P8              base64 of the AuthKey_<id>.p8 file
+#   WINDOWS_CERTIFICATE           base64 of the code-signing .pfx
+#   WINDOWS_CERTIFICATE_PASSWORD  its password
+#   RELEASE_SCAN_EXTRA            optional: comma-separated regexes the
+#                                 artifact scan must also refuse
+
+on:
+  push:
+    tags: ['desktop-v*']
+  pull_request:
+    paths:
+      - 'desktop/packaging/**'
+      - 'desktop/scripts/package.py'
+      - 'tools/release-scan.py'
+      - 'tools/build-desktop.py'
+      - '.github/workflows/release-desktop.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and scan only; release nothing
+        type: boolean
+        default: true
+      tag:
+        description: An existing desktop-v tag to attach to (only when dry_run is off)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-desktop-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: package (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+          - os: windows-2022
+            platform: windows-x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      HAVE_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
+      HAVE_APPLE_NOTARY: ${{ secrets.APPLE_API_KEY != '' && secrets.APPLE_API_KEY_P8 != '' }}
+      HAVE_WINDOWS_SIGNING: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+      # linuxdeploy (AppImage) runs without FUSE on the runner.
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build and packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev libx11-dev libxcursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev libva-dev dpkg-dev file \
+            desktop-file-utils libfuse2
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked --version 0.11.8
+      - name: Neutral build paths
+        # Crates embed their CARGO_MANIFEST_DIR as strings, which
+        # --remap-path-prefix does not reach: build where no user directory
+        # appears. macOS checkouts live under /Users/runner and Windows'
+        # CARGO_HOME under C:\Users\runneradmin, so move those; Linux's
+        # /home/runner is a CI path already.
+        run: |
+          case "$RUNNER_OS" in
+            macOS)
+              src=/private/tmp/octosense-build/OctoSense
+              mkdir -p "$src" && cp -R "$GITHUB_WORKSPACE/." "$src/"
+              echo "CARGO_HOME=/private/tmp/octosense-build/cargo" >> "$GITHUB_ENV" ;;
+            Windows)
+              src="$GITHUB_WORKSPACE"
+              echo "CARGO_HOME=D:\\octosense-cargo" >> "$GITHUB_ENV" ;;
+            *)
+              src="$GITHUB_WORKSPACE" ;;
+          esac
+          echo "SRC=$src" >> "$GITHUB_ENV"
+      - name: Prepare the pinned framework sources
+        run: cd "$SRC" && python tools/setup.py
+      - name: One Makepad, App Hub, octos and Rinx; the shell graph guards
+        run: |
+          cd "$SRC"
+          python tools/setup.py --check --cargo
+          bash tools/check-shell-graph.sh -p octosense
+      - name: Signing hook (Windows)
+        if: runner.os == 'Windows' && env.HAVE_WINDOWS_SIGNING == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          # cargo-packager signs octosense.exe, the kernel and the installer
+          # with signtool, by thumbprint from the user certificate store.
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          "WINDOWS_CERTIFICATE_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Signing hook (macOS notarization key)
+        if: runner.os == 'macOS' && env.HAVE_APPLE_SIGNING == 'true' && env.HAVE_APPLE_NOTARY == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$key"
+          echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+      - name: Build and package (paths remapped, resources and kernel bundled)
+        env:
+          # Read by package.py / cargo-packager only when present: the
+          # identity turns on codesign (hardened runtime), the certificate is
+          # imported into a temporary keychain, the API key notarizes the .app.
+          APPLE_SIGNING_IDENTITY: ${{ env.HAVE_APPLE_SIGNING == 'true' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_CERTIFICATE: ${{ env.HAVE_APPLE_SIGNING == 'true' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.HAVE_APPLE_SIGNING == 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_API_KEY: ${{ env.HAVE_APPLE_NOTARY == 'true' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_ISSUER: ${{ env.HAVE_APPLE_NOTARY == 'true' && secrets.APPLE_API_ISSUER || '' }}
+        run: |
+          cd "$SRC"
+          # Empty variables would still look "set" to the packager.
+          for name in APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_KEY APPLE_API_ISSUER; do
+            [ -n "${!name}" ] || unset "$name"
+          done
+          if [[ "$TAG" == desktop-v* ]]; then
+            python desktop/scripts/package.py --version-from-tag "$TAG"
+          else
+            python desktop/scripts/package.py
+          fi
+      - name: Collect the packages
+        run: |
+          cd "$SRC/target/octosense-package"
+          version=$(python -c 'import json; print(json.load(open("receipt.json"))["version"])')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          rm -rf upload && mkdir upload
+          case "$RUNNER_OS" in
+            macOS)
+              cp dist/*.dmg upload/
+              ditto -c -k --keepParent dist/OctoSense.app "upload/OctoSense_${version}_macos_aarch64.app.zip" ;;
+            Windows)
+              cp dist/*-setup.exe upload/ ;;
+            *)
+              cp dist/*.deb dist/*.AppImage upload/ ;;
+          esac
+          cp receipt.json "upload/OctoSense_${version}_${{ matrix.platform }}.receipt.json"
+          ls -la upload
+      - name: Signing hook (macOS .dmg notarization and stapling)
+        if: runner.os == 'macOS' && env.HAVE_APPLE_SIGNING == 'true' && env.HAVE_APPLE_NOTARY == 'true'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          # cargo-packager notarized and stapled the .app and signed the
+          # .dmg; notarize and staple the .dmg too, so it opens offline.
+          for dmg in "$SRC"/target/octosense-package/upload/*.dmg; do
+            xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+              --issuer "$APPLE_API_ISSUER" --wait
+            xcrun stapler staple "$dmg"
+            spctl --assess --type open --context context:primary-signature -v "$dmg"
+          done
+      - name: Refuse private paths and names (the packages and their payloads)
+        env:
+          RELEASE_SCAN_EXTRA: ${{ secrets.RELEASE_SCAN_EXTRA }}
+        run: |
+          cd "$SRC/target/octosense-package"
+          # The upload set (inside .dmg, .deb, .AppImage, .zip, the NSIS
+          # installer), plus what went into them: the binary, the kernel and
+          # the staged resources.
+          exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
+          python "$SRC/tools/release-scan.py" upload/* resources kernel "$SRC/target/release/$exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: octosense-desktop-${{ matrix.platform }}
+          path: ${{ env.SRC }}/target/octosense-package/upload/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: draft release
+    needs: package
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/desktop-v')) ||
+      (github.event_name == 'workflow_dispatch' && !inputs.dry_run && startsWith(inputs.tag, 'desktop-v'))
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: tools
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: octosense-desktop-*
+          path: packages
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          cd packages
+          sha256sum -- * | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      - name: Scan again what is attached
+        env:
+          RELEASE_SCAN_EXTRA: ${{ secrets.RELEASE_SCAN_EXTRA }}
+        run: |
+          # .dmg images were opened and scanned on macOS; here their bytes.
+          python3 tools/release-scan.py packages/*
+      - name: Attach to the tag's draft release
+        run: |
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null || { echo "::error::no tag $TAG"; exit 1; }
+          version="${TAG#desktop-v}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true ] \
+              || { echo "::error::$TAG is already published; not replacing its files"; exit 1; }
+            gh release upload "$TAG" packages/* --clobber
+          else
+            gh release create "$TAG" packages/* --draft --latest=false --verify-tag \
+              --title "OctoSense desktop $version" \
+              --notes "OctoSense desktop $version, built from the $TAG tag by the release-desktop workflow (run $GITHUB_RUN_ID). Unsigned unless the signing secrets were configured: see desktop/README.md, Release builds. Check the files against SHA256SUMS."
+          fi

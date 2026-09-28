@@ -12,3 +12,6 @@ __pycache__/
 
 # Framework checkouts prepared by tools/setup.py.
 /.sources
+
+# desktop/scripts/package.py writes this beside release.json while it packages.
+/desktop/packaging/.release.generated.json

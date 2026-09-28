@@ -89,16 +89,30 @@ pub fn scope_linked_app_data() {
     }
 }
 
+/// Whether this is a packaged (installed) build: `desktop/scripts/package.py`
+/// builds with `MAKEPAD_PACKAGE_DIR` set, and Makepad then reads every
+/// `crate_resource` from the package instead of the source tree. A packaged
+/// build never looks for the checkout it was built in: that path belongs to
+/// the build machine, and the developer catalog it holds is source-built.
+pub const fn packaged() -> bool {
+    option_env!("MAKEPAD_PACKAGE_DIR").is_some()
+}
+
 static PACKAGE_DIR: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
 /// The running package's source directory (desktop/ or phone/), set by its
-/// `octosense_main!` before the app starts. The shell's own
-/// `CARGO_MANIFEST_DIR` is crates/shell, which carries no catalog.
+/// `octosense_main!` before the app starts (not in a packaged build). The
+/// shell's own `CARGO_MANIFEST_DIR` is crates/shell, which carries no catalog.
 pub fn set_package_dir(dir: &'static str) {
+    if packaged() {
+        return;
+    }
     let _ = PACKAGE_DIR.set(dir);
 }
 
 /// A source tree belongs to OctoSense only when it has our provenance marker.
+/// A packaged build finds one only from where it runs (its executable's or
+/// the working directory's ancestors), never from where it was built.
 pub fn project_root() -> Option<PathBuf> {
     let starts = [
         PACKAGE_DIR.get().map(PathBuf::from),
@@ -107,7 +121,7 @@ pub fn project_root() -> Option<PathBuf> {
             .and_then(|p| p.parent().map(Path::to_path_buf)),
         std::env::current_dir().ok(),
         // Tests and tools without a package: the desktop package beside us.
-        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../desktop")),
+        (!packaged()).then(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../desktop")),
     ];
     for start in starts.into_iter().flatten() {
         for dir in start.ancestors().take(6) {

@@ -29,8 +29,9 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | `src/main.rs` | The entry point (package `octosense`): `octosense_main!()` over the shell's `App`. The shell (tiling, launcher, dock, bar, hosting, the app registry, `shell/`, `octosense/`) is [`../crates/shell/src`](../crates/shell/src). |
 | `config/apps.json` | The default developer-program catalog. `apps.makepad.json` is an identical copy for `--apps`; `apps.overlay.json` holds the adaptations applied when regenerating them. |
 | `system-apps.json` | Which system apps this build packs, and from where (`../apps`). |
-| `scripts/` | `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
+| `scripts/` | `package.py` (the release packages, [Release builds](#release-builds)), `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `upstream/makepad.json` | Provenance of every file imported from Makepad's `apps/wm`. |
+| `packaging/` | The release packages' cargo-packager config (`release.json`), app icon (`icons/`, `make_icons.py`) and macOS `Info.plist` additions and entitlements. |
 | `resources/android/` | The Android manifest template. Themes, wallpapers, icons and the startup script are the shell's, in [`../crates/shell/resources`](../crates/shell/resources). |
 | `docs/` | [Validation record](docs/validation.md), [upstream sync](docs/upstream.md), [local AI](docs/local-ai.md), [Android AppCard build](docs/android-appcard-build.md), dated plans. |
 | `KEYBINDINGS.md`, `BACKLOG.md` | Keymap notes; open follow-ups. |
@@ -78,7 +79,7 @@ Developer programs from `config/apps.json` build on first launch (progress shows
 | Android | `cargo makepad android run -p octosense --release`; see [Phones](#phones). |
 | iOS | Startup policy is tested, but a full build currently fails in the pinned Makepad Metal backend ([validation](docs/validation.md)). |
 
-A relocatable `.app`, installers and a Linux session compositor are not provided.
+Installable packages (macOS `.app`/`.dmg`, Windows installer, Linux `.deb`/`.AppImage`) come from [Release builds](#release-builds). A Linux session compositor is not provided.
 
 ### Cargo features
 
@@ -296,6 +297,54 @@ Phone builds of this package always link Reference and Sheets and the octos kern
 - State lives in `~/.octosense` (`OCTOSENSE_HOME`); hosted apps get it as `MAKEPAD_HOME`.
 - Local models for the AI pane (**F10**): [docs/local-ai.md](docs/local-ai.md). The desktop works without a model.
 
+## Release builds
+
+`desktop/scripts/package.py` turns a checkout into installable packages that need neither `.sources/` nor the repository at run time. From the repository root, after setup, with [cargo-packager](https://github.com/crabnebula-dev/cargo-packager) installed (`cargo install cargo-packager --locked --version 0.11.8`):
+
+```sh
+python3 desktop/scripts/package.py                     # this OS's formats, version from desktop/Cargo.toml
+python3 desktop/scripts/package.py --formats app       # macOS: just OctoSense.app
+python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private paths before sharing anything
+```
+
+| OS | Packages (in `target/octosense-package/dist/`) | Resources in the package |
+| --- | --- | --- |
+| macOS (arm64) | `OctoSense.app`, `OctoSense_<version>_aarch64.dmg` | `OctoSense.app/Contents/Resources/<crate>/resources/` |
+| Windows (x64) | `OctoSense_<version>_x64-setup.exe` (NSIS, per-user) | beside `octosense.exe` in the install directory |
+| Linux (x86_64) | `octosense_<version>_amd64.deb`, `octosense_<version>_x86_64.AppImage` | `/usr/lib/octosense/` (`usr/lib/octosense/` in the AppImage) |
+
+What a package contains and how it is found at run time:
+
+- **Resources.** The build sets `MAKEPAD_PACKAGE_DIR` (and `MAKEPAD=apple_bundle` on macOS), so Makepad reads every `crate_resource` from the package: `Contents/Resources` through `NSBundle` on macOS, the executable's directory on Windows, `../lib/octosense` from `usr/bin/octosense` on Linux. The script stages the `resources/` of every git or path crate the app links: Makepad's widgets (fonts, icons, textures, about 59 MB), the shell's icons and themes, App Hub, Rinx and its article crates. A packaged build also stops looking for the checkout it was built in, so it has no developer-program catalog (those rows build from source); `--apps <file>` with `executable` rows still works.
+- **System apps** (News, Photos, Maps, Camera, Mail, AI providers) are already in the binary: App Hub packs the bundles `system-apps.json` selects at build time. Nothing else is read from `apps/` or `desktop/config/`.
+- **The octos kernel.** The script builds octos at the revision `Cargo.lock` pins (the checkout and staging of `tools/build-desktop.py`, which checks the binary's `--version`) and ships it as `octos-kernel` beside the executable (`Contents/MacOS/` in the app), where the kernel service finds it without `OCTOS_APP_CORE_BIN`. `--kernel <path>` ships a prebuilt one; `--no-kernel` ships none, and the app then runs without an assistant (AI providers are still saved). `target/octosense-package/receipt.json` records the version, resource crates and the kernel's SHA-256.
+- **Private-path-free.** Paths in the binaries are remapped (`--remap-path-prefix` for the home directory, `CARGO_HOME` and the checkout) and debug info stripped (symbol names stay, for readable backtraces). Crates also embed their source directories as plain strings, which remapping does not reach, so build from a directory outside any user's home, with `CARGO_HOME` outside it too (the release workflow does); `tools/release-scan.py` fails on `/Users/…`, `C:\Users\…`, homes other than `/home/runner`, `*.local` hosts, private IPv4 addresses, the scanning account's and host's names and any `RELEASE_SCAN_EXTRA` pattern, inside the `.app`, `.dmg`, `.deb`, `.AppImage`, `.zip` and NSIS installers.
+- **Identity.** Product name **OctoSense**, identifier `org.octosense.desktop` (`desktop/packaging/release.json`), icon from `desktop/packaging/icons/` (`make_icons.py` renders it). Android keeps `dev.makepad.octosense`.
+
+### Cutting a desktop release
+
+1. Merge everything the release needs to `main`, and dry-run the workflow on it: **Actions → Release desktop → Run workflow** (`dry_run` on), or `gh workflow run release-desktop.yml --ref main -f dry_run=true`. It builds and scans all three platforms and keeps the packages as workflow artifacts for 14 days.
+2. Tag the commit and push the tag: `git tag desktop-v0.1.0 <commit> && git push origin desktop-v0.1.0`. The version is the tag's (`desktop-v<major>.<minor>.<patch>[-<pre>]`).
+3. `.github/workflows/release-desktop.yml` runs on macOS 14 (arm64), Windows 2022 and Ubuntu 22.04 (x86_64; the older glibc keeps the AppImage and `.deb` usable on older distributions): `tools/setup.py`, the graph checks (`setup.py --check --cargo`, `check-shell-graph.sh`), `package.py` with remapped paths in a neutral directory, the scan, then a **draft** release for the tag, not marked latest (`home-v*` and `rom-v*` share this repository), with every package, a receipt per platform and `SHA256SUMS`.
+4. Review the draft, try the packages, and publish it by hand.
+
+Packages are **unsigned** until the signing secrets exist: macOS Gatekeeper then asks to confirm the first open (right-click → Open), and Windows SmartScreen warns. x86_64 macOS builds are not produced (the workflow's macOS runner is arm64).
+
+### Signing secrets (to add later)
+
+Each signing step is skipped while its secret is missing. Add them under **Settings → Secrets and variables → Actions**:
+
+| Secret | For |
+| --- | --- |
+| `APPLE_CERTIFICATE` | base64 of the **Developer ID Application** certificate and key (`.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | the `.p12` password |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: <name> (<team id>)`: turns on codesign (hardened runtime, `desktop/packaging/macos/entitlements.plist`) of the kernel, the app and the `.dmg` |
+| `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8` | App Store Connect API key id, issuer id and base64 of `AuthKey_<id>.p8`: notarytool notarization and stapling of the `.app` and the `.dmg` |
+| `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` | base64 of the code-signing `.pfx` and its password: signtool signs `octosense.exe`, the kernel and the installer |
+| `RELEASE_SCAN_EXTRA` | optional: comma-separated regular expressions the artifact scan must also refuse |
+
+The signing paths have not run yet (no certificates): they are **unverified**.
+
 ## Pins and upstream sync
 
 Every external dependency is pinned once for the whole repository: Makepad and OctoScript through `native-runtime.lock.json` (and the reviewed patch in `runtime-patches.lock.json`), App Hub, octos and Rinx in the root `Cargo.toml` `[workspace.dependencies]`. The system apps, the host services, the kernel service and AppCard are in this repository and change in the same pull request as the shell; there is nothing to pin. After moving a pin: `python3 tools/setup.py --update`, `cargo update` as needed, then `python3 tools/setup.py --check --cargo` and the tests below.
@@ -315,6 +364,7 @@ cargo check --locked -p octosense -p octosense-reference -p octosense-appcard --
 bash ../tools/check-shell-graph.sh -p octosense   # AI services linked, no AppCard UI without app-appcard, Rinx only as a module, one Makepad/App Hub/octos (host and aarch64-linux-android)
 cd ..
 python3 -m unittest discover -s tools -p 'test_*.py'
+python3 -m unittest discover -s desktop/scripts -p 'test_package.py'
 python3 tools/setup.py --check --cargo
 ```
 
@@ -341,7 +391,7 @@ Results for each change are recorded in [docs/validation.md](docs/validation.md)
 ## Known gaps
 
 - Only macOS is validated. Windows and Linux are untested; the iOS build fails in the pinned Metal backend.
-- No packaged `.app` or installer; source builds read fonts and resources from the `.sources/makepad` checkout, so keep it in place.
+- Source builds (`cargo run`, `tools/build-desktop.py`) read fonts and resources from the `.sources/makepad` checkout, so keep it in place; [release builds](#release-builds) carry their own. Release packages are unsigned until the signing secrets are added, and the Windows and Linux packages are built in CI but not run by us.
 - Photos on desktop has thumbnails only unless you mount a photo directory.
 - The hosted AppCard assistant does not yet wire notifications, share or the WebView overlay.
 - Mobile Sheets needs grid-label and toolbar fixes ([BACKLOG.md](BACKLOG.md)).

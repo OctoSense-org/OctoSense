@@ -29,8 +29,9 @@
 | `src/main.rs` | 入口（包名 `octosense`）：在 Shell 的 `App` 上调用 `octosense_main!()`。Shell 本身（平铺、launcher、dock、顶栏、托管、应用注册表、`shell/`、`octosense/`）在 [`../crates/shell/src`](../crates/shell/src)。 |
 | `config/apps.json` | 默认的开发者程序目录。`apps.makepad.json` 是供 `--apps` 使用的相同副本；`apps.overlay.json` 保存重新生成时应用的调整。 |
 | `system-apps.json` | 本构建打包哪些系统应用，以及从哪里打包（`../apps`）。 |
-| `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.sh` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
+| `scripts/` | `package.py`（发布安装包，见[发布构建](#发布构建)）、`upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.sh` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
 | `upstream/makepad.json` | 从 Makepad `apps/wm` 导入的每个文件的来源记录。 |
+| `packaging/` | 发布安装包的 cargo-packager 配置（`release.json`）、应用图标（`icons/`、`make_icons.py`），以及 macOS `Info.plist` 补充项与 entitlements。 |
 | `resources/android/` | Android manifest 模板。主题、壁纸、图标和启动脚本属于 Shell，在 [`../crates/shell/resources`](../crates/shell/resources)。 |
 | `docs/` | [验证记录](docs/validation.md)、[上游同步](docs/upstream.md)、[本地 AI](docs/local-ai.md)、[Android AppCard 构建](docs/android-appcard-build.md)、按日期的计划。 |
 | `KEYBINDINGS.md`、`BACKLOG.md` | 快捷键说明；待办事项。 |
@@ -78,7 +79,7 @@ python3 tools/build-desktop.py
 | Android | `cargo makepad android run -p octosense --release`；见[手机](#手机)。 |
 | iOS | 启动策略已测试，但完整构建目前在固定版本 Makepad 的 Metal 后端中失败（[验证记录](docs/validation.md)）。 |
 
-不提供可移动的 `.app`、安装包或 Linux 会话合成器。
+可安装的包（macOS `.app`/`.dmg`、Windows 安装程序、Linux `.deb`/`.AppImage`）见[发布构建](#发布构建)。不提供 Linux 会话合成器。
 
 ### Cargo features
 
@@ -296,6 +297,54 @@ cargo makepad android run -p octosense --release
 - 状态保存在 `~/.octosense`（`OCTOSENSE_HOME`）；被托管的应用通过 `MAKEPAD_HOME` 获得它。
 - AI 面板（**F10**）的本地模型：[docs/local-ai.md](docs/local-ai.md)。没有模型桌面也能正常工作。
 
+## 发布构建
+
+`desktop/scripts/package.py` 把检出的源码做成可安装的包，运行时既不需要 `.sources/`，也不需要本仓库。在仓库根目录完成 setup，并安装 [cargo-packager](https://github.com/crabnebula-dev/cargo-packager)（`cargo install cargo-packager --locked --version 0.11.8`）之后：
+
+```sh
+python3 desktop/scripts/package.py                     # this OS's formats, version from desktop/Cargo.toml
+python3 desktop/scripts/package.py --formats app       # macOS: just OctoSense.app
+python3 tools/release-scan.py target/octosense-package/dist/*   # refuse private paths before sharing anything
+```
+
+| 系统 | 包（位于 `target/octosense-package/dist/`） | 包内资源位置 |
+| --- | --- | --- |
+| macOS（arm64） | `OctoSense.app`、`OctoSense_<version>_aarch64.dmg` | `OctoSense.app/Contents/Resources/<crate>/resources/` |
+| Windows（x64） | `OctoSense_<version>_x64-setup.exe`（NSIS，按用户安装） | 安装目录中 `octosense.exe` 旁边 |
+| Linux（x86_64） | `octosense_<version>_amd64.deb`、`octosense_<version>_x86_64.AppImage` | `/usr/lib/octosense/`（AppImage 中为 `usr/lib/octosense/`） |
+
+包里有什么，运行时如何找到：
+
+- **资源。** 构建时设置 `MAKEPAD_PACKAGE_DIR`（macOS 上另加 `MAKEPAD=apple_bundle`），Makepad 于是从包内读取所有 `crate_resource`：macOS 通过 `NSBundle` 读 `Contents/Resources`，Windows 读可执行文件所在目录，Linux 从 `usr/bin/octosense` 出发读 `../lib/octosense`。脚本会收集应用链接的每个 git 或路径 crate 的 `resources/`：Makepad 的 widgets（字体、图标、纹理，约 59 MB）、Shell 的图标和主题、App Hub、Rinx 及其文章相关 crate。打包构建也不再寻找构建时所在的源码检出，因此没有开发者程序目录（那些条目需要从源码构建）；用 `--apps <file>` 加 `executable` 条目仍然可用。
+- **系统应用**（新闻、相册、地图、相机、邮件、AI 提供商）已在二进制中：App Hub 在构建时把 `system-apps.json` 选中的 bundle 打包进去。运行时不再读取 `apps/` 或 `desktop/config/`。
+- **octos 内核。** 脚本按 `Cargo.lock` 固定的版本构建 octos（使用 `tools/build-desktop.py` 的检出与放置流程，会检查二进制的 `--version`），并以 `octos-kernel` 的名字放在可执行文件旁边（app 中为 `Contents/MacOS/`），内核服务无需 `OCTOS_APP_CORE_BIN` 即可找到它。`--kernel <path>` 使用预先构建的内核；`--no-kernel` 不附带内核，应用随后没有助手（AI 提供商设置仍会保存）。`target/octosense-package/receipt.json` 记录版本、资源 crate 和内核的 SHA-256。
+- **不含私人路径。** 二进制中的路径会被重映射（对主目录、`CARGO_HOME` 和源码检出使用 `--remap-path-prefix`），并去掉调试信息（保留符号名，便于阅读回溯）。crate 还会把自己的源码目录作为普通字符串嵌入，重映射管不到，所以要在任何用户主目录之外的目录中构建，`CARGO_HOME` 也放在外面（发布工作流就是这样做的）；`tools/release-scan.py` 会在 `.app`、`.dmg`、`.deb`、`.AppImage`、`.zip` 和 NSIS 安装程序内部查找 `/Users/…`、`C:\Users\…`、`/home/runner` 以外的主目录、`*.local` 主机名、私有 IPv4 地址、执行扫描的账户名和主机名以及 `RELEASE_SCAN_EXTRA` 中的模式，发现即失败。
+- **标识。** 产品名 **OctoSense**，标识符 `org.octosense.desktop`（`desktop/packaging/release.json`），图标来自 `desktop/packaging/icons/`（由 `make_icons.py` 生成）。Android 仍为 `dev.makepad.octosense`。
+
+### 发布桌面版本
+
+1. 把发布所需的一切合并到 `main`，并在其上试运行工作流：**Actions → Release desktop → Run workflow**（`dry_run` 打开），或 `gh workflow run release-desktop.yml --ref main -f dry_run=true`。它会构建并扫描三个平台，把包作为工作流 artifact 保留 14 天。
+2. 给提交打标签并推送：`git tag desktop-v0.1.0 <commit> && git push origin desktop-v0.1.0`。版本号取自标签（`desktop-v<major>.<minor>.<patch>[-<pre>]`）。
+3. `.github/workflows/release-desktop.yml` 在 macOS 14（arm64）、Windows 2022 和 Ubuntu 22.04（x86_64；较旧的 glibc 让 AppImage 和 `.deb` 能在较旧的发行版上使用）上运行：`tools/setup.py`、依赖图检查（`setup.py --check --cargo`、`check-shell-graph.sh`）、在中性目录中以重映射路径运行 `package.py`、扫描，然后为该标签创建一个**草稿** release，不标记为 latest（`home-v*` 和 `rom-v*` 共用本仓库），附上所有包、每个平台的 receipt 和 `SHA256SUMS`。
+4. 检查草稿、试用这些包，然后手动发布。
+
+在签名 secret 配置之前，包都是**未签名**的：macOS Gatekeeper 首次打开时要求确认（右键 → 打开），Windows SmartScreen 会警告。不生成 x86_64 的 macOS 构建（工作流的 macOS runner 是 arm64）。
+
+### 签名 secret（之后添加）
+
+缺少对应 secret 时，相应的签名步骤会跳过。在 **Settings → Secrets and variables → Actions** 中添加：
+
+| Secret | 用途 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | **Developer ID Application** 证书及私钥（`.p12`）的 base64 |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 的密码 |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: <name> (<team id>)`：启用对内核、app 和 `.dmg` 的 codesign（hardened runtime，`desktop/packaging/macos/entitlements.plist`） |
+| `APPLE_API_KEY`、`APPLE_API_ISSUER`、`APPLE_API_KEY_P8` | App Store Connect API key id、issuer id 和 `AuthKey_<id>.p8` 的 base64：用 notarytool 公证并 staple `.app` 和 `.dmg` |
+| `WINDOWS_CERTIFICATE`、`WINDOWS_CERTIFICATE_PASSWORD` | 代码签名 `.pfx` 的 base64 及其密码：signtool 签名 `octosense.exe`、内核和安装程序 |
+| `RELEASE_SCAN_EXTRA` | 可选：逗号分隔的正则表达式，产物扫描也要拒绝这些内容 |
+
+签名流程尚未运行过（没有证书）：属于**未验证**。
+
 ## 版本固定与上游同步
 
 每个外部依赖在整个仓库中只固定一次：Makepad 和 OctoScript 通过 `native-runtime.lock.json`（以及 `runtime-patches.lock.json` 中经审查的补丁），App Hub、octos 和 Rinx 在根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中。系统应用、宿主服务、内核服务和 AppCard 都在本仓库中，与 Shell 在同一个 pull request 中修改，无需固定版本。移动固定版本之后：运行 `python3 tools/setup.py --update`，按需运行 `cargo update`，再运行 `python3 tools/setup.py --check --cargo` 和下面的测试。
@@ -315,6 +364,7 @@ cargo check --locked -p octosense -p octosense-reference -p octosense-appcard --
 bash ../tools/check-shell-graph.sh -p octosense   # AI services linked, no AppCard UI without app-appcard, Rinx only as a module, one Makepad/App Hub/octos (host and aarch64-linux-android)
 cd ..
 python3 -m unittest discover -s tools -p 'test_*.py'
+python3 -m unittest discover -s desktop/scripts -p 'test_package.py'
 python3 tools/setup.py --check --cargo
 ```
 
@@ -341,7 +391,7 @@ python3 desktop/scripts/smoke.py --cargo-run --default-catalog
 ## 已知不足
 
 - 只在 macOS 上验证过。Windows 和 Linux 未测试；iOS 构建在固定版本的 Metal 后端中失败。
-- 没有打包好的 `.app` 或安装包；源码构建从 `.sources/makepad` 检出中读取字体和资源，所以请保留该检出。
+- 源码构建（`cargo run`、`tools/build-desktop.py`）从 `.sources/makepad` 检出中读取字体和资源，所以请保留该检出；[发布构建](#发布构建)自带资源。在添加签名 secret 之前发布包未签名；Windows 和 Linux 包在 CI 中构建，但我们没有运行过。
 - 桌面端的相册只有缩略图，除非挂载照片目录。
 - 托管的 AppCard 助手尚未接通通知、分享和 WebView 覆盖层。
 - 手机上的 Sheets 需要修复网格标签和工具栏（[BACKLOG.md](BACKLOG.md)）。
