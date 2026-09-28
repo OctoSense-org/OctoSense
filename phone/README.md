@@ -194,16 +194,19 @@ The octos agent kernel is a Home service, independent of any app:
 `octos-core` (default, and always on in Android, iOS and OpenHarmony
 builds). Home starts it at startup with its data dir through the shell's AI
 services ([`crates/ai-host`](../crates/ai-host/README.md)); nothing runs until a consumer
-connects. Then there is one kernel per process: `liboctos.so serve --stdio`
+connects. Then there is one kernel per process: `liboctos.so serve --host 127.0.0.1 --host-managed`
 from the APK's native lib dir on Android (every APK `rom/scripts/build-home.sh`
 builds carries it), the core in-process on OpenHarmony, the binary named by
 `OCTOS_APP_CORE_BIN` on a desktop (none otherwise), none on iOS. Its core
 dir is `<data dir>/octos-home/.octos` on a phone and `OCTOS_APP_CORE_DIR`,
 else `~/octos-home/.octos`, on a desktop. The AI providers app configures it
 (below); AppCard (opt-in) and, next, Rinx connect to it and share it; it
-stops when the last one leaves and on Home's shutdown. To build without it
+stays available when native apps close and stops on Home's shutdown. To build without it
 (desktop only): `--no-default-features` plus the features you want, e.g.
 `--features app-hub`.
+
+
+**Talk to the system agent:** open **AI providers → Talk to Octos** for the server address and native **Copy access token** button. Native apps, OctosCode TUI and Web share one WebSocket server; the system session is `_main:api:octosense#system`. The kernel requires this repository's locked `--host-managed` overlay, applied automatically by the Android build tool. The web client is hosted separately. See the [kernel guide](../crates/kernel/README.md) for connections, tunnels and platform limits.
 
 ### AI providers
 

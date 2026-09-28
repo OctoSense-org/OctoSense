@@ -1,118 +1,122 @@
-# octosense-kernel: the shell's octos kernel
+# OctoSense's shared Octos server
 
-The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
-service**. The shell (Home in `phone/`, the desktop in `desktop/`) owns it; the
-**AI providers** system app configures it through the `llm` host service;
-**AppCard**, and next Rinx's native mini-app host, connect to it. This crate
-is that service: one kernel per process, started on demand, shared,
-restarted when the providers change.
+English | [简体中文](README.zh-CN.md)
 
-It lives in `crates/` rather than `apps/` because it is not an app: it is
-the shared runtime piece the shells, AppCard (`apps/appcard/app`) and the
-`llm` service (`apps/ai-providers/host-service`, feature `octos-core`) link.
+The shell owns one Octos agent runtime. Native apps use the scoped app-peer
+broker; OctosCode TUI and Web attach to the same authenticated WebSocket server.
+They do not start another kernel or contend for the same data directory.
 
-## What it does
+## Talk to the system agent
 
-| | |
-|---|---|
-| **Core dir** | octos's data dir: `<core_dir>/profiles/_main.json` is the profile the AI providers app writes. Resolved as: the shell's `Options::core_dir`, else `$OCTOS_APP_CORE_DIR`, else on Android/OpenHarmony `<app data dir>/octos-home/.octos` (the app-private octos home AppCard has always used), else `$HOME/octos-home/.octos` (`octosense_llm_config::profile::default_core_dir()`). |
-| **One kernel, lazily** | The first `connect()` starts it; later ones share it. octos holds a single-writer lock on its data dir, so a second kernel on the same dir could not run anyway. |
-| **Shared by frames** | A `Connection` carries UI Protocol (JSON-RPC) frames exactly as `octos serve --stdio` speaks them. Each consumer uses its own request ids and receives the replies to its requests and the notifications of the sessions it named (a notification for a session nobody named goes to every consumer). |
-| **Restart** | `restart()` stops a running kernel (a no-op when none runs). Connections then end with `CloseReason::Restarted`; a consumer connects again, which starts a fresh kernel that reads the new profile. The next kernel starts only after the old one has exited and released its data dir. |
-| **Idle stop** | When the last connection is dropped the kernel stops, as AppCard's own child used to. |
-| **Shutdown** | `shutdown()` stops it and waits (5 s at most). |
+1. Configure a model in **AI providers**, then select **Talk to Octos**.
+2. The trusted sheet shows **Server origin**, **WebSocket endpoint**, and the
+   system conversation, `_main:api:octosense#system` in profile `_main`.
+3. For OctosCode Web, enter the origin where you host that client, such as
+   `http://localhost:4173`, and select **Save origin and restart**. A changed
+   origin interrupts active work. OctoSense does not bundle web-client assets.
+4. Select **Copy access token**, then **Open web client**. Enter the sheet's
+   server origin and paste the token into the web client's **Auth token** field.
+   Select **Connect**, then **Open conversation** on its saved-link screen.
+   The generated link selects the existing system conversation using the
+   workspace confirmed by Octos. It contains no token. The same link can be
+   opened on your computer.
 
-How it starts, per platform (`src/launch.rs`):
+The access token grants control of the agent, including its tools. It is copied
+by native code at the user's request; neither the app script nor its service
+reply receives it. Only use a web client you trust.
 
-- **Android**: `<nativeLibraryDir>/liboctos.so serve --stdio`, `HOME=<core
-  dir's parent>` (the octos home), with AppCard's environment
-  (`OCTOS_SKILLS_PATH`, `OCTOS_OMIT_WORKSPACE_HINT`, `RUST_LOG`, the
-  `makepad.OCTOS_PROXY` proxy) and the kernel config's memory budget. The APK
-  must bundle the kernel: `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`
-  (the shells' build scripts do it).
-- **OpenHarmony**: the canonical core in-process,
-  `octos_cli::embedded::serve_io(<octos home>, ..)`, on this crate's runtime
-  with 8 MiB worker stacks (HAP native libraries may not exec).
-- **Desktop**: `<program> serve --stdio --data-dir <core_dir>` (plus
-  `--config <core_dir>/config.json` when that file exists) with
-  `OCTOS_HOME=<core_dir>`; the program is the shell's `Options::program` or
-  `$OCTOS_APP_CORE_BIN`. With neither there is no kernel: a developer's own
-  `octos serve` is never touched.
-- **iOS**: no kernel.
+On desktop, launch OctosCode with its `--endpoint`, `--profile-id _main`, and
+`--session '_main:api:octosense#system'` options and supply its auth token through
+its environment/configuration. Leave stdio mode disabled. A bare `octoscode`
+launch normally starts its own kernel and is not this connection. TUI launch
+is **unverified** in this change; simultaneous native and browser clients were
+verified against the real kernel with a scripted local model. A headless
+Chromium run also opened the generated system link, sent a message and
+displayed the reply.
 
-The kernel and the frame pump run on the crate's own Tokio runtime, so a
-consumer may use any runtime or none.
+### Computer connected to an Android device
 
-## Using it
-
-A shell, once at startup, before the first consumer:
-
-```rust
-octosense_kernel::configure(
-    octosense_kernel::Options::default().app_data_dir(cx.get_data_dir()),
-);
-// The llm service (feature `octos-core`) writes under the same core dir
-// and calls octosense_kernel::restart() after every change.
-octosense_llm_service::register_with(
-    octosense_llm_service::Options::default().core_dir(octosense_kernel::core_dir().unwrap()),
-);
-```
-
-A consumer:
-
-```rust
-let mut conn = octosense_kernel::connect()?;       // Err: no kernel here
-conn.send(r#"{"jsonrpc":"2.0","id":"1","method":"session/open","params":{"session_id":"_main:api:x","profile_id":"_main"}}"#)?;
-loop {
-    match conn.recv().await {
-        Ok(frame) => { /* a JSON-RPC frame for this consumer */ }
-        Err(octosense_kernel::CloseReason::Restarted) => { /* connect again, re-open sessions */ break }
-        Err(other) => { /* the kernel stopped or could not start: tell the person */ break }
-    }
-}
-```
-
-AppCard's transport (`apps/appcard/app/crates/octos-app-transport`,
-`kernel.rs`) is the reference consumer: on `Restarted` it fails the requests
-still waiting, reconnects and opens its sessions again from their replay
-cursors, so the app carries on.
-
-**Rinx and other consumers.** A native mini-app host takes its own
-connection (`connect()`), opens sessions with ids of its own (Rinx uses
-`<profile>:api:rinx-mini-…`) and gets only its sessions' traffic, with no
-coupling to AppCard's connection or UI queue. It must handle
-`CloseReason::Restarted` by reconnecting.
-
-Other functions: `core_dir()`, `home()`, `profile()`, `launch()` /
-`is_available()` (whether and how a kernel would start), `status()`.
-
-## Testing
-
-From the repository root:
+The server binds only `127.0.0.1`; another APK on the device still needs the
+token. A computer needs a tunnel. The ADB forwarding example below is
+**unverified on a device in this change**. Replace `SERIAL` and `PORT` with the
+authorized device and the port shown in the sheet; using the same port on both
+ends keeps the displayed server address usable on the computer:
 
 ```sh
-cargo test --locked -p octosense-kernel   # unit tests + the core against a stand-in kernel (python3)
-# The real kernel: a profile written by octosense-llm-config, session/open,
-# profile/llm/list, a provider change and a restart. Build octos at the rev
-# the root Cargo.toml pins, then:
-OCTOS_CORE_TEST_KERNEL=/path/to/octos cargo test -p octosense-kernel --test real_kernel -- --nocapture
+adb -s SERIAL forward tcp:PORT tcp:PORT
 ```
 
-Build the kernel for that test (and for an Android APK, with the NDK and
-`--target aarch64-linux-android`) from octos-org/octos at the rev in the root
-`Cargo.toml` `[workspace.dependencies]`:
+Serve the web client on the computer, allow that exact web origin in the
+phone's sheet, open the system conversation link on the computer, and enter the
+forwarded server origin and token there. No root, Termux, PRoot or Ubuntu is
+required by this APK-bundled server. This does not add a Linux coding toolchain.
+A browser may require permission to reach a local-network address.
+
+## Runtime and lifetime
+
+- Desktop and Android run `octos serve --host 127.0.0.1 --host-managed`.
+  Android executes the APK's `liboctos.so`; desktop uses `OCTOS_APP_CORE_BIN`.
+- The first native consumer or connection-sheet request starts the server.
+  Port zero allocates a free port; only the pinned server's listener announcement
+  is accepted. Native consumers retain their frame API and negotiate the
+  capabilities previously enabled by stdio.
+- The system workspace is resolved and saved in `system-workspace.txt`. Native
+  system-session opens reuse it, including after Web scopes the session and
+  after a full shell restart. App-peer workspaces remain independent.
+- Provider/origin changes restart the server after the old process exits, keeping
+  its port and token for reconnecting clients. Dropping the last native consumer
+  leaves the server running. Closing the shell stops it. This is not a persistent
+  Android foreground service; Android process death stops the agent too.
+- `<core_dir>/client-connection.json` contains connection details and the secret
+  token, is written atomically with mode `0600`, and is removed on orderly stop.
+  Tokens rotate when the shell's kernel service is recreated. Do not publish this
+  file or put the token in logs/command arguments.
+- Core directory: explicit `Options::core_dir`, then `OCTOS_APP_CORE_DIR`, then
+  `<app data dir>/octos-home/.octos` on phones or `~/octos-home/.octos` on desktop.
+  AI providers writes `<core_dir>/profiles/_main.json`.
+- OpenHarmony retains `octos_cli::embedded::serve_io`; external clients are
+  unavailable there. iOS has no local kernel. `Options::stdio()` retains private
+  pipe behavior for fixtures and embedding hosts, including stop when idle.
+
+A shared server is not a shared conversation unless clients open the same
+session. App peers keep their own scoped sessions. Browser-owned active turns
+may still be interrupted when their WebSocket closes (upstream Octos issue
+2167); this integration does not implement detached-turn ownership.
+
+## Build and verify
+
+The executable must contain the overlay in
+[`octos-runtime-patches.lock.json`](../../octos-runtime-patches.lock.json).
+It adds mandatory host-token authentication, disables password-free solo login
+and loopback profile-header impersonation, and runs the profile in the server
+process. Plain upstream binaries lacking `--host-managed` fail to start; there
+is no unauthenticated fallback. The Octos pin and patch hash are checked before
+application. Android packaging applies the overlay automatically.
+
+The desktop plan and tests below were run from the repository root:
 
 ```sh
-cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
+python3 tools/kernel-artifact.py --host --plan
+python3 -m unittest discover -s tools -p 'test_kernel_artifact.py'
+cargo test --locked -p octosense-kernel
 ```
 
-CI: `.github/workflows/apps.yml` (the `services` job tests this crate; the
-`apps` job builds AppCard, which links it).
+`python3 tools/kernel-artifact.py --host` builds the release desktop executable
+under `target/octos-kernel/target/release/octos` (**release command unverified**;
+the pinned source plus overlay was built and exercised in debug mode). Set
+`OCTOS_APP_CORE_BIN` to that binary when launching a shell.
 
-## One octos
+Real integration tests use `OCTOS_CORE_TEST_KERNEL=<patched binary>` with
+`cargo test --locked -p octosense-kernel --test real_kernel -- --nocapture`.
+They check authentication, origin rejection, native/browser conversation
+sharing, provider restart, token redaction and shutdown without external model
+calls. The app-peer real-kernel suite also runs against this transport.
 
 On OpenHarmony this crate links `octos-cli` from git octos-org/octos at the
 one rev the root `Cargo.toml` pins for every octos crate (`3b5d17a4`). A
 workspace that builds it for OpenHarmony also needs the `nix` patch (octos
 rev `18fcd3f1`, see the root `Cargo.toml` `[patch.crates-io]`). On every other target it
 links no octos crate at all: the kernel is a separate binary.
+
+See [ADR 0003](../../docs/adr/0003-shared-octos-client-access.md). Android APK
+packaging and physical-device behavior remain **unverified** in this change.

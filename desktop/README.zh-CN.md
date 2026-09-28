@@ -145,7 +145,10 @@ launcher 把四类应用列在一起：
 
 AI 提供商（`os.ai-providers`）通过 `llm` 服务（`octosense-llm-service`，来自 [`../apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商。密钥只在宿主面板上输入，保存到 octos 读取的 macOS 钥匙串条目；提供商写入 Shell 的 octos core 目录下内核的 profile（`<core 目录>/profiles/_main.json`；core 目录为 `OCTOS_APP_CORE_DIR`，否则为 `~/octos-home/.octos`）。手机上的提供商二维码可从图片导入：**Choose image** 打开文件面板，或把截图拖到导入面板上。**开始 → 设置 → AI providers** 可打开它。更改后服务会重启正在运行的内核，使用方（AppCard）会重新连接到新内核。
 
-**octos 内核**是一项 Shell 服务，不属于任何应用：`octosense-kernel`（[`../crates/kernel`](../crates/kernel)，feature `octos-core`，默认开启）。Shell 在启动时通过其 AI 服务启动它（[`../crates/ai-host`](../crates/ai-host/README.md)，`octosense_ai_host::start`）；在有使用方连接之前不运行任何东西，之后每个进程只有一个内核（桌面上是 `<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core 目录>`，Android 上是 APK 中的 `liboctos.so`；iOS 以及未设置 `OCTOS_APP_CORE_BIN` 的桌面上没有内核）。AppCard 的 Agent 连接它；Rinx 通过应用与 Agent 之间的代理访问它。最后一个使用方离开或 Shell 退出时内核停止。
+
+**与系统 Agent 对话：** 打开 **AI providers → Talk to Octos**，获取服务器地址并通过宿主按钮复制访问令牌。原生应用、OctosCode 终端和 Web 客户端连接同一个 WebSocket 服务；系统会话为 `_main:api:octosense#system`。内核必须包含本仓库锁定的 `--host-managed` 补丁，Android 构建工具会自动应用。Web 客户端仍需单独托管。连接、隧道及平台限制见[内核指南](../crates/kernel/README.zh-CN.md)。
+
+**octos 内核**是一项 Shell 服务，不属于任何应用：`octosense-kernel`（[`../crates/kernel`](../crates/kernel)，feature `octos-core`，默认开启）。Shell 在启动时通过其 AI 服务启动它（[`../crates/ai-host`](../crates/ai-host/README.md)，`octosense_ai_host::start`）；在有使用方连接之前不运行任何东西，之后每个进程只有一个内核（桌面上是 `<OCTOS_APP_CORE_BIN> serve --host 127.0.0.1 --host-managed --data-dir <core 目录>`，Android 上是 APK 中的 `liboctos.so`；iOS 以及未设置 `OCTOS_APP_CORE_BIN` 的桌面上没有内核）。AppCard 的 Agent 连接它；Rinx 通过应用与 Agent 之间的代理访问它。原生应用关闭后服务仍保持可连接；Shell 退出时内核停止。
 
 需要密码、PIN 或令牌的新功能，应放在宿主服务和宿主自有面板中，绝不放在应用自己的界面里。
 

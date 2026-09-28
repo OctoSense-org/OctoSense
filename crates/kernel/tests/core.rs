@@ -24,7 +24,7 @@ fn core(tag: &str) -> (Core, PathBuf) {
     let log = dir.with_extension("log");
     let _ = std::fs::remove_file(&log);
     let core = Core::new(
-        Options::default()
+        Options::default().stdio()
             .core_dir(&dir)
             .program(fake_kernel())
             .env("FAKE_KERNEL_LOG", log.to_string_lossy()),
@@ -59,6 +59,34 @@ async fn gone(pid: u64) -> bool {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     false
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_during_websocket_startup_reaps_the_child() {
+    let dir = core_dir("pending-listener");
+    let log = dir.with_extension("log");
+    let _ = std::fs::remove_file(&log);
+    // This fixture never announces a listener. Stop must interrupt readiness,
+    // not wait for its 90-second timeout or leak a child/data-directory lock.
+    let core = Core::new(Options::default().program(fake_kernel()).core_dir(&dir)
+        .env("FAKE_KERNEL_LOG", log.to_string_lossy()));
+    let mut conn = core.connect().unwrap();
+    let started = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&log) {
+                if let Ok(value) = serde_json::from_str::<Value>(text.trim()) { break value; }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    let pid = started["pid"].as_u64().unwrap();
+    assert!(alive(pid));
+    core.shutdown_within(Duration::from_secs(5));
+    assert!(gone(pid).await);
+    assert_eq!(next(&mut conn).await.unwrap_err(), CloseReason::Shutdown);
+    assert!(!dir.join(octosense_kernel::CONNECTION_FILE).exists());
+    let _ = std::fs::remove_file(log);
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -173,7 +201,7 @@ async fn shutdown_stops_and_waits() {
 
 #[test]
 fn no_kernel_binary_means_no_connection() {
-    let core = Core::new(Options::default().core_dir(core_dir("none")).program("/nonexistent/octos"));
+    let core = Core::new(Options::default().stdio().core_dir(core_dir("none")).program("/nonexistent/octos"));
     assert!(matches!(core.connect(), Err(Unavailable::NoKernel(_))));
     assert!(!core.status().running);
 }
@@ -185,7 +213,7 @@ async fn a_kernel_that_cannot_start_fails_the_connection() {
     std::fs::create_dir_all(&dir).unwrap();
     let program = dir.join("octos");
     std::fs::write(&program, "not a program").unwrap();
-    let core = Core::new(Options::default().core_dir(dir.join("core")).program(&program));
+    let core = Core::new(Options::default().stdio().core_dir(dir.join("core")).program(&program));
     let mut a = core.connect().unwrap();
     assert!(matches!(next(&mut a).await, Err(CloseReason::Failed(_))));
 }

@@ -1,16 +1,8 @@
 # octosense-kernel — the shell's octos kernel (one per process).
 #
-# The shell owns the octos agent kernel as a service: this crate resolves the
-# kernel's core dir (where the AI providers app's `llm` service writes
-# `profiles/_main.json`), starts ONE kernel lazily on the first `connect()`
-# (`octos serve --stdio` as a child on desktop and Android, the canonical core
-# in-process on OpenHarmony), multiplexes it between consumers (AppCard, and
-# later Rinx), restarts it when the providers change and stops it when the
-# last consumer leaves. See README.md.
-#
-# Explicit package fields (no `workspace = true`): the shells and AppCard's
-# workspace take this crate as a plain path dependency. The empty
-# `[workspace]` below lets it test on its own from this directory.
+# Desktop/Android use one authenticated loopback WebSocket server; the
+# OpenHarmony core stays embedded. Native consumers keep a shared frame API.
+# External clients attach without creating another kernel. See README.md.
 [package]
 name        = "octosense-kernel"
 version     = "0.1.0"
@@ -23,6 +15,10 @@ publish     = false
 
 [dependencies]
 tokio      = { version = "1", features = ["rt-multi-thread", "sync", "io-util", "process", "time", "macros"] }
+tokio-tungstenite = { workspace = true }
+futures-util = "0.3"
+uuid = { workspace = true }
+url = "2"
 serde_json = "1"
 log        = "0.4"
 # `default_core_dir()` — the one definition of where the kernel's profile

@@ -1,0 +1,116 @@
+diff --git a/crates/octos-cli/src/api/mod.rs b/crates/octos-cli/src/api/mod.rs
+index 1d44299e..8b19d147 100644
+--- a/crates/octos-cli/src/api/mod.rs
++++ b/crates/octos-cli/src/api/mod.rs
+@@ -372,6 +372,8 @@ pub struct AppState {
+     /// configs never set) is the primary defence; the handlers additionally
+     /// reject any request carrying proxy-forwarding headers.
+     pub solo_login_enabled: bool,
++    /// Only the embedding host's token authenticates a host-managed server.
++    pub host_managed_auth: bool,
+     /// The HTTP serve's stop switch — the same `watch` channel the SIGINT /
+     /// SIGTERM watcher flips, so the `server/shutdown` UI Protocol method ends
+     /// the process through exactly the path Ctrl+C takes: stop accepting,
+@@ -536,6 +538,7 @@ impl AppState {
+             deployment_mode: crate::config::DeploymentMode::Local,
+             pairing: None,
+             solo_login_enabled: false,
++            host_managed_auth: false,
+             serve_shutdown: None,
+             dangerous_default_permissions: false,
+             default_network_denied: false,
+diff --git a/crates/octos-cli/src/api/router.rs b/crates/octos-cli/src/api/router.rs
+index bee4cb52..55f71875 100644
+--- a/crates/octos-cli/src/api/router.rs
++++ b/crates/octos-cli/src/api/router.rs
+@@ -1221,6 +1221,11 @@ pub(crate) async fn resolve_identity_public(state: &AppState, token: &str) -> Op
+ 
+ /// Resolve token to an AuthIdentity.
+ async fn resolve_identity(state: &AppState, token: &str) -> Option<AuthIdentity> {
++    if state.host_managed_auth {
++        return state.auth_token.as_deref()
++            .filter(|expected| !expected.is_empty() && constant_time_eq(token.as_bytes(), expected.as_bytes()))
++            .map(|_| AuthIdentity::Admin);
++    }
+     if token.is_empty() {
+         return None;
+     }
+@@ -1316,6 +1321,10 @@ async fn user_auth_middleware(
+         return Ok(next.run(req).await);
+     }
+ 
++    if state.host_managed_auth {
++        return Err(StatusCode::UNAUTHORIZED);
++    }
++
+     // 2. Accept X-Profile-Id header for chat API routes (proxy auth).
+     // The reverse proxy (Caddy) sets this header to identify the profile,
+     // so requests through the proxy are implicitly authenticated.
+diff --git a/crates/octos-cli/src/api/ui_protocol_transport.rs b/crates/octos-cli/src/api/ui_protocol_transport.rs
+index 1816bbce..a1769377 100644
+--- a/crates/octos-cli/src/api/ui_protocol_transport.rs
++++ b/crates/octos-cli/src/api/ui_protocol_transport.rs
+@@ -9712,7 +9712,7 @@ pub(crate) fn supports_local_solo_profile_create(state: &AppState) -> bool {
+ /// hosted server, where one client stopping the process would take everyone
+ /// else down, never advertises or accepts it.
+ pub(crate) fn supports_server_shutdown(state: &AppState) -> bool {
+-    local_solo_danger_allowed(state) && state.serve_shutdown.is_some()
++    (local_solo_danger_allowed(state) || state.host_managed_auth) && state.serve_shutdown.is_some()
+ }
+ 
+ /// `server/shutdown`: stop this `octos serve` exactly as Ctrl+C would.
+diff --git a/crates/octos-cli/src/commands/serve.rs b/crates/octos-cli/src/commands/serve.rs
+index 58c90775..0418939b 100644
+--- a/crates/octos-cli/src/commands/serve.rs
++++ b/crates/octos-cli/src/commands/serve.rs
+@@ -350,6 +350,12 @@ pub struct ServeCommand {
+     #[arg(long)]
+     pub stdio: bool,
+ 
++    /// Host-owned local server: one in-process runtime, mandatory host token,
++    /// no password-free solo login or trusted-proxy authentication.
++    #[arg(long, conflicts_with_all = ["stdio", "solo"])]
++    #[serde(default)]
++    pub host_managed: bool,
++
+     /// Working directory (defaults to current directory).
+     #[arg(short, long)]
+     pub cwd: Option<PathBuf>,
+@@ -1068,6 +1074,13 @@ impl ServeCommand {
+             None
+         };
+ 
++        if self.host_managed {
++            eyre::ensure!(!self.stdio && !self.solo, "--host-managed cannot use --stdio or --solo");
++            eyre::ensure!(self.host == "127.0.0.1", "--host-managed requires loopback binding");
++            eyre::ensure!(config.mode == crate::config::DeploymentMode::Local, "--host-managed requires local mode");
++            eyre::ensure!(auth_token.as_deref().is_some_and(|t| !t.is_empty()), "--host-managed requires OCTOS_AUTH_TOKEN");
++        }
++
+         // Initialize profile store and process manager for admin dashboard.
+         // Registry (`<id>.json`) resolves from the SHARED `state_home`; the
+         // per-profile `<id>/data` runtime tree roots under the per-instance
+@@ -1467,12 +1480,12 @@ impl ServeCommand {
+         // gateway for the same profile would open its episodes.redb again and
+         // lock session/open out of the profile after onboarding. Stdio serve
+         // already has no gateway auto-start; keep HTTP solo consistent.
+-        let solo_login_enabled_flag = self.solo
++        let solo_login_enabled_flag = !self.host_managed && (self.solo
+             || std::env::var("OCTOS_SOLO_LOGIN")
+                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+-                .unwrap_or(false);
++                .unwrap_or(false));
+         let solo_in_process =
+-            solo_login_enabled_flag && config.mode == crate::config::DeploymentMode::Local;
++            (solo_login_enabled_flag || self.host_managed) && config.mode == crate::config::DeploymentMode::Local;
+ 
+         let bridge_js_path = data_dir.join("whatsapp-bridge").join("bridge.js");
+         let process_manager = Arc::new(
+@@ -1752,6 +1765,7 @@ impl ServeCommand {
+             host_memory: config.memory.clone(),
+             pairing: pairing.clone(),
+             solo_login_enabled: solo_login_enabled_flag,
++            host_managed_auth: self.host_managed,
+             // Only the HTTP serve has a loop to stop; see AppState::serve_shutdown.
+             serve_shutdown: (!self.stdio).then(|| serve_shutdown_tx.clone()),
+             dangerous_default_permissions: dangerous_default_permissions_flag,

@@ -1,14 +1,14 @@
 //! How a kernel starts on this platform. Resolved afresh for every start, so
 //! a changed configuration applies on the next start.
 //!
-//! - **Android**: `<nativeLibraryDir>/liboctos.so serve --stdio`, with
+//! - **Android**: `<nativeLibraryDir>/liboctos.so serve --host 127.0.0.1 --host-managed`, with
 //!   `HOME=<kernel home>` and the kernel home as cwd. An app may exec only
 //!   from its nativeLibraryDir, so the APK bundles the kernel as a "library"
 //!   (`MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`). The environment and
 //!   the kernel config merge are the ones AppCard's `stdio_spawn` used.
 //! - **OpenHarmony**: the canonical core in-process
 //!   (`octos_cli::embedded::serve_io`); HAP native libraries cannot exec.
-//! - **Desktop**: `<program> serve --stdio --data-dir <core_dir> --config
+//! - **Desktop**: `<program> serve --host 127.0.0.1 --host-managed --data-dir <core_dir> --config
 //!   <core_dir>/config.json` with `OCTOS_HOME=<core_dir>`, where the program
 //!   is the shell's [`crate::Options::program`] or `$OCTOS_APP_CORE_BIN`.
 //!   Without one there is no kernel (a developer's own `octos serve` is never
@@ -22,6 +22,13 @@ use crate::dirs;
 /// A resolved way to start the kernel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Launch {
+    /// A loopback HTTP/WebSocket server shared by native and external clients.
+    WebSocket {
+        program: PathBuf,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+        cwd: Option<PathBuf>,
+    },
     /// `program args…` speaking NDJSON JSON-RPC on stdin/stdout.
     Stdio {
         program: PathBuf,
@@ -31,6 +38,21 @@ pub enum Launch {
     },
     /// The canonical core served in-process from `home` (OpenHarmony).
     Embedded { home: PathBuf },
+}
+
+impl Launch {
+    pub(crate) fn websocket(self) -> Self {
+        match self {
+            Self::Stdio { program, mut args, env, cwd } => {
+                args.retain(|arg| arg != "--stdio");
+                // The reviewed kernel overlay keeps authentication mandatory while
+                // running the profile in this process, without gateway children.
+                args.extend(["--host".into(), "127.0.0.1".into(), "--host-managed".into()]);
+                Self::WebSocket { program, args, env, cwd }
+            }
+            other => other,
+        }
+    }
 }
 
 /// Why no kernel can start here.
@@ -178,12 +200,12 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
         log::warn!("octos-core: could not create {}: {e}", core_dir.display());
     }
     match launch {
-        Launch::Stdio { cwd: Some(cwd), .. } => {
+        Launch::Stdio { cwd: Some(cwd), .. } | Launch::WebSocket { cwd: Some(cwd), .. } => {
             if let Err(e) = std::fs::create_dir_all(cwd) {
                 log::warn!("octos-core: could not create {}: {e}", cwd.display());
             }
         }
-        Launch::Stdio { .. } => {}
+        Launch::Stdio { .. } | Launch::WebSocket { .. } => {}
         Launch::Embedded { home } => {
             let _ = std::fs::create_dir_all(home);
         }

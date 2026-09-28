@@ -130,6 +130,25 @@ fn two_providers(rig: &mut Rig) {
 }
 
 #[test]
+fn client_connection_controls_require_their_own_trusted_sheet() {
+    let mut rig = Rig::new("client-sheet", None);
+    for method in ["llm.sheet.client_info", "llm.sheet.client_copy_token", "llm.sheet.client_open", "llm.sheet.client_origin"] {
+        assert!(rig.ask(method, json!({})).is_err());
+        assert!(rig.sheet(method, json!({})).is_err(), "a different sheet cannot access connection controls");
+    }
+    let other = rig.send("os.mail", "llm.connect_client", json!({}), false);
+    assert!(wait(other).is_err());
+    let waiting = rig.send(APP, "llm.connect_client", json!({}), false);
+    assert!(rig.host.body().contains("Talk to Octos"));
+    assert!(!rig.host.body().contains("is_password: true"));
+    assert!(rig.ask("llm.sheet.client_info", json!({})).is_err(), "the calling app cannot impersonate its sheet");
+    let other = rig.send("os.mail", "llm.sheet.client_copy_token", json!({}), true);
+    assert!(wait(other).is_err(), "another app's sheet cannot copy the token");
+    rig.sheet("llm.sheet.cancel", json!({})).unwrap();
+    assert_eq!(wait(waiting).unwrap(), json!({}), "the app receives no connection details");
+}
+
+#[test]
 fn keys_are_typed_only_on_the_sheet_and_never_come_back() {
     let mut rig = Rig::new("edit", None);
 

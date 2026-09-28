@@ -139,6 +139,10 @@ pub trait QrImagePicker: Send + Sync {
 /// `octos-core`). Runs on whichever thread made the change.
 pub type OnChanged = Arc<dyn Fn() + Send + Sync>;
 
+/// Trusted host UI actions; secrets never return to the requesting script.
+pub enum ClientUiAction { CopyToken(String), OpenWeb(String) }
+pub type ClientUi = Arc<dyn Fn(ClientUiAction) + Send + Sync>;
+
 /// What a shell hands the service. `Options::default()` is what
 /// [`register`] uses.
 #[derive(Clone, Default)]
@@ -164,6 +168,7 @@ pub struct Options {
     /// [`QR_LIFETIME_SECS`], which is the default). `None`: the
     /// [`QR_LIFETIME_ENV`] variable, else the default.
     pub qr_lifetime_secs: Option<u64>,
+    pub client_ui: Option<ClientUi>,
 }
 
 impl Options {
@@ -219,6 +224,7 @@ pub fn register_with(options: Options) {
         export: Arc::default(),
         generation: 0,
         qr_lifetime: qr_lifetime(options.qr_lifetime_secs),
+        client_ui: options.client_ui,
     }));
 }
 
@@ -314,6 +320,7 @@ struct Pending {
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     Add,
+    Connect,
     Edit(String),
     Export(u64),
     Import { scanned: Option<String> },
@@ -387,6 +394,7 @@ pub struct LlmService {
     export: Arc<Mutex<Option<ExportJob>>>,
     generation: u64,
     qr_lifetime: u64,
+    client_ui: Option<ClientUi>,
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -909,6 +917,41 @@ fn apply_import(shared: &Shared, pending: &Mutex<Option<Pending>>, provisioning:
     }
 }
 
+
+#[cfg(feature = "octos-core")]
+fn client_action(method: &str, args: &Value, ui: Option<ClientUi>) -> Result<Value, String> {
+    use octosense_kernel as kernel;
+    match method {
+        "sheet.client_origin" => {
+            kernel::set_web_client_origin(text(args, "origin"))?;
+            Ok(json!({}))
+        }
+        "sheet.client_copy_token" => {
+            let ui = ui.ok_or("The host cannot copy to the clipboard.")?;
+            ui(ClientUiAction::CopyToken(kernel::client_access()?.token));
+            Ok(json!({}))
+        }
+        "sheet.client_open" => {
+            let ui = ui.ok_or("The host cannot open a browser.")?;
+            ui(ClientUiAction::OpenWeb(kernel::web_client_url()?));
+            Ok(json!({}))
+        }
+        _ => {
+            let access = kernel::client_access()?;
+            let origin = kernel::web_client_origin();
+            let web_url = if origin.is_empty() { String::new() } else { kernel::web_client_url()? };
+            Ok(json!({"origin": access.origin, "endpoint": access.endpoint(),
+                "profile_id": "_main", "session_id": kernel::SYSTEM_SESSION,
+                "web_origin": origin, "web_url": web_url, "can_copy": ui.is_some()}))
+        }
+    }
+}
+
+#[cfg(not(feature = "octos-core"))]
+fn client_action(_method: &str, _args: &Value, _ui: Option<ClientUi>) -> Result<Value, String> {
+    Err("This build does not include the Octos kernel service.".into())
+}
+
 impl HostService for LlmService {
     fn family(&self) -> &'static str {
         "llm"
@@ -920,6 +963,18 @@ impl HostService for LlmService {
         }
         let id = text(&call.args, "id").to_string();
         match call.method() {
+            "connect_client" => {
+                if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI providers to connect a client.".into())); }
+                self.raise(&call.app_id, reply, Kind::Connect, sheets::connect_client(), host);
+            }
+            "sheet.client_info" | "sheet.client_origin" | "sheet.client_copy_token" | "sheet.client_open" => {
+                let permitted = call.from_sheet && self.pending.lock().unwrap().as_ref()
+                    .is_some_and(|p| p.kind == Kind::Connect && p.app_id == call.app_id);
+                if !permitted { return reply.send(Err("Open the client connection sheet first.".into())); }
+                let method = call.method().to_owned();
+                let ui = self.client_ui.clone();
+                work(move || reply.send(client_action(&method, &call.args, ui)));
+            }
             "providers" => {
                 let (shared, scanner, image_picker) = (self.shared.clone(), self.scanner.is_some(), self.image_picker.is_some());
                 work(move || {
@@ -1005,7 +1060,7 @@ impl HostService for LlmService {
                 IMAGE_WAITER.lock().unwrap().take();
                 if let Some(waiting) = self.pending.lock().unwrap().take() {
                     // Closing the QR is how an export ends.
-                    let answer = if matches!(waiting.kind, Kind::Export(_)) { Ok(json!({})) } else { Err("Cancelled.".into()) };
+                    let answer = if matches!(waiting.kind, Kind::Export(_) | Kind::Connect) { Ok(json!({})) } else { Err("Cancelled.".into()) };
                     waiting.reply.send(answer);
                 }
                 reply.send(Ok(json!({})));

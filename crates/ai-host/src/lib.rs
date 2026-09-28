@@ -281,6 +281,10 @@ fn register_llm(core_dir: Option<PathBuf>, import: QrImport) -> bool {
     }
     // With `octos-core` the service itself restarts the kernel after a
     // change; its consumers reconnect.
+    options.client_ui = Some(std::sync::Arc::new(|action| {
+        CLIENT_UI.lock().unwrap().push(action);
+        makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
+    }));
     octosense_llm_service::register_with(options.clone());
     // `model` (ADR 0002, `model.complete`): contained apps' one-shot model
     // calls over the same providers, with per-app budgets. Apps granted the
@@ -296,9 +300,19 @@ fn register_llm(_core_dir: Option<PathBuf>, _import: QrImport) -> bool {
     false
 }
 
-/// Every event, on the UI thread, early: opens the scanner or picker the
-/// `llm` service asked for and completes it from the platform's answer.
+#[cfg(feature = "llm")]
+static CLIENT_UI: std::sync::Mutex<Vec<octosense_llm_service::ClientUiAction>> = std::sync::Mutex::new(Vec::new());
+
+/// Every event, on the UI thread, early: performs the host sheet's clipboard
+/// and browser actions and pumps the platform scanner/picker results.
 pub fn handle_event(cx: &mut Cx, event: &Event) {
+    #[cfg(feature = "llm")]
+    for action in std::mem::take(&mut *CLIENT_UI.lock().unwrap()) {
+        match action {
+            octosense_llm_service::ClientUiAction::CopyToken(token) => cx.copy_to_clipboard(&token),
+            octosense_llm_service::ClientUiAction::OpenWeb(url) => cx.open_url(&url, OpenUrlInPlace::No),
+        }
+    }
     if let Some(state) = STATE.get() {
         qr::pump(cx, event, state.qr_import);
     }

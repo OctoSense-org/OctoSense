@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "base_revision": "60cf96e6c8719bd5f1b61ab5b537a88ffa314879",
+  "patch": "tools/runtime-patches/octos-host-managed.patch",
+  "sha256": "63720f5fa7d45268c6e20a69d5c1e567b7c630cf54c7a0ac99d2fad0a4ff752d"
+}

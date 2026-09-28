@@ -46,7 +46,7 @@ fn listed_pid(event: &TransportEvent) -> Option<u64> {
 async fn a_restarted_kernel_is_rejoined_and_the_session_reopened() {
     let dir = std::env::temp_dir().join(format!("octos-app-kernel-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    octosense_kernel::configure(octosense_kernel::Options::default().core_dir(&dir).program(fake_kernel()));
+    octosense_kernel::configure(octosense_kernel::Options::default().stdio().core_dir(&dir).program(fake_kernel()));
 
     let cfg = TransportConfig {
         base_url: Url::parse("http://127.0.0.1").unwrap(),

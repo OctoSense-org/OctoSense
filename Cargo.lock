@@ -7379,12 +7379,16 @@ dependencies = [
 name = "octosense-kernel"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "log",
  "octos-cli",
  "octosense-llm-config",
  "serde_json",
  "tokio",
+ "tokio-tungstenite 0.24.0",
  "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]

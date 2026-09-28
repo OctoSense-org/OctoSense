@@ -295,6 +295,9 @@ after every change, so the running kernel picks up the new providers. The
 method table and registration are in its
 [README](ai-providers/host-service/README.md).
 
+
+**Talk to the system agent:** open **AI providers → Talk to Octos** for the server address and native **Copy access token** button. Native apps, OctosCode TUI and Web share one WebSocket server; the system session is `_main:api:octosense#system`. The kernel requires this repository's locked `--host-managed` overlay, applied automatically by the Android build tool. The web client is hosted separately. See the [kernel guide](../crates/kernel/README.md) for connections, tunnels and platform limits.
+
 ## The octos kernel
 
 The octos agent kernel is a **shell service**, not part of any app.
@@ -303,11 +306,11 @@ service; the shells link it by default (cargo feature `octos-core`, also on
 in `mobile-apps` and native mobile builds):
 
 - **One per process, on demand.** The first consumer's `connect()` starts it:
-  `octos serve --stdio` as a child on desktop and Android (on Android the
+  `octos serve --host 127.0.0.1 --host-managed` as a child on desktop and Android (on Android the
   APK's bundled `liboctos.so`), the canonical core in-process on
   OpenHarmony. Later consumers share it; each gets only the replies to its
-  own requests and its own sessions' notifications. It stops when the last
-  consumer leaves.
+  own requests and its own sessions' notifications. On desktop and Android it stays
+  available after native apps close, until the shell exits.
 - **Configured by AI providers.** The `llm` host service writes the kernel's
   profile, `<core_dir>/profiles/_main.json`, and keys (macOS keychain `octos`
   service behind `keychain:` markers, `<core_dir>/secrets/` on Linux, the

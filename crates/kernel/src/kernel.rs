@@ -12,7 +12,10 @@ use tokio::sync::{mpsc, watch};
 
 use crate::launch::Launch;
 use crate::router::{ConnId, Router};
-use crate::{CloseReason, LogSink};
+use crate::{CloseReason, LogSink, ClientAccess};
+use crate::network::Network;
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 /// What a consumer's inbound channel carries.
 #[derive(Debug)]
@@ -45,6 +48,7 @@ struct Io {
     writer: Pin<Box<dyn AsyncWrite + Send>>,
     lines: tokio::io::Lines<BufReader<Pin<Box<dyn AsyncRead + Send>>>>,
     running: Running,
+    network: bool,
 }
 
 /// Keeps the last lines the kernel wrote to stderr, to say why it exited.
@@ -64,9 +68,10 @@ impl Tail {
     }
 }
 
-fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
+fn start(launch: &Launch, network: &Network, log: &LogSink, tail: &Tail) -> Result<Io, String> {
     match launch {
-        Launch::Stdio { program, args, env, cwd } => {
+        Launch::Stdio { program, args, env, cwd } | Launch::WebSocket { program, args, env, cwd } => {
+            let shared = matches!(launch, Launch::WebSocket { .. });
             let mut command = tokio::process::Command::new(program);
             command
                 .args(args)
@@ -76,6 +81,11 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 .kill_on_drop(true);
             for (k, v) in env {
                 command.env(k, v);
+            }
+            if shared {
+                command.args(["--port", &network.port.load(Ordering::Relaxed).to_string()])
+                    .env("OCTOS_AUTH_TOKEN", &network.token).env("NO_COLOR", "1")
+                    .env_remove("OCTOS_INSTANCE_DATA_DIR");
             }
             if let Some(cwd) = cwd {
                 command.current_dir(cwd);
@@ -89,9 +99,11 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
             if let Some(stderr) = child.stderr.take() {
                 let log = log.clone();
                 let tail = tail.clone();
+                let token = network.token.clone();
                 tokio::spawn(async move {
                     let mut lines = BufReader::new(stderr).lines();
                     while let Ok(Some(line)) = lines.next_line().await {
+                        let line = line.replace(&token, "[redacted]");
                         (log)(&format!("octos: {line}"));
                         tail.push(line);
                     }
@@ -101,6 +113,7 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 writer: Box::pin(stdin),
                 lines: BufReader::new(Box::pin(stdout) as Pin<Box<dyn AsyncRead + Send>>).lines(),
                 running: Running::Child(child),
+                network: shared,
             })
         }
         #[cfg(target_env = "ohos")]
@@ -119,11 +132,39 @@ fn start(launch: &Launch, log: &LogSink, tail: &Tail) -> Result<Io, String> {
                 writer: Box::pin(writer),
                 lines: BufReader::new(Box::pin(reader) as Pin<Box<dyn AsyncRead + Send>>).lines(),
                 running: Running::Embedded(task),
+                network: false,
             })
         }
         #[cfg(not(target_env = "ohos"))]
         Launch::Embedded { .. } => Err("an embedded core exists only on OpenHarmony".into()),
     }
+}
+
+
+async fn prepare_network(
+    io: &mut Io, network: &Network, core_dir: &std::path::Path,
+    ready: &watch::Sender<Option<Result<ClientAccess, CloseReason>>>,
+) -> Result<(), String> {
+    if !io.network {
+        ready.send_replace(Some(Err(CloseReason::Failed("This platform uses an embedded/private pipe kernel; external clients are unavailable.".into()))));
+        return Ok(());
+    }
+    tokio::time::timeout(Duration::from_secs(90), async {
+        let access = loop {
+            let line = io.lines.next_line().await.map_err(|e| e.to_string())?
+                .ok_or_else(|| "the kernel exited before opening its WebSocket listener; use an OctoSense kernel built with the host-managed overlay".to_owned())?;
+            if let Some(access) = network.announced(&line) { break access; }
+        };
+        let stream = crate::network::connect(&access).await?;
+        let (reader, writer) = tokio::io::split(stream);
+        let stdout = std::mem::replace(&mut io.lines, BufReader::new(Box::pin(reader) as Pin<Box<dyn AsyncRead + Send>>).lines());
+        io.writer = Box::pin(writer);
+        // Drain without logging: the server also prints its pairing code here.
+        tokio::spawn(async move { let mut lines = stdout; while let Ok(Some(_)) = lines.next_line().await {} });
+        access.save(core_dir).map_err(|e| format!("cannot save private client connection: {e}"))?;
+        ready.send_replace(Some(Ok(access)));
+        Ok(())
+    }).await.map_err(|_| "the kernel did not become ready within 90 seconds".to_owned())?
 }
 
 /// The embedded core logs through `tracing`; send it to the log sink, once
@@ -166,8 +207,11 @@ async fn exited(running: &mut Running) -> String {
 /// Stop the kernel: close its input (it drains owned turns on EOF), wait a
 /// grace period, then kill it and wait, so its data-dir lock is released
 /// before a next generation starts.
-async fn stop(io: Io) {
-    let Io { writer, lines, mut running } = io;
+async fn stop(mut io: Io) {
+    if io.network {
+        let _ = tokio::time::timeout(Duration::from_secs(1), io.writer.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":\"host-stop\",\"method\":\"server/shutdown\",\"params\":{}}\n")).await;
+    }
+    let Io { writer, lines, mut running, .. } = io;
     drop(writer);
     drop(lines);
     match &mut running {
@@ -186,20 +230,29 @@ async fn stop(io: Io) {
     }
 }
 
-/// Run generation `generation` until it is stopped or its kernel ends.
+/// Settings that remain fixed for one kernel generation.
+pub(crate) struct GenerationConfig {
+    pub generation: u64,
+    pub launch: Launch,
+    pub network: Arc<Network>,
+    pub core_dir: PathBuf,
+    pub log: LogSink,
+}
+
+/// Run a generation until it is stopped or its kernel ends.
 pub(crate) async fn supervise(
-    generation: u64,
-    launch: Launch,
+    config: GenerationConfig,
+    ready: watch::Sender<Option<Result<ClientAccess, CloseReason>>>,
     mut ctl: mpsc::UnboundedReceiver<Ctl>,
     done: watch::Sender<bool>,
-    log: LogSink,
     ended: impl FnOnce() + Send,
 ) {
+    let GenerationConfig { generation, launch, network, core_dir, log } = config;
     let mut consumers: HashMap<ConnId, mpsc::UnboundedSender<Inbound>> = HashMap::new();
-    let mut router = Router::default();
+    let mut router = Router::new(&core_dir);
     let tail = Tail::default();
     (log)(&format!("octos-core: starting kernel {generation}: {}", describe(&launch)));
-    let started = start(&launch, &log, &tail);
+    let started = start(&launch, &network, &log, &tail);
     let reason = match started {
         Err(e) => {
             (log)(&format!("octos-core: kernel {generation} did not start: {e}"));
@@ -208,10 +261,30 @@ pub(crate) async fn supervise(
             CloseReason::Failed(e)
         }
         Ok(mut io) => {
-            let reason = loop {
+            let mut queued = VecDeque::new();
+            // Keep ownership of the child while waiting for startup so Stop
+            // can always kill AND reap it before the next generation starts.
+            let startup = {
+                let setup = prepare_network(&mut io, &network, &core_dir, &ready);
+                tokio::pin!(setup);
+                loop {
+                    tokio::select! {
+                        biased;
+                        msg = ctl.recv() => match msg {
+                            Some(Ctl::Attach(id, tx)) => { router.attach(id); consumers.insert(id, tx); }
+                            Some(Ctl::Detach(id)) => { router.detach(id); consumers.remove(&id); }
+                            Some(Ctl::Stop(reason)) => break Err(reason),
+                            Some(frame) => queued.push_back(frame),
+                            None => break Err(CloseReason::Shutdown),
+                        },
+                        result = &mut setup => break result.map_err(CloseReason::Failed),
+                    }
+                }
+            };
+            let reason = if let Err(reason) = startup { reason } else { loop {
                 tokio::select! {
                     biased;
-                    msg = ctl.recv() => match msg {
+                    msg = async { if queued.is_empty() { ctl.recv().await } else { queued.pop_front() } } => match msg {
                         Some(Ctl::Attach(id, tx)) => {
                             router.attach(id);
                             consumers.insert(id, tx);
@@ -251,12 +324,19 @@ pub(crate) async fn supervise(
                     },
                     why = exited(&mut io.running) => break CloseReason::Exited(with_tail(&why, &tail)),
                 }
-            };
+            }};
             (log)(&format!("octos-core: stopping kernel {generation}: {reason}"));
             stop(io).await;
-            reason
+            match reason {
+                CloseReason::Failed(why) => CloseReason::Failed(with_tail(&why, &tail)),
+                other => other,
+            }
         }
     };
+    ready.send_replace(Some(Err(reason.clone())));
+    if matches!(launch, Launch::WebSocket { .. }) {
+        let _ = std::fs::remove_file(core_dir.join(crate::CONNECTION_FILE));
+    }
     // Every consumer of this generation learns why it ended — including one
     // whose Attach is still queued.
     ctl.close();
@@ -283,7 +363,7 @@ fn with_tail(why: &str, tail: &Tail) -> String {
 
 fn describe(launch: &Launch) -> String {
     match launch {
-        Launch::Stdio { program, args, .. } => format!("{} {}", program.display(), args.join(" ")),
+        Launch::Stdio { program, args, .. } | Launch::WebSocket { program, args, .. } => format!("{} {}", program.display(), args.join(" ")),
         Launch::Embedded { home } => format!("embedded core, home {}", home.display()),
     }
 }

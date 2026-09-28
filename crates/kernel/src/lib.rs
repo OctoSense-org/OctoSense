@@ -2,8 +2,7 @@
 //!
 //! The octos agent kernel is a shell service. A shell (the phone's Home in
 //! `phone/`, the desktop shell in `desktop/`) [`configure`]s it once at
-//! startup; every consumer — the AppCard assistant today, Rinx's native
-//! mini-app host next — calls [`connect`] and gets its own [`Connection`]
+//! startup; every consumer — AppCard and Rinx's native mini-app host — calls [`connect`] and gets its own [`Connection`]
 //! to the ONE kernel of the process. The AI providers app's `llm` host service writes the kernel's
 //! profile under [`core_dir`] and calls [`restart`] after a change.
 //!
@@ -11,16 +10,15 @@
 //!   next ones share it. octos holds a single-writer lock on its data dir,
 //!   so two kernels on one core dir could not coexist anyway.
 //! - **Shared by frames.** A connection carries UI Protocol (JSON-RPC)
-//!   frames, one per `send`/`recv`, exactly as `octos serve --stdio` speaks
-//!   them. Each consumer uses its own request ids and sees the replies to its
+//!   frames, one per `send`/`recv`, over the shared WebSocket connection. Each consumer uses its own request ids and sees the replies to its
 //!   own requests and the notifications of the sessions it opened (see
 //!   `router`).
 //! - **Restart.** [`restart`] stops a running kernel (a no-op when none
 //!   runs); each connection's `recv` then returns
-//!   [`CloseReason::Restarted`], and the consumer reconnects, which starts a
-//!   fresh kernel that reads the new profile.
-//! - **Idle stop.** When the last connection is dropped the kernel stops, as
-//!   AppCard's own `kill_on_drop` child did.
+//!   [`CloseReason::Restarted`], and the consumer reconnects. The service starts a
+//!   fresh server at the same address with the same token.
+//! - **Lifetime.** The shared server survives native app closure so external
+//!   clients remain usable. Private pipe/embedded mode still stops when idle.
 //! - **Shutdown.** [`shutdown`] stops it and waits.
 //!
 //! Where it runs: see [`launch`]. The kernel and this crate's frame pump run
@@ -35,6 +33,8 @@ use tokio::sync::{mpsc, watch};
 
 pub mod dirs;
 mod kernel;
+mod network;
+pub use network::{ClientAccess, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
 mod router;
 
@@ -59,6 +59,7 @@ pub struct Options {
     program: Option<PathBuf>,
     env: Vec<(String, String)>,
     log: Option<LogSink>,
+    stdio: bool,
 }
 
 impl std::fmt::Debug for Options {
@@ -73,6 +74,10 @@ impl std::fmt::Debug for Options {
 }
 
 impl Options {
+    /// Private pipe mode for embedding hosts and protocol fixtures. The
+    /// desktop and Android defaults are a shared loopback WebSocket server.
+    pub fn stdio(mut self) -> Self { self.stdio = true; self }
+
     /// The kernel's core dir (octos data dir, `<core_dir>/profiles/_main.json`).
     /// Default: see [`resolve_core_dir`].
     pub fn core_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -145,6 +150,8 @@ struct Generation {
     id: u64,
     ctl: mpsc::UnboundedSender<Ctl>,
     connections: usize,
+    shared: bool,
+    ready: watch::Receiver<Option<Result<ClientAccess, CloseReason>>>,
 }
 
 struct State {
@@ -159,6 +166,7 @@ struct State {
 struct Inner {
     state: Mutex<State>,
     runtime: OnceLock<tokio::runtime::Runtime>,
+    network: Arc<network::Network>,
 }
 
 impl Inner {
@@ -213,6 +221,7 @@ impl Core {
                 next_conn: 0,
             }),
             runtime: OnceLock::new(),
+            network: Arc::default(),
         }))
     }
 
@@ -240,11 +249,21 @@ impl Core {
 
     fn launch_of(options: &Options) -> Result<Launch, Unavailable> {
         let core_dir = Self::core_dir_of(options);
-        launch::resolve(&launch::Inputs {
+        let launch = launch::resolve(&launch::Inputs {
             core_dir: core_dir.as_deref(),
             program: options.program.as_deref(),
             env: &options.env,
-        })
+        })?;
+        let mut launch = if options.stdio { launch } else { launch.websocket() };
+        if let Launch::WebSocket { env, .. } = &mut launch {
+            if let Some(dir) = core_dir.as_ref() {
+                if let Ok(origin) = std::fs::read_to_string(dir.join("web-client-origin.txt")) {
+                    let origin = network::validate_origin(origin.trim()).map_err(Unavailable::NoKernel)?;
+                    env.push(("OCTOS_APPUI_ALLOWED_ORIGINS".into(), origin));
+                }
+            }
+        }
+        Ok(launch)
     }
 
     /// Connect to the kernel, starting it if none runs. Fails only when no
@@ -265,6 +284,7 @@ impl Core {
                     generation: current.id,
                     ctl: current.ctl.clone(),
                     inbound: rx,
+                    ready: current.ready.clone(),
                     closed: None,
                 });
             }
@@ -279,10 +299,13 @@ impl Core {
         let (done_tx, done_rx) = watch::channel(false);
         let previous = st.last_done.replace(done_rx);
         ctl.send(Ctl::Attach(conn, tx)).expect("fresh channel");
-        st.current = Some(Generation { id, ctl: ctl.clone(), connections: 1 });
+        let shared = matches!(launch, Launch::WebSocket { .. });
+        let (ready_tx, ready) = watch::channel(None);
+        st.current = Some(Generation { id, ctl: ctl.clone(), connections: 1, shared, ready: ready.clone() });
         drop(st);
 
         let weak = Arc::downgrade(&self.0);
+        let network = self.0.network.clone();
         self.0.runtime().spawn(async move {
             // Wait until the previous kernel let go of the data dir, then
             // make the directories (and the phone's kernel config).
@@ -298,17 +321,21 @@ impl Core {
                     }
                 }
             };
-            kernel::supervise(id, launch, ctl_rx, done_tx, log, ended).await;
+            let config = kernel::GenerationConfig { generation: id, launch, network, core_dir, log };
+            kernel::supervise(config, ready_tx, ctl_rx, done_tx, ended).await;
         });
-        Ok(Connection { core: self.clone(), id: conn, generation: id, ctl, inbound: rx, closed: None })
+        Ok(Connection { core: self.clone(), id: conn, generation: id, ctl, inbound: rx, ready, closed: None })
     }
 
     /// Restart the kernel if one runs: its connections close with
-    /// [`CloseReason::Restarted`] and the next `connect()` starts a fresh
-    /// kernel (after this one let go of its data dir). Returns whether one
+    /// [`CloseReason::Restarted`]. Shared mode starts a replacement immediately;
+    /// pipe mode waits for the next consumer. Returns whether one
     /// was running. Callable from any thread.
     pub fn restart(&self) -> bool {
-        self.stop_current(CloseReason::Restarted)
+        let shared = self.0.state.lock().unwrap().current.as_ref().is_some_and(|g| g.shared);
+        let running = self.stop_current(CloseReason::Restarted);
+        if running && shared { let _ = self.connect(); }
+        running
     }
 
     /// Stop the kernel (if any) and wait up to `timeout` for it to exit.
@@ -351,8 +378,19 @@ impl Core {
         }
     }
 
-    /// A connection left: when it was the last of the running generation,
-    /// the kernel stops.
+    /// Start the shared server and wait for its authenticated endpoint. For
+    /// a host worker thread; never block the UI thread on kernel startup.
+    pub fn client_access(&self) -> Result<ClientAccess, String> {
+        let connection = self.connect().map_err(|e| e.to_string())?;
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.0.runtime().spawn(async move {
+            let result = connection.client_access().await.map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+        rx.recv_timeout(Duration::from_secs(95)).map_err(|_| "The Octos server did not become ready.".to_string())?
+    }
+
+    /// A connection left. Only private pipe/embedded kernels stop when idle.
     fn detach(&self, generation: u64, conn: u64) {
         let mut st = self.0.state.lock().unwrap();
         let Some(current) = st.current.as_mut().filter(|g| g.id == generation) else {
@@ -360,7 +398,7 @@ impl Core {
         };
         let _ = current.ctl.send(Ctl::Detach(conn));
         current.connections = current.connections.saturating_sub(1);
-        if current.connections == 0 {
+        if current.connections == 0 && !current.shared {
             let idle = st.current.take().expect("checked above");
             let _ = idle.ctl.send(Ctl::Stop(CloseReason::Shutdown));
         }
@@ -376,6 +414,7 @@ pub struct Connection {
     ctl: mpsc::UnboundedSender<Ctl>,
     inbound: mpsc::UnboundedReceiver<Inbound>,
     closed: Option<CloseReason>,
+    ready: watch::Receiver<Option<Result<ClientAccess, CloseReason>>>,
 }
 
 impl std::fmt::Debug for Connection {
@@ -385,6 +424,48 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
+    /// Wait for the actual, authenticated server. The token is for trusted
+    /// host UI only. Pipe-only platforms return an explicit error.
+    pub async fn client_access(&self) -> Result<ClientAccess, CloseReason> {
+        let mut ready = self.ready.clone();
+        ready.wait_for(|v| v.is_some()).await.map_err(|_| CloseReason::Shutdown)?;
+        let result = ready.borrow().as_ref().cloned().unwrap();
+        result
+    }
+
+    /// Open the system conversation and build OctosCode Web's saved-session
+    /// link from the workspace the server confirms. No credential is in it.
+    pub async fn system_web_url(&mut self, origin: &str) -> Result<String, String> {
+        let origin = network::validate_origin(origin)?;
+        if origin.is_empty() { return Err("Save the web client's origin first.".into()); }
+        let id = uuid::Uuid::new_v4().to_string();
+        self.send(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session/open",
+            "params":{"session_id":SYSTEM_SESSION,"profile_id":"_main"}}).to_string())
+            .map_err(|e| e.to_string())?;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let frame: serde_json::Value = serde_json::from_str(&self.recv().await.map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+                if frame["id"] != id { continue; }
+                if frame.get("error").is_some() { return Err("Octos could not open its system conversation. Configure a provider first.".into()); }
+                let opened = &frame["result"]["opened"];
+                let workspace = opened["workspace_root"].as_str().filter(|s| !s.is_empty())
+                    .ok_or("The kernel did not confirm the system workspace.")?;
+                // Web sends this path back as cwd; Octos canonicalizes it.
+                // Match that identity on hosts with aliases (/tmp on macOS,
+                // /data/data on Android) so Web's workspace check succeeds.
+                let workspace = std::fs::canonicalize(workspace)
+                    .map_err(|_| "The system workspace could not be resolved.")?;
+                let dir = self.core.core_dir().ok_or("No kernel data directory.")?;
+                network::save_system_workspace(&dir, &workspace)?;
+                let mut url = url::Url::parse(&origin).map_err(|e| e.to_string())?;
+                let reference = serde_json::json!([workspace,"_main",SYSTEM_SESSION]).to_string();
+                url.query_pairs_mut().append_pair("s", &reference);
+                return Ok(url.to_string());
+            }
+        }).await.map_err(|_| "Opening the system conversation timed out.".to_owned())?
+    }
+
     /// Send one JSON-RPC frame (no trailing newline needed). Never blocks.
     pub fn send(&self, frame: impl Into<String>) -> Result<(), CloseReason> {
         if let Some(reason) = &self.closed {
@@ -463,6 +544,47 @@ pub fn is_available() -> bool {
 /// Connect to the process's kernel, starting it if needed.
 pub fn connect() -> Result<Connection, Unavailable> {
     global().connect()
+}
+
+/// Connection details for a trusted host sheet (run on a worker thread).
+pub fn client_access() -> Result<ClientAccess, String> {
+    global().client_access()
+}
+
+/// A credential-free link to the system conversation (host worker only).
+/// The user still supplies the server origin and token in the web client.
+pub fn web_client_url() -> Result<String, String> {
+    let core = global();
+    let mut connection = core.connect().map_err(|e| e.to_string())?;
+    let origin = web_client_origin();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    core.0.runtime().spawn(async move {
+        let result = async {
+            connection.client_access().await.map_err(|e| e.to_string())?;
+            connection.system_web_url(&origin).await
+        }.await;
+        let _ = tx.send(result);
+    });
+    rx.recv_timeout(Duration::from_secs(110)).map_err(|_| "Opening the web client timed out.".to_string())?
+}
+
+/// The web client's explicitly trusted origin, configured on the host sheet.
+pub fn web_client_origin() -> String {
+    core_dir().and_then(|dir| std::fs::read_to_string(dir.join("web-client-origin.txt")).ok()).unwrap_or_default()
+}
+
+/// Change the allowed web origin and restart the server. No wildcards,
+/// credentials, paths, queries or fragments are accepted.
+pub fn set_web_client_origin(origin: &str) -> Result<(), String> {
+    let normalized = network::validate_origin(origin.trim())?;
+    let dir = core_dir().ok_or_else(|| "No kernel data directory.".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("web-client-origin.txt");
+    if std::fs::read_to_string(&path).unwrap_or_default() != normalized {
+        std::fs::write(path, normalized).map_err(|e| e.to_string())?;
+        restart();
+    }
+    Ok(())
 }
 
 /// Restart the process's kernel if it runs (after a provider change).

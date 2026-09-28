@@ -59,6 +59,69 @@ fn frame(actions: &str, content: &str) -> String {
     )
 }
 
+/// Connection controls live on the trusted sheet. The access token is
+/// copied by native code and is never present in this script or its replies.
+pub fn connect_client() -> String {
+    let mut script = String::from(r#"
+fn status(text){ ui.status.set_text(text) }
+fn refresh(){
+    status("Starting Octos…")
+    host.request("llm.sheet.client_info", {}, fn(r){
+        if !r.is_ok { status(r.error) return }
+        ui.origin.set_text(r.data.origin)
+        ui.endpoint.set_text(r.data.endpoint)
+        ui.session.set_text(r.data.session_id)
+        ui.web_origin.set_text(r.data.web_origin)
+        ui.web_url.set_text(r.data.web_url)
+        ui.copy.set_visible(r.data.can_copy)
+        status("Connected. Native apps and external clients share this agent runtime.")
+    })
+}
+fn save_origin(){
+    status("Restarting Octos…")
+    host.request("llm.sheet.client_origin", {origin: ui.web_origin.text()}, fn(r){
+        if !r.is_ok { status(r.error) return }
+        refresh()
+    })
+}
+fn copy_token(){
+    host.request("llm.sheet.client_copy_token", {}, fn(r){
+        if r.is_ok { status("Access token copied. Paste it into your client.") } else { status(r.error) }
+    })
+}
+fn open_web(){
+    host.request("llm.sheet.client_open", {}, fn(r){ if !r.is_ok { status(r.error) } })
+}
+fn close(){ host.request("llm.sheet.cancel", {}, nil) }
+start_timeout(0.1, || refresh())
+"#);
+    script.push_str(STYLES);
+    script.push_str(&frame(
+        r#"Plain{text: "Done" on_click: || close()}
+           View{width: Fill height: 1}
+           Plain{text: "Refresh" on_click: || refresh()}"#,
+        r#"Title{text: "Talk to Octos"}
+        Note{text: "Connect OctosCode Web or OctosCode in a terminal to this device's assistant."}
+        Caption{text: "Server origin · for the web client"}
+        origin := Field{is_read_only: true}
+        Caption{text: "WebSocket endpoint · for OctosCode --endpoint"}
+        endpoint := Field{is_read_only: true}
+        Caption{text: "System-agent conversation · profile _main"}
+        session := Field{is_read_only: true}
+        copy := Primary{text: "Copy access token" on_click: || copy_token()}
+        Caption{text: "Web client origin · for example http://localhost:4173"}
+        web_origin := Field{empty_text: "http://localhost:4173"}
+        Note{text: "Use the address where your OctosCode Web client is hosted. Saving a changed origin restarts Octos and interrupts active work."}
+        Plain{text: "Save origin and restart" on_click: || save_origin()}
+        Caption{text: "System conversation link · open on either device"}
+        web_url := Field{is_read_only: true}
+        Primary{text: "Open web client" on_click: || open_web()}
+        Note{text: "Enter the server origin and paste the access token in the web client. The link selects the system conversation. A computer connects through a tunnel. Closing the browser can interrupt work started there."}
+        status := Status{}"#,
+    ));
+    script
+}
+
 /// The add and edit sheet: a five-step wizard in Octoscode's `/model` order,
 /// one step per page, a step indicator and progress bar at the top, and Back
 /// / Next pinned at the bottom (Next is greyed out until the step is valid):
