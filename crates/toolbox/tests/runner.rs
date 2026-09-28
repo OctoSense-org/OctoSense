@@ -184,11 +184,11 @@ async fn the_model_budget_is_enforced_and_leaves_a_partial_result() {
 async fn the_page_and_call_budgets_are_enforced() {
     let (case, template) = city();
     let folder = temp_dir("page-budget");
-    // The scope's page limit: pages are articles read, so two of the three.
-    // The search is not charged to it, however many feeds it fetched.
-    let scoped = app(&folder).with_scope(Scope {
-        max_pages: Some(2),
-        ..Scope::default()
+    // The app's own read budget: two of the three articles. The search is
+    // not charged to it, however many feeds it fetched.
+    let scoped = app(&folder).with_budget(Budget {
+        max_reads: 2,
+        ..template.manifest.budget
     });
     let mut data = case.fixture.clone();
     data.searches[0].fetches = 5;
@@ -202,7 +202,7 @@ async fn the_page_and_call_budgets_are_enforced() {
     .await
     .unwrap();
     assert_eq!(result.status, RunStatus::Partial);
-    assert_eq!(result.stats.pages, 2);
+    assert_eq!(result.stats.reads, 2);
     assert_eq!(result.stats.search_fetches, 5);
     assert_eq!(result.stats.denied, 1);
     assert_eq!(result.data["missing"], 1);
@@ -425,7 +425,7 @@ async fn news_digest_skips_results_the_backend_cannot_read() {
     assert_eq!(result.status, RunStatus::Partial);
     assert_eq!(result.data["unreadable"], 1);
     assert_eq!(result.data["missing"], 0);
-    assert_eq!((result.stats.pages, result.stats.failed), (2, 0));
+    assert_eq!((result.stats.reads, result.stats.failed), (2, 0));
     assert_eq!(result.data["sources"].as_array().unwrap().len(), 2);
     assert!(result.data["digest"].is_object());
 }
@@ -433,9 +433,9 @@ async fn news_digest_skips_results_the_backend_cannot_read() {
 #[tokio::test]
 async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     // The live failure of 27 Sep 2026: two searches fetching four feeds
-    // each used up `max_pages`, the zh results were all Google News links
+    // each used up the page budget, the zh results were all Google News links
     // (unreadable without a browser), and the brief rested on one en
-    // article. Searches are no longer charged to `max_pages`, unreadable
+    // article. Searches are no longer charged to the read budget, unreadable
     // results are skipped, and each language gets a read.
     let template = template("topic-brief");
     let case = case("topic-brief", "unreadable-skipped");
@@ -451,7 +451,7 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     .unwrap();
     assert_eq!(result.status, RunStatus::Ready, "{:?}", result.diagnostics);
     assert_eq!(result.stats.search_fetches, 8);
-    assert_eq!(result.stats.pages, 4);
+    assert_eq!(result.stats.reads, 4);
     assert_eq!((result.stats.denied, result.stats.failed), (0, 0));
     for query in result.data["queries"].as_array().unwrap() {
         assert_eq!(query["read"], 2, "{query}");
@@ -479,7 +479,7 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     // Partial: a read failed, even though the fallback recovered.
     assert_eq!(result.status, RunStatus::Partial);
     assert_eq!(result.data["missing"], 1);
-    assert_eq!(result.stats.pages, 3);
+    assert_eq!(result.stats.reads, 3);
     let reads: Vec<u64> = result.data["queries"]
         .as_array()
         .unwrap()
@@ -669,7 +669,7 @@ impl ToolboxHost for Recorder {
                 provenance: Vec::new(),
                 usage: Usage {
                     model_calls: 0,
-                    pages: 1,
+                    fetches: 1,
                 },
                 notes: Vec::new(),
             })

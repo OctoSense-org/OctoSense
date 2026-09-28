@@ -39,7 +39,7 @@ pub struct CaseMetrics {
     pub difference: Option<String>,
     pub calls: u32,
     pub model_calls: u32,
-    pub pages: u32,
+    pub reads: u32,
     pub elapsed_ms: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<f64>,
@@ -112,7 +112,7 @@ fn metrics(
         difference,
         calls: result.stats.calls,
         model_calls: result.stats.model_calls,
-        pages: result.stats.pages,
+        reads: result.stats.reads,
         elapsed_ms: result.stats.elapsed_ms,
         quality: scorer.score(case, result),
         diagnostics: result.diagnostics.clone(),

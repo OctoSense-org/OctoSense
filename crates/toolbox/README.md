@@ -38,7 +38,7 @@ templates/library.lock.json   the digest of every library template
   "id": "news-digest", "version": "1.0.0", "title": "…", "description": "…",
   "params": { JSON Schema: the parameters the script sees as `request` },
   "modules": [{"module": "research", "methods": ["query", "search", "article", "digest"]}],
-  "budget": {"max_calls": 8, "max_model_calls": 2, "max_pages": 7, "max_ms": 60000, "max_concurrency": 4},
+  "budget": {"max_calls": 8, "max_model_calls": 2, "max_reads": 7, "max_ms": 60000, "max_concurrency": 4},
   "output": { JSON Schema of `data` },
   "provenance": true,
   "lineage": {"parent_id", "parent_version", "parent_digest"}   (forks only)
@@ -53,7 +53,7 @@ A script returns `{status: "ready" | "partial", data}`. Every optional parameter
 
 `Library::builtin()` and `Library::load_dir()` load each template, validate it and pin it:
 
-- **Manifest**: unknown fields are refused. The id is a directory-safe name. Only known modules and methods are allowed, and each only once. The budget must stay within the toolbox ceiling (64 calls, 8 model calls, 32 pages, 300 s, concurrency 8). A module that reads external sources requires `provenance: true`. Each file is capped at 32 KiB.
+- **Manifest**: unknown fields are refused. The id is a directory-safe name. Only known modules and methods are allowed, and each only once. The budget must stay within the toolbox ceiling (64 calls, 8 model calls, 32 reads, 300 s, concurrency 8). A module that reads external sources requires `provenance: true`. Each file is capped at 32 KiB.
 - **Static check** (`check::check_source`): the source must pass OctoScript's canonical syntax check. Imports may name only `mod.std.{array,assert,json,math,object,text}` and the declared host modules; `mod.tool` is always refused. OctoScript's scope-resolved call report checks every `module.method` call, local aliases included, against the declared methods. `mod` may appear only in a `use` line. An incomplete report counts as a refusal.
 - **Pin**: the digest is SHA-256 over both files, with line endings normalized. Each digest must match `library.lock.json`, and the lock must name nothing else.
 
@@ -66,25 +66,25 @@ At run time the VM also installs **only** the declared methods, so a call the ch
 1. Refuses the run before it starts if the app lacks a grant the modules need (`research`) or the parameters do not match the schema.
 2. Builds a `CapabilityRuntime` whose only host module is the declared one. Each method is a deferred external tool with its input and output contract from `modules.rs`. The parameters become `request`.
 3. Evaluates the script. Every deferred call is claimed and dispatched to the caller's **`ToolboxHost`**, together with a `CallContext`: the app's identity, grants, scope and folder (`AppContext`), the run and template, the effective budget and what is left of it. Independent calls run concurrently, up to `max_concurrency`.
-4. **Budget**: the run gets the template's budget, narrowed by the app's own budget and its scope's page limit. A call over `max_calls`, `max_model_calls` or `max_pages` is refused before dispatch. `max_pages` counts **articles read** (each `article` call, whether or not it succeeds). A `search` is one call and is not charged to `max_pages`: how many feeds and APIs it fetches is the backend's configuration (one for the fixture backend, four for the interim adapter below), and charging it let two searches starve the reads (on 27 Sep 2026 a two-language `topic-brief` used 8 of its 10 pages on feeds and read one article). The fan-out is capped at `research::MAX_SEARCH_FETCHES` (8) per search and reported as `stats.search_fetches`. The script sees a failed call and can continue (`try … catch`). When `max_ms` elapses, in-flight calls are cancelled and fail as timed out.
+4. **Budget**: the run gets the template's budget, narrowed by the app's own budget (`AppContext::budget`). The budget is the template's and the app's, never the grant's: the app's scope says what it may reach, not how much one run may do. A call over `max_calls`, `max_model_calls` or `max_reads` is refused before dispatch. `max_reads` counts **articles read** (each `article` call, whether or not it succeeds); it was called `max_pages` until 27 Sep 2026 and was renamed so it is not confused with the `crawl` scope's `max_pages` (pages of one crawl). A template or fork that still says `max_pages` in its budget is refused as an unknown field. A `search` is one call and is not charged to `max_reads`: how many feeds and APIs it fetches is the backend's configuration (one for the fixture backend, four for the interim adapter below), and charging it let two searches starve the reads (on 27 Sep 2026 a two-language `topic-brief` used 8 of its 10 pages on feeds and read one article). The fan-out is capped at `research::MAX_SEARCH_FETCHES` (8) per search and reported as `stats.search_fetches`. The script sees a failed call and can continue (`try … catch`). When `max_ms` elapses, in-flight calls are cancelled and fail as timed out.
 5. **Output**: the value must be exactly `{status, data}`, and `data` must match the output schema. Any URL in `data` must be one the host retrieved. Otherwise the run is `failed` and no data is published. A `ready` result is downgraded to `partial` when any call was refused, failed or timed out.
 6. **Provenance**: the host returns provenance records with each reply (URL, title, source, retrieval time, evidence hash). The runner keeps them outside the VM and attaches every record whose id or URL `data` refers to.
 7. With `write_result`, the result goes to `<app folder>/toolbox/runs/<template>/<run>.json`.
 
-The result also carries `diagnostics`, `stats` (calls, model calls, pages, search fetches, denied, failed, peak concurrency, elapsed) and a `trace` of start, complete, denied and timed-out events. The future is not `Send`, because the VM stays on the calling thread.
+The result also carries `diagnostics`, `stats` (calls, model calls, reads, search fetches, denied, failed, peak concurrency, elapsed) and a `trace` of start, complete, denied and timed-out events. The future is not `Send`, because the VM stays on the calling thread.
 
 ## `mod.research` v1
 
 | Method | Input | Output | Charged |
 |---|---|---|---|
 | `query` | `{query, language?}` | `{query, language}`: search terms in `language` | 1 model call |
-| `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at, readable}], source: {partial, providers, queried_at}}`, readable items first | 1 call; its fetches are reported, not charged to `max_pages` |
+| `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at, readable}], source: {partial, providers, queried_at}}`, readable items first | 1 call; its fetches are reported, not charged to `max_reads` |
 | `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256, on_topic}` | 1 page |
 | `digest` | `{task: digest\|brief\|plan\|compare, language, article_ids, focus?}` (articles read in **this run**) | `{task, language, summary, points: [{text, citations, label?}], off_topic: [id]}` | 1 model call |
 
 `research::ResearchHost` implements `ToolboxHost` for this module over two parts: a `ResearchBackend` (finds and reads sources) and a `ModelClient` (supplied by the host). The policy is enforced here, once, whatever the backend:
 
-- **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit, and `max_pages` narrows the run's page budget. The scope has no depth limit (`max_depth` was declared and never enforced, and is removed): `mod.research` reads only this run's search results and never follows a link from a page, so every read is at depth one. A scope that still carries `max_depth` loads, and the field is ignored.
+- **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit. The scope does not limit how many articles a run reads; that is the budget's `max_reads`. `mod.research` reads only this run's search results and never follows a link from a page, so every read is at depth one.
 - **Ids**: search results get host-assigned ids derived from their URLs. `article` reads only this run's ids, so a template cannot fetch an arbitrary URL.
 - **Evidence**: article text stays in the host, capped at 6000 bytes on a paragraph boundary and hashed. The script sees a 400-byte excerpt and the hash.
 - **Relevance** (`research::relevance`, in the host so it survives the engine swap): topics are split into terms, stop-words ("of", "the", "news", "de", "新闻" …) ignored; words match whole words, case- and accent-insensitively, with a light suffix stemmer; runs of Han, kana, Hangul or Thai match as substrings after both sides are folded to Simplified Chinese with a small character table (common news vocabulary, about 540 characters; a character outside it matches only its own script).
@@ -142,7 +142,7 @@ The run-time grant check still applies, so a fork never gains capabilities beyon
 
 - whether the output is valid against its schema;
 - recursive data equality with the expected `status` and `data`, where given (the first differing path is reported);
-- calls, model calls and pages;
+- calls, model calls and reads;
 - latency;
 - an optional `QualityScorer` for text output (default: none).
 
@@ -229,7 +229,7 @@ A workspace-wide `cargo fmt --check` reports files outside this crate (the shell
 
 | Run | news-digest | topic-brief |
 |---|---|---|
-| Before these fixes | `partial`, 2 of 3 read (one Google News link failed); on a second run `digest: null`: "model output rejected: a point has no text" | `partial`, pages 10 of 10, 1 read refused (`max_pages`), 2 reads failed on Google News links; zh not read; the brief rested on 1 article |
+| Before these fixes | `partial`, 2 of 3 read (one Google News link failed); on a second run `digest: null`: "model output rejected: a point has no text" | `partial`, pages 10 of 10, 1 read refused (`max_pages`, now `max_reads`), 2 reads failed on Google News links; zh not read; the brief rested on 1 article |
 | "OpenAI", after | `partial` (a provider failed), 3 of 3 read (BBC, Guardian ×2), 12 points, no drops, pages 3, search fetches 4 | `partial`: en read 3 (BBC, Guardian ×2); zh found 3, all Google News links, skipped as unreadable, so zh had nothing to read. Pages 3, denied 0, failed 0, 12 points, no drops |
 | "Trump", after | `partial`: all 3 results were Google News links, skipped; nothing read, no model call | `partial`: zh ("特朗普") read 3 from BBC 中文; en found 3, all Google News links, skipped. Pages 3, denied 0, failed 0, 12 points, no drops |
 

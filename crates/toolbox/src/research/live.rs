@@ -1065,15 +1065,15 @@ impl ResearchBackend for InterimResearch {
                 }
             }
             let mut notes = Vec::new();
-            let mut partial = calls.len() as u32 > query.max_pages;
+            let mut partial = calls.len() as u32 > query.max_fetches;
             if partial {
                 notes.push(format!(
                     "{} providers left out (at most {} per search)",
-                    calls.len() as u32 - query.max_pages,
-                    query.max_pages
+                    calls.len() as u32 - query.max_fetches,
+                    query.max_fetches
                 ));
             }
-            calls.truncate(query.max_pages as usize);
+            calls.truncate(query.max_fetches as usize);
             // Every provider runs concurrently under its own deadline, so one
             // slow or throttled provider cannot hold up the search.
             let deadline = self.config.provider_deadline;
@@ -1174,7 +1174,7 @@ impl ResearchBackend for InterimResearch {
                 items,
                 providers,
                 partial,
-                pages,
+                fetches: pages,
                 notes,
             })
         })
@@ -1375,14 +1375,14 @@ mod tests {
             budget: crate::Budget {
                 max_calls: 8,
                 max_model_calls: 2,
-                max_pages: 8,
+                max_reads: 8,
                 max_ms: 60_000,
                 max_concurrency: 4,
             },
             remaining: crate::host::Remaining {
                 calls: 8,
                 model_calls: 2,
-                pages: 8,
+                reads: 8,
                 ms: 60_000,
             },
             call_index: 0,
@@ -1396,7 +1396,7 @@ mod tests {
             region: None,
             limit: 5,
             max_age_hours: Some(72),
-            max_pages: 8,
+            max_fetches: 8,
         }
     }
 
@@ -1453,7 +1453,7 @@ mod tests {
             second.notes,
             vec!["gdelt skipped: rate-limited (429) earlier in this process; results from other sources"]
         );
-        assert_eq!(second.pages, 1);
+        assert_eq!(second.fetches, 1);
         let gdelt_requests = server
             .paths
             .lock()

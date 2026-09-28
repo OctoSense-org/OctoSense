@@ -11,12 +11,12 @@ use serde_json::{json, Value};
 pub enum MethodKind {
     /// Runs a model: one `max_model_calls` each.
     Model,
-    /// Reads one page: one `max_pages` each, so `max_pages` is the number of
-    /// articles a run may try to read.
-    Page,
+    /// Reads one article: one `max_reads` each, so `max_reads` is the number
+    /// of articles a run may try to read.
+    Read,
     /// Queries sources: one call. The feeds and API responses the backend
     /// fetched are reported (`RunStats::search_fetches`) but not charged to
-    /// `max_pages`: how many providers a backend queries is its own
+    /// `max_reads`: how many providers a backend queries is its own
     /// configuration (one for the fixture, four for the interim adapter), and
     /// charging it would make the same template read fewer articles on a
     /// broader backend. The fan-out is capped per search by
@@ -140,7 +140,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         },
         MethodSpec {
             name: "article",
-            kind: MethodKind::Page,
+            kind: MethodKind::Read,
             description: "Read one search result's page and keep its main text as evidence; `on_topic: false` when the page does not mention the terms of the search that found it (the host will not digest it)",
             input: || {
                 json!({"type": "object", "additionalProperties": false, "required": ["id"],

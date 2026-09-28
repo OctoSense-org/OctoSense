@@ -59,11 +59,11 @@ pub struct RunStats {
     /// Host calls dispatched.
     pub calls: u32,
     pub model_calls: u32,
-    /// Pages charged to `max_pages`: article reads dispatched, whether or not
+    /// Reads charged to `max_reads`: article reads dispatched, whether or not
     /// they succeeded.
-    pub pages: u32,
+    pub reads: u32,
     /// Feeds and API responses the backend fetched for searches. Reported,
-    /// not charged to `max_pages` (see [`MethodKind::Search`]).
+    /// not charged to `max_reads` (see [`MethodKind::Search`]).
     #[serde(default)]
     pub search_fetches: u32,
     /// Calls refused by the budget before dispatch.
@@ -122,14 +122,11 @@ fn new_run_id() -> String {
     )
 }
 
-/// The budget a run gets: the template's, narrowed by the app's budget and
-/// its scope's page limit.
+/// The budget a run gets: the template's, narrowed by the app's own budget.
+/// The app's scope (its grant) says what it may reach, not how much one run
+/// may do, so it does not narrow the budget.
 pub fn effective_budget(template: &Budget, app: &AppContext) -> Budget {
-    let mut budget = app.budget.map_or(*template, |b| template.min(b));
-    if let Some(pages) = app.scope.max_pages {
-        budget.max_pages = budget.max_pages.min(pages);
-    }
-    budget
+    app.budget.map_or(*template, |b| template.min(b))
 }
 
 fn runtime_err(e: impl std::fmt::Debug) -> Error {
@@ -194,7 +191,7 @@ type Inflight<'a> = Pin<
 struct Charges {
     calls: u32,
     model_calls: u32,
-    pages: u32,
+    reads: u32,
 }
 
 /// Runs `template` for `app` with `params`, dispatching module calls to
@@ -252,7 +249,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
     let mut used = Charges {
         calls: 0,
         model_calls: 0,
-        pages: 0,
+        reads: 0,
     };
     let mut provenance: BTreeMap<String, Provenance> = BTreeMap::new();
     let mut provenance_order: Vec<String> = Vec::new();
@@ -303,7 +300,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                     Some(MethodKind::Model) if used.model_calls >= budget.max_model_calls => {
                         Some("max_model_calls")
                     }
-                    Some(MethodKind::Page) if used.pages >= budget.max_pages => Some("max_pages"),
+                    Some(MethodKind::Read) if used.reads >= budget.max_reads => Some("max_reads"),
                     None => Some("undeclared method"),
                     _ => None,
                 }
@@ -343,7 +340,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
             let remaining = Remaining {
                 calls: budget.max_calls.saturating_sub(used.calls),
                 model_calls: budget.max_model_calls.saturating_sub(used.model_calls),
-                pages: budget.max_pages.saturating_sub(used.pages),
+                reads: budget.max_reads.saturating_sub(used.reads),
                 ms: budget
                     .max_ms
                     .saturating_sub(started.elapsed().as_millis() as u64),
@@ -351,7 +348,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
             used.calls += 1;
             match kind {
                 Some(MethodKind::Model) => used.model_calls += 1,
-                Some(MethodKind::Page) => used.pages += 1,
+                Some(MethodKind::Read) => used.reads += 1,
                 Some(MethodKind::Search) | None => {}
             }
             let ctx = CallContext {
@@ -403,8 +400,8 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                     Ok(reply) => {
                         match kind {
                             Some(MethodKind::Model) => used.model_calls += reply.usage.model_calls.saturating_sub(1),
-                            Some(MethodKind::Page) => used.pages += reply.usage.pages.saturating_sub(1),
-                            Some(MethodKind::Search) => stats.search_fetches += reply.usage.pages,
+                            Some(MethodKind::Read) => used.reads += reply.usage.fetches.saturating_sub(1),
+                            Some(MethodKind::Search) => stats.search_fetches += reply.usage.fetches,
                             None => {}
                         }
                         for note in reply.notes {
@@ -469,7 +466,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
 
     stats.calls = used.calls;
     stats.model_calls = used.model_calls;
-    stats.pages = used.pages;
+    stats.reads = used.reads;
     stats.elapsed_ms = ms();
 
     let mut status = RunStatus::Failed;

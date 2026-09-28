@@ -17,7 +17,7 @@
     }
   },
   "modules": [{"module": "research", "methods": ["query", "search", "article", "digest"]}],
-  "budget": {"max_calls": 8, "max_model_calls": 2, "max_pages": 7, "max_ms": 60000, "max_concurrency": 4},
+  "budget": {"max_calls": 8, "max_model_calls": 2, "max_reads": 7, "max_ms": 60000, "max_concurrency": 4},
   "output": {
     "type": "object",
     "additionalProperties": false,

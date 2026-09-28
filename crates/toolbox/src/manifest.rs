@@ -16,7 +16,7 @@ pub const MAX_SOURCE_BYTES: usize = 32 * 1024;
 pub const BUDGET_CEILING: Budget = Budget {
     max_calls: 64,
     max_model_calls: 8,
-    max_pages: 32,
+    max_reads: 32,
     max_ms: 300_000,
     max_concurrency: 8,
 };
@@ -58,8 +58,10 @@ pub struct Budget {
     pub max_calls: u32,
     /// Calls that run a model (`research.query`, `research.digest`).
     pub max_model_calls: u32,
-    /// Pages and feeds fetched (`research.search`, `research.article`).
-    pub max_pages: u32,
+    /// Articles read (`research.article`), whether or not the read
+    /// succeeds. Searches are not charged to it. Not the `crawl` scope's
+    /// `max_pages`.
+    pub max_reads: u32,
     /// Wall-clock limit of one run.
     pub max_ms: u64,
     /// Host calls in flight at once.
@@ -72,7 +74,7 @@ impl Budget {
         Budget {
             max_calls: self.max_calls.min(other.max_calls),
             max_model_calls: self.max_model_calls.min(other.max_model_calls),
-            max_pages: self.max_pages.min(other.max_pages),
+            max_reads: self.max_reads.min(other.max_reads),
             max_ms: self.max_ms.min(other.max_ms),
             max_concurrency: self.max_concurrency.min(other.max_concurrency),
         }
@@ -87,8 +89,8 @@ impl Budget {
         if self.max_model_calls > limit.max_model_calls {
             over.push("max_model_calls");
         }
-        if self.max_pages > limit.max_pages {
-            over.push("max_pages");
+        if self.max_reads > limit.max_reads {
+            over.push("max_reads");
         }
         if self.max_ms > limit.max_ms {
             over.push("max_ms");

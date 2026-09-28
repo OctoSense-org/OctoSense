@@ -111,7 +111,7 @@ async fn every_template_matches_its_fixtures() {
             if result.status != RunStatus::Failed {
                 assert!(result.stats.calls <= template.manifest.budget.max_calls);
                 assert!(result.stats.model_calls <= template.manifest.budget.max_model_calls);
-                assert!(result.stats.pages <= template.manifest.budget.max_pages);
+                assert!(result.stats.reads <= template.manifest.budget.max_reads);
             }
             checked += 1;
         }
