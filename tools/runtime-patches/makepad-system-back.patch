@@ -1,0 +1,34 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 274d922..ede68f2 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -1180,6 +1180,8 @@ public class MakepadActivity
+         void onDestroy();
+         default boolean onActivityResult(int requestCode, int resultCode, Intent data) { return false; }
+         default boolean onBackPressed() { return false; }
++        /** The extension owns Android 13+ Back through its system dispatcher. */
++        default boolean usesSystemBackCallback() { return false; }
+         /** Runs before native views or the renderer receive a touch. */
+         default boolean filterTouchEvent(MotionEvent event) { return true; }
+     }
+@@ -1811,6 +1813,12 @@ public class MakepadActivity
+     // key (BACK included) and forwards it to Rust, so onBackPressed never runs.
+     @Override
+     public boolean dispatchKeyEvent(KeyEvent event) {
++        // System Back invokes the registered callback separately. Forwarding
++        // its compatibility key to the surface would navigate twice.
++        if (android.os.Build.VERSION.SDK_INT >= 33 && event.getKeyCode() == KeyEvent.KEYCODE_BACK
++                && mApplicationExtension != null && mApplicationExtension.usesSystemBackCallback()) {
++            return true;
++        }
+         if (mQrScanning && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+             if (event.getAction() == KeyEvent.ACTION_UP) closeQrScanner("cancelled");
+             return true;
+@@ -1821,6 +1829,7 @@ public class MakepadActivity
+     @Override
+     @SuppressWarnings("deprecation")
+     public void onBackPressed() {
++        if (mQrScanning) { closeQrScanner("cancelled"); return; }
+         if (mApplicationExtension != null && mApplicationExtension.onBackPressed()) return;
+         super.onBackPressed();
+         MakepadNative.onBackPressed();

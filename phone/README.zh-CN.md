@@ -120,6 +120,8 @@ adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo
 
 octos Agent 内核是 Home 的一项服务，不依附于任何应用：`octosense-kernel`（[`crates/kernel`](../crates/kernel)），feature `octos-core`（默认开启，Android、iOS、OpenHarmony 构建总是开启）。Home 在启动时通过 Shell 的 AI 服务（[`crates/ai-host`](../crates/ai-host/README.md)）用自己的数据目录启动它，在有使用方连接之前不运行任何东西。之后每个进程只有一个内核：Android 上从 APK 原生库目录运行 `liboctos.so serve --stdio`（`rom/scripts/build-home.sh` 构建的每个 APK 都带有它），OpenHarmony 上在进程内运行，桌面上运行 `OCTOS_APP_CORE_BIN` 指定的二进制（未指定则没有），iOS 上没有。它的 core 目录在手机上是 `<数据目录>/octos-home/.octos`，在桌面上是 `OCTOS_APP_CORE_DIR`，否则 `~/octos-home/.octos`。AI 提供商应用负责配置它（见下文）；AppCard（需显式开启）以及之后的 Rinx 连接并共享它；最后一个使用方离开或 Home 关闭时内核停止。不带内核服务构建（仅桌面）：`--no-default-features` 加上需要的 feature，例如 `--features app-hub`。
 
+**Talk to Octos**（默认关闭）：在 **AI providers → Talk to Octos** 中打开后，本机会启动一个仅监听回环地址的服务，让 Web 客户端或终端界面与本设备的助手对话。开启期间内核以 `octos serve --host-managed` 代替 `--stdio` 运行，原生应用继续通过其 WebSocket 工作；外部客户端使用单独的令牌，只能打开 UI Protocol 套接字。Web 客户端通过一次性配对码或其链接的二维码配对；本用户的终端客户端读取私有连接文件。原生应用关闭后服务仍保持运行，直到关闭该功能或 Shell 退出。见 [ADR 0003（英文）](../docs/adr/0003-shared-octos-client-access.md) 和[内核指南](../crates/kernel/README.zh-CN.md)。
+
 ### AI 提供商
 
 AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-providers/host-service`](../apps/ai-providers/host-service)）编辑 octos 内核的 LLM 提供商，Home 在启动时通过 [`crates/ai-host`](../crates/ai-host/README.md) 注册该服务：

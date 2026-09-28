@@ -153,7 +153,8 @@ pub fn system_card_apps() -> Vec<crate::clients::AppDef> {
 /// closed.
 ///
 /// The `llm` service (AI providers, `os.ai-providers`) is the assistant's
-/// and registers with the kernel in `ai_host::start`, at startup.
+/// and registers with the kernel in `ai_host::start`, at startup, with the
+/// `model` service (`model.complete`, ADR 0002) over the same providers.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn register_host_services() {
     static ONCE: std::sync::Once = std::sync::Once::new();
@@ -388,7 +389,9 @@ impl AppRegistry {
         }
         // Modules that are module-hosted by default on a desktop too, unless
         // the person switched them.
-        if matches!(id, "robrix" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
+        // (Rinx is Robrix renamed: under the old id the desktop fell through
+        // to a process launch and failed with "binary not found: rinx".)
+        if matches!(id, "rinx" | "finance") && self.module(id).is_some() && !self.overrides.contains_key(id) {
             return Hosting::Module;
         }
         // A system or installed app has no process form anywhere: the `card`
@@ -444,9 +447,17 @@ impl AppRegistry {
 mod tests {
     use super::*;
 
-    /// The system apps system-apps.json selects, in its order.
+    /// The system apps this build's system-apps.json selects, in its order:
+    /// the desktop and the phone pack different sets (no Camera on the
+    /// desktop), chosen by `OCTOSENSE_SYSTEM_APPS` in `.cargo/config.toml`.
     #[cfg(any(feature = "app-hub", native_mobile))]
-    const SYSTEM_APPS: [&str; 6] = ["news", "photos", "maps", "camera", "mail", "ai-providers"];
+    fn system_app_ids() -> Vec<&'static str> {
+        let text = include_str!(env!("OCTOSENSE_SYSTEM_APPS"));
+        let json: serde_json::Value = serde_json::from_str(text).expect("system-apps.json parses");
+        json["apps"].as_array().expect("system-apps.json has apps").iter()
+            .map(|id| &*Box::leak(id.as_str().expect("app ids are strings").to_owned().into_boxed_str()))
+            .collect()
+    }
 
     #[cfg(feature = "mobile-apps")]
     #[test]
@@ -460,7 +471,7 @@ mod tests {
         let linked = linked_modules();
         let native: Vec<&str> = linked.iter().map(|m| m.id()).filter(|id| catalog_visible(id)).collect();
         let mut expected: Vec<&str> = native.clone();
-        expected.extend(SYSTEM_APPS.iter().copied().filter(|id| !native.contains(id)));
+        expected.extend(system_app_ids().iter().copied().filter(|id| !native.contains(id)));
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert_eq!(native.contains(&"appcard"), cfg!(feature = "app-appcard"));
         assert_eq!(native.contains(&"rinx"), cfg!(feature = "app-rinx"));
@@ -468,7 +479,7 @@ mod tests {
         // The system apps without a native module: the Card runner hosts
         // them, launched by their manifest id (ADR 0004).
         let registry = AppRegistry::default();
-        for id in SYSTEM_APPS.iter().filter(|id| !native.contains(id)) {
+        for id in system_app_ids().iter().filter(|id| !native.contains(id)) {
             let app = catalog.iter().find(|app| app.id == *id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
             assert_eq!(registry.module(id).map(|m| m.id()), Some("card"));
@@ -559,14 +570,16 @@ mod tests {
         let registry = AppRegistry::default();
         let native = registry.linked_ids();
         let ids: Vec<String> = system_card_apps().into_iter().map(|app| app.id).collect();
-        let expected: Vec<&str> = SYSTEM_APPS.iter().copied().filter(|id| !native.contains(id)).collect();
+        let expected: Vec<&str> = system_app_ids().iter().copied().filter(|id| !native.contains(id)).collect();
         assert_eq!(ids, expected);
         for id in &ids {
             assert_eq!(registry.hosting(id), Hosting::Module);
             assert!(is_linked(id));
         }
         assert_eq!(registry.hosting("apphub"), Hosting::Module, "the store has no process form");
-        assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
+        if system_app_ids().contains(&"camera") {
+            assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
+        }
     }
 
     #[test]
@@ -590,6 +603,14 @@ mod tests {
             assert!(registry.linked_ids().contains(&"sheets"));
             let plain = AppRegistry::default();
             assert_eq!(plain.hosting("sheets"), Hosting::Process, "desktop default is a process");
+        }
+    }
+
+    #[test]
+    fn rinx_is_module_hosted_on_the_desktop_by_default() {
+        let plain = AppRegistry::default();
+        if plain.module("rinx").is_some() {
+            assert_eq!(plain.hosting("rinx"), Hosting::Module, "Rinx ships only as a linked module");
         }
     }
 

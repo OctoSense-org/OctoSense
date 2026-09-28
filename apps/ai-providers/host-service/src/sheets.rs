@@ -59,6 +59,164 @@ fn frame(actions: &str, content: &str) -> String {
     )
 }
 
+/// Talk to Octos, on the trusted sheet: off by default. Turning it on starts
+/// the kernel's loopback server for external clients and mints their token;
+/// a web client pairs with a one-time code (`pair_client`). No token is ever
+/// shown, copied or sent to this script.
+pub fn connect_client() -> String {
+    let mut script = String::from(r#"
+fn status(text){ ui.status.set_text(text) }
+fn show(d){
+    if d.enabled { ui.state.set_text("On") } else { ui.state.set_text("Off") }
+    ui.turn_on.set_visible(d.enabled == false)
+    ui.on_box.set_visible(d.enabled == true)
+    ui.origin.set_text(d.origin)
+    ui.endpoint.set_text(d.endpoint)
+    ui.descriptor.set_text(d.descriptor)
+    ui.session.set_text(d.session_id)
+    ui.web_origin.set_text(d.web_origin)
+}
+fn answer(r){
+    if !r.is_ok { status(r.error) return }
+    show(r.data)
+    status("")
+}
+fn refresh(){ status("Checking…") host.request("llm.sheet.client_info", {}, fn(r){ answer(r) }) }
+fn enable(on){
+    if on { status("Starting the Talk to Octos server…") } else { status("Stopping external access…") }
+    host.request("llm.sheet.client_enable", {on: on}, fn(r){ answer(r) })
+}
+fn rotate(){
+    status("Revoking…")
+    host.request("llm.sheet.client_rotate", {}, fn(r){
+        answer(r)
+        if r.is_ok { status("Every paired client must pair again.") }
+    })
+}
+fn save_origin(){ status("Saving…") host.request("llm.sheet.client_origin", {origin: ui.web_origin.text()}, fn(r){ answer(r) }) }
+fn open_web(){ host.request("llm.sheet.client_open", {}, fn(r){ if !r.is_ok { status(r.error) } }) }
+fn poll_pair(){
+    host.request("llm.sheet.client_pair_ready", {}, fn(r){
+        if !r.is_ok { status(r.error) return }
+        if r.data.ready == true { host.request("llm.sheet.client_pair_show", {}, nil) return }
+        start_timeout(0.3, || poll_pair())
+    })
+}
+fn pair(){ status("Preparing a pairing code…") host.request("llm.sheet.client_pair", {}, fn(r){ if r.is_ok { poll_pair() } else { status(r.error) } }) }
+fn close(){ host.request("llm.sheet.cancel", {}, nil) }
+// The host's Back (phone) calls cancel(): closing ends any pairing code.
+fn cancel(){ close() }
+start_timeout(0.1, || refresh())
+"#);
+    script.push_str(STYLES);
+    script.push_str(&frame(
+        r#"Plain{text: "Done" on_click: || close()}
+           View{width: Fill height: 1}"#,
+        r#"Title{text: "Talk to Octos"}
+        Note{text: "Let a web client or a terminal on this device talk to your assistant. Off by default; only this device's apps use it then."}
+        View{width: Fill height: Fit flow: Right spacing: 8 align: Align{y: 0.5}
+            Caption{text: "Talk to Octos"}
+            state := Label{text: "" draw_text.color: #x1c1c1e draw_text.text_style: theme.font_bold{font_size: 13}}
+        }
+        turn_on := Primary{text: "Turn on" on_click: || enable(true)}
+        Note{text: "Turning on restarts the assistant: work in progress, in apps too, stops."}
+        on_box := View{visible: false width: Fill height: Fit flow: Down spacing: 8
+            Primary{text: "Pair a web client" on_click: || pair()}
+            Note{text: "Shows a one-time code and a QR of the web link. A code works once, for five minutes, only while its sheet is open."}
+            Caption{text: "Web client origin · https, or http only for localhost"}
+            web_origin := Field{empty_text: "https://web.example"}
+            Plain{text: "Save origin" on_click: || save_origin()}
+            Note{text: "Saving a changed origin restarts the assistant: work in progress, in apps too, stops."}
+            Plain{text: "Open web client" on_click: || open_web()}
+            Caption{text: "Server · the web client pairs with it"}
+            origin := Field{is_read_only: true}
+            Caption{text: "WebSocket endpoint · for a terminal client"}
+            endpoint := Field{is_read_only: true}
+            Caption{text: "Connection file · a terminal client of this user reads it"}
+            descriptor := Field{is_read_only: true}
+            Caption{text: "System-agent conversation · profile _main"}
+            session := Field{is_read_only: true}
+            Plain{text: "Revoke all clients" on_click: || rotate()}
+            Note{text: "Revoking disconnects every client and makes each pair again. It restarts the assistant, and Turn off does too: work in progress, in apps too, stops."}
+            Plain{text: "Turn off" on_click: || enable(false)}
+        }
+        Note{text: "A paired client talks with the assistant in the system conversation and answers only its own requests' questions. It cannot see or drive the apps' assistants, touch this device's turns, change models, keys or skills, run commands or git, or stop the assistant. A computer reaches this device through a tunnel that keeps the port number."}
+        status := Status{}"#,
+    ));
+    script
+}
+
+/// The pairing code's sheet: the code in large type and, when a web origin
+/// is saved, a QR of the web client's pairing link. It counts down and ends
+/// at zero; leaving it (Back, Done) turns pairing off.
+pub fn pair_client(code: &str, server: &str, qr: Option<(usize, &[bool])>, lifetime_secs: u64) -> String {
+    let mut script = format!(
+        r##"let left = {lifetime_secs}
+let closing = false
+fn back(){{
+    if closing {{ return }}
+    closing = true
+    host.request("llm.sheet.client_back", {{}}, nil)
+}}
+fn again(){{
+    if closing {{ return }}
+    closing = true
+    host.request("llm.sheet.client_pair", {{}}, fn(r){{ if r.is_ok {{ poll() }} else {{ ui.status.set_text(r.error) }} }})
+}}
+fn poll(){{
+    host.request("llm.sheet.client_pair_ready", {{}}, fn(r){{
+        if !r.is_ok {{ ui.status.set_text(r.error) return }}
+        if r.data.ready == true {{ host.request("llm.sheet.client_pair_show", {{}}, nil) return }}
+        start_timeout(0.3, || poll())
+    }})
+}}
+fn close(){{ host.request("llm.sheet.cancel", {{}}, nil) }}
+fn cancel(){{ close() }}
+fn count_down(){{
+    if closing {{ return }}
+    left = left - 1
+    if left <= 0 {{ back() return }}
+    let m = floor(left / 60)
+    let s = left - m * 60
+    if s < 10 {{ ui.countdown.set_text("Expires in " + m + ":0" + s) }} else {{ ui.countdown.set_text("Expires in " + m + ":" + s) }}
+    start_timeout(1, || count_down())
+}}
+start_timeout(1, || count_down())
+let Dark = SolidView{{height: Fill draw_bg.color: #x000000}}
+let Light = View{{height: Fill}}
+let QrRow = View{{width: Fit flow: Right}}
+{STYLES}"##
+    );
+    let expires = format!("{}:{:02}", lifetime_secs / 60, lifetime_secs % 60);
+    let qr = match qr {
+        Some((size, modules)) => format!(
+            "        Note{{text: \"Scan it with the device where the web client runs, or open the web client and type the code.\"}}\n        View{{width: Fill height: Fit flow: Down align: Align{{x: 0.5}}\n{}        }}\n",
+            qr_views(size, modules, module_px(size))
+        ),
+        None => "        Note{text: \"Save the web client's origin on the previous page to get a QR of its link.\"}\n".to_string(),
+    };
+    let content = format!(
+        r#"        Title{{text: "Pair a web client"}}
+        Note{{text: "Open the web client, enter this device's server and type the code. The code gives that client access once."}}
+{qr}        Caption{{text: "Code"}}
+        code := Label{{width: Fill align: Align{{x: 0.5}} text: "{code}" draw_text.color: ink draw_text.text_style: theme.font_bold{{font_size: 30}}}}
+        countdown := Caption{{text: "Expires in {expires}"}}
+        Caption{{text: "Server"}}
+        Note{{text: "{server}"}}
+        status := Status{{}}"#,
+        code = lit(code),
+        server = lit(server),
+    );
+    script.push_str(&frame(
+        r#"            Plain{text: "Back" on_click: || back()}
+            View{width: Fill height: 1}
+            Plain{text: "New code" on_click: || again()}
+            Primary{text: "Done" on_click: || close()}"#,
+        &content,
+    ));
+    script
+}
+
 /// The add and edit sheet: a five-step wizard in Octoscode's `/model` order,
 /// one step per page, a step indicator and progress bar at the top, and Back
 /// / Next pinned at the bottom (Next is greyed out until the step is valid):
@@ -774,6 +932,7 @@ fn close(){{
     closing = true
     host.request("llm.sheet.cancel", {{}}, nil)
 }}
+fn cancel(){{ close() }}
 fn count_down(){{
     if closing {{ return }}
     left = left - 1
@@ -903,6 +1062,16 @@ if can_drop {{ await_drop() }}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pairing_sheet_shows_the_code_and_a_qr_of_the_link_only() {
+        let (size, modules) = octosense_llm_config::qr::render_matrix("https://web.example/?octos=http%3A%2F%2F127.0.0.1%3A4000&pair=ABCD2345").unwrap();
+        let sheet = pair_client("ABCD2345", "http://127.0.0.1:4000", Some((size, &modules)), 300);
+        assert!(sheet.contains("ABCD2345") && sheet.contains("// qr-begin") && sheet.contains("Expires in 5:00"));
+        assert!(sheet.contains("llm.sheet.client_back"), "leaving the code's sheet turns pairing off");
+        let without = pair_client("AB\"CD", "http://127.0.0.1:4000", None, 300);
+        assert!(!without.contains("// qr-begin") && !without.contains("AB\"CD"), "literals are sanitised");
+    }
 
     #[test]
     fn literals_cannot_be_ended_early() {

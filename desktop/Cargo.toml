@@ -44,7 +44,7 @@ octosense-shell = { workspace = true }
 
 [features]
 # App Hub is part of the standard launcher: the store, the Card runner and
-# the system apps (News, Photos, Maps, Camera, Mail, AI providers) it runs;
+# the system apps (News, Photos, Maps, Mail, AI providers; Camera is phone-only) it runs;
 # the octos kernel is a shell service in every standard build.
 default = ["app-hub", "octos-core", "app-rinx"]
 # The embedded apps, also usable on the desktop with --module. AppCard is not

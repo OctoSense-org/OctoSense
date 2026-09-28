@@ -11,7 +11,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | Where | Role for the desktop |
 | --- | --- |
 | [`../phone/`](../phone/README.md) | Home, the phone shell. Same app model, same runtime, same system apps. |
-| [`../apps/`](../apps/README.md) | News, Photos, Maps, Camera, Mail and AI providers bundles, the Mail and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
+| [`../apps/`](../apps/README.md) | News, Photos, Maps, Mail and AI providers bundles (Camera is phone-only), the Mail and `llm` host services, the AppCard assistant (`octos-app`, opt-in, not shipped by default), and Reference. |
 | [`../crates/`](../crates/) | The shell itself (`crates/shell`, package `octosense-shell`, which this package wraps), its AI services (`crates/ai-host`), the octos kernel service (`crates/kernel`, package `octosense-kernel`) and the app-agent broker (`crates/app-peers`). |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store and the Card runner. Linked as the Git crate `octosense-app-hub-app`. |
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | Where apps are designed, built and published to the App Hub. |
@@ -122,7 +122,7 @@ The launcher lists four kinds of app together:
 
 | Kind | Comes from | Runs as | Launcher id |
 | --- | --- | --- | --- |
-| **System apps**: News, Photos, Maps, Camera, Mail, AI providers | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
+| **System apps**: News, Photos, Maps, Mail, AI providers (Camera ships on the phone only) | `../apps/<name>/bundle`, selected by `system-apps.json`, packed into the build | Contained Splash programs in App Hub's Card runner, each in its own isolate under the capabilities its manifest asks for | `<name>` (manifest id `os.<name>`) |
 | **Store apps** | The signed App Hub catalog, installed from the store (`apphub`) | The same Card runner. Every open is checked against the catalog; an update closes old instances. | `hub:<manifest-id>` |
 | **Native modules** | Rust crates linked into this binary | In-process `AppModule`s. Trusted code only: App Hub, AppCard, Rinx, Reference and the `app-*` features. | module id |
 | **Developer programs** | `config/apps.json` | Separate processes in tiles, over Makepad's `--stdin-loop` hosting protocol, built on first launch | catalog `id` |
@@ -146,6 +146,8 @@ Mail is the worked example (`octosense-mail-service`, from [`../apps/mail/host-s
 AI providers (`os.ai-providers`) edits the octos kernel's LLM providers through the `llm` service (`octosense-llm-service`, from [`../apps/ai-providers/host-service`](../apps/ai-providers/host-service)). Keys are typed only on host sheets and go to the macOS keychain entry octos reads; the providers are written to the kernel's profile under the shell's octos core dir (`<core dir>/profiles/_main.json`; core dir `OCTOS_APP_CORE_DIR`, else `~/octos-home/.octos`). A phone's provider QR is imported from a picture of it: **Choose image** opens the open panel, or drop a screenshot on the import sheet. **Start → Settings → AI providers** opens it. After a change the service restarts the kernel if one runs; its consumers (AppCard) reconnect to the new one.
 
 **The octos kernel** is a shell service, not part of any app: `octosense-kernel` ([`../crates/kernel`](../crates/kernel), feature `octos-core`, default). The shell starts it through its AI services at startup ([`../crates/ai-host`](../crates/ai-host/README.md), `octosense_ai_host::start`); nothing runs until a consumer connects, then one kernel per process (`<OCTOS_APP_CORE_BIN> serve --stdio --data-dir <core dir>` on a desktop, the APK's `liboctos.so` on Android; none on iOS or on a desktop without `OCTOS_APP_CORE_BIN`). AppCard's agent connects to it; Rinx reaches it through the app-agent broker. It stops when the last consumer leaves and when the shell exits.
+
+**Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
 
 New app features that need a password, PIN or token belong in a host service and a host sheet, never in the app's own UI.
 
@@ -173,7 +175,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
+  "apps": ["news", "photos", "maps", "mail", "ai-providers"],
   "assets": {}
 }
 ```

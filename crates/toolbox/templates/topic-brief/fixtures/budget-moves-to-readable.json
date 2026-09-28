@@ -1,0 +1,241 @@
+{
+  "name": "budget-moves-to-readable",
+  "params": {
+    "language": "en",
+    "languages": [
+      {
+        "language": "en",
+        "translate": false
+      },
+      {
+        "language": "zh",
+        "translate": true
+      }
+    ],
+    "max_age_hours": 72,
+    "per_language": 2,
+    "read_top": 4,
+    "topic": "Nvidia earnings"
+  },
+  "fixture": {
+    "now": "2026-09-27T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Nvidia earnings",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/en/nvidia-results",
+            "title": "Nvidia beats forecasts on data-center demand",
+            "source": "Market Wire",
+            "language": "en",
+            "published_at": "2026-09-26T21:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/en/nvidia-guidance",
+            "title": "Nvidia guides above estimates for next quarter",
+            "source": "Chip Weekly",
+            "language": "en",
+            "published_at": "2026-09-26T20:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/en/nvidia-shares",
+            "title": "Nvidia shares swing after earnings call",
+            "source": "Daily Markets",
+            "language": "en",
+            "published_at": "2026-09-26T19:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/en/nvidia-china",
+            "title": "Nvidia says China sales fell to 8% of revenue",
+            "source": "Market Wire",
+            "language": "en",
+            "published_at": "2026-09-26T18:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "英伟达 财报",
+        "language": "zh",
+        "delay_ms": 20,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/zh-nvidia-1",
+            "title": "英伟达财报超预期",
+            "source": "新闻网",
+            "language": "zh",
+            "published_at": "2026-09-26T22:00:00Z",
+            "via": "",
+            "readable": false
+          },
+          {
+            "url": "https://news.google.com/rss/articles/zh-nvidia-2",
+            "title": "英伟达股价盘后波动",
+            "source": "财经网",
+            "language": "zh",
+            "published_at": "2026-09-26T21:30:00Z",
+            "via": "",
+            "readable": false
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/en/nvidia-china": {
+        "text": "Nvidia said sales in China fell to 8% of revenue in the quarter, down from 13% a year earlier.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/en/nvidia-guidance": {
+        "text": "Nvidia guided next-quarter revenue to $56 billion, above the average estimate of $54 billion.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/en/nvidia-results": {
+        "text": "Nvidia reported quarterly revenue of $52 billion, above analysts' forecasts, on strong data-center demand.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/en/nvidia-shares": {
+        "text": "Nvidia shares moved 6% in both directions in after-hours trading as investors weighed the earnings call.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {
+      "Nvidia earnings": "英伟达 财报"
+    },
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "brief": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "sc6a7d5d66c2c"
+            ],
+            "text": "Nvidia shares moved 6% in both directions in after-hours trading as investors weighed the earnings call."
+          },
+          {
+            "citations": [
+              "s520cc0858545"
+            ],
+            "text": "Nvidia reported quarterly revenue of $52 billion, above analysts' forecasts, on strong data-center demand."
+          },
+          {
+            "citations": [
+              "s449a38c14146"
+            ],
+            "text": "Nvidia guided next-quarter revenue to $56 billion, above the average estimate of $54 billion."
+          },
+          {
+            "citations": [
+              "sa5589babf678"
+            ],
+            "text": "Nvidia said sales in China fell to 8% of revenue in the quarter, down from 13% a year earlier."
+          }
+        ],
+        "summary": "Sources: Nvidia shares swing after earnings call; Nvidia beats forecasts on data-center demand; Nvidia guides above estimates for next quarter; Nvidia says China sales fell to 8% of revenue",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "digest"
+      },
+      "language": "en",
+      "missing": 0,
+      "queries": [
+        {
+          "failed": 0,
+          "found": 4,
+          "language": "en",
+          "left": 0,
+          "off_topic": 0,
+          "read": 4,
+          "terms": "Nvidia earnings",
+          "unreadable": 0
+        },
+        {
+          "failed": 0,
+          "found": 2,
+          "language": "zh",
+          "left": 0,
+          "off_topic": 0,
+          "read": 0,
+          "terms": "英伟达 财报",
+          "unreadable": 2
+        }
+      ],
+      "sources": [
+        {
+          "evidence_sha256": "88a4945d9c759f82178d8a1e0f4e39be1df842e6b5db4f077df689e298a0fad3",
+          "id": "sc6a7d5d66c2c",
+          "language": "en",
+          "published_at": "2026-09-26T19:00:00Z",
+          "source": "Daily Markets",
+          "title": "Nvidia shares swing after earnings call",
+          "url": "https://example.invalid/en/nvidia-shares"
+        },
+        {
+          "evidence_sha256": "772ef03c44e67a03e89579ab183002f197cf38589ec3f9196e0080f217da8972",
+          "id": "s520cc0858545",
+          "language": "en",
+          "published_at": "2026-09-26T21:00:00Z",
+          "source": "Market Wire",
+          "title": "Nvidia beats forecasts on data-center demand",
+          "url": "https://example.invalid/en/nvidia-results"
+        },
+        {
+          "evidence_sha256": "060b76a947662ebe941d4077f0287c076f2cb958bb6bd49201c27ddcd8955916",
+          "id": "s449a38c14146",
+          "language": "en",
+          "published_at": "2026-09-26T20:00:00Z",
+          "source": "Chip Weekly",
+          "title": "Nvidia guides above estimates for next quarter",
+          "url": "https://example.invalid/en/nvidia-guidance"
+        },
+        {
+          "evidence_sha256": "d76c6193a704978ff6e0845d94d8c292e71b22f0b5c1ef813632d8d5595db1f7",
+          "id": "sa5589babf678",
+          "language": "en",
+          "published_at": "2026-09-26T18:00:00Z",
+          "source": "Market Wire",
+          "title": "Nvidia says China sales fell to 8% of revenue",
+          "url": "https://example.invalid/en/nvidia-china"
+        }
+      ],
+      "topic": "Nvidia earnings"
+    }
+  }
+}

@@ -57,6 +57,7 @@ import org.json.JSONObject;
 /** Public launcher client and asynchronous bridge adapter in the Home process. */
 public final class MakepadAppExtension implements MakepadActivity.ApplicationExtension {
     private final MakepadActivity activity;
+    private Runnable unregisterSystemBack;
     private final ObscuredTouchGuard touchGuard=new ObscuredTouchGuard();
     @Override public boolean filterTouchEvent(android.view.MotionEvent event) {return touchGuard.accept(event);}
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -231,6 +232,21 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         });
         refreshCatalog();
         onIntent(activity.getIntent());
+        // This activity opts into predictive Back. Its legacy callback alone
+        // cannot prevent Android 13+ from finishing the shell.
+        if(android.os.Build.VERSION.SDK_INT>=33) {
+            unregisterSystemBack=SystemBack.register(activity,activity::onBackPressed);
+        }
+    }
+    @android.annotation.TargetApi(33)
+    private static final class SystemBack {
+        static Runnable register(MakepadActivity activity,Runnable action) {
+            android.window.OnBackInvokedDispatcher dispatcher=activity.getOnBackInvokedDispatcher();
+            android.window.OnBackInvokedCallback callback=action::run;
+            // DEFAULT leaves the IME's Back dismissal ahead of app navigation.
+            dispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback);
+            return () -> dispatcher.unregisterOnBackInvokedCallback(callback);
+        }
     }
     /** A native dialog in the shell's appearance rather than the device default. */
     private AlertDialog.Builder dialog(boolean dark) {
@@ -1540,7 +1556,15 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         offer(() -> {if(soundsSettings!=null)soundsSettings.invalidate();if(appNotificationsSettings!=null)appNotificationsSettings.invalidate();if(rolesSettings!=null)rolesSettings.invalidate();if(permissionsSettings!=null)permissionsSettings.invalidate();if(dndSettings!=null)dndSettings.invalidate();if(appNetworkSettings!=null)appNetworkSettings.invalidate();if(appBatterySettings!=null)appBatterySettings.invalidate();if(appStorageSettings!=null)appStorageSettings.invalidate();if(appLanguageSettings!=null)appLanguageSettings.invalidate();if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();emitUiMode();});
     }
     @Override public boolean onActivityResult(int request,int result,Intent data) {return widgets.onActivityResult(request,result,data);}
-    @Override public boolean onBackPressed() {return replyComposer.close()||widgets.hide();}
+    @Override public boolean usesSystemBackCallback() {return unregisterSystemBack!=null;}
+    @Override public boolean onBackPressed() {
+        if(replyComposer.close()||widgets.hide()) return true;
+        // The shell offers Back to its foreground module, then returns to
+        // its launcher. Do not let Activity's fallback finish the shell
+        // before that asynchronous Rust event is handled.
+        dev.makepad.android.MakepadNative.onBackPressed();
+        return true;
+    }
     private void sendSettingsEntry(SettingsEntryContract.Entry entry) {
         if(entry!=null) {
             JSONObject packet=json("schema",1,"id",entry.id,"route",entry.route);
@@ -1592,6 +1616,7 @@ public final class MakepadAppExtension implements MakepadActivity.ApplicationExt
         if(intent!=null && intent.hasCategory(Intent.CATEGORY_HOME)) {replyComposer.close();widgets.hide();homeGeometry.invalidate();}
     }
     @Override public void onDestroy() {
+        if(unregisterSystemBack!=null) {unregisterSystemBack.run();unregisterSystemBack=null;}
         QrImagePickActivity.setListener(null);
         offer(()->{if(captionLanguageSettings!=null)captionLanguageSettings.invalidate();if(systemLanguageSettings!=null)systemLanguageSettings.invalidate();if(keyboardSettings!=null)keyboardSettings.invalidate();});
         if(captionCustomSettings!=null)captionCustomSettings.retireInBackground();

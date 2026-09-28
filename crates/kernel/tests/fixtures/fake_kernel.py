@@ -31,7 +31,11 @@ for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
-    msg = json.loads(line)
+    try:
+        msg = json.loads(line)
+    except ValueError:
+        # `serve --host-managed` gets its two token lines first; skip them.
+        continue
     method, rid, params = msg.get("method"), msg.get("id"), msg.get("params") or {}
     if method == "test/exit":
         print("fake kernel: asked to exit", file=sys.stderr, flush=True)

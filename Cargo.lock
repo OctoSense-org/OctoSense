@@ -303,7 +303,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
  "x11rb",
 ]
 
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
 dependencies = [
  "article-core",
  "libc",
@@ -1671,10 +1671,23 @@ version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e901edd733a1472f944a45116df3f846f54d37e67e68640ac8bb69689aca2aa"
 dependencies = [
- "cssparser-macros",
+ "cssparser-macros 0.6.1",
  "dtoa-short",
  "itoa",
  "phf 0.11.3",
+ "smallvec 1.16.1",
+]
+
+[[package]]
+name = "cssparser"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c9cdaae01d5ed7882b04d795e7f752f46ff52d2fa3b50a20d28c464510bba98"
+dependencies = [
+ "cssparser-macros 0.7.1",
+ "dtoa-short",
+ "itoa",
+ "phf 0.13.1",
  "smallvec 1.16.1",
 ]
 
@@ -1683,6 +1696,16 @@ name = "cssparser-macros"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
+dependencies = [
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "cssparser-macros"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
  "syn 2.0.119",
@@ -2057,7 +2080,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2081,6 +2104,40 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.5",
+]
+
+[[package]]
+name = "dom_query"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fac5fca71e65e94cc718a6e2af65d6e0f9c6027751c2aa562fbb5087fda639bc"
+dependencies = [
+ "bit-set 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cssparser 0.37.0",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "html5ever 0.39.0",
+ "nom",
+ "precomputed-hash",
+ "selectors 0.38.0",
+ "tendril 0.5.1",
+]
+
+[[package]]
+name = "dom_smoothie"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1afbed996f0bcb119c068504c7c504d625700d58c8bd862d6f66abd7ae7d3859"
+dependencies = [
+ "dom_query",
+ "flagset",
+ "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gjson",
+ "html-escape",
+ "once_cell 1.21.4",
+ "phf 0.13.1",
+ "tendril 0.5.1",
+ "thiserror 2.0.20",
+ "unicode-segmentation 1.13.3",
 ]
 
 [[package]]
@@ -2518,6 +2575,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
+name = "flagset"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
+
+[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2807,8 +2870,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -3594,6 +3657,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "gjson"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43503cc176394dd30a6525f5f36e838339b8b5619be33ed9a7783841580a97b6"
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3905,6 +3974,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "html-escape"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9356095b4b41197bba32173600e1582792cda618f65d12f68e2e77d273413c5"
+
+[[package]]
 name = "html5ever"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4105,7 +4180,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-core 0.56.0",
 ]
 
 [[package]]
@@ -6616,7 +6691,7 @@ dependencies = [
 [[package]]
 name = "octos-agent"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6645,6 +6720,7 @@ dependencies = [
  "octos-llm",
  "octos-memory",
  "octos-plugin",
+ "octos-research",
  "pdf-extract",
  "redb",
  "regex",
@@ -6744,7 +6820,7 @@ dependencies = [
 [[package]]
 name = "octos-bus"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -6773,7 +6849,7 @@ dependencies = [
 [[package]]
 name = "octos-cli"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "agent-client-protocol",
  "argon2",
@@ -6854,7 +6930,7 @@ dependencies = [
 [[package]]
 name = "octos-core"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "chrono",
  "eyre",
@@ -6868,7 +6944,7 @@ dependencies = [
 [[package]]
 name = "octos-diagnostics"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6880,7 +6956,7 @@ dependencies = [
 [[package]]
 name = "octos-fleet"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6896,7 +6972,7 @@ dependencies = [
 [[package]]
 name = "octos-fleet-worker"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "async-trait",
  "eyre",
@@ -6913,7 +6989,7 @@ dependencies = [
 [[package]]
 name = "octos-llm"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6937,7 +7013,7 @@ dependencies = [
 [[package]]
 name = "octos-memory"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "bincode",
  "chrono",
@@ -6956,7 +7032,7 @@ dependencies = [
 [[package]]
 name = "octos-pipeline"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6978,7 +7054,7 @@ dependencies = [
 [[package]]
 name = "octos-plugin"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "eyre",
  "metrics",
@@ -6990,9 +7066,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "octos-research"
+version = "2.0.3-rc.13"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
+dependencies = [
+ "chrono",
+ "dom_smoothie",
+ "futures",
+ "makepad-script",
+ "octoscript-core",
+ "quick-xml",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "octos-sandbox"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "clap",
  "eyre",
@@ -7007,7 +7104,7 @@ dependencies = [
 [[package]]
 name = "octos-services"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "chrono",
  "dirs",
@@ -7029,7 +7126,7 @@ dependencies = [
 [[package]]
 name = "octos-store"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7049,7 +7146,7 @@ dependencies = [
 [[package]]
 name = "octos-swarm"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7068,7 +7165,7 @@ dependencies = [
 [[package]]
 name = "octos-workflows"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=60cf96e6c8719bd5f1b61ab5b537a88ffa314879#60cf96e6c8719bd5f1b61ab5b537a88ffa314879"
+source = "git+https://github.com/octos-org/octos.git?rev=5e7577f0cb92cf618b965745434b0200e2b82865#5e7577f0cb92cf618b965745434b0200e2b82865"
 dependencies = [
  "chrono",
  "eyre",
@@ -7079,6 +7176,29 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "octoscript-capabilities"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "getrandom 0.3.4",
+ "makepad-script",
+ "octoscript-core",
+ "octoscript-protocol",
+ "octoscript-schema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "octoscript-core"
+version = "0.1.0"
+dependencies = [
+ "makepad-script",
+ "octoscript-ui-l0",
+ "serde_json",
 ]
 
 [[package]]
@@ -7095,11 +7215,29 @@ name = "octoscript-node"
 version = "0.1.0"
 
 [[package]]
+name = "octoscript-protocol"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "constant_time_eq 0.4.2",
+ "serde",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "octoscript-render"
 version = "0.1.0"
 dependencies = [
  "makepad-script",
  "octoscript-node",
+ "serde_json",
+]
+
+[[package]]
+name = "octoscript-schema"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 
@@ -7141,7 +7279,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=e8601b80ce104db2e48208094714bdcffdce6b5a#e8601b80ce104db2e48208094714bdcffdce6b5a"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7157,7 +7295,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=e8601b80ce104db2e48208094714bdcffdce6b5a#e8601b80ce104db2e48208094714bdcffdce6b5a"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7185,7 +7323,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=e8601b80ce104db2e48208094714bdcffdce6b5a#e8601b80ce104db2e48208094714bdcffdce6b5a"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7206,7 +7344,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=46d67e51b62827a1224b1aacddc2a7b9e69185fc#46d67e51b62827a1224b1aacddc2a7b9e69185fc"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=e8601b80ce104db2e48208094714bdcffdce6b5a#e8601b80ce104db2e48208094714bdcffdce6b5a"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7241,12 +7379,18 @@ dependencies = [
 name = "octosense-kernel"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
+ "libc",
  "log",
  "octos-cli",
+ "octos-core",
  "octosense-llm-config",
  "serde_json",
  "tokio",
+ "tokio-tungstenite 0.24.0",
  "tracing-subscriber",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -7389,6 +7533,27 @@ dependencies = [
  "rinx",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "octosense-toolbox"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dom_smoothie",
+ "futures-util",
+ "octos-research",
+ "octoscript-capabilities",
+ "octoscript-core",
+ "octoscript-schema",
+ "quick-xml",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
+ "url",
 ]
 
 [[package]]
@@ -8512,7 +8677,7 @@ dependencies = [
 [[package]]
 name = "rinx"
 version = "1.0.0-beta.1"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8557,7 +8722,9 @@ dependencies = [
  "rand 0.8.8",
  "rangemap",
  "rfd",
+ "rinx-miniapp-catalog",
  "rinx-miniapp-core",
+ "rinx-system-apps",
  "robius-directories",
  "robius-file-picker",
  "robius-location",
@@ -8582,10 +8749,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "rinx-miniapp-catalog"
+version = "0.1.0"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+dependencies = [
+ "octosense-app-hub",
+ "octosense-app-policy",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=a72e4b003a05ebcb31bc86c346d7dd06cdffbceb#a72e4b003a05ebcb31bc86c346d7dd06cdffbceb"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
 dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rinx-system-apps"
+version = "0.1.0"
+source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+dependencies = [
+ "octosense-app-policy",
  "serde",
  "serde_json",
 ]
@@ -9356,11 +9545,11 @@ version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5f3a24d916e78954af99281a455168d4a9515d65eca99a18da1b813689c4ad9"
 dependencies = [
- "cssparser",
+ "cssparser 0.35.0",
  "ego-tree",
  "html5ever 0.35.0",
  "precomputed-hash",
- "selectors",
+ "selectors 0.31.0",
  "tendril 0.4.3",
 ]
 
@@ -9472,7 +9661,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5685b6ae43bfcf7d2e7dfcfb5d8e8f61b46442c902531e41a32a9a8bf0ee0fb6"
 dependencies = [
  "bitflags 2.13.2",
- "cssparser",
+ "cssparser 0.35.0",
  "derive_more 2.1.1",
  "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
@@ -9480,6 +9669,25 @@ dependencies = [
  "phf 0.11.3",
  "phf_codegen 0.11.3",
  "precomputed-hash",
+ "servo_arc",
+ "smallvec 1.16.1",
+]
+
+[[package]]
+name = "selectors"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cssparser 0.37.0",
+ "derive_more 2.1.1",
+ "log",
+ "new_debug_unreachable",
+ "phf 0.13.1",
+ "phf_codegen 0.13.1",
+ "precomputed-hash",
+ "rustc-hash 2.1.3",
  "servo_arc",
  "smallvec 1.16.1",
 ]
@@ -10171,7 +10379,7 @@ dependencies = [
  "memchr 2.8.3",
  "ntapi",
  "objc2-core-foundation",
- "windows 0.57.0",
+ "windows 0.56.0",
 ]
 
 [[package]]
@@ -10192,7 +10400,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell 1.21.4",
  "rustix",
  "windows-sys 0.61.2",
@@ -10920,7 +11128,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11630,16 +11838,6 @@ dependencies = [
 
 [[package]]
 name = "windows"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
-dependencies = [
- "windows-core 0.57.0",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows"
 version = "0.61.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
@@ -11705,18 +11903,6 @@ checksum = "4698e52ed2d08f8658ab0c39512a7c00ee5fe2688c65f8c0a4f06750d729f2a6"
 dependencies = [
  "windows-implement 0.56.0",
  "windows-interface 0.56.0",
- "windows-result 0.1.2",
- "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ed2439a290666cd67ecce2b0ffaad89c2a56b976b736e6ece670297897832d"
-dependencies = [
- "windows-implement 0.57.0",
- "windows-interface 0.57.0",
  "windows-result 0.1.2",
  "windows-targets 0.52.6",
 ]
@@ -11798,17 +11984,6 @@ dependencies = [
 
 [[package]]
 name = "windows-implement"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9107ddc059d5b6fbfbffdfa7a7fe3e22a226def0b2608f72e9d552763d3e1ad7"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "windows-implement"
 version = "0.60.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
@@ -11823,17 +11998,6 @@ name = "windows-interface"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08990546bf4edef8f431fa6326e032865f27138718c587dc21bc0265bbcb57cc"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "windows-interface"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29bee4b38ea3cde66011baa44dba677c432a78593e202392d1e9070cf2a7fca7"
 dependencies = [
  "proc-macro2",
  "quote",

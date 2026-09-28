@@ -266,6 +266,8 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 `octosense_kernel::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
 方式见其 [README（英文）](ai-providers/host-service/README.md)。
 
+**Talk to Octos**（默认关闭）：在 **AI providers → Talk to Octos** 中打开后，本机会启动一个仅监听回环地址的服务，让 Web 客户端或终端界面与本设备的助手对话。开启期间内核以 `octos serve --host-managed` 代替 `--stdio` 运行，原生应用继续通过其 WebSocket 工作；外部客户端使用单独的令牌，只能打开 UI Protocol 套接字。Web 客户端通过一次性配对码或其链接的二维码配对；本用户的终端客户端读取私有连接文件。原生应用关闭后服务仍保持运行，直到关闭该功能或 Shell 退出。见 [ADR 0003（英文）](../docs/adr/0003-shared-octos-client-access.md) 和[内核指南](../crates/kernel/README.zh-CN.md)。
+
 ## octos 内核
 
 octos Agent 内核是 **Shell 服务**，不属于任何应用。
@@ -306,7 +308,7 @@ octos UI Protocol v1 与 octos 通信。
   `octos-app-render`（流式 markdown 渲染）。
 - **octos**：所有 octos crate 都来自 git `octos-org/octos`，版本为根目录
   `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（目前是 octos `main` 上的
-  `60cf96e6`），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
+  `5e7577f0`），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
   （见 [octos 内核](#octos-内核)）。
 - **Makepad**：不内置。Makepad、Octoscript 和 Octoscript-Makepad 是仓库根目录下
   `.sources/` 中由 `tools/setup.py` 准备的检出，版本由 `native-runtime.lock.json`
@@ -379,7 +381,7 @@ Shell 的 `system-apps.json` 中加入它。
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，原生模块；通过 `crates/app-peers` 访问助手 |
-| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `60cf96e6`） |
+| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `5e7577f0`） |
 
 ## 参与贡献
 

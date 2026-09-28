@@ -1,0 +1,143 @@
+{
+  "name": "workday",
+  "params": {
+    "language": "en",
+    "per_topic": 1,
+    "topics": [
+      "Harbor City weather today",
+      "Harbor City business news"
+    ]
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Harbor City weather today",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/harbor/weather",
+            "title": "Harbor City: showers clearing by noon",
+            "source": "Harbor Daily",
+            "language": "en",
+            "published_at": "2026-09-20T05:30:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Harbor City business news",
+        "language": "en",
+        "delay_ms": 50,
+        "partial": false,
+        "providers": [
+          "fixture"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/harbor/port",
+            "title": "Port of Harbor City posts busiest August on record",
+            "source": "Harbor Business",
+            "language": "en",
+            "published_at": "2026-09-19T18:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/harbor/port": {
+        "text": "The Port of Harbor City handled 212,000 containers in August, its busiest month on record. Port officials credited a new shipping route.",
+        "title": null,
+        "delay_ms": 60,
+        "error": null
+      },
+      "https://example.invalid/harbor/weather": {
+        "text": "Morning showers in Harbor City will clear by noon, with a dry afternoon and a high of 22°C.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "briefing": {
+        "dropped_points": 0,
+        "language": "en",
+        "off_topic": [],
+        "points": [
+          {
+            "citations": [
+              "s900ad8d2df86"
+            ],
+            "text": "Morning showers in Harbor City will clear by noon, with a dry afternoon and a high of 22°C."
+          },
+          {
+            "citations": [
+              "sb2851996f7a5"
+            ],
+            "text": "The Port of Harbor City handled 212,000 containers in August, its busiest month on record."
+          }
+        ],
+        "summary": "Sources: Harbor City: showers clearing by noon; Port of Harbor City posts busiest August on record",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
+        "task": "brief"
+      },
+      "language": "en",
+      "missing": 0,
+      "sources": [
+        {
+          "evidence_sha256": "8a199eab701fe51ac8214ce5cb1fbb1a8a3974f0242748aec5dffefb67590de5",
+          "id": "s900ad8d2df86",
+          "published_at": "2026-09-20T05:30:00Z",
+          "source": "Harbor Daily",
+          "title": "Harbor City: showers clearing by noon",
+          "topic": "Harbor City weather today",
+          "url": "https://example.invalid/harbor/weather"
+        },
+        {
+          "evidence_sha256": "328715f1ac69b729e4d7c2f386161e0f44c4f9cef4d0f5b0dd980e88140b059e",
+          "id": "sb2851996f7a5",
+          "published_at": "2026-09-19T18:00:00Z",
+          "source": "Harbor Business",
+          "title": "Port of Harbor City posts busiest August on record",
+          "topic": "Harbor City business news",
+          "url": "https://example.invalid/harbor/port"
+        }
+      ],
+      "topics": [
+        {
+          "found": 1,
+          "read": 1,
+          "topic": "Harbor City weather today"
+        },
+        {
+          "found": 1,
+          "read": 1,
+          "topic": "Harbor City business news"
+        }
+      ]
+    }
+  }
+}
