@@ -9,6 +9,7 @@ OctoSense 仓库的决策：Shell、Shell 服务、系统应用，以及桌面�
 | [0001](0001-one-octosense-repository.md)（英文） | 用一个 OctoSense 仓库承载 Shell、Shell 服务、系统应用和两种打包形态 | 已接受 |
 | [0002](0002-event-driven-app-agents.md)（英文） | 事件驱动的应用智能体：应用按自己的触发条件思考，并把卡片发布到一览屏 | 提议中 |
 | [0003](0003-shared-octos-client-access.md)（英文） | Talk to Octos：原生与外部客户端共用一个内核（需手动开启） | 已实现；Android 未验证 |
+| [0004](0004-native-apps-hosting-and-peers.md)（英文） | 原生应用、应用智能体与跨应用协作：一份清单、按目标平台托管、每个应用都有智能体、由本人批准 | 已接受 |
 
 ## Home（手机 Shell）的决策，2026-09-16 至 2026-09-25
 
