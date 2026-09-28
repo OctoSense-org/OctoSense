@@ -39,7 +39,7 @@ docs/             架构、协议、构建与评审笔记。
 所有 octos crate（`octos-core`，以及 OpenHarmony 上的 `octos-cli` 和它引入的约
 20 个 crate）都来自**同一个**来源：git `https://github.com/octos-org/octos.git`，
 版本为仓库根目录 `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（目前是
-octos main 上的 `e6223efc`），与 `crates/kernel` 和两个 Shell 共用。octos 中适配
+octos main 上的 `5e7577f0`），与 `crates/kernel` 和两个 Shell 共用。octos 中适配
 OpenHarmony 的 `nix` 在根目录的 `[patch.crates-io]` 中 patch（来自 octos `18fcd3f1`）。
 没有 octos submodule；可用
 `cargo tree --locked -p octos-app -i octos-core --target all --depth 0` 检查依赖图中只有一份 octos。
