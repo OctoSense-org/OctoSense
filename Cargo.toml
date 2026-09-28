@@ -84,8 +84,8 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "6351524b77a49a382c96373d7bfe6a105f142dbc" }
 # --- App Hub: the shells' store/Card runner/system apps crate and the host
 # service registry the Mail and llm services register into. One revision.
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
 # merge of octos#2585). Move octos-core and octos-cli together; the Android
 # kernel artifact (liboctos.so) is built from this same revision.
@@ -97,7 +97,7 @@ octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "7bec0918c49
 octos-research = { git = "https://github.com/octos-org/octos.git", rev = "7bec0918c497b99671c9e882b7a465e6737cfd83", default-features = false }
 # --- Rinx (Matrix chats, Moments, articles, mini apps) as a hosted module:
 # the library only, never its standalone entry or its own kernel (Rinx ADR 0007).
-rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "a72e4b003a05ebcb31bc86c346d7dd06cdffbceb", default-features = false, features = ["octosense-module"] }
+rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "68afcf796d303aaf646eeb832d65c450a56c92b5", default-features = false, features = ["octosense-module"] }
 # --- AppCard's inline renderers.
 streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main" }
 makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-diagram-kit.git", branch = "main" }
@@ -225,12 +225,12 @@ octoscript-makepad = { path = ".sources/octoscript-makepad/crates/octoscript-mak
 octoscript-widgets = { path = ".sources/octoscript-makepad/crates/octoscript-widgets" }
 octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" }
 
-# Rinx still takes the app-peers contract by git from OctoSense-System-Apps
-# (archived; it was imported into this repository): that code lives here
-# now, so these are the same crates this workspace links — one broker
-# contract and one kernel.
-[patch."https://github.com/OctoSense-org/OctoSense-System-Apps.git"]
+# Rinx takes the app-peers contract from this repository by git. Redirect
+# it to the same local workspace crates, so the host and module share one
+# broker contract and one kernel.
+[patch."https://github.com/OctoSense-org/OctoSense.git"]
 octosense-app-peers = { path = "crates/app-peers" }
+octosense-kernel = { path = "crates/kernel" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
 
 # Rinx's Matrix stack: the patched ruma its own workspace uses (Rinx's
