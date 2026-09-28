@@ -4452,7 +4452,11 @@ impl MatchEvent for App {
         // configured here and started when a consumer (AppCard, Rinx)
         // connects, and AI providers' `llm` service, which writes its profile
         // and restarts it after a change. A no-op where the build links none.
-        ai_host::start(ai_host::Host::platform(cx.get_data_dir()));
+        // Its octos home is OctoSense's own (`<data dir>/octos-home`; on a
+        // desktop, OctoSense's state dir), never the person's `~/octos-home`.
+        ai_host::start(ai_host::Host::platform(cx.get_data_dir().or_else(|| {
+            Some(octosense::paths::home().to_string_lossy().into_owned())
+        })));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();

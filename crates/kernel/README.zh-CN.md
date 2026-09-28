@@ -15,7 +15,7 @@ Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI provid
 
 | | |
 |---|---|
-| **Core 目录** | octos 的数据目录：`<core_dir>/profiles/_main.json` 是 AI providers 应用写入的 profile。解析顺序：Shell 的 `Options::core_dir`，否则 `$OCTOS_APP_CORE_DIR`，否则在 Android/OpenHarmony 上为 `<应用数据目录>/octos-home/.octos`（AppCard 一直使用的应用私有 octos home），否则 `$HOME/octos-home/.octos`（`octosense_llm_config::profile::default_core_dir()`）。 |
+| **Core 目录** | octos 的数据目录：`<core_dir>/profiles/_main.json` 是 AI providers 应用写入的 profile。解析顺序：Shell 的 `Options::core_dir`，否则 `$OCTOS_APP_CORE_DIR`，否则 `<应用数据目录>/octos-home/.octos`：OctoSense 自己的 octos home（手机上为平台的应用数据目录，即 AppCard 一直使用的应用私有 home；桌面上为 OctoSense 的状态目录 `~/.octosense`），否则 `$HOME/octos-home/.octos`（`octosense_llm_config::profile::default_core_dir()`，供未指定任何目录的使用者）。桌面版 OctoSense 以前与用户独立的 octos 共用 `$HOME/octos-home/.octos`；现在首次使用时只从那里复制提供商和模型设置（`llm`、`env_vars`）到自己的 profile，绝不在那里写入、移动或删除任何内容。 |
 | **一个内核，按需启动** | 第一次 `connect()` 启动它，之后的连接共享它。octos 对数据目录持有单写者锁，同一目录上本来也无法运行第二个内核。 |
 | **按帧共享** | 一个 `Connection` 传递 UI Protocol（JSON-RPC）帧，与 `octos serve --stdio` 的格式完全相同。每个使用方使用自己的请求 id，只收到自己请求的回复和自己指定会话的通知（没有任何使用方指定的会话通知会发给所有使用方）。 |
 | **重启** | `restart()` 停止正在运行的内核（没有运行时什么也不做）。连接随后以 `CloseReason::Restarted` 结束；使用方重新连接，会启动读取新 profile 的新内核。新内核要等旧内核退出并释放数据目录后才启动。 |
@@ -131,25 +131,24 @@ adb -s SERIAL forward tcp:PORT tcp:PORT
 
 ## 系统智能体的工具
 
-系统智能体只拿到一组明确定义的工具，而不是 octos 的全部默认工具
-（[ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12）。它的 octos
-工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、
-`peer_list`、`peer_respond`、`peer_close`）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、
-记忆、`ask_user_question`、查看媒体、octos 的 `web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）
-以及 `tool_search`。授予的工具箱工具和跨应用工具，以及用户在设置中开启（默认关闭）的命令执行，
-通过 `SystemAgentTools` 作为宿主工具加入；命令执行是需要实时批准的宿主工具（`terminal.run`），
-绝不是 octos 的 `shell`。
+[ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12：系统智能体的工具集就是它获得的授权。它默认的 octos
+工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`、
+`peer_close`）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
+`web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。授予的工具箱工具和跨应用工具，以及用户在设置中开启
+（默认关闭）的命令执行，通过 `SystemAgentTools` 作为宿主工具加入；命令执行是需要实时批准的宿主工具（`terminal.run`）。
 
-**内核今天执行的内容。** octos 没有按会话的工具名单，因此每次启动都把一个“上限”作为 profile 的
-`tool_policy` 写入 `<core_dir>/profiles/_main.json`，替换任何其他策略：系统智能体的工具，加上应用可被授予的每个
-octos 通用工具（`system_tools::APP_GRANTABLE_OCTOS_TOOLS`），并拒绝 octos 的进程工具（`shell` 及
-`group:runtime` 其余工具、`check`、`git`）、子智能体、`peer_handoff`、调度器、目标和管理工具
-（`system_tools::NEVER_OFFERED`）。octos 对该 profile 的每个回合（包括唤醒续接回合）都应用它。因此：
+**内核今天执行的内容。** octos 没有宿主可为单个会话设置的工具名单，因此每次启动都写入 `_main` profile 的 `tool_policy`
+（`system_tools::tool_policy`）：任何授权可给予的一切，唯独去掉 octos 自己的 shell（`group:runtime`：`shell`、`bash`、
+`exec_command`、`write_stdin`）——这是 OctoSense 唯一从不提供的工具，因为 §12 只以宿主工具的形式授予命令执行。octos
+对该 profile 的每个回合（包括唤醒续接回合）都应用它。因此：
 
-- 系统智能体永远拿不到 `shell` 或上限之外的工具，但在 octos 允许宿主设置会话工具名单（octos#2567 第 5 项）之前，
-  约束它的是上限而不是它的精确清单；精确清单的真实内核测试在此之前被忽略；
-- 应用 peer 不会被限制在其可获授权之下；每个 peer 由其回合的 `generic_tools` 收窄到其授权（计划第 6 步）；
-- Talk to Octos 外部回合保留 octos 自己的允许列表，上限包含它。
+- **§12 的“恰好是它的授权”对系统智能体尚未执行**：它拿不到 octos shell，但除此之外受可授权上限约束，而不是它的清单，
+  直到 octos#2567 增加面向会话的注册和工具名单（评审第 M1 项；我们的第 5 项）。精确清单的真实内核测试在此之前被忽略；
+- 应用 peer 由其回合的 `generic_tools` 收窄到其授权（计划第 6 步）；
+- Talk to Octos 外部回合保留 octos 自己的允许列表。
+
+该策略只写入 OctoSense 自己的 core 目录，且只覆盖 OctoSense 写入的策略（`"owner": "octosense"`）：遇到外来策略或用户自己的
+`$HOME/octos-home/.octos` 时拒绝并发出警告。
 
 ## 测试
 

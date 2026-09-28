@@ -72,7 +72,7 @@ flowchart TB
 
 | 平台 | 内核 | Core 目录（octos home） |
 | --- | --- | --- |
-| 桌面端（macOS；Windows 和 Linux 未测试） | `$OCTOS_APP_CORE_BIN serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`）。**没有 `OCTOS_APP_CORE_BIN` 就没有内核**，开发者自己运行的 `octos serve` 永远不会被动到。把内核打包在桌面端二进制旁边的工作正在进行（[#85](https://github.com/OctoSense-org/OctoSense/pull/85)）。 | `$OCTOS_APP_CORE_DIR`，否则为 `~/octos-home/.octos` |
+| 桌面端（macOS；Windows 和 Linux 未测试） | `$OCTOS_APP_CORE_BIN serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`）。**没有 `OCTOS_APP_CORE_BIN` 就没有内核**，开发者自己运行的 `octos serve` 永远不会被动到。把内核打包在桌面端二进制旁边的工作正在进行（[#85](https://github.com/OctoSense-org/OctoSense/pull/85)）。 | `$OCTOS_APP_CORE_DIR`，否则为 `<OctoSense 状态目录>/octos-home/.octos`（`~/.octosense/octos-home/.octos`）：OctoSense 自己的目录，不再是用户的 `~/octos-home/.octos`（只从中复制一次提供商设置） |
 | Android（Home） | APK 中的 `liboctos.so serve --stdio`，由 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按根 `Cargo.toml` 锁定的 octos 版本构建 | `<应用数据目录>/octos-home/.octos` |
 | OpenHarmony | 进程内运行（`octos_cli::embedded::serve_io`），因为 HAP 不能 exec | `<应用数据目录>/octos-home/.octos` |
 | iOS | **没有。** 提供方仍会保存；没有应用能获得助手 | – |

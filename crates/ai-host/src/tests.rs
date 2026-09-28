@@ -116,16 +116,18 @@ fn the_shipped_policy_grants_rinx_the_assistant() {
 }
 
 #[test]
-fn a_phone_core_dir_is_the_kernels_octos_home() {
+fn the_core_dir_is_octosenses_own_octos_home_under_its_data_dir() {
     if std::env::var_os("OCTOS_APP_CORE_DIR").is_some() {
         return;
     }
     let dir = core_dir(Some("/data/user/0/app/files".into()));
-    if cfg!(any(target_os = "android", target_env = "ohos")) {
-        assert_eq!(dir, Some(PathBuf::from("/data/user/0/app/files/octos-home/.octos")));
-    } else {
-        assert_eq!(dir, octosense_llm_config::profile::default_core_dir());
-    }
+    // With the kernel service, the kernel's (configured) core dir.
+    #[cfg(kernel)]
+    assert_eq!(dir, octosense_kernel::core_dir());
+    // Without it, every platform: `<data dir>/octos-home/.octos`, never
+    // `~/octos-home`.
+    #[cfg(not(kernel))]
+    assert_eq!(dir, Some(PathBuf::from("/data/user/0/app/files/octos-home/.octos")));
 }
 
 #[test]
