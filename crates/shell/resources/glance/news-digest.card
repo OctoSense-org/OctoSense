@@ -1,0 +1,30 @@
+# ledger news.digest@1.0.0
+# level:   L0
+# profile: ui/l0
+#
+# The News digest on the glance screen (OctoSense #63): a test fixture the
+# shell publishes as `os.news` under OCTOSENSE_GLANCE_DEMO=1. Every value is
+# a source the publisher supplies in `data`; the card states nothing else.
+# The sources are the catalogued News digest helpers; the `sys.digest(app:)`
+# source ADR 0002 names is not in the pinned L0 catalog yet.
+
+source status   sys.news_status(fields: [message, count])
+source stories  sys.news_digest(count: 3, fields: [id, title, publisher])
+
+copy label { class: vocabulary, en: "NEWS DIGEST", zh: "新闻摘要" }
+
+view root  Surface(pad: .page) {
+             Col(gap: 6) {
+               Row(gap: 8) {
+                 TextCaption(text: copy.label, width: .fill)
+                 TextCaption(value: status.count)
+               }
+               TextTitle(text: status.message, width: .fill)
+               for s, i in stories key s.id {
+                 Row(gap: 8) {
+                   TextRow(text: s.title, width: .fill)
+                   TextCaption(text: s.publisher)
+                 }
+               }
+             }
+           }

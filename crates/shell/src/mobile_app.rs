@@ -519,6 +519,7 @@ impl App {
             }
             PhoneHit::Group(name)=>self.open_group(cx,&name),
             PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
+            PhoneHit::Glance(app)=>{log!("[phone] glance card opens {}",app);self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),
             PhoneHit::OpenBoth(name)=>{self.open_pair(cx,&name);}
             PhoneHit::Split(client)=>{

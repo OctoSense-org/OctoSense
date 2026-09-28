@@ -85,6 +85,9 @@ pub enum WmAction {
     /// keymap row: it carries no Omarchy layer, so `main.rs` matches the
     /// bare key before the map.
     ToggleAi,
+    /// F9 — the desktop's glance panel (glance_panel.rs): the cards apps
+    /// published. Not a keymap row, like F10.
+    ToggleGlance,
 }
 
 /// Which Omarchy modifier layer a bind lives on.

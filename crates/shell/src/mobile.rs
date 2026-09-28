@@ -32,6 +32,8 @@ pub enum PhoneHit {
     Group(String), GroupApp(String, String), GroupClose, OpenBoth(String), Split(ClientId), Divider,
     /// The app drawer's letter column: a finger on it jumps the list.
     Scrub,
+    /// A published card on the glance page: open the app that published it.
+    Glance(String),
 }
 
 /// The launch effect of an Android app (`PhoneState::launch`).
