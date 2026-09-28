@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use octosense_kernel::{CloseReason, Connection, Core, Options, Unavailable};
+use octosense_kernel::{CloseReason, Connection, Core, Launch, Options, Unavailable};
 use serde_json::{json, Value};
 
 fn fake_kernel() -> PathBuf {
@@ -24,7 +24,7 @@ fn core(tag: &str) -> (Core, PathBuf) {
     let log = dir.with_extension("log");
     let _ = std::fs::remove_file(&log);
     let core = Core::new(
-        Options::default().stdio()
+        Options::default()
             .core_dir(&dir)
             .program(fake_kernel())
             .env("FAKE_KERNEL_LOG", log.to_string_lossy()),
@@ -70,6 +70,8 @@ async fn shutdown_during_websocket_startup_reaps_the_child() {
     // not wait for its 90-second timeout or leak a child/data-directory lock.
     let core = Core::new(Options::default().program(fake_kernel()).core_dir(&dir)
         .env("FAKE_KERNEL_LOG", log.to_string_lossy()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("external-access.json"), r#"{"enabled":true}"#).unwrap();
     let mut conn = core.connect().unwrap();
     let started = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
@@ -84,9 +86,69 @@ async fn shutdown_during_websocket_startup_reaps_the_child() {
     core.shutdown_within(Duration::from_secs(5));
     assert!(gone(pid).await);
     assert_eq!(next(&mut conn).await.unwrap_err(), CloseReason::Shutdown);
-    assert!(!dir.join(octosense_kernel::CONNECTION_FILE).exists());
+    assert!(!octosense_kernel::connection_file(&dir).exists());
     let _ = std::fs::remove_file(log);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+fn args(launch: &Launch) -> Vec<String> {
+    match launch {
+        Launch::Stdio { args, .. } | Launch::WebSocket { args, .. } => args.clone(),
+        Launch::Embedded { .. } => Vec::new(),
+    }
+}
+
+fn env(launch: &Launch) -> Vec<(String, String)> {
+    match launch {
+        Launch::Stdio { env, .. } | Launch::WebSocket { env, .. } => env.clone(),
+        Launch::Embedded { .. } => Vec::new(),
+    }
+}
+
+#[test]
+fn talk_to_octos_is_off_by_default_and_the_toggle_switches_the_launch() {
+    let (core, _) = core("toggle");
+    // Off: the private stdio pipe, no listener, no external access.
+    let launch = core.launch().unwrap();
+    assert!(matches!(launch, Launch::Stdio { .. }));
+    assert!(args(&launch).contains(&"--stdio".to_string()));
+    assert!(!core.external_access());
+    assert!(core.client_access().unwrap_err().contains("Talk to Octos"));
+    assert!(core.pairing().is_err());
+    // On: octos's host-managed loopback server.
+    core.set_external_access(true).unwrap();
+    assert!(core.external_access());
+    let launch = core.launch().unwrap();
+    let on = args(&launch);
+    assert!(matches!(launch, Launch::WebSocket { .. }));
+    assert!(!on.contains(&"--stdio".to_string()));
+    for flag in ["--host-managed", "--host", "127.0.0.1"] {
+        assert!(on.contains(&flag.to_string()), "{on:?}");
+    }
+    // Off again: back to the pipe; the setting and descriptor are gone.
+    core.set_external_access(false).unwrap();
+    assert!(!core.external_access());
+    assert!(matches!(core.launch().unwrap(), Launch::Stdio { .. }));
+    let dir = core.core_dir().unwrap();
+    assert!(!dir.join("external-access.json").exists());
+    assert!(!octosense_kernel::connection_file(&dir).exists());
+    core.shutdown_within(Duration::from_secs(5));
+}
+
+#[test]
+fn a_malformed_web_origin_leaves_the_kernel_available() {
+    let (core, _) = core("bad-origin");
+    let dir = core.core_dir().unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("external-access.json"), r#"{"enabled":true}"#).unwrap();
+    for bad in ["http://evil.example", "not a url", "https://web.example/path"] {
+        std::fs::write(dir.join("web-client-origin.txt"), bad).unwrap();
+        let launch = core.launch().expect("a bad origin never makes the kernel unavailable");
+        assert!(!env(&launch).iter().any(|(k, _)| k == "OCTOS_APPUI_ALLOWED_ORIGINS"), "{bad}");
+    }
+    std::fs::write(dir.join("web-client-origin.txt"), "https://web.example").unwrap();
+    let launch = core.launch().unwrap();
+    assert!(env(&launch).contains(&("OCTOS_APPUI_ALLOWED_ORIGINS".into(), "https://web.example".into())));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -201,7 +263,7 @@ async fn shutdown_stops_and_waits() {
 
 #[test]
 fn no_kernel_binary_means_no_connection() {
-    let core = Core::new(Options::default().stdio().core_dir(core_dir("none")).program("/nonexistent/octos"));
+    let core = Core::new(Options::default().core_dir(core_dir("none")).program("/nonexistent/octos"));
     assert!(matches!(core.connect(), Err(Unavailable::NoKernel(_))));
     assert!(!core.status().running);
 }
@@ -213,7 +275,7 @@ async fn a_kernel_that_cannot_start_fails_the_connection() {
     std::fs::create_dir_all(&dir).unwrap();
     let program = dir.join("octos");
     std::fs::write(&program, "not a program").unwrap();
-    let core = Core::new(Options::default().stdio().core_dir(dir.join("core")).program(&program));
+    let core = Core::new(Options::default().core_dir(dir.join("core")).program(&program));
     let mut a = core.connect().unwrap();
     assert!(matches!(next(&mut a).await, Err(CloseReason::Failed(_))));
 }

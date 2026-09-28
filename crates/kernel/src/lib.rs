@@ -10,15 +10,22 @@
 //!   next ones share it. octos holds a single-writer lock on its data dir,
 //!   so two kernels on one core dir could not coexist anyway.
 //! - **Shared by frames.** A connection carries UI Protocol (JSON-RPC)
-//!   frames, one per `send`/`recv`, over the shared WebSocket connection. Each consumer uses its own request ids and sees the replies to its
+//!   frames, one per `send`/`recv`, exactly as `octos serve --stdio` speaks
+//!   them. Each consumer uses its own request ids and sees the replies to its
 //!   own requests and the notifications of the sessions it opened (see
 //!   `router`).
 //! - **Restart.** [`restart`] stops a running kernel (a no-op when none
 //!   runs); each connection's `recv` then returns
-//!   [`CloseReason::Restarted`], and the consumer reconnects. The service starts a
-//!   fresh server at the same address with the same token.
-//! - **Lifetime.** The shared server survives native app closure so external
-//!   clients remain usable. Private pipe/embedded mode still stops when idle.
+//!   [`CloseReason::Restarted`], and the consumer reconnects, which starts a
+//!   fresh kernel that reads the new profile.
+//! - **Idle stop.** When the last connection is dropped the kernel stops, as
+//!   AppCard's own `kill_on_drop` child did.
+//! - **Talk to Octos** (off by default; desktop and Android). While the
+//!   person has it on ([`set_external_access`]), the kernel is octos's
+//!   host-managed loopback server: native consumers keep the same frames over
+//!   its WebSocket, external clients attach with a separate token (see
+//!   `network`), a restart brings the server straight back, and it does not
+//!   stop when native consumers leave.
 //! - **Shutdown.** [`shutdown`] stops it and waits.
 //!
 //! Where it runs: see [`launch`]. The kernel and this crate's frame pump run
@@ -34,7 +41,7 @@ use tokio::sync::{mpsc, watch};
 pub mod dirs;
 mod kernel;
 mod network;
-pub use network::{ClientAccess, CONNECTION_FILE, SYSTEM_SESSION};
+pub use network::{connection_file, pairing_link, ClientAccess, Pairing, CONNECTION_FILE, SYSTEM_SESSION};
 pub mod launch;
 mod router;
 
@@ -59,7 +66,6 @@ pub struct Options {
     program: Option<PathBuf>,
     env: Vec<(String, String)>,
     log: Option<LogSink>,
-    stdio: bool,
 }
 
 impl std::fmt::Debug for Options {
@@ -74,10 +80,6 @@ impl std::fmt::Debug for Options {
 }
 
 impl Options {
-    /// Private pipe mode for embedding hosts and protocol fixtures. The
-    /// desktop and Android defaults are a shared loopback WebSocket server.
-    pub fn stdio(mut self) -> Self { self.stdio = true; self }
-
     /// The kernel's core dir (octos data dir, `<core_dir>/profiles/_main.json`).
     /// Default: see [`resolve_core_dir`].
     pub fn core_dir(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -254,13 +256,17 @@ impl Core {
             program: options.program.as_deref(),
             env: &options.env,
         })?;
-        let mut launch = if options.stdio { launch } else { launch.websocket() };
+        // Talk to Octos is the person's opt-in; the private pipe otherwise.
+        let Some(dir) = core_dir.as_ref().filter(|dir| network::external_access_enabled(dir)) else {
+            return Ok(launch);
+        };
+        let mut launch = launch.websocket();
         if let Launch::WebSocket { env, .. } = &mut launch {
-            if let Some(dir) = core_dir.as_ref() {
-                if let Ok(origin) = std::fs::read_to_string(dir.join("web-client-origin.txt")) {
-                    let origin = network::validate_origin(origin.trim()).map_err(Unavailable::NoKernel)?;
-                    env.push(("OCTOS_APPUI_ALLOWED_ORIGINS".into(), origin));
-                }
+            // A malformed saved origin means none: the kernel stays up and
+            // trusts no browser origin (never the built-in development ones).
+            let origin = network::read_web_origin(dir);
+            if !origin.is_empty() {
+                env.push(("OCTOS_APPUI_ALLOWED_ORIGINS".into(), origin));
             }
         }
         Ok(launch)
@@ -328,14 +334,109 @@ impl Core {
     }
 
     /// Restart the kernel if one runs: its connections close with
-    /// [`CloseReason::Restarted`]. Shared mode starts a replacement immediately;
-    /// pipe mode waits for the next consumer. Returns whether one
-    /// was running. Callable from any thread.
+    /// [`CloseReason::Restarted`]. With Talk to Octos on, a replacement
+    /// starts at once (external clients reconnect to it); otherwise the next
+    /// consumer starts it. Returns whether one was running. Callable from any
+    /// thread.
     pub fn restart(&self) -> bool {
-        let shared = self.0.state.lock().unwrap().current.as_ref().is_some_and(|g| g.shared);
         let running = self.stop_current(CloseReason::Restarted);
-        if running && shared { let _ = self.connect(); }
+        if running && self.shared_launch() {
+            let _ = self.connect();
+        }
         running
+    }
+
+    fn shared_launch(&self) -> bool {
+        matches!(self.launch(), Ok(Launch::WebSocket { .. }))
+    }
+
+    /// Whether Talk to Octos is on.
+    pub fn external_access(&self) -> bool {
+        self.core_dir().is_some_and(|dir| network::external_access_enabled(&dir))
+    }
+
+    /// Turn Talk to Octos on or off. On: mint a fresh external token and
+    /// (re)start the kernel as the host-managed server. Off: forget the
+    /// token and port, remove the descriptor and go back to the private
+    /// pipe; every external connection ends with the server. A running
+    /// kernel restarts either way.
+    pub fn set_external_access(&self, on: bool) -> Result<(), String> {
+        let dir = self.core_dir().ok_or("No kernel data directory.")?;
+        // OpenHarmony's core is embedded (no process to serve from); iOS
+        // has no kernel.
+        if on && !matches!(self.launch().map_err(|e| e.to_string())?, Launch::Stdio { .. } | Launch::WebSocket { .. }) {
+            return Err("Talk to Octos is not available on this platform.".into());
+        }
+        network::save_external_access(&dir, on).map_err(|e| format!("Could not save the setting: {e}"))?;
+        if on {
+            self.0.network.rotate();
+        } else {
+            self.0.network.clear();
+            network::remove_descriptor(&dir);
+        }
+        if !self.restart() && on {
+            // Nothing ran: start the server now so clients can attach.
+            let _ = self.connect();
+        }
+        Ok(())
+    }
+
+    /// Retire the external token: every paired or connected external client
+    /// must pair again. The server restarts to drop open connections.
+    pub fn rotate_external_access(&self) -> Result<(), String> {
+        if !self.external_access() {
+            return Err("Talk to Octos is off.".into());
+        }
+        self.0.network.rotate();
+        if !self.restart() {
+            let _ = self.connect();
+        }
+        Ok(())
+    }
+
+    /// Run `f` against the ready server on the core's runtime and wait (for a
+    /// host worker thread; never the UI thread).
+    fn with_ready_server<T: Send + 'static>(
+        &self,
+        timeout: Duration,
+        f: impl FnOnce(ClientAccess, Arc<network::Network>) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + Send>> + Send + 'static,
+    ) -> Result<T, String> {
+        if !self.external_access() {
+            return Err("Turn on Talk to Octos first.".into());
+        }
+        let connection = self.connect().map_err(|e| e.to_string())?;
+        let network = self.0.network.clone();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        self.0.runtime().spawn(async move {
+            let result = match connection.client_access().await {
+                Ok(access) => f(access, network).await,
+                Err(e) => Err(e.to_string()),
+            };
+            drop(connection);
+            let _ = tx.send(result);
+        });
+        rx.recv_timeout(timeout).map_err(|_| "The Octos server did not become ready.".to_string())?
+    }
+
+    /// Enable a one-time pairing code for the external token (five minutes,
+    /// one claim). Call while the pairing UI is open; [`Self::end_pairing`]
+    /// when it closes.
+    pub fn pairing(&self) -> Result<Pairing, String> {
+        self.with_ready_server(Duration::from_secs(100), |access, network| {
+            Box::pin(async move { network::start_pairing(&access, network.host_token()).await })
+        })
+    }
+
+    /// Turn pairing off again (best effort; codes also expire on their own).
+    pub fn end_pairing(&self) {
+        if self.external_access() && self.status().running {
+            let _ = self.with_ready_server(Duration::from_secs(15), |access, network| {
+                Box::pin(async move {
+                    network::end_pairing(&access, network.host_token()).await;
+                    Ok(())
+                })
+            });
+        }
     }
 
     /// Stop the kernel (if any) and wait up to `timeout` for it to exit.
@@ -378,16 +479,10 @@ impl Core {
         }
     }
 
-    /// Start the shared server and wait for its authenticated endpoint. For
-    /// a host worker thread; never block the UI thread on kernel startup.
+    /// The external clients' connection (Talk to Octos on), once the server
+    /// is ready. For a host worker thread; never block the UI thread.
     pub fn client_access(&self) -> Result<ClientAccess, String> {
-        let connection = self.connect().map_err(|e| e.to_string())?;
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        self.0.runtime().spawn(async move {
-            let result = connection.client_access().await.map_err(|e| e.to_string());
-            let _ = tx.send(result);
-        });
-        rx.recv_timeout(Duration::from_secs(95)).map_err(|_| "The Octos server did not become ready.".to_string())?
+        self.with_ready_server(Duration::from_secs(95), |access, _| Box::pin(async move { Ok(access) }))
     }
 
     /// A connection left. Only private pipe/embedded kernels stop when idle.
@@ -424,8 +519,8 @@ impl std::fmt::Debug for Connection {
 }
 
 impl Connection {
-    /// Wait for the actual, authenticated server. The token is for trusted
-    /// host UI only. Pipe-only platforms return an explicit error.
+    /// Wait for the Talk to Octos server; its token is the EXTERNAL one, for
+    /// trusted host UI only. With Talk to Octos off this is an error.
     pub async fn client_access(&self) -> Result<ClientAccess, CloseReason> {
         let mut ready = self.ready.clone();
         ready.wait_for(|v| v.is_some()).await.map_err(|_| CloseReason::Shutdown)?;
@@ -433,11 +528,10 @@ impl Connection {
         result
     }
 
-    /// Open the system conversation and build OctosCode Web's saved-session
-    /// link from the workspace the server confirms. No credential is in it.
-    pub async fn system_web_url(&mut self, origin: &str) -> Result<String, String> {
-        let origin = network::validate_origin(origin)?;
-        if origin.is_empty() { return Err("Save the web client's origin first.".into()); }
+    /// Open the system conversation and return OctosCode Web's saved-session
+    /// reference (`[workspace, profile, session]`) for the workspace the
+    /// server confirms. No credential is in it.
+    pub async fn system_reference(&mut self) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         self.send(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session/open",
             "params":{"session_id":SYSTEM_SESSION,"profile_id":"_main"}}).to_string())
@@ -458,10 +552,7 @@ impl Connection {
                     .map_err(|_| "The system workspace could not be resolved.")?;
                 let dir = self.core.core_dir().ok_or("No kernel data directory.")?;
                 network::save_system_workspace(&dir, &workspace)?;
-                let mut url = url::Url::parse(&origin).map_err(|e| e.to_string())?;
-                let reference = serde_json::json!([workspace,"_main",SYSTEM_SESSION]).to_string();
-                url.query_pairs_mut().append_pair("s", &reference);
-                return Ok(url.to_string());
+                return Ok(serde_json::json!([workspace,"_main",SYSTEM_SESSION]).to_string());
             }
         }).await.map_err(|_| "Opening the system conversation timed out.".to_owned())?
     }
@@ -546,43 +637,92 @@ pub fn connect() -> Result<Connection, Unavailable> {
     global().connect()
 }
 
-/// Connection details for a trusted host sheet (run on a worker thread).
+/// The external clients' connection while Talk to Octos is on (host worker
+/// thread only).
 pub fn client_access() -> Result<ClientAccess, String> {
     global().client_access()
 }
 
+/// Whether Talk to Octos is on.
+pub fn external_access() -> bool {
+    global().external_access()
+}
+
+/// Turn Talk to Octos on (mints the external token) or off (ends external
+/// access). Host worker thread only.
+pub fn set_external_access(on: bool) -> Result<(), String> {
+    global().set_external_access(on)
+}
+
+/// Retire the external token; paired clients must pair again.
+pub fn rotate_external_access() -> Result<(), String> {
+    global().rotate_external_access()
+}
+
+/// A one-time pairing code for the external token (host worker only).
+pub fn pairing() -> Result<Pairing, String> {
+    global().pairing()
+}
+
+/// Turn the pairing code off (host worker only).
+pub fn end_pairing() {
+    global().end_pairing()
+}
+
 /// A credential-free link to the system conversation (host worker only).
-/// The user still supplies the server origin and token in the web client.
+/// The web client pairs (code or QR) before it can connect.
 pub fn web_client_url() -> Result<String, String> {
+    system_reference().map(|(origin, reference)| {
+        let mut url = url::Url::parse(&origin).expect("a validated origin");
+        if let Some(server) = client_access().ok().map(|a| a.origin) {
+            url.query_pairs_mut().append_pair("octos", &server);
+        }
+        url.query_pairs_mut().append_pair("s", &reference);
+        url.to_string()
+    })
+}
+
+/// The saved web origin and the system conversation reference Web opens.
+pub fn system_reference() -> Result<(String, String), String> {
     let core = global();
-    let mut connection = core.connect().map_err(|e| e.to_string())?;
     let origin = web_client_origin();
+    if origin.is_empty() {
+        return Err("Save the web client's origin first.".into());
+    }
+    if !core.external_access() {
+        return Err("Turn on Talk to Octos first.".into());
+    }
+    let mut connection = core.connect().map_err(|e| e.to_string())?;
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     core.0.runtime().spawn(async move {
         let result = async {
             connection.client_access().await.map_err(|e| e.to_string())?;
-            connection.system_web_url(&origin).await
-        }.await;
+            connection.system_reference().await
+        }
+        .await;
         let _ = tx.send(result);
     });
-    rx.recv_timeout(Duration::from_secs(110)).map_err(|_| "Opening the web client timed out.".to_string())?
+    let reference = rx.recv_timeout(Duration::from_secs(110)).map_err(|_| "Opening the web client timed out.".to_string())??;
+    Ok((origin, reference))
 }
 
-/// The web client's explicitly trusted origin, configured on the host sheet.
+/// The web client's exact origin, configured on the host sheet ("" = none;
+/// a malformed saved value also reads as none).
 pub fn web_client_origin() -> String {
-    core_dir().and_then(|dir| std::fs::read_to_string(dir.join("web-client-origin.txt")).ok()).unwrap_or_default()
+    core_dir().map(|dir| network::read_web_origin(&dir)).unwrap_or_default()
 }
 
-/// Change the allowed web origin and restart the server. No wildcards,
-/// credentials, paths, queries or fragments are accepted.
+/// Change the allowed web origin (atomically) and restart a running Talk to
+/// Octos server. `https`, or `http` only for loopback; no wildcards,
+/// credentials, paths, queries or fragments.
 pub fn set_web_client_origin(origin: &str) -> Result<(), String> {
     let normalized = network::validate_origin(origin.trim())?;
     let dir = core_dir().ok_or_else(|| "No kernel data directory.".to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join("web-client-origin.txt");
-    if std::fs::read_to_string(&path).unwrap_or_default() != normalized {
-        std::fs::write(path, normalized).map_err(|e| e.to_string())?;
-        restart();
+    if network::read_web_origin(&dir) != normalized {
+        network::save_web_origin(&dir, &normalized)?;
+        if external_access() {
+            restart();
+        }
     }
     Ok(())
 }

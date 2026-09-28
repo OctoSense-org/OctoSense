@@ -8,7 +8,7 @@ Decisions for the OctoSense repository: the shell, its services, the system apps
 | --- | --- | --- |
 | [0001](0001-one-octosense-repository.md) | One OctoSense repository for the shell, its services, the system apps and both packagings | Accepted |
 | [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed |
-| [0003](0003-shared-octos-client-access.md) | Shared Octos access for native, terminal and web clients | Implemented; Android acceptance pending |
+| [0003](0003-shared-octos-client-access.md) | Talk to Octos: one kernel for native and external clients (opt-in) | Implemented; Android unverified |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 

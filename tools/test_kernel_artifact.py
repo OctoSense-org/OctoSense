@@ -7,15 +7,15 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-import subprocess
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("kernel_artifact", ROOT / "tools/kernel-artifact.py")
 kernel = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kernel)
 
-REV = "3b5d17a435da8ba9d1fcccbfedce46c357819a3a"
+# The head of octos#2591 (`serve --host-managed`) until it merges; then the
+# merged octos commit (the root Cargo.toml says the same).
+REV = "2cd29e44ca4bff8c54fe1de10179b5cf29017571"
 
 
 def lock_with(*revs):
@@ -43,14 +43,23 @@ class RevisionTests(unittest.TestCase):
 
 
 class PlanTests(unittest.TestCase):
-    def test_desktop_plan_also_applies_the_reviewed_overlay(self):
-        steps, binary, _ = kernel.kernel_plan(host=True, work=Path("/w"))
-        self.assertIn("--apply-host-patch", steps[-2][1])
-        self.assertNotIn("--target", steps[-1][1])
+    def test_the_desktop_plan_builds_the_locked_revision_unpatched(self):
+        steps, binary, source = kernel.kernel_plan(host=True, work=Path("/w"))
+        self.assertEqual(source, f"{kernel.OCTOS_URL}@{kernel.octos_revision()}")
         self.assertEqual(binary, Path("/w/target/release/octos"))
-        overlay = json.loads((ROOT / "octos-runtime-patches.lock.json").read_text())
-        self.assertEqual(overlay["base_revision"], kernel.octos_revision())
-        self.assertEqual(overlay["sha256"], hashlib.sha256((ROOT / overlay["patch"]).read_bytes()).hexdigest())
+        build = steps[-1][1]
+        self.assertIn("--locked", build)
+        self.assertNotIn("--target", build)
+        self.assertNotIn("--offline", build)
+        # octos ships `serve --host-managed` itself: no overlay step, no lock.
+        self.assertFalse(any("--apply-host-patch" in argv for _, argv in steps))
+        self.assertFalse((ROOT / "octos-runtime-patches.lock.json").exists())
+        self.assertFalse((ROOT / "tools/runtime-patches/octos-host-managed.patch").exists())
+
+    def test_an_offline_desktop_plan_stays_offline(self):
+        steps, _, _ = kernel.kernel_plan(host=True, work=Path("/w"), offline=True)
+        self.assertFalse(any(argv[:2] == ["git", "fetch"] for _, argv in steps))
+        self.assertIn("--offline", steps[-1][1])
 
     def test_the_plan_checks_out_and_cross_builds_the_kernel(self):
         work = Path("/w")
@@ -123,41 +132,6 @@ class PlanTests(unittest.TestCase):
             self.assertFalse((Path(temp) / "w").exists(), "a plan creates nothing")
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 kernel.main(["--kernel", "/k/octos", "--no-kernel"])
-
-
-class OverlayTests(unittest.TestCase):
-    def test_apply_is_idempotent_and_refuses_changed_hash_or_revision(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            src = root / "src"
-            src.mkdir()
-            def git(*args):
-                return subprocess.check_output(["git", *args], cwd=src, text=True).strip()
-            git("init", "--quiet")
-            (src / "sample").write_text("original\n")
-            git("add", "sample")
-            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture")
-            rev = git("rev-parse", "HEAD")
-            (src / "sample").write_text("patched\n")
-            overlay = root / "overlay.patch"
-            overlay.write_text(git("diff") + "\n")
-            git("restore", "sample")
-            lock = {"base_revision": rev, "patch": "overlay.patch", "sha256": hashlib.sha256(overlay.read_bytes()).hexdigest()}
-            lock_file = root / "octos-runtime-patches.lock.json"
-            lock_file.write_text(json.dumps(lock))
-            with patch.object(kernel, "ROOT", root):
-                kernel.apply_host_patch(src)
-                kernel.apply_host_patch(src)
-                self.assertEqual((src / "sample").read_text(), "patched\n")
-                lock["base_revision"] = "0" * 40
-                lock_file.write_text(json.dumps(lock))
-                with self.assertRaisesRegex(RuntimeError, "new kernel pin"):
-                    kernel.apply_host_patch(src)
-                lock["base_revision"] = rev
-                lock["sha256"] = "0" * 64
-                lock_file.write_text(json.dumps(lock))
-                with self.assertRaisesRegex(RuntimeError, "reviewed hash"):
-                    kernel.apply_host_patch(src)
 
 
 if __name__ == "__main__":

@@ -86,15 +86,17 @@ octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.g
 # service registry the Mail and llm services register into. One revision.
 octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
-# --- octos: ONE source for every octos crate (octos-org/octos main at the
-# merge of octos#2594). Move octos-core and octos-cli together; the Android
-# kernel artifact (liboctos.so) is built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "3b5d17a435da8ba9d1fcccbfedce46c357819a3a" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "3b5d17a435da8ba9d1fcccbfedce46c357819a3a", default-features = false }
+# --- octos: ONE source for every octos crate. Move octos-core, octos-cli and
+# octos-research together; the Android kernel artifact (liboctos.so) is built
+# from this same revision. TEMPORARY: the head of octos#2591
+# (`serve --host-managed`), on top of octos main at e200b072 (keeps octos#2583;
+# no octos#2567). It must move to the merged octos commit before this merges.
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "2cd29e44ca4bff8c54fe1de10179b5cf29017571" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "2cd29e44ca4bff8c54fe1de10179b5cf29017571", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "3b5d17a435da8ba9d1fcccbfedce46c357819a3a", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "2cd29e44ca4bff8c54fe1de10179b5cf29017571", default-features = false }
 # --- Rinx (Matrix chats, Moments, articles, mini apps) as a hosted module:
 # the library only, never its standalone entry or its own kernel (Rinx ADR 0007).
 rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "68afcf796d303aaf646eeb832d65c450a56c92b5", default-features = false, features = ["octosense-module"] }

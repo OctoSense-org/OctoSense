@@ -303,13 +303,12 @@ fn register_llm(_core_dir: Option<PathBuf>, _import: QrImport) -> bool {
 #[cfg(feature = "llm")]
 static CLIENT_UI: std::sync::Mutex<Vec<octosense_llm_service::ClientUiAction>> = std::sync::Mutex::new(Vec::new());
 
-/// Every event, on the UI thread, early: performs the host sheet's clipboard
-/// and browser actions and pumps the platform scanner/picker results.
+/// Every event, on the UI thread, early: performs the Talk to Octos sheet's
+/// browser action and pumps the platform scanner/picker results.
 pub fn handle_event(cx: &mut Cx, event: &Event) {
     #[cfg(feature = "llm")]
     for action in std::mem::take(&mut *CLIENT_UI.lock().unwrap()) {
         match action {
-            octosense_llm_service::ClientUiAction::CopyToken(token) => cx.copy_to_clipboard(&token),
             octosense_llm_service::ClientUiAction::OpenWeb(url) => cx.open_url(&url, OpenUrlInPlace::No),
         }
     }

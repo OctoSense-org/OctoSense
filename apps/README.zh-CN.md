@@ -263,8 +263,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 `octosense_kernel::restart()`，让正在运行的内核读取新的服务商。方法列表与注册
 方式见其 [README（英文）](ai-providers/host-service/README.md)。
 
-
-**与系统 Agent 对话：** 打开 **AI providers → Talk to Octos**，获取服务器地址并通过宿主按钮复制访问令牌。原生应用、OctosCode 终端和 Web 客户端连接同一个 WebSocket 服务；系统会话为 `_main:api:octosense#system`。内核必须包含本仓库锁定的 `--host-managed` 补丁，Android 构建工具会自动应用。Web 客户端仍需单独托管。连接、隧道及平台限制见[内核指南](../crates/kernel/README.zh-CN.md)。
+**Talk to Octos**（默认关闭）：在 **AI providers → Talk to Octos** 中打开后，本机会启动一个仅监听回环地址的服务，让 Web 客户端或终端界面与本设备的助手对话。开启期间内核以 `octos serve --host-managed` 代替 `--stdio` 运行，原生应用继续通过其 WebSocket 工作；外部客户端使用单独的令牌，只能打开 UI Protocol 套接字。Web 客户端通过一次性配对码或其链接的二维码配对；本用户的终端客户端读取私有连接文件。原生应用关闭后服务仍保持运行，直到关闭该功能或 Shell 退出。见 [ADR 0003（英文）](../docs/adr/0003-shared-octos-client-access.md) 和[内核指南](../crates/kernel/README.zh-CN.md)。
 
 ## octos 内核
 
@@ -274,9 +273,9 @@ Shell 默认链接它（cargo feature `octos-core`，在 `mobile-apps` 和原生
 同样开启）：
 
 - **每进程一个，按需启动。** 第一个使用方调用 `connect()` 时启动：桌面和
-  Android 上以子进程运行 `octos serve --host 127.0.0.1 --host-managed`（Android 上是 APK 内置的
+  Android 上以子进程运行 `octos serve --stdio`（Android 上是 APK 内置的
   `liboctos.so`），OpenHarmony 上在进程内运行标准内核。之后的使用方共享它；
-  每个使用方只收到自己请求的回复和自己会话的通知。桌面和 Android 上原生应用关闭后服务继续运行，Shell 退出时停止。
+  每个使用方只收到自己请求的回复和自己会话的通知。最后一个使用方离开时内核停止。
 - **由 AI 服务商配置。** `llm` 宿主服务写入内核的 profile
   `<core_dir>/profiles/_main.json` 以及密钥（macOS 钥匙串 `octos` 服务配合
   `keychain:` 标记，Linux 上是 `<core_dir>/secrets/`，其他平台写在 profile 中），

@@ -295,8 +295,7 @@ after every change, so the running kernel picks up the new providers. The
 method table and registration are in its
 [README](ai-providers/host-service/README.md).
 
-
-**Talk to the system agent:** open **AI providers → Talk to Octos** for the server address and native **Copy access token** button. Native apps, OctosCode TUI and Web share one WebSocket server; the system session is `_main:api:octosense#system`. The kernel requires this repository's locked `--host-managed` overlay, applied automatically by the Android build tool. The web client is hosted separately. See the [kernel guide](../crates/kernel/README.md) for connections, tunnels and platform limits.
+**Talk to Octos** (off by default): **AI providers → Talk to Octos** turns on a loopback server so a web client or a terminal UI can talk to this device's assistant. While it is on, the kernel runs as `octos serve --host-managed` instead of `--stdio` and native apps keep working over its WebSocket; external clients get a separate token that opens the UI Protocol socket and nothing else. A web client pairs with a one-time code or the QR of its link; a terminal client of this user reads the private connection file. The server stays up when native apps close, until it is turned off or the shell exits. See [ADR 0003](../docs/adr/0003-shared-octos-client-access.md) and the [kernel guide](../crates/kernel/README.md).
 
 ## The octos kernel
 
@@ -306,11 +305,11 @@ service; the shells link it by default (cargo feature `octos-core`, also on
 in `mobile-apps` and native mobile builds):
 
 - **One per process, on demand.** The first consumer's `connect()` starts it:
-  `octos serve --host 127.0.0.1 --host-managed` as a child on desktop and Android (on Android the
+  `octos serve --stdio` as a child on desktop and Android (on Android the
   APK's bundled `liboctos.so`), the canonical core in-process on
   OpenHarmony. Later consumers share it; each gets only the replies to its
-  own requests and its own sessions' notifications. On desktop and Android it stays
-  available after native apps close, until the shell exits.
+  own requests and its own sessions' notifications. It stops when the last
+  consumer leaves.
 - **Configured by AI providers.** The `llm` host service writes the kernel's
   profile, `<core_dir>/profiles/_main.json`, and keys (macOS keychain `octos`
   service behind `keychain:` markers, `<core_dir>/secrets/` on Linux, the

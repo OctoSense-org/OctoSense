@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build the octos kernel for OctoSense (Python 3.9+).
+"""The octos kernel an OctoSense Android APK bundles (Python 3.9+).
 
 The octos kernel is a shell service (octosense-ai-host, feature
 `octos-core`; always on Android): at run time the shell execs
-`liboctos.so serve --host 127.0.0.1 --host-managed` from the APK's native lib dir, the only place an
+`liboctos.so serve --stdio` from the APK's native lib dir, the only place an
 Android app may exec a binary from. This tool produces that artifact for
 every shell build (desktop/ and phone/ alike):
 
@@ -12,11 +12,10 @@ every shell build (desktop/ and phone/ alike):
 - by default it checks that revision out into a private work dir (never a
   sibling checkout you may be working in) and cross-builds `octos` for
   aarch64-linux-android with the cargo-makepad SDK's NDK clang (API 33,
-  `--no-default-features --features api,git,ast`: the HTTP/WebSocket server without
+  `--no-default-features --features api,git,ast`: the stdio server without
   the llama.cpp embedder);
-- applies the revision- and hash-locked host-managed authentication overlay;
-- `--host` builds for this desktop instead of Android (no SDK needed);
-- `--kernel <path>` takes a prebuilt `octos` with the same overlay;
+- `--host` builds it for this desktop instead (no SDK needed);
+- `--kernel <path>` takes a prebuilt aarch64-linux-android `octos` instead;
 - it records what it produced (source, revision, sha256) with `--receipt`;
 - with a command after `--` it runs that command (the packager) with
   `MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=<octos>`.
@@ -42,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OCTOS_URL = "https://github.com/octos-org/octos.git"
 TARGET = "aarch64-linux-android"
 API = "33"
-# The shared HTTP/WebSocket kernel, without the llama.cpp
+# The kernel as the shells' phones run it: the stdio server, no llama.cpp
 # embedder (needs cmake and is not used on a phone).
 KERNEL_BUILD = ["-p", "octos-cli", "--bin", "octos", "--no-default-features", "--features", "api,git,ast"]
 LIB_NAME = "liboctos.so"
@@ -102,17 +101,18 @@ def build_command(sdk, target_dir, offline=False, required=True):
 
 def plan(revision, work, sdk, offline=False, required=True, host=False):
     """(steps, kernel): the (cwd, argv) steps that check the revision out into
-    `work/src` and cross-build it into `work/target`, and the binary's path."""
+    `work/src` and cross-build it into `work/target` (or, `host`, build it for
+    this machine), and the binary's path."""
     work = Path(work)
     src = work / "src"
     steps = [(work, ["git", "init", "--quiet", str(src)])]
     if not offline:
         steps.append((src, ["git", "fetch", "--quiet", "--no-tags", "--depth=1", OCTOS_URL, revision]))
     steps.append((src, ["git", "checkout", "--quiet", "--detach", revision]))
-    steps.append((src, [sys.executable, str(ROOT / "tools/kernel-artifact.py"), "--apply-host-patch", str(src)]))
     if host:
         command = ["env", f"CARGO_TARGET_DIR={work / 'target'}", "cargo", "build", "--locked", "--release", *KERNEL_BUILD]
-        if offline: command.append("--offline")
+        if offline:
+            command.append("--offline")
         steps.append((src, command))
         return steps, work / "target/release/octos"
     steps.append((src, build_command(sdk, work / "target", offline, required)))
@@ -142,27 +142,7 @@ def receipt(kernel, source):
     """What a build records about the bundled kernel."""
     if not kernel:
         return None
-    value = {"source": source, "sha256": hashlib.sha256(Path(kernel).read_bytes()).hexdigest()}
-    if source != "prebuilt":
-        value["host_managed_overlay"] = json.loads((ROOT / "octos-runtime-patches.lock.json").read_text())
-    return value
-
-
-def apply_host_patch(src):
-    """Fail closed on a changed pin/patch; repeated builds preserve an applied overlay."""
-    src = Path(src)
-    lock = json.loads((ROOT / "octos-runtime-patches.lock.json").read_text())
-    patch = ROOT / lock["patch"]
-    if hashlib.sha256(patch.read_bytes()).hexdigest() != lock["sha256"]:
-        raise RuntimeError("The Octos host-managed patch differs from its reviewed hash")
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=src, text=True).strip()
-    if head != lock["base_revision"]:
-        raise RuntimeError("Rebase and review the Octos host-managed patch for the new kernel pin first")
-    applied = subprocess.run(["git", "apply", "--reverse", "--check", str(patch)], cwd=src, capture_output=True)
-    if applied.returncode == 0:
-        return
-    subprocess.run(["git", "apply", "--check", str(patch)], cwd=src, check=True)
-    subprocess.run(["git", "apply", str(patch)], cwd=src, check=True)
+    return {"source": source, "sha256": hashlib.sha256(Path(kernel).read_bytes()).hexdigest()}
 
 
 def run_steps(steps):
@@ -179,8 +159,7 @@ def main(argv=None):
         argv, command = argv[:i], argv[i + 1:]
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lock", type=Path, help="The Cargo.lock naming the octos revision (default: the workspace's)")
-    p.add_argument("--host", action="store_true", help="Build the desktop kernel instead of the Android executable")
-    p.add_argument("--apply-host-patch", type=Path, help=argparse.SUPPRESS)
+    p.add_argument("--host", action="store_true", help="Build the kernel for this desktop instead of Android")
     p.add_argument("--sdk", type=Path, help="cargo-makepad's Android SDK dir (holds ndk/)")
     source = p.add_mutually_exclusive_group()
     source.add_argument("--kernel", type=Path, help="A prebuilt aarch64-linux-android octos to bundle")
@@ -190,9 +169,6 @@ def main(argv=None):
     p.add_argument("--receipt", type=Path, help="Write {source, sha256} of the kernel here (JSON)")
     p.add_argument("--plan", action="store_true", help="Print the plan as JSON; run nothing")
     args = p.parse_args(argv)
-    if args.apply_host_patch:
-        apply_host_patch(args.apply_host_patch)
-        return
     if args.kernel:
         args.kernel = args.kernel.resolve()
     try:

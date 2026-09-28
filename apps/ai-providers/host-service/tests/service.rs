@@ -130,20 +130,25 @@ fn two_providers(rig: &mut Rig) {
 }
 
 #[test]
-fn client_connection_controls_require_their_own_trusted_sheet() {
+fn talk_to_octos_controls_require_their_own_trusted_sheet() {
     let mut rig = Rig::new("client-sheet", None);
-    for method in ["llm.sheet.client_info", "llm.sheet.client_copy_token", "llm.sheet.client_open", "llm.sheet.client_origin"] {
+    let controls = ["llm.sheet.client_info", "llm.sheet.client_enable", "llm.sheet.client_rotate",
+        "llm.sheet.client_origin", "llm.sheet.client_open", "llm.sheet.client_pair",
+        "llm.sheet.client_pair_ready", "llm.sheet.client_pair_show", "llm.sheet.client_back"];
+    for method in controls {
         assert!(rig.ask(method, json!({})).is_err());
         assert!(rig.sheet(method, json!({})).is_err(), "a different sheet cannot access connection controls");
     }
     let other = rig.send("os.mail", "llm.connect_client", json!({}), false);
     assert!(wait(other).is_err());
     let waiting = rig.send(APP, "llm.connect_client", json!({}), false);
-    assert!(rig.host.body().contains("Talk to Octos"));
-    assert!(!rig.host.body().contains("is_password: true"));
+    let body = rig.host.body().to_string();
+    assert!(body.contains("Talk to Octos") && body.contains("Turn on") && body.contains("Pair a web client"));
+    assert!(!body.contains("is_password: true"));
+    assert!(!body.to_lowercase().contains("copy"), "no token is ever copied");
     assert!(rig.ask("llm.sheet.client_info", json!({})).is_err(), "the calling app cannot impersonate its sheet");
-    let other = rig.send("os.mail", "llm.sheet.client_copy_token", json!({}), true);
-    assert!(wait(other).is_err(), "another app's sheet cannot copy the token");
+    let other = rig.send("os.mail", "llm.sheet.client_enable", json!({"on": true}), true);
+    assert!(wait(other).is_err(), "another app's sheet cannot turn it on");
     rig.sheet("llm.sheet.cancel", json!({})).unwrap();
     assert_eq!(wait(waiting).unwrap(), json!({}), "the app receives no connection details");
 }
@@ -685,11 +690,14 @@ fn no_sheet_arms_a_timer_that_outlives_it() {
         sheets::export_waiting(),
         sheets::export(size, &modules, "ABCD-EFGH", &["x".into()], 300),
         sheets::import(true, true, true),
+        sheets::connect_client(),
+        sheets::pair_client("ABCD2345", "http://127.0.0.1:4000", Some((size, &modules)), 300),
     ] {
         assert!(!body.contains("start_interval"), "{body}");
         assert!(!body.contains("fn tick"), "{body}");
     }
     assert!(sheets::export_waiting().contains("host.request(\"llm.sheet.show\", {}, nil)"));
+    assert!(sheets::connect_client().contains("host.request(\"llm.sheet.client_pair_show\", {}, nil)"));
 }
 
 #[test]

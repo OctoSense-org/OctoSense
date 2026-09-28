@@ -1,40 +1,78 @@
-//! Real host-managed kernel tests: native/browser coexistence, authentication,
-//! origin checks, provider restart, and shared system-agent turns using a local
-//! scripted model. No external model or real credential is used.
-//! Set OCTOS_CORE_TEST_KERNEL to the pinned binary with OctoSense's overlay.
-//! Without it these integration tests are skipped (see README.md).
+//! A real `octos` kernel started by the core from a temp core dir whose
+//! profile `octosense_llm_config` wrote, as the AI providers app's `llm`
+//! service does. No provider is called: keys are fixtures and the kernel is
+//! only asked what it runs on (`profile/llm/list`).
+//!
+//! Runs when `OCTOS_CORE_TEST_KERNEL` names an `octos` binary built from the
+//! octos rev AppCard pins:
+//!
+//! ```sh
+//! cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
+//! ```
+//!
+//! Without it the test says so and passes (CI has no kernel binary).
+//!
+//! The Talk to Octos tests need an octos with `serve --host-managed`
+//! (octos#2591); they drive the server as an external client would, and
+//! probe what that client must NOT be able to do.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use octosense_llm_config::{profile, Provider, ProviderSet};
-use octosense_kernel::{CloseReason, Connection, Core, Options};
-use serde_json::{json, Value};
 use futures_util::{SinkExt, StreamExt};
+use octosense_kernel::{ClientAccess, CloseReason, Connection, Core, Options, SYSTEM_SESSION};
+use octosense_llm_config::{profile, Provider, ProviderSet};
+use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
 type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn solo_status(access: &octosense_kernel::ClientAccess, path: &str) -> String {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-    let mut tcp = tokio::net::TcpStream::connect(access.origin.trim_start_matches("http://")).await.unwrap();
-    let body = r#"{"name":"Unauthorized app","username":"intruder","email":"intruder@solo.local"}"#;
-    tcp.write_all(format!("POST {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", access.origin.trim_start_matches("http://"), body.len()).as_bytes()).await.unwrap();
-    let mut line = String::new();
-    tokio::io::BufReader::new(tcp).read_line(&mut line).await.unwrap();
-    line
+const WEB: &str = "http://localhost:4173";
+
+fn kernel() -> Option<PathBuf> {
+    let program = std::env::var_os("OCTOS_CORE_TEST_KERNEL").map(PathBuf::from);
+    if program.is_none() {
+        eprintln!("OCTOS_CORE_TEST_KERNEL is not set: skipping the real-kernel test");
+    }
+    program
 }
 
-async fn external(access: &octosense_kernel::ClientAccess) -> Socket {
-    // Browsers cannot set Authorization; OctosCode Web uses the query token.
-    let mut req = format!("{}?token={}&ui_feature=state.session_hydrate.v1,session.workspace_cwd.v1", access.endpoint(), access.token).into_client_request().unwrap();
-    req.headers_mut().insert("Origin", "http://localhost:4173".parse().unwrap());
-    tokio_tungstenite::connect_async(req).await.map(|(s, _)| s).unwrap_or_else(|_| panic!("external client could not connect"))
+/// A blocking core call (they wait on the kernel) off the test's runtime.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    tokio::task::spawn_blocking(f).await.unwrap()
 }
 
-async fn ws_call(socket: &mut Socket, id: &str, method: &str, params: Value) -> Value {
+/// One raw HTTP/1.1 request; returns the status code and body.
+async fn http(port: u16, method: &str, path: &str, host: &str, token: Option<&str>, body: &str) -> (u16, String) {
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let auth = token.map(|t| format!("Authorization: Bearer {t}\r\n")).unwrap_or_default();
+    tcp.write_all(format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n{auth}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+    let mut response = String::new();
+    let _ = tokio::time::timeout(Duration::from_secs(10), tcp.read_to_string(&mut response)).await;
+    let status = response.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    (status, response.split_once("\r\n\r\n").map(|(_, b)| b.to_owned()).unwrap_or_default())
+}
+
+fn port_of(access: &ClientAccess) -> u16 {
+    access.origin.rsplit(':').next().unwrap().parse().unwrap()
+}
+
+/// An external client the way a browser connects: the bearer subprotocol,
+/// an allowed Origin, and its own feature request.
+async fn external(access: &ClientAccess) -> Socket {
+    let mut req = format!("{}?ui_feature=state.session_hydrate.v1,session.workspace_cwd.v1", access.endpoint())
+        .into_client_request().unwrap();
+    req.headers_mut().insert("Sec-WebSocket-Protocol", format!("octos-ui, octos.bearer.{}", access.token).parse().unwrap());
+    req.headers_mut().insert("Origin", WEB.parse().unwrap());
+    let (socket, response) = tokio_tungstenite::connect_async(req).await.expect("external client could not connect");
+    assert_eq!(response.headers()["sec-websocket-protocol"], "octos-ui");
+    socket
+}
+
+async fn ws_frame(socket: &mut Socket, id: &str, method: &str, params: Value) -> Value {
     socket.send(Message::Text(json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params}).to_string())).await.unwrap();
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
@@ -42,15 +80,28 @@ async fn ws_call(socket: &mut Socket, id: &str, method: &str, params: Value) -> 
                 Message::Text(text) => {
                     let frame: Value = serde_json::from_str(&text).unwrap();
                     if frame["id"] == id {
-                        assert!(frame.get("error").is_none(), "{method}: {frame}");
-                        return frame["result"].clone();
+                        return frame;
                     }
                 }
                 Message::Ping(bytes) => socket.send(Message::Pong(bytes)).await.unwrap(),
-                _ => {},
+                _ => {}
             }
         }
     }).await.expect("external request timed out")
+}
+
+async fn ws_call(socket: &mut Socket, id: &str, method: &str, params: Value) -> Value {
+    let frame = ws_frame(socket, id, method, params).await;
+    assert!(frame.get("error").is_none(), "{method}: {frame}");
+    frame["result"].clone()
+}
+
+async fn ws_refused(req: impl IntoClientRequest + Unpin) -> u16 {
+    match tokio_tungstenite::connect_async(req).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => response.status().as_u16(),
+        Err(e) => panic!("unexpected error: {e}"),
+        Ok(_) => 101,
+    }
 }
 
 async fn call(conn: &mut Connection, id: &str, method: &str, params: Value) -> Value {
@@ -86,15 +137,11 @@ async fn running_on(conn: &mut Connection, id: &str) -> (String, String) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_real_kernel_runs_on_the_profile_the_providers_app_wrote() {
-    let Some(program) = std::env::var_os("OCTOS_CORE_TEST_KERNEL").map(PathBuf::from) else {
-        eprintln!("OCTOS_CORE_TEST_KERNEL is not set: skipping the real-kernel test");
-        return;
-    };
+    let Some(program) = kernel() else { return };
     let dir = std::env::temp_dir().join(format!("octos-core-real-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let core_dir = dir.join("octos-home/.octos");
     write_provider(&core_dir, "deepseek", "deepseek-v4-flash");
-    std::fs::write(core_dir.join("web-client-origin.txt"), "http://localhost:4173").unwrap();
 
     let lines = Arc::new(Mutex::new(Vec::<String>::new()));
     let sink = lines.clone();
@@ -110,27 +157,6 @@ async fn a_real_kernel_runs_on_the_profile_the_providers_app_wrote() {
     assert_eq!(open["opened"]["session_id"], "_main:octos-core-it");
     assert_eq!(open["opened"]["active_profile_id"], "_main");
     assert_eq!(running_on(&mut conn, "llm1").await, ("deepseek".into(), "deepseek-v4-flash".into()));
-    let access = conn.client_access().await.unwrap();
-    assert!(!format!("{access:?}").contains(&access.token));
-    let mut browser = external(&access).await;
-    let open = ws_call(&mut browser, "open", "session/open", json!({"session_id":"_main:octos-core-it", "profile_id":"_main"})).await;
-    assert_eq!(open["opened"]["session_id"], "_main:octos-core-it");
-    let list = ws_call(&mut browser, "llm1", "profile/llm/list", json!({"profile_id":"_main"})).await;
-    assert_eq!(list["primary"]["model"], "deepseek-v4-flash");
-    // Reject both a missing token and an untrusted browser origin.
-    assert!(tokio_tungstenite::connect_async(access.endpoint()).await.is_err());
-    let mut spoofed = access.endpoint().into_client_request().unwrap();
-    spoofed.headers_mut().insert("X-Profile-Id", "_main".parse().unwrap());
-    assert!(tokio_tungstenite::connect_async(spoofed).await.is_err(), "another local APK cannot impersonate a trusted proxy");
-    assert!(solo_status(&access, "/api/auth/solo").await.contains("403"), "no password-free local login");
-    assert!(solo_status(&access, "/api/auth/solo/create").await.contains("403"), "no unauthenticated local owner creation");
-    let mut denied = format!("{}?token={}", access.endpoint(), access.token).into_client_request().unwrap();
-    denied.headers_mut().insert("Origin", "https://untrusted.example".parse().unwrap());
-    assert!(tokio_tungstenite::connect_async(denied).await.is_err());
-    #[cfg(unix)] {
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(core_dir.join(octosense_kernel::CONNECTION_FILE)).unwrap().permissions().mode() & 0o777, 0o600);
-    }
     // A second consumer shares that kernel.
     let mut other = core.connect().unwrap();
     assert_eq!(other.generation(), conn.generation());
@@ -139,32 +165,21 @@ async fn a_real_kernel_runs_on_the_profile_the_providers_app_wrote() {
     // The providers app saves another provider and restarts the kernel.
     write_provider(&core_dir, "moonshot", "kimi-k2.5");
     assert!(core.restart());
-    while conn.recv().await.is_ok() {}
-    assert_eq!(conn.closed(), Some(&CloseReason::Restarted));
-    while other.recv().await.is_ok() {}
-    assert_eq!(other.closed(), Some(&CloseReason::Restarted));
+    assert_eq!(conn.recv().await, Err(CloseReason::Restarted));
+    assert_eq!(other.recv().await, Err(CloseReason::Restarted));
     let mut conn = core.connect().unwrap();
     assert_eq!(conn.generation(), 2);
     call(&mut conn, "open", "session/open", json!({"session_id": "_main:octos-core-it", "profile_id": "_main"})).await;
     assert_eq!(running_on(&mut conn, "llm2").await, ("moonshot".into(), "kimi-k2.5".into()));
-    let restarted = conn.client_access().await.unwrap();
-    assert_eq!(access.origin, restarted.origin, "external clients reconnect to the same port");
-    assert!(access.token == restarted.token, "restart preserves the access token");
-    drop(browser);
-    let mut browser = external(&access).await;
-    let list = ws_call(&mut browser, "llm2", "profile/llm/list", json!({"profile_id":"_main"})).await;
-    assert_eq!(list["primary"]["model"], "kimi-k2.5");
     let log = lines.lock().unwrap().join("\n");
     assert!(log.contains("Model: deepseek-v4-flash") && log.contains("Model: kimi-k2.5"), "{log}");
 
+    // Talk to Octos is off: the kernel is the private pipe, nothing listens
+    // and there is no descriptor.
+    assert!(!core.external_access());
+    assert!(!octosense_kernel::connection_file(&core_dir).exists());
     drop((conn, other));
-    assert!(core.status().running, "external clients keep the shared server available");
-    let list = ws_call(&mut browser, "after-native-close", "profile/llm/list", json!({"profile_id":"_main"})).await;
-    assert_eq!(list["primary"]["model"], "kimi-k2.5");
-    drop(browser);
-    assert!(!lines.lock().unwrap().iter().any(|line| line.contains(&access.token)), "no access token in logs");
-    assert!(core.shutdown_within(Duration::from_secs(5)));
-    assert!(!core_dir.join(octosense_kernel::CONNECTION_FILE).exists());
+    assert!(!core.status().running);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -176,10 +191,167 @@ impl<F: FnMut()> Drop for Defer<F> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn talk_to_octos_admits_an_external_client_to_the_ui_protocol_only() {
+    let Some(program) = kernel() else { return };
+    let dir = std::env::temp_dir().join(format!("octos-core-talk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let core_dir = dir.join("octos-home/.octos");
+    write_provider(&core_dir, "deepseek", "deepseek-v4-flash");
+    std::fs::write(core_dir.join("web-client-origin.txt"), WEB).unwrap();
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = lines.clone();
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program).log(move |l| {
+        sink.lock().unwrap().push(l.to_owned());
+    }));
+    let dump = lines.clone();
+    let _print_log = Defer(move || eprintln!("kernel log:\n{}", dump.lock().unwrap().join("\n")));
+
+    // Turning it on starts the host-managed server and mints the token.
+    let c = core.clone();
+    blocking(move || c.set_external_access(true)).await.unwrap();
+    let c = core.clone();
+    let access = blocking(move || c.client_access()).await.unwrap();
+    let port = port_of(&access);
+    let authority = format!("127.0.0.1:{port}");
+    assert!(!format!("{access:?}").contains(&access.token));
+
+    // Native consumers share the same kernel over the host token.
+    let mut native = core.connect().unwrap();
+    assert_eq!(running_on(&mut native, "llm1").await.1, "deepseek-v4-flash");
+    let mut browser = external(&access).await;
+    let list = ws_call(&mut browser, "llm1", "profile/llm/list", json!({"profile_id":"_main"})).await;
+    assert_eq!(list["primary"]["model"], "deepseek-v4-flash");
+
+    // What the external token must not reach.
+    for path in ["/api/admin/overview", "/api/admin/stop-all", "/api/admin/token/rotate", "/api/admin/host/pairing"] {
+        let (status, _) = http(port, "POST", path, &authority, Some(&access.token), "").await;
+        assert!(status == 401 || status == 403, "{path}: {status}");
+    }
+    let (status, _) = http(port, "GET", "/api/my/profile", &authority, Some(&access.token), "").await;
+    assert_eq!(status, 403, "REST is closed to the external token");
+    let shutdown = ws_frame(&mut browser, "stop", "server/shutdown", json!({})).await;
+    assert!(shutdown.get("error").is_some(), "external clients cannot stop the server: {shutdown}");
+    let caps = ws_call(&mut browser, "caps", "config/capabilities/list", json!({})).await;
+    assert!(!caps.to_string().contains("server/shutdown"), "not advertised: {caps}");
+    for topic in ["peer-rinx", "peerctx-rinx.app-a"] {
+        let peer = format!("_main:api:octosense#{topic}");
+        let answer = ws_frame(&mut browser, "approve", "approval/respond", json!({
+            "session_id": peer, "approval_id": uuid::Uuid::new_v4().to_string(), "decision": "approve"})).await;
+        assert_eq!(answer["error"]["data"]["kind"], "host_owned_peer_answer_denied", "{answer}");
+    }
+    // DNS rebinding and other local apps.
+    let (status, _) = http(port, "GET", "/health", &format!("rebind.example:{port}"), None, "").await;
+    assert_eq!(status, 421, "a foreign Host header is refused");
+    let (status, _) = http(port, "GET", "/health", &authority, None, "").await;
+    assert_eq!(status, 200);
+    assert_eq!(ws_refused(access.endpoint()).await, 401, "no token");
+    let mut spoofed = access.endpoint().into_client_request().unwrap();
+    spoofed.headers_mut().insert("X-Profile-Id", "_main".parse().unwrap());
+    assert_eq!(ws_refused(spoofed).await, 401, "no trusted-proxy impersonation");
+    for solo in ["/api/auth/solo", "/api/auth/solo/create"] {
+        let body = r#"{"name":"Unauthorized app","username":"intruder","email":"intruder@solo.local"}"#;
+        let (status, _) = http(port, "POST", solo, &authority, None, body).await;
+        assert!(status == 403 || status == 404, "{solo}: {status}");
+    }
+    for origin in ["https://untrusted.example", "http://localhost:5173"] {
+        let mut denied = format!("{}?token={}", access.endpoint(), access.token).into_client_request().unwrap();
+        denied.headers_mut().insert("Origin", origin.parse().unwrap());
+        assert_eq!(ws_refused(denied).await, 403, "{origin}");
+    }
+    // The descriptor carries the external token only, privately.
+    let descriptor = octosense_kernel::connection_file(&core_dir);
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&descriptor).unwrap()).unwrap();
+    assert_eq!(saved["token"], access.token.as_str());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&descriptor).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    // A provider restart keeps the port and token (the host keeps the
+    // listener), and the server comes straight back.
+    write_provider(&core_dir, "moonshot", "kimi-k2.5");
+    drop(browser);
+    assert!(core.restart());
+    while native.recv().await.is_ok() {}
+    let c = core.clone();
+    let restarted = blocking(move || c.client_access()).await.unwrap();
+    assert_eq!(restarted.origin, access.origin, "the same port");
+    assert_eq!(restarted.token, access.token, "the same external token");
+    let mut browser = external(&restarted).await;
+    let list = ws_call(&mut browser, "llm2", "profile/llm/list", json!({"profile_id":"_main"})).await;
+    assert_eq!(list["primary"]["model"], "kimi-k2.5");
+    drop(native);
+    assert!(core.status().running, "external clients keep the server up");
+
+    // Rotating retires the old token.
+    let c = core.clone();
+    blocking(move || c.rotate_external_access()).await.unwrap();
+    let c = core.clone();
+    let rotated = blocking(move || c.client_access()).await.unwrap();
+    assert_ne!(rotated.token, access.token);
+    let mut old = format!("{}?token={}", access.endpoint(), access.token).into_client_request().unwrap();
+    old.headers_mut().insert("Origin", WEB.parse().unwrap());
+    assert_eq!(ws_refused(old).await, 401, "the old token is dead");
+    drop(browser);
+
+    // Turning it off stops external access: nothing listens any more.
+    let c = core.clone();
+    blocking(move || c.set_external_access(false)).await.unwrap();
+    for _ in 0..100 {
+        if tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err() { break; }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err(), "nothing listens with Talk to Octos off");
+    assert!(!descriptor.exists());
+    assert!(!lines.lock().unwrap().iter().any(|l| l.contains(&access.token) || l.contains(&rotated.token)), "no token in logs");
+    core.shutdown_within(Duration::from_secs(15));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pairing_hands_a_web_client_the_external_token_once() {
+    let Some(program) = kernel() else { return };
+    let dir = std::env::temp_dir().join(format!("octos-core-pair-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let core_dir = dir.join("octos-home/.octos");
+    write_provider(&core_dir, "deepseek", "deepseek-v4-flash");
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let c = core.clone();
+    blocking(move || c.set_external_access(true)).await.unwrap();
+    let c = core.clone();
+    let access = blocking(move || c.client_access()).await.unwrap();
+    let port = port_of(&access);
+    let authority = format!("127.0.0.1:{port}");
+    let (status, _) = http(port, "GET", "/pair/info", &authority, None, "").await;
+    assert_eq!(status, 404, "pairing is off until the host enables it");
+    let c = core.clone();
+    let pairing = blocking(move || c.pairing()).await.unwrap();
+    assert_eq!(pairing.code.len(), 8);
+    assert_eq!(pairing.expires_in_secs, 300);
+    let link = octosense_kernel::pairing_link(WEB, &pairing, None).unwrap();
+    assert!(link.contains(&pairing.code) && !link.contains(&access.token));
+    let claim = json!({"code": pairing.code}).to_string();
+    let (status, body) = http(port, "POST", "/pair/claim", &authority, None, &claim).await;
+    assert_eq!(status, 200);
+    let claimed: Value = serde_json::from_str(body.trim()).unwrap();
+    assert_eq!(claimed["token"], access.token.as_str(), "the external token, never the host's");
+    let (status, _) = http(port, "POST", "/pair/claim", &authority, None, &claim).await;
+    assert_eq!(status, 400, "single use");
+    let c = core.clone();
+    blocking(move || c.end_pairing()).await;
+    let (status, _) = http(port, "GET", "/pair/info", &authority, None, "").await;
+    assert_eq!(status, 404, "off again when the sheet closes");
+    let c = core.clone();
+    blocking(move || c.set_external_access(false)).await.unwrap();
+    core.shutdown_within(Duration::from_secs(15));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn native_and_browser_talk_to_the_same_system_agent() {
     use std::io::BufRead;
-    use octosense_kernel::SYSTEM_SESSION;
-    let Some(program) = std::env::var_os("OCTOS_CORE_TEST_KERNEL") else { return };
+    let Some(program) = kernel() else { return };
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app-peers/tests/fixtures/mock_llm.py");
     let mut model = std::process::Command::new("python3").arg(script)
         .stdout(std::process::Stdio::piped()).spawn().unwrap();
@@ -196,14 +368,13 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
         "config":{"llm":{"primary":{"family_id":"local", "model_id":"mock-model",
             "route":{"base_url":format!("http://127.0.0.1:{port}/v1"), "api_type":"openai"}}}}
     }).to_string()).unwrap();
-    std::fs::write(dir.join("web-client-origin.txt"), "http://localhost:4173").unwrap();
-    let core = Core::new(Options::default().program(program).core_dir(&dir));
+    std::fs::write(dir.join("web-client-origin.txt"), WEB).unwrap();
+    let core = Core::new(Options::default().program(&program).core_dir(&dir));
+    let c = core.clone();
+    blocking(move || c.set_external_access(true)).await.unwrap();
     let mut native = core.connect().unwrap();
     let access = native.client_access().await.unwrap();
-    let link = native.system_web_url("http://localhost:4173").await.unwrap();
-    let url = url::Url::parse(&link).unwrap();
-    assert!(!link.contains(&access.token));
-    let reference: Value = serde_json::from_str(&url.query_pairs().find(|(k, _)| k == "s").unwrap().1).unwrap();
+    let reference: Value = serde_json::from_str(&native.system_reference().await.unwrap()).unwrap();
     assert!(reference[0].as_str().unwrap().starts_with('/'));
     assert_eq!(reference[1], "_main");
     assert_eq!(reference[2], SYSTEM_SESSION);
@@ -226,8 +397,6 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }).await.expect("browser sees native turn");
-    // Completion can precede the turn/start reply; inspect durable turn
-    // state rather than depending on the relative delivery of notifications.
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let state = call(&mut native, "state", "turn/state/get", json!({
@@ -244,20 +413,72 @@ async fn native_and_browser_talk_to_the_same_system_agent() {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }).await.expect("native client sees browser turn");
-    assert_eq!(core.status().generation, 1);
     drop((native, browser));
-    core.shutdown_within(Duration::from_secs(5));
-    // A Web cwd makes the session persistently scoped. After even a full
-    // host restart, native app peers must resume it without having to know
-    // the browser's workspace routing contract.
-    let restarted = Core::new(Options::default()
-        .program(std::env::var_os("OCTOS_CORE_TEST_KERNEL").unwrap()).core_dir(&dir));
+    core.shutdown_within(Duration::from_secs(15));
+    // A Web cwd makes the session persistently scoped. After a full host
+    // restart with Talk to Octos off, native app peers still resume it.
+    std::fs::remove_file(dir.join("external-access.json")).unwrap();
+    let restarted = Core::new(Options::default().program(&program).core_dir(&dir));
     let mut native = restarted.connect().unwrap();
     let opened = call(&mut native, "resume", "session/open", json!({
         "session_id":SYSTEM_SESSION,"profile_id":"_main"})).await;
     assert_eq!(opened["opened"]["workspace_root"], reference[0]);
-    assert!(native.system_web_url("http://localhost:4173").await.is_ok());
     drop(native);
     restarted.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The kernel must not outlive a host that dies without stopping it
+/// (a crash or SIGKILL): its stdin closes and it stops. This test re-runs
+/// itself as the host in a child process and kills that process.
+#[test]
+fn a_host_that_dies_takes_its_kernel_with_it() {
+    const HOST: &str = "OCTOSENSE_KERNEL_TEST_HOST";
+    let Some(program) = kernel() else { return };
+    if let Some(dir) = std::env::var_os(HOST).map(PathBuf::from) {
+        // The host: start the kernel, report ready, then wait to be killed.
+        let shared = dir.join("shared").exists();
+        write_provider(&dir, "deepseek", "deepseek-v4-flash");
+        let core = Core::new(Options::default().program(&program).core_dir(&dir));
+        if shared {
+            core.set_external_access(true).unwrap();
+            core.client_access().unwrap();
+        }
+        let _conn = core.connect().unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        std::fs::write(dir.join("ready"), "").unwrap();
+        std::thread::sleep(Duration::from_secs(600));
+        return;
+    }
+    for shared in [false, true] {
+        let dir = std::env::temp_dir().join(format!("octos-core-orphan-{}-{shared}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        if shared {
+            std::fs::write(dir.join("shared"), "").unwrap();
+        }
+        let mut host = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "a_host_that_dies_takes_its_kernel_with_it", "--nocapture", "--test-threads=1"])
+            .env(HOST, &dir)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(120);
+        while !dir.join("ready").exists() {
+            assert!(std::time::Instant::now() < deadline, "the host did not start its kernel");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let kernels = || {
+            let out = std::process::Command::new("pgrep").args(["-f", &dir.to_string_lossy()]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().map(str::to_owned).collect::<Vec<_>>()
+        };
+        assert!(!kernels().is_empty(), "the kernel runs (shared: {shared})");
+        host.kill().unwrap(); // SIGKILL: no orderly stop
+        host.wait().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !kernels().is_empty() {
+            assert!(std::time::Instant::now() < deadline, "the kernel outlived its host (shared: {shared}): {:?}", kernels());
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
