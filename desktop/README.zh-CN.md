@@ -173,7 +173,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 {
   "schema": 1,
   "source": "../apps",
-  "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
+  "apps": ["news", "photos", "maps", "mail", "ai-providers"],
   "assets": {}
 }
 ```
