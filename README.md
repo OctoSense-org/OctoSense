@@ -68,6 +68,23 @@ python3 tools/setup.py --check --cargo  # verify: one Makepad, App Hub, octos an
 
 `--update` moves clean checkouts after the locks change; `--cache DIR` borrows Git objects from existing clones (`DIR/makepad`, `DIR/octoscript`, `DIR/octoscript-makepad`). Local changes in `.sources/` are preserved.
 
+**Already have clones of these repositories?** Keep one clone of each on the machine and make every `.sources/` entry a `git worktree` of it, so there is one object store per repository and no stale copy. Name the directory that holds the clones (as `<dir>/makepad`, `<dir>/octoscript`, `<dir>/octoscript-makepad`) once, in `~/.config/octosense/sources.json`:
+
+```json
+{ "hub": "/path/to/clones" }
+```
+
+or per run with `--hub DIR` or `OCTOSENSE_SOURCES_HUB=DIR`; `OCTOSENSE_MAKEPAD_HUB=CLONE` (and `_OCTOSCRIPT_`, `_OCTOSCRIPT_MAKEPAD_`) names one clone, as does `"repositories": {"makepad": "CLONE"}` in the file. Setup then fetches each pinned revision into that clone and runs `git worktree add --detach .sources/<name> <rev>` instead of cloning; `--update` moves the worktrees. Without a hub (CI, a fresh machine) it clones as before, and `--no-hub` forces that. A `.sources/` entry that is already a full clone is reported, not deleted; `--convert` replaces it with a worktree when it holds no local work.
+
+Before deleting a checkout of this repository, remove its `.sources/` worktrees so the clones keep no stale entries:
+
+```sh
+python3 tools/setup.py --remove-worktrees   # git worktree remove + prune in each clone; stops on local work
+git worktree remove <this checkout>         # if it is itself a worktree
+```
+
+By hand, the same is `git -C <clone> worktree remove --force .sources/<name>` (the reviewed Makepad patch is staged, hence `--force`; check `git status` first) and `git -C <clone> worktree prune`.
+
 ## Build
 
 **Desktop** (from the root or `desktop/`; details in [desktop/README.md](desktop/README.md)):
