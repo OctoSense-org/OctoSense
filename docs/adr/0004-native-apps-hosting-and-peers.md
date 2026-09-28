@@ -1,7 +1,7 @@
 # ADR 0004: Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person
 
 - **Date:** 2026-09-28
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-28)
 - **Scope:** How OctoSense declares, links, hosts, isolates and trusts its bundled native Rust apps on each target; where every app keeps its data and what its agent may read; how every bundled app, native or script, owns an octos app agent; how the system agent and app agents work across apps; and how the person approves what they do, live or in advance.
 - **Relates to:** [ADR 0001](0001-one-octosense-repository.md); [ADR 0002](0002-event-driven-app-agents.md) (app agents; amended by this ADR); [Home ADR 0002](home/0002-agentic-app-security-model.md) and [Home ADR 0004](home/0004-system-apps-are-contained-script-apps.md) (amended); Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md); octos UPCR-2026-034 (host-owned app peers, merged), UPCR-2026-035 ([octos#2567](https://github.com/octos-org/octos/pull/2567), host tools per app peer, open) and UPCR-2026-036 (`serve --host-managed`, [octos#2591](https://github.com/octos-org/octos/pull/2591), merged); [octos#2601](https://github.com/octos-org/octos/pull/2601) (tool origin, per-connection ownership); [ADR 0003](0003-shared-octos-client-access.md) (Talk to Octos, OctoSense [#98](https://github.com/OctoSense-org/OctoSense/pull/98): external clients never reach app agents).
 
