@@ -70,8 +70,13 @@ jobs:
           bash ../tools/check-shell-graph.sh -p octosense-home
       - name: Verify the single runtime graph
         run: python3 tools/setup.py --check --cargo
+      - name: Build Home, App Hub admission and runtime policy tests
+        working-directory: phone
+        timeout-minutes: 60
+        run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-news -p octosense-appcard -p octosense-ai-host --no-run
       - name: Test Home, App Hub admission and runtime policy
         working-directory: phone
+        timeout-minutes: 30
         run: |
           # octosense-app-hub-app is App Hub's shared shell crate, a git
           # dependency with dev-dependencies: cargo cannot test it from here;
