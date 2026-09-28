@@ -332,6 +332,43 @@ fn an_app_without_the_capability_is_refused_before_anything_else() {
     assert!(rig.fake.seen().is_empty());
 }
 
+/// The Card runner's isolate gate (Makepad's `splash_policy`, which App Hub
+/// feeds each app's resolved policy) lets `model.*` out only for an app whose
+/// policy lists `model`: `llm` or a neighbouring name is not enough, and
+/// `model` grants nothing else. Behind it, the service's default grant reads
+/// the same manifest, so an app the gate admits is served and one it would
+/// refuse is refused again here.
+#[test]
+fn the_card_runner_gate_and_the_service_agree_on_the_model_capability() {
+    use octosense_appstore::makepad_widgets::splash_policy::{service_allowed, set_policy_for_heap};
+    let without = NEXT.fetch_add(2, Ordering::Relaxed);
+    let with = without + 1;
+    set_policy_for_heap(without, vec!["storage".into(), "llm".into(), "models".into()], Vec::new(), None);
+    for method in ["model.complete", "model.budget"] {
+        assert!(service_allowed(without, method).is_err(), "{method}");
+    }
+    set_policy_for_heap(with, vec!["model".into()], Vec::new(), None);
+    for method in ["model.complete", "model.budget"] {
+        assert!(service_allowed(with, method).is_ok(), "{method}");
+    }
+    assert!(service_allowed(with, "llm.list").is_err(), "model grants nothing else");
+
+    // The service's own check, the default one, over manifests where App Hub
+    // puts them: the granted app is served, the other refused.
+    let rig = Rig::with("gate", vec![deepseek("deepseek-v4-flash")], |o| o.grants(complete::manifest_grants));
+    let write = |id: &str, caps: &[&str]| {
+        let path = rig.dir.join(id).join("bundle/manifest.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, json!({"id": id, "capabilities": caps}).to_string()).unwrap();
+    };
+    write(APP, &["storage", "model"]);
+    write("com.example.other", &["storage", "llm"]);
+    assert!(rig.call(APP, "budget", json!({})).is_ok());
+    let err = rig.call("com.example.other", "budget", json!({})).unwrap_err();
+    assert!(err.starts_with("capability: "), "{err}");
+    assert!(rig.fake.seen().is_empty());
+}
+
 #[test]
 fn the_default_grant_reads_the_apps_own_manifest() {
     let root = std::env::temp_dir().join(format!("model-grants-{}", std::process::id()));
