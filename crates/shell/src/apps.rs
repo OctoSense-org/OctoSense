@@ -444,9 +444,17 @@ impl AppRegistry {
 mod tests {
     use super::*;
 
-    /// The system apps system-apps.json selects, in its order.
+    /// The system apps this build's system-apps.json selects, in its order:
+    /// the desktop and the phone pack different sets (no Camera on the
+    /// desktop), chosen by `OCTOSENSE_SYSTEM_APPS` in `.cargo/config.toml`.
     #[cfg(any(feature = "app-hub", native_mobile))]
-    const SYSTEM_APPS: [&str; 6] = ["news", "photos", "maps", "camera", "mail", "ai-providers"];
+    fn system_app_ids() -> Vec<&'static str> {
+        let text = include_str!(env!("OCTOSENSE_SYSTEM_APPS"));
+        let json: serde_json::Value = serde_json::from_str(text).expect("system-apps.json parses");
+        json["apps"].as_array().expect("system-apps.json has apps").iter()
+            .map(|id| &*Box::leak(id.as_str().expect("app ids are strings").to_owned().into_boxed_str()))
+            .collect()
+    }
 
     #[cfg(feature = "mobile-apps")]
     #[test]
@@ -460,7 +468,7 @@ mod tests {
         let linked = linked_modules();
         let native: Vec<&str> = linked.iter().map(|m| m.id()).filter(|id| catalog_visible(id)).collect();
         let mut expected: Vec<&str> = native.clone();
-        expected.extend(SYSTEM_APPS.iter().copied().filter(|id| !native.contains(id)));
+        expected.extend(system_app_ids().iter().copied().filter(|id| !native.contains(id)));
         assert_eq!(catalog.iter().map(|app| app.id.as_str()).collect::<Vec<_>>(), expected);
         assert_eq!(native.contains(&"appcard"), cfg!(feature = "app-appcard"));
         assert_eq!(native.contains(&"rinx"), cfg!(feature = "app-rinx"));
@@ -468,7 +476,7 @@ mod tests {
         // The system apps without a native module: the Card runner hosts
         // them, launched by their manifest id (ADR 0004).
         let registry = AppRegistry::default();
-        for id in SYSTEM_APPS.iter().filter(|id| !native.contains(id)) {
+        for id in system_app_ids().iter().filter(|id| !native.contains(id)) {
             let app = catalog.iter().find(|app| app.id == *id).unwrap();
             assert_eq!(card_manifest_id(app), Some(format!("os.{id}").as_str()));
             assert_eq!(registry.module(id).map(|m| m.id()), Some("card"));
@@ -559,14 +567,16 @@ mod tests {
         let registry = AppRegistry::default();
         let native = registry.linked_ids();
         let ids: Vec<String> = system_card_apps().into_iter().map(|app| app.id).collect();
-        let expected: Vec<&str> = SYSTEM_APPS.iter().copied().filter(|id| !native.contains(id)).collect();
+        let expected: Vec<&str> = system_app_ids().iter().copied().filter(|id| !native.contains(id)).collect();
         assert_eq!(ids, expected);
         for id in &ids {
             assert_eq!(registry.hosting(id), Hosting::Module);
             assert!(is_linked(id));
         }
         assert_eq!(registry.hosting("apphub"), Hosting::Module, "the store has no process form");
-        assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
+        if system_app_ids().contains(&"camera") {
+            assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
+        }
     }
 
     #[test]
