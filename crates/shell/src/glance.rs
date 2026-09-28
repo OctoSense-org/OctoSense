@@ -30,14 +30,20 @@
 //! does a card the L0 check refuses) and keep [`PER_APP_CARDS`] cards; the
 //! store keeps at most [`STORE_CARDS`], dropping the least important.
 //!
-//! **Who may call.** Contained apps reach a service only through a granted
-//! capability family, and App Hub's pinned revision has no `glance`
-//! capability (`octosense_app_policy::KNOWN_CAPABILITIES`), so a manifest
-//! cannot ask for it yet and the isolate refuses `glance.*` before it gets
-//! here. Until App Hub publishes the capability, the service also admits
-//! only system apps (`os.*`) among contained callers.
-//! TODO(app-hub): add `glance` to App Hub's KNOWN_CAPABILITIES (with its
-//! store words), then lift the `os.*` restriction here.
+//! **Who may call.** A contained app publishes only when it holds the
+//! `glance` capability (App Hub's `KNOWN_CAPABILITIES`; the store tells the
+//! person "Show cards on your glance screen"). The Card runner's gate
+//! (Makepad's `splash_policy::service_allowed`) lets a `glance.*` request
+//! out of an app's isolate only when the app's resolved policy grants
+//! `glance`, so a call the runner hands [`GlanceService`] from the app
+//! itself holds the grant. A host sheet runs under no app's policy, so a
+//! call from a sheet holds none, and [`Caller::Contained`] records which it
+//! is. Every method refuses a contained caller without the grant. System
+//! apps are no exception: they run under their own manifest's policy like
+//! any installed app, so a system app that publishes requests `glance` in
+//! its manifest, as Mail requests `mail`. Native modules are the shell's own
+//! code and publish by the id the shell hosts them as. The capability only
+//! decides who may publish; the limits above hold for every caller.
 //!
 //! **The feed.** The system agent will rank and trim; until then the shell
 //! shows cards by priority, then recency, at most [`SHOWN_CARDS`]
@@ -67,8 +73,9 @@ pub const SHOWN_CARDS: usize = 6;
 /// Who is calling: the host decides, never the arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Caller {
-    /// A contained app, by the manifest id the Card runner runs it under.
-    Contained(String),
+    /// A contained app, by the manifest id the Card runner runs it under,
+    /// and whether its policy grants `glance` (see the module docs).
+    Contained { app: String, granted: bool },
     /// A native module or the shell itself, by the id the shell hosts it as.
     Native(String),
 }
@@ -76,7 +83,18 @@ pub enum Caller {
 impl Caller {
     pub fn app(&self) -> &str {
         match self {
-            Caller::Contained(id) | Caller::Native(id) => id,
+            Caller::Contained { app: id, .. } | Caller::Native(id) => id,
+        }
+    }
+    /// A contained app whose policy grants `glance`.
+    pub fn granted(app: impl Into<String>) -> Caller {
+        Caller::Contained { app: app.into(), granted: true }
+    }
+    /// Whether this caller may use the glance service at all.
+    pub fn may_use(&self) -> Result<(), String> {
+        match self {
+            Caller::Contained { app, granted: false } => Err(format!("{app} was not granted the glance capability")),
+            _ => Ok(()),
         }
     }
     /// The launcher id that opens this app: a system app's short id
@@ -139,12 +157,8 @@ impl GlanceStore {
     /// `glance.publish`, for `caller`, at `now_ms`.
     pub fn publish(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
         self.expire(now_ms);
+        caller.may_use()?;
         let app = caller.app().to_string();
-        if let Caller::Contained(id) = caller {
-            if !id.starts_with("os.") {
-                return Err("glance is open to system apps only until App Hub grants a glance capability".into());
-            }
-        }
         if let Some(claimed) = args.get("app") {
             if claimed.as_str() != Some(app.as_str()) && claimed.as_str() != Some(caller.launch_id()) {
                 return Err("the publishing app is the caller; `app` cannot name another".into());
@@ -244,6 +258,7 @@ impl GlanceStore {
 
     /// `glance.withdraw`: the caller's own card only.
     pub fn withdraw(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
+        caller.may_use()?;
         self.expire(now_ms);
         let card_id = text(args, "card_id").ok_or("card_id is required")?;
         let before = self.cards.len();
@@ -252,15 +267,16 @@ impl GlanceStore {
     }
 
     /// `glance.list`: the caller's own cards.
-    pub fn list(&mut self, caller: &Caller, now_ms: u64) -> Value {
+    pub fn list(&mut self, caller: &Caller, now_ms: u64) -> Result<Value, String> {
+        caller.may_use()?;
         self.expire(now_ms);
-        Value::Array(
+        Ok(Value::Array(
             self.cards
                 .iter()
                 .filter(|c| c.app == caller.app())
                 .map(|c| json!({"card_id": c.card_id, "title": c.title, "priority": c.priority, "published_at": c.published_ms, "expires_at": c.expires_ms}))
                 .collect(),
-        )
+        ))
     }
 
     /// Drop expired cards; true when any went.
@@ -326,7 +342,7 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
     let result = with_store(|store| match method {
         "publish" => store.publish(caller, args, now),
         "withdraw" => store.withdraw(caller, args, now),
-        "list" => Ok(store.list(caller, now)),
+        "list" => store.list(caller, now),
         other => Err(format!("glance has no method {other:?}")),
     });
     if result.is_ok() && method != "list" {
@@ -364,8 +380,12 @@ impl octosense_appstore::services::HostService for GlanceService {
         "glance"
     }
     fn call(&mut self, call: octosense_appstore::services::ServiceCall, reply: octosense_appstore::services::Replier, _host: &mut dyn octosense_appstore::services::ServiceHost) {
-        // The identity is the runner's, never the app's arguments.
-        reply.send(request(&Caller::Contained(call.app_id.clone()), &call.service, &call.args));
+        // The identity is the runner's, never the app's arguments. A call from
+        // the app's own isolate passed the runner's gate, which requires the
+        // `glance` capability; a host sheet's isolate has no app policy and
+        // holds no grant.
+        let caller = Caller::Contained { app: call.app_id.clone(), granted: !call.from_sheet };
+        reply.send(request(&caller, &call.service, &call.args));
     }
 }
 
@@ -404,7 +424,7 @@ pub fn publish_demo_if_asked() {
             "card_id": "digest", "title": "News digest", "source": source, "data": data,
             "priority": 70, "open": {"app": "news"}
         });
-        if let Err(e) = request(&Caller::Contained("os.news".into()), "glance.publish", &args) {
+        if let Err(e) = request(&Caller::granted("os.news"), "glance.publish", &args) {
             makepad_widgets::log!("glance: demo digest refused: {e}");
         }
     });
@@ -415,7 +435,7 @@ mod tests {
     use super::*;
 
     fn news() -> Caller {
-        Caller::Contained("os.news".into())
+        Caller::granted("os.news")
     }
     fn args(card_id: &str) -> Value {
         let (source, data) = demo_digest();
@@ -436,19 +456,47 @@ mod tests {
         let shown = store.shown(1_000, SHOWN_CARDS);
         assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.news", "news"));
         // Another app sees, replaces and withdraws only its own cards.
-        let maps = Caller::Contained("os.maps".into());
-        assert_eq!(store.list(&maps, 1_000), json!([]));
+        let maps = Caller::granted("os.maps");
+        assert_eq!(store.list(&maps, 1_000).unwrap(), json!([]));
         assert_eq!(store.withdraw(&maps, &json!({"card_id": "digest"}), 1_000).unwrap()["withdrawn"], false);
         assert_eq!(store.len(), 1);
     }
 
     #[test]
-    fn contained_apps_outside_os_are_refused_until_the_capability_exists() {
+    fn a_contained_app_needs_the_glance_capability_whoever_it_is() {
         let mut store = GlanceStore::default();
-        let err = store.publish(&Caller::Contained("com.example.news".into()), &args("d"), 0).unwrap_err();
-        assert!(err.contains("system apps only"), "{err}");
+        // A store app with the grant publishes like a system app, under the
+        // same limits, and its card opens only itself.
+        let mut a = args("d");
+        a["open"] = json!({"app": "com.example.news"});
+        assert!(store.publish(&Caller::granted("com.example.news"), &a, 0).is_ok());
+        // Without the grant, no app may publish, list or withdraw; being a
+        // system app is not a grant.
+        for app in ["com.example.other", "os.maps"] {
+            let ungranted = Caller::Contained { app: app.into(), granted: false };
+            let err = store.publish(&ungranted, &args("d"), 0).unwrap_err();
+            assert!(err.contains("not granted the glance capability"), "{err}");
+            assert!(store.list(&ungranted, 0).is_err());
+            assert!(store.withdraw(&ungranted, &json!({"card_id": "d"}), 0).is_err());
+        }
         // A native module publishes through the same API.
         assert!(store.publish(&Caller::Native("news".into()), &args("d"), 0).is_ok());
+        assert_eq!(store.len(), 2);
+    }
+
+    /// The grant is the Card runner's: its isolate gate lets `glance.*` out
+    /// only for an app whose resolved policy lists `glance` (a prefix or a
+    /// neighbouring family is not enough).
+    #[test]
+    fn the_runner_gate_admits_glance_only_with_the_capability() {
+        use makepad_widgets::splash_policy::{service_allowed, set_policy_for_heap};
+        set_policy_for_heap(9201, vec!["storage".into(), "news".into()], Vec::new(), None);
+        assert!(service_allowed(9201, "glance.publish").is_err());
+        set_policy_for_heap(9202, vec!["glance".into()], Vec::new(), None);
+        for method in ["glance.publish", "glance.withdraw", "glance.list"] {
+            assert!(service_allowed(9202, method).is_ok(), "{method}");
+        }
+        assert!(service_allowed(9202, "news.list").is_err(), "glance grants nothing else");
     }
 
     #[test]
@@ -502,7 +550,7 @@ mod tests {
         // Another app has its own window.
         let mut maps = args("digest");
         maps["open"] = json!({"app": "maps"});
-        assert!(store.publish(&Caller::Contained("os.maps".into()), &maps, 2_000).is_ok());
+        assert!(store.publish(&Caller::granted("os.maps"), &maps, 2_000).is_ok());
         // The window slides.
         assert!(store.publish(&news(), &args("digest"), 1_000 + RATE_WINDOW_MS).is_ok());
     }
@@ -531,9 +579,9 @@ mod tests {
         a["expires"] = json!(60);
         let ok = store.publish(&news(), &a, 1_000).unwrap();
         assert_eq!(ok["expires_at"], 61_000);
-        assert_eq!(store.list(&news(), 60_999).as_array().unwrap().len(), 1);
+        assert_eq!(store.list(&news(), 60_999).unwrap().as_array().unwrap().len(), 1);
         assert!(store.shown(61_000, 9).is_empty());
-        assert_eq!(store.list(&news(), 61_000), json!([]));
+        assert_eq!(store.list(&news(), 61_000).unwrap(), json!([]));
         store.publish(&news(), &args("digest"), 70_000).unwrap();
         assert_eq!(store.withdraw(&news(), &json!({"card_id": "digest"}), 70_001).unwrap()["withdrawn"], true);
         assert!(store.is_empty());
@@ -550,7 +598,7 @@ mod tests {
                 let mut a = args(&format!("c{i}"));
                 a["priority"] = json!(p);
                 a["open"] = Value::Null;
-                store.publish(&Caller::Contained(app.into()), &a, t).unwrap();
+                store.publish(&Caller::granted(app), &a, t).unwrap();
             }
         }
         let shown = store.shown(t, SHOWN_CARDS);
@@ -573,13 +621,15 @@ mod tests {
         }
         register();
         let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, host_dir: std::env::temp_dir() };
+        let from_sheet = |app: &str, service: &str, args: Value| ServiceCall { from_sheet: true, ..call(app, service, args) };
         let mut spoof = args("dispatch-test");
         spoof["app"] = json!("os.mail");
         dispatch(call("os.news", "glance.publish", spoof), 9101, 1, &mut NoSheets);
         let refused = take_replies_for(&[9101]);
         assert!(refused[0].2.as_ref().unwrap_err().contains("caller"), "{refused:?}");
-        dispatch(call("com.example.x", "glance.publish", args("dispatch-test")), 9102, 1, &mut NoSheets);
-        assert!(take_replies_for(&[9102])[0].2.as_ref().unwrap_err().contains("system apps only"));
+        // A host sheet over an app runs under no app policy: no grant.
+        dispatch(from_sheet("os.news", "glance.publish", args("dispatch-test")), 9102, 1, &mut NoSheets);
+        assert!(take_replies_for(&[9102])[0].2.as_ref().unwrap_err().contains("not granted the glance capability"));
         dispatch(call("os.news", "glance.publish", args("dispatch-test")), 9103, 1, &mut NoSheets);
         assert!(take_replies_for(&[9103])[0].2.is_ok());
         assert!(shown().iter().any(|c| c.key() == "os.news/dispatch-test" && c.open_app == "news"));
