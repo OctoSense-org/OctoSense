@@ -115,8 +115,10 @@
   },
   "expected": {
     "status": "ready",
+    "reasons": [],
     "data": {
       "brief": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -140,22 +142,31 @@
           }
         ],
         "summary": "Sources: Typhoon Haikui nears Guangdong; 海葵逼近廣東沿海; 漁民陸續返港",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",
       "missing": 0,
       "queries": [
         {
+          "failed": 0,
           "found": 1,
           "language": "en",
+          "left": 0,
           "off_topic": 0,
           "read": 1,
           "terms": "typhoon",
           "unreadable": 0
         },
         {
+          "failed": 0,
           "found": 3,
           "language": "zh",
+          "left": 0,
           "off_topic": 1,
           "read": 2,
           "terms": "台风",

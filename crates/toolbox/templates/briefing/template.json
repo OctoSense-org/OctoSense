@@ -1,8 +1,8 @@
 {
   "id": "briefing",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Briefing",
-  "description": "Search a few topics together (for example a city's weather and business news), read the top articles of each concurrently and write one briefing with a point or two per topic, with citations.",
+  "description": "Search a few topics together (for example a city's weather and business news), read the top articles of each concurrently and write one briefing with a point or two per topic, with citations. Ready when every topic was read and the briefing kept every point; partial, with the reasons, when a topic found or read nothing or the briefing failed or dropped points; failed when nothing was read.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -23,8 +23,8 @@
     "required": ["topics", "language", "briefing", "sources", "missing"],
     "properties": {
       "topics": {"type": "array", "maxItems": 4, "items": {
-        "type": "object", "additionalProperties": false, "required": ["topic", "found"],
-        "properties": {"topic": {"type": "string"}, "found": {"type": "integer", "minimum": 0}}}},
+        "type": "object", "additionalProperties": false, "required": ["topic", "found", "read"],
+        "properties": {"topic": {"type": "string"}, "found": {"type": "integer", "minimum": 0}, "read": {"type": "integer", "minimum": 0, "description": "Articles read for this topic."}}}},
       "language": {"type": "string"},
       "briefing": {"description": "research.digest's result (task brief), or null."},
       "sources": {"type": "array", "maxItems": 12, "items": {

@@ -1,8 +1,8 @@
 {
   "id": "news-digest",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "title": "News digest",
-  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read), leave out pages that do not mention the topic and articles the model finds off topic, and summarize the rest once in the requested language, citing each point's articles. Optionally translates the query into the search language first.",
+  "description": "Search news on a topic, read the top articles concurrently (skipping results the backend cannot read), leave out pages that do not mention the topic and articles the model finds off topic, and summarize the rest once in the requested language, citing each point's articles. Optionally translates the query into the search language first. Ready when articles on the topic were read and the digest kept every point; partial, with the reasons, when the translation or the digest failed or the digest dropped points; failed when the search failed or nothing on the topic was read.",
   "params": {
     "type": "object",
     "additionalProperties": false,

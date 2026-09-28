@@ -28,6 +28,7 @@ let sources = []
 let missing = 0
 let index = 0
 let has_forecast = false
+let has_air = false
 for pending in reads {
     let article = try pending.await() catch nil
     if article == nil {
@@ -35,6 +36,8 @@ for pending in reads {
     } else {
         if kinds[index] == "forecast" {
             has_forecast = true
+        } else {
+            has_air = true
         }
         array.push(ids, article.id)
         array.push(sources, {id: article.id, kind: kinds[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
@@ -48,8 +51,27 @@ if has_forecast {
     let resolved = try research.digest({task: "plan", language: request.language, article_ids: ids, focus: focus}).await() catch nil
     plan = resolved
 }
+// Ready when a forecast and an air-quality report were read and the plan
+// kept every point. Without air quality the plan is partial; without a
+// forecast there is no plan, and the run failed.
+let reasons = []
+if air == nil {
+    array.push(reasons, "air quality: the search failed")
+} elif has_air == false {
+    array.push(reasons, "air quality: no report read (" + array.len(air.items) + " found)")
+}
+if has_forecast && plan == nil {
+    array.push(reasons, "the plan failed; the sources are listed without it")
+}
+if plan != nil && plan.dropped_points > 0 {
+    array.push(reasons, "the plan dropped " + plan.dropped_points + " invalid point(s)")
+}
 let status = "ready"
-if air == nil || missing > 0 || has_forecast == false || plan == nil || forecast.source.partial {
+if array.len(reasons) > 0 {
     status = "partial"
 }
-{status: status, data: {location: request.location, activity: request.activity, days: request.days, language: request.language, plan: plan, sources: sources, missing: missing}}
+if has_forecast == false {
+    status = "failed"
+    array.push(reasons, "no forecast was read (" + array.len(forecast.items) + " found)")
+}
+{status: status, reasons: reasons, data: {location: request.location, activity: request.activity, days: request.days, language: request.language, plan: plan, sources: sources, missing: missing}}

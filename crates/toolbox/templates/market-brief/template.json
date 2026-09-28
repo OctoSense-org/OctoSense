@@ -1,8 +1,8 @@
 {
   "id": "market-brief",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Market brief",
-  "description": "One news search per ticker symbol, started together, the top articles for each read concurrently, and one brief (a comparison for several symbols) of developments and the risks the sources name, with citations. Research, not advice: no quotes or predictions in v1.",
+  "description": "One news search per ticker symbol, started together, the top articles for each read concurrently, and one brief (a comparison for several symbols) of developments and the risks the sources name, with citations. Research, not advice: no quotes or predictions in v1. Ready when every symbol was read and the brief kept every point; partial, with the reasons, when a symbol found or read nothing or the brief failed or dropped points; failed when nothing was read.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -28,8 +28,8 @@
     "required": ["symbols", "language", "brief", "sources", "missing"],
     "properties": {
       "symbols": {"type": "array", "maxItems": 3, "items": {
-        "type": "object", "additionalProperties": false, "required": ["symbol", "name", "found"],
-        "properties": {"symbol": {"type": "string"}, "name": {"type": "string"}, "found": {"type": "integer", "minimum": 0}}}},
+        "type": "object", "additionalProperties": false, "required": ["symbol", "name", "found", "read"],
+        "properties": {"symbol": {"type": "string"}, "name": {"type": "string"}, "found": {"type": "integer", "minimum": 0}, "read": {"type": "integer", "minimum": 0, "description": "Articles read for this symbol."}}}},
       "language": {"type": "string"},
       "brief": {"description": "research.digest's result, or null."},
       "sources": {"type": "array", "maxItems": 9, "items": {

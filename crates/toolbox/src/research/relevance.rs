@@ -175,7 +175,7 @@ impl Indexed {
     }
 }
 
-enum Token {
+pub(super) enum Token {
     /// A folded, lowercased word, and whether it was written with a capital
     /// or a digit.
     Word(String, bool),
@@ -183,7 +183,7 @@ enum Token {
 }
 
 /// Scripts written without spaces between words.
-fn unspaced(c: char) -> bool {
+pub(super) fn is_unspaced(c: char) -> bool {
     matches!(c as u32,
         0x3040..=0x30FF   // hiragana, katakana
         | 0x3400..=0x4DBF // CJK extension A
@@ -195,21 +195,21 @@ fn unspaced(c: char) -> bool {
 }
 
 /// Words (folded, lowercased) and unspaced runs (folded to Simplified).
-fn tokens(text: &str) -> Vec<Token> {
+pub(super) fn tokens(text: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut word = String::new();
     let mut name = false;
     let mut run = String::new();
     for c in text.chars() {
-        let spaced = !unspaced(c) && c.is_alphanumeric();
+        let spaced = !is_unspaced(c) && c.is_alphanumeric();
         if !spaced && !word.is_empty() {
             out.push(Token::Word(std::mem::take(&mut word), name));
             name = false;
         }
-        if !unspaced(c) && !run.is_empty() {
+        if !is_unspaced(c) && !run.is_empty() {
             out.push(Token::Run(std::mem::take(&mut run)));
         }
-        if unspaced(c) {
+        if is_unspaced(c) {
             run.push(to_simplified(c));
         } else if spaced {
             name |= c.is_uppercase() || c.is_numeric();
@@ -229,7 +229,7 @@ fn tokens(text: &str) -> Vec<Token> {
 
 /// A light suffix stemmer for whole-word matching. Both sides go through
 /// it, so it only has to be consistent, not linguistically right.
-fn stem(word: &str) -> String {
+pub(super) fn stem(word: &str) -> String {
     let mut w = word.to_owned();
     for (suffix, replacement) in [
         ("ations", ""),
@@ -310,7 +310,7 @@ fn to_simplified(c: char) -> char {
 
 /// Stop-words ignored in topics: function words in the languages the
 /// toolbox searches most, and words that describe news rather than a topic.
-const STOP_WORDS: &[&str] = &[
+pub(super) const STOP_WORDS: &[&str] = &[
     // English
     "a",
     "an",

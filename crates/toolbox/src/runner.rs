@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 /// Largest parameter object a template accepts.
 pub const MAX_PARAMS_BYTES: usize = 16 * 1024;
-/// Largest `{status, data}` value a template may return.
+/// Largest `{status, data, reasons}` value a template may return.
 pub const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Default)]
@@ -39,11 +39,15 @@ pub struct RunOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunStatus {
-    /// Everything the template needed arrived.
+    /// The output has everything the template needs. Failures the template
+    /// recovered from (a failed read replaced by another candidate, a
+    /// provider suspended while others answered) are in `diagnostics`, not
+    /// held against it.
     Ready,
-    /// Usable data with gaps; see `diagnostics`.
+    /// Usable data that is materially incomplete; `status_reasons` says how.
     Partial,
-    /// No usable data: the script failed or its output was refused.
+    /// No usable data: the template found nothing usable, the script failed
+    /// or its output was refused; `status_reasons` says which.
     Failed,
 }
 
@@ -91,6 +95,12 @@ pub struct RunResult {
     pub app_id: String,
     pub template: TemplateRef,
     pub status: RunStatus,
+    /// Why the status is not `ready`, one line each, for the app to show:
+    /// the template's own reasons (a language with no read, a digest that
+    /// failed), then the runner's (a budget cut the run short, the script
+    /// failed). Empty when `ready`.
+    #[serde(default)]
+    pub status_reasons: Vec<String>,
     /// The template's `data`, validated against its output schema; `null`
     /// when the run failed.
     pub data: Value,
@@ -469,21 +479,53 @@ pub async fn run<H: ToolboxHost + ?Sized>(
     stats.reads = used.reads;
     stats.elapsed_ms = ms();
 
+    // The template judges its own output (see `RunStatus`); the runner adds
+    // what the template cannot see: a budget that cut the run short, a
+    // script that failed, an output it refused.
     let mut status = RunStatus::Failed;
     let mut data = Value::Null;
-    if let (false, Some(done)) = (failed, evaluation) {
+    let mut status_reasons = Vec::new();
+    if failed {
+        status_reasons.push("the template's script failed; see diagnostics".to_owned());
+    } else if let Some(done) = evaluation {
         match finish_output(template, &mut runtime, done.value, &provenance) {
-            Ok((declared, value)) => {
-                status = declared;
-                data = value;
+            Ok(output) => {
+                status = output.status;
+                data = output.data;
+                status_reasons = output.reasons;
             }
-            Err(message) => diagnostics.push(message),
+            Err(message) => {
+                diagnostics.push(message);
+                status_reasons.push("the template's output was refused; see diagnostics".into());
+            }
         }
     }
-    if status == RunStatus::Ready && (stats.denied > 0 || stats.failed > 0 || expired) {
-        status = RunStatus::Partial;
-        diagnostics
-            .push("status: ready downgraded to partial after refused or failed calls".into());
+    if stats.denied > 0 || expired {
+        if stats.denied > 0 {
+            status_reasons.push(format!(
+                "the budget refused {} call(s); see diagnostics",
+                stats.denied
+            ));
+        }
+        if expired {
+            status_reasons.push(format!(
+                "the time budget ({} ms) ran out; in-flight calls were cancelled",
+                budget.max_ms
+            ));
+        }
+        if status == RunStatus::Ready {
+            status = RunStatus::Partial;
+        }
+    }
+    if status != RunStatus::Ready && status_reasons.is_empty() {
+        status_reasons.push("the template gave no reason".into());
+    }
+    if status == RunStatus::Ready {
+        status_reasons.clear();
+    }
+    if status == RunStatus::Failed {
+        // Nothing usable: what the template found is in the reasons.
+        data = Value::Null;
     }
 
     let referenced: BTreeSet<&str> = json::strings(&data).into_iter().collect();
@@ -507,6 +549,7 @@ pub async fn run<H: ToolboxHost + ?Sized>(
             digest: template.digest.clone(),
         },
         status,
+        status_reasons,
         data,
         provenance: attached,
         diagnostics,
@@ -521,29 +564,75 @@ pub async fn run<H: ToolboxHost + ?Sized>(
     Ok(result)
 }
 
-/// Converts, checks and validates the script's return value: `{status, data}`
-/// with `data` matching the output schema and every URL in it host-kept.
+/// The most reasons a template may give, and the longest one.
+const MAX_REASONS: usize = 16;
+const MAX_REASON_CHARS: usize = 300;
+
+struct Output {
+    status: RunStatus,
+    data: Value,
+    reasons: Vec<String>,
+}
+
+/// Converts, checks and validates the script's return value:
+/// `{status, data, reasons?}` with `status` one of `ready`, `partial` or
+/// `failed`, `reasons` a list of short strings saying why it is not ready,
+/// `data` matching the output schema and every URL in it host-kept.
 fn finish_output(
     template: &Template,
     runtime: &mut CapabilityRuntime,
     value: octoscript_core::vm::ScriptValue,
     provenance: &BTreeMap<String, Provenance>,
-) -> std::result::Result<(RunStatus, Value), String> {
+) -> std::result::Result<Output, String> {
     let output = runtime
         .script_value_as_json(value, MAX_OUTPUT_BYTES, 32)
         .map_err(|e| format!("output: {e:?}"))?;
     let Some(fields) = output.as_object() else {
-        return Err("output: a template returns {status, data}".into());
+        return Err("output: a template returns {status, data, reasons?}".into());
     };
-    if fields.len() != 2 || !fields.contains_key("data") {
-        return Err("output: a template returns exactly {status, data}".into());
+    if !fields.contains_key("data")
+        || fields
+            .keys()
+            .any(|k| !matches!(k.as_str(), "status" | "data" | "reasons"))
+    {
+        return Err("output: a template returns exactly {status, data, reasons?}".into());
     }
     let status = match fields.get("status").and_then(Value::as_str) {
         Some("ready") => RunStatus::Ready,
         Some("partial") => RunStatus::Partial,
+        Some("failed") => RunStatus::Failed,
         other => {
             return Err(format!(
-                "output: status must be ready or partial, not {other:?}"
+                "output: status must be ready, partial or failed, not {other:?}"
+            ))
+        }
+    };
+    let reasons = match fields.get("reasons") {
+        None => Vec::new(),
+        Some(Value::Array(items)) if items.len() <= MAX_REASONS => items
+            .iter()
+            .map(|r| {
+                r.as_str()
+                    .filter(|r| !r.trim().is_empty() && r.chars().count() <= MAX_REASON_CHARS)
+                    .map(|r| {
+                        // URLs come only from host provenance, and a reason
+                        // has none (a parameter could carry one into it).
+                        if json::contains_url(r) {
+                            "a reason was withheld: it contained a URL".to_owned()
+                        } else {
+                            r.trim().to_owned()
+                        }
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "output: each reason is a non-empty string of at most {MAX_REASON_CHARS} characters"
+                        )
+                    })
+            })
+            .collect::<std::result::Result<_, _>>()?,
+        Some(_) => {
+            return Err(format!(
+                "output: reasons is a list of at most {MAX_REASONS} strings"
             ))
         }
     };
@@ -562,7 +651,11 @@ fn finish_output(
             "output: {bad:?} is a URL the host did not retrieve; URLs come only from host provenance"
         ));
     }
-    Ok((status, data))
+    Ok(Output {
+        status,
+        data,
+        reasons,
+    })
 }
 
 fn write_result(app: &AppContext, result: &mut RunResult) -> Result<()> {

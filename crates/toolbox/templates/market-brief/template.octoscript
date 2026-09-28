@@ -14,22 +14,22 @@ for entry in request.symbols {
 let symbols = []
 let reads = []
 let read_symbols = []
-let incomplete = false
+let reasons = []
 let index = 0
 for pending in searches {
     let entry = request.symbols[index]
     let found = try pending.await() catch nil
     if found == nil {
-        incomplete = true
-        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: 0})
+        array.push(reasons, "symbol " + entry.symbol + ": the search failed")
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: 0, read: 0})
     } else {
-        if found.source.partial {
-            incomplete = true
+        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: array.len(found.items), read: 0})
+        if array.len(found.items) == 0 {
+            array.push(reasons, "symbol " + entry.symbol + ": nothing found")
         }
-        array.push(symbols, {symbol: entry.symbol, name: entry.name, found: array.len(found.items)})
         for item in found.items {
             array.push(reads, research.article({id: item.id}))
-            array.push(read_symbols, entry.symbol)
+            array.push(read_symbols, index)
         }
     }
     index = index + 1
@@ -41,11 +41,13 @@ let missing = 0
 index = 0
 for pending in reads {
     let article = try pending.await() catch nil
+    let s = read_symbols[index]
     if article == nil {
         missing = missing + 1
     } else {
+        symbols[s].read = symbols[s].read + 1
         array.push(ids, article.id)
-        array.push(sources, {id: article.id, symbol: read_symbols[index], title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
+        array.push(sources, {id: article.id, symbol: symbols[s].symbol, title: article.title, url: article.url, source: article.source, published_at: article.published_at, evidence_sha256: article.evidence_sha256})
     }
     index = index + 1
 }
@@ -64,8 +66,26 @@ if array.len(ids) > 0 {
     let resolved = try research.digest({task: task, language: request.language, article_ids: ids, focus: focus}).await() catch nil
     brief = resolved
 }
+// Ready when every symbol was read and the brief kept every point. A failed
+// read matters only when it leaves a symbol unread; a suspended provider is
+// in the diagnostics.
+for entry in symbols {
+    if entry.found > 0 && entry.read == 0 {
+        array.push(reasons, "symbol " + entry.symbol + ": no article read (" + entry.found + " failed)")
+    }
+}
+if array.len(ids) > 0 && brief == nil {
+    array.push(reasons, "the brief failed; the sources are listed without it")
+}
+if brief != nil && brief.dropped_points > 0 {
+    array.push(reasons, "the brief dropped " + brief.dropped_points + " invalid point(s)")
+}
 let status = "ready"
-if incomplete || missing > 0 || array.len(ids) == 0 || brief == nil {
+if array.len(reasons) > 0 {
     status = "partial"
 }
-{status: status, data: {symbols: symbols, language: request.language, brief: brief, sources: sources, missing: missing}}
+if array.len(ids) == 0 {
+    status = "failed"
+    array.push(reasons, "no article was read")
+}
+{status: status, reasons: reasons, data: {symbols: symbols, language: request.language, brief: brief, sources: sources, missing: missing}}

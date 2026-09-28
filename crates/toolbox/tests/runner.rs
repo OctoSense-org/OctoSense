@@ -1,5 +1,6 @@
-//! The runner: grants, parameters, budget, concurrency, partial results,
-//! provenance, output validation and writing results to the app's folder.
+//! The runner: grants, parameters, budget, concurrency, partial results and
+//! the status rules, provenance, output validation and writing results to
+//! the app's folder.
 
 mod common;
 
@@ -166,6 +167,13 @@ async fn the_model_budget_is_enforced_and_leaves_a_partial_result() {
     .await
     .unwrap();
     assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(
+        result.status_reasons,
+        [
+            "the digest failed; the sources are listed without a digest",
+            "the budget refused 1 call(s); see diagnostics"
+        ]
+    );
     assert!(result.data["digest"].is_null());
     assert_eq!(result.data["sources"].as_array().unwrap().len(), 3);
     assert_eq!(result.stats.model_calls, 0);
@@ -201,7 +209,13 @@ async fn the_page_and_call_budgets_are_enforced() {
     )
     .await
     .unwrap();
+    // The digest of two articles is complete, but the budget cut the run
+    // short: the runner says so.
     assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(
+        result.status_reasons,
+        ["the budget refused 1 call(s); see diagnostics"]
+    );
     assert_eq!(result.stats.reads, 2);
     assert_eq!(result.stats.search_fetches, 5);
     assert_eq!(result.stats.denied, 1);
@@ -250,8 +264,16 @@ async fn the_time_budget_cancels_in_flight_calls() {
     .await
     .unwrap();
     assert!(started.elapsed().as_millis() < 2000);
-    assert_eq!(result.status, RunStatus::Partial);
-    assert_eq!(result.data["missing"], 3);
+    // Every read was cancelled: nothing usable came back.
+    assert_eq!(result.status, RunStatus::Failed);
+    assert!(result.data.is_null());
+    assert_eq!(
+        result.status_reasons,
+        [
+            "no article on the topic was read (3 failed, 0 unreadable, 0 off topic)",
+            "the time budget (200 ms) ran out; in-flight calls were cancelled"
+        ]
+    );
     assert_eq!(
         result
             .trace
@@ -278,6 +300,10 @@ async fn a_required_failure_publishes_no_data() {
     .await
     .unwrap();
     assert_eq!(result.status, RunStatus::Failed);
+    assert_eq!(
+        result.status_reasons,
+        ["the template's script failed; see diagnostics"]
+    );
     assert!(result.data.is_null());
     assert!(result.provenance.is_empty());
 }
@@ -381,15 +407,29 @@ async fn one_bad_point_does_not_sink_the_digest() {
         )
         .await
         .unwrap();
-        assert_eq!(result.status, RunStatus::Ready, "{:?}", result.diagnostics);
+        // The digest is kept, but it lost points: partial, and why.
+        let expected = if model.malformed_points { 3 } else { 1 };
+        assert_eq!(
+            result.status,
+            RunStatus::Partial,
+            "{:?}",
+            result.diagnostics
+        );
+        assert_eq!(
+            result.status_reasons,
+            [format!("the digest dropped {expected} invalid point(s)")]
+        );
+        assert_eq!(result.data["digest"]["dropped_points"], expected);
         // Exactly the valid points survive.
-        assert_eq!(result.data["digest"], good.data["digest"], "{model:?}");
+        assert_eq!(
+            result.data["digest"]["points"], good.data["digest"]["points"],
+            "{model:?}"
+        );
         let dropped: Vec<&String> = result
             .diagnostics
             .iter()
             .filter(|d| d.starts_with("research.digest") && d.contains("dropped"))
             .collect();
-        let expected = if model.malformed_points { 3 } else { 1 };
         assert_eq!(dropped.len(), expected, "{:?}", result.diagnostics);
         let text = serde_json::to_string(&result).unwrap();
         assert!(!text.contains("model.invalid"));
@@ -422,7 +462,13 @@ async fn news_digest_skips_results_the_backend_cannot_read() {
     )
     .await
     .unwrap();
-    assert_eq!(result.status, RunStatus::Partial);
+    // Skipping it is not a gap: the digest of the rest is complete.
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
     assert_eq!(result.data["unreadable"], 1);
     assert_eq!(result.data["missing"], 0);
     assert_eq!((result.stats.reads, result.stats.failed), (2, 0));
@@ -476,8 +522,17 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     )
     .await
     .unwrap();
-    // Partial: a read failed, even though the fallback recovered.
-    assert_eq!(result.status, RunStatus::Partial);
+    // Ready: a read failed, but the fallback recovered it. The failure is
+    // in the diagnostics and the counts.
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
+    assert!(result.status_reasons.is_empty());
+    assert!(result.diagnostics.iter().any(|d| d.contains("HTTP 403")));
+    assert_eq!(result.data["queries"][1]["failed"], 1);
     assert_eq!(result.data["missing"], 1);
     assert_eq!(result.stats.reads, 3);
     let reads: Vec<u64> = result.data["queries"]
@@ -489,8 +544,8 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     assert_eq!(reads, [1, 1]);
     assert!(result.data["brief"].is_object());
 
-    // With no readable result in a language, it goes unread and the run
-    // says so.
+    // With no readable result in a language, it goes unread; there was
+    // nothing to read, so the brief is still complete.
     let mut data = case.fixture.clone();
     for item in &mut data.searches[1].items {
         item.readable = false;
@@ -504,7 +559,12 @@ async fn topic_brief_reads_every_language_that_has_a_readable_article() {
     )
     .await
     .unwrap();
-    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
     assert_eq!(result.stats.failed, 0);
     assert_eq!(result.data["queries"][1]["read"], 0);
     assert_eq!(result.data["queries"][1]["unreadable"], 3);
@@ -619,8 +679,9 @@ async fn the_apps_scope_filters_and_refuses() {
     .await
     .unwrap();
     // Every result was on a denied domain: nothing found, nothing read.
-    assert_eq!(result.status, RunStatus::Partial);
-    assert!(result.data["sources"].as_array().unwrap().is_empty());
+    assert_eq!(result.status, RunStatus::Failed);
+    assert_eq!(result.status_reasons, ["the search found nothing"]);
+    assert!(result.data.is_null());
     assert!(result.provenance.is_empty());
 
     let spanish_only = app(&folder).with_scope(Scope {
@@ -638,6 +699,7 @@ async fn the_apps_scope_filters_and_refuses() {
     .unwrap();
     // An English search is outside the scope: the required search fails.
     assert_eq!(result.status, RunStatus::Failed);
+    assert_eq!(result.status_reasons, ["the search failed"]);
     assert!(result
         .diagnostics
         .iter()
@@ -839,4 +901,211 @@ let digest = research.digest({task: "brief", language: "en", article_ids: ids}).
         .diagnostics
         .iter()
         .any(|d| d.contains("no article given is about the topic")));
+}
+
+#[tokio::test]
+async fn a_suspended_provider_is_a_diagnostic_not_a_gap() {
+    // Validation run 2: GDELT answered 429, octos suspended it, and every
+    // search said `partial`, so every run was partial. Other providers
+    // answered; the run is complete.
+    let (case, template) = city();
+    let mut data = case.fixture.clone();
+    data.searches[0].partial = true;
+    data.searches[0].notes =
+        vec!["engine gdelt (en) suspended after earlier errors: suspended for 86s".into()];
+    let result = run(
+        &template,
+        &app(&temp_dir("suspended")),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
+    assert!(result.status_reasons.is_empty());
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("gdelt (en) suspended")));
+}
+
+#[tokio::test]
+async fn topic_brief_is_partial_when_a_language_or_the_read_count_falls_short() {
+    // Every English read fails and the attempts run out with an English
+    // candidate untried: English has no read, and the brief has one of the
+    // two articles asked for while a readable candidate remained.
+    let template = template("topic-brief");
+    let case = case("topic-brief", "failed-read-fallback");
+    let mut data = case.fixture.clone();
+    for item in &mut data.searches[0].items {
+        item.readable = true;
+        data.pages.insert(
+            item.url.clone(),
+            fixture::RecordedPage {
+                error: Some("no main text".into()),
+                ..Default::default()
+            },
+        );
+    }
+    let result = run(
+        &template,
+        &app(&temp_dir("short")),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(
+        result.status_reasons,
+        [
+            "language en: no article read (2 failed, 1 readable left untried)",
+            "read 1 of 2 articles while 1 readable candidates remained"
+        ]
+    );
+    let en = &result.data["queries"][0];
+    assert_eq!(
+        (&en["read"], &en["failed"], &en["left"]),
+        (&json!(0), &json!(2), &json!(1))
+    );
+    assert!(result.data["brief"].is_object());
+
+    // Every read in every language fails: nothing usable, failed.
+    for page in data.pages.values_mut() {
+        page.error = Some("no main text".into());
+    }
+    let result = run(
+        &template,
+        &app(&temp_dir("short")),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Failed);
+    assert!(result.data.is_null());
+    assert_eq!(
+        result.status_reasons.last().unwrap(),
+        "no article on the topic was read (4 reads failed)"
+    );
+    assert!(result
+        .status_reasons
+        .iter()
+        .any(|r| r.starts_with("language zh: no article read")));
+}
+
+#[tokio::test]
+async fn a_summary_sentence_no_point_backs_is_dropped() {
+    // Validation run 2: the points were clean, the summary added facts. The
+    // host drops a summary sentence no point backs and says so; the digest
+    // is otherwise complete.
+    let (case, template) = city();
+    let mut data = case.fixture.clone();
+    data.model.summary_drift = true;
+    let result = run(
+        &template,
+        &app(&temp_dir("drift")),
+        case.params.clone(),
+        &fixture::host(&data),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.status,
+        RunStatus::Ready,
+        "{:?}",
+        result.status_reasons
+    );
+    let digest = &result.data["digest"];
+    assert!(!digest["summary"].as_str().unwrap().contains("2031"));
+    assert_eq!(
+        digest["summary_check"],
+        json!({"sentences": 2, "dropped": 1, "flagged": 0})
+    );
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.ends_with("digest summary: sentence 2 of 2 dropped: no point backs it")));
+}
+
+#[tokio::test]
+async fn a_template_states_its_status_and_reasons() {
+    let folder = temp_dir("reasons");
+    let host = fixture::host(&FixtureData::default());
+    let status = |source: &str| {
+        let template = probe(&["search"], source).unwrap();
+        let app = app(&folder);
+        let host = &host;
+        async move {
+            run(&template, &app, json!({}), host, RunOptions::default())
+                .await
+                .unwrap()
+        }
+    };
+    // Reasons are passed through.
+    let result = status(
+        "use mod.research
+{status: \"partial\", reasons: [\"language zh: no article read\"], data: {n: 1}}\n",
+    )
+    .await;
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.status_reasons, ["language zh: no article read"]);
+    assert_eq!(result.data["n"], 1);
+    // A template may declare `failed`: its data is not published.
+    let result = status(
+        "use mod.research
+{status: \"failed\", reasons: [\"nothing found\"], data: {n: 0}}\n",
+    )
+    .await;
+    assert_eq!(result.status, RunStatus::Failed);
+    assert_eq!(result.status_reasons, ["nothing found"]);
+    assert!(result.data.is_null());
+    // Partial without a reason still says so; a ready run has none.
+    let result = status(
+        "use mod.research
+{status: \"partial\", data: {}}\n",
+    )
+    .await;
+    assert_eq!(result.status_reasons, ["the template gave no reason"]);
+    let result = status(
+        "use mod.research
+{status: \"ready\", reasons: [\"stale\"], data: {}}\n",
+    )
+    .await;
+    assert!(result.status_reasons.is_empty());
+    // A reason with a URL is withheld; a malformed one refuses the output.
+    let result = status(
+        "use mod.research
+{status: \"partial\", reasons: [\"see https://x.invalid\"], data: {}}\n",
+    )
+    .await;
+    assert_eq!(
+        result.status_reasons,
+        ["a reason was withheld: it contained a URL"]
+    );
+    let result = status(
+        "use mod.research
+{status: \"partial\", reasons: [3], data: {}}\n",
+    )
+    .await;
+    assert_eq!(result.status, RunStatus::Failed);
+    assert_eq!(
+        result.status_reasons,
+        ["the template's output was refused; see diagnostics"]
+    );
+    let result = status(
+        "use mod.research
+{status: \"ready\", data: {}, extra: 1}\n",
+    )
+    .await;
+    assert_eq!(result.status, RunStatus::Failed);
 }

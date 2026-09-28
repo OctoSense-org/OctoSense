@@ -4,18 +4,27 @@ use mod.std.array
 // News digest (from the splash-research experiment): translate the query if
 // asked, discover sources, read every article concurrently, then summarize
 // once in the requested language with citations by article id.
+let reasons = []
 let topic = request.topic
 if request.translate_query {
-    let translated = research.query({query: request.topic, language: request.search_language}).await()
-    topic = translated.query
+    let translated = try research.query({query: request.topic, language: request.search_language}).await() catch nil
+    if translated == nil {
+        array.push(reasons, "the query translation failed; searched the topic as given")
+    } else {
+        topic = translated.query
+    }
 }
-let found = research.search({topic: topic, language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours}).await()
+let found = try research.search({topic: topic, language: request.search_language, limit: request.limit, max_age_hours: request.max_age_hours}).await() catch nil
+let items = []
+if found != nil {
+    items = found.items
+}
 
 // Start every read before awaiting any: the host runs them concurrently.
 // Results the backend says it cannot read are counted, not read.
 let tasks = []
 let unreadable = 0
-for item in found.items {
+for item in items {
     if item.readable {
         array.push(tasks, research.article({id: item.id}))
     } else {
@@ -59,13 +68,33 @@ if digest != nil {
     }
     sources = kept
 }
-// Partial when a search provider or a read failed, results were unreadable,
-// nothing was found, or nothing on the topic was read.
-let status = "ready"
-if missing > 0 || unreadable > 0 || found.source.partial || array.len(found.items) == 0 || array.len(ids) == 0 {
-    status = "partial"
-}
+
+// The status says whether the digest is complete, and `reasons` why not:
+// - ready: articles on the topic were read and the digest kept every point.
+//   Failed, unreadable or off-topic results and suspended providers are
+//   counted (`missing`, `unreadable`, `off_topic`) and in the diagnostics,
+//   not held against it.
+// - partial: the translation or the digest failed, or the digest dropped
+//   points.
+// - failed: the search failed or nothing on the topic was read.
 if array.len(ids) > 0 && digest == nil {
+    array.push(reasons, "the digest failed; the sources are listed without a digest")
+}
+if digest != nil && digest.dropped_points > 0 {
+    array.push(reasons, "the digest dropped " + digest.dropped_points + " invalid point(s)")
+}
+let status = "ready"
+if array.len(reasons) > 0 {
     status = "partial"
 }
-{status: status, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable, off_topic: off_topic}}
+if array.len(ids) == 0 {
+    status = "failed"
+    if found == nil {
+        array.push(reasons, "the search failed")
+    } elif array.len(items) == 0 {
+        array.push(reasons, "the search found nothing")
+    } else {
+        array.push(reasons, "no article on the topic was read (" + missing + " failed, " + unreadable + " unreadable, " + off_topic + " off topic)")
+    }
+}
+{status: status, reasons: reasons, data: {topic: request.topic, language: request.language, digest: digest, sources: sources, missing: missing, unreadable: unreadable, off_topic: off_topic}}

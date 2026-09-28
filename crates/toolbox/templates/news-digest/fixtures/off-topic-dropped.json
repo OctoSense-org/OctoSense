@@ -96,9 +96,11 @@
     }
   },
   "expected": {
-    "status": "partial",
+    "status": "ready",
+    "reasons": [],
     "data": {
       "digest": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [
           "s39ccdf3dc582"
@@ -112,6 +114,11 @@
           }
         ],
         "summary": "Sources: Tankers queue as Iran tightens checks in the Strait of Hormuz; Warships transit the Taiwan Strait",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 1,
+          "sentences": 1
+        },
         "task": "digest"
       },
       "language": "en",

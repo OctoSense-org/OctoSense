@@ -74,6 +74,9 @@
   },
   "expected": {
     "status": "partial",
+    "reasons": [
+      "the digest failed; the sources are listed without a digest"
+    ],
     "data": {
       "digest": null,
       "language": "en",

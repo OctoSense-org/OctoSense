@@ -16,6 +16,10 @@
 //!   excerpt and the evidence hash;
 //! - `digest` takes only articles read in this run, cites them by id, and a
 //!   model reply containing a URL or citing anything else is refused;
+//! - the digest's summary may only restate its points ([`summary`]): a
+//!   summary sentence none of whose key terms (numbers, names, CJK
+//!   two-character sequences) appears in a kept point is dropped, and one
+//!   carrying a number, name or phrase no point carries is flagged;
 //! - relevance, whatever the backend ([`relevance`]): search results whose
 //!   headline mentions the topic are listed first; `article` says
 //!   `on_topic: false` when a page in the search's language does not mention
@@ -28,6 +32,7 @@
 #[cfg(feature = "live")]
 pub mod live;
 pub mod relevance;
+pub mod summary;
 
 use crate::host::{CallContext, HostError, HostFuture, HostReply, Provenance, Usage};
 use crate::json::contains_url;
@@ -680,8 +685,10 @@ fn digest_prompt(task: &str, language: &str, focused: bool) -> String {
     format!(
         "{relevance}You write {what}. Write in the language with BCP 47 tag {language}, translating the \
          sources as needed. Use only facts stated in the articles you are given. Every point \
-         cites the ids of the articles it rests on in `citations`. Never write URLs or invent \
-         sources. Keep within these limits, or the host drops what exceeds them: a summary of \
+         cites the ids of the articles it rests on in `citations`. The summary only restates \
+         your points: every statement in it must be in a point, and it adds no fact, number, \
+         date, name, cause, forecast, quote or conclusion of its own; the host removes summary \
+         sentences that no point backs. Never write URLs or invent sources. Keep within these limits, or the host drops what exceeds them: a summary of \
          at most 1000 characters; at most {MAX_POINTS} points; each point one or two sentences \
          of at most 300 characters, citing 1 to {MAX_CITATIONS} articles; a label of at most \
          30 characters. Reply with JSON only: {{\"summary\": string, \"points\": [{{\"text\": \
@@ -724,7 +731,15 @@ const MAX_CITATIONS: usize = 8;
 /// One with no text or too much, no citation or too many, a citation to an
 /// article it was not given, or a URL is dropped, with a note, and the rest
 /// are kept. A label that is too long or carries a URL is dropped from its
-/// point. A digest with no valid point left is refused.
+/// point. A digest with no valid point left is refused. A point citing only
+/// articles marked off topic is removed too, but is not counted as dropped.
+/// The summary is then
+/// checked against the kept points ([`summary::check_summary`]): sentences no
+/// point backs are dropped, sentences carrying a number, name or phrase no
+/// point carries are flagged, and a summary with no sentence left is
+/// refused. The output counts what was dropped (`dropped_points`,
+/// `summary_check`), so a template can tell a complete digest from one the
+/// host had to cut.
 ///
 /// The security properties hold for every point kept: it cites only the ids
 /// in `ids` (articles read in this run), and no string in the output carries
@@ -753,6 +768,9 @@ fn validate_digest(
     let excluded: BTreeSet<&str> = off_topic.iter().map(String::as_str).collect();
     let mut notes = Vec::new();
     let mut kept = Vec::new();
+    // Points about articles marked off topic are removed by design; only
+    // the invalid ones count as dropped.
+    let mut off_topic_points = 0;
     for (index, point) in points.iter().enumerate() {
         let n = index + 1;
         if kept.len() == MAX_POINTS {
@@ -768,19 +786,56 @@ fn validate_digest(
                 }
                 kept.push(record);
             }
-            Err(why) => notes.push(format!("digest point {n} dropped: {why}")),
+            Err(why) => {
+                if why == OFF_TOPIC_ONLY {
+                    off_topic_points += 1;
+                }
+                notes.push(format!("digest point {n} dropped: {why}"))
+            }
         }
     }
     if kept.is_empty() {
         return Err(reject(&format!("no valid point ({})", notes.join("; "))));
     }
-    let output = json!({"task": task, "language": language, "summary": summary, "points": kept});
+    let dropped_points = points.len() - kept.len() - off_topic_points;
+    // The summary may only restate the kept points.
+    let texts: Vec<&str> = kept.iter().filter_map(|p| p["text"].as_str()).collect();
+    let check = summary::check_summary(summary, &texts);
+    for n in &check.dropped {
+        notes.push(format!(
+            "digest summary: sentence {n} of {} dropped: no point backs it",
+            check.sentences
+        ));
+    }
+    for n in &check.flagged {
+        notes.push(format!(
+            "digest summary: sentence {n} of {} kept but flagged: it carries a number, name or phrase no point carries",
+            check.sentences
+        ));
+    }
+    if check.summary.is_empty() {
+        return Err(reject("no summary sentence restates a point"));
+    }
+    let output = json!({
+        "task": task,
+        "language": language,
+        "summary": check.summary,
+        "points": kept,
+        "dropped_points": dropped_points,
+        "summary_check": {
+            "sentences": check.sentences,
+            "dropped": check.dropped.len(),
+            "flagged": check.flagged.len(),
+        },
+    });
     // Each part was checked above; this guards the assembled whole.
     if crate::json::strings(&output).into_iter().any(contains_url) {
         return Err(reject("it contains a URL"));
     }
     Ok((output, notes))
 }
+
+const OFF_TOPIC_ONLY: &str = "it cites only articles marked off topic";
 
 /// One digest point: the record to keep and, if its label was dropped, why;
 /// or why the point is dropped.
@@ -816,7 +871,7 @@ fn check_point(
         }
     }
     if citations.is_empty() && cites_off_topic {
-        return Err("it cites only articles marked off topic");
+        return Err(OFF_TOPIC_ONLY);
     }
     if citations.is_empty() {
         return Err("it cites nothing");

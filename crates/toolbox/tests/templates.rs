@@ -90,6 +90,7 @@ async fn every_template_matches_its_fixtures() {
             if bless() {
                 case.expected = Some(Expected {
                     status: result.status,
+                    reasons: result.status_reasons.clone(),
                     data: result.data.clone(),
                 });
                 std::fs::write(&path, serde_json::to_string_pretty(&case).unwrap() + "\n").unwrap();
@@ -103,6 +104,7 @@ async fn every_template_matches_its_fixtures() {
                 "{name}: {:?}",
                 result.diagnostics
             );
+            assert_eq!(result.status_reasons, expected.reasons, "{name}");
             assert!(
                 json::equivalent(&result.data, &expected.data),
                 "{name}: data differs at {:?}",

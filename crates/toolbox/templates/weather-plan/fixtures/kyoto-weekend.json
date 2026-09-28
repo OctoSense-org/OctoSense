@@ -88,6 +88,7 @@
   },
   "expected": {
     "status": "ready",
+    "reasons": [],
     "data": {
       "activity": "gardens and walks",
       "days": 3,
@@ -95,6 +96,7 @@
       "location": "Kyoto",
       "missing": 0,
       "plan": {
+        "dropped_points": 0,
         "language": "en",
         "off_topic": [],
         "points": [
@@ -118,6 +120,11 @@
           }
         ],
         "summary": "Sources: Kyoto forecast: dry Saturday, rain from Sunday afternoon; Kansai outlook: typhoon remnants bring showers early next week; Kyoto air quality good this weekend",
+        "summary_check": {
+          "dropped": 0,
+          "flagged": 0,
+          "sentences": 1
+        },
         "task": "plan"
       },
       "sources": [
