@@ -237,7 +237,7 @@ by the default `app-hub` feature and on every mobile build. The **Preview
 catalog** switch shows the built-in apps while the live catalog is empty.
 
 See the crate's
-[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/64bd6c01218010805116ae203edfb1f4b9e28fe6/crates/app-hub-app/README.md)
+[README](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md)
 at the pinned revision and the [native design evidence](docs/design/app-hub/README.md).
 App authors start with
 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow).

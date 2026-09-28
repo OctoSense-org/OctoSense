@@ -76,8 +76,8 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "65d30a091eee284ed45afe5b8502835563fb56f7" }
 # --- App Hub: the shells' store/Card runner/system apps crate and the host
 # service registry the Mail and llm services register into. One revision.
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "64bd6c01218010805116ae203edfb1f4b9e28fe6" }
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "64bd6c01218010805116ae203edfb1f4b9e28fe6" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "46d67e51b62827a1224b1aacddc2a7b9e69185fc" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
 # merge of octos#2541). Move octos-core and octos-cli together; the Android
 # kernel artifact (liboctos.so) is built from this same revision.
