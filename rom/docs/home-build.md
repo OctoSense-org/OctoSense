@@ -29,11 +29,13 @@ assistant (`octos-app`, `apps/appcard/app/app`) is built
 only with `--features app-appcard`: it is not shipped for now, so default,
 `mobile-apps` and native mobile builds leave its UI out.
 
-The runtime's Makepad (main `6cf03859`, OctoScript-Makepad `6881fb6c`)
+The runtime's Makepad (main `975c5630`, OctoScript-Makepad `65d30a09`)
 includes the contained-app and isolate controls from makepad#30, the camera
 QR scanner AI providers uses (makepad#31), Splash `reapply_text`
 (makepad#35) with stateful mini-app inputs (OctoScript-Makepad#46) for Rinx,
-and self-confirmed assistant tools (makepad#36).
+self-confirmed assistant tools (makepad#36), the one-call-site Slug text,
+cursor and glass shaders (makepad#37, #39) and the in-process terminal
+module whose `run` the person confirms (makepad#40, #41).
 
 Rinx (`app-rinx`, in the default and `mobile-apps` builds) is linked as a
 native module with `octosense-module` only; CI checks that its standalone

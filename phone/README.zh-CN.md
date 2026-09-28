@@ -132,7 +132,7 @@ AI 提供商（`os.ai-providers`）通过 `llm` 宿主服务（[`apps/ai-provide
 
 App Hub（`apphub`）用于浏览已签名的 OctoSense 应用目录、搜索、查看应用详情、安装经过验证的应用包，并维护已安装应用的应用库。已安装的应用在隔离的 Card 实例（`card`）中打开，并在启动器和最近任务中单独显示。两者都来自 App Hub 的共享 Shell crate `octosense-app-hub-app`（OctoSense-App-Hub 中的 `crates/app-hub-app`），由默认的 `app-hub` feature 链接，且包含在所有移动端构建中。**预览目录**开关会在线上目录为空时显示内置应用。
 
-参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/46d67e51b62827a1224b1aacddc2a7b9e69185fc/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
+参见该 crate 在固定版本下的 [README（英文）](https://github.com/OctoSense-org/OctoSense-App-Hub/blob/64bd6c01218010805116ae203edfb1f4b9e28fe6/crates/app-hub-app/README.md) 以及 [原生设计依据（英文）](docs/design/app-hub/README.md)。应用开发者可从 [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) 开始。
 
 ## 在桌面电脑上运行
 

@@ -84,7 +84,7 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
   end to end in the shell PRs' test runs (the test phone had no network).
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
   Mail's and the `llm` host services use the one App Hub revision the root
-  `Cargo.toml` pins (`46d67e51`, main after OctoSense-App-Hub#15; #11 added
+  `Cargo.toml` pins (`64bd6c01`, main after OctoSense-App-Hub#21; #11 added
   the `llm` capability, #14 the Matrix and Octos host-service capabilities),
   the same one the shells link, so a build has one `octosense-appstore` and
   one host-service registry.
