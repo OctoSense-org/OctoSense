@@ -12,6 +12,7 @@
 pub mod ai_bus;
 pub mod app_storage;
 pub mod dev_mode;
+pub mod approvals;
 pub mod apps;
 pub mod binds;
 pub mod clients;
@@ -204,6 +205,11 @@ script_mod! {
                         shell_menu := ShellMenu{}
                         shell_notes := ShellNotifications{}
                         shell_osd := ShellOsd{}
+                        // The approval surface (approvals/): the shell's
+                        // approval and first-use sheets, the time-box
+                        // indicator, and Settings > Assistant > Approvals.
+                        shell_approvals := ShellApprovals{}
+                        shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
                         // everything, drawn only while the mode is on.
                         shell_dev_banner := ShellDevBanner{}
@@ -357,6 +363,9 @@ pub struct App {
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
+    /// The approvals' generation last drawn (approvals/).
+    #[rust]
+    pub approvals_generation: u64,
     #[rust]
     pub hub: Option<WmHub>,
     #[rust]
@@ -3095,6 +3104,25 @@ impl App {
         self.update_bar(cx);
     }
 
+    /// Once a second: approval rules that ran out, `confirm: app` calls
+    /// that waited too long, sheets nobody answered; then what the person
+    /// must be told (every automatic approval among it).
+    fn approvals_tick(&mut self, cx: &mut Cx) {
+        approvals::tick();
+        self.approvals_changed(cx);
+    }
+
+    fn approvals_changed(&mut self, cx: &mut Cx) {
+        for n in approvals::take_notices() {
+            self.notify(cx, &n.title, &n.body);
+        }
+        let generation = approvals::generation();
+        if generation != self.approvals_generation {
+            self.approvals_generation = generation;
+            self.redraw_all(cx);
+        }
+    }
+
     /// The in-process notification API — `WmRequest::Notify{title, body}`
     /// lands here.
     pub fn notify(&mut self, cx: &mut Cx, title: &str, body: &str) {
@@ -4198,6 +4226,14 @@ impl App {
                         i += 2;
                         continue;
                     }
+                    // approval-sheet, approval-batch, approval-consent,
+                    // approvals-settings (approvals/mod.rs).
+                    if approvals::test_action(name) {
+                        log!("wm: --test-action {}", name);
+                        self.redraw_all(cx);
+                        i += 2;
+                        continue;
+                    }
                     match test_action(name) {
                         Some(action) => {
                             log!("wm: --test-action {} -> {:?}", name, action);
@@ -4535,6 +4571,9 @@ impl MatchEvent for App {
         // starts, so grants and approvals see it from the first call.
         dev_mode::init(&octosense::paths::home());
         self.dev_generation = dev_mode::generation();
+        // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
+        // and audit, before any app can ask for an approval.
+        approvals::init(&octosense::paths::home());
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -4996,6 +5035,7 @@ impl App {
         shell::script_mod(vm);
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
+        approvals::script_mod(vm);
         desktop::script_mod(vm);
         snap::script_mod(vm);
         mobile_surface::script_mod(vm);
@@ -5087,6 +5127,12 @@ impl App {
                     return;
                 }
             }
+        }
+        // An approval sheet, the first-use sheet and the Approvals page
+        // are modal, over everything (approvals/mod.rs `pointer`).
+        if self.state.is_some() && approvals::pointer(&self.ui, cx, event) {
+            self.approvals_changed(cx);
+            return;
         }
         // The shell menu (and, for move/down/up, an open bar flyout) is
         // modal: while it is up, the pointer event is exclusively its own
@@ -5252,6 +5298,7 @@ impl App {
                 self.phone_tick(cx);
                 dev_mode::tick();
                 self.dev_mode_changed(cx);
+                self.approvals_tick(cx);
                 // The pool fills itself here: at startup, after an
                 // adoption, and after any death it healed from. One spawn
                 // per second, so a cold desktop never forks four cargo

@@ -27,6 +27,8 @@ libc = "0.2"
 sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The approvals audit keeps a digest of each call's arguments, never the arguments.
+sha2 = "0.10"
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,
 # finance, matplot) and the map navigation layer the appcard module renders.
 makepad-widgets = { workspace = true, features = ["appcard", "maps"] }
