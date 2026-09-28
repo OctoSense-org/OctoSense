@@ -12,6 +12,7 @@ on:
       - 'crates/**'
       - 'apps/**'
       - 'Cargo.toml'
+      - 'native-apps.json'
       - 'Cargo.lock'
       - '.cargo/**'
       - 'native-runtime.lock.json'
@@ -24,6 +25,7 @@ on:
       - 'crates/**'
       - 'apps/**'
       - 'Cargo.toml'
+      - 'native-apps.json'
       - 'Cargo.lock'
       - '.cargo/**'
       - 'native-runtime.lock.json'
@@ -80,3 +82,5 @@ jobs:
           python3 -m unittest discover -s tools -p 'test_*.py'
       - name: One Makepad, App Hub, octos and Rinx in the locked graph
         run: python3 tools/setup.py --check --cargo
+      - name: The native apps' generated places match native-apps.json
+        run: python3 tools/native_apps.py --check

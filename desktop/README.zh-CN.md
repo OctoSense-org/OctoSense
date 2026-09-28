@@ -75,6 +75,8 @@ cargo run --release -p octosense
 
 ### Cargo features
 
+原生应用的 feature（`app-hub`、`app-rinx`、`app-reference`、`app-sheets`、`app-terminal`、`app-appcard`）、默认集合和 `mobile-apps` 都来自 [`native-apps.json`](../native-apps.json)（ADR 0004 §1）：修改清单后运行 `python3 tools/native_apps.py`，不要手动修改各 `Cargo.toml` 中生成的区块。
+
 | Feature | 默认 | 作用 |
 | --- | --- | --- |
 | `app-hub` | 开 | 链接 `octosense-app-hub-app`（商店 `apphub`、Card 运行器 `card`、系统应用）以及宿主服务 `octosense-mail-service`（邮件）和 `octosense-llm-service`（AI 提供商）。没有它，构建中既没有 App Hub 也没有系统应用。 |
@@ -85,7 +87,7 @@ cargo run --release -p octosense
 | `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell，默认在进程内运行（在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Process` 可改为独立进程）。助手只获得读取工具（`read_screen`、`read_scrollback`），不提供 `run`。在 macOS 上，Shell 的 PTY 辅助程序就是 `octosense` 本身，因此无需在旁边附带第二个二进制文件。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
-| `mobile-apps` | 关 | `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
+| `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
 
 已链接的模块用 `--module <id>` 打开（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）：
 

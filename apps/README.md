@@ -25,11 +25,12 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   assistant, a Rust module (`octos-app`) that the shells link in-process and
   that runs on the shell's octos kernel. It is **opt-in**: both shells link
   it only with `--features app-appcard`, and it is not shipped by default.
-- **Native comparison modules** (`news/native`, `photos/native`,
-  `maps/native`) and **Reference** (`reference`): Rust modules Home links
-  behind features (`app-news`, `app-photos`, `app-maps`, `app-reference`);
-  the desktop links only Reference this way (its `app-photos` is Makepad's
-  own Photos module).
+- **Reference** (`reference`): a Rust module the shells link behind
+  `app-reference` (always on phones). Every native app the shells link is
+  declared in [`../native-apps.json`](../native-apps.json). News, Photos and
+  Maps are script apps only: their earlier native modules were deleted
+  (native-apps ADR 0004 §1, [#110](https://github.com/OctoSense-org/OctoSense/pull/110)). Photos' sample library, which Home mounts, is in
+  `photos/resources/`.
 
 The shell services these apps rely on are next door:
 [`../crates/kernel`](../crates/kernel) (the octos kernel service, see
@@ -77,7 +78,7 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
 - **Photos**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
   2 MB). The full-size files the viewer shows are served at
   `{{assets}}/photos/...` only when a shell mounts them: Home mounts
-  `photos/native/resources/photos` (about 87 MB, `phone/system-apps.json`);
+  `photos/resources/photos` (about 87 MB, `phone/system-apps.json`);
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
   no full-size image there.
 - **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
@@ -120,7 +121,7 @@ standalone launcher and ROM image). Each packaging:
      "schema": 1,
      "source": "../apps",
      "apps": ["news", "photos", "maps", "camera", "mail", "ai-providers"],
-     "assets": { "photos": { "photos": "../apps/photos/native/resources/photos" } }
+     "assets": { "photos": { "photos": "../apps/photos/resources/photos" } }
    }
    ```
 

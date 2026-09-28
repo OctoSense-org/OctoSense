@@ -44,6 +44,7 @@ pub mod layout;
 pub mod octosense;
 pub mod module_host;
 pub mod module_view;
+pub mod native_apps;
 pub mod pane_links;
 pub mod preview;
 pub mod run_view;

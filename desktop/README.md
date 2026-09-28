@@ -75,6 +75,8 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 
 ### Cargo features
 
+The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`, `app-terminal`, `app-appcard`), the default set and `mobile-apps` come from [`native-apps.json`](../native-apps.json) (ADR 0004 §1): edit the manifest and run `python3 tools/native_apps.py`, never the generated blocks in the `Cargo.toml`s.
+
 | Feature | Default | Effect |
 | --- | --- | --- |
 | `app-hub` | on | Links `octosense-app-hub-app` (store `apphub`, Card runner `card`, system apps) and the host services `octosense-mail-service` (Mail) and `octosense-llm-service` (AI providers). Without it the build has no App Hub and no system apps. |
@@ -85,7 +87,7 @@ A relocatable `.app`, installers and a Linux session compositor are not provided
 | `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile, in-process by default (a `terminal: Process` line in `wm/apps.splash` under the state directory switches it to a process). The assistant gets its read tools (`read_screen`, `read_scrollback`); `run` is not offered. On macOS the shell's PTY helper is `octosense` itself, so no second binary ships beside it. |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
-| `mobile-apps` | off | `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
+| `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
 A linked module opens with `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory):
 

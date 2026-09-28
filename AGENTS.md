@@ -20,7 +20,8 @@
 | A system app | `apps/<name>/bundle/` | App Hub's `card-host --bundle apps/<name>/bundle --system`; then in a shell |
 | A host service (`mail`, `llm`, `model`) | `apps/mail/host-service/`, `apps/ai-providers/` | `cargo test --locked -p octosense-mail-service -p octosense-llm-service` |
 | AppCard (opt-in) | `apps/appcard/` | [apps/appcard/AGENTS.md](apps/appcard/AGENTS.md), `apps.yml` |
-| An external pin (Makepad, OctoScript, App Hub, octos, Rinx) | root `Cargo.toml` `[workspace.dependencies]`, `native-runtime.lock.json`, `runtime-patches.lock.json` | `python3 tools/setup.py --update`, then `--check --cargo` |
+| A native app (App Hub, Rinx, Terminal, Sheets, Reference, AppCard): its crate, pin, features, hosting per target, sandbox, storage and agent grants | `native-apps.json` only; `python3 tools/native_apps.py` writes the marked blocks in the `Cargo.toml`s, `crates/shell/src/native_apps.rs` and `Cargo.lock` | `python3 tools/native_apps.py --check`, `python3 -m unittest discover -s tools -p 'test_*.py'` |
+| An external pin (Makepad, OctoScript, App Hub, octos, Rinx) | root `Cargo.toml` `[workspace.dependencies]` (a native app's in `native-apps.json`), `native-runtime.lock.json`, `runtime-patches.lock.json` | `python3 tools/setup.py --update`, then `--check --cargo` and `python3 tools/native_apps.py --check` |
 | A decision | `docs/adr/` (next free number) | — |
 
 Start every session with `python3 tools/setup.py` (it prepares `.sources/`, and changes nothing that is already right).

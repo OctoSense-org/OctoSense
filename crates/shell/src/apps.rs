@@ -46,36 +46,17 @@ pub fn is_linked(id: &str) -> bool {
     linked_modules().iter().any(|m| m.id() == id) || is_card_app(id)
 }
 
-/// Mobile includes its bundled modules automatically; desktop opts in with
-/// `app-*` features and continues to use process hosting by default.
+/// The native apps this build links (`native-apps.json`, generated into
+/// `native_apps.rs` by tools/native_apps.py; ADR 0004 §1), then what the
+/// product links beyond the shell (the phone's Settings). Native mobile
+/// targets link App Hub, Reference and Sheets without flags; the rest come
+/// with their `app-*` features. Rinx's assistant is the shell's, given at
+/// creation (ai_host); it never starts a kernel of its own. The in-process
+/// Terminal's PTY helper on macOS is this executable (`--exec-pty`, handled
+/// in `Cx::pre_start`), so it needs no second binary shipped beside it.
 fn linked_modules() -> Vec<&'static dyn AppModule> {
-    #[allow(unused_mut)]
     let mut out: Vec<&'static dyn AppModule> = Vec::new();
-    // Rinx: Matrix chats, Moments, articles and mini apps. Its assistant is
-    // the shell's, given at creation (ai_host); it never starts a kernel of
-    // its own.
-    #[cfg(feature = "app-rinx")]
-    out.push(&rinx::module::RINX_MODULE);
-    #[cfg(any(feature = "app-reference", native_mobile))]
-    out.push(&octosense_reference::REFERENCE_MODULE);
-    #[cfg(any(feature = "app-sheets", native_mobile))]
-    out.push(&makepad_sheets::SHEETS_MODULE);
-    // Terminal is a system app on the desktop: a login shell in a tile. Its
-    // PTY helper on macOS is this executable (`--exec-pty`, handled in
-    // `Cx::pre_start`), so it needs no second binary shipped beside it.
-    #[cfg(feature = "app-terminal")]
-    out.push(&makepad_terminal::TERMINAL_MODULE);
-    // AppCard is opt-in on every target (not shipped by default for now).
-    #[cfg(feature = "app-appcard")]
-    out.push(&octosense_appcard::APPCARD_MODULE);
-    // The trust anchor stays native: the store, and the runner every system
-    // and installed app is hosted by.
-    #[cfg(any(feature = "app-hub", native_mobile))]
-    {
-        out.push(&octosense_app_hub_app::APP_HUB_MODULE);
-        out.push(&octosense_app_hub_app::CARD_MODULE);
-    }
-    // What the product links beyond the shell (the phone's Settings).
+    crate::native_apps::link(&mut out);
     out.extend(crate::ext::linked_modules());
     out
 }
@@ -573,6 +554,30 @@ mod tests {
         assert_eq!(registry.hosting("apphub"), Hosting::Module, "the store has no process form");
         if system_app_ids().contains(&"camera") {
             assert!(octosense_app_hub_app::system_icon("camera").is_some(), "Camera ships its own icon");
+        }
+    }
+
+    /// native-apps.json is the one declaration: every native module this
+    /// build links is an entry under its own id (App Hub's runner `card`
+    /// rides on `apphub`), linked by the entry's feature, and the host
+    /// ships exactly the `octos.*` grants the entries record.
+    #[test]
+    fn the_linked_native_modules_are_the_manifests() {
+        let mut linked = Vec::new();
+        crate::native_apps::link(&mut linked);
+        for module in &linked {
+            let id = if module.id() == "card" { "apphub" } else { module.id() };
+            let app = crate::native_apps::find(id).unwrap_or_else(|| panic!("{id} is not in native-apps.json"));
+            assert!(app.feature.starts_with("app-"), "{id} is linked by an app-* feature");
+        }
+        let shipped = octosense_ai_host::Policy::shipped();
+        for app in crate::native_apps::APPS {
+            let granted: Vec<&str> = shipped
+                .grants()
+                .find(|(module, _)| *module == app.id)
+                .map(|(_, services)| services.iter().map(String::as_str).collect())
+                .unwrap_or_default();
+            assert_eq!(granted, app.octos, "{}'s agent grants", app.id);
         }
     }
 
