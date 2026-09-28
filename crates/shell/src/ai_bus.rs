@@ -26,6 +26,17 @@ use std::collections::{HashMap, HashSet};
 /// The WM's own service endpoint.
 pub const OS_ENDPOINT: &str = "os";
 
+/// Tools a process-hosted app publishes that the shell never offers the
+/// assistant, by app id. The Terminal's tools stay read-only in every
+/// hosting (ADR 0004 §10): its standalone binary also publishes `run`,
+/// which types into a live, unsandboxed shell; the linked module offers the
+/// reads only.
+pub const WITHHELD_TOOLS: &[(&str, &[&str])] = &[("terminal", &["run"])];
+
+fn withheld_for(app: &str) -> Option<&'static [&'static str]> {
+    WITHHELD_TOOLS.iter().find(|(id, _)| *id == app).map(|(_, tools)| *tools)
+}
+
 /// What the bus wants the WM to do with a frame.
 pub enum Route {
     /// Send this JSON to that client's studio socket.
@@ -49,6 +60,9 @@ pub struct AiBus {
     /// endpoints): no socket, their frames are made and answered here.
     /// This leg is what the web superbuild runs everything on.
     locals: HashSet<ClientId>,
+    /// Process clients whose app has tools the assistant is not offered
+    /// (`WITHHELD_TOOLS`), noted from the app id the WM launched them as.
+    withheld: HashMap<ClientId, &'static [&'static str]>,
 }
 
 impl AiBus {
@@ -207,6 +221,18 @@ impl AiBus {
     /// A `Custom` frame from `client`. The WM's own `WmRequest` envelope is
     /// not ours and yields `Drop`.
     pub fn on_custom(&mut self, client: ClientId, json: &str) -> Route {
+        self.on_custom_from(client, None, json)
+    }
+
+    /// `on_custom` for a client the WM launched as `app`: its registration
+    /// loses the tools `WITHHELD_TOOLS` names for that app, and a call to
+    /// one of them never reaches it.
+    pub fn on_custom_from(&mut self, client: ClientId, app: Option<&str>, json: &str) -> Route {
+        if let Some(tools) = app.and_then(withheld_for) {
+            if !self.is_pane(client) && !self.locals.contains(&client) {
+                self.withheld.insert(client, tools);
+            }
+        }
         if self.is_pane(client) {
             let Some(down) = HostedDown::parse(json) else { return Route::Drop };
             let Some(to) = down.to.clone() else { return Route::Drop };
@@ -219,7 +245,11 @@ impl AiBus {
             return match Self::client_of(&to) {
                 Some((true, target)) if self.locals.contains(&target) => Route::Local(target, down.msg),
                 Some((false, target)) if !self.locals.contains(&target) && self.manifests.contains_key(&target) => {
-                    Route::ToClient(target, down.to_json())
+                    let withheld = self.withheld.get(&target).copied().unwrap_or_default();
+                    match &down.msg {
+                        ServiceDown::Call(call) if withheld.contains(&call.tool.as_str()) => Route::Drop,
+                        _ => Route::ToClient(target, down.to_json()),
+                    }
                 }
                 _ => Route::Drop,
             };
@@ -234,6 +264,9 @@ impl AiBus {
                 // in-process modules (`register_local`, trusted native code)
                 // keep a tool's claim that its own sheet confirms it.
                 manifest.clear_self_confirm();
+                if let Some(withheld) = self.withheld.get(&client) {
+                    manifest.tools.retain(|tool| !withheld.contains(&tool.name.as_str()));
+                }
                 self.manifests.insert(client, manifest.clone());
             }
             ServiceUp::Unregister => {
@@ -250,6 +283,7 @@ impl AiBus {
             self.pane_client = None;
             return None;
         }
+        self.withheld.remove(&client);
         self.manifests.remove(&client)?;
         let from = Some(self.endpoint_for(client));
         self.locals.remove(&client);
@@ -297,6 +331,30 @@ mod tests {
 
     fn call(tool: &str, args: &str) -> ServiceCall {
         ServiceCall { call_id: "c".into(), tool: tool.into(), args: args.into() }
+    }
+
+    #[test]
+    fn a_process_terminal_offers_its_reads_only() {
+        let terminal = || {
+            ServiceManifest::new("terminal", "Terminal", "The live terminal.")
+                .with_tool(ToolDef::new("read_screen", "Read the screen.", r#"{"type":"object"}"#, Risk::Read))
+                .with_tool(ToolDef::new("run", "Type a line.", r#"{"type":"object"}"#, Risk::Destructive))
+        };
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(), port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(4, Some("terminal"), &up.to_json()) else { panic!("expected ToPane") };
+        let ServiceUp::Register { manifest, .. } = HostedUp::parse(&json).unwrap().msg else { panic!("expected Register") };
+        assert_eq!(manifest.tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["read_screen"]);
+        assert!(bus.replay(AiBus::os_manifest(&[]))[1].contains("read_screen") && !bus.replay(AiBus::os_manifest(&[]))[1].contains("\"run\""));
+        // A call to the withheld tool never reaches the terminal; a read does.
+        let run = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("run", r#"{"command":"ls"}"#)) };
+        assert!(matches!(bus.on_custom(9, &run.to_json()), Route::Drop));
+        let read = HostedDown { to: Some(EndpointId("w4".into())), msg: ServiceDown::Call(call("read_screen", "{}")) };
+        assert!(matches!(bus.on_custom(9, &read.to_json()), Route::ToClient(4, _)));
+        // Another app keeps a tool of the same name.
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal(), port_tag: 0 } };
+        let Route::ToPane(json) = bus.on_custom_from(5, Some("files"), &up.to_json()) else { panic!("expected ToPane") };
+        assert!(json.contains("\"run\""));
     }
 
     #[test]

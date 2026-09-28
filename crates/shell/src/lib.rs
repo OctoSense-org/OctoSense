@@ -2628,7 +2628,8 @@ impl App {
                     }
                     return;
                 }
-                let route = self.ai_bus.on_custom(client, &json);
+                let app = self.state_mut().clients.get(&client).map(|slot| slot.app.clone());
+                let route = self.ai_bus.on_custom_from(client, app.as_deref(), &json);
                 self.on_bus_route(cx, route);
             }
             AppToStudio::LogItem(item) => {

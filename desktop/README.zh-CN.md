@@ -84,20 +84,19 @@ cargo run --release -p octosense
 | `app-rinx` | 开 | 以模块形式链接 Matrix 客户端 [Rinx](https://github.com/hagency-org/Rinx)；隐含 `octos-core`（它的助手就是 Shell 的助手）。 |
 | `app-reference` | 关 | 以模块形式链接 Reference（`../apps/reference`）。 |
 | `app-sheets` | 关 | 以模块形式链接 Makepad 的 Sheets。 |
-| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell，默认在进程内运行（在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Process` 可改为独立进程）。助手只获得读取工具（`read_screen`、`read_scrollback`），不提供 `run`。在 macOS 上，Shell 的 PTY 辅助程序就是 `octosense` 本身，因此无需在旁边附带第二个二进制文件。 |
+| `app-terminal` | 开 | 以系统应用形式链接 Makepad 的 Terminal：在磁贴中运行的登录 Shell。在 macOS 和 Windows 上它作为独立进程运行（`terminal`，从固定版本的 Makepad 检出中用 `cargo run` 构建，否则使用 `octosense` 旁边的二进制文件），因此它崩溃不会影响 Shell；在 Linux 上只有 Vulkan 构建且处于 Wayland 会话时才如此。无法启动进程时（没有检出也没有二进制文件：发布包目前还不附带它，见 [#94](https://github.com/OctoSense-org/OctoSense/pull/94)），它在进程内打开，与手机上相同；在状态目录下的 `wm/apps.splash` 中写一行 `terminal: Module` 或 `terminal: Process` 可覆盖默认值。无论哪种托管方式，助手都只获得读取工具（`read_screen`、`read_scrollback`），从不提供 `run`。在 macOS 上进程内运行时，Shell 的 PTY 辅助程序就是 `octosense` 本身。 |
 | `app-appcard` | 关 | 链接 AppCard 助手模块（`../apps/appcard/module`）；隐含 `octos-core`。在所有目标平台（包括手机）上都需显式启用；目前不随产品发布。 |
 | `app-aichat` | 关 | 以模块形式链接 Makepad 的 AI chat，不含其模型引擎。 |
 | `mobile-apps` | 关 | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`：手机构建所链接的集合，用于在桌面上测试。不含 AppCard。 |
 
-已链接的模块用 `--module <id>` 打开（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）：
+已链接的原生应用按照 `native-apps.json` 中该平台的 `hosting` 托管：App Hub、Rinx 和 AppCard 在所有平台上都在进程内运行，Terminal 在 macOS 和 Windows 上作为独立进程运行，Reference 和 Sheets 在桌面端作为独立进程运行。用 `--module <id>`（或在状态目录下的 `wm/apps.splash` 中写一行 `<id>: Module`）可改为在进程内打开：
 
 ```sh
-cargo run --release -p octosense --features app-appcard -- --module appcard
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets
-cargo run --release -p octosense -- --module rinx
+cargo run --release -p octosense -- --module terminal
 ```
 
-App Hub 的模块是例外：它们没有进程形态，总是在进程内打开。
+App Hub 的模块没有进程形态，总是在进程内打开。
 
 ### 命令行参数与环境变量
 
@@ -189,7 +188,7 @@ OCTOSENSE_HUB=<mirror dir> OCTOSENSE_HUB_ANCHOR=<anchor hex> \
 
 ### 开发者程序与目录
 
-`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Terminal 同时以链接方式提供（`app-terminal`，默认开启），在进程内打开；它在 `config/apps.json` 中的条目是可以切换成的独立进程形式。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
+`config/apps.json` 列出 Reference 和 Makepad 自带的应用（Browser、Files、Terminal、Sheets、Notes、Calendar、id 为 `studio` 的 Director 等）。Terminal 同时以链接方式提供（`app-terminal`，默认开启）；它在 `config/apps.json` 中的条目是它在 macOS 和 Windows 上使用的独立进程形式，链接的模块是进程内形式。Image、PDF 和 AI 辅助应用也会出现在 launcher 中，除非它们的 id（`image`、`pdf`、`aichat`）写在状态目录下的 `wm/launcher.hides` 中。
 
 目录查找顺序：给了 `--apps <file>` 就用它；否则若存在 `~/.octosense/apps.json` 就用它；否则用 `config/apps.json`。目录是一个 JSON 数组，每个条目选择一种启动目标：
 

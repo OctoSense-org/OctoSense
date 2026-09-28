@@ -20,6 +20,16 @@ fn main() {
     if feature || target_os == "android" || target_env == "ohos" {
         println!("cargo:rustc-cfg=mobile_only");
     }
+    // `makepad_vulkan`: Makepad renders with Vulkan (`MAKEPAD=vulkan`, the
+    // same switch makepad-platform's build reads), so a Linux desktop can
+    // share a process app's frames zero-copy (native-apps.json's
+    // `process-if-vulkan`, apps::vulkan_wayland).
+    println!("cargo:rustc-check-cfg=cfg(makepad_vulkan)");
+    println!("cargo:rerun-if-env-changed=MAKEPAD");
+    let makepad = std::env::var("MAKEPAD").unwrap_or_default();
+    if makepad.split(['+', ',']).any(|config| matches!(config, "vulkan" | "use_vulkan" | "quest")) {
+        println!("cargo:rustc-cfg=makepad_vulkan");
+    }
     // The host's build id: the second this build was configured, as digits.
     // A hosted AppCard pins its card approvals to the runtime it admitted
     // them under; when the host is a NEW build the store is archived once

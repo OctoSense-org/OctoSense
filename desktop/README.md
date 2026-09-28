@@ -84,20 +84,19 @@ The native apps' features (`app-hub`, `app-rinx`, `app-reference`, `app-sheets`,
 | `app-rinx` | on | Links [Rinx](https://github.com/hagency-org/Rinx), the Matrix client, as a module; implies `octos-core` (its assistant is the shell's). |
 | `app-reference` | off | Links Reference (`../apps/reference`) as a module. |
 | `app-sheets` | off | Links Makepad's Sheets as a module. |
-| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile, in-process by default (a `terminal: Process` line in `wm/apps.splash` under the state directory switches it to a process). The assistant gets its read tools (`read_screen`, `read_scrollback`); `run` is not offered. On macOS the shell's PTY helper is `octosense` itself, so no second binary ships beside it. |
+| `app-terminal` | on | Links Makepad's Terminal as a system app: a login shell in a tile. On macOS and Windows it runs as its own process (`terminal`, built from the pinned Makepad checkout with `cargo run`, else the binary beside `octosense`), so a crash in it leaves the shell running; on Linux only with a Vulkan build in a Wayland session. Where it cannot start a process (no checkout and no binary: release packages do not ship it yet, [#94](https://github.com/OctoSense-org/OctoSense/pull/94)) it opens in-process, as it does on phones; a `terminal: Module` or `terminal: Process` line in `wm/apps.splash` under the state directory overrides that. The assistant gets its read tools (`read_screen`, `read_scrollback`) in either hosting; `run` is never offered. In-process on macOS, the shell's PTY helper is `octosense` itself. |
 | `app-appcard` | off | Links the AppCard assistant module (`../apps/appcard/module`); implies `octos-core`. Opt-in on every target, phones included; not shipped for now. |
 | `app-aichat` | off | Links Makepad's AI chat as a module, without its model engine. |
 | `mobile-apps` | off | `app-rinx` + `app-reference` + `app-sheets` + `app-hub` + `octos-core`: the set phone builds link, for testing on desktop. Not AppCard. |
 
-A linked module opens with `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory):
+A linked native app is hosted as its `hosting` in `native-apps.json` says for the platform: App Hub, Rinx and AppCard in-process everywhere, the Terminal as a process on macOS and Windows, Reference and Sheets as processes on the desktop. `--module <id>` (or a `<id>: Module` line in `wm/apps.splash` under the state directory) opens one in-process instead:
 
 ```sh
-cargo run --release -p octosense --features app-appcard -- --module appcard
 cargo run --release -p octosense --features mobile-apps -- --module reference --module sheets
-cargo run --release -p octosense -- --module rinx
+cargo run --release -p octosense -- --module terminal
 ```
 
-App Hub's modules are the exception: they have no process form and always open in-process.
+App Hub's modules have no process form and always open in-process.
 
 ### Flags and environment
 
@@ -189,7 +188,7 @@ Open **App Hub**, choose the app, **Get**, scroll to **Install**, then **Open**:
 
 ### Developer programs and the catalog
 
-`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). Terminal is also linked (`app-terminal`, on by default) and opens in-process; its `config/apps.json` row is the process form a person can switch to. The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
+`config/apps.json` lists Reference and Makepad's own apps (Browser, Files, Terminal, Sheets, Notes, Calendar, Director under the id `studio`, and more). Terminal is also linked (`app-terminal`, on by default); its `config/apps.json` row is the process form it opens in on macOS and Windows, and the linked module is the in-process form. The Image, PDF and AI helpers also appear in the launcher unless their ids (`image`, `pdf`, `aichat`) are listed in `wm/launcher.hides` under the state directory.
 
 Catalog lookup: `--apps <file>` if given, else `~/.octosense/apps.json` if it exists, else `config/apps.json`. A catalog is a JSON array; each entry picks one launch target:
 
