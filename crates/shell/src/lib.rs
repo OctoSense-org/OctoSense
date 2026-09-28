@@ -779,7 +779,10 @@ impl App {
             if octosense::policy::requested("--demo-home") {
                 crate::demo_home::ensure_demo_home()
             } else {
-                None
+                // Otherwise the person's home, like any terminal: never the
+                // directory the launch happens to run in (a process
+                // Terminal is started from its catalog row's checkout).
+                user_home()
             }
         })
     }
@@ -5210,4 +5213,11 @@ app_main!(
     }
 );
     };
+}
+
+/// The person's home directory (`HOME`; `USERPROFILE` on Windows), where a
+/// new terminal with no directory to inherit opens.
+fn user_home() -> Option<std::path::PathBuf> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var).filter(|home| !home.is_empty()).map(std::path::PathBuf::from).filter(|home| home.is_dir())
 }
