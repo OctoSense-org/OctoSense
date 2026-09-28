@@ -27,7 +27,7 @@
 | `src/main.rs` | 入口（包名 `octosense`）：在 Shell 的 `App` 上调用 `octosense_main!()`。Shell 本身（平铺、launcher、dock、顶栏、托管、应用注册表、`shell/`、`octosense/`）在 [`../crates/shell/src`](../crates/shell/src)。 |
 | `config/apps.json` | 默认的开发者程序目录。`apps.makepad.json` 是供 `--apps` 使用的相同副本；`apps.overlay.json` 保存重新生成时应用的调整。 |
 | `system-apps.json` | 本构建打包哪些系统应用，以及从哪里打包（`../apps`）。 |
-| `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh` 和 `ai_providers_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用和 AI 提供商），以及 `provision-appcard-llm.sh`（Android）。 |
+| `scripts/` | `upstream.py`（WM 来源记录与目录重新生成）、`smoke.py`（原生冒烟测试）及它们的 Python 测试，`system_apps_remote.sh`、`ai_providers_remote.sh` 和 `glance_remote.sh`（以隐藏窗口 `--remote` 端到端运行系统应用、AI 提供商与一览屏），以及 `provision-appcard-llm.sh`（Android）。 |
 | `upstream/makepad.json` | 从 Makepad `apps/wm` 导入的每个文件的来源记录。 |
 | `resources/android/` | Android manifest 模板。主题、壁纸、图标和启动脚本属于 Shell，在 [`../crates/shell/resources`](../crates/shell/resources)。 |
 | `docs/` | [验证记录](docs/validation.md)、[上游同步](docs/upstream.md)、[本地 AI](docs/local-ai.md)、[Android AppCard 构建](docs/android-appcard-build.md)、按日期的计划。 |
@@ -118,6 +118,7 @@ App Hub 的模块是例外：它们没有进程形态，总是在进程内打开
 | `OCTOSENSE_MAIL_VAULT=file` | 把邮件密码保存在权限为 0600 的文件中，而不是 macOS 钥匙串。 |
 | `OCTOSENSE_LLM_VAULT=file` | 把 AI 提供商的密钥保存在仅所有者可读的 octos profile 中，而不是 macOS 钥匙串。 |
 | `OCTOS_APP_CORE_BIN`、`OCTOS_APP_CORE_DIR` | Shell 内核服务运行的 octos 内核二进制（未设置时使用程序旁的 `octos-kernel`）及其 core 目录（默认 `~/octos-home/.octos`；AI 提供商的 profile 为 `<dir>/profiles/_main.json`）。 |
+| `OCTOSENSE_GLANCE_DEMO=1` | 启动时以 `os.news` 身份向一览屏发布一张示例 L0 新闻摘要卡片：桌面风格下按 F9 查看，手机风格下在一览页查看。用于测试 `glance` 服务。 |
 | `MAKEPAD_REMOTE`、`MAKEPAD_HIDE_WINDOWS` | 远程控制桥；隐藏窗口（见[演示](#演示)）。 |
 
 ## 应用模型

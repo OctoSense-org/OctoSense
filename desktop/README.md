@@ -27,7 +27,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | `src/main.rs` | The entry point (package `octosense`): `octosense_main!()` over the shell's `App`. The shell (tiling, launcher, dock, bar, hosting, the app registry, `shell/`, `octosense/`) is [`../crates/shell/src`](../crates/shell/src). |
 | `config/apps.json` | The default developer-program catalog. `apps.makepad.json` is an identical copy for `--apps`; `apps.overlay.json` holds the adaptations applied when regenerating them. |
 | `system-apps.json` | Which system apps this build packs, and from where (`../apps`). |
-| `scripts/` | `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh` and `ai_providers_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
+| `scripts/` | `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `upstream/makepad.json` | Provenance of every file imported from Makepad's `apps/wm`. |
 | `resources/android/` | The Android manifest template. Themes, wallpapers, icons and the startup script are the shell's, in [`../crates/shell/resources`](../crates/shell/resources). |
 | `docs/` | [Validation record](docs/validation.md), [upstream sync](docs/upstream.md), [local AI](docs/local-ai.md), [Android AppCard build](docs/android-appcard-build.md), dated plans. |
@@ -118,6 +118,7 @@ App Hub's modules are the exception: they have no process form and always open i
 | `OCTOSENSE_MAIL_VAULT=file` | Keep Mail passwords in a 0600 file instead of the macOS keychain. |
 | `OCTOSENSE_LLM_VAULT=file` | Keep AI providers' keys in the owner-only octos profile instead of the macOS keychain. |
 | `OCTOS_APP_CORE_BIN`, `OCTOS_APP_CORE_DIR` | The octos kernel binary the shell's kernel service runs (unset: use the packaged sibling) and its core dir (default `~/octos-home/.octos`; the AI providers profile is `<dir>/profiles/_main.json`). |
+| `OCTOSENSE_GLANCE_DEMO=1` | Publish a sample L0 News digest card (as `os.news`) to the glance screen at startup: F9 on a desktop style, the glance page on a phone style. A test path for the `glance` service. |
 | `MAKEPAD_REMOTE`, `MAKEPAD_HIDE_WINDOWS` | Remote-control bridge; hidden windows (see [Demos](#demos)). |
 
 ## The app model
