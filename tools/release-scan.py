@@ -52,6 +52,12 @@ GENERIC_ACCOUNTS = {"runner", "runneradmin", "root", "admin", "administrator", "
 # worker's git identity, the solo profile, a test account).
 PRODUCT_LOCAL_NAMES = ("octosense.local", "octos.local", "solo.local", "test.local")
 
+# Rust packs string literals back to back, so a bare `.local` literal (octos'
+# `host.ends_with(".local")`, `home.join(".local")`) can land right after
+# another literal and read as `<word>.local`. Only these exact endings are
+# excused; anything else that looks like a host is reported.
+GLUED_LOCAL_SUFFIXES = (b"utf-8.local",)
+
 BASE_PATTERNS = [
     ("macOS user directory", rb"/Users/[^/\s\x00\"']+"),
     ("Windows user directory", rb"[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}[^\\/\s\x00\"']+"),
@@ -103,6 +109,8 @@ def scan_bytes(data, where, patterns, findings):
         seen = set()
         for m in regex.finditer(data):
             if m.group(0) in seen:
+                continue
+            if label.startswith("mDNS") and m.group(0).lower().endswith(GLUED_LOCAL_SUFFIXES):
                 continue
             seen.add(m.group(0))
             findings.append(f"{where}: {label}: {mask(m.group(0))}")

@@ -33,7 +33,7 @@ class PatternTests(unittest.TestCase):
                      b"version 10.2.3.4.5", b"/cargo/registry/src", b"EHLO octosense.local\r\n",
                      b"fleet-worker@octos.local", b"e2e@test.local",
                      b"forbiddenutf-8.local/bin/ominix-api", b"x.local/share/y",
-                     b"not found.forbiddenutf-8.local\x00"):
+                     b"not found.forbiddenutf-8.local\x00", b"not foundforbiddenutf-8.local\x00"):
             self.assertEqual(findings(fine), [], fine)
 
     def test_findings_are_masked_and_extra_patterns_apply(self):
