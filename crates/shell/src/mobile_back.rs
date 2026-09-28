@@ -12,7 +12,6 @@
 //! `Event::BackPressed` and setting its `handled` flag, which is how native
 //! modules (Settings, and any other linked module) already take it.
 use crate::hub::ClientId;
-use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
 use makepad_widgets::*;
 
 /// An app opened from inside another app (Settings → Accounts → AI
@@ -32,25 +31,26 @@ pub fn leave_target(return_to: Option<ReturnTo>, leaving: ClientId, alive: impl 
 }
 
 /// The foreground module gets Back first. `module` is the module's id
-/// (`card` for every App Hub app, system apps included), `root` and `vm_id`
-/// its instance. Returns whether the module took Back; if not, the caller
+/// (`card` for every App Hub app, system apps included), `root` its
+/// instance's root. Returns whether the module took Back; if not, the caller
 /// leaves the app.
 ///
 /// In order: the host-side hooks for module kinds that cannot answer Back
 /// themselves, then `Event::BackPressed` delivered to the root inside the
 /// module's isolate, taken if anything in it set `handled`.
-pub fn offer_back_to_module(cx: &mut Cx, module: &str, root: &WidgetRef, vm_id: SplashVmId) -> bool {
-    let entry = enter_isolate(cx, vm_id);
-    let taken = match module {
+///
+/// The caller runs this inside the module's isolate, with its panics
+/// contained (`ModuleHost::dispatch`).
+pub fn offer_back_to_module(cx: &mut Cx, module: &str, root: &WidgetRef) -> bool {
+    let hook = match module {
         "card" => card_sheet_back(cx, root),
         _ => false,
-    } || {
+    };
+    hook || {
         let event = Event::BackPressed { handled: std::cell::Cell::new(false) };
         root.handle_event(cx, &event, &mut Scope::empty());
         matches!(event, Event::BackPressed { handled } if handled.get())
-    };
-    leave_isolate(cx, entry);
-    taken
+    }
 }
 
 /// The Card runner draws a host service's sheet (a sign-in, the AI
@@ -124,6 +124,7 @@ mod tests {
     fn a_card_sheet_takes_back_with_its_own_cancel() {
         use makepad_app_module::AppModule;
         use makepad_widgets::splash_host::take_splash_host_requests_for;
+        use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
         let mut cx = Cx::new(Box::new(|_, _| {}));
         cx.with_vm(makepad_widgets::script_mod);
         let mut host = crate::module_host::ModuleHost::default();
@@ -155,7 +156,7 @@ mod tests {
             taken
         };
 
-        assert!(!offer_back_to_module(&mut cx, "card", &root, vm_id), "no sheet: Back leaves the app");
+        assert!(!host.dispatch(&mut cx, 11, "Back", |cx, root| offer_back_to_module(cx, "card", root)).unwrap(), "no sheet: Back leaves the app");
 
         // First, while the sheet isolate has never defined one: a program's
         // functions outlive a replacement in the same isolate.
@@ -164,7 +165,7 @@ mod tests {
         assert!(!up(&mut cx), "a sheet with no cancel of its own is closed");
 
         let heap = raise(&mut cx, "fn cancel(){ host.request(\"probe.sheet.cancel\", {}, nil) }\nView{}");
-        assert!(offer_back_to_module(&mut cx, "card", &root, vm_id));
+        assert!(host.dispatch(&mut cx, 11, "Back", |cx, root| offer_back_to_module(cx, "card", root)).unwrap());
         let sent: Vec<String> = take_splash_host_requests_for(&[heap]).into_iter().map(|r| r.service).collect();
         assert_eq!(sent, ["probe.sheet.cancel"], "Back is the sheet's Cancel");
 

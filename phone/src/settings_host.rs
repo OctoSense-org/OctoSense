@@ -20,7 +20,9 @@ use crate::settings_app_battery::AppBatteryRequest;
 use crate::settings_app_language::AppLanguageRequest;
 use crate::settings_app_storage::AppStorageRequest;
 use crate::settings_display::{DisplayRequest,DisplayValue};
-use makepad_widgets::{widget_async::{enter_isolate, leave_isolate}, *};
+#[cfg(test)]
+use makepad_widgets::widget_async::{enter_isolate, leave_isolate};
+use makepad_widgets::*;
 
 #[derive(Default)]
 pub struct SettingsRuntime {
@@ -122,7 +124,7 @@ impl App {
         }
         let Some(instance)=self.module_host.settings_instance()else{return;};
         // Never match a caller-supplied app id/title or a script impostor.
-        let(client,root,vm_id)=(instance.client,instance.root.clone(),instance.vm_id);
+        let client=instance.client;
         if !self.state.as_ref().unwrap().clients.get(&client).is_some_and(|slot|slot.closing.is_none()){return;}
         self.state_mut().phone.shade.close();self.state_mut().phone.groups.close();
         self.activate_client(cx,client);
@@ -131,11 +133,9 @@ impl App {
             self.settings_runtime.app_notifications=Default::default();
             self.settings_runtime.permissions=Default::default();
         }
-        let isolate=enter_isolate(cx,vm_id);
-        let applied=if let Some(mut view)=root.borrow_mut::<SettingsView>() {
+        let applied=self.module_host.dispatch(cx,client,"a settings entry",|cx,root|if let Some(mut view)=root.borrow_mut::<SettingsView>() {
             if let Some(package)=&request.package{view.navigate_notification_entry(cx,request.id,package);}else{view.navigate_entry(cx,request.route);}true
-        }else{false};
-        leave_isolate(cx,isolate);
+        }else{false}).unwrap_or(false);
         if applied {
             self.settings_runtime.entries.complete(request.id);
             self.settings_runtime.accessibility.invalidate();self.redraw_all(cx);
@@ -189,18 +189,16 @@ impl App {
     }
     pub(crate) fn refresh_settings_app(&mut self, cx: &mut Cx) {
         let state = self.settings_snapshot();
-        let Some(instance) = self.module_host.settings_instance() else { return; };
-        let (root, vm_id) = (instance.root.clone(), instance.vm_id);
-        let entry = enter_isolate(cx, vm_id);
-        if let Some(mut view) = root.borrow_mut::<SettingsView>() { view.observe(cx, state); }
-        leave_isolate(cx, entry);
+        let Some(client) = self.module_host.settings_instance().map(|i| i.client) else { return; };
+        self.module_host.dispatch(cx, client, "a settings refresh", |cx, root| {
+            if let Some(mut view) = root.borrow_mut::<SettingsView>() { view.observe(cx, state); }
+        });
     }
     fn settings_outcome(&mut self, cx: &mut Cx, client: crate::hub::ClientId, pending: bool, message: &str) {
-        let Some(instance) = self.module_host.get(client).filter(|i| crate::settings_app::trusted(i.module)) else { return; };
-        let (root, vm_id) = (instance.root.clone(), instance.vm_id);
-        let entry = enter_isolate(cx, vm_id);
-        if let Some(mut view) = root.borrow_mut::<SettingsView>() { view.outcome(cx, pending, message); }
-        leave_isolate(cx, entry);
+        if !self.module_host.get(client).is_some_and(|i| crate::settings_app::trusted(i.module)) { return; }
+        self.module_host.dispatch(cx, client, "a settings outcome", |cx, root| {
+            if let Some(mut view) = root.borrow_mut::<SettingsView>() { view.outcome(cx, pending, message); }
+        });
     }
     pub(crate) fn settings_request(&mut self, cx: &mut Cx, uid: WidgetUid, request: SettingsRequest) {
         let Some(client) = self.module_host.settings_client(uid) else {
@@ -474,8 +472,8 @@ impl App {
         if self.module_host.settings_client(pending.root) != Some(pending.client) { return; }
         let reason = value.get("reason").and_then(Value::as_str).unwrap_or("");
         if reason.starts_with("dnd_") {
-            if let Some(instance)=self.module_host.settings_instance(){let(root,vm_id)=(instance.root.clone(),instance.vm_id);let isolate=enter_isolate(cx,vm_id);
-                if let Some(mut view)=root.borrow_mut::<SettingsView>(){view.dnd_operation_result(cx,status==1&&reason=="dnd_applied");}leave_isolate(cx,isolate);
+            if let Some(client)=self.module_host.settings_instance().map(|i|i.client){
+                self.module_host.dispatch(cx,client,"a settings result",|cx,root|if let Some(mut view)=root.borrow_mut::<SettingsView>(){view.dnd_operation_result(cx,status==1&&reason=="dnd_applied");});
             }
         }
         let message = if status == 1 {

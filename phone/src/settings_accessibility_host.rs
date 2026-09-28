@@ -2,7 +2,7 @@
 //! script-selected module or a raw Android settings command.
 use crate::{App,settings_accessibility::Action,settings_app::SettingsView};
 use makepad_strict_json::{obj,Value};
-use makepad_widgets::{widget_async::{enter_isolate,leave_isolate},*};
+use makepad_widgets::*;
 
 const INACTIVE_LAYOUT:&str=r#"{"schema":1,"active":false,"token":"","pane":"","bounds":[0,0,0,0],"scroll":null,"nodes":[]}"#;
 
@@ -44,10 +44,8 @@ impl App {
     fn settings_accessibility_retire_owner(&mut self,cx:&mut Cx) {
         self.settings_runtime.accessibility.retire_results();
         if let Some((client,uid))=self.settings_runtime.accessibility.owner.take() {
-            if let Some(instance)=self.module_host.get(client).filter(|instance|instance.root.widget_uid()==uid) {
-                let(root,vm_id)=(instance.root.clone(),instance.vm_id);let entry=enter_isolate(cx,vm_id);
-                if let Some(mut view)=root.borrow_mut::<SettingsView>(){view.accessibility_retire();}
-                leave_isolate(cx,entry);
+            if self.module_host.get(client).is_some_and(|instance|instance.root.widget_uid()==uid) {
+                self.module_host.dispatch(cx,client,"accessibility",|_cx,root|if let Some(mut view)=root.borrow_mut::<SettingsView>(){view.accessibility_retire();});
             }
         }
     }
@@ -68,10 +66,7 @@ impl App {
         let awaiting_draw=is_draw&&!self.settings_runtime.accessibility.after_draw.is_empty();
         let now=crate::host::now();if !awaiting_draw&&now-self.settings_runtime.accessibility.last_publish<0.25{return;}
         self.settings_runtime.accessibility.last_publish=now;
-        let Some(instance)=self.module_host.get(owner.0)else{return;};
-        let(root,vm_id)=(instance.root.clone(),instance.vm_id);let entry=enter_isolate(cx,vm_id);
-        let layout=root.borrow_mut::<SettingsView>().map(|mut view|{let dpi=view.accessibility_dpi(cx);view.accessibility_layout(cx,dpi)});
-        leave_isolate(cx,entry);
+        let layout=self.module_host.dispatch(cx,owner.0,"accessibility",|cx,root|root.borrow_mut::<SettingsView>().map(|mut view|{let dpi=view.accessibility_dpi(cx);view.accessibility_layout(cx,dpi)})).flatten();
         let Some(layout)=layout else{return;};
         // A new pane needs its first real draw before geometry can be exposed.
         if !layout.active(){return;}
@@ -91,10 +86,8 @@ impl App {
         let accepted=if let (Some(action),Some(owner))=(Action::decode(value),self.settings_accessibility_owner()) {
             if self.settings_runtime.accessibility.owner!=Some(owner)||!self.settings_runtime.accessibility.can_queue_result() {false}
             else if !self.settings_runtime.accessibility.accepts_sequence(&action){false}
-            else if let Some(instance)=self.module_host.get(owner.0).filter(|instance|instance.root.widget_uid()==owner.1) {
-                let(root,vm_id)=(instance.root.clone(),instance.vm_id);let entry=enter_isolate(cx,vm_id);
-                let accepted=root.borrow_mut::<SettingsView>().is_some_and(|mut view|{let dpi=view.accessibility_dpi(cx);view.accessibility_action(cx,dpi,&action)});
-                leave_isolate(cx,entry);accepted
+            else if self.module_host.get(owner.0).is_some_and(|instance|instance.root.widget_uid()==owner.1) {
+                self.module_host.dispatch(cx,owner.0,"accessibility",|cx,root|root.borrow_mut::<SettingsView>().is_some_and(|mut view|{let dpi=view.accessibility_dpi(cx);view.accessibility_action(cx,dpi,&action)})).unwrap_or(false)
             }else{false}
         }else{false};
         if accepted{

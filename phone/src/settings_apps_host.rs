@@ -145,11 +145,8 @@ impl App {
                 self.fail_settings_apps_read(cx,"Android returned invalid app details. Refresh to try again.");return;
             };
             if let ReadKey::EntryDetails {entry_id,..}=&read.key {
-                let Some(instance)=self.module_host.settings_instance()else{return;};
-                let(root,vm_id)=(instance.root.clone(),instance.vm_id);
-                let isolate=makepad_widgets::widget_async::enter_isolate(cx,vm_id);
-                let adopted=root.borrow_mut::<SettingsView>().is_some_and(|mut view|view.resolve_notification_entry(cx,*entry_id,&details));
-                makepad_widgets::widget_async::leave_isolate(cx,isolate);
+                let Some(client)=self.module_host.settings_instance().map(|i|i.client)else{return;};
+                let adopted=self.module_host.dispatch(cx,client,"settings app details",|cx,root|root.borrow_mut::<SettingsView>().is_some_and(|mut view|view.resolve_notification_entry(cx,*entry_id,&details))).unwrap_or(false);
                 if !adopted{return;}
             }
             self.settings_runtime.apps.details = Some(details);

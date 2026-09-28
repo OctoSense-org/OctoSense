@@ -43,6 +43,8 @@ pub mod hub;
 pub mod layout;
 pub mod octosense;
 pub mod module_host;
+#[cfg(test)]
+mod module_panic_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod pane_links;
@@ -2146,6 +2148,46 @@ impl App {
         self.activate_client(cx, id);
         self.update_bar(cx);
         self.redraw_all(cx);
+    }
+
+    /// The instances whose module panicked since the last event
+    /// (module_host.rs, "PANIC CONTAINMENT"): their extra windows close,
+    /// the tile lets go of the root and shows the app closed with a
+    /// Restart, the assistant loses its tools, and the instance's
+    /// resources are freed. The shell and every other app go on.
+    pub(crate) fn contain_module_faults(&mut self, cx: &mut Cx) {
+        let failed = self.module_host.take_faults(cx);
+        for (client, label) in failed {
+            let windows: Vec<ClientId> = self.module_windows.iter()
+                .filter(|(_, (owner, _))| *owner == client).map(|(w, _)| *w).collect();
+            for window in windows {
+                self.remove_client(cx, window);
+            }
+            self.desk(cx)
+                .borrow_mut::<WmDesk>()
+                .map(|mut d| d.with_module_view(cx, client, |cx, v| v.show_failed(cx, &label)));
+            self.module_host.release_failed(cx, client);
+            if let Some(bye) = self.ai_bus.client_died(client) {
+                self.send_to_pane(bye);
+            }
+            self.pane_links.close_instance(client);
+            self.update_bar(cx);
+            self.redraw_all(cx);
+        }
+    }
+
+    /// Restart on a failed module's tile: that window closes and the app
+    /// opens afresh, as a launch from the menu would open it.
+    fn restart_failed_module(&mut self, cx: &mut Cx, client: ClientId) {
+        if !self.module_host.is_failed(client) {
+            return;
+        }
+        let Some(app) = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|slot| slot.app.clone()) else {
+            return;
+        };
+        log!("wm: restarting {app} after its instance (client {client}) failed");
+        self.request_close(cx, client);
+        self.launch_app(cx, &app);
     }
 
     /// A frame the pane addressed to an in-process instance.
@@ -4752,6 +4794,7 @@ impl MatchEvent for App {
                 MpRunViewAction::Clicked { client } => {
                     self.focus_client(cx, client);
                 }
+                MpRunViewAction::Restart { client } => self.restart_failed_module(cx, client),
                 MpRunViewAction::None => {}
             }
             match wa.cast::<WmDeskAction>() {
@@ -4864,6 +4907,14 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.shell_handle_event_inner(cx, event);
+        // Whatever module panicked during this event — in its tile's event
+        // or draw, or in a call the shell made — is contained by now; show
+        // it closed and free it before the next event (module_host.rs).
+        self.contain_module_faults(cx);
+    }
+
+    fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
         // Recording belongs to the WM, including on Home and in an OS menu.
         // Forwarding this chord also starts a recorder in the focused child.
         if let Event::KeyDown(e) | Event::KeyUp(e) = event {

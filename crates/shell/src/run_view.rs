@@ -160,6 +160,11 @@ pub enum MpRunViewAction {
     Clicked {
         client: ClientId,
     },
+    /// The person asked a module tile whose app stopped after a panic to
+    /// start it again (`module_view.rs`).
+    Restart {
+        client: ClientId,
+    },
     #[default]
     None,
 }
