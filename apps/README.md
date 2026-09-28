@@ -7,7 +7,7 @@ the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until
 2026-09-27 they were the OctoSense-System-Apps repository (archived).
 
-- **News, Photos, Maps, Camera, Mail and AI providers** are *contained script apps*. Each is
+- **News, Photos, Maps, Camera, Mail, AI providers and YouTube** are *contained script apps*. Each is
   an OctoScript (Splash) program in a `bundle/`, run by App Hub's Card runner
   in its own isolate, under exactly the permissions its `manifest.json` asks
   for. That is the same containment a store app gets. They are also worked
@@ -61,6 +61,7 @@ OctoScript-App-Design-Flow:
 | [Camera](camera/bundle) | `os.camera` | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library` | none | none |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer | `storage`, `mail` | none (the service connects, not the app) | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | The assistant's LLM providers: a primary and fallbacks, each with a model pull-down from octos's catalog and Test connection; an add wizard (family, model, route, key, test); Show QR for phone and import by camera, image or paste | `storage`, `llm` | none (the service connects, not the app) | [`llm`](ai-providers/host-service) |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube search (the runtime's keyless `sys.video`, which reads YouTube's own results page), result rows with thumbnails and LIVE or length badges, topic chips, playback of YouTube's mobile watch page in `WebReader`, and a history of what was played on this device | `storage`, `net` | `www.youtube.com`, `m.youtube.com`, `i.ytimg.com` | none |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
 What each capability means is defined by App Hub's closed list
@@ -71,6 +72,11 @@ host's mail service, `llm` reaches the host's LLM-provider service. `net` reache
 
 ### Status and known gaps
 
+- **YouTube**: on the OnePlus 6 (2026-09-27) search, results, playback and
+  history worked; closing the player ends the page (makepad#43, in the
+  runtime). Playback opens YouTube's mobile watch page, which autoplays muted
+  and shows its own "Open App" prompt. Search reads YouTube's results page and
+  depends on its layout.
 - **Camera**: on the OnePlus 6 test run (2026-09-25) Camera captured a photo
   and released the camera in the background, but the live preview drew pure
   black; unresolved. Desktop builds have no camera and the Android emulator

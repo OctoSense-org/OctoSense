@@ -103,7 +103,7 @@ adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.
 
 ## 系统应用
 
-News、Photos、Maps、Camera、Mail 和 AI 提供商都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
+News、Photos、Maps、Camera、Mail、AI 提供商和 YouTube 都是隔离运行的脚本应用（[ADR 0004（英文）](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)）。它们的应用包位于 [`apps/`](../apps/README.zh-CN.md)（`apps/<name>/bundle/`）；本目录的 `system-apps.json` 指定本 Home 附带哪些应用，并挂载由 Home 自有的素材（Photos 的示例图库 `apps/photos/resources/photos`）。无论是在独立的 Home 中还是在 ROM 中，App Hub 的 Card 运行器都会按照各应用清单中的策略，在各自独立的 isolate 中运行它们。每个应用都保留简短的启动器 id（`os.news` 对应 `news`），因此图标、磁贴和程序坞都不受影响。
 
 Mail 通过 `mail` 宿主服务（[`apps/mail/host-service`](../apps/mail/host-service)）收发邮件：用户在宿主自己的面板上登录，密码保存在钥匙串中或由 Android Keystore 密钥保护，应用本身从不持有套接字或密码。使用演示邮箱（密码为 `demo`）：
 

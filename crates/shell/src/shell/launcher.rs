@@ -55,7 +55,7 @@ fn icon_for(id: &str) -> Option<Ico> {
         "sheets" => Ico::Calendar,
         "score" => Ico::Bell,
         "image" => Ico::Monitor,
-        "video" => Ico::Play,
+        "video" | "youtube" => Ico::Play,
         "pdf" => Ico::Check,
         "route" | "maps" => Ico::Globe,
         "mixer" => Ico::Speaker,

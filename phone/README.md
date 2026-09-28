@@ -38,7 +38,7 @@ run cargo from this directory: `phone/.cargo/config.toml` selects the
 phone's system apps.
 
 **On a desktop**, the phone shell in a phone-sized window with App Hub, the
-six system apps and the built-in Settings (only macOS is built in CI):
+seven system apps and the built-in Settings (only macOS is built in CI):
 
 ```sh
 cargo run --release -p octosense-home --features mobile-only
@@ -160,7 +160,7 @@ Android Settings. See the [current controls and validation](docs/android/setting
 
 ## System apps
 
-News, Photos, Maps, Camera, Mail and AI providers are contained script apps
+News, Photos, Maps, Camera, Mail, AI providers and YouTube are contained script apps
 ([ADR 0004](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)). Their
 bundles live in [`apps/`](../apps/README.md) (`apps/<name>/bundle/`);
 this directory's `system-apps.json` names which this Home ships and

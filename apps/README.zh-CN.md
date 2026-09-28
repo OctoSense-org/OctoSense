@@ -7,7 +7,7 @@
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 
-- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）和 AI providers**
+- **新闻（News）、相册（Photos）、地图（Maps）、相机（Camera）、邮件（Mail）、AI providers 和 YouTube**
   是*隔离运行的脚本应用*。每个应用都是 `bundle/` 里的一个 OctoScript（Splash）
   程序，由 App Hub 的 Card runner 在独立的 isolate 中运行，权限严格等于其
   `manifest.json` 所申请的内容，与商店应用受到的隔离完全相同。它们同时也是
@@ -55,6 +55,7 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 | [Camera](camera/bundle) | `os.camera` | 基于运行时 `CameraPreview` 控件的拍照和录像，闪光灯和变焦，最近一张的缩略图和查看器 | `storage`、`camera`、`microphone`、`library` | 无 | 无 |
 | [Mail](mail/bundle) | `os.mail` | 账户、文件夹、邮件列表、阅读（HTML 由服务重建）和写信 | `storage`、`mail` | 无（由服务联网，而不是应用） | [`mail`](mail/host-service) |
 | [AI providers](ai-providers/bundle) | `os.ai-providers` | 助手的大模型服务商：一个主用与若干备用，每项都有来自 octos 模型目录的型号下拉菜单和“测试连接”；添加向导（系列、型号、线路、密钥、测试）；“为手机显示二维码”，以及通过相机、图片或粘贴导入 | `storage`、`llm` | 无（由服务联网，而不是应用） | [`llm`](ai-providers/host-service) |
+| [YouTube](youtube/bundle) | `os.youtube` | YouTube 搜索（运行时无需密钥的 `sys.video`，读取 YouTube 自己的搜索结果页），带缩略图和直播或时长角标的结果列表、话题标签，在 `WebReader` 中播放 YouTube 移动版观看页，以及本机播放记录 | `storage`、`net` | `www.youtube.com`、`m.youtube.com`、`i.ytimg.com` | 无 |
 | [AppCard](appcard) | 原生，需显式启用 | AppCard 助手：路由大脑选择或组合一个应用 Agent，由它生成实时的 Splash 或 webview 卡片。Shell 只在启用 `app-appcard` 时链接它；默认不发布 | 不适用（不是 bundle） | 不适用 | Shell 的 octos 内核 |
 
 每项权限的含义由 App Hub 的封闭列表定义（`crates/app-policy/src/manifest.rs`
@@ -64,6 +65,9 @@ OctoScript-App-Design-Flow 的 `AGENTS.md`，再读 `docs/QUICKSTART.md`），�
 
 ### 状态与已知问题
 
+- **YouTube**：在 OnePlus 6 上测试（2026-09-27），搜索、结果、播放和播放记录都正常；
+  关闭播放器会结束页面（makepad#43，已在运行时中）。播放打开的是 YouTube 移动版观看页，
+  它会静音自动播放，并显示自己的“Open App”提示。搜索读取 YouTube 的搜索结果页，依赖其布局。
 - **Camera**：在 OnePlus 6 测试中（2026-09-25），Camera 能拍照并在后台释放
   相机，但实时预览是纯黑的，尚未解决。桌面构建没有相机，Android 模拟器拒绝
   提供相机，因此其他环境下拍摄未经测试。
