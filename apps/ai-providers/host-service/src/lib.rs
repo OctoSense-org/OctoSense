@@ -72,6 +72,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub mod complete;
 pub mod image_qr;
 pub mod model;
 pub mod probe;
@@ -219,6 +220,22 @@ pub fn register_with(options: Options) {
         generation: 0,
         qr_lifetime: qr_lifetime(options.qr_lifetime_secs),
     }));
+}
+
+/// Offer the `model` service ([`complete`]) over the same profile and vault
+/// as the `llm` service `options` describe: the person's providers, in
+/// their order, with their keys, which no app ever sees. `model` supplies
+/// the rest (grants, limits, a transport for tests); providers it already
+/// names are kept.
+pub fn register_model(options: &Options, model: complete::Options) -> Arc<complete::ModelHost> {
+    let model = if model.providers.is_some() {
+        model
+    } else {
+        let core_dir = resolved_core_dir(options);
+        let vault = options.vault.clone().unwrap_or_else(|| vault::platform(&core_dir));
+        model.providers(Arc::new(complete::ProfileProviders { path: profile::profile_path(&core_dir), vault }))
+    };
+    complete::register_with(model)
 }
 
 /// Where the profile lives: the shell's choice, else the octos kernel's core
