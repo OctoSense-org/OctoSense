@@ -6,7 +6,7 @@ AMD64 userspace execution and platform C/Java/Go compilation pass. The full
 used to align all 1,145 public project revisions. Sources and build output use
 about 135 GB within the approved 400 GB limit. The Soong-only `aapt2` preflight
 passes. The emulated APK build was stopped at the user's request to move to a
-native x86 Linux host. The replacement host `ubuntu@54.198.120.231` accepted
+native x86 Linux host. The replacement host `ubuntu@<build-host>` accepted
 the supplied `octosense.pem` key on 17 September. Its source sync and 1,145-project
 audit pass. The native `aapt2` preflight, upstream Trebuchet APK build and separate
 OctoSense adapter build pass. The locally signed native APK passes inspection.
