@@ -10,8 +10,8 @@ The first templates are ported from the AppCard research experiment ([`apps/appc
 
 | id | What it does | Host calls (max) | Model calls (max) |
 |---|---|---|---|
-| `news-digest` | Optional query translation; search; read the top N articles concurrently; one digest in the requested language with citations | 8 | 2 |
-| `topic-brief` | Translations per language, all started together; one search per language; round-robin merge so every language is represented; read the top N concurrently; one brief | 16 | 5 |
+| `news-digest` | Optional query translation; search; read the top N articles concurrently, skipping results the backend cannot read; one digest in the requested language with citations | 8 | 2 |
+| `topic-brief` | Translations per language, all started together; one search per language; reads in rounds that give every language a read first whenever it found a readable article, skip results the backend cannot read and replace a failed read with that language's next candidate (at most `read_top` + one attempt per language); one brief | 20 | 5 |
 | `weather-plan` | Forecast and air-quality searches started together; reads run concurrently; one plan with citations. Air quality is optional (the result is `partial` without it); a forecast is required (the run fails without it) | 7 | 1 |
 | `market-brief` | One news search per ticker, started together; per-symbol reads run concurrently; one brief (a comparison for several symbols). Research, not advice: v1 has no quote method, so prices appear only as the sources state them | 13 | 1 |
 | `briefing` | Up to four topics searched together; the top articles of each are read concurrently; one briefing | 17 | 1 |
@@ -19,7 +19,7 @@ The first templates are ported from the AppCard research experiment ([`apps/appc
 
 `weather-plan` and `market-brief` adapt the experiment's `weather` and `stock` workflows. Those called `forecast`, `air_quality`, `quote` and `baseline` methods, which `mod.research` v1 does not have. Here they read published forecasts and news. Structured weather and market data will come with the research engine's providers. `briefing` and `compare` come from the experiment's composition set. Its `travel`, `outdoor` and `market` families need places and quotes, which the research module does not provide, so they are deferred.
 
-Every template ships recorded fixtures in `templates/<id>/fixtures/`, with the expected `status` and `data`. The 14 cases include ready, partial and failed runs.
+Every template ships recorded fixtures in `templates/<id>/fixtures/`, with the expected `status` and `data`. The 17 cases include ready, partial and failed runs.
 
 ## Template format
 
@@ -66,19 +66,19 @@ At run time the VM also installs **only** the declared methods, so a call the ch
 1. Refuses the run before it starts if the app lacks a grant the modules need (`research`) or the parameters do not match the schema.
 2. Builds a `CapabilityRuntime` whose only host module is the declared one. Each method is a deferred external tool with its input and output contract from `modules.rs`. The parameters become `request`.
 3. Evaluates the script. Every deferred call is claimed and dispatched to the caller's **`ToolboxHost`**, together with a `CallContext`: the app's identity, grants, scope and folder (`AppContext`), the run and template, the effective budget and what is left of it. Independent calls run concurrently, up to `max_concurrency`.
-4. **Budget**: the run gets the template's budget, narrowed by the app's own budget and its scope's page limit. A call over `max_calls`, `max_model_calls` or `max_pages` is refused before dispatch. The script sees a failed call and can continue (`try … catch`). When `max_ms` elapses, in-flight calls are cancelled and fail as timed out.
+4. **Budget**: the run gets the template's budget, narrowed by the app's own budget and its scope's page limit. A call over `max_calls`, `max_model_calls` or `max_pages` is refused before dispatch. `max_pages` counts **articles read** (each `article` call, whether or not it succeeds). A `search` is one call and is not charged to `max_pages`: how many feeds and APIs it fetches is the backend's configuration (one for the fixture backend, four for the interim adapter below), and charging it let two searches starve the reads (on 27 Sep 2026 a two-language `topic-brief` used 8 of its 10 pages on feeds and read one article). The fan-out is capped at `research::MAX_SEARCH_FETCHES` (8) per search and reported as `stats.search_fetches`. The script sees a failed call and can continue (`try … catch`). When `max_ms` elapses, in-flight calls are cancelled and fail as timed out.
 5. **Output**: the value must be exactly `{status, data}`, and `data` must match the output schema. Any URL in `data` must be one the host retrieved. Otherwise the run is `failed` and no data is published. A `ready` result is downgraded to `partial` when any call was refused, failed or timed out.
 6. **Provenance**: the host returns provenance records with each reply (URL, title, source, retrieval time, evidence hash). The runner keeps them outside the VM and attaches every record whose id or URL `data` refers to.
 7. With `write_result`, the result goes to `<app folder>/toolbox/runs/<template>/<run>.json`.
 
-The result also carries `diagnostics`, `stats` (calls, model calls, pages, denied, failed, peak concurrency, elapsed) and a `trace` of start, complete, denied and timed-out events. The future is not `Send`, because the VM stays on the calling thread.
+The result also carries `diagnostics`, `stats` (calls, model calls, pages, search fetches, denied, failed, peak concurrency, elapsed) and a `trace` of start, complete, denied and timed-out events. The future is not `Send`, because the VM stays on the calling thread.
 
 ## `mod.research` v1
 
 | Method | Input | Output | Charged |
 |---|---|---|---|
 | `query` | `{query, language?}` | `{query, language}`: search terms in `language` | 1 model call |
-| `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at}], source: {partial, providers, queried_at}}` | the pages the backend fetched |
+| `search` | `{topic, language?, region?, limit?, max_age_hours?}` | `{items: [{id, title, url, source, language, published_at, readable}], source: {partial, providers, queried_at}}`, readable items first | 1 call; its fetches are reported, not charged to `max_pages` |
 | `article` | `{id}` (a search result's id from **this run**) | `{id, title, url, source, language, published_at, excerpt, chars, truncated, evidence_sha256}` | 1 page |
 | `digest` | `{task: digest\|brief\|plan\|compare, language, article_ids, focus?}` (articles read in **this run**) | `{task, language, summary, points: [{text, citations, label?}]}` | 1 model call |
 
@@ -87,12 +87,13 @@ The result also carries `diagnostics`, `stats` (calls, model calls, pages, denie
 - **Scope**: every call is checked against the app's scope. Languages and regions are refused when out of scope. Results on denied domains, or outside the allowed ones, are dropped. Recency is capped at the scope's limit.
 - **Ids**: search results get host-assigned ids derived from their URLs. `article` reads only this run's ids, so a template cannot fetch an arbitrary URL.
 - **Evidence**: article text stays in the host, capped at 6000 bytes on a paragraph boundary and hashed. The script sees a 400-byte excerpt and the hash.
-- **Digests**: the host owns the prompts for each task. A model reply is refused when it cites an article it was not given or contains a URL.
+- **Readability**: a backend marks an item `readable: false` when it knows a read would fail (the interim adapter cannot resolve Google News links). The host lists readable items first, before it applies `limit`, and the templates skip unreadable ones instead of spending a read on them.
+- **Digests**: the host owns the prompts for each task, and each prompt states the length limits. Validation is per point. The digest is refused only when its summary is missing, longer than 1200 characters or contains a URL, when the reply is not JSON (a code fence or a line of prose around the object is tolerated), or when no valid point is left. A point with no text, text over 400 characters, a URL, no citation, more than 8, or a citation to an article it was not given is dropped, and the rest are kept; a label over 40 characters or with a URL is dropped from its point; points beyond 12 are dropped. Each drop is a diagnostic (`research.digest (call N): digest point 3 dropped: it has no text`) that never quotes the model. So every point kept cites only articles read in this run, and no model text carries a URL. Lengths are counted in characters, as the output contract's `maxLength` is.
 
 Backends:
 
-- **Fixture** (`fixture::FixtureBackend` and `fixture::FakeModel`): replays recorded searches and pages with their delays. The fake model is deterministic and extractive: it builds each point from an article's first sentence and cites it. Tests and evaluation use this backend.
-- **Interim live adapter** (`research::live`, feature `live`). **Interim**: it is replaced once the octos research engine (octos#2568) and metasearch (octos#2576) land. It fetches only free structured sources: Google News RSS search, the GDELT DOC API and configured RSS/Atom feeds. It never scrapes results pages. Pages are read over plain HTTP, and `dom_smoothie` (MIT, a port of Mozilla's readability.js) extracts the main text. Pages that need JavaScript fail as partial results; Google News article links are among them.
+- **Fixture** (`fixture::FixtureBackend` and `fixture::FakeModel`): replays recorded searches and pages with their delays. A recorded search can say how many feeds it fetched (`fetches`) and mark items `readable: false`. The fake model is deterministic and extractive: it builds each point from an article's first sentence and cites it. Its config can inject a URL into the summary (`inject_url`), a point citing an unknown article (`cite_unknown`), or three invalid points (`malformed_points`). Tests and evaluation use this backend.
+- **Interim live adapter** (`research::live`, feature `live`). **Interim**: it is replaced once the octos research engine (octos#2568) and metasearch (octos#2576) land. It fetches only free structured sources: Google News RSS search, the GDELT DOC API and configured RSS/Atom feeds. It never scrapes results pages. Pages are read over plain HTTP, and `dom_smoothie` (MIT, a port of Mozilla's readability.js) extracts the main text. Pages that need JavaScript fail as partial results; Google News article links are among them, so search marks them `readable: false`. Items from GDELT (with a `sourcelang:` filter) and Google News are tagged with the query's language.
   - **robots.txt is an operator setting, off by default.** OctoSense agents are personal assistants that read on behalf of one person, so robots.txt is not applied by default. That holds for feeds, reads a person starts and autonomous research alike. When it is off, robots.txt is never fetched. An operator turns it on with `LiveConfig { respect_robots: true, .. }` or `OCTOSENSE_TOOLBOX_ROBOTS=1` (read by `LiveConfig::from_env()`). When it is on, the rules are RFC 9309: our product token's group, else `*`; the longest match wins; they are cached per origin; an unreachable robots.txt means the host is not fetched.
   - **Always on, whatever the setting:**
     - an honest User-Agent: `OctoSense-Toolbox/0.1 (octos research for one person; +https://github.com/OctoSense-org/OctoSense)`;
@@ -166,19 +167,37 @@ This flow needs the wiring in [What remains](#what-remains):
 All of these were run on 27 Sep 2026.
 
 ```sh
-cargo test --locked -p octosense-toolbox                     # 35 tests, fixtures only
-cargo test --locked -p octosense-toolbox --features live     # 43 tests: + adapter tests on a local server (robots.txt
-                                                             # never requested by default; honoured when on; SSRF; backoff)
+cargo test --locked -p octosense-toolbox                     # 41 tests, fixtures only
+cargo test --locked -p octosense-toolbox --features live     # 50 tests (3 ignored): + adapter tests on a local server
+                                                             # (robots.txt never requested by default; honoured when on; SSRF; backoff)
 cargo clippy --locked -p octosense-toolbox --all-targets --features live --no-deps -- -D warnings
+cargo fmt --check -p octosense-toolbox
 # The live smoke test: Google News RSS, GDELT and the BBC and Guardian technology
-# feeds, the extractive stand-in model. On 27 Sep 2026: partial, 2 of 3 sources
-# read (the Google News link needs a browser), 48.6 s, of which the
-# search took 48.3 s (one slow provider; not diagnosed further).
+# feeds, the extractive stand-in model. Latest: ready, 3 of 3 sources read,
+# 4 search fetches, 28.7 s.
 cargo test -p octosense-toolbox --features live --test live -- --ignored --nocapture
+# The templates with a real model: DeepSeek deepseek-v4-flash, the same feeds
+# plus BBC 中文. The key is read only from DEEPSEEK_API_KEY; the tests skip
+# without it. Results below.
+DEEPSEEK_API_KEY=… cargo test -p octosense-toolbox --features live --test live_model -- --ignored --nocapture --test-threads=1
 # After changing a template or a fixture: rewrite the lock and the expected
 # results from the current output, then review the diff.
 TOOLBOX_BLESS=1 cargo test -p octosense-toolbox --test templates
 ```
+
+A workspace-wide `cargo fmt --check` reports files outside this crate (the shell, `phone/`, the apps), which this crate's changes do not touch.
+
+### Real-model runs (27 Sep 2026)
+
+`tests/live_model.rs`, topic "OpenAI" (the default; `LIVE_TOPIC` changes it). `topic-brief` searched en (as is) and zh (translated), `per_language` 3, `read_top` 4. GDELT answered HTTP 429 to this network throughout, so the readable sources were the configured feeds.
+
+| Run | news-digest | topic-brief |
+|---|---|---|
+| Before these fixes | `partial`, 2 of 3 read (one Google News link failed); on a second run `digest: null`: "model output rejected: a point has no text" | `partial`, pages 10 of 10, 1 read refused (`max_pages`), 2 reads failed on Google News links; zh not read; the brief rested on 1 article |
+| "OpenAI", after | `partial` (a provider failed), 3 of 3 read (BBC, Guardian ×2), 12 points, no drops, pages 3, search fetches 4 | `partial`: en read 3 (BBC, Guardian ×2); zh found 3, all Google News links, skipped as unreadable, so zh had nothing to read. Pages 3, denied 0, failed 0, 12 points, no drops |
+| "Trump", after | `partial`: all 3 results were Google News links, skipped; nothing read, no model call | `partial`: zh ("特朗普") read 3 from BBC 中文; en found 3, all Google News links, skipped. Pages 3, denied 0, failed 0, 12 points, no drops |
+
+Earlier runs of the same code, before the prompt stated the length limits, dropped 1 to 4 points per digest as "longer than 400" and kept the rest; one dropped a thirteenth point. Two limits of the data remain. DeepSeek leaves "OpenAI" as it is in zh, and Google News with `hl=zh` then returns English stories as Google News links. And the configured BBC 中文 feed redirects to the Traditional-script edition, so Simplified search terms (中国) do not match its titles (中國).
 
 `octoscript-schema` turns on `serde_json`'s `arbitrary_precision` feature for any build that includes this crate. The shells do not link it today. Check this before they do.
 
