@@ -434,7 +434,7 @@ Found while writing this page (2026-09-28); none is fixed here, as this change i
 6. **Command execution "turned on in Settings"** (`crates/kernel/README.md`, `system_tools.rs` docs): no Settings switch exists yet; `SystemAgentTools::grant_command_execution` is a seam.
 7. **`host::processes_available()`'s test** checks only `wasm32` while the function also excludes native mobile.
 8. **Approvals, ADR 0004 §8.** Every app tool call is to reach the router through `peer/tool/call`; today only the AI bus feeds it (above). No app registers its own `confirm: app` sheet, so such a call would wait and be refused. The audit keeps a digest of the arguments, not the arguments. The send queue and undo window are not built.
-9. **Storage, ADR 0004 §11.** Secrets use the OS keychain only on macOS and iOS (plaintext 0600 files elsewhere). The startup check refuses workspaces that reach the secrets through links or containment rather than looking for a `secrets/` path, and does not stop startup. `storage.accounts` defaults to `false` in `spec.rs` but `consent.rs` treats a missing value as `true`.
+9. **Storage, ADR 0004 §11.** Secrets use the OS keychain only on macOS and iOS (plaintext 0600 files elsewhere). The startup check refuses workspaces that reach the secrets through links or containment rather than looking for a `secrets/` path, and does not stop startup. (Fixed: `storage.accounts` defaults to `false` in both app storage and the consent sheet, which now reads `StorageSpec`.)
 10. **Developer mode, ADR 0004 §13.** `dev.run` is not registered; Settings turns it on only for all apps (a chosen list only through `OCTOSENSE_DEV_MODE`); there is no phone gesture; in-process modules still show their own confirmation sheets.
 
 ## Source map

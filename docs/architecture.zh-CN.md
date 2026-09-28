@@ -434,7 +434,7 @@ sequenceDiagram
 6. **“在 Settings 中开启”命令执行**（`crates/kernel/README.md`、`system_tools.rs` 文档）：还没有 Settings 开关；`SystemAgentTools::grant_command_execution` 只是接口。
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都应通过 `peer/tool/call` 到达路由；目前只有 AI 总线向它提交请求（见上文）。没有应用注册自己的 `confirm: app` 面板，因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。
-9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。`spec.rs` 中 `storage.accounts` 默认为 `false`，而 `consent.rs` 把缺省值当作 `true`。
+9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。（已修复：app storage 和同意面板中 `storage.accounts` 都默认为 `false`，同意面板现在读取 `StorageSpec`。）
 10. **开发者模式，ADR 0004 §13。** `dev.run` 尚未注册；Settings 只能为所有应用开启（选定应用只能通过 `OCTOSENSE_DEV_MODE`）；手机上没有开启手势；进程内模块仍会显示自己的确认面板。
 
 ## 源码位置

@@ -230,7 +230,7 @@ The contract, one block in both manifests (App Hub's `manifest.json` extends its
 }
 ```
 
-- `accounts`: the app keeps data per account (one agent per account); `false` means one `device` folder.
+- `accounts`: the app keeps data per account (one agent per account); `false`, the default, means one `device` folder (an app with accounts declares `true`).
 - `agent_workspace`: `"account"` (default: the account folder) or `"none"` (the agent reads no files; tools only).
 - `external`: native apps only, paths outside the jail the app needs, reviewed in `native-apps.json` (the terminal's `home:rw`). They are part of its OS sandbox and are **never** in an agent's workspace.
 
