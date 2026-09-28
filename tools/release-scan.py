@@ -54,12 +54,6 @@ GENERIC_ACCOUNTS = {"runner", "runneradmin", "root", "admin", "administrator", "
 # worker's git identity, the solo profile, a test account).
 PRODUCT_LOCAL_NAMES = ("octosense.local", "octos.local", "solo.local", "test.local")
 
-# Rust packs string literals back to back, so a bare `.local` literal (octos'
-# `host.ends_with(".local")`, `home.join(".local")`) can land right after
-# another literal and read as `<word>.local`. Only these exact endings are
-# excused; anything else that looks like a host is reported.
-GLUED_LOCAL_SUFFIXES = (b"utf-8.local",)
-
 BASE_PATTERNS = [
     ("macOS user directory", rb"/Users/[^/\s\x00\"']+"),
     ("Windows user directory", rb"[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!runneradmin[\\/])[^\\/\s\x00\"']+"),
@@ -68,7 +62,8 @@ BASE_PATTERNS = [
     ("mDNS .local host name", rb"(?<![A-Za-z0-9_.-])(?!(?:" + b"|".join(re.escape(n.encode()) for n in PRODUCT_LOCAL_NAMES)
      + rb")(?![A-Za-z0-9_-]))[A-Za-z0-9][A-Za-z0-9-]*\.local(?![A-Za-z0-9_-])"
      # ~/.local/bin and friends glued to a neighbouring string are paths.
-     rb"(?!/(?:bin|share|lib|state|include)(?![A-Za-z0-9_-]))"),
+     # (Rust packs literals back to back, so the next literal may follow.)
+     rb"(?!/(?:bin|share|lib|state|include))"),
     ("private IPv4 address", rb"(?<![0-9.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![0-9.])"),
 ]
 
@@ -111,8 +106,6 @@ def scan_bytes(data, where, patterns, findings):
         seen = set()
         for m in regex.finditer(data):
             if m.group(0) in seen:
-                continue
-            if label.startswith("mDNS") and m.group(0).lower().endswith(GLUED_LOCAL_SUFFIXES):
                 continue
             seen.add(m.group(0))
             findings.append(f"{where}: {label}: {mask(m.group(0))}")

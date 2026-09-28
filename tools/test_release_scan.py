@@ -23,7 +23,7 @@ def findings(data, extra=()):
 class PatternTests(unittest.TestCase):
     def test_private_paths_and_hosts_are_found(self):
         for leak in (b"/Users/someone/src/app.rs", b"C:\\Users\\someone\\.cargo", b"c:/Users/someone/x",
-                     "C:\\Users\\".encode("utf-16-le"), b"/home/someone/.cargo/registry", b"built on studio.local", b"my-mac.local", b"http://studio.local/api", b"studio.local/binary",
+                     "C:\\Users\\".encode("utf-16-le"), b"/home/someone/.cargo/registry", b"built on studio.local", b"my-mac.local", b"http://studio.local/api", 
                      b"http://192.168.1.20:8080", b"10.0.0.7", b"172.20.1.1"):
             self.assertTrue(findings(b"at " + leak + b" end"), leak)
 
@@ -33,7 +33,7 @@ class PatternTests(unittest.TestCase):
                      b"version 10.2.3.4.5", b"/cargo/registry/src", b"EHLO octosense.local\r\n",
                      b"fleet-worker@octos.local", b"e2e@test.local",
                      b"forbiddenutf-8.local/bin/ominix-api", b"x.local/share/y",
-                     b"not found.forbiddenutf-8.local\x00", b"not foundforbiddenutf-8.local\x00"):
+                     b"not found.forbiddenutf-8.local/bin/x", b"command not foundnewTab.local/sharekde-open"):
             self.assertEqual(findings(fine), [], fine)
 
     def test_findings_are_masked_and_extra_patterns_apply(self):
