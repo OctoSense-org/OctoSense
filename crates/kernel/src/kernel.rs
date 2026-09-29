@@ -288,6 +288,9 @@ pub(crate) struct GenerationConfig {
     pub network: Arc<Network>,
     pub core_dir: PathBuf,
     pub log: LogSink,
+    /// Why this generation must not start (its tool policy could not be
+    /// enforced: `launch::prepare`); it then ends as `Failed` at once.
+    pub refused: Option<String>,
 }
 
 /// Run a generation until it is stopped or its kernel ends.
@@ -298,12 +301,15 @@ pub(crate) async fn supervise(
     done: watch::Sender<bool>,
     ended: impl FnOnce() + Send,
 ) {
-    let GenerationConfig { generation, launch, network, core_dir, log } = config;
+    let GenerationConfig { generation, launch, network, core_dir, log, refused } = config;
     let mut consumers: HashMap<ConnId, mpsc::UnboundedSender<Inbound>> = HashMap::new();
     let mut router = Router::new(&core_dir);
     let tail = Tail::default();
     (log)(&format!("octos-core: starting kernel {generation}: {}", describe(&launch)));
-    let started = start(&launch, &network, &log, &tail);
+    let started = match refused {
+        Some(why) => Err(why),
+        None => start(&launch, &network, &log, &tail),
+    };
     let reason = match started {
         Err(e) => {
             (log)(&format!("octos-core: kernel {generation} did not start: {e}"));

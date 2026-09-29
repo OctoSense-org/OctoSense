@@ -279,3 +279,31 @@ async fn a_kernel_that_cannot_start_fails_the_connection() {
     let mut a = core.connect().unwrap();
     assert!(matches!(next(&mut a).await, Err(CloseReason::Failed(_))));
 }
+
+/// G13 (ADR 0004 §12): a tool policy that cannot be enforced (here a
+/// foreign one in the profile) starts no kernel: the connection closes
+/// with the reason and the program never runs. Once the profile is
+/// OctoSense's again, the next connection starts it with the policy.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tool_policy_that_cannot_be_enforced_starts_no_kernel() {
+    let (core, log) = core("foreign-policy");
+    let dir = core.core_dir().unwrap();
+    let profile = octosense_kernel::dirs::profile_path(&dir);
+    std::fs::create_dir_all(profile.parent().unwrap()).unwrap();
+    let foreign = r#"{"id":"_main","config":{"tool_policy":{"allow":["*"]}}}"#;
+    std::fs::write(&profile, foreign).unwrap();
+    let mut conn = core.connect().unwrap();
+    match next(&mut conn).await {
+        Err(CloseReason::Failed(why)) => assert!(why.contains("tool policy") && why.contains("not started"), "{why}"),
+        other => panic!("the kernel must not start: {other:?}"),
+    }
+    assert!(!log.exists(), "the kernel program never ran");
+    assert_eq!(std::fs::read_to_string(&profile).unwrap(), foreign, "the person's policy is left alone");
+    // The profile is OctoSense's again: the next start writes the policy.
+    std::fs::write(&profile, r#"{"id":"_main","config":{}}"#).unwrap();
+    let mut conn = core.connect().unwrap();
+    let listed = call(&mut conn, "1", "session/list", json!({})).await;
+    assert!(listed["pid"].is_u64(), "{listed}");
+    let written: Value = serde_json::from_str(&std::fs::read_to_string(&profile).unwrap()).unwrap();
+    assert_eq!(written["config"]["tool_policy"], octosense_kernel::system_tools::tool_policy());
+}
