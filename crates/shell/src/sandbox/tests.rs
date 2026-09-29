@@ -46,6 +46,11 @@ fn jail_only(root: &Path, hub_port: u16) -> Policy {
         accounts: false,
         external: &[],
         storage: "{}",
+        tools_json: "[]",
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     };
     // The scratch root stands in for the person's home: closed but for the
     // jail. The probe's tools are its program.

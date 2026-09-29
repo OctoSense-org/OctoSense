@@ -76,6 +76,19 @@ pub struct NativeApp {
     /// The whole `storage` block as JSON, which the shell parses with
     /// `app_storage::StorageSpec` at startup (ADR 0004 §11).
     pub storage: &'static str,
+    /// `agent.tools`: its own tools, the `tools.json` entries (a JSON
+    /// array; empty when it declares none).
+    pub tools_json: &'static str,
+    /// `agent.generic_tools`: exactly the octos kernel tools its agent
+    /// gets (none when empty; never octos's shell).
+    pub generic_tools: &'static [&'static str],
+    /// `agent.grants`: other apps' shareable tools its agent may call,
+    /// as (owning app, tool).
+    pub grants: &'static [(&'static str, &'static str)],
+    /// `agent.budget`: its agent's tool calls per turn and per day
+    /// (`None`: the shell's defaults).
+    pub calls_per_turn: Option<u32>,
+    pub calls_per_day: Option<u32>,
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -97,6 +110,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: true,
         external: &[],
         storage: r#"{"accounts": true, "agent_workspace": "account", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &["read_file", "write_file", "edit_file", "diff_edit", "apply_patch", "glob", "grep", "list_dir", "code_structure", "ask_user_question", "view_image", "recall", "recall_memory", "memory_search", "memory_load", "save_memory", "memory_note", "web_search", "web_fetch", "tool_search"],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
     NativeApp {
         id: "reference",
@@ -116,6 +134,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
     NativeApp {
         id: "sheets",
@@ -135,6 +158,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
     NativeApp {
         id: "terminal",
@@ -156,6 +184,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &["home:rw"],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
+        tools_json: r##"[{"name":"terminal.run","description":"Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.","input_schema":{"type":"object","properties":{"command":{"type":"string","maxLength":4096}},"required":["command"],"additionalProperties":false},"risk":"destructive","confirm":"host","shareable":true},{"name":"terminal.read_screen","description":"Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"read","shareable":true},{"name":"terminal.read_scrollback","description":"Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).","input_schema":{"type":"object","properties":{"lines":{"type":"integer","minimum":1,"maximum":2000}},"additionalProperties":false},"risk":"read","shareable":true}]"##,
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
     NativeApp {
         id: "appcard",
@@ -175,6 +208,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
     NativeApp {
         id: "apphub",
@@ -194,6 +232,11 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &[],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
+        tools_json: r##"[]"##,
+        generic_tools: &[],
+        grants: &[],
+        calls_per_turn: None,
+        calls_per_day: None,
     },
 ];
 

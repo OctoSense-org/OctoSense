@@ -17,9 +17,13 @@ it, each between `# BEGIN native-apps: <block>` and `# END native-apps:
   desktop/Cargo.toml,    the package's default features and the forwarded
   phone/Cargo.toml       `app-<id>` / `mobile-apps` features ("features")
 
-and the whole of `crates/shell/src/native_apps.rs`: what `linked_modules()`
-pushes under which feature, and each app's hosting per target (the default
-the shell uses when the person has not switched an app).
+the whole of `crates/shell/src/native_apps.rs`: what `linked_modules()`
+pushes under which feature, each app's hosting per target (the default the
+shell uses when the person has not switched an app) and its agent block
+(its own tools, the kernel tools and other apps' tools its agent is
+granted, its tool-call budget); and the whole of
+`crates/ai-host/src/native_agents.rs`: the `octos.*` services each app's
+agent is granted, which `Policy::shipped()` hands out.
 
 It refuses `process` hosting on mobile or wasm targets, plain `process` on
 Linux (non-Vulkan Linux runs every app in-process: `process-if-vulkan`),
@@ -41,6 +45,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = "native-apps.json"
 RUST_FILE = "crates/shell/src/native_apps.rs"
+AGENTS_FILE = "crates/ai-host/src/native_agents.rs"
 PACKAGES = {"desktop": "desktop/Cargo.toml", "phone": "phone/Cargo.toml"}
 
 TARGETS = ("macos", "windows", "linux", "android", "ios", "ohos")
@@ -169,6 +174,8 @@ def validate(data):
             problems.append(f"{where}: agent.octos must be a list")
         if isinstance(app["agent"], dict):
             problems += [f"{where}: {p}" for p in tool_policy_problems(app["agent"].get("tool_policy", {}))]
+            problems += [f"{where}: {p}" for p in agent_problems(ident, app["agent"])]
+    problems += grant_problems([a for a in data["apps"] if isinstance(a, dict) and isinstance(a.get("agent"), dict)])
     if problems:
         raise ManifestError(f"{MANIFEST}:\n  " + "\n  ".join(problems))
     return data["apps"]
@@ -239,6 +246,122 @@ def tool_policy_problems(policy):
             problems.append(f"agent.tool_policy.{tool}.confirm must be 'host' or 'app'")
         elif not isinstance(rule["auto_approvable"], bool):
             problems.append(f"agent.tool_policy.{tool}.auto_approvable must be true or false")
+    return problems
+
+
+AGENT_KEYS = {"octos", "tools", "generic_tools", "grants", "tool_policy", "budget"}
+# The fields a `tools.json` entry may carry (octos `ToolDecl`, UPCR-2026-035);
+# `app` is the shell's to set.
+DECL_FIELDS = {"name", "description", "input_schema", "output_schema", "risk", "background", "outward", "confirm", "shareable"}
+RISKS = ("read", "act", "destructive")
+# octos's own shell: never granted to an app agent (ADR 0004 §12); command
+# execution is a host tool (`terminal.run`) with a live approval.
+OCTOS_SHELL = ("shell", "bash", "exec_command", "write_stdin", "group:runtime")
+
+
+def agent_problems(ident, agent):
+    """The agent block (ADR 0004 §1, §7, §12): `octos` (its `octos.*`
+    services), `tools` (null, or its own `tools.json` entries, named
+    `<id>.<tool>`), `generic_tools` (the exact octos kernel tools its agent
+    gets; never octos's shell), `grants` (other apps' shareable tools,
+    `{"app", "tool"}`), `budget` (`calls_per_turn`, `calls_per_day`)."""
+    problems = []
+    unknown = sorted(set(agent) - AGENT_KEYS)
+    if unknown:
+        problems.append(f"agent: unknown {', '.join(unknown)}")
+    tools = agent.get("tools")
+    names = []
+    if tools is not None:
+        if not isinstance(tools, list) or not tools:
+            problems.append("agent.tools must be null or a non-empty list of tools.json entries")
+            tools = []
+        for i, tool in enumerate(tools):
+            where = f"agent.tools[{i}]"
+            if not isinstance(tool, dict):
+                problems.append(f"{where}: not an object")
+                continue
+            extra = sorted(set(tool) - DECL_FIELDS)
+            if extra:
+                problems.append(f"{where}: unknown {', '.join(extra)} (the kernel refuses them)")
+            name = tool.get("name")
+            if not isinstance(name, str) or not re.fullmatch(rf"{re.escape(ident)}(\.[a-z][a-z0-9_]*)+", name):
+                problems.append(f"{where}: name must be {ident}.<tool>")
+            elif name in names:
+                problems.append(f"{where}: {name} is declared twice")
+            else:
+                names.append(name)
+            if not isinstance(tool.get("description"), str) or not tool["description"].strip():
+                problems.append(f"{where}: description is required")
+            schema = tool.get("input_schema")
+            if not isinstance(schema, dict) or schema.get("type") != "object":
+                problems.append(f"{where}: input_schema must describe an object")
+            if "output_schema" in tool and not isinstance(tool["output_schema"], dict):
+                problems.append(f"{where}: output_schema must be a schema object")
+            if tool.get("risk") not in RISKS:
+                problems.append(f"{where}: risk must be one of {', '.join(RISKS)}")
+            if tool.get("confirm", "host") not in ("host", "app"):
+                problems.append(f"{where}: confirm must be 'host' or 'app'")
+            for flag in ("shareable", "background", "outward"):
+                if flag in tool and not isinstance(tool[flag], bool):
+                    problems.append(f"{where}: {flag} must be true or false")
+    policy = agent.get("tool_policy", {})
+    if isinstance(policy, dict) and tools is not None:
+        short = {n.split(".", 1)[1] for n in names}
+        for rule in policy:
+            if rule not in short:
+                problems.append(f"agent.tool_policy.{rule}: {ident} declares no tool {ident}.{rule}")
+    generic = agent.get("generic_tools", [])
+    if not isinstance(generic, list):
+        problems.append("agent.generic_tools must be a list of octos tool names")
+        generic = []
+    for g in generic:
+        if g in OCTOS_SHELL:
+            problems.append(f"agent.generic_tools: {g} is octos's own shell, which no app agent gets "
+                            "(ADR 0004 §12: command execution is a host tool)")
+        elif not (isinstance(g, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", g)):
+            problems.append(f"agent.generic_tools: {g!r} is not an octos tool name")
+    if len(set(map(str, generic))) != len(generic):
+        problems.append("agent.generic_tools names a tool twice")
+    budget = agent.get("budget")
+    if budget is not None:
+        if not isinstance(budget, dict) or not set(budget) <= {"calls_per_turn", "calls_per_day"}:
+            problems.append("agent.budget is {calls_per_turn?, calls_per_day?}")
+        else:
+            for key, value in budget.items():
+                if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                    problems.append(f"agent.budget.{key} must be a positive integer")
+    grants = agent.get("grants", [])
+    if not isinstance(grants, list) or not all(isinstance(g, dict) and set(g) == {"app", "tool"}
+                                               and all(isinstance(g[k], str) for k in g) for g in grants):
+        problems.append('agent.grants must be a list of {"app": <owning app>, "tool": <its tool>}')
+    return problems
+
+
+def grant_problems(apps):
+    """Each cross-app grant names another app's shareable tool: a native
+    owner's tool must be in its `agent.tools` and `shareable`; a script
+    owner (`os.*`) is checked when App Hub loads its `tools.json`."""
+    problems = []
+    declared = {a.get("id"): {t.get("name"): t for t in (a["agent"].get("tools") or []) if isinstance(t, dict)} for a in apps}
+    for app in apps:
+        grants = app["agent"].get("grants", [])
+        if not isinstance(grants, list):
+            continue
+        for grant in grants:
+            if not isinstance(grant, dict) or set(grant) != {"app", "tool"}:
+                continue
+            owner, tool = grant["app"], grant["tool"]
+            where = f"{app.get('id')}: agent.grants {owner}/{tool}"
+            if owner == app.get("id"):
+                problems.append(f"{where}: an app's own tools need no grant")
+            elif owner in declared:
+                entry = declared[owner].get(tool)
+                if entry is None:
+                    problems.append(f"{where}: {owner} declares no {tool}")
+                elif entry.get("shareable") is not True:
+                    problems.append(f"{where}: {tool} is not shareable")
+            elif not (isinstance(owner, str) and owner.startswith("os.")):
+                problems.append(f"{where}: no native app {owner}, and not a system app (os.*)")
     return problems
 
 
@@ -453,6 +576,19 @@ def render_rust(apps):
         "    /// The whole `storage` block as JSON, which the shell parses with",
         "    /// `app_storage::StorageSpec` at startup (ADR 0004 §11).",
         "    pub storage: &'static str,",
+        "    /// `agent.tools`: its own tools, the `tools.json` entries (a JSON",
+        "    /// array; empty when it declares none).",
+        "    pub tools_json: &'static str,",
+        "    /// `agent.generic_tools`: exactly the octos kernel tools its agent",
+        "    /// gets (none when empty; never octos's shell).",
+        "    pub generic_tools: &'static [&'static str],",
+        "    /// `agent.grants`: other apps' shareable tools its agent may call,",
+        "    /// as (owning app, tool).",
+        "    pub grants: &'static [(&'static str, &'static str)],",
+        "    /// `agent.budget`: its agent's tool calls per turn and per day",
+        "    /// (`None`: the shell's defaults).",
+        "    pub calls_per_turn: Option<u32>,",
+        "    pub calls_per_day: Option<u32>,",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -486,6 +622,17 @@ def render_rust(apps):
         external = ", ".join(s(x) for x in app["storage"]["external"])
         out.append(f"        external: &[{external}],")
         out.append(f"        storage: {rust_raw(json.dumps(app['storage'], separators=(', ', ': ')))},")
+        agent = app["agent"]
+        tools = json.dumps(agent.get("tools") or [], separators=(",", ":"), ensure_ascii=False)
+        out.append(f"        tools_json: r##\"{tools}\"##,")
+        generic = ", ".join(s(x) for x in agent.get("generic_tools", []))
+        out.append(f"        generic_tools: &[{generic}],")
+        grants = ", ".join(f"({s(g['app'])}, {s(g['tool'])})" for g in agent.get("grants", []))
+        out.append(f"        grants: &[{grants}],")
+        budget = agent.get("budget") or {}
+        for key in ("calls_per_turn", "calls_per_day"):
+            value = f"Some({budget[key]})" if key in budget else "None"
+            out.append(f"        {key}: {value},")
         out.append("    },")
     out += [
         "];",
@@ -539,6 +686,27 @@ def render_rust(apps):
             out += [f"        out.push(&{m});" for m in modules]
             out.append("    }")
     out += ["}", ""]
+    return "\n".join(out)
+
+
+def render_agents(apps):
+    """`crates/ai-host/src/native_agents.rs`: the agent grants
+    `Policy::shipped()` hands out, one line per app granted `octos.*`."""
+    out = [
+        "//! @generated by tools/native_apps.py from native-apps.json: do not edit;",
+        "//! change the manifest and run the script (ADR 0004 §1, §4).",
+        "//!",
+        "//! The native apps whose reviewed entry grants their agent `octos.*`",
+        "//! services (`agent.octos`): what [`crate::Policy::shipped`] hands out.",
+        "",
+        "/// (app id, the `octos.*` services its agent is granted).",
+        "pub const NATIVE_AGENTS: &[(&str, &[&str])] = &[",
+    ]
+    for app in apps:
+        octos = app["agent"]["octos"]
+        if octos:
+            out.append(f"    ({s(app['id'])}, &[{', '.join(s(x) for x in octos)}]),")
+    out += ["];", ""]
     return "\n".join(out)
 
 
@@ -631,6 +799,7 @@ def generate(root):
             raise ManifestError(f"{rel} is missing")
         out[rel] = (text, replace_blocks(text, package_block(apps, shell, text), rel))
     out[RUST_FILE] = (read(RUST_FILE), render_rust(apps))
+    out[AGENTS_FILE] = (read(AGENTS_FILE), render_agents(apps))
     return out
 
 
