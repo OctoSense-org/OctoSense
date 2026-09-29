@@ -47,7 +47,7 @@ impl OctosContext for FakeContext {
         }
         match op {
             ContextOp::Approval { .. } => {}
-            ContextOp::Turn { .. } => match &self.turn {
+            ContextOp::Turn { .. } | ContextOp::TurnFrom { .. } => match &self.turn {
                 Turn::Reply(v) => sink(ContextEvent::Complete(Ok(v.clone()))),
                 Turn::ApproveThenReply(id, title, v) => {
                     sink(ContextEvent::Data(json!({
@@ -188,10 +188,27 @@ fn contained_turn_reaches_app_peer_and_replies() {
     let reply = ask(APP, "octos.turn.start", json!({"text": "hi"}), false).expect("a reply");
     assert_eq!(reply["text"], "你好");
     assert_eq!(peers.ids(), vec!["card.com.example.trip".to_string()]);
-    assert_eq!(peers.ops("card.com.example.trip"), vec![ContextOp::Turn { text: "hi".into() }]);
+    assert_eq!(peers.ops("card.com.example.trip"), vec![ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Unknown }], "a turn that says nothing is unknown");
     let service = peers.service("card.com.example.trip");
     assert_eq!(service.accounts.lock().unwrap().clone(), vec![Some(ACCOUNT.to_string())]);
     assert_eq!(service.specs.lock().unwrap()[0].account, ACCOUNT);
+}
+
+#[test]
+fn contained_turns_carry_what_started_them() {
+    let _g = serial();
+    let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
+    register(true, &peers);
+    ask(APP, "octos.turn.start", json!({"text": "hi", "trigger": "person"}), false).expect("a reply");
+    ask(APP, "octos.turn.start", json!({"text": "new mail", "trigger": "incoming", "from": "bo@example.org"}), false).expect("a reply");
+    ask(APP, "octos.turn.start", json!({"text": "tick", "trigger": "schedule"}), false).expect("a reply");
+    ask(APP, "octos.turn.start", json!({"text": "hm", "trigger": "system_agent"}), false).expect("a reply");
+    let triggers: Vec<TurnTrigger> = peers.ops("card.com.example.trip").into_iter().filter_map(|op| op.turn().map(|(_, t)| t)).collect();
+    assert_eq!(
+        triggers,
+        vec![TurnTrigger::Person, TurnTrigger::Incoming { from: Some("bo@example.org".into()) }, TurnTrigger::App, TurnTrigger::Unknown],
+        "an app never claims the system agent"
+    );
 }
 
 #[test]
