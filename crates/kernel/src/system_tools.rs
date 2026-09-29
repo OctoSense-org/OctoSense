@@ -4,8 +4,8 @@
 //! - [`SYSTEM_AGENT_TOOLS`]: the octos tools the system agent
 //!   (`_main:api:octosense#system`) gets by default. With what the person
 //!   grants it ([`SystemAgentTools`]: toolbox tools, other apps' shareable
-//!   tools, and, planned, command execution behind a Settings switch that
-//!   does not exist yet; see [`SystemAgentTools::grant_command_execution`])
+//!   tools, and command execution behind the Setup → Assistant → Command
+//!   execution switch (#132); see [`SystemAgentTools::grant_command_execution`])
 //!   that is its whole set: ADR 0004 §12's "exactly its grants".
 //! - [`tool_policy`]: the `_main` profile's policy, the ceiling for every
 //!   `_main` session. It is every tool any grant can give: OctoSense
@@ -32,10 +32,13 @@
 //!   client's turns on the session, so the shell registers without it; the
 //!   exact list waits for a durable host-only list (octos#2605). The
 //!   real-kernel exact-list test is kept, ignored until then.
-//! - **App peers are not capped below what they can be granted**: each is
-//!   narrowed to its grants by its turns' `generic_tools` (octos#2567, plan
-//!   step 6). Host-routed tools (app, toolbox, cross-app tools, command
-//!   execution) are registered after the policy, so it never strips them.
+//! - **App peers are not capped below what they can be granted**, and are
+//!   not yet narrowed to their grants either: the broker registers them with
+//!   `generic_tools` omitted, so each keeps octos's whole kernel roster
+//!   except what this policy denies (octos's shell). Narrowing each peer to
+//!   its grants through `generic_tools` is plan step 6, not done yet.
+//!   Host-routed tools (app, toolbox, cross-app tools, command execution)
+//!   are registered after the policy, so it never strips them.
 //! - **Talk to Octos external turns are unaffected**: octos confines them to
 //!   its external allowlist ([`EXTERNAL_TURN_TOOLS`]), none of which is the
 //!   shell (UPCR-2026-036).
