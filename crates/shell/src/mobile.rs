@@ -122,9 +122,9 @@ pub struct PhoneState {
     /// stretch that eases back after the lift.
     pub search_stretch: f64,
     pub search_scroll_limit: f64,
-    /// The last finger sample on the drawer (y, time) the velocity is
-    /// measured against.
-    pub search_track: Option<(f64, f64)>,
+    /// The finger's recent samples on the drawer (y, time), newest last:
+    /// the lift velocity is measured over them (`search_lift`).
+    pub search_track: Vec<(f64, f64)>,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -163,7 +163,7 @@ impl Default for PhoneState {
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
-            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: None,
+            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(),
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -182,6 +182,16 @@ impl Default for PhoneState {
             android: Default::default() }
     }
 }
+/// How much of the finger's travel past an end of the drawer list shows as
+/// stretch, and the most it can stretch.
+pub const SEARCH_STRETCH: f64 = 0.45;
+pub const SEARCH_STRETCH_MAX: f64 = 72.0;
+/// How far back the drawer's lift velocity looks, in seconds.
+const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
+/// The flicked drawer's friction: its speed falls by e every 1/k seconds,
+/// so it coasts v/k points (a quarter of the lift speed per second).
+const SEARCH_FRICTION: f64 = 4.0;
+
 impl PhoneState {
     pub fn navigation_rect(&self) -> Rect {
         // The native KeyboardView already resizes this viewport above the
@@ -243,6 +253,7 @@ impl PhoneState {
         self.search_scroll = 0.0;
         self.search_velocity = 0.0;
         self.search_stretch = 0.0;
+        self.search_track.clear();
     }
     pub fn step(&mut self, dt: f64) -> bool {
         let reduced = self.android.reduce_motion;
@@ -288,7 +299,7 @@ impl PhoneState {
             if self.gesture.is_none() && self.screen == PhoneScreen::Drawer {
                 let before = self.search_scroll;
                 self.search_scroll = (self.search_scroll - self.search_velocity * dt).clamp(0.0, self.search_scroll_limit);
-                self.search_velocity *= (-dt * 4.0).exp();
+                self.search_velocity *= (-dt * SEARCH_FRICTION).exp();
                 if self.search_velocity.abs() < 30.0 || self.search_scroll == before { self.search_velocity = 0.0; }
                 active = true;
             } else { self.search_velocity = 0.0; }
@@ -318,6 +329,49 @@ impl PhoneState {
     }
     pub fn searching(&self) -> bool {
         self.screen == PhoneScreen::Drawer && self.search_open
+    }
+    /// A finger landed on the drawer list: a coasting list stops under it.
+    pub fn search_touch(&mut self, y: f64, time: f64) {
+        self.search_velocity = 0.0;
+        self.search_track.clear();
+        self.search_track.push((y, time));
+    }
+    /// The finger on the drawer list moved by `dy` points (down positive) to
+    /// `y` at `time`; `max` is how far the list scrolls. The list follows
+    /// the finger 1:1. Past either end it stretches at `SEARCH_STRETCH` of
+    /// the finger's travel (up to `SEARCH_STRETCH_MAX`), and a finger that
+    /// turns back takes the stretch up before the list moves again.
+    pub fn search_drag(&mut self, dy: f64, y: f64, time: f64, max: f64) {
+        let max = max.max(0.0);
+        // Where the finger has put the list, in scroll points; beyond
+        // 0..max it is the overscroll the stretch shows.
+        let pos = self.search_scroll.clamp(0.0, max) - self.search_stretch / SEARCH_STRETCH - dy;
+        if pos < 0.0 {
+            self.search_scroll = 0.0;
+            self.search_stretch = (-pos * SEARCH_STRETCH).min(SEARCH_STRETCH_MAX);
+        } else if pos > max {
+            self.search_scroll = max;
+            self.search_stretch = -((pos - max) * SEARCH_STRETCH).min(SEARCH_STRETCH_MAX);
+        } else {
+            self.search_scroll = pos;
+            self.search_stretch = 0.0;
+        }
+        // Samples older than the velocity window are of no further use.
+        self.search_track.retain(|(_, t)| time - *t <= SEARCH_VELOCITY_WINDOW);
+        if self.search_track.len() >= 16 { self.search_track.remove(0); }
+        self.search_track.push((y, time));
+    }
+    /// The finger left the drawer list at `time`. A list flicked past the
+    /// slop keeps going at the finger's speed over the last tenth of a
+    /// second; a lift after a pause, or a tap, leaves it where it is. The
+    /// stretch eases back in `step`.
+    pub fn search_lift(&mut self, time: f64, moved: bool) {
+        let velocity = match (self.search_track.first(), self.search_track.last()) {
+            (Some(&(y0, t0)), Some(&(y1, t1))) if t1 - t0 > 0.004 && time - t1 < 0.08 => (y1 - y0) / (t1 - t0),
+            _ => 0.0,
+        };
+        self.search_velocity = if moved && velocity.abs() > 250.0 && self.search_stretch == 0.0 { velocity } else { 0.0 };
+        self.search_track.clear();
     }
 }
 
@@ -409,6 +463,112 @@ mod tests {
         phone.step(1.0/60.0);
         assert_eq!(phone.search_scroll,510.0,"reduced motion cannot advance the physics clock");
         assert!(phone.search_velocity < -500.0);
+    }
+
+    /// A finger on the drawer the way phone_pointer_at (mobile_app.rs)
+    /// drives it: the recognizer first; while it owns nothing the list
+    /// scrolls; a committed Back from the library goes Home (commit_gesture).
+    fn drawer_finger(phone: &mut PhoneState, points: &[(f64, f64)], secs: f64) {
+        use crate::mobile_gestures::*;
+        let ctx = GestureContext { screen: phone.viewport, insets: SafeInsets::default(), phone: phone.screen, body: true, system_edges: true, shade: false };
+        let zones = ExclusionZones::default();
+        let mut rec = GestureRecognizer::default();
+        let (start, t0) = (dvec2(points[0].0, points[0].1), 10.0);
+        rec.feed(FingerPhase::Down, start, t0, &ctx, &zones);
+        phone.search_touch(start.y, t0);
+        let mut shell = rec.active();
+        let mut last = start;
+        let n = points.len() - 1;
+        for (i, &(x, y)) in points.iter().enumerate().skip(1) {
+            let (p, time) = (dvec2(x, y), t0 + secs * i as f64 / n as f64);
+            let out = if shell { rec.feed(FingerPhase::Move, p, time, &ctx, &zones) } else { None };
+            shell = rec.active();
+            if out.is_none() { phone.search_drag(p.y - last.y, p.y, time, phone.search_scroll_limit); }
+            last = p;
+            phone.step(1.0 / 120.0);
+        }
+        let out = if shell { rec.feed(FingerPhase::Up, last, t0 + secs, &ctx, &zones) } else { None };
+        phone.search_lift(t0 + secs, (last - start).length() >= 12.0);
+        if out == Some(ShellGesture::Commit(GestureKind::Back)) { phone.navigate(PhoneScreen::Home); }
+    }
+    fn searching_phone() -> PhoneState {
+        let mut phone = PhoneState::default();
+        phone.viewport = Rect { pos: dvec2(0.0, 0.0), size: dvec2(412.0, 892.0) };
+        phone.open_search();
+        phone.search_query = "a".into();
+        phone.search_scroll_limit = 2000.0;
+        phone
+    }
+
+    #[test]
+    fn a_pull_down_at_the_top_of_search_stretches_and_springs_back_without_closing_it() {
+        // Straight down, and down along a right thumb's arc (it starts a
+        // little sideways): 300 points over six moves with the list at 0.
+        let straight = [(200.0, 400.0), (200.0, 450.0), (200.0, 500.0), (200.0, 550.0), (200.0, 600.0), (200.0, 650.0), (200.0, 700.0)];
+        let arc = [(200.0, 400.0), (214.0, 410.0), (240.0, 460.0), (270.0, 520.0), (295.0, 580.0), (315.0, 640.0), (330.0, 700.0)];
+        for (what, path, secs) in [("straight", &straight, 0.3), ("arc", &arc, 0.3), ("fast arc", &arc, 0.1)] {
+            let mut phone = searching_phone();
+            drawer_finger(&mut phone, path, secs);
+            assert!(phone.searching(), "{what}: a pull at the top must not close search");
+            assert_eq!(phone.search_query, "a", "{what}");
+            assert_eq!(phone.search_scroll, 0.0, "{what}");
+            assert!(phone.search_stretch > 0.0, "{what}: the list stretches under the finger");
+            assert_eq!(phone.search_velocity, 0.0, "{what}: a stretched list does not coast");
+            for _ in 0..60 { phone.step(1.0 / 60.0); }
+            assert_eq!(phone.search_stretch, 0.0, "{what}: the stretch springs back");
+            assert!(phone.searching(), "{what}");
+        }
+    }
+
+    #[test]
+    fn the_search_list_follows_the_finger_one_to_one_and_a_flick_coasts_and_slows() {
+        let mut phone = searching_phone();
+        phone.search_scroll = 500.0;
+        phone.search_touch(600.0, 1.0);
+        // 150 points up over six moves: the list scrolls exactly 150.
+        for i in 1..=6 {
+            phone.search_drag(-25.0, 600.0 - 25.0 * i as f64, 1.0 + 0.1 * i as f64, 2000.0);
+            assert_eq!(phone.search_scroll, 500.0 + 25.0 * i as f64);
+        }
+        // Lifted after a pause: it stays put.
+        phone.search_lift(1.8, true);
+        assert_eq!(phone.search_velocity, 0.0);
+        // A flick: 200 points in a tenth of a second, lifted at once.
+        phone.search_touch(600.0, 2.0);
+        for i in 1..=5 { phone.search_drag(-40.0, 600.0 - 40.0 * i as f64, 2.0 + 0.02 * i as f64, 2000.0); }
+        assert_eq!(phone.search_scroll, 850.0);
+        phone.search_lift(2.1, true);
+        assert!((phone.search_velocity + 2000.0).abs() < 1.0, "the finger's speed: {}", phone.search_velocity);
+        let mut before = phone.search_scroll;
+        let mut speed = f64::MAX;
+        for _ in 0..30 {
+            phone.step(1.0 / 60.0);
+            let moved = phone.search_scroll - before;
+            assert!(moved > 0.0 && moved < speed, "it keeps going, slower each frame");
+            speed = moved;
+            before = phone.search_scroll;
+        }
+        for _ in 0..240 { phone.step(1.0 / 60.0); }
+        assert_eq!(phone.search_velocity, 0.0, "and comes to rest");
+        let coasted = phone.search_scroll - 850.0;
+        assert!((coasted - 2000.0 / 4.0).abs() < 20.0, "about v/friction: {coasted}");
+    }
+
+    #[test]
+    fn a_finger_turning_back_takes_up_the_stretch_before_the_list_moves() {
+        let mut phone = searching_phone();
+        phone.search_touch(400.0, 1.0);
+        phone.search_drag(100.0, 500.0, 1.1, 2000.0);
+        assert_eq!((phone.search_scroll, phone.search_stretch), (0.0, 45.0));
+        phone.search_drag(-60.0, 440.0, 1.2, 2000.0);
+        assert_eq!(phone.search_scroll, 0.0);
+        assert!((phone.search_stretch - 18.0).abs() < 1e-9);
+        phone.search_drag(-60.0, 380.0, 1.3, 2000.0);
+        assert!((phone.search_scroll - 20.0).abs() < 1e-9 && phone.search_stretch == 0.0);
+        // At the bottom it stretches the other way.
+        phone.search_drag(-100.0, 280.0, 1.4, 50.0);
+        assert_eq!(phone.search_scroll, 50.0);
+        assert!((phone.search_stretch + 70.0 * SEARCH_STRETCH).abs() < 1e-9);
     }
 
     #[test]

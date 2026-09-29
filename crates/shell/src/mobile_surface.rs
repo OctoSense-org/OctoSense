@@ -6,6 +6,7 @@ use crate::mobile_shade::ShadeContentCache;
 use crate::glance_card::GlanceTiles;
 use crate::octosense::style::AppIconDraw;
 mod search;
+use search::SearchResults;
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -377,6 +378,9 @@ pub struct PhoneSurface {
     #[rust] search_rect: Rect,
     #[rust] search_pointer: bool,
     #[rust] pub search_scroll_max: f64,
+    // The results for the last query drawn (search.rs): matched and sorted
+    // once per query and catalog, not on every frame of a scroll.
+    #[rust] search_found: SearchResults,
     #[rust] pub pad_left: f64,
     #[redraw] #[rust] area: Area,
 }
