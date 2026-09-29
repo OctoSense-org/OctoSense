@@ -4,17 +4,23 @@
 //!
 //! | In | Here | Out |
 //! | --- | --- | --- |
-//! | a broker's `user_question/requested` on an app peer's session or context ([`crate::host_tools::ShellToolHost`]) | [`Questions::requested`]: one [`Request`] with its owning app, peer, account, context, turn, the questions and options, who started the turn ([`Asker`]) and so which [`Conversation`] it belongs to | every [`Consumer`] hears it ([`subscribe`]) |
+//! | a broker's `user_question/requested` on an app peer's session or context ([`crate::host_tools::ShellToolHost`]) | [`Questions::requested`]: one [`Request`] with its owning app, peer, account, context, turn, the questions and options, who started the turn ([`Origin`]) and so which [`Conversation`] it belongs to | every [`Consumer`] hears it ([`subscribe`]) |
 //! | the turn ended (the broker saw its terminal) | [`Questions::closed`] | the consumers hear it closed |
 //! | the person answered on a shell surface | [`answer`], with a [`PersonAnswer`] | `user_question/respond` on the broker's link, once |
 //!
-//! **Which conversation.** A question from a turn the person or the app
-//! started (a request context's turn, the peer's own turn) is the app's:
-//! [`Conversation::App`]. A question from a turn the system agent started
-//! on the peer (`peer/input`) is the system agent's to relay, so it goes to
-//! the system chat: [`Conversation::SystemChat`]. There is no `host.ask`:
-//! octos keeps `ask_user_question` on host-driven turns when the peer's
-//! `generic_tools` lists it.
+//! **Which conversation: the turn's origin, not the session.** An app
+//! agent has one shared conversation on its peer session (and its request
+//! contexts); the person (the app's UI, its cards), the app and the system
+//! agent all drive turns there. A question from a turn the person or the
+//! app started is the app's: [`Conversation::App`]. A question from a turn
+//! the system agent started (`peer/input`) is the system agent's to relay,
+//! so it goes to the system chat: [`Conversation::SystemChat`]. The
+//! request keeps the turn's [`Origin`]: the one octos reports once it
+//! carries `origin` on the event ([`Request::origin_reported`]), until then
+//! the broker's derivation (the turns it started for `peer/input` are the
+//! system agent's; a context's the person's; any other the app's). There
+//! is no `host.ask`: octos keeps `ask_user_question` on host-driven turns
+//! when the peer's `generic_tools` lists it.
 //!
 //! **Consumers.** The system chat subscribes and shows its questions in
 //! its conversation (`crate::system_chat`); the shell's app-conversation
@@ -38,17 +44,27 @@ mod tests;
 
 use std::sync::Mutex;
 
-use crate::ai_host::app_peers::host_tools::{AgentQuestion, CallOrigin, QuestionAnswer, QuestionItem, QuestionReply};
+use crate::ai_host::app_peers::host_tools::{AgentQuestion, QuestionAnswer, QuestionItem, QuestionReply, TurnOrigin};
 
 /// Who started the turn that asked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Asker {
-    /// A request context's turn: the person, in the app.
+pub enum Origin {
+    /// The person, in the app (its UI, its cards).
     Person,
-    /// The peer's own turn: the app's agent at work.
-    AppAgent,
-    /// A `peer/input` turn: the system agent's request to the app's agent.
+    /// The app itself (a trigger, its own run).
+    App,
+    /// The system agent (`peer/input`): its request to the app's agent.
     SystemAgent,
+}
+
+impl From<TurnOrigin> for Origin {
+    fn from(o: TurnOrigin) -> Origin {
+        match o {
+            TurnOrigin::Person => Origin::Person,
+            TurnOrigin::App => Origin::App,
+            TurnOrigin::SystemAgent => Origin::SystemAgent,
+        }
+    }
 }
 
 /// Where the question is asked.
@@ -89,7 +105,10 @@ pub struct Request {
     pub title: String,
     pub body: String,
     pub items: Vec<QuestionItem>,
-    pub asker: Asker,
+    /// Who started the turn that asked; the conversation follows from it.
+    pub origin: Origin,
+    /// Whether octos reported the origin (else the broker derived it).
+    pub origin_reported: bool,
     pub conversation: Conversation,
     pub state: State,
 }
@@ -102,9 +121,9 @@ impl Request {
     /// "Rinx's agent asks", for a surface's heading.
     pub fn asked_by(&self) -> String {
         let app = crate::approvals::sheet::app_label(&self.app);
-        match (&self.asker, &self.client) {
-            (Asker::SystemAgent, _) => format!("{app}'s agent asks (for the assistant)"),
-            (Asker::Person, Some(client)) => format!("{app}'s agent asks ({client})"),
+        match (&self.origin, &self.client) {
+            (Origin::SystemAgent, _) => format!("{app}'s agent asks (for the assistant)"),
+            (_, Some(client)) => format!("{app}'s agent asks ({client})"),
             _ => format!("{app}'s agent asks"),
         }
     }
@@ -179,17 +198,10 @@ impl Questions {
     /// A broker handed the host an agent's question: route it.
     pub fn requested(&mut self, peer_app: &str, account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> u64 {
         let app = app_of_peer(peer_app).to_string();
-        let asker = match question.origin {
-            CallOrigin::Context => Asker::Person,
-            CallOrigin::PeerInput => Asker::SystemAgent,
-            CallOrigin::PeerOwn => Asker::AppAgent,
-            // A host session's own question is its own chat's (the system
-            // chat answers those itself); never routed here in practice.
-            CallOrigin::System => Asker::SystemAgent,
-        };
-        let conversation = match asker {
-            Asker::SystemAgent => Conversation::SystemChat,
-            Asker::Person | Asker::AppAgent => Conversation::App(app.clone()),
+        let origin = Origin::from(question.turn_origin);
+        let conversation = match origin {
+            Origin::SystemAgent => Conversation::SystemChat,
+            Origin::Person | Origin::App => Conversation::App(app.clone()),
         };
         self.next += 1;
         let id = self.next;
@@ -206,7 +218,8 @@ impl Questions {
             title: question.title,
             body: question.body,
             items: question.questions,
-            asker,
+            origin,
+            origin_reported: question.origin_reported,
             conversation,
             state: State::Open,
         };

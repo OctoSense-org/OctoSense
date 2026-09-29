@@ -1439,6 +1439,20 @@ impl Inner {
                 None if st.input_turns.contains(&question.turn_id) => CallOrigin::PeerInput,
                 None => CallOrigin::PeerOwn,
             };
+            // Until octos reports the turn's origin, derive it from what
+            // this host knows (what started each turn it started, G2): the
+            // turns it started for `peer/input` are the system agent's; a
+            // turn its starter said the person or the app started is theirs;
+            // an unsaid context turn is the person's, any other the app's.
+            if !question.origin_reported {
+                question.turn_origin = match (st.trigger_of(&question.turn_id), question.origin) {
+                    (TurnTrigger::SystemAgent, _) | (_, CallOrigin::PeerInput) => host_tools::TurnOrigin::SystemAgent,
+                    (TurnTrigger::Person, _) => host_tools::TurnOrigin::Person,
+                    (TurnTrigger::App | TurnTrigger::Incoming { .. }, _) => host_tools::TurnOrigin::App,
+                    (TurnTrigger::Unknown, CallOrigin::Context) => host_tools::TurnOrigin::Person,
+                    (TurnTrigger::Unknown, _) => host_tools::TurnOrigin::App,
+                };
+            }
             (st.link.clone(), st.account.clone())
         };
         if let Some(context) = context {

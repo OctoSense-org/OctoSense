@@ -2,7 +2,7 @@
 //! answer path, and that nothing an app reaches can answer.
 
 use super::*;
-use crate::ai_host::app_peers::host_tools::{AgentQuestion, CallOrigin, QuestionAnswer, QuestionReply};
+use crate::ai_host::app_peers::host_tools::{AgentQuestion, CallOrigin, QuestionAnswer, QuestionReply, TurnOrigin};
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +16,12 @@ fn question(id: &str, turn: &str, origin: CallOrigin, context: Option<&str>) -> 
     )
     .unwrap();
     q.origin = origin;
+    // As the broker derives it until octos reports it.
+    q.turn_origin = match origin {
+        CallOrigin::PeerInput => TurnOrigin::SystemAgent,
+        CallOrigin::Context => TurnOrigin::Person,
+        _ => TurnOrigin::App,
+    };
     q.context_id = context.map(str::to_string);
     q.client = context.map(|_| "mini.news#1".to_string());
     q
@@ -49,16 +55,39 @@ fn a_question_is_routed_by_who_started_the_turn_and_every_consumer_hears_it() {
     let by_app = model.requested("rinx", Some("@a:x"), question("q2", "t2", CallOrigin::PeerOwn, None), a2);
     let by_system = model.requested("card.os.news", None, question("q3", "t3", CallOrigin::PeerInput, None), a3);
     let r = model.get(by_person).unwrap();
-    assert_eq!((r.asker, &r.conversation), (Asker::Person, &Conversation::App("rinx".into())));
+    assert_eq!((r.origin, &r.conversation), (Origin::Person, &Conversation::App("rinx".into())));
     assert_eq!(r.client.as_deref(), Some("mini.news#1"));
     assert_eq!(model.get(by_app).unwrap().conversation, Conversation::App("rinx".into()));
     let r = model.get(by_system).unwrap();
-    assert_eq!((r.asker, &r.conversation), (Asker::SystemAgent, &Conversation::SystemChat));
+    assert_eq!((r.origin, &r.conversation), (Origin::SystemAgent, &Conversation::SystemChat));
+    assert!(!r.origin_reported);
     assert_eq!(r.app, "os.news", "a script app's peer names its app");
     assert_eq!(model.open(&Conversation::SystemChat).len(), 1);
     assert_eq!(model.open_in_apps().len(), 2);
     assert_eq!(heard.lock().unwrap().len(), 3);
     assert_eq!(r.options(), vec!["#a".to_string(), "#b".to_string()]);
+}
+
+/// The TURN's origin routes a question, not its session: on the peer's one
+/// shared conversation a person's turn asks in the app, a system agent's
+/// turn in the system chat; an origin octos reports wins over the
+/// derivation.
+#[test]
+fn a_question_follows_its_turns_origin_not_its_session() {
+    let mut model = Questions::default();
+    let mut person_on_peer = question("q1", "t1", CallOrigin::PeerOwn, None);
+    person_on_peer.turn_origin = TurnOrigin::Person;
+    person_on_peer.origin_reported = true;
+    let mut system_on_peer = question("q2", "t2", CallOrigin::PeerOwn, None);
+    system_on_peer.turn_origin = TurnOrigin::SystemAgent;
+    system_on_peer.origin_reported = true;
+    let (a1, _) = answer_handle();
+    let (a2, _) = answer_handle();
+    let person = model.requested("rinx", None, person_on_peer, a1);
+    let system = model.requested("rinx", None, system_on_peer, a2);
+    assert_eq!(model.get(person).unwrap().conversation, Conversation::App("rinx".into()));
+    assert_eq!(model.get(system).unwrap().conversation, Conversation::SystemChat);
+    assert!(model.get(system).unwrap().origin_reported);
 }
 
 #[test]

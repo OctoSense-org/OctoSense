@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
-use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply};
+use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply, TurnOrigin};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -860,6 +860,15 @@ fn an_agents_question_goes_to_the_host_and_only_the_host_answers_it() {
     let origins: Vec<(String, CallOrigin)> = host.questions.lock().unwrap().iter().map(|(q, _)| (q.question_id.clone(), q.origin)).collect();
     assert_eq!(origins[1], ("q2".to_string(), CallOrigin::PeerInput));
     assert_eq!(origins[2], ("q3".to_string(), CallOrigin::PeerOwn));
+    let turn_origins: Vec<(TurnOrigin, bool)> = host.questions.lock().unwrap().iter().map(|(q, _)| (q.turn_origin, q.origin_reported)).collect();
+    assert_eq!(turn_origins, [(TurnOrigin::Person, false), (TurnOrigin::SystemAgent, false), (TurnOrigin::App, false)], "derived by the host");
+    // A turn origin the kernel reports replaces the derivation.
+    let mut reported = question(&peer_session, "q4", "turn-own");
+    reported["origin"] = json!("system_agent");
+    notify(&script, "user_question/requested", reported);
+    wait_for("the reported one", || host.questions.lock().unwrap().len() == 4);
+    let fourth = host.questions.lock().unwrap()[3].0.clone();
+    assert_eq!((fourth.turn_origin, fourth.origin_reported), (TurnOrigin::SystemAgent, true));
     // A turn that ends closes its unanswered question.
     notify(&script, "turn/completed", json!({"session_id": peer_session, "turn_id": "turn-in"}));
     wait_for("closed", || host.closed_questions.lock().unwrap().contains(&"q2".to_string()));

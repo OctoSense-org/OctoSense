@@ -477,6 +477,30 @@ pub struct QuestionItem {
     pub multi_select: bool,
 }
 
+/// Who started the turn that asked (the peer's one conversation is shared:
+/// the person or the app drive some turns, the system agent others).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnOrigin {
+    /// The person, in the app (its UI, its cards).
+    Person,
+    /// The app itself (a trigger, its own run).
+    App,
+    /// The system agent (`peer/input`).
+    SystemAgent,
+}
+
+impl TurnOrigin {
+    /// octos's spelling (`person` | `app` | `system_agent`).
+    pub fn parse(text: &str) -> Option<TurnOrigin> {
+        match text {
+            "person" | "user" => Some(TurnOrigin::Person),
+            "app" => Some(TurnOrigin::App),
+            "system_agent" | "system" => Some(TurnOrigin::SystemAgent),
+            _ => None,
+        }
+    }
+}
+
 /// An agent's `ask_user_question` on an app peer's session or one of its
 /// request contexts, with what the host knows about the turn that asked.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -496,6 +520,14 @@ pub struct AgentQuestion {
     /// Which turn asked: a context's (the person, in the app), the peer's
     /// own (the app's agent), or a `peer/input` turn (the system agent's).
     pub origin: CallOrigin,
+    /// Who started that turn: what the kernel reports (`origin` on the
+    /// event, once octos carries it), else what the host derives: the turns
+    /// it started for `peer/input` are the system agent's, a context's the
+    /// person's, any other the app's (or the person's: one shared
+    /// conversation).
+    pub turn_origin: TurnOrigin,
+    /// Whether `turn_origin` came from the kernel (not derived).
+    pub origin_reported: bool,
 }
 
 impl AgentQuestion {
@@ -536,6 +568,16 @@ impl AgentQuestion {
             body: s(params, "body"),
             questions,
             origin: CallOrigin::PeerOwn,
+            turn_origin: TurnOrigin::App,
+            origin_reported: false,
+        })
+        .map(|mut q| {
+            let reported = ["origin", "turn_origin"].iter().find_map(|k| params.get(*k).and_then(Value::as_str).and_then(TurnOrigin::parse));
+            if let Some(origin) = reported {
+                q.turn_origin = origin;
+                q.origin_reported = true;
+            }
+            q
         })
     }
 
