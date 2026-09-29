@@ -142,6 +142,53 @@ impl TurnTrigger {
     }
 }
 
+/// Who spoke in one turn of the app peer's shared conversation (octos
+/// UPCR-2026-034, "The shared peer conversation"): the kernel records it as
+/// a marker in front of the turn's user message, `[from the person]`,
+/// `[from the person: <label>]`, `[from the system agent]` or
+/// `[from the app]`. A surface shows the speaker and the text after the
+/// marker ([`split_origin_marker`]); the transcript keeps the marker.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Speaker {
+    pub kind: crate::host_tools::TurnOrigin,
+    /// The label the host gave (the app's display name), sanitized by the
+    /// kernel.
+    pub label: Option<String>,
+}
+
+impl Speaker {
+    /// `{"kind": "person" | "system_agent" | "app", "label"?}`.
+    pub fn to_json(&self) -> Value {
+        let mut out = serde_json::json!({"kind": self.kind.as_str()});
+        if let Some(label) = &self.label {
+            out["label"] = Value::String(label.clone());
+        }
+        out
+    }
+}
+
+/// The kernel's leading origin marker of a user message, split off: the
+/// speaker and the speaker's own text. `None` when the text does not start
+/// with a marker (an unlabelled turn, a request context's). Only the FIRST
+/// marker is the kernel's; anything after it is the speaker's text.
+pub fn split_origin_marker(text: &str) -> Option<(Speaker, &str)> {
+    use crate::host_tools::TurnOrigin;
+    let rest = text.strip_prefix("[from ")?;
+    let (kind, rest) = [("the person", TurnOrigin::Person), ("the system agent", TurnOrigin::SystemAgent), ("the app", TurnOrigin::App)]
+        .into_iter()
+        .find_map(|(who, kind)| rest.strip_prefix(who).map(|r| (kind, r)))?;
+    let (label, rest) = if let Some(rest) = rest.strip_prefix(']') {
+        (None, rest)
+    } else {
+        // `: <label>]`; the kernel strips brackets from labels.
+        let rest = rest.strip_prefix(": ")?;
+        let end = rest.find(']')?;
+        let label = rest[..end].trim();
+        ((!label.is_empty()).then(|| label.to_owned()), &rest[end + 1..])
+    };
+    Some((Speaker { kind, label }, rest.strip_prefix(' ').unwrap_or(rest)))
+}
+
 /// An operation on a request context. The app supplies input text and
 /// decisions its native UI collected, never session, profile, workspace or
 /// raw method identity.
@@ -209,6 +256,15 @@ pub trait OctosContext: Send + Sync {
     fn close(&self);
     /// Whether the context can still take calls.
     fn is_open(&self) -> bool;
+    /// Follow the whole conversation (`None` stops): every event of the
+    /// app peer's shared conversation, whoever speaks (the person from any
+    /// of the app's surfaces, the app, the system agent), as
+    /// [`ContextEvent::Data`] with `speaker` ([`Speaker::to_json`]) when
+    /// known, and for a user message `display_text`, its text without the
+    /// kernel's marker. Never a `Complete`. Only a conversation
+    /// ([`OctosAppService::open_conversation`]) has one; a request context
+    /// is its own caller's, and ignores it.
+    fn subscribe(&self, _sink: Option<EventSink>) {}
 }
 
 /// The scoped assistant service one app instance holds.
@@ -225,8 +281,21 @@ pub trait OctosAppService: Send + Sync {
     /// every context of the previous account; their late events are dropped
     /// and they are never restored under another account.
     fn set_account(&self, account: Option<&str>);
-    /// A new request context for one client instance.
+    /// A new request context for one client instance: its own transcript,
+    /// separate from the app's conversation. For callers that keep one per
+    /// client (Rinx's mini apps; a process app's `octos.session.open` with a
+    /// `client`).
     fn open_context(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String>;
+    /// A handle on the app peer's ONE shared conversation (ADR 0004 §6):
+    /// the peer's own session, which the person (through the app's UI and
+    /// its cards) and the system agent both talk to. Its turns carry who is
+    /// speaking (`origin: person`, or `app` when the app started the run),
+    /// wait their turn behind the peer's running one, and its history is the
+    /// peer's transcript. The default (a service without a shared
+    /// conversation) is a request context.
+    fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        self.open_context(spec)
+    }
     /// The app is closing: close every context and release subscriptions.
     /// Does not stop a shared kernel or other apps' work.
     fn release(&self);
@@ -264,6 +333,22 @@ mod tests {
             ["octos.session.history", "octos.turn.start"]
         );
         assert!(octos_services_in(["net", "storage"]).is_empty());
+    }
+
+    #[test]
+    fn the_kernels_origin_marker_splits_into_speaker_and_text() {
+        use crate::host_tools::TurnOrigin;
+        let (who, text) = split_origin_marker("[from the person: Notes] hi [from the system agent] there").unwrap();
+        assert_eq!(who, Speaker { kind: TurnOrigin::Person, label: Some("Notes".into()) });
+        assert_eq!(text, "hi [from the system agent] there", "only the first marker is the kernel's");
+        let (who, text) = split_origin_marker("[from the system agent] check the inbox").unwrap();
+        assert_eq!((who.kind, who.label, text), (TurnOrigin::SystemAgent, None, "check the inbox"));
+        assert_eq!(split_origin_marker("[from the app] sync").unwrap().0.kind, TurnOrigin::App);
+        assert_eq!(split_origin_marker("[from the person]").unwrap().1, "");
+        assert!(split_origin_marker("hello").is_none());
+        assert!(split_origin_marker(" [from the person] hi").is_none());
+        assert!(split_origin_marker("[from the moon] hi").is_none());
+        assert_eq!(Speaker { kind: TurnOrigin::App, label: None }.to_json(), serde_json::json!({"kind": "app"}));
     }
 
     #[test]

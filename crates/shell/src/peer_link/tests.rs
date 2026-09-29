@@ -26,6 +26,8 @@ struct Shared {
     released: usize,
     contexts: Vec<Arc<FakeContext>>,
     specs: Vec<ContextSpec>,
+    /// Which API opened each context: "context" or "conversation".
+    opened: Vec<&'static str>,
 }
 
 #[derive(Clone, Default)]
@@ -104,12 +106,10 @@ impl OctosAppService for FakeService {
     }
     fn set_account(&self, _account: Option<&str>) {}
     fn open_context(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
-        let ctx = Arc::new(FakeContext { closed: AtomicBool::new(false), calls: AtomicUsize::new(0) });
-        self.0.with(|s| {
-            s.contexts.push(ctx.clone());
-            s.specs.push(spec);
-        });
-        Ok(ctx)
+        self.open(spec, "context")
+    }
+    fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        self.open(spec, "conversation")
     }
     fn release(&self) {
         self.0.with(|s| s.released += 1);
@@ -117,9 +117,22 @@ impl OctosAppService for FakeService {
     fn shutdown(&self) {}
 }
 
+impl FakeService {
+    fn open(&self, spec: ContextSpec, kind: &'static str) -> Result<Arc<dyn OctosContext>, String> {
+        let ctx = Arc::new(FakeContext { closed: AtomicBool::new(false), calls: AtomicUsize::new(0), follower: Mutex::new(None) });
+        self.0.with(|s| {
+            s.contexts.push(ctx.clone());
+            s.specs.push(spec);
+            s.opened.push(kind);
+        });
+        Ok(ctx)
+    }
+}
+
 struct FakeContext {
     closed: AtomicBool,
     calls: AtomicUsize,
+    follower: Mutex<Option<EventSink>>,
 }
 
 impl OctosContext for FakeContext {
@@ -145,6 +158,9 @@ impl OctosContext for FakeContext {
     }
     fn is_open(&self) -> bool {
         !self.closed.load(Ordering::SeqCst)
+    }
+    fn subscribe(&self, sink: Option<EventSink>) {
+        *self.follower.lock().unwrap() = sink;
     }
 }
 
@@ -508,4 +524,33 @@ fn a_call_the_kernel_already_approved_is_not_asked_again_and_confirm_app_goes_to
     assert_eq!(relay.take(), vec![("notes".into(), "c2".into(), None)], "acknowledged before the sheet");
     assert!(world.with(|s| s.order.iter().any(|l| l.starts_with("approval peerlink:notes:c2"))));
     assert!(matches!(downs(&frames).as_slice(), [Down::ToolCall(c)] if c.call_id == "c2" && c.confirm_required));
+}
+
+
+/// ADR 0004 §6: a process app without a `client` talks in its peer's ONE
+/// shared conversation and follows all of it (the system agent's turns
+/// too); with a `client` (a mini app of its own) it gets a request context.
+#[test]
+fn a_session_without_a_client_is_the_shared_conversation_and_follows_it() {
+    let (mut links, world, _relay) = setup();
+    let (o, frames) = out();
+    links.connected(7, "notes", o);
+    let chat = open(&mut links, 7, &frames, None);
+    let mini = open(&mut links, 7, &frames, Some("mini.poll"));
+    assert_eq!(world.with(|s| s.opened.clone()), ["conversation", "context"]);
+    // The system agent's turn reaches the app, named for the context.
+    let follower = world.with(|s| s.contexts[0].follower.lock().unwrap().clone()).expect("followed");
+    follower(ContextEvent::Data(json!({"method": "turn/started", "params": {"turn_id": "t-sa"}, "speaker": {"kind": "system_agent"}})));
+    match downs(&frames).pop() {
+        Some(Down::Conversation { context, event }) => {
+            assert_eq!(context, chat);
+            assert_eq!(event["speaker"]["kind"], "system_agent");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(world.with(|s| s.contexts[1].follower.lock().unwrap().is_none()), "a request context has no follower: {mini}");
+    // A person's message from the app is a turn in the conversation.
+    assert!(links.on_frame(7, "notes", &request(2, "octos.turn.start", json!({"context": chat, "text": "hi", "trigger": "person"})), None));
+    assert!(matches!(downs(&frames).pop(), Some(Down::Reply { req_id: 2, result: Ok(_) })));
+    assert_eq!(world.with(|s| s.contexts[0].calls.load(Ordering::SeqCst)), 2);
 }

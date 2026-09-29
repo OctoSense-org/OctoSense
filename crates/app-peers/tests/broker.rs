@@ -23,6 +23,11 @@ struct Script {
     hold_turns: bool,
     /// peer/tools/register is refused.
     refuse_register: bool,
+    /// The next this-many turn/starts are refused `turn_in_progress` (the
+    /// kernel still runs a turn the host has not seen end).
+    busy_starts: usize,
+    /// What session/hydrate answers (`messages`).
+    history: Vec<Value>,
     connects: usize,
     /// Each connection's kernel-to-broker half (`None`: closed).
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
@@ -92,11 +97,15 @@ impl Connector for FakeConnector {
                     let method = frame["method"].as_str().unwrap().to_owned();
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
-                    let (legacy, hold, refuse_register) = {
+                    let (legacy, hold, refuse_register, busy, history) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
                         s.conns.push(conn);
-                        (s.legacy, s.hold_turns, s.refuse_register)
+                        let busy = method == "turn/start" && s.busy_starts > 0;
+                        if busy {
+                            s.busy_starts -= 1;
+                        }
+                        (s.legacy, s.hold_turns, s.refuse_register, busy, s.history.clone())
                     };
                     let send = |frame: String| emit(&script, conn, frame);
                     let reply = |result: Value| {
@@ -147,6 +156,7 @@ impl Connector for FakeConnector {
                             );
                             send(reply(json!({"session_id": session, "created": true})));
                         }
+                        "turn/start" if busy => send(refuse("turn_in_progress")),
                         "turn/start" => {
                             let session = params["session_id"].clone();
                             let turn = params["turn_id"].clone();
@@ -165,7 +175,7 @@ impl Connector for FakeConnector {
                                 send(note("turn/completed", json!({})));
                             }
                         }
-                        "session/hydrate" => send(reply(json!({"messages": []}))),
+                        "session/hydrate" => send(reply(json!({"messages": history}))),
                         _ => send(reply(json!({}))),
                     }
                 }
@@ -1049,4 +1059,238 @@ fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
     wait_for("the next queued input", || calls_of(&script, "turn/start").len() == 2);
     assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-b1");
     assert!(!calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-full"));
+}
+
+
+// ---------------------------------------------------------------------------
+// The shared peer conversation (ADR 0004 §6, octos#2626): the person and the
+// system agent talk to the peer's own session; each turn says who speaks.
+
+fn events(rx: &std::sync::mpsc::Receiver<ContextEvent>, wait: Duration) -> Vec<Value> {
+    let mut out = Vec::new();
+    while let Ok(ContextEvent::Data(d)) = rx.recv_timeout(wait) {
+        out.push(d);
+    }
+    out
+}
+
+/// A person's message from the app (a module, a card, a process app
+/// without a client) runs on the peer's own session, on the connection
+/// that registered its tools, labelled `person` with the app's name, or
+/// `app` when the app itself started the run; its calls keep G2's trigger
+/// and its question is the app conversation's. No request context opens.
+#[test]
+fn a_persons_message_runs_on_the_peers_session_with_its_origin() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "summarize my day".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    let result = complete(&rx).unwrap();
+    assert_eq!(result["text"], "Hello there");
+    assert_eq!(result["speaker"], json!({"kind": "person", "label": "Rinx"}));
+    let slug = peer_slug(&script);
+    let peer_session = format!("_main:api:octosense#peer-{slug}");
+    let (conn, start) = calls_of(&script, "turn/start")[0].clone();
+    assert_eq!(start["session_id"], peer_session.as_str(), "the peer's own session");
+    assert_eq!(start["origin"], json!({"kind": "person", "label": "Rinx"}));
+    assert_eq!(start["input"][0]["text"], "summarize my day", "the kernel adds the marker, not the host");
+    assert_eq!(conn, calls_of(&script, "peer/tools/register")[0].0, "on the connection that registered the tools");
+    assert!(position(&script, "peer/context/open").is_none(), "no request context");
+
+    // The app's own run speaks as the app; an unsaid turn is the person's
+    // for the label, and stays Unknown for approval rules.
+    script.lock().unwrap().hold_turns = true;
+    let (sink, _rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "sync".into(), trigger: TurnTrigger::App }, sink).unwrap();
+    wait_for("the app's turn", || calls_of(&script, "turn/start").len() == 2);
+    let app_turn = calls_of(&script, "turn/start")[1].1.clone();
+    assert_eq!(app_turn["origin"]["kind"], "app");
+    let app_turn_id = app_turn["turn_id"].as_str().unwrap().to_owned();
+    notify(&script, "turn/completed", json!({"session_id": peer_session, "turn_id": app_turn_id}));
+    std::thread::sleep(Duration::from_millis(300));
+    let (sink, _rx) = collect();
+    chat.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    wait_for("the unsaid turn", || calls_of(&script, "turn/start").len() == 3);
+    let unsaid = calls_of(&script, "turn/start")[2].1.clone();
+    assert_eq!(unsaid["origin"]["kind"], "person");
+    let unsaid_id = unsaid["turn_id"].as_str().unwrap().to_owned();
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", &unsaid_id, None));
+    wait_for("the call", || host.calls.lock().unwrap().len() == 1);
+    let call = host.calls.lock().unwrap()[0].0.clone();
+    assert_eq!((call.origin, call.trigger.clone()), (CallOrigin::PeerOwn, TurnTrigger::Unknown), "G2's trigger is the authority for rules");
+    notify(&script, "user_question/requested", json!({"session_id": peer_session, "question_id": "q1", "turn_id": unsaid_id, "title": "Which?", "body": "", "questions": []}));
+    wait_for("the question", || host.questions.lock().unwrap().len() == 1);
+    assert_eq!(host.questions.lock().unwrap()[0].0.turn_origin, TurnOrigin::Person, "the person's turn: the app's conversation");
+    // The system agent never speaks through the app.
+    let (sink, rx) = collect();
+    let chat2 = broker.open_conversation(spec("@a:x", "card", &ALL)).unwrap();
+    chat2.call(ContextOp::TurnFrom { text: "x".into(), trigger: TurnTrigger::SystemAgent }, sink).unwrap();
+    assert!(complete(&rx).is_err());
+    drop(broker);
+}
+
+/// The system agent's `peer/input` starts with the kernel's turn id and NO
+/// origin (the kernel labels it `system_agent` and refuses a relabel).
+#[test]
+fn a_peer_input_turn_starts_without_an_origin() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host), None);
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": "i1", "turn_id": "turn-1", "text": "brief"}));
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let start = calls_of(&script, "turn/start")[0].1.clone();
+    assert_eq!(start["turn_id"], "turn-1");
+    assert!(start.get("origin").is_none(), "{start}");
+}
+
+/// One queue per peer, one turn at a time: a person's message waits for
+/// the system agent's running input (and the input for the person's
+/// message); a full queue refuses an input `busy` and a person's message
+/// with a visible error; `turn_in_progress` is retried with the same turn.
+#[test]
+fn the_persons_messages_and_the_system_agents_inputs_share_one_bounded_queue() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    notify(&script, "peer/input", input("i1"));
+    wait_for("the input's turn", || calls_of(&script, "turn/start").len() == 1);
+    // The person writes from the app while the system agent's turn runs.
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, person_rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "and the weather?".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    wait_for("queued", || broker.queued_turns() == 1);
+    assert_eq!(calls_of(&script, "turn/start").len(), 1, "one turn at a time");
+    // Another input queues behind the person's message.
+    notify(&script, "peer/input", input("i2"));
+    wait_for("queued input", || broker.queued_turns() == 2);
+    // Fill the queue with cards' messages; one more is refused, visibly.
+    let mut cards = Vec::new();
+    for i in 2..octosense_app_peers::host_tools::MAX_QUEUED_INPUTS {
+        let card = broker.open_conversation(spec("@a:x", &format!("card{i}"), &ALL)).unwrap();
+        let (sink, rx) = collect();
+        card.call(ContextOp::Turn { text: format!("card {i}") }, sink).unwrap();
+        cards.push((card, rx));
+    }
+    wait_for("full", || broker.queued_turns() == octosense_app_peers::host_tools::MAX_QUEUED_INPUTS);
+    let extra = broker.open_conversation(spec("@a:x", "extra", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    extra.call(ContextOp::Turn { text: "one more".into() }, sink).unwrap();
+    assert_eq!(complete(&rx).unwrap_err(), octosense_app_peers::broker::BUSY);
+    notify(&script, "peer/input", input("i3"));
+    wait_for("busy", || calls_of(&script, "peer/input/reject").len() == 1);
+    assert_eq!(calls_of(&script, "peer/input/reject")[0].1["reason"], "busy");
+    // The kernel still runs something the host has not seen end: the
+    // person's start is retried, with the same turn id.
+    script.lock().unwrap().busy_starts = 1;
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("the person's turn, retried", || calls_of(&script, "turn/start").len() == 3);
+    let starts = calls_of(&script, "turn/start");
+    assert_eq!(starts[1].1["turn_id"], starts[2].1["turn_id"], "the same turn after turn_in_progress");
+    assert_eq!(starts[2].1["origin"]["kind"], "person");
+    let person_turn = starts[2].1["turn_id"].as_str().unwrap().to_owned();
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": person_turn}));
+    assert_eq!(complete(&person_rx).unwrap()["text"], "Hello there");
+    // Then the queued input, with its own turn id and no origin.
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 4);
+    let next = calls_of(&script, "turn/start")[3].1.clone();
+    assert_eq!(next["turn_id"], "turn-i2");
+    assert!(next.get("origin").is_none());
+    drop(cards);
+    drop(broker);
+}
+
+/// The whole shared conversation reaches the app: a follower of the
+/// conversation sees the system agent's turn (its speaker named) and the
+/// person's own; the caller's sink hears only its own turn; a user
+/// message shows its speaker, not the kernel's marker; history is the
+/// peer's transcript with the speakers.
+#[test]
+fn a_system_agents_turn_streams_to_the_apps_conversation() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (follow, follow_rx) = collect();
+    chat.subscribe(Some(follow));
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Open, sink).unwrap();
+    assert_eq!(complete(&rx).unwrap()["conversation"], true);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": "i1", "turn_id": "turn-sa", "text": "check the inbox"}));
+    notify(&script, "projection/envelope", json!({"session_id": "_main:api:octosense", "topic": format!("peer-{slug}"), "turn_id": "turn-sa", "thread_id": "turn-sa", "seq": 1,
+        "payload": {"type": "user_message", "data": {"text": "[from the system agent] check the inbox"}}}));
+    let seen = events(&follow_rx, Duration::from_millis(400));
+    let sa: Vec<&Value> = seen.iter().filter(|d| d["params"]["turn_id"] == "turn-sa").collect();
+    assert!(sa.iter().any(|d| d["method"] == "turn/started"), "{seen:?}");
+    assert!(sa.iter().any(|d| d["method"] == "turn/completed"), "{seen:?}");
+    assert!(sa.iter().all(|d| d["speaker"]["kind"] == "system_agent"), "{sa:?}");
+    let user = sa.iter().find(|d| d["method"] == "projection/envelope").unwrap();
+    assert_eq!(user["display_text"], "check the inbox");
+    // The person's own message: the follower sees it too, with its speaker.
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Turn { text: "thanks".into() }, sink).unwrap();
+    complete(&rx).unwrap();
+    let seen = events(&follow_rx, Duration::from_millis(300));
+    assert!(seen.iter().any(|d| d["method"] == "turn/completed" && d["speaker"]["kind"] == "person" && d["speaker"]["label"] == "Rinx"), "{seen:?}");
+    // A caller's sink hears only its own turn: nothing of the system agent's.
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    notify(&script, "turn/started", json!({"session_id": session, "turn_id": "turn-other"}));
+    let history = complete(&rx).unwrap();
+    assert!(events(&rx, Duration::from_millis(200)).is_empty());
+    let hydrate = calls_of(&script, "session/hydrate").last().unwrap().1.clone();
+    assert_eq!(hydrate["session_id"], session.as_str(), "the peer's transcript");
+    assert!(history["messages"].is_array());
+    // History keeps the marker and names the speaker.
+    script.lock().unwrap().history = vec![
+        json!({"role": "user", "content": "[from the person: Rinx] thanks"}),
+        json!({"role": "user", "content": "[from the system agent] check the inbox"}),
+        json!({"role": "assistant", "content": "Done."}),
+        json!({"role": "user", "content": "unlabelled"}),
+    ];
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    assert_eq!(rows[0]["content"], "[from the person: Rinx] thanks");
+    assert_eq!((rows[0]["speaker"].clone(), rows[0]["display_text"].clone()), (json!({"kind": "person", "label": "Rinx"}), json!("thanks")));
+    assert_eq!(rows[1]["speaker"]["kind"], "system_agent");
+    assert!(rows[2].get("speaker").is_none() && rows[3].get("speaker").is_none());
+    // Closing the handle ends its follow.
+    chat.close();
+    notify(&script, "turn/started", json!({"session_id": session, "turn_id": "turn-late"}));
+    assert!(events(&follow_rx, Duration::from_millis(200)).iter().all(|d| d["params"]["turn_id"] != "turn-late"));
+    drop(broker);
+}
+
+/// A caller that opens a request context per client (Rinx's mini apps)
+/// still gets its own session: no origin, its own transcript.
+#[test]
+fn a_request_context_for_an_explicit_client_still_works() {
+    let (broker, script) = new_broker(&ALL);
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    assert_eq!(complete(&rx).unwrap()["text"], "Hello there");
+    let start = calls_of(&script, "turn/start")[0].1.clone();
+    assert!(start["session_id"].as_str().unwrap().contains("#peerctx-"));
+    assert!(start.get("origin").is_none(), "an origin is refused off the peer's own session");
+    assert_eq!(calls_of(&script, "peer/context/open").len(), 1);
+    let (sink, rx) = collect();
+    ctx.subscribe(Some(sink));
+    let (sink2, rx2) = collect();
+    ctx.call(ContextOp::Open, sink2).unwrap();
+    assert_eq!(complete(&rx2).unwrap()["conversation"], false);
+    assert!(events(&rx, Duration::from_millis(100)).is_empty(), "a request context has no follower");
 }

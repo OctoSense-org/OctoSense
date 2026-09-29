@@ -85,6 +85,8 @@ struct FakeService {
     accounts: Mutex<Vec<Option<String>>>,
     specs: Mutex<Vec<ContextSpec>>,
     contexts: Mutex<Vec<Arc<FakeContext>>>,
+    /// How many handles were the shared conversation (not a request context).
+    conversations: AtomicUsize,
     released: AtomicBool,
 }
 
@@ -117,6 +119,10 @@ impl OctosAppService for FakeService {
         });
         self.contexts.lock().unwrap().push(context.clone());
         Ok(context)
+    }
+    fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        self.conversations.fetch_add(1, Ordering::SeqCst);
+        self.open_context(spec)
     }
     fn release(&self) {
         self.released.store(true, Ordering::SeqCst);
@@ -164,6 +170,7 @@ impl PeerFactory for Peers {
             accounts: Mutex::default(),
             specs: Mutex::default(),
             contexts: Mutex::default(),
+            conversations: AtomicUsize::new(0),
             released: AtomicBool::new(false),
         });
         self.launched.lock().unwrap().push((peer_id.to_owned(), service.clone()));
@@ -212,6 +219,9 @@ fn contained_turn_reaches_app_peer_and_replies() {
     let service = peers.service("card.com.example.trip");
     assert_eq!(service.accounts.lock().unwrap().clone(), vec![Some(ACCOUNT.to_string())]);
     assert_eq!(service.specs.lock().unwrap()[0].account, ACCOUNT);
+    // ADR 0004 §6: the app's turns go to its peer's shared conversation
+    // (the peer's own session, `origin: person`), not a request context.
+    assert_eq!(service.conversations.load(Ordering::SeqCst), 1);
 }
 
 #[test]

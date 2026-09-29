@@ -45,8 +45,10 @@ pub const TOOL_CANCEL: &str = "peer/tool/cancel";
 pub const PEER_INPUT: &str = "peer/input";
 /// The host refuses a `peer/input` it will not act on (octos#2621).
 pub const PEER_INPUT_REJECT: &str = "peer/input/reject";
-/// How many of the system agent's inputs wait for a busy peer before the
-/// host refuses more (`busy`).
+/// How many turns wait for a busy peer, the system agent's inputs and the
+/// person's messages together (one queue per peer, one turn at a time: the
+/// kernel admits one and queues none). Past it the host refuses an input
+/// (`busy`) and a person's message (a visible error).
 pub const MAX_QUEUED_INPUTS: usize = 8;
 
 /// Why the host refuses a `peer/input` (`peer/input/reject`'s `reason`).
@@ -164,7 +166,9 @@ pub enum CallOrigin {
     /// The peer's own session, a turn the host started for a `peer/input`
     /// (the system agent's request, made for the person).
     PeerInput,
-    /// The peer's own session, any other turn (the app agent's own runs).
+    /// The peer's own session, any other turn: the person's and the app's
+    /// turns in the shared conversation (their trigger says which), and the
+    /// app agent's own runs.
     PeerOwn,
     /// The system agent's conversation.
     System,
@@ -549,6 +553,15 @@ pub enum TurnOrigin {
 }
 
 impl TurnOrigin {
+    /// The wire's spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TurnOrigin::Person => "person",
+            TurnOrigin::App => "app",
+            TurnOrigin::SystemAgent => "system_agent",
+        }
+    }
+
     /// octos's spelling (`person` | `app` | `system_agent`).
     pub fn parse(text: &str) -> Option<TurnOrigin> {
         match text {
