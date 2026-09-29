@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+> **Where this fits.** One octos kernel per shell: a child process on the desktop and Android, in process on OpenHarmony, none on iOS. The shell holds the host token and is the only host connection; the system agent and every app agent are sessions in this kernel, and a Talk to Octos client gets only the system conversation with the external token. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
 service**. The shell (Home in `phone/`, the desktop in `desktop/`) owns it; the

@@ -1,6 +1,6 @@
 # octosense-ai-host: the shell's AI services
 
-> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+> **Where this fits.** This crate is the shell's side of the octos kernel: it owns the kernel service, offers each granted native module its `OctosAppService` (from `crates/app-peers`), and serves script apps' `host.request("octos.*")` through the `octos` host service. Every path from an app into octos goes through it; apps never talk to the kernel. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 One entry point for what every OctoSense shell (desktop/, phone/) hosts:
 

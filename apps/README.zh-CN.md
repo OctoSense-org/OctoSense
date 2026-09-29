@@ -2,10 +2,9 @@
 
 [English](README.md) | 简体中文
 
-[OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)
+> **在整个系统中的位置。**系统应用是运行在 App Hub 的 Card runner 中的脚本应用。它们从不直接与 octos 内核通信：应用只能通过 Shell，用 `host.request("octos.*")` 使用自己的 Agent（每个应用、每个账号一个 peer），Agent 对应用工具的调用也经由 Shell 的中转和审批路由回到应用。应用的 glance 卡片在应用自己的策略下运行，用户在卡片上的操作是应用自己的操作，而不是 Agent 的工具调用。进程、应用 Agent 的两条通道以及一次带审批的工具调用的图示：[整体如何运作](../README.zh-CN.md#整体如何运作)；详细说明：[docs/architecture.zh-CN.md](../docs/architecture.zh-CN.md) 和 [ADR 0004（英文）](../docs/adr/0004-native-apps-hosting-and-peers.md)。
 
-> 在整个系统中的位置：见 [OctoSense 架构](../docs/architecture.zh-CN.md)（含架构图）。
-（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
+[OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)（运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。
 

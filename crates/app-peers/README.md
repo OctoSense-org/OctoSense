@@ -1,6 +1,6 @@
 # octosense-app-peers: host-owned octos app peers
 
-> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+> **Where this fits.** The broker is the host connection for app agents: one host-owned peer per (app, account), owned by the system agent. It starts the system agent's `peer/input` turns on the peer's session (`#peer-<app>`), runs the person's turns (a separate `share_history` request context `#peerctx-<app>.<id>` is in progress), registers the app's tools and hands every `peer/tool/call`, approval and question to the shell, and applies the 10-minute prompt deadline and the person's Stop. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../../README.md#how-it-fits-together); the details: [docs/architecture.md](../../docs/architecture.md) and [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md):
 an OctoSense shell runs ONE octos kernel and ONE provider profile
