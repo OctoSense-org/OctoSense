@@ -13,7 +13,7 @@ spec = importlib.util.spec_from_file_location("kernel_artifact", ROOT / "tools/k
 kernel = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kernel)
 
-REV = "665209e517470b16bc8c658167baaa119ed43c6f"
+REV = "acffad3b493b70d6620b57394265ec84d260ce13"
 
 
 def lock_with(*revs):
