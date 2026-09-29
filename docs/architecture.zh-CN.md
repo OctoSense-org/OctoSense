@@ -308,7 +308,7 @@ flowchart TB
 1. **开发者模式**（`dev_hooks.rs`、`crates/shell/src/dev_mode.rs`，[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）批准它所覆盖应用的一切，包括 `auto_approvable: false` 和 `confirm: app`，但从不替外部客户端批准。只有用户能开启它：开发构建中用 `OCTOSENSE_DEV_MODE=all`（或应用列表），发布构建只能用 `--dev-grant-all`，或在桌面端的 Developer options 中输入确认短语；商店构建永远不能。开启时显示横幅，审计每次调用，不在开发者 profile 中时 8 小时后或重启时自动结束。`dev.run` 尚未注册（步骤 11）。
 2. **`confirm: app`** 工具交给所属应用自己的面板（应用通过 `register_app_confirm` 注册的 `AppConfirm`），并附上调用方；规则不回答它们。未注册面板的应用有 120 秒（`app_wait_s`），之后调用被明确拒绝。`main` 上目前还没有应用注册面板；Rinx 的发送面板仍在 Rinx 内部作答。
 3. **`auto_approvable: false`**、**结果未知**和**外部客户端**的调用总是交给用户。
-4. **常设规则**（`rules.rs`），以**（所属应用，工具）**为键，不论谁调用；可以对确切参数设条件（收件人在联系人中或在该会话中、无附件、由用户触发、次数或金额上限；调用缺少所需信息时条件不成立），有每日上限（工具规则默认 20 次），范围最宽的规则（“这个应用接下来一小时的所有请求”）最多 60 分钟（没有“一切、永久”的规则），还有一个“关闭所有规则”。Shell 目前还没有联系人来源，因此“收件人在联系人中”目前从不匹配。由收到的内容触发的运行会被跳过，除非规则明确包含。用户在 Settings → Assistant → Approvals（`settings_page.rs`）中或从面板上创建规则；系统 Agent 只能建议。
+4. **常设规则**（`rules.rs`），以**（所属应用，工具）**为键，不论谁调用；可以对确切参数设条件（收件人在联系人中或在该会话中、无附件、由用户触发、次数或金额上限；调用缺少所需信息时条件不成立），有每日上限（工具规则默认 20 次），范围最宽的规则（“这个应用接下来一小时的所有请求”）最多 60 分钟（没有“一切、永久”的规则），还有一个“关闭所有规则”。联系人来自 Mail 宿主服务的数据（用户自己的账户，以及用户发过邮件的地址；`contacts.rs`），并且只有在用户于设置中打开“在审批规则中使用我的联系人”（默认关闭）之后才会使用；在此之前“收件人在联系人中”从不匹配。系统通讯录是后续工作。由收到的内容触发的运行会被跳过，除非规则明确包含。用户在 Settings → Assistant → Approvals（`settings_page.rs`）中或从面板上创建规则；系统 Agent 只能建议。
 5. 否则显示 **Shell 绘制的面板**（`sheet.rs`、`view.rs`）：每一行显示所属应用、工具、确切参数，跨应用调用时还显示调用方应用；系统 Agent 同一请求的 `confirm: host` 审批可以合并到它对话中的一个面板。
 
 每个决定都只向中继发送一次，并写入**审计**（`audit.rs`：`<octosense home>/logs/approvals-audit.jsonl` 中每个决定一行 JSON，仅所有者可读，记录参数的摘要而不是参数本身；开发者模式在 `logs/dev-audit.jsonl` 中另有完整审计）；每个自动决定也会作为通知告知用户。规则存放在 `approvals/rules.json`，同意记录在 `approvals/consent.json`，都在 OctoSense 主目录下。
@@ -417,7 +417,7 @@ sequenceDiagram
 | 3 | octos 把输入以 `peer/input` 送到 Shell；Shell 在 Calendar 的 peer 上用 `turn/start` 启动回合，使其带有 Calendar 的工具、记忆和账号上下文。如果 Calendar 的 peer 没有宿主连接，系统 Agent 会被告知该应用未连接。 | 进行中（[octos#2567](https://github.com/octos-org/octos/pull/2567)）；Shell 一侧规划中（步骤 6） |
 | 4 | Calendar 的 Agent 调用 `calendar.create_event`（自己的工具），并为每位受邀者调用一次 Mail 可共享的 `mail.send`。每次调用都以 `peer/tool/call` 到达 Shell；Shell 盖上调用方（Calendar 的 Agent）、账号和上下文。 | 规划中（ADR 0004 §5、§7；步骤 6） |
 | 5 | Shell 检查 Calendar 的清单是否获授权 `mail.send`（脚本应用在安装时授权）；不需要第二道 Agent 级别的同意。 | 规划中（步骤 6） |
-| 6 | `mail.send` 是对外的 `confirm: host` 工具，由审批路由处理：开发者模式未开启；不是 `confirm: app`；不是 `auto_approvable: false`；如果有针对（Mail，`mail.send`）的常设规则（例如“发给我的联系人”），就由规则批准（通知并审计；联系人条件需要 Shell 目前还没有的联系人来源），否则一个合并的 Shell 面板列出每封邀请：所属应用 Mail、工具 `mail.send`、调用方应用 Calendar 以及确切参数。 | 路由、规则、面板和审计已在 main（[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）；octos#2567 合入后由内核的工具调用提交请求 |
+| 6 | `mail.send` 是对外的 `confirm: host` 工具，由审批路由处理：开发者模式未开启；不是 `confirm: app`；不是 `auto_approvable: false`；如果有针对（Mail，`mail.send`）的常设规则（例如“发给我的联系人”），就由规则批准（通知并审计；只有用户打开了“在审批规则中使用我的联系人”，联系人条件才会成立），否则一个合并的 Shell 面板列出每封邀请：所属应用 Mail、工具 `mail.send`、调用方应用 Calendar 以及确切参数。 | 路由、规则、面板和审计已在 main（[#120](https://github.com/OctoSense-org/OctoSense/pull/120)）；octos#2567 合入后由内核的工具调用提交请求 |
 | 7 | 批准后，Shell 把每次调用交给 Mail 的宿主服务，它用用户在 Mail 宿主面板上登录的账号发送（密码永远不会到达 Agent），并把结果以 `peer/tool/result` 返回内核。 | Mail 的宿主服务已在 main（`apps/mail/host-service`）；把它的工具作为 Agent 工具还在规划中 |
 | 8 | Calendar 的回合结束，octos 写入 `peers/<slug>/result.md` 和 `turns.txt`；系统 Agent 用 `peer_gather` 读取。失败的邀请会被点名，结果未知的邀请未经用户同意绝不重试。 | 黑板已在 main（octos） |
 | 9 | 系统 Agent 宣布“已预订周二下午 3 点；已向 3 人发送邀请”。Calendar 和 Mail 自己的界面会显示变化，因为它们的数据变了。 | 规划中 |
@@ -430,7 +430,7 @@ sequenceDiagram
 2. **崩溃进程应用的重启。** ADR 0004 §2 说它的磁贴会显示已关闭并提供重启。Shell 实际上移除客户端并发出 “App stopped” 通知；Restart 界面只用于进程内模块（`module_view.rs`）。
 3. **Agent 工作区 = 账号目录。** ADR 0004 §11 说它就是 `peer/prepare` 的 `cwd`。broker 不向 `peer/prepare` 发送 `cwd`，把 peer 绑定到内核分配的工作区；存储 API 的 `agent_workspace` 没有与之连接。账号目录名（`account_hash`，SHA-256）和记忆命名空间标签（`broker.rs` 中的 FNV-1a）也是对账号的两种不同 hash。
 4. **ADR 0003 的 “What the profile runs”** 说 OctoSense 既不配置工具集也不配置沙箱。自 [#117](https://github.com/OctoSense-org/OctoSense/pull/117) 起，Shell 每次启动前都向 `_main` profile 写入拒绝 `group:runtime` 的 `tool_policy`，因此宿主自己的回合也没有 octos shell。
-5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。仍未修复：[ai-services.zh-CN.md](ai-services.zh-CN.md) 的日期是 2026-09-27：其架构图显示 Card runner “没有 `octos.*` 服务”（#106 已合入），并说脚本应用“在首次使用同意落地之前”关闭（同意机制已在 #120 落地；`Policy::contained_apps` 开关默认仍关闭）。
+5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。[ai-services.zh-CN.md](ai-services.zh-CN.md) 现已描述 2026-09-28 的 `main`（#106 的 Card runner `octos` 服务、#120 的同意机制；`Policy::contained_apps` 开关默认仍关闭）。
 6. **“在 Settings 中开启”命令执行。** 文档已修复：`crates/kernel/README.md` 和 `system_tools.rs` 现在说明它尚在计划中（没有 Settings 开关调用 `SystemAgentTools::grant_command_execution`；宿主工具需要 octos#2567）。
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都应通过 `peer/tool/call` 到达路由；目前只有 AI 总线向它提交请求（见上文）。没有应用注册自己的 `confirm: app` 面板，因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。

@@ -30,12 +30,18 @@
 //! State lives under the host's own directory (`<host_dir>/mail`), outside
 //! every app's jail: `accounts.json` (no passwords) and `box-<id>…json` (the
 //! fetched mail). Passwords go to the platform's secret store ([`vault`]).
+//!
+//! The shell reads one more thing, host-side and only with the person's
+//! consent: [`contacts::known_addresses`], their own addresses and the
+//! people they sent mail to, for the approval rules' "recipients in my
+//! contacts".
 use octosense_appstore::services::{close_sheet_later, HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+pub mod contacts;
 pub mod vault;
 mod html;
 mod imap;
@@ -175,7 +181,7 @@ impl Transport for DemoTransport {
             .map(|(uid, sender, address, subject, body, html)| {
                 json!({"id": &network::hash(uid)[..24], "uid": uid, "sender": sender, "address": address, "subject": subject,
                     "body": if body.is_empty() { "(No readable message body)" } else { body }, "preview": body, "html": html,
-                    "time": "Sep 25", "date": "2026-09-25T09:00:00Z", "unread": folder == INBOX})
+                    "to": if folder == INBOX { "me@example.com" } else { "noah@example.com" }, "time": "Sep 25", "date": "2026-09-25T09:00:00Z", "unread": folder == INBOX})
             })
             .collect();
         seen.extend(messages.iter().map(|m| m["uid"].clone()));
@@ -258,13 +264,8 @@ impl Store {
         Ok(account)
     }
 
-    /// The inbox keeps the name older builds gave it.
     fn mailbox_path(&self, id: &str, folder: &str) -> PathBuf {
-        if folder == INBOX {
-            self.dir.join(format!("box-{id}.json"))
-        } else {
-            self.dir.join(format!("box-{id}-{}.json", &network::hash(folder)[..12]))
-        }
+        mailbox_file(&self.dir, id, folder)
     }
 
     fn mailbox(&self, id: &str, folder: &str) -> Value {
@@ -289,6 +290,7 @@ impl Store {
 
     fn forget(&self, id: &str) {
         self.vault.remove(&self.dir, id);
+        contacts::forget(&self.dir, id);
         if let Ok(entries) = std::fs::read_dir(&self.dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -297,6 +299,16 @@ impl Store {
                 }
             }
         }
+    }
+}
+
+/// Where one folder's fetched mail is kept; the inbox keeps the name older
+/// builds gave it.
+fn mailbox_file(dir: &Path, id: &str, folder: &str) -> PathBuf {
+    if folder == INBOX {
+        dir.join(format!("box-{id}.json"))
+    } else {
+        dir.join(format!("box-{id}-{}.json", &network::hash(folder)[..12]))
     }
 }
 
@@ -580,7 +592,13 @@ impl HostService for MailService {
                     "message_id": format!("<{now:x}@{domain}>"),
                 });
                 let transport = self.transport.clone();
-                work(move || reply.send(transport.send(&account, &draft)));
+                work(move || {
+                    let sent = transport.send(&account, &draft);
+                    if sent.is_ok() {
+                        contacts::record_sent(&store.dir, &account_arg, text(&draft, "to"));
+                    }
+                    reply.send(sent)
+                });
             }
             other => reply.send(Err(format!("mail has no method {other:?}"))),
         }
@@ -832,9 +850,13 @@ mod tests {
 
         ask(&dir, "os.mail", "mail.send", json!({"account": id, "to": "alex@example.com", "subject": "Hi", "body": "Hello"}), false, &mut host).unwrap();
         assert_eq!(fake.sent.lock().unwrap()[0]["to"], "alex@example.com");
+        // The approval rules' contacts: the account and whom it wrote to, no password.
+        assert_eq!(contacts::known_addresses(&dir), ["alex@example.com", "me@example.com"]);
+        assert!(!std::fs::read_to_string(dir.join("mail").join(contacts::SENT_TO_FILE)).unwrap().contains("s3cret"));
 
         ask(&dir, "os.mail", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();
         assert!(!dir.join("mail/secrets").join(&id).exists(), "the last app out takes the password with it");
         assert!(std::fs::read_dir(dir.join("mail")).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with("box-")), "and its mail");
+        assert!(contacts::known_addresses(&dir).is_empty(), "and whom it wrote to");
     }
 }

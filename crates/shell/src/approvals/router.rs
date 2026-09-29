@@ -24,7 +24,8 @@ use super::audit::{AuditLog, Entry};
 use super::dev_hooks::{DevKind, DevModeHooks};
 use super::facts;
 use super::relay::{ApprovalIntake, ApprovalRelay};
-use super::rules::{Contacts, ApprovalGesture, RuleDraft, RuleStore};
+use super::contacts::{ContactsGate, ContactsSource};
+use super::rules::{ApprovalGesture, RuleDraft, RuleStore};
 use super::sheet::{app_label, caller_label, Answer, Line, Place, Sheet, Surfaced};
 use super::types::{Caller, Confirm, Connection, Decision, Request, RequestContext, RequestId, RuleId, ToolSpec};
 use serde_json::Value;
@@ -81,7 +82,8 @@ pub struct Router {
     pub rules: RuleStore,
     pub audit: AuditLog,
     hooks: Box<dyn DevModeHooks>,
-    contacts: Box<dyn Contacts>,
+    /// "Recipients in my contacts", behind the person's consent.
+    contacts: ContactsGate,
     relay: Box<dyn ApprovalRelay>,
     /// Every request not yet decided.
     pending: BTreeMap<RequestId, Request>,
@@ -102,7 +104,7 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(rules: RuleStore, audit: AuditLog, hooks: Box<dyn DevModeHooks>, contacts: Box<dyn Contacts>, relay: Box<dyn ApprovalRelay>) -> Router {
+    pub fn new(rules: RuleStore, audit: AuditLog, hooks: Box<dyn DevModeHooks>, contacts: ContactsGate, relay: Box<dyn ApprovalRelay>) -> Router {
         Router {
             rules,
             audit,
@@ -131,8 +133,16 @@ impl Router {
     pub fn set_hooks(&mut self, hooks: Box<dyn DevModeHooks>) {
         self.hooks = hooks;
     }
-    pub fn set_contacts(&mut self, contacts: Box<dyn Contacts>) {
-        self.contacts = contacts;
+    /// Replace where contacts come from; the person's consent stays.
+    pub fn set_contacts(&mut self, contacts: Box<dyn ContactsSource>) {
+        self.contacts.set_source(contacts);
+    }
+    pub fn contacts(&self) -> &ContactsGate {
+        &self.contacts
+    }
+    /// Settings' "Use my contacts in approval rules".
+    pub fn contacts_mut(&mut self) -> &mut ContactsGate {
+        &mut self.contacts
     }
     pub fn hooks(&self) -> &dyn DevModeHooks {
         &*self.hooks
@@ -215,7 +225,7 @@ impl Router {
         // 4. Standing rules.
         let surfaced = match always_person {
             Some(s) => s,
-            None => match self.rules.find(&req, &*self.contacts, now) {
+            None => match self.rules.find(&req, &self.contacts, now) {
                 Some(rule) => {
                     self.rules.record_use(&rule, now);
                     self.decide(&req.id, Decision::ApproveByRule(rule.clone()), "rule", Some(&rule), "standing rule", now);
@@ -232,7 +242,7 @@ impl Router {
     }
 
     fn surface(&mut self, req: &Request, surfaced: Surfaced, now: u64) -> u64 {
-        let line = Line::for_request(req, surfaced, &*self.contacts);
+        let line = Line::for_request(req, surfaced, &self.contacts);
         let batch = req.context.batch.clone();
         self.notice(format!("Needs you: {}", line.heading()), format!("{} asks. Open the sheet to approve or deny.", line.caller));
         self.changed();
@@ -350,7 +360,7 @@ impl Router {
             .collect();
         for (sheet, id) in open {
             let Some(req) = self.pending.get(&id).cloned() else { continue };
-            if let Some(rule) = self.rules.find(&req, &*self.contacts, now) {
+            if let Some(rule) = self.rules.find(&req, &self.contacts, now) {
                 self.rules.record_use(&rule, now);
                 self.decide(&id, Decision::ApproveByRule(rule.clone()), "rule", Some(&rule), "standing rule", now);
                 if let Some(line) = self.sheets.iter_mut().find(|s| s.id == sheet).and_then(|s| s.lines.iter_mut().find(|l| l.request == id)) {

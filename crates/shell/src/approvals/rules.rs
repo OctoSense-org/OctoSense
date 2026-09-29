@@ -18,6 +18,7 @@
 //! - **One tap turns every rule off** ([`RuleStore::all_off`]).
 //! - **Persisted per OctoSense home** in [`RULES_FILE`], owner-only.
 
+use super::contacts::ContactsSource;
 use super::facts;
 use super::types::{Request, RuleId, Trigger};
 use serde::{Deserialize, Serialize};
@@ -189,32 +190,6 @@ pub enum Miss {
     CapReached,
 }
 
-/// The person's contacts, for "recipients in contacts".
-pub trait Contacts: Send {
-    fn contains(&self, address: &str) -> bool;
-}
-
-/// Nobody is in contacts: the contacts condition never holds until the
-/// shell has a contacts source.
-#[derive(Default)]
-pub struct NoContacts;
-
-impl Contacts for NoContacts {
-    fn contains(&self, _address: &str) -> bool {
-        false
-    }
-}
-
-/// A fixed list (tests, and a host-provided snapshot).
-#[derive(Default, Clone)]
-pub struct ContactList(pub Vec<String>);
-
-impl Contacts for ContactList {
-    fn contains(&self, address: &str) -> bool {
-        self.0.iter().any(|c| c.eq_ignore_ascii_case(address))
-    }
-}
-
 pub fn day_of(now: u64) -> u64 {
     now / DAY_S
 }
@@ -240,7 +215,7 @@ impl Rule {
 
     /// Whether this rule answers `req`, on its exact arguments. The router
     /// has already excluded `auto_approvable: false` and unknown outcomes.
-    pub fn check(&self, req: &Request, contacts: &dyn Contacts, now: u64) -> Result<(), Miss> {
+    pub fn check(&self, req: &Request, contacts: &dyn ContactsSource, now: u64) -> Result<(), Miss> {
         if self.app != req.app {
             return Err(Miss::OtherApp);
         }
@@ -265,7 +240,7 @@ impl Rule {
                 return Err(Miss::NoRecipients);
             }
             let in_thread = |r: &String| req.context.thread.iter().any(|t| t.eq_ignore_ascii_case(r));
-            let ok = recipients.iter().all(|r| (c.recipients_in_contacts && contacts.contains(r)) || (c.recipients_in_thread && in_thread(r)));
+            let ok = recipients.iter().all(|r| (c.recipients_in_contacts && contacts.is_known(r)) || (c.recipients_in_thread && in_thread(r)));
             if !ok {
                 return Err(Miss::RecipientsNotKnown);
             }
@@ -389,7 +364,7 @@ impl RuleStore {
 
     /// The first rule that answers `req`. Narrow rules first, then the
     /// app's time-boxed "everything".
-    pub fn find(&self, req: &Request, contacts: &dyn Contacts, now: u64) -> Option<RuleId> {
+    pub fn find(&self, req: &Request, contacts: &dyn ContactsSource, now: u64) -> Option<RuleId> {
         let narrow = self.rules.iter().filter(|r| !r.is_everything());
         let broad = self.rules.iter().filter(|r| r.is_everything());
         narrow.chain(broad).find(|r| r.check(req, contacts, now).is_ok()).map(|r| r.id.clone())

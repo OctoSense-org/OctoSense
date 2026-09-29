@@ -4,6 +4,8 @@
 //! - **Rules**: each standing rule with its conditions, today's use of its
 //!   daily cap and the minutes left of a time box; Delete (or Turn on for
 //!   one that is off); **Turn every rule off** in one tap.
+//! - **Use my contacts in approval rules**: off by default; while off,
+//!   "people in my contacts" never matches (`contacts.rs`).
 //! - **App agents**: every app's agent with its consent and an off switch;
 //!   "Everything for 60 min" creates the time-boxed rule for that app.
 //! - **Recent automatic approvals**: the audit's newest automatic entries
@@ -45,6 +47,8 @@ enum Hit {
     AllOff,
     Delete(RuleId),
     Enable(RuleId),
+    ContactsOn,
+    ContactsOff,
     AgentOff(String),
     AgentAllow(String),
     Everything(String),
@@ -55,6 +59,7 @@ enum Hit {
 struct Frame {
     open: bool,
     rules: Vec<Rule>,
+    contacts: bool,
     agents: Vec<(String, String, State)>,
     log: Vec<Entry>,
     now: u64,
@@ -68,6 +73,7 @@ fn frame() -> Frame {
         Frame {
             open: true,
             rules: a.router.rules.rules().to_vec(),
+            contacts: a.router.contacts().allowed(),
             agents: a.consent.agents(),
             log: a.router.audit.recent_automatic(8),
             now: super::now(),
@@ -241,6 +247,23 @@ impl ShellApprovalsSettings {
             hits.push((off, Hit::AllOff));
         }
         y += 28.0 + 10.0;
+        {
+            let (switch, hit) = if f.contacts { ("Turn off", Hit::ContactsOff) } else { ("Turn on", Hit::ContactsOn) };
+            let sw = b.width(cx, switch);
+            let s = b.draw(cx, x + cw - sw, y + 6.0, sw, switch, false);
+            hits.push((s, hit));
+            let tw = cw - sw - 12.0;
+            let label = "Use my contacts in approval rules";
+            let status = if f.contacts {
+                "On: your mail accounts and the people you sent mail to"
+            } else {
+                "Off: \u{201c}people in my contacts\u{201d} never matches"
+            };
+            b.d.label_elided(cx, rect(x, y, tw, 20.0), true, tok.font.body, ink, HAlign::Left, label);
+            b.d.label_elided(cx, rect(x, y + 20.0, tw, 16.0), false, tok.font.body_small, dim, HAlign::Left, status);
+            shown.push(format!("{label} | {status}"));
+            y += ROW_H + 4.0;
+        }
         if f.rules.is_empty() {
             b.d.label_elided(cx, rect(x, y, cw, 18.0), false, tok.font.body, dim, HAlign::Left, "No rules. Every approval asks you.");
             shown.push("No rules. Every approval asks you.".into());
@@ -326,8 +349,8 @@ impl ShellApprovalsSettings {
     }
 }
 
-/// What a press does on the page. Creating or re-enabling a rule and
-/// allowing an agent are the person's gestures.
+/// What a press does on the page. Creating or re-enabling a rule, allowing
+/// an agent and turning contacts on are the person's gestures.
 fn act(hit: Hit) {
     let now = super::now();
     super::with(|a| match hit {
@@ -341,6 +364,8 @@ fn act(hit: Hit) {
         Hit::Enable(id) => {
             a.router.rules.enable(&ApprovalGesture::settings_tap(), &id);
         }
+        Hit::ContactsOn => a.router.contacts_mut().allow(&ApprovalGesture::settings_tap(), now),
+        Hit::ContactsOff => a.router.contacts_mut().turn_off(now),
         Hit::AgentOff(app) => a.consent.turn_off(&app, now),
         Hit::AgentAllow(app) => a.consent.set(&ApprovalGesture::settings_tap(), &app, true, now),
         Hit::Everything(app) => {

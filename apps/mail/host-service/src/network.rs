@@ -423,7 +423,7 @@ pub fn decode(raw: &[u8], uid: &str) -> Result<Value, String> {
     };
     Ok(
         json!({"id":&hash(uid)[..24],"uid":uid,"sender":sender,"address":address,"subject":subject,
-        "message_id":header("Message-ID"),"reply_to":header("Reply-To"),"references":header("References"),
+        "to":header("To"),"cc":header("Cc"),"message_id":header("Message-ID"),"reply_to":header("Reply-To"),"references":header("References"),
         "body":plain,"preview":plain.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(180).collect::<String>(),
         "html":html,"inline_images":images,"attachment_items":attachments,"attachments":attachments.len(),
         "date":date.to_rfc3339(),"time":date.format("%b %d").to_string(),"unread":true,"flagged":false,"archived":false,"source":"gmail"}),
