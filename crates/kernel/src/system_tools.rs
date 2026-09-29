@@ -180,9 +180,11 @@ impl SystemAgentTools {
     /// the host tool [`COMMAND_EXECUTION_TOOL`], each command approved live
     /// (section 8); never octos's shell.
     ///
-    /// TODO(ADR 0004 plan steps 4/6): persist the switch in Settings →
-    /// Assistant (no Settings plumbing for it exists yet) and register the
-    /// host tool on the system session once octos can (octos#2567 item 6).
+    /// The shell persists the switch (Setup → Assistant → Command
+    /// execution, `crates/shell/src/system_chat/grants.rs`) and hands the
+    /// set to [`set_grants`]; a kernel start takes it ([`grants_at_start`]).
+    /// TODO(ADR 0004 plan step 6): register the host tool on the system
+    /// session once octos can (octos#2567 item 6).
     pub fn grant_command_execution(&mut self, on: bool) -> &mut Self {
         self.command_execution = on;
         self
@@ -207,6 +209,44 @@ impl SystemAgentTools {
     pub fn names(&self) -> BTreeSet<String> {
         SYSTEM_AGENT_TOOLS.iter().map(|t| t.to_string()).chain(self.host_tools()).collect()
     }
+}
+
+// ---- the grants a kernel starts with ---------------------------------------
+
+/// The person's current grants for the system agent (the shell sets them
+/// from Settings), and the grants the running kernel generation started
+/// with: a change applies from the next kernel start.
+static GRANTS: std::sync::Mutex<Option<SystemAgentTools>> = std::sync::Mutex::new(None);
+static AT_START: std::sync::Mutex<Option<SystemAgentTools>> = std::sync::Mutex::new(None);
+
+fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The shell hands over the person's grants (at startup, and whenever a
+/// Settings switch changes). Only the shell calls this, from its Settings
+/// handler, which requires the person's gesture to turn a grant on.
+pub fn set_grants(tools: SystemAgentTools) {
+    *lock(&GRANTS) = Some(tools);
+}
+
+/// The person's current grants ([`SystemAgentTools::new`] until the shell
+/// sets them).
+pub fn grants() -> SystemAgentTools {
+    lock(&GRANTS).clone().unwrap_or_default()
+}
+
+/// Called before every kernel start (`launch::prepare`): the new
+/// generation runs with the grants of this moment.
+pub(crate) fn take_grants_for_start() {
+    *lock(&AT_START) = Some(grants());
+}
+
+/// The grants the last kernel start took; `None` before any start. The
+/// shell compares it with [`grants`] to say "restart the assistant to
+/// apply" (see `crate::system_agent_tools_in_effect`).
+pub fn grants_at_start() -> Option<SystemAgentTools> {
+    lock(&AT_START).clone()
 }
 
 /// The octos `ToolPolicy` the kernel runs `_main` with: everything a grant
@@ -323,6 +363,20 @@ mod tests {
         let host: Vec<String> = granted.host_tools().into_iter().collect();
         assert_eq!(host, ["mail.send", COMMAND_EXECUTION_TOOL, "toolbox.search"]);
         assert!(!granted.names().contains("shell"), "never octos's shell");
+    }
+
+    #[test]
+    fn a_start_takes_the_grants_of_that_moment() {
+        let mut on = SystemAgentTools::new();
+        on.grant_command_execution(true);
+        set_grants(on.clone());
+        take_grants_for_start();
+        assert_eq!(grants_at_start(), Some(on));
+        // A later change waits for the next start.
+        set_grants(SystemAgentTools::new());
+        assert!(grants_at_start().unwrap().command_execution());
+        take_grants_for_start();
+        assert!(!grants_at_start().unwrap().command_execution());
     }
 
     #[test]
