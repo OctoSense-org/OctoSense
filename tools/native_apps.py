@@ -191,13 +191,28 @@ def sandbox_problems(sandbox):
     return problems
 
 
+STORAGE_KEYS = ("max_bytes", "accounts", "agent_workspace", "cache_max_bytes", "external")
+
+
 def storage_problems(storage):
-    """`storage` (ADR 0004 §11): `accounts` a bool, `external` a list of
-    `<root>[/<path>]:ro|rw` grants outside the jail (part of the sandbox,
-    never of an agent's workspace)."""
+    """`storage` (ADR 0004 §11), the block the shell parses with
+    `app_storage::StorageSpec` at startup: `accounts` a bool, `agent_workspace`
+    "account" or "none", the optional byte ceilings positive whole numbers,
+    `external` a list of `<root>[/<path>]:ro|rw` grants outside the jail
+    (part of the sandbox, never of an agent's workspace). Unknown fields are
+    refused, as the shell refuses them."""
     problems = []
+    unknown = sorted(set(storage) - set(STORAGE_KEYS))
+    if unknown:
+        problems.append(f"storage.{unknown[0]} is not a storage field (one of {', '.join(STORAGE_KEYS)})")
     if not isinstance(storage.get("accounts"), bool):
         problems.append("storage.accounts must be true or false")
+    if storage.get("agent_workspace", "account") not in ("account", "none"):
+        problems.append("storage.agent_workspace must be 'account' or 'none'")
+    for key in ("max_bytes", "cache_max_bytes"):
+        value = storage.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value <= 0):
+            problems.append(f"storage.{key} must be a positive whole number of bytes")
     external = storage.get("external")
     if not isinstance(external, list):
         return problems + ["storage.external must be a list"]
@@ -346,6 +361,13 @@ def package_block(apps, shell, cargo_toml):
     return {"features": lines}
 
 
+def rust_raw(text):
+    """A Rust raw string literal holding `text`."""
+    if '"#' in text:
+        raise ManifestError(f"cannot embed {text!r} in a raw string")
+    return f'r#"{text}"#'
+
+
 def rust_hosting(value):
     return {"module": "Hosting::Module", "process": "Hosting::Process",
             "process-if-vulkan": "Hosting::ProcessIfVulkan"}[value]
@@ -428,6 +450,9 @@ def render_rust(apps):
         "    pub accounts: bool,",
         "    /// `storage.external`: `<root>[/<path>]:ro|rw` outside its jail.",
         "    pub external: &'static [&'static str],",
+        "    /// The whole `storage` block as JSON, which the shell parses with",
+        "    /// `app_storage::StorageSpec` at startup (ADR 0004 §11).",
+        "    pub storage: &'static str,",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -460,6 +485,7 @@ def render_rust(apps):
         out.append(f"        accounts: {'true' if app['storage']['accounts'] else 'false'},")
         external = ", ".join(s(x) for x in app["storage"]["external"])
         out.append(f"        external: &[{external}],")
+        out.append(f"        storage: {rust_raw(json.dumps(app['storage'], separators=(', ', ': ')))},")
         out.append("    },")
     out += [
         "];",
