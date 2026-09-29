@@ -446,3 +446,58 @@ fn a_context_approval_is_never_triggered_by_the_person_unless_stamped() {
     }
     assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
 }
+
+// ---------------------------------------------------------------- every approval (G4)
+
+fn octos_approval(id: &str, tool: &str, peer_app: &str, client: Option<&str>) -> HostToolApproval {
+    let mut a = HostToolApproval::parse_octos(&json!({"approval_id": id, "turn_id": "t", "tool_name": tool, "title": "Write notes.md", "body": "b"}), "s#peerctx-x.ctx", peer_app).unwrap();
+    a.context_id = client.map(|_| "ctx".to_string());
+    a.client = client.map(str::to_string);
+    a
+}
+
+#[test]
+fn octos_own_approvals_on_an_apps_peer_go_to_the_shells_sheet() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let answers: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let answer = || {
+        let a = answers.clone();
+        ApprovalAnswer::new(move |ok| a.lock().unwrap().push(ok))
+    };
+    // Rinx's mini app, in a context: Rinx's own agent, for that client.
+    relay.handle(Event::Approval { app: "rinx".into(), account: Some("@a:x".into()), approval: octos_approval("o1", "write_file", "rinx", Some("mini.news")), answer: answer() }, &mut w);
+    let (app, spec, caller, context) = w.asked[0].clone();
+    assert_eq!((app.as_str(), spec.name.as_str()), ("rinx", "write_file"));
+    assert_eq!(caller, Caller::OwnAgent { client: Some("mini.news".into()) });
+    assert_eq!(context.context_id.as_deref(), Some("ctx"));
+    assert!(w.router.is_pending(&RequestId("hostappr:o1".into())), "on the shell's sheet, not the app's");
+    // A script app's peer (`card.<id>`): the app, not the peer name.
+    relay.handle(Event::Approval { app: "card.com.example.trip".into(), account: None, approval: octos_approval("o2", "write_file", "card.com.example.trip", None), answer: answer() }, &mut w);
+    assert_eq!(w.asked[1].0, "com.example.trip");
+    assert_eq!(w.asked[1].2, Caller::OwnAgent { client: None });
+    // octos's shell is a command: never a rule.
+    relay.handle(Event::Approval { app: "rinx".into(), account: None, approval: octos_approval("o3", "shell", "rinx", None), answer: answer() }, &mut w);
+    assert!(w.asked[2].1.command && !w.asked[2].1.auto_approvable);
+    // The person answers the first: the kernel hears it once.
+    let sheet = w.router.sheets().iter().find(|s| s.lines.iter().any(|l| l.request.0 == "hostappr:o1")).unwrap().id;
+    w.router.answer(sheet, &RequestId("hostappr:o1".into()), crate::approvals::sheet::Answer::Once, &crate::approvals::rules::ApprovalGesture::sheet_tap(), 2).unwrap();
+    for event in w.decided() {
+        relay.handle(event, &mut w);
+    }
+    assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
+}
+
+#[test]
+fn developer_mode_answers_octos_own_approvals_through_the_router() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::all());
+    let answers: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let a = answers.clone();
+    relay.handle(Event::Approval { app: "rinx".into(), account: None, approval: octos_approval("o1", "write_file", "rinx", Some("mini")), answer: ApprovalAnswer::new(move |ok| a.lock().unwrap().push(ok)) }, &mut w);
+    for event in w.decided() {
+        relay.handle(event, &mut w);
+    }
+    assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
+    assert_eq!(w.router.audit.all()[0].by, "developer_mode");
+}

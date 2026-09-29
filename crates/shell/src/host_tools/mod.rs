@@ -8,6 +8,7 @@
 //! | `peer/tool/call` | [`relay::Relay`]: authorize, route to the owning app, confirm, answer once |
 //! | `peer/tool/cancel`, an interrupt, a closed connection | the call ends; whoever holds it is told |
 //! | `approval/requested` `host_tool` | the approval router ([`crate::approvals::approval_requested`]); its decision answers the kernel |
+//! | any other `approval/requested` on an app's peer session or context (octos's own tools) | the same router, as the app agent's call on its own app (ADR 0004 §8); the app hears only `approval/handled_by_host` |
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
 //!

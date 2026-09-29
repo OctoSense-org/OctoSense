@@ -772,12 +772,26 @@ impl Inner {
         if ours {
             self.note_terminal(method, &params);
         }
-        // A host-routed tool's approval is the host's to draw (the owning
-        // app's sheet, the shell's router): never the app context's.
+        // Every approval on the peer's session or one of its contexts is the
+        // host's to draw (ADR 0004 §8): a host-routed tool's (the owning
+        // app's sheet, the shell's router) and octos's own (the shell's
+        // router, as the app agent's call). The app's context only hears
+        // that the host has it. A host that takes none leaves octos's own
+        // approvals to the context, as before.
         if ours && method == "approval/requested" {
-            if let Some(approval) = HostToolApproval::parse(&params, session) {
+            let context = route.as_ref().and_then(|(g, c)| (*g == generation).then(|| c.upgrade()).flatten());
+            let approval = HostToolApproval::parse(&params, session)
+                .or_else(|| HostToolApproval::parse_octos(&params, session, &self.cfg.app_id))
+                .map(|mut a| {
+                    if let Some(c) = &context {
+                        a.context_id.get_or_insert_with(|| c.context_id.clone());
+                        a.client = Some(c.instance.clone());
+                    }
+                    a
+                });
+            if let Some(approval) = approval {
                 if self.on_host_approval(approval) {
-                    if let Some(context) = route.as_ref().and_then(|(g, c)| (*g == generation).then(|| c.upgrade()).flatten()) {
+                    if let Some(context) = context {
                         context.notification(host_tools::HANDLED_BY_HOST, &params);
                     }
                     return;

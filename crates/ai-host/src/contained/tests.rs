@@ -29,6 +29,9 @@ enum Turn {
     Reply(Value),
     /// Raise an approval (`id`, `title`), then complete with this value.
     ApproveThenReply(&'static str, &'static str, Value),
+    /// The host took the approval (the shell's router): the app hears only
+    /// that, then the turn completes with this value.
+    HostHasItThenReply(&'static str, Value),
 }
 
 struct FakeContext {
@@ -53,6 +56,13 @@ impl OctosContext for FakeContext {
                     sink(ContextEvent::Data(json!({
                         "method": "approval/requested",
                         "params": {"approval_id": id, "title": title, "body": "ls"},
+                    })));
+                    sink(ContextEvent::Complete(Ok(v.clone())));
+                }
+                Turn::HostHasItThenReply(id, v) => {
+                    sink(ContextEvent::Data(json!({
+                        "method": octosense_app_peers::host_tools::HANDLED_BY_HOST,
+                        "params": {"approval_id": id, "title": "Write notes.md", "body": ""},
                     })));
                     sink(ContextEvent::Complete(Ok(v.clone())));
                 }
@@ -339,6 +349,21 @@ fn contained_denies_tool_approvals() {
         .ops("card.com.example.trip")
         .iter()
         .any(|op| matches!(op, ContextOp::Approval { approve: true, .. })));
+}
+
+#[test]
+fn contained_never_declines_an_approval_the_host_routes() {
+    let _g = serial();
+    let peers = Peers::new(Turn::HostHasItThenReply("a1", json!({"turn_id": "t1", "text": "done"})));
+    register(true, &peers);
+    let reply = ask(APP, "octos.turn.start", json!({"text": "save my notes"}), false).expect("a reply");
+    assert_eq!(reply["text"], "done");
+    assert!(reply.get("denied_approvals").is_none(), "{reply}");
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(
+        !peers.ops("card.com.example.trip").iter().any(|op| matches!(op, ContextOp::Approval { .. })),
+        "the shell's sheet answers it, never the contained service"
+    );
 }
 
 #[test]

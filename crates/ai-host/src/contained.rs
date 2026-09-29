@@ -176,8 +176,15 @@ fn finish(result: Result<Value, String>, denied: &[String]) -> Result<Value, Str
     Ok(value)
 }
 
-/// Where one call's events go: approvals are declined, the completion is
-/// the app's answer, streamed text is dropped (the answer carries it).
+/// Where one call's events go: the completion is the app's answer,
+/// streamed text is dropped (the answer carries it).
+///
+/// Approvals: the broker hands every approval of the app's peer and
+/// contexts to the shell's approval router (ADR 0004 §8), and this context
+/// only hears `approval/handled_by_host`, which needs nothing from here. A
+/// raw `approval/requested` reaches this sink only when no host routes
+/// approvals (a host without a router): a script app draws no sheet of its
+/// own, so that one is declined rather than left to time out.
 fn sink(context: Weak<dyn OctosContext>, once: Once) -> EventSink {
     let denied: Arc<Mutex<Vec<String>>> = Arc::default();
     Arc::new(move |event| match event {
