@@ -5406,6 +5406,8 @@ dependencies = [
  "makepad-live-id",
  "makepad-micro-serde",
  "makepad-script",
+ "rustls",
+ "webpki-roots 1.0.9",
  "windows 0.62.2",
 ]
 
