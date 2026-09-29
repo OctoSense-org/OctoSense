@@ -19,7 +19,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use octosense_app_peers::broker::{Broker, BrokerConfig};
+use octosense_app_peers::broker::{Broker, BrokerConfig, ToolHostHandle};
+use octosense_app_peers::host_tools::{CallOrigin, HostToolCall, ToolHost, ToolOutcome, ToolReply};
 use octosense_app_peers::connectors::CoreConnector;
 use octosense_app_peers::*;
 use octosense_kernel::{Core, Options};
@@ -681,6 +682,114 @@ fn the_system_agent_cannot_get_a_command_run_through_an_app_peer() {
         "no command ran"
     );
 
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+
+/// UPCR-2026-035 end to end: the broker registers Rinx's tools after
+/// `peer/prepare`; the system agent's `peer_send_input` reaches the shell as
+/// `peer/input`, the broker starts that turn on its own connection, and the
+/// turn (host-driven: app tools, attended) calls the registered app tool,
+/// which the host answers once. A request context's turn gets the tool too,
+/// stamped with its client. The peer is never offered octos's shell.
+#[test]
+fn the_system_agents_input_runs_as_a_host_driven_turn_with_the_apps_tools() {
+    let Some(program) = kernel() else { return };
+    struct EchoHost(Mutex<Vec<HostToolCall>>);
+    impl ToolHost for EchoHost {
+        fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
+            Ok(vec![json!({"name": "rinx.echo", "description": "Echo a text back.", "risk": "read",
+                "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}})])
+        }
+        fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
+            let text = call.args["text"].as_str().unwrap_or("").to_owned();
+            self.0.lock().unwrap().push(call);
+            reply.finish(ToolOutcome::Ok(json!({"echo": text})));
+        }
+    }
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let dir = temp("host-tools");
+    std::fs::create_dir_all(&dir).unwrap();
+    let offered_log = dir.join("offered.jsonl");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .env("MOCK_LLM_TOOLS_LOG", &offered_log)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let host = Arc::new(EchoHost(Mutex::new(Vec::new())));
+    let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+    cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+    cfg.tool_host = Some(ToolHostHandle(host.clone() as Arc<dyn ToolHost>));
+    let rinx = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound and its tools registered");
+    let (slug, peer_session) = rinx.peer().unwrap();
+
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+               "input": [{"kind": "text", "text": format!("TELL_PEER_TOOL:{slug}")}]}),
+    )
+    .expect("system turn");
+    for _ in 0..120 {
+        if !host.0.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let calls = host.0.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "the app tool ran once: {calls:?}");
+    let call = &calls[0];
+    assert_eq!(call.name, "rinx.echo");
+    assert_eq!(call.origin, CallOrigin::PeerInput, "the turn the broker started for peer/input");
+    assert_eq!(call.account.as_deref(), Some("@alice:example.org"));
+    assert_eq!(call.session_id, peer_session);
+    let mut transcript = String::new();
+    for _ in 0..60 {
+        transcript = rinx
+            .host_request("session/hydrate", json!({"session_id": peer_session, "include": ["messages"]}))
+            .unwrap_or(Value::Null)
+            .to_string();
+        if transcript.contains("CALL_APP_TOOL") && transcript.contains("OK") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(transcript.contains("CALL_APP_TOOL"), "the system agent's input ran on the peer: {transcript}");
+
+    // A request context of the app (a mini app) gets the tool too.
+    let ctx = rinx.open_context(spec("@alice:example.org", "mini.echo#1")).unwrap();
+    let answer = run(&ctx, ContextOp::Turn { text: "CALL_APP_TOOL".into() }, Duration::from_secs(60)).expect("a completion");
+    answer.expect("the context turn completed");
+    let calls = host.0.lock().unwrap().clone();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[1].origin, CallOrigin::Context);
+    assert_eq!(calls[1].client.as_deref(), Some("mini.echo#1"), "stamped from the host's context table");
+
+    let requests: Vec<Value> = std::fs::read_to_string(&offered_log)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let peer_requests: Vec<&Value> = requests.iter().filter(|r| r["user"].as_str().unwrap_or("").contains("CALL_APP_TOOL")).collect();
+    assert!(!peer_requests.is_empty());
+    for request in &peer_requests {
+        let tools: Vec<&str> = request["tools"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+        assert!(tools.contains(&"rinx_echo"), "the registered app tool is offered: {tools:?}");
+        assert!(!tools.iter().any(|t| ["shell", "bash", "exec_command"].contains(t)), "{tools:?}");
+    }
     rinx.release();
     drop(rinx);
     core.shutdown_within(Duration::from_secs(5));

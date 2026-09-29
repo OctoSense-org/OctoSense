@@ -16,12 +16,25 @@
 //!   generation, app not released, service in the app's grant AND the
 //!   instance's — before the request and again before any reply is
 //!   delivered, so a late reply never reaches a new account or instance;
-//! - routes each notification to the context whose session it names.
+//! - routes each notification to the context whose session it names;
+//! - is the peer's **tool host** (octos UPCR-2026-035): right after every
+//!   `peer/prepare` (and so after every reconnect, which prepares again) it
+//!   registers the app's tools on its own link, the one that drives the
+//!   peer's turns (`peer/tools/register`, `generic_tools` omitted so the
+//!   peer keeps its kernel roster). A peer whose registration fails runs no
+//!   turn. It takes every `peer/tool/call` on that link, stamps the account,
+//!   the calling context's client and the caller, executes each occurrence
+//!   at most once, refuses calls of turns it interrupted, and hands the call
+//!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
+//!   closed link end calls before they run. `peer/input` (the system agent's
+//!   input) starts the peer's turn on the same link with the kernel's turn
+//!   id, once per input, queued while the peer is busy; `host_tool`
+//!   approvals go to the host, never to the app.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -32,6 +45,7 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::contract::*;
+use crate::host_tools::{self, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, ToolHost, ToolOutcome, ToolReply};
 
 /// A boxed future, for the object-safe transport traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -85,6 +99,19 @@ pub struct BrokerConfig {
     /// it created. `None` keeps tokens in memory, so a peer created by this
     /// process cannot be resumed after a restart.
     pub state_dir: Option<std::path::PathBuf>,
+    /// The peer's tool host (UPCR-2026-035); `None`: the process's
+    /// ([`host_tools::host`]).
+    pub tool_host: Option<ToolHostHandle>,
+}
+
+/// A tool host for one broker (tests, a standalone app's own).
+#[derive(Clone)]
+pub struct ToolHostHandle(pub Arc<dyn ToolHost>);
+
+impl std::fmt::Debug for ToolHostHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ToolHostHandle")
+    }
 }
 
 impl BrokerConfig {
@@ -118,6 +145,7 @@ impl BrokerConfig {
             },
             turn_timeout: Duration::from_secs(180),
             state_dir: None,
+            tool_host: None,
         }
     }
 }
@@ -240,6 +268,33 @@ struct Route {
     context: Weak<ContextInner>,
 }
 
+/// A `peer/tool/call` the host is working on.
+struct InFlight {
+    reply: ToolReply,
+    occurrence: String,
+    turn_id: String,
+}
+
+/// One occurrence `(session, turn, tool call, args digest)`: executed at
+/// most once; a repeat gets the first result.
+enum Occurrence {
+    /// The call ids waiting on it (the first is the one the host runs).
+    Running(Vec<String>),
+    Done(ToolOutcome),
+}
+
+/// How many finished occurrences, interrupted turns and inputs are kept.
+const REMEMBERED: usize = 512;
+
+fn remember(list: &mut VecDeque<String>, item: String) {
+    if !list.contains(&item) {
+        list.push_back(item);
+        while list.len() > REMEMBERED {
+            list.pop_front();
+        }
+    }
+}
+
 #[derive(Clone)]
 struct PeerInfo {
     slug: String,
@@ -274,6 +329,20 @@ struct State {
     contexts: Vec<Weak<ContextInner>>,
     model: Option<ModelInfo>,
     last_error: Option<String>,
+    /// In-flight `peer/tool/call`s by call id.
+    calls: HashMap<String, InFlight>,
+    occurrences: HashMap<String, Occurrence>,
+    occurrence_order: VecDeque<String>,
+    /// Turns this broker interrupted or saw end interrupted: their late
+    /// calls are refused (octos#2567 follow-up N1).
+    interrupted: VecDeque<String>,
+    /// `peer/input` ids taken, and the turns started for them.
+    inputs_seen: VecDeque<String>,
+    input_turns: VecDeque<String>,
+    /// Inputs waiting for the peer's running turn to end.
+    input_queue: VecDeque<PeerInput>,
+    /// Workspaces new peers were created with, when no state dir keeps them.
+    cwds: HashMap<String, String>,
 }
 
 struct Inner {
@@ -318,6 +387,14 @@ impl Broker {
                 contexts: Vec::new(),
                 model: None,
                 last_error: None,
+                calls: HashMap::new(),
+                occurrences: HashMap::new(),
+                occurrence_order: VecDeque::new(),
+                interrupted: VecDeque::new(),
+                inputs_seen: VecDeque::new(),
+                input_turns: VecDeque::new(),
+                input_queue: VecDeque::new(),
+                cwds: HashMap::new(),
             }),
             connecting: tokio::sync::Mutex::new(()),
             binding: tokio::sync::Mutex::new(()),
@@ -362,6 +439,16 @@ impl Broker {
         });
         rx.recv_timeout(Duration::from_secs(60))
             .map_err(|_| "binding the app peer timed out".to_owned())?
+    }
+
+    /// Tool calls the host has not answered yet.
+    pub fn calls_in_flight(&self) -> usize {
+        self.0.lock().calls.len()
+    }
+
+    /// `peer/input`s waiting for the peer's running turn.
+    pub fn queued_inputs(&self) -> usize {
+        self.0.lock().input_queue.len()
     }
 
     /// Send a raw request on this broker's link. For the HOST only (its own
@@ -434,6 +521,36 @@ impl Inner {
         std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
+    fn tool_host(&self) -> Arc<dyn ToolHost> {
+        match &self.cfg.tool_host {
+            Some(handle) => handle.0.clone(),
+            None => host_tools::host(),
+        }
+    }
+
+    /// The workspace a peer was created with (`<namespace>.cwd` beside its
+    /// token): a resume must name the same one. None for a peer the kernel
+    /// provisioned.
+    fn load_cwd(&self, namespace: &str) -> Option<String> {
+        if let Some(cwd) = self.lock().cwds.get(namespace) {
+            return Some(cwd.clone());
+        }
+        let path = self.token_path(namespace)?.with_extension("cwd");
+        let text = std::fs::read_to_string(path).ok()?;
+        let cwd = text.trim().to_owned();
+        (!cwd.is_empty()).then_some(cwd)
+    }
+
+    fn save_cwd(&self, namespace: &str, cwd: &str) -> Result<(), String> {
+        self.lock().cwds.insert(namespace.to_owned(), cwd.to_owned());
+        let Some(path) = self.token_path(namespace).map(|p| p.with_extension("cwd")) else {
+            return Ok(());
+        };
+        let tmp = path.with_extension("cwd.tmp");
+        std::fs::write(&tmp, cwd).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+    }
+
     fn fail(&self, error: &str) {
         self.lock().last_error = Some(error.to_owned());
     }
@@ -491,22 +608,37 @@ impl Inner {
     }
 
     /// The link ended: fail everything waiting on it; sessions and the peer
-    /// are opened again on the next request.
-    fn link_closed(&self, epoch: u64, why: &str) {
-        let (pending, waiters) = {
+    /// are opened again (and the app's tools registered again) on the next
+    /// request, or by the rebind this schedules. Tool calls that came on the
+    /// link end now: the kernel fails them, and the host never runs them.
+    fn link_closed(self: &Arc<Self>, epoch: u64, why: &str) {
+        let (pending, waiters, calls, rebind) = {
             let mut st = self.lock();
             if st.link_epoch != epoch {
                 return;
             }
             st.link = None;
-            st.peer = None;
+            let had_peer = st.peer.take().is_some();
             st.peer_turn = None;
             st.last_error = Some(why.to_owned());
             let pending: Vec<Reply> = st.pending.drain().map(|(_, r)| r).collect();
             let contexts: Vec<Arc<ContextInner>> =
                 st.contexts.iter().filter_map(Weak::upgrade).collect();
-            (pending, contexts)
+            let calls: Vec<(String, ToolReply)> = st.calls.drain().map(|(id, f)| (id, f.reply)).collect();
+            st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
+            st.input_queue.clear();
+            let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
+            (pending, contexts, calls, rebind)
         };
+        let host = self.tool_host();
+        for (call_id, reply) in calls {
+            if reply.cancel() {
+                host.tool_cancel(&self.cfg.app_id, &call_id, "disconnected");
+            }
+        }
+        if let Some(generation) = rebind {
+            self.schedule_rebind(generation);
+        }
         let message = format!("The assistant connection ended ({why}); try again");
         for reply in pending {
             let _ = reply.send(Err(message.clone()));
@@ -530,7 +662,31 @@ impl Inner {
         }
     }
 
-    fn inbound(&self, frame: &str) {
+    /// The peer was bound when its link ended: bind it again on a new link
+    /// (prepare, then register), so the system agent's `peer/input` reaches
+    /// the app again without waiting for the app's next request.
+    fn schedule_rebind(self: &Arc<Self>, generation: u64) {
+        let weak = Arc::downgrade(self);
+        self.rt().spawn(async move {
+            let mut wait = Duration::from_millis(500);
+            for _ in 0..6 {
+                tokio::time::sleep(wait).await;
+                let Some(inner) = weak.upgrade() else { return };
+                {
+                    let st = inner.lock();
+                    if st.released || st.generation != generation || st.account.is_none() || st.peer.is_some() {
+                        return;
+                    }
+                }
+                if inner.ensure_peer().await.is_ok() {
+                    return;
+                }
+                wait = (wait * 2).min(Duration::from_secs(10));
+            }
+        });
+    }
+
+    fn inbound(self: &Arc<Self>, frame: &str) {
         if std::env::var_os("APP_PEERS_TRACE").is_some() {
             eprintln!("app-peers <- {}", frame);
         }
@@ -557,6 +713,12 @@ impl Inner {
             return;
         };
         let params = value.get("params").cloned().unwrap_or(Value::Null);
+        match method {
+            host_tools::TOOL_CALL => return self.on_tool_call(&params),
+            host_tools::TOOL_CANCEL => return self.on_tool_cancel(&params),
+            host_tools::PEER_INPUT => return self.on_peer_input(&params),
+            _ => {}
+        }
         let Some(session_id) = params.get("session_id").and_then(Value::as_str) else {
             return;
         };
@@ -577,6 +739,22 @@ impl Inner {
                 st.generation,
             )
         };
+        let ours = peer_session.as_deref() == Some(session) || route.is_some();
+        if ours {
+            self.note_terminal(method, &params);
+        }
+        // A host-routed tool's approval is the host's to draw (the owning
+        // app's sheet, the shell's router): never the app context's.
+        if ours && method == "approval/requested" {
+            if let Some(approval) = HostToolApproval::parse(&params, session) {
+                if self.on_host_approval(approval) {
+                    if let Some(context) = route.as_ref().and_then(|(g, c)| (*g == generation).then(|| c.upgrade()).flatten()) {
+                        context.notification(host_tools::HANDLED_BY_HOST, &params);
+                    }
+                    return;
+                }
+            }
+        }
         if peer_session.as_deref() == Some(session) {
             // Track the peer's own (system-agent driven) turn so a release
             // can stop it.
@@ -588,10 +766,16 @@ impl Inner {
                 method == "projection/envelope" && params["payload"]["type"] == "turn_terminal";
             let mut st = self.lock();
             let ended = terminal || matches!(method, "turn/completed" | "turn/error");
+            let mut next = false;
             if method == "turn/started" {
                 st.peer_turn = turn;
             } else if ended && st.peer_turn == turn {
                 st.peer_turn = None;
+                next = true;
+            }
+            drop(st);
+            if next {
+                self.next_input();
             }
             return;
         }
@@ -636,7 +820,8 @@ impl Inner {
         }
     }
 
-    /// Create or resume the app's peer for the current account.
+    /// Create or resume the app's peer for the current account, and
+    /// register its tools on this link (UPCR-2026-035's host obligation).
     async fn ensure_peer(self: &Arc<Self>) -> Result<(u64, PeerInfo), String> {
         let _guard = self.binding.lock().await;
         let (account, generation) = {
@@ -655,6 +840,12 @@ impl Inner {
             return Err("This app has no assistant access".into());
         }
         let account = account.ok_or("Sign in before using the assistant")?;
+        let host = self.tool_host();
+        if host.suspended(&self.cfg.app_id, &account) {
+            let err = "This account is signed out; its assistant is paused".to_owned();
+            self.fail(&err);
+            return Err(err);
+        }
         let tag = account_tag(&account);
         let namespace = app_namespace(&self.cfg.app_id, &account);
         let name = format!("{} {}", self.cfg.app_label, &tag[..8]);
@@ -674,8 +865,20 @@ impl Inner {
             "resume": true,
         });
         let known_token = self.load_token(&namespace);
+        // The agent's workspace is the account's folder (ADR 0004 §11) for
+        // a peer created now; a resume names the workspace the peer was
+        // created with (the kernel refuses any other), so peers created
+        // before keep the one the kernel provisioned.
+        let mut chosen_cwd = None;
         if let Some(token) = &known_token {
             params["host_token"] = json!(token);
+            if let Some(cwd) = self.load_cwd(&namespace) {
+                params["cwd"] = json!(cwd);
+            }
+        } else if let Some(cwd) = host.agent_workspace(&self.cfg.app_id, &account) {
+            let cwd = cwd.to_string_lossy().into_owned();
+            params["cwd"] = json!(cwd);
+            chosen_cwd = Some(cwd);
         }
         if let Some(lane) = &self.cfg.model_lane {
             params["model"] = json!(lane);
@@ -708,6 +911,14 @@ impl Inner {
                     self.fail(&err);
                     return Err(err);
                 }
+                if chosen_cwd.is_some() {
+                    let cwd = result["cwd"].as_str().map(str::to_owned).or(chosen_cwd);
+                    if let Some(cwd) = cwd {
+                        if let Err(err) = self.save_cwd(&namespace, &cwd) {
+                            eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run");
+                        }
+                    }
+                }
                 Some(token.to_owned())
             }
             None => known_token,
@@ -727,6 +938,20 @@ impl Inner {
             open_params(&session, &self.cfg.profile_id, result["cwd"].as_str()),
         )
         .await?;
+        let epoch = self.lock().link_epoch;
+        // Register the app's tools on THIS link before any turn: the kernel
+        // gives app memory, app context and app tools only to turns of the
+        // connection that registered. A peer that could not register runs
+        // no turn (never a memory-less one).
+        let Some(host_token) = token.clone() else {
+            let err = "The assistant returned no credential for the app's peer; it cannot take the app's tools".to_owned();
+            self.fail(&err);
+            return Err(err);
+        };
+        if let Err(err) = self.register_tools(&slug, &host_token, &account).await {
+            self.fail(&err);
+            return Err(err);
+        }
         let peer = PeerInfo {
             slug,
             session: session.clone(),
@@ -736,9 +961,387 @@ impl Inner {
         if st.generation != generation || st.released {
             return Err("The account changed; try again".into());
         }
+        if st.link_epoch != epoch || st.link.is_none() {
+            return Err("The assistant connection changed; try again".into());
+        }
         st.peer = Some((generation, peer.clone()));
         st.model = model;
         Ok((generation, peer))
+    }
+
+    /// `peer/tools/register` on this link: the app's granted tools plus the
+    /// cross-app tools granted to it, `generic_tools` omitted (the peer
+    /// keeps its kernel roster).
+    async fn register_tools(self: &Arc<Self>, slug: &str, token: &str, account: &str) -> Result<Value, String> {
+        let tools = self
+            .tool_host()
+            .declarations(&self.cfg.app_id, account)
+            .map_err(|e| format!("The app's tools could not be declared ({e}); the assistant runs nothing for it"))?;
+        let params = json!({
+            "profile_id": self.cfg.profile_id,
+            "session_id": self.cfg.originator,
+            "peer": slug,
+            "host_token": token,
+            "tools": tools,
+        });
+        self.request(host_tools::REGISTER, params)
+            .await
+            .map_err(|e| format!("The assistant did not take the app's tools ({e}); it runs no turn without them"))
+    }
+
+    /// Send a request on `link` (the connection a call came on), answer
+    /// logged, never retried on another connection.
+    fn fire(self: &Arc<Self>, link: &mpsc::UnboundedSender<String>, method: &str, params: Value) {
+        let (tx, rx) = oneshot::channel();
+        let id = {
+            let mut st = self.lock();
+            st.next_id += 1;
+            let id = format!("app-peers-{}", st.next_id);
+            st.pending.insert(id.clone(), tx);
+            id
+        };
+        let frame = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+        if std::env::var_os("APP_PEERS_TRACE").is_some() {
+            eprintln!("app-peers -> {frame}");
+        }
+        if link.send(frame.to_string()).is_err() {
+            self.lock().pending.remove(&id);
+            return;
+        }
+        let inner = self.clone();
+        let method = method.to_owned();
+        self.rt().spawn(async move {
+            match tokio::time::timeout(Duration::from_secs(60), rx).await {
+                Ok(Ok(Err(e))) => eprintln!("app-peers: {method} was refused: {e}"),
+                Err(_) => {
+                    inner.lock().pending.remove(&id);
+                }
+                _ => {}
+            }
+        });
+    }
+
+    /// Record a turn as interrupted (N1): its late calls are refused, and
+    /// its in-flight calls end now.
+    fn note_interrupted(&self, turn: &str) {
+        let calls: Vec<(String, ToolReply)> = {
+            let mut st = self.lock();
+            remember(&mut st.interrupted, turn.to_owned());
+            let ids: Vec<String> = st.calls.iter().filter(|(_, f)| f.turn_id == turn).map(|(id, _)| id.clone()).collect();
+            ids.into_iter().filter_map(|id| st.calls.remove(&id).map(|f| (id, f.reply))).collect()
+        };
+        let host = self.tool_host();
+        for (call_id, reply) in calls {
+            if reply.cancel() {
+                host.tool_cancel(&self.cfg.app_id, &call_id, "cancelled");
+            }
+        }
+    }
+
+    /// A turn of ours ended interrupted (the kernel's terminal says so).
+    fn note_terminal(&self, method: &str, params: &Value) {
+        let Some(turn) = params.get("turn_id").and_then(Value::as_str) else { return };
+        let interrupted = match method {
+            "projection/envelope" => {
+                params["payload"]["type"] == "turn_terminal"
+                    && matches!(params["payload"]["data"]["outcome"].as_str(), Some("interrupted" | "cancelled"))
+            }
+            "turn/error" => params["message"].as_str().or(params["code"].as_str()).is_some_and(|m| m.contains("interrupt")),
+            "turn/interrupted" => true,
+            _ => false,
+        };
+        if interrupted {
+            self.note_interrupted(turn);
+        }
+    }
+
+    /// The answer handle of one call: `peer/tool/result` on the link it came
+    /// on, with the peer's credential; a final answer settles its occurrence.
+    fn reply_for(self: &Arc<Self>, call: &HostToolCall, link: mpsc::UnboundedSender<String>, token: Option<String>) -> ToolReply {
+        let weak = Arc::downgrade(self);
+        let base = json!({
+            "profile_id": self.cfg.profile_id,
+            "session_id": self.cfg.originator,
+            "peer": call.peer,
+            "host_token": token,
+        });
+        let occurrence = call.occurrence();
+        let call_id = call.call_id.clone();
+        ToolReply::new(call.call_id.clone(), move |fields: Value| {
+            let Some(inner) = weak.upgrade() else { return };
+            let mut params = base.clone();
+            for (k, v) in fields.as_object().into_iter().flatten() {
+                params[k] = v.clone();
+            }
+            let final_answer = fields.get("status").is_none();
+            inner.fire(&link, host_tools::TOOL_RESULT, params);
+            if final_answer {
+                let outcome = if fields["ok"] == true {
+                    ToolOutcome::Ok(fields.get("data").cloned().unwrap_or(Value::Null))
+                } else {
+                    ToolOutcome::Error {
+                        kind: fields["error"]["kind"].as_str().unwrap_or("error").to_owned(),
+                        message: fields["error"]["message"].as_str().unwrap_or("").to_owned(),
+                    }
+                };
+                inner.settle(&call_id, &occurrence, outcome);
+            }
+        })
+    }
+
+    /// A call was answered: its occurrence is done, and every repeat of it
+    /// waiting gets the same answer.
+    fn settle(&self, call_id: &str, occurrence: &str, outcome: ToolOutcome) {
+        let others: Vec<ToolReply> = {
+            let mut st = self.lock();
+            st.calls.remove(call_id);
+            let waiting = match st.occurrences.get(occurrence) {
+                Some(Occurrence::Running(ids)) => ids.clone(),
+                _ => Vec::new(),
+            };
+            if !st.occurrences.contains_key(occurrence) || !waiting.is_empty() {
+                st.occurrence_order.push_back(occurrence.to_owned());
+            }
+            st.occurrences.insert(occurrence.to_owned(), Occurrence::Done(outcome.clone()));
+            while st.occurrence_order.len() > REMEMBERED {
+                if let Some(old) = st.occurrence_order.pop_front() {
+                    if matches!(st.occurrences.get(&old), Some(Occurrence::Done(_))) {
+                        st.occurrences.remove(&old);
+                    }
+                }
+            }
+            waiting.iter().filter(|id| id.as_str() != call_id).filter_map(|id| st.calls.remove(id).map(|f| f.reply)).collect()
+        };
+        for reply in others {
+            reply.finish(outcome.clone());
+        }
+    }
+
+    /// `peer/tool/call`: stamp it, check it, run each occurrence once.
+    fn on_tool_call(self: &Arc<Self>, params: &Value) {
+        let mut call = match HostToolCall::parse(params) {
+            Ok(call) => call,
+            Err(e) => return eprintln!("app-peers: {} dropped: {e}", host_tools::TOOL_CALL),
+        };
+        let host = self.tool_host();
+        let (link, peer, account) = {
+            let st = self.lock();
+            let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
+            (st.link.clone(), peer, st.account.clone())
+        };
+        // Answered on the connection the call came on (the kernel refuses a
+        // result from any other).
+        let Some(link) = link else { return };
+        let reply = self.reply_for(&call, link, peer.as_ref().and_then(|p| p.token.clone()));
+        let refuse = |kind: &str, message: &str| {
+            reply.finish(ToolOutcome::error(kind, message));
+        };
+        let Some(peer) = peer else {
+            return refuse("app_not_ready", "the app's assistant is not bound on this connection");
+        };
+        if call.peer.as_deref() != Some(peer.slug.as_str()) {
+            return refuse("not_this_peer", "this connection hosts another app's peer");
+        }
+        let Some(account) = account else {
+            return refuse("signed_out", "the account is signed out");
+        };
+        if host.suspended(&self.cfg.app_id, &account) {
+            return refuse("signed_out", "the account is signed out");
+        }
+        call.calling_app = self.cfg.app_id.clone();
+        call.account = Some(account);
+        let occurrence = call.occurrence();
+        let repeat = {
+            let mut st = self.lock();
+            // N1: a call can still arrive just after an interrupt.
+            if st.interrupted.contains(&call.turn_id) {
+                drop(st);
+                return refuse("turn_interrupted", "the turn was interrupted");
+            }
+            match &call.context_id {
+                Some(context_id) => {
+                    let owner = st
+                        .contexts
+                        .iter()
+                        .filter_map(Weak::upgrade)
+                        .find(|c| &c.context_id == context_id && c.open.load(Ordering::Acquire) && c.generation == st.generation);
+                    match owner {
+                        Some(context) => {
+                            call.client = Some(context.instance.clone());
+                            call.origin = CallOrigin::Context;
+                        }
+                        None => {
+                            drop(st);
+                            return refuse("unknown_context", "a request context this app did not open, or one already closed");
+                        }
+                    }
+                }
+                None => {
+                    call.origin = if st.input_turns.contains(&call.turn_id) { CallOrigin::PeerInput } else { CallOrigin::PeerOwn };
+                }
+            }
+            let repeat = match st.occurrences.get_mut(&occurrence) {
+                Some(Occurrence::Done(outcome)) => Some(Some(outcome.clone())),
+                Some(Occurrence::Running(ids)) => {
+                    ids.push(call.call_id.clone());
+                    Some(None)
+                }
+                None => {
+                    st.occurrences.insert(occurrence.clone(), Occurrence::Running(vec![call.call_id.clone()]));
+                    None
+                }
+            };
+            if !matches!(repeat, Some(Some(_))) {
+                st.calls.insert(call.call_id.clone(), InFlight { reply: reply.clone(), occurrence, turn_id: call.turn_id.clone() });
+            }
+            repeat
+        };
+        match repeat {
+            // Executed once already: the same answer, nothing runs again.
+            Some(Some(outcome)) => {
+                reply.finish(outcome);
+            }
+            // Running: this repeat gets the first one's answer.
+            Some(None) => {}
+            None => host.tool_call(call, reply),
+        }
+    }
+
+    /// `peer/tool/cancel`: nothing of the call runs or answers afterwards.
+    fn on_tool_cancel(&self, params: &Value) {
+        let Some(call_id) = params.get("call_id").and_then(Value::as_str) else { return };
+        let reason = params.get("reason").and_then(Value::as_str).unwrap_or("cancelled");
+        let reply = {
+            let mut st = self.lock();
+            let flight = st.calls.remove(call_id);
+            if let Some(f) = &flight {
+                if let Some(Occurrence::Running(ids)) = st.occurrences.get_mut(&f.occurrence) {
+                    ids.retain(|id| id != call_id);
+                    if ids.is_empty() {
+                        st.occurrences.remove(&f.occurrence);
+                    }
+                }
+            }
+            flight.map(|f| f.reply)
+        };
+        if reply.is_some_and(|r| r.cancel()) {
+            self.tool_host().tool_cancel(&self.cfg.app_id, call_id, reason);
+        }
+    }
+
+    /// `peer/input`: the system agent's input to this app's peer. Started as
+    /// the peer's turn on this link with the kernel's turn id (a host-driven
+    /// turn: the app's tools, memory and approvals), once per input id,
+    /// after the running turn when the peer is busy; never for a signed-out
+    /// or suspended account (ADR 0004 §11).
+    fn on_peer_input(self: &Arc<Self>, params: &Value) {
+        let Some(input) = PeerInput::parse(params) else {
+            return eprintln!("app-peers: {} dropped: malformed", host_tools::PEER_INPUT);
+        };
+        let (peer, account, busy, seen) = {
+            let mut st = self.lock();
+            let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
+            let seen = st.inputs_seen.contains(&input.input_id);
+            if !seen {
+                remember(&mut st.inputs_seen, input.input_id.clone());
+            }
+            (peer, st.account.clone(), st.peer_turn.is_some() || !st.input_queue.is_empty(), seen)
+        };
+        if seen {
+            return;
+        }
+        let Some(peer) = peer.filter(|p| p.slug == input.peer && p.session == input.session_id) else {
+            return eprintln!("app-peers: {}: input {} is not for this app's peer", self.cfg.app_id, input.input_id);
+        };
+        let _ = peer;
+        let host = self.tool_host();
+        let Some(account) = account.filter(|a| !host.suspended(&self.cfg.app_id, a)) else {
+            return eprintln!("app-peers: {}: input {} refused: the account is signed out", self.cfg.app_id, input.input_id);
+        };
+        if let Err(why) = host.admit_input(&self.cfg.app_id, &account, &input) {
+            return eprintln!("app-peers: {}: input {} refused: {why}", self.cfg.app_id, input.input_id);
+        }
+        if busy {
+            self.lock().input_queue.push_back(input);
+        } else {
+            self.start_input(input);
+        }
+    }
+
+    fn start_input(self: &Arc<Self>, input: PeerInput) {
+        {
+            let mut st = self.lock();
+            st.peer_turn = Some(input.turn_id.clone());
+            remember(&mut st.input_turns, input.turn_id.clone());
+        }
+        let inner = self.clone();
+        self.rt().spawn(async move {
+            let started = inner
+                .request(
+                    "turn/start",
+                    json!({
+                        "session_id": input.session_id,
+                        "turn_id": input.turn_id,
+                        "input": [{"kind": "text", "text": input.text}],
+                    }),
+                )
+                .await;
+            if let Err(e) = started {
+                eprintln!("app-peers: {}: the system agent's input {} did not start: {e}", inner.cfg.app_id, input.input_id);
+                let ended = {
+                    let mut st = inner.lock();
+                    let ours = st.peer_turn.as_deref() == Some(input.turn_id.as_str());
+                    if ours {
+                        st.peer_turn = None;
+                    }
+                    ours
+                };
+                if ended {
+                    inner.next_input();
+                }
+            }
+        });
+    }
+
+    /// The peer's turn ended: the next queued input, if any.
+    fn next_input(self: &Arc<Self>) {
+        let next = {
+            let mut st = self.lock();
+            if st.peer_turn.is_some() {
+                return;
+            }
+            st.input_queue.pop_front()
+        };
+        if let Some(input) = next {
+            self.start_input(input);
+        }
+    }
+
+    /// A `host_tool` approval: the host draws it and answers on this link.
+    fn on_host_approval(self: &Arc<Self>, approval: HostToolApproval) -> bool {
+        let (link, account) = {
+            let st = self.lock();
+            (st.link.clone(), st.account.clone())
+        };
+        let Some(link) = link else { return false };
+        let weak = Arc::downgrade(self);
+        let session = approval.session_id.clone();
+        let approval_id = approval.approval_id.clone();
+        let answer = ApprovalAnswer::new(move |approve| {
+            if let Some(inner) = weak.upgrade() {
+                inner.fire(
+                    &link,
+                    "approval/respond",
+                    json!({
+                        "session_id": session,
+                        "approval_id": approval_id,
+                        "decision": if approve { "approve" } else { "deny" },
+                        "client_note": "decided by the host (UPCR-2026-035 host_tool)",
+                    }),
+                );
+            }
+        });
+        self.tool_host().host_tool_approval(&self.cfg.app_id, account.as_deref(), approval, answer)
     }
 
     fn close_context_on_kernel(
@@ -750,6 +1353,9 @@ impl Inner {
         token: Option<String>,
     ) {
         let inner = self.clone();
+        if let Some(turn) = &turn {
+            self.note_interrupted(turn);
+        }
         self.rt().spawn(async move {
             if let Some(turn) = turn {
                 let _ = inner
@@ -827,6 +1433,9 @@ struct ContextInner {
     generation: u64,
     services: BTreeSet<String>,
     context_id: String,
+    /// The client instance key the app gave (a Rinx mini app): stamped on
+    /// tool calls from this context as their `client`.
+    instance: String,
     open: AtomicBool,
     bound: Mutex<Option<Bound>>,
     turn: Mutex<Option<TurnWaiter>>,
@@ -1063,6 +1672,7 @@ impl ContextInner {
                         Ok(Ok(result)) => result,
                         Ok(Err(_)) => Err("The assistant's turn was cancelled".into()),
                         Err(_) => {
+                            inner.note_interrupted(&turn_id);
                             let _ = inner
                                 .request(
                                     "turn/interrupt",
@@ -1118,6 +1728,7 @@ impl ContextInner {
                     .as_ref()
                     .map(|w| w.turn_id.clone())
                     .ok_or("No assistant turn is running")?;
+                inner.note_interrupted(&turn);
                 inner
                     .request(
                         "turn/interrupt",
@@ -1286,6 +1897,7 @@ impl OctosAppService for Broker {
             generation: st.generation,
             services,
             context_id: context_id(&self.0.nonce, &spec.instance),
+            instance: spec.instance.clone(),
             open: AtomicBool::new(true),
             bound: Mutex::new(None),
             turn: Mutex::new(None),
@@ -1314,6 +1926,9 @@ impl OctosAppService for Broker {
         // Conservative background policy (ADR 0007 open question): closing
         // the app stops its peer's running turn too. The peer and its state
         // stay for the next launch; nothing else is stopped.
+        if let Some((turn, _)) = &peer_turn {
+            self.0.note_interrupted(turn);
+        }
         let inner = self.0.clone();
         self.0.rt().spawn(async move {
             if let Some((turn, session)) = peer_turn {
@@ -1329,6 +1944,14 @@ impl OctosAppService for Broker {
             tokio::time::sleep(Duration::from_millis(500)).await;
             inner.lock().link.take();
         });
+    }
+
+    fn set_tool_executor(&self, executor: Option<Arc<dyn host_tools::ToolExecutor>>) {
+        self.0.tool_host().set_executor(&self.0.cfg.app_id, executor);
+    }
+
+    fn set_confirm_sheet(&self, sheet: Option<Arc<dyn host_tools::ConfirmSheet>>) {
+        self.0.tool_host().set_confirm_sheet(&self.0.cfg.app_id, sheet);
     }
 
     fn shutdown(&self) {

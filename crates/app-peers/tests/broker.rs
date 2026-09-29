@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link};
+use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
+use octosense_app_peers::host_tools::{ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, ToolHost, ToolOutcome, ToolReply};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -14,11 +15,17 @@ use tokio::sync::mpsc;
 #[derive(Default)]
 struct Script {
     calls: Vec<(String, Value)>,
+    /// The connection (0-based, in connect order) each call came on.
+    conns: Vec<usize>,
     /// peer/prepare ignores the host binding (a pre-UPCR kernel).
     legacy: bool,
     /// turn/start never completes on its own.
     hold_turns: bool,
+    /// peer/tools/register is refused.
+    refuse_register: bool,
     connects: usize,
+    /// Each connection's kernel-to-broker half (`None`: closed).
+    out: Vec<Option<mpsc::UnboundedSender<String>>>,
 }
 
 struct FakeConnector(Arc<Mutex<Script>>);
@@ -42,6 +49,28 @@ impl Link for FakeLink {
     }
 }
 
+/// Send a kernel frame on connection `conn`.
+fn emit(script: &Arc<Mutex<Script>>, conn: usize, frame: String) {
+    let out = script.lock().unwrap().out.get(conn).cloned().flatten();
+    if let Some(out) = out {
+        let _ = out.send(frame);
+    }
+}
+
+/// A notification on the newest connection.
+fn notify(script: &Arc<Mutex<Script>>, method: &str, params: Value) {
+    let conn = script.lock().unwrap().out.len() - 1;
+    emit(script, conn, json!({"jsonrpc": "2.0", "method": method, "params": params}).to_string());
+}
+
+/// Close the newest connection from the kernel's side.
+fn kill_link(script: &Arc<Mutex<Script>>) {
+    let mut s = script.lock().unwrap();
+    if let Some(last) = s.out.last_mut() {
+        *last = None;
+    }
+}
+
 impl Connector for FakeConnector {
     fn available(&self) -> Result<(), String> {
         Ok(())
@@ -49,22 +78,32 @@ impl Connector for FakeConnector {
     fn connect(&self) -> BoxFuture<'static, Result<Box<dyn Link>, String>> {
         let script = self.0.clone();
         Box::pin(async move {
-            script.lock().unwrap().connects += 1;
             let (to_kernel, mut kernel_in) = mpsc::unbounded_channel::<String>();
             let (kernel_out, from_kernel) = mpsc::unbounded_channel::<String>();
+            let conn = {
+                let mut s = script.lock().unwrap();
+                s.connects += 1;
+                s.out.push(Some(kernel_out));
+                s.out.len() - 1
+            };
             tokio::spawn(async move {
                 while let Some(frame) = kernel_in.recv().await {
                     let frame: Value = serde_json::from_str(&frame).unwrap();
                     let method = frame["method"].as_str().unwrap().to_owned();
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
-                    let (legacy, hold) = {
+                    let (legacy, hold, refuse_register) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
-                        (s.legacy, s.hold_turns)
+                        s.conns.push(conn);
+                        (s.legacy, s.hold_turns, s.refuse_register)
                     };
+                    let send = |frame: String| emit(&script, conn, frame);
                     let reply = |result: Value| {
                         json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string()
+                    };
+                    let refuse = |kind: &str| {
+                        json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32001, "message": "refused", "data": {"kind": kind}}}).to_string()
                     };
                     match method.as_str() {
                         "peer/prepare" => {
@@ -73,7 +112,8 @@ impl Connector for FakeConnector {
                                 .unwrap()
                                 .to_lowercase()
                                 .replace(' ', "-");
-                            let mut result = json!({"slug": name, "cwd": "/kernel/ws", "model": {"lane": "primary"}});
+                            let cwd = params["cwd"].as_str().unwrap_or("/kernel/ws").to_owned();
+                            let mut result = json!({"slug": name, "cwd": cwd, "model": {"lane": "primary"}});
                             if !legacy {
                                 result["memory_namespace"] = params["memory_namespace"].clone();
                                 result["resumed"] = json!(params.get("host_token").is_some());
@@ -81,15 +121,17 @@ impl Connector for FakeConnector {
                                     result["host_token"] = json!("fixture-host-token");
                                 }
                             }
-                            let _ = kernel_out.send(reply(result));
+                            send(reply(result));
                         }
-                        "peer/context/open" | "peer/context/close"
+                        "peer/tools/register" if refuse_register => send(refuse("peer_tools_invalid")),
+                        "peer/tools/register" | "peer/context/open" | "peer/context/close" | "peer/tool/result"
                             if params["host_token"] != "fixture-host-token" =>
                         {
-                            let _ = kernel_out.send(
-                                json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32001, "message": "bad token", "data": {"kind": "peer_host_token_mismatch"}}})
-                                    .to_string(),
-                            );
+                            send(refuse("peer_host_token_mismatch"));
+                        }
+                        "peer/tools/register" => {
+                            let tools = params["tools"].clone();
+                            send(reply(json!({"slug": params["peer"], "version": 1, "tools": tools, "generic_tools": null, "applies": "next_turn"})));
                         }
                         "peer/context/open" => {
                             let session = format!(
@@ -103,13 +145,12 @@ impl Connector for FakeConnector {
                                 params["peer"].as_str().unwrap(),
                                 params["context_id"].as_str().unwrap()
                             );
-                            let _ = kernel_out
-                                .send(reply(json!({"session_id": session, "created": true})));
+                            send(reply(json!({"session_id": session, "created": true})));
                         }
                         "turn/start" => {
                             let session = params["session_id"].clone();
                             let turn = params["turn_id"].clone();
-                            let _ = kernel_out.send(reply(json!({"accepted": true})));
+                            send(reply(json!({"accepted": true})));
                             let note = |method: &str, extra: Value| {
                                 let mut p = json!({"session_id": session, "turn_id": turn});
                                 for (k, v) in extra.as_object().unwrap() {
@@ -117,20 +158,15 @@ impl Connector for FakeConnector {
                                 }
                                 json!({"jsonrpc": "2.0", "method": method, "params": p}).to_string()
                             };
-                            let _ =
-                                kernel_out.send(note("message/delta", json!({"text": "Hello "})));
-                            let _ =
-                                kernel_out.send(note("message/delta", json!({"text": "there"})));
+                            send(note("turn/started", json!({})));
+                            send(note("message/delta", json!({"text": "Hello "})));
+                            send(note("message/delta", json!({"text": "there"})));
                             if !hold {
-                                let _ = kernel_out.send(note("turn/completed", json!({})));
+                                send(note("turn/completed", json!({})));
                             }
                         }
-                        "session/hydrate" => {
-                            let _ = kernel_out.send(reply(json!({"messages": []})));
-                        }
-                        _ => {
-                            let _ = kernel_out.send(reply(json!({})));
-                        }
+                        "session/hydrate" => send(reply(json!({"messages": []}))),
+                        _ => send(reply(json!({}))),
                     }
                 }
             });
@@ -147,8 +183,12 @@ impl Connector for FakeConnector {
 }
 
 fn new_broker(services: &[&str]) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_with(services, None, None)
+}
+
+fn new_broker_with(services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>) -> (Broker, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));
-    let cfg = BrokerConfig::new(
+    let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
         "_main",
         "_main:api:octosense#system",
@@ -156,6 +196,8 @@ fn new_broker(services: &[&str]) -> (Broker, Arc<Mutex<Script>>) {
         "Rinx",
         services.iter().map(|s| s.to_string()).collect(),
     );
+    cfg.tool_host = host.map(|h| ToolHostHandle(h as Arc<dyn ToolHost>));
+    cfg.state_dir = state_dir;
     (
         Broker::new(cfg, Arc::new(FakeConnector(script.clone()))),
         script,
@@ -408,4 +450,341 @@ fn release_closes_the_apps_contexts_without_stopping_a_shared_kernel() {
         Availability::Unavailable(_)
     ));
     broker.shutdown(); // not owned: a no-op on the kernel
+}
+
+
+// ---------------------------------------------------------------- UPCR-2026-035
+
+/// The shell's side, recorded: what it declares, what it was handed.
+#[derive(Default)]
+struct RecordingHost {
+    declared: Mutex<Vec<Value>>,
+    workspace: Mutex<Option<std::path::PathBuf>>,
+    suspended: Mutex<bool>,
+    /// Answer each call at once with this (else hold it).
+    answer: Mutex<Option<ToolOutcome>>,
+    calls: Mutex<Vec<(HostToolCall, ToolReply)>>,
+    cancels: Mutex<Vec<(String, String)>>,
+    inputs: Mutex<Vec<PeerInput>>,
+    approvals: Mutex<Vec<(HostToolApproval, ApprovalAnswer)>>,
+}
+
+impl ToolHost for RecordingHost {
+    fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
+        Ok(self.declared.lock().unwrap().clone())
+    }
+    fn agent_workspace(&self, _app: &str, _account: &str) -> Option<std::path::PathBuf> {
+        self.workspace.lock().unwrap().clone()
+    }
+    fn suspended(&self, _app: &str, _account: &str) -> bool {
+        *self.suspended.lock().unwrap()
+    }
+    fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
+        if let Some(outcome) = self.answer.lock().unwrap().clone() {
+            reply.finish(outcome);
+        }
+        self.calls.lock().unwrap().push((call, reply));
+    }
+    fn tool_cancel(&self, _app: &str, call_id: &str, reason: &str) {
+        self.cancels.lock().unwrap().push((call_id.into(), reason.into()));
+    }
+    fn admit_input(&self, _app: &str, _account: &str, input: &PeerInput) -> Result<(), String> {
+        self.inputs.lock().unwrap().push(input.clone());
+        Ok(())
+    }
+    fn host_tool_approval(&self, _app: &str, _account: Option<&str>, approval: HostToolApproval, answer: ApprovalAnswer) -> bool {
+        self.approvals.lock().unwrap().push((approval, answer));
+        true
+    }
+}
+
+fn wait_for(what: &str, mut f: impl FnMut() -> bool) {
+    for _ in 0..100 {
+        if f() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+fn calls_of(script: &Arc<Mutex<Script>>, method: &str) -> Vec<(usize, Value)> {
+    let s = script.lock().unwrap();
+    s.calls.iter().zip(&s.conns).filter(|((m, _), _)| m == method).map(|((_, p), c)| (*c, p.clone())).collect()
+}
+
+fn position(script: &Arc<Mutex<Script>>, method: &str) -> Option<usize> {
+    script.lock().unwrap().calls.iter().position(|(m, _)| m == method)
+}
+
+fn peer_slug(script: &Arc<Mutex<Script>>) -> String {
+    calls_of(script, "peer/tools/register")[0].1["peer"].as_str().unwrap().to_owned()
+}
+
+fn tool_call_params(slug: &str, call_id: &str, turn: &str, context: Option<&str>) -> Value {
+    let session = match context {
+        Some(c) => format!("_main:api:octosense#peerctx-{slug}.{c}"),
+        None => format!("_main:api:octosense#peer-{slug}"),
+    };
+    json!({"peer": slug, "session_id": session, "context_id": context, "turn_id": turn, "call_id": call_id,
+        "tool_call_id": format!("tc-{call_id}"), "args_digest": "d", "name": "rinx.message.send", "app": "rinx",
+        "caller": {"kind": "app_peer", "peer": slug, "session_id": session, "context_id": context, "turn_id": turn},
+        "args": {"room": "!r", "text": "hi"}, "risk": "act", "confirm_required": false, "timeout_ms": 30000, "tools_version": 1})
+}
+
+#[test]
+fn the_apps_tools_are_registered_on_the_driving_link_after_prepare_and_before_any_turn() {
+    let host = Arc::new(RecordingHost::default());
+    *host.declared.lock().unwrap() = vec![json!({"name": "rinx.message.send", "description": "Send", "input_schema": {"type": "object"}, "risk": "act", "outward": true, "confirm": "app"})];
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@alice:example.org"));
+    let ctx = broker.open_context(spec("@alice:example.org", "notes#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    complete(&rx).unwrap();
+    let prepare = position(&script, "peer/prepare").unwrap();
+    let register = position(&script, "peer/tools/register").expect("registered");
+    let turn = position(&script, "turn/start").unwrap();
+    assert!(prepare < register && register < turn, "prepare, register, then turns");
+    let registrations = calls_of(&script, "peer/tools/register");
+    assert_eq!(registrations.len(), 1);
+    let (conn, params) = &registrations[0];
+    assert_eq!(params["session_id"], "_main:api:octosense#system", "the originator names the peer");
+    assert_eq!(params["host_token"], "fixture-host-token");
+    assert!(params.get("generic_tools").is_none(), "omitted: the peer keeps its kernel roster");
+    assert_eq!(params["tools"][0]["name"], "rinx.message.send");
+    let (turn_conn, _) = &calls_of(&script, "turn/start")[0];
+    assert_eq!(conn, turn_conn, "registered on the connection that drives the turns");
+}
+
+#[test]
+fn an_app_with_no_tools_registers_an_empty_set_and_again_after_a_reconnect() {
+    let (broker, script) = new_broker(&ALL);
+    broker.set_account(Some("@a:x"));
+    wait_for("the first registration", || calls_of(&script, "peer/tools/register").len() == 1);
+    assert_eq!(calls_of(&script, "peer/tools/register")[0].1["tools"], json!([]), "an empty set until the app declares tools");
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    kill_link(&script);
+    // The broker binds again on a new link by itself: prepare, then register.
+    wait_for("a registration on the new link", || calls_of(&script, "peer/tools/register").iter().any(|(c, _)| *c == 1));
+    let prepares: Vec<usize> = calls_of(&script, "peer/prepare").iter().map(|(c, _)| *c).collect();
+    assert_eq!(prepares, vec![0, 1]);
+    let ctx = broker.open_context(spec("@a:x", "app#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    complete(&rx).unwrap();
+    let (turn_conn, _) = &calls_of(&script, "turn/start")[0];
+    assert_eq!(*turn_conn, 1);
+    let s = script.lock().unwrap();
+    let last_register = s.calls.iter().rposition(|(m, _)| m == "peer/tools/register").unwrap();
+    let first_turn = s.calls.iter().position(|(m, _)| m == "turn/start").unwrap();
+    assert!(last_register < first_turn, "registered again before the next turn");
+}
+
+#[test]
+fn a_peer_that_could_not_register_runs_no_turn_and_says_so() {
+    let (broker, script) = new_broker(&ALL);
+    script.lock().unwrap().refuse_register = true;
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "app#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    let err = complete(&rx).unwrap_err();
+    assert!(err.contains("did not take the app's tools"), "{err}");
+    assert!(position(&script, "turn/start").is_none(), "never a memory-less turn");
+    assert!(position(&script, "peer/context/open").is_none());
+    assert!(matches!(broker.availability(), Availability::Failed(_)));
+}
+
+#[test]
+fn a_tool_call_is_stamped_run_once_answered_on_its_link_and_never_after_a_cancel() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@alice:x"));
+    let ctx = broker.open_context(spec("@alice:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let slug = peer_slug(&script);
+    let context_id = calls_of(&script, "peer/context/open")[0].1["context_id"].as_str().unwrap().to_owned();
+
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "t1", Some(&context_id)));
+    wait_for("the host to get the call", || host.calls.lock().unwrap().len() == 1);
+    let (call, reply) = host.calls.lock().unwrap()[0].clone();
+    assert_eq!(call.account.as_deref(), Some("@alice:x"), "the account is the host's, never the app's");
+    assert_eq!(call.client.as_deref(), Some("mini.news#1"), "the client comes from the context table");
+    assert_eq!(call.calling_app, "rinx");
+    assert_eq!(call.origin, CallOrigin::Context);
+    assert!(reply.acknowledge());
+    assert!(reply.finish(ToolOutcome::Ok(json!({"sent": true}))));
+    wait_for("two results", || calls_of(&script, "peer/tool/result").len() == 2);
+    let results = calls_of(&script, "peer/tool/result");
+    assert_eq!(results[0].1["status"], "awaiting_confirmation");
+    assert_eq!(results[1].1["ok"], true);
+    assert_eq!(results[1].1["host_token"], "fixture-host-token");
+    assert_eq!(results[1].1["peer"], slug.as_str());
+    assert!(results.iter().all(|(c, _)| *c == 0), "on the connection the call came on");
+
+    // The kernel re-dispatches the same occurrence: the first answer, nothing runs again.
+    let mut again = tool_call_params(&slug, "c1-again", "t1", Some(&context_id));
+    again["tool_call_id"] = json!("tc-c1");
+    notify(&script, "peer/tool/call", again);
+    wait_for("the repeat's answer", || calls_of(&script, "peer/tool/result").len() == 3);
+    assert_eq!(host.calls.lock().unwrap().len(), 1, "executed at most once");
+    assert_eq!(calls_of(&script, "peer/tool/result")[2].1["call_id"], "c1-again");
+
+    // Cancelled before the host answered: nothing reaches the kernel.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c2", "t2", None));
+    wait_for("the second call", || host.calls.lock().unwrap().len() == 2);
+    notify(&script, "peer/tool/cancel", json!({"call_id": "c2", "reason": "timeout"}));
+    wait_for("the cancel", || !host.cancels.lock().unwrap().is_empty());
+    assert_eq!(host.cancels.lock().unwrap()[0], ("c2".to_string(), "timeout".to_string()));
+    let (call2, reply2) = host.calls.lock().unwrap()[1].clone();
+    assert_eq!(call2.origin, CallOrigin::PeerOwn);
+    assert!(!reply2.finish(ToolOutcome::Ok(json!({}))), "nothing after cancel");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls_of(&script, "peer/tool/result").len(), 3);
+
+    // A context this app never opened is refused.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c3", "t3", Some("forged")));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").len() == 4);
+    assert_eq!(calls_of(&script, "peer/tool/result")[3].1["error"]["kind"], "unknown_context");
+    assert_eq!(host.calls.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn calls_of_an_interrupted_turn_are_refused_and_a_closed_link_ends_calls_in_flight() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "app#1", &ALL)).unwrap();
+    let (sink, _rx) = collect();
+    ctx.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let turn = calls_of(&script, "turn/start")[0].1["turn_id"].as_str().unwrap().to_owned();
+    let context_id = calls_of(&script, "peer/context/open")[0].1["context_id"].as_str().unwrap().to_owned();
+    let slug = peer_slug(&script);
+    // One call in flight when the person stops the turn.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", &turn, Some(&context_id)));
+    wait_for("the call", || host.calls.lock().unwrap().len() == 1);
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Interrupt, sink).unwrap();
+    complete(&rx).unwrap();
+    assert!(host.cancels.lock().unwrap().contains(&("c1".to_string(), "cancelled".to_string())), "the interrupt ends its calls");
+    // N1: a call of that turn arriving after the interrupt never runs.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", &turn, Some(&context_id)));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    let late = calls_of(&script, "peer/tool/result").into_iter().find(|(_, p)| p["call_id"] == "c-late").unwrap().1;
+    assert_eq!(late["error"]["kind"], "turn_interrupted");
+    assert_eq!(host.calls.lock().unwrap().len(), 1);
+
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c2", "other-turn", None));
+    wait_for("the second call", || host.calls.lock().unwrap().len() == 2);
+    kill_link(&script);
+    wait_for("the disconnect", || host.cancels.lock().unwrap().iter().any(|(c, r)| c == "c2" && r == "disconnected"));
+    assert!(!host.calls.lock().unwrap()[1].1.is_open(), "a dropped connection fails the call");
+    assert_eq!(broker.calls_in_flight(), 0);
+}
+
+#[test]
+fn the_system_agents_input_starts_the_peers_turn_once_and_queues_while_busy() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str, turn: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": turn, "text": format!("brief {id}")});
+    notify(&script, "peer/input", input("i1", "turn-1"));
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let (conn, start) = calls_of(&script, "turn/start")[0].clone();
+    assert_eq!(start["turn_id"], "turn-1", "the kernel's turn id");
+    assert_eq!(start["session_id"], session.as_str());
+    assert_eq!(start["input"][0]["text"], "brief i1");
+    assert_eq!(conn, calls_of(&script, "peer/tools/register")[0].0, "on the registering connection");
+    // A repeat is dropped; another input waits for the running turn.
+    notify(&script, "peer/input", input("i1", "turn-1"));
+    notify(&script, "peer/input", input("i2", "turn-2"));
+    wait_for("the queue", || broker.queued_inputs() == 1);
+    assert_eq!(calls_of(&script, "turn/start").len(), 1);
+    // A call from the input's turn is the system agent's request for the person.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "turn-1", None));
+    wait_for("the call", || host.calls.lock().unwrap().len() == 1);
+    assert_eq!(host.calls.lock().unwrap()[0].0.origin, CallOrigin::PeerInput);
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-1"}));
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-2");
+    assert_eq!(host.inputs.lock().unwrap().len(), 2, "each input admitted once");
+
+    // A suspended (signed-out) account starts nothing.
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-2"}));
+    *host.suspended.lock().unwrap() = true;
+    notify(&script, "peer/input", input("i3", "turn-3"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(calls_of(&script, "turn/start").len(), 2);
+}
+
+#[test]
+fn a_host_tool_approval_goes_to_the_host_and_is_answered_on_its_link() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "app#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let session = calls_of(&script, "session/open").last().unwrap().1["session_id"].as_str().unwrap().to_owned();
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "a1", "turn_id": "t", "tool_name": "mail_send", "title": "Send", "body": "",
+        "approval_kind": "host_tool", "typed_details": {"kind": "host_tool", "host_tool": {"app": "mail", "tool": "mail.send", "args": {"to": ["ana@example.org"]}, "risk": "act", "outward": true, "calling_kind": "app_peer", "calling_session_id": session}}}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    let (approval, answer) = host.approvals.lock().unwrap()[0].clone();
+    assert_eq!((approval.app.as_str(), approval.tool.as_str()), ("mail", "mail.send"));
+    assert!(answer.respond(false));
+    assert!(!answer.respond(true), "answered once");
+    wait_for("the answer", || position(&script, "approval/respond").is_some());
+    let respond = calls_of(&script, "approval/respond")[0].1.clone();
+    assert_eq!((respond["approval_id"].as_str(), respond["decision"].as_str()), (Some("a1"), Some("deny")));
+    // The app's context heard that the host has it, and was never asked.
+    let mut seen = Vec::new();
+    while let Ok(ContextEvent::Data(d)) = rx.recv_timeout(Duration::from_millis(200)) {
+        seen.push(d["method"].as_str().unwrap_or("").to_owned());
+    }
+    assert!(!seen.iter().any(|m| m == "approval/requested"), "{seen:?}");
+    drop(broker);
+}
+
+#[test]
+fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was_made_with() {
+    let dir = std::env::temp_dir().join(format!("app-peers-cwd-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some("/home/apps/rinx/accounts/abc".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert_eq!(calls_of(&script, "peer/prepare")[0].1["cwd"], "/home/apps/rinx/accounts/abc");
+    drop(broker);
+    // A later run resumes with the SAME workspace, whatever the host says now.
+    *host.workspace.lock().unwrap() = Some("/elsewhere".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
+    assert_eq!(prepare["host_token"], "fixture-host-token");
+    assert_eq!(prepare["cwd"], "/home/apps/rinx/accounts/abc");
+    drop(broker);
+    // A peer created before (a token, no recorded workspace) keeps the kernel's.
+    for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+        if entry.path().extension().is_some_and(|e| e == "cwd") {
+            std::fs::remove_file(entry.path()).unwrap();
+        }
+    }
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert!(calls_of(&script, "peer/prepare")[0].1.get("cwd").is_none());
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&dir);
 }
