@@ -95,15 +95,15 @@ octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.g
 # into; the same revision as App Hub's app crate (a native app, above).
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
-# merge of octos#2601, the `serve --host-managed` follow-ups). Move octos-core, octos-cli
-# and octos-research together; the Android kernel artifact (liboctos.so) is
-# built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "5e7577f0cb92cf618b965745434b0200e2b82865" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "5e7577f0cb92cf618b965745434b0200e2b82865", default-features = false }
+# merge of octos#2567, host-registered tools per app peer, UPCR-2026-035).
+# Move octos-core, octos-cli and octos-research together; the Android kernel
+# artifact (liboctos.so) is built from this same revision.
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "665209e517470b16bc8c658167baaa119ed43c6f" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "665209e517470b16bc8c658167baaa119ed43c6f", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "5e7577f0cb92cf618b965745434b0200e2b82865", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "665209e517470b16bc8c658167baaa119ed43c6f", default-features = false }
 # --- AppCard's inline renderers.
 streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main" }
 makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-diagram-kit.git", branch = "main" }

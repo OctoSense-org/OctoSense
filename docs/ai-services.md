@@ -219,10 +219,10 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
 
 ### Desktop, with a throwaway kernel and profile
 
-1. Build octos at the revision the root `Cargo.toml` pins (`5e7577f0`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
+1. Build octos at the revision the root `Cargo.toml` pins (`665209e5`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
 
    ```sh
-   git checkout 5e7577f0cb92cf618b965745434b0200e2b82865
+   git checkout 665209e517470b16bc8c658167baaa119ed43c6f
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 
