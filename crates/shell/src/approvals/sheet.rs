@@ -10,7 +10,8 @@
 //! nothing else; an agent's own text is never an approval surface.
 
 use super::facts;
-use super::rules::{Conditions, Contacts, RuleDraft, MAX_EVERYTHING_MINUTES};
+use super::contacts::ContactsSource;
+use super::rules::{Conditions, RuleDraft, MAX_EVERYTHING_MINUTES};
 use super::types::{Caller, Connection, Request, RequestId, Trigger};
 
 /// Why the router put a request in front of the person.
@@ -110,7 +111,7 @@ pub fn caller_label(owning_app: &str, caller: &Caller) -> String {
 }
 
 impl Line {
-    pub fn for_request(req: &Request, surfaced: Surfaced, contacts: &dyn Contacts) -> Line {
+    pub fn for_request(req: &Request, surfaced: Surfaced, contacts: &dyn ContactsSource) -> Line {
         let always = if surfaced.rules_could_answer() && req.tool.auto_approvable && !req.context.outcome_unknown && req.context.connection == Connection::Host {
             always_choices(req, contacts)
         } else {
@@ -135,7 +136,7 @@ impl Line {
 }
 
 /// The rules a sheet offers for this call, narrowest first.
-fn always_choices(req: &Request, contacts: &dyn Contacts) -> Vec<AlwaysChoice> {
+fn always_choices(req: &Request, contacts: &dyn ContactsSource) -> Vec<AlwaysChoice> {
     let mut out = Vec::new();
     let recipients = facts::recipients(&req.args);
     let no_attachments = !facts::has_attachments(&req.args);
@@ -145,7 +146,7 @@ fn always_choices(req: &Request, contacts: &dyn Contacts) -> Vec<AlwaysChoice> {
         c
     };
     if !recipients.is_empty() {
-        if recipients.iter().all(|r| contacts.contains(r)) {
+        if recipients.iter().all(|r| contacts.is_known(r)) {
             let c = with_attachments(Conditions { recipients_in_contacts: true, ..Conditions::default() });
             out.push(AlwaysChoice { label: format!("Always for people in my contacts{}", if no_attachments { ", no attachments" } else { "" }), draft: RuleDraft::tool(&req.app, tool, c) });
         }

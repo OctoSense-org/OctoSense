@@ -7,7 +7,8 @@ use super::consent::{AgentSummary, ConsentStore, State};
 use super::dev_hooks::FixedDevMode;
 use super::relay::RecordingRelay;
 use super::router::{make_request, AppConfirm, AppConfirmRequest, AutoBy, Route, Router};
-use super::rules::{Conditions, ContactList, ApprovalGesture, RuleDraft, RuleStore, DEFAULT_DAILY_CAP};
+use super::contacts::{ContactList, ContactsGate, ContactsSource, MailContacts, NoContacts};
+use super::rules::{Conditions, ApprovalGesture, RuleDraft, RuleStore, DEFAULT_DAILY_CAP};
 use super::sheet::{Answer, Place, Surfaced};
 use super::types::*;
 use serde_json::{json, Value};
@@ -18,9 +19,16 @@ const MAIL: &str = "os.mail";
 
 fn router_with(dev: FixedDevMode) -> (Router, RecordingRelay) {
     let relay = RecordingRelay::default();
-    let contacts = ContactList(vec!["ana@example.org".into(), "bo@example.org".into()]);
-    let r = Router::new(RuleStore::memory(), AuditLog::memory(), Box::new(dev), Box::new(contacts), Box::new(relay.clone()));
+    let r = router_with_contacts(dev, relay.clone(), true);
     (r, relay)
+}
+/// Ana and Bo are contacts; `consent`: "Use my contacts in approval rules" is on.
+fn router_with_contacts(dev: FixedDevMode, relay: RecordingRelay, consent: bool) -> Router {
+    let mut contacts = ContactsGate::memory(Box::new(ContactList(vec!["ana@example.org".into(), "bo@example.org".into(), "@ana:example.org".into()])));
+    if consent {
+        contacts.allow(&ApprovalGesture::settings_tap(), T0);
+    }
+    Router::new(RuleStore::memory(), AuditLog::memory(), Box::new(dev), contacts, Box::new(relay))
 }
 fn router() -> (Router, RecordingRelay) {
     router_with(FixedDevMode::off())
@@ -163,6 +171,48 @@ fn condition_recipients_in_contacts() {
     assert!(!matches(&mut r, "2", json!({"to": ["ana@example.org", "eve@example.org"]}), Trigger::Person, &[]));
     assert!(!matches(&mut r, "3", json!({"to": "ana@example.org", "bcc": "eve@example.org"}), Trigger::Person, &[]), "bcc counts");
     assert!(!matches(&mut r, "4", json!({"subject": "no recipients"}), Trigger::Person, &[]), "a missing fact fails");
+    assert!(matches(&mut r, "5", json!({"to": "@Ana:example.org"}), Trigger::Person, &[]), "a Matrix ID");
+    assert!(!matches(&mut r, "6", json!({"to": "@eve:example.org"}), Trigger::Person, &[]));
+}
+
+#[test]
+fn contacts_never_match_without_consent() {
+    let relay = RecordingRelay::default();
+    let mut r = router_with_contacts(FixedDevMode::off(), relay.clone(), false);
+    rule(&mut r, contacts_rule());
+    assert!(!r.contacts().allowed(), "off by default");
+    assert!(!matches(&mut r, "1", json!({"to": "ana@example.org"}), Trigger::Person, &[]), "a known recipient, no consent");
+    assert!(
+        r.front_sheet().unwrap().lines[0].always.iter().all(|c| !c.label.contains("contacts")),
+        "no \u{201c}always for people in my contacts\u{201d} either"
+    );
+    r.contacts_mut().allow(&ApprovalGesture::settings_tap(), T0);
+    assert!(matches(&mut r, "2", json!({"to": "ana@example.org"}), Trigger::Person, &[]));
+    assert!(!matches(&mut r, "3", json!({"to": "eve@example.org"}), Trigger::Person, &[]), "an unknown recipient");
+    r.contacts_mut().turn_off(T0);
+    assert!(!matches(&mut r, "4", json!({"to": "ana@example.org"}), Trigger::Person, &[]), "turned off again");
+    // A new source keeps the person's choice.
+    r.set_contacts(Box::new(ContactList(vec!["ana@example.org".into()])));
+    assert!(!r.contacts().is_known("ana@example.org"));
+}
+
+#[test]
+fn mail_contacts_read_the_mail_services_data_where_it_lives() {
+    fn read(dir: &std::path::Path) -> Vec<String> {
+        // Stands in for the mail service's known_addresses.
+        if dir.ends_with(".host") { vec!["me@example.com".into(), "ana@example.org".into()] } else { Vec::new() }
+    }
+    let mail = MailContacts::new(|| Some(std::path::PathBuf::from("apps-root").join(".host")), read);
+    assert!(mail.is_known("Ana@Example.org") && mail.is_known("me@example.com"));
+    assert!(!mail.is_known("eve@example.org") && !mail.is_known(""));
+    let unset = MailContacts::new(|| None, read);
+    assert!(!unset.is_known("ana@example.org"), "no App Hub data root yet: nobody");
+    assert!(!NoContacts.is_known("ana@example.org"));
+    // Behind the gate: nothing until the person allows it.
+    let mut gate = ContactsGate::memory(Box::new(mail));
+    assert!(!gate.is_known("ana@example.org"));
+    gate.allow(&ApprovalGesture::settings_tap(), T0);
+    assert!(gate.is_known("ana@example.org"));
 }
 
 #[test]
@@ -446,6 +496,8 @@ fn rules_consent_and_audit_persist_per_home_owner_only() {
     {
         let mut a = super::Approvals::in_home(&home);
         a.router.set_contacts(Box::new(ContactList(vec!["ana@example.org".into()])));
+        assert!(!a.router.contacts().allowed(), "contacts are off in a new home");
+        a.router.contacts_mut().allow(&ApprovalGesture::settings_tap(), T0);
         let id = a.router.create_rule(&ApprovalGesture::settings_tap(), contacts_rule(), T0).unwrap();
         a.router.request(send("1", json!({"to": "ana@example.org"})), T0);
         assert_eq!(a.router.rules.get(&id).unwrap().used_today(T0), 1);
@@ -455,11 +507,12 @@ fn rules_consent_and_audit_persist_per_home_owner_only() {
     assert_eq!(a.router.rules.rules().len(), 1);
     assert_eq!(a.router.rules.rules()[0].used_today(T0), 1, "the cap's count survives a restart");
     assert_eq!(a.consent.state("os.news"), State::Allowed);
+    assert!(a.router.contacts().allowed(), "the contacts choice survives a restart");
     assert_eq!(a.router.audit.recent_automatic(5).len(), 1, "the log is read back");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        for f in [super::rules::RULES_FILE, super::consent::CONSENT_FILE, super::audit::AUDIT_FILE] {
+        for f in [super::rules::RULES_FILE, super::consent::CONSENT_FILE, super::contacts::CONTACTS_FILE, super::audit::AUDIT_FILE] {
             let mode = std::fs::metadata(home.join(f)).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600, "{f}");
         }

@@ -13,11 +13,12 @@
 //! | the sheet model | [`sheet`] |
 //! | the append-only, owner-only audit | [`audit`] |
 //! | consent at first use; `consent::granted(app)` | [`consent`] |
+//! | contacts for "recipients in my contacts", behind the person's consent | [`contacts`] |
 //! | the shell-drawn sheet, first-use sheet and time-box indicator | [`view`] |
 //! | Settings → Assistant → Approvals | [`settings_page`] |
 //!
-//! Files, per OctoSense home: [`rules::RULES_FILE`], [`consent::CONSENT_FILE`]
-//! and [`audit::AUDIT_FILE`], all owner-only.
+//! Files, per OctoSense home: [`rules::RULES_FILE`], [`consent::CONSENT_FILE`],
+//! [`contacts::CONTACTS_FILE`] and [`audit::AUDIT_FILE`], all owner-only.
 //!
 //! The shell calls [`init`] at startup, [`tick`] once a second (and shows
 //! [`take_notices`] as notifications), and gives pointer events to
@@ -28,6 +29,7 @@
 
 pub mod audit;
 pub mod consent;
+pub mod contacts;
 pub mod dev_hooks;
 pub mod facts;
 pub mod relay;
@@ -86,17 +88,18 @@ impl ApprovalRelay for Dispatch {
 
 impl Approvals {
     pub fn in_home(home: &Path) -> Approvals {
-        Approvals::with_parts(rules::RuleStore::in_home(home), audit::AuditLog::in_home(home), consent::ConsentStore::in_home(home))
+        let contacts = contacts::ContactsGate::in_home(home, contacts::shell_source());
+        Approvals::with_parts(rules::RuleStore::in_home(home), audit::AuditLog::in_home(home), consent::ConsentStore::in_home(home), contacts)
     }
     pub fn memory() -> Approvals {
-        Approvals::with_parts(rules::RuleStore::memory(), audit::AuditLog::memory(), consent::ConsentStore::memory())
+        Approvals::with_parts(rules::RuleStore::memory(), audit::AuditLog::memory(), consent::ConsentStore::memory(), contacts::ContactsGate::memory(Box::new(contacts::NoContacts)))
     }
-    fn with_parts(rules: rules::RuleStore, audit: audit::AuditLog, consent: consent::ConsentStore) -> Approvals {
+    fn with_parts(rules: rules::RuleStore, audit: audit::AuditLog, consent: consent::ConsentStore, contacts: contacts::ContactsGate) -> Approvals {
         let queue = RecordingRelay::default();
         let bus = RecordingRelay::default();
         let external = Arc::new(Mutex::new(None));
         let dispatch = Dispatch { bus: bus.clone(), queue: queue.clone(), external: external.clone() };
-        let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), Box::new(rules::NoContacts), Box::new(dispatch));
+        let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), contacts, Box::new(dispatch));
         Approvals { router, consent, settings_open: false, queue, bus, external }
     }
     /// Sheets, rules, consent and the page: one number for "redraw".
@@ -104,7 +107,7 @@ impl Approvals {
         let now = now();
         // The time-box indicator counts minutes down.
         let minute = if self.router.rules.active_everything(now).is_empty() { 0 } else { now / 60 };
-        self.router.generation() + self.consent.generation() + u64::from(self.settings_open) + minute
+        self.router.generation() + self.consent.generation() + self.router.contacts().generation() + u64::from(self.settings_open) + minute
     }
     pub fn consent_granted(&self, app: &str) -> bool {
         self.consent.granted(app, self.router.hooks().grants_all(app))
