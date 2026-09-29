@@ -127,8 +127,10 @@ impl OctosContext for FakeContext {
         self.calls.fetch_add(1, Ordering::SeqCst);
         match op {
             ContextOp::Open => sink(ContextEvent::Complete(Ok(json!({"session_id": "s"})))),
-            ContextOp::Turn { text } => {
-                sink(ContextEvent::Data(json!({"method": "message/delta", "text": text})));
+            op @ (ContextOp::Turn { .. } | ContextOp::TurnFrom { .. }) => {
+                let (text, trigger) = op.turn().unwrap();
+                // The fake echoes what started the turn, for the tests.
+                sink(ContextEvent::Data(json!({"method": "message/delta", "text": text, "trigger": trigger.as_str()})));
                 sink(ContextEvent::Complete(Ok(json!({"text": "done"}))));
             }
             _ => sink(ContextEvent::Complete(Ok(Value::Null))),
@@ -299,6 +301,13 @@ fn identity_is_the_sockets_and_a_process_uses_only_its_own_contexts() {
     links.on_frame(1, "notes", &request(6, "octos.turn.start", json!({"context": ctx, "text": "x"})), None);
     let got = downs(&frames_a);
     assert!(matches!(got.as_slice(), [Down::Event { req_id: 6, .. }, Down::Reply { req_id: 6, result: Ok(_) }]), "{got:?}");
+    assert!(matches!(&got[0], Down::Event { event, .. } if event["trigger"] == "unknown"), "a turn that says nothing is unknown: {got:?}");
+    // What started the turn reaches the broker as the app said it.
+    for (req, said, want) in [(7, json!("person"), "person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
+        links.on_frame(1, "notes", &request(req, "octos.turn.start", json!({"context": ctx, "text": "x", "trigger": said})), None);
+        let got = downs(&frames_a);
+        assert!(matches!(got.first(), Some(Down::Event { event, .. }) if event["trigger"] == want), "{req}: {got:?}");
+    }
 }
 
 #[test]

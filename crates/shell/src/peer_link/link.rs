@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value};
 
 use super::wire::{self, Down, Outcome, Risk, ToolCallDown, Up};
-use crate::ai_host::app_peers::{ContextEvent, ContextOp, ContextSpec, OctosAppService, OctosContext, OCTOS_SERVICES};
+use crate::ai_host::app_peers::{ContextEvent, ContextOp, ContextSpec, OctosAppService, OctosContext, TurnTrigger, OCTOS_SERVICES};
 use crate::approvals::{Caller, Decision, RequestContext, RequestId, Route, ToolSpec, Trigger};
 use crate::hub::ClientId;
 use crate::native_apps::Confirm;
@@ -299,7 +299,9 @@ impl PeerLinks {
                     "octos.session.history" => ContextOp::History,
                     "octos.turn.interrupt" => ContextOp::Interrupt,
                     "octos.turn.start" => match args.get("text").and_then(Value::as_str) {
-                        Some(text) => ContextOp::Turn { text: text.to_string() },
+                        // What started the turn, as the app says; left
+                        // out, it is unknown (never "the person").
+                        Some(text) => ContextOp::TurnFrom { text: text.to_string(), trigger: TurnTrigger::from_args(&Value::Object(args.clone())) },
                         None => return Self::reply(&out, req_id, Err("bad_args: text is required".into())),
                     },
                     _ => return Self::reply(&out, req_id, Err(format!("unsupported: {method}"))),

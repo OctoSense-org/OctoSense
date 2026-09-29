@@ -287,6 +287,12 @@ impl Driver {
             reply.finish(ToolOutcome::error("turn_interrupted", "the person stopped that answer"));
             return;
         }
+        // Only a turn this chat started is the person's (G1, G2): another
+        // client's turn on the session stays unknown.
+        let mut call = call;
+        if self.model.is_own_turn(&call.turn_id) {
+            call.trigger = crate::ai_host::app_peers::TurnTrigger::Person;
+        }
         self.calls.insert(call.call_id.clone(), reply.clone());
         self.effects.push(Effect::ToolCall { call, reply });
     }

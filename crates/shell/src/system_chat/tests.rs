@@ -753,3 +753,19 @@ fn a_new_conversation_turn_is_the_chats_own() {
     assert!(d.model.is_own_turn(&turn));
     assert!(!d.model.is_own_turn("talk-to-octos-1"));
 }
+
+#[test]
+fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
+    use crate::ai_host::app_peers::TurnTrigger;
+    let (mut d, fake) = opened();
+    d.command(Command::Send("list my files".into()));
+    let own = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    let call = |id: &str, turn: &str| json!({"peer": null, "context_id": null, "turn_id": turn, "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "d",
+        "name": "terminal.run", "app": "terminal", "caller": {"kind": "system", "peer": null, "session_id": SYSTEM_SESSION, "turn_id": turn},
+        "args": {"command": "ls"}, "risk": "destructive", "confirm_required": false, "timeout_ms": 30000, "tools_version": 1});
+    fake.notify("peer/tool/call", call("c1", &own));
+    fake.notify("peer/tool/call", call("c2", "talk-to-octos-1"));
+    settle(&mut d);
+    let triggers: Vec<(String, TurnTrigger)> = d.effects.iter().filter_map(|e| match e { Effect::ToolCall { call, .. } => Some((call.call_id.clone(), call.trigger.clone())), _ => None }).collect();
+    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person), ("c2".to_string(), TurnTrigger::Unknown)]);
+}

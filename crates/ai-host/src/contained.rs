@@ -17,7 +17,7 @@
 //! shell's factory (`cfg(kernel)`) launches them through
 //! `octosense_app_peers::hosted`; tests use a fake one.
 
-use octosense_app_peers::{ContextEvent, ContextOp, ContextSpec, EventSink, OctosAppService, OctosContext};
+use octosense_app_peers::{ContextEvent, ContextOp, ContextSpec, EventSink, OctosAppService, OctosContext, TurnTrigger};
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -81,11 +81,12 @@ fn namespace_segment(id: &str) -> bool {
         && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// The operation an app's call asks for. Only `text` for a turn; nothing for
-/// the rest.
+/// The operation an app's call asks for. Only `text` for a turn, and what
+/// started it (`trigger`, `from`: [`TurnTrigger::from_args`]; left out, the
+/// turn counts as unknown); nothing for the rest.
 pub fn parse(service: &str, args: &Value) -> Result<ContextOp, String> {
     let allowed: &[&str] = match service {
-        "octos.turn.start" => &["text"],
+        "octos.turn.start" => &["text", "trigger", "from"],
         "octos.session.open" | "octos.session.history" | "octos.turn.interrupt" => &[],
         other => return Err(format!("Unknown Octos service {other}")),
     };
@@ -93,12 +94,13 @@ pub fn parse(service: &str, args: &Value) -> Result<ContextOp, String> {
         return Err(UNSUPPORTED_ARGS.into());
     }
     Ok(match service {
-        "octos.turn.start" => ContextOp::Turn {
+        "octos.turn.start" => ContextOp::TurnFrom {
             text: args["text"]
                 .as_str()
                 .filter(|s| !s.trim().is_empty() && s.len() <= MAX_TEXT_BYTES)
                 .ok_or(BAD_TEXT)?
                 .to_owned(),
+            trigger: TurnTrigger::from_args(args),
         },
         "octos.session.open" => ContextOp::Open,
         "octos.session.history" => ContextOp::History,
