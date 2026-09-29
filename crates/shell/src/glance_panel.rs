@@ -2,13 +2,16 @@
 //! screen (glance.rs), in a column at the right edge of the desk, over the
 //! windows, the way the phone shows them on its glance page.
 //!
-//! F9 (or `--test-action glance`) shows and hides it. Clicking a card opens
-//! the app that published it; clicking outside the column closes it. The
+//! F9 (or `--test-action glance`) shows and hides it. Each card is live: the
+//! panel hands it the pointer inside its tile and every other event
+//! (typing, focus, timers, answers), so it works as it does in its app
+//! (glance_card.rs). The open button at a card's top-right corner opens the
+//! app that published it; clicking outside the column closes it. The
 //! column is [`PANEL_WIDTH`] wide; each card is a tile of the column's inner
 //! width at its measured height (glance_card.rs), in the glance order
 //! (priority, then recency).
 use crate::glance_card::GlanceTiles;
-use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
+use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, Ico, ShellDraw};
 use crate::shell::{alpha, MaterialTokens, ShellTokens};
 use makepad_widgets::*;
 
@@ -74,6 +77,12 @@ pub struct ShellGlancePanel {
 }
 
 impl ShellGlancePanel {
+    /// Whether a pointer event at `p` is the panel's: anywhere in the open
+    /// column (its cards' or its own), or a press anywhere (outside the
+    /// column, it closes the panel).
+    pub fn owns_pointer(&self, p: DVec2, press: bool) -> bool {
+        self.open && (press || contains(self.column, p))
+    }
     pub fn toggle(&mut self, cx: &mut Cx) {
         self.open = !self.open;
         self.redraw(cx);
@@ -116,7 +125,10 @@ impl Widget for ShellGlancePanel {
                     break;
                 }
                 let r = rect(x + PAD, y, PANEL_WIDTH - PAD * 2.0, h);
-                self.tiles.draw(cx, &key, &card.body, r);
+                self.tiles.draw(cx, &key, &card.app, card.contained, &card.body, r);
+                let open = crate::glance_card::open_button(r);
+                self.d.card(cx, open, &tok.notifications.surface);
+                self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
                 self.card_rects.push((r, card.open_app.clone(), card.route.clone()));
                 y += h + GAP;
             }
@@ -136,16 +148,23 @@ impl Widget for ShellGlancePanel {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
-        if !self.open {
-            return;
-        }
         if let Event::MouseDown(e) = event {
-            if let Some((_, app, route)) = self.card_rects.iter().find(|(r, _, _)| contains(*r, e.abs)).cloned() {
+            if !self.open {
+                return;
+            }
+            if let Some((_, app, route)) = self.card_rects.iter().find(|(r, _, _)| contains(crate::glance_card::open_button(*r), e.abs)).cloned() {
                 cx.widget_action(self.uid, ShellGlancePanelAction::Open { app, route });
+                return;
             } else if !contains(self.column, e.abs) {
                 self.open = false;
                 self.redraw(cx);
+                return;
             }
+        }
+        // The cards' own input and answers (glance_card.rs). A closed panel
+        // has swept its tiles; pointer events reach them only while open.
+        if self.open || !event.requires_visibility() {
+            self.tiles.handle_event(cx, event);
         }
     }
 }

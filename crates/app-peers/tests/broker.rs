@@ -836,3 +836,43 @@ fn each_turns_trigger_is_stamped_on_its_calls_and_approvals() {
     assert_eq!(parsed.trigger, TurnTrigger::Unknown, "the default until the host stamps it");
     drop(broker);
 }
+
+#[test]
+fn octos_own_approvals_on_a_context_or_the_peers_session_go_to_the_host() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "mini.notes#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let slug = peer_slug(&script);
+    let context_id = calls_of(&script, "peer/context/open")[0].1["context_id"].as_str().unwrap().to_owned();
+    let context_session = calls_of(&script, "session/open").last().unwrap().1["session_id"].as_str().unwrap().to_owned();
+    // octos's own write_file approval in the app's context.
+    notify(&script, "approval/requested", json!({"session_id": context_session, "approval_id": "w1", "turn_id": "t", "tool_name": "write_file", "title": "Write notes.md", "body": "outside the workspace"}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    let (approval, answer) = host.approvals.lock().unwrap()[0].clone();
+    assert!(approval.octos, "octos's own tool, not a host tool");
+    assert_eq!((approval.app.as_str(), approval.tool.as_str()), ("rinx", "write_file"), "owned by the peer's app");
+    assert_eq!(approval.args, json!({"title": "Write notes.md", "body": "outside the workspace"}));
+    assert_eq!(approval.context_id.as_deref(), Some(context_id.as_str()));
+    assert_eq!(approval.client.as_deref(), Some("mini.notes#1"), "the client from the host's own context table");
+    // The app hears only that the host has it, never the approval itself.
+    let mut seen = Vec::new();
+    while let Ok(ContextEvent::Data(d)) = rx.recv_timeout(Duration::from_millis(200)) {
+        seen.push(d["method"].as_str().unwrap_or("").to_owned());
+    }
+    assert!(seen.iter().any(|m| m == host_tools::HANDLED_BY_HOST), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "approval/requested"), "{seen:?}");
+    assert!(answer.respond(true));
+    wait_for("the answer", || position(&script, "approval/respond").is_some());
+    assert_eq!(calls_of(&script, "approval/respond")[0].1["decision"], "approve");
+    // One on the peer's own session (a peer/input turn): no longer dropped.
+    let own = format!("_main:api:octosense#peer-{slug}");
+    notify(&script, "approval/requested", json!({"session_id": own, "approval_id": "w2", "turn_id": "turn-9", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 2);
+    let (approval, _) = host.approvals.lock().unwrap()[1].clone();
+    assert!(approval.octos && approval.context_id.is_none() && approval.client.is_none());
+    drop(broker);
+}
