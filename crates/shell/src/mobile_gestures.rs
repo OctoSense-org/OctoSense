@@ -210,11 +210,14 @@ impl GestureRecognizer {
                 let t = self.track.as_mut()?;
                 Self::sample(t, p, time);
                 let delta = p - t.start;
-                // Once a library drag chooses scrolling (or moves left), it
-                // stays the grid's until Up, even if the finger later curves
-                // right. Relinquishing the track also preserves scroll inertia.
+                // A library drag is the grid's (scrolling, or the search
+                // results under the query) unless it is plainly a rightward
+                // swipe. It is decided once, past the slop: a diagonal that
+                // was left undecided could lock as Back a sample later and
+                // return Home, closing search, on a thumb's downward arc.
+                // Relinquishing the track also preserves scroll inertia.
                 if t.origin == Origin::Library && t.kind.is_none() && delta.length() > SLOP
-                    && (delta.y.abs() > delta.x.abs() * 1.2 || -delta.x > delta.y.abs() * 1.2) {
+                    && Self::classify(t.origin, delta).is_none() {
                     self.track = None;
                     return None;
                 }
@@ -235,9 +238,15 @@ impl GestureRecognizer {
                 let kind = t.kind?;
                 let delta = p - t.start;
                 let progress = Self::progress(kind, t.origin, delta, m.commit_distance);
-                let along = Self::along(kind, t.origin, Self::velocity(&t));
+                let velocity = Self::velocity(&t);
+                let along = Self::along(kind, t.origin, velocity);
+                // A library flick sends it back only while it is still going
+                // mostly sideways, not a swipe that turned into a scroll.
+                let flick = along >= m.flick_velocity && (t.origin != Origin::Library || velocity.x > velocity.y.abs() * 2.0);
                 if kind == GestureKind::HomeUp && t.held { return Some(ShellGesture::Commit(GestureKind::Switcher)); }
-                if progress >= Self::commit_fraction(kind) || along >= m.flick_velocity { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
+                // Nor one that ended up travelling further down than right.
+                if t.origin == Origin::Library && delta.x <= delta.y.abs() { return Some(ShellGesture::Cancel(kind)); }
+                if progress >= Self::commit_fraction(kind) || flick { Some(ShellGesture::Commit(kind)) } else { Some(ShellGesture::Cancel(kind)) }
             }
         }
     }
@@ -327,7 +336,8 @@ impl GestureRecognizer {
                 else if d.y > 0.0 && ay > ax * 1.2 { Some(GestureKind::Shade(side)) }
                 else { None }
             }
-            Origin::Library => (d.x > ay * 1.2).then_some(GestureKind::Back),
+            // Twice as far right as up or down: a swipe back, not a scroll.
+            Origin::Library => (d.x > ay * 2.0).then_some(GestureKind::Back),
 
         }
     }
@@ -596,6 +606,24 @@ mod tests {
         let ctx = GestureContext { body: false, ..ctx(PhoneScreen::Drawer) };
         let out = drive(&mut rec, &ctx, &ExclusionZones::default(), &swipe((200.0, 300.0), (204.0, 500.0), 0.3, 5));
         assert!(out.iter().all(|g| g.is_none()), "{out:?}");
+    }
+    #[test]
+    fn a_downward_thumb_arc_in_the_library_is_a_scroll_never_back() {
+        // Starts a little sideways, then mostly down: it used to lock as
+        // Back and return Home, closing search.
+        let arc = [(Down, 200.0, 400.0, 1.0), (Move, 214.0, 410.0, 1.02), (Move, 240.0, 460.0, 1.04), (Move, 270.0, 520.0, 1.06),
+            (Move, 295.0, 580.0, 1.08), (Move, 330.0, 700.0, 1.1), (Up, 330.0, 700.0, 1.1)];
+        for system_edges in [false, true] {
+            let context = GestureContext { system_edges, shade: !system_edges, ..ctx(PhoneScreen::Drawer) };
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &ExclusionZones::default(), &arc);
+            assert!(out.iter().all(|g| g.is_none()), "{out:?}");
+            // A swipe that starts right but turns into a long pull down cancels.
+            let mut rec = GestureRecognizer::default();
+            let out = drive(&mut rec, &context, &ExclusionZones::default(), &[(Down, 200.0, 400.0, 1.0), (Move, 230.0, 405.0, 1.02),
+                (Move, 300.0, 520.0, 1.05), (Move, 340.0, 700.0, 1.08), (Up, 340.0, 700.0, 1.08)]);
+            assert_eq!(last(&out), ShellGesture::Cancel(GestureKind::Back), "{out:?}");
+        }
     }
     #[test]
     fn library_swipe_right_returns_home_with_either_edge_owner() {

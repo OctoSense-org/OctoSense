@@ -2,29 +2,58 @@
 //! clipboard and native IME stay with TextInput. Only its soft keys are hosted.
 use super::*;
 
-fn matching_apps<'a>(apps: &'a [(String, String)], query: &str) -> Vec<&'a (String, String)> {
+/// The catalog positions of the apps matching `query`, best first.
+fn matching_indices(apps: &[(String, String)], query: &str) -> Vec<usize> {
     let words: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
-    let mut found: Vec<_> = apps
+    let mut found: Vec<(usize, String)> = apps
         .iter()
-        .filter(|(id, label)| {
+        .enumerate()
+        .filter(|(_, (id, label))| {
             let name = format!("{id} {label}").to_lowercase();
             words.iter().all(|word| name.contains(word))
         })
+        .map(|(index, (_, label))| (index, label.to_lowercase()))
         .collect();
     // What the person typed first is most likely the start of a name: labels
     // beginning with the first word come first, then the rest alphabetically.
     let first = words.first().cloned().unwrap_or_default();
-    found.sort_by_cached_key(|(_, label)| {
-        let lower = label.to_lowercase();
-        (!lower.starts_with(&first), !lower.split_whitespace().any(|w| w.starts_with(&first)), lower)
+    found.sort_by_cached_key(|(_, lower)| {
+        (!lower.starts_with(&first), !lower.split_whitespace().any(|w| w.starts_with(&first)), lower.clone())
     });
-    found
+    found.into_iter().map(|(index, _)| index).collect()
+}
+fn matching_apps<'a>(apps: &'a [(String, String)], query: &str) -> Vec<&'a (String, String)> {
+    matching_indices(apps, query).into_iter().map(|index| &apps[index]).collect()
+}
+/// The indices into the catalog that match a query, kept for as long as
+/// the query and the catalog stay the same.
+#[derive(Default)]
+pub struct SearchResults {
+    key: Option<(String, u64)>,
+    pub found: Vec<usize>,
+}
+impl SearchResults {
+    /// The matches for `query` in `apps`, recomputed only when either changed.
+    pub fn update(&mut self, apps: &[(String, String)], query: &str) -> &[usize] {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        apps.hash(&mut hasher);
+        let key = (query, hasher.finish());
+        if self.key.as_ref().is_none_or(|(q, h)| q != key.0 || *h != key.1) {
+            self.found = matching_indices(apps, query);
+            self.key = Some((query.to_string(), key.1));
+        }
+        &self.found
+    }
 }
 /// The result Return launches: the best match for the query, if any.
 pub fn top_hit(apps: &[(String, String)], query: &str) -> Option<String> {
     if query.trim().is_empty() { return None; }
     matching_apps(apps, query).first().map(|(id, _)| id.clone())
 }
+
+/// The height of one search result row.
+const ROW: f64 = 56.0;
 
 impl PhoneSurface {
     pub fn dismiss_search(&mut self, cx: &mut Cx, phone: &mut PhoneState, clear: bool) {
@@ -243,14 +272,20 @@ impl PhoneSurface {
     ) {
         let timing = crate::mobile_perf::work_start();
         let matching = crate::mobile_perf::work_start();
-        let found = matching_apps(apps, &state.phone.search_query);
+        let mut results = std::mem::take(&mut self.search_found);
+        let count = results.update(apps, &state.phone.search_query).len();
         crate::mobile_perf::work_end("search.matching", matching);
         let top = pill.pos.y + pill.size.y + 14.0;
+        // Only the shell's own soft keyboard (a desktop preview) is drawn
+        // over the viewport. A native IME has already reflowed the viewport
+        // above itself (KeyboardView), so taking its height off again left
+        // the results a single row tall under Android's keyboard.
         let bottom = screen.pos.y + screen.size.y
-            - state.phone.keyboard.max(state.phone.keyboard_target).max(state.phone.native_keyboard)
+            - state.phone.keyboard.max(state.phone.keyboard_target)
             - 28.0;
         let height = (bottom - top).max(0.0);
-        if found.is_empty() {
+        if count == 0 {
+            self.search_found = results;
             self.label(
                 cx,
                 rect(screen.pos.x + 20.0, top + 24.0, screen.size.x - 40.0, 30.0),
@@ -261,15 +296,20 @@ impl PhoneSurface {
             );
             return;
         }
-        self.search_scroll_max = (found.len() as f64 * 56.0 - height).max(0.0);
-        let scroll = state.phone.search_scroll.clamp(0.0, self.search_scroll_max);
+        self.search_scroll_max = (count as f64 * ROW - height).max(0.0);
+        // The stretch past either end moves the rows with the finger too.
+        let scroll = state.phone.search_scroll.clamp(0.0, self.search_scroll_max) - state.phone.search_stretch;
         cx.begin_turtle(
             Walk::abs_rect(rect(screen.pos.x, top, screen.size.x, height)),
             Layout::default(),
         );
-        for (index, (id, label)) in found.into_iter().enumerate() {
-            let y = top + index as f64 * 56.0 - scroll;
-            if y + 56.0 <= top || y >= bottom {
+        // Only the rows on screen are laid out and drawn.
+        let first = (scroll / ROW).floor().max(0.0) as usize;
+        let last = (((scroll + height) / ROW).ceil().max(0.0) as usize).min(count);
+        for index in first..last {
+            let (id, label) = &apps[results.found[index]];
+            let y = top + index as f64 * ROW - scroll;
+            if y + ROW <= top || y >= bottom {
                 continue;
             }
             let row = rect(screen.pos.x + 20.0, y, screen.size.x - 40.0, 56.0);
@@ -308,6 +348,7 @@ impl PhoneSurface {
             ));
         }
         cx.end_turtle();
+        self.search_found = results;
         crate::mobile_perf::work_end("search.results", timing);
     }
 }
@@ -331,5 +372,16 @@ mod tests {
             ["files", "photos", "task"]
         );
         assert!(matching_apps(&apps, "task photos").is_empty());
+    }
+    #[test]
+    fn results_are_kept_per_query_and_catalog() {
+        let mut apps: Vec<(String, String)> = vec![("files".into(), "Files".into()), ("photos".into(), "Photos".into())];
+        let mut results = SearchResults::default();
+        assert_eq!(results.update(&apps, "o"), [1]);
+        results.found.push(9);
+        assert_eq!(results.update(&apps, "o"), [1, 9], "the same query and catalog are not matched again");
+        assert_eq!(results.update(&apps, ""), [0, 1]);
+        apps.push(("zoo".into(), "Zoo".into()));
+        assert_eq!(results.update(&apps, ""), [0, 1, 2], "a changed catalog is");
     }
 }

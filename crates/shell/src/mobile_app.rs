@@ -1079,8 +1079,7 @@ impl App {
                 if hit==Some(PhoneHit::Scrub) || matches!(&hit,Some(PhoneHit::Shade(h)) if ShadeState::drags(h)) {self.phone_gestures.cancel();}
                 let shell=self.phone_gestures.active();
                 if !shell && !screen.contains(p) && hit.is_none() {return false;}
-                phone.search_velocity=0.0;
-                phone.search_track=Some((p.y,time));
+                phone.search_touch(p.y,time);
                 if hit==Some(PhoneHit::Scrub) {
                     if let Some(scroll)=scrub_at {phone.search_scroll=scroll;}
                 }
@@ -1109,17 +1108,8 @@ impl App {
                         if (scroll-phone.search_scroll).abs()>0.5 {phone.search_scroll=scroll;self.android_haptic(cx,"tick");}
                     }
                 }else if from==PhoneScreen::Drawer {
-                    // Past either end the list stretches a little instead of stopping.
-                    let next=phone.search_scroll.min(search_scroll_max)-last.y;
-                    if next<0.0 {phone.search_stretch=(phone.search_stretch-next*0.45).min(72.0);phone.search_scroll=0.0;}
-                    else if next>search_scroll_max {phone.search_stretch=(phone.search_stretch-(next-search_scroll_max)*0.45).max(-72.0);phone.search_scroll=search_scroll_max;}
-                    else {phone.search_scroll=next;}
-                    // The flick speed: a short average of the finger's recent samples.
-                    if let Some((y0,t0))=phone.search_track {
-                        let dt=time-t0;
-                        if dt>0.0005 {phone.search_velocity=phone.search_velocity*0.5+(p.y-y0)/dt*0.5;}
-                    }
-                    phone.search_track=Some((p.y,time));
+                    // 1:1 with the finger; past either end it stretches (mobile.rs).
+                    phone.search_drag(last.y,p.y,time,search_scroll_max);
                 }else if from==PhoneScreen::Recents && !shell {
                     if delta.y.abs()>delta.x.abs()*1.2 {phone.dismiss_y=delta.y.min(0.0);}
                     else {let width=card_rect(screen,0.0,0.0).size.x+22.0;phone.page=(phone.page-last.x/width).clamp(-0.25,phone.order.len().saturating_sub(1)as f64+0.25);}
@@ -1131,10 +1121,8 @@ impl App {
                 let delta=p-g.start;
                 // A drawer scroll lifted at speed keeps going; a lift after a
                 // pause, or anything else, stops it.
-                let coasting=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0
-                    && phone.search_track.is_some_and(|(_,t0)|time-t0<0.08) && phone.search_velocity.abs()>250.0;
-                if !coasting {phone.search_velocity=0.0;}
-                phone.search_track=None;
+                let scrolled=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0;
+                phone.search_lift(time,scrolled);
                 if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
                     let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
                         && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));
