@@ -16,6 +16,8 @@
 
 ## 整体如何运作
 
+![OctoSense AI 服务：进程与传输](docs/images/ai-services-processes.png)
+
 ```
  用户 ──> OctoSense Shell（一个进程）──── OUP（stdio）────> octos 内核（每个 Shell 一个）
           ├─ 原生模块：App Hub、Rinx                ├─ 系统 Agent 会话

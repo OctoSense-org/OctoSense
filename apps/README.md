@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+> Where this fits: see the [OctoSense architecture](../docs/architecture.md) (with diagrams).
+
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
 them. They live in `apps/` of the [OctoSense repository](../README.md); until

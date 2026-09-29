@@ -1,5 +1,7 @@
 # octosense-ai-host: the shell's AI services
 
+> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+
 One entry point for what every OctoSense shell (desktop/, phone/) hosts:
 
 - **the octos kernel** (`crates/kernel`) as a shell service: configured once,

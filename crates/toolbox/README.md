@@ -1,5 +1,7 @@
 # octosense-toolbox: workflow templates
 
+> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+
 The system toolbox's library of **OctoScript workflow templates** ([ADR 0002](../../docs/adr/), section 6, "Workflow templates", proposed in OctoSense PR #77). A template is a fixed, bounded procedure (a news digest, a multi-language topic brief, a plan from the weather) written in OctoScript with a manifest that says what it may call. An app's agent picks one and fills its parameters: one model call to choose, instead of a multi-call tool loop. The host then runs the independent steps concurrently.
 
 This crate holds the library, the runner, forks, evaluation, the `mod.research` v1 host module, and the `workflow.*` tool surface as a Rust API. **The shells do not link it yet.** See [What remains](#what-remains).

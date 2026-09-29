@@ -1,5 +1,7 @@
 # octosense-app-peers: host-owned octos app peers
 
+> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+
 Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md):
 an OctoSense shell runs ONE octos kernel and ONE provider profile
 ([`crates/kernel`](../kernel)). A native app that declares assistant

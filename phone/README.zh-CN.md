@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+> 在整个系统中的位置：见 [OctoSense 架构](../docs/architecture.zh-CN.md)（含架构图）。
+
 OctoSense 手机 Shell：一个 Makepad 应用，也就是设备的桌面。它包括带实时磁贴和应用组合的桌面页面、手势层、通知面板（左侧通知，右侧控制）、最近任务、用于展示进行中活动的实时岛，以及在进程内绘制于磁贴中的托管应用：App Hub 及其运行的应用、系统应用、Reference 和 Sheets，另外还有作为服务的 octos Agent 内核。（AppCard 目前不随产品发布，只有使用 `--features app-appcard` 时才会链接。）
 
 Home 是本仓库的三个产品之一（环境准备、目录结构和 CI 见[根目录 README](../README.zh-CN.md)）。把它与具有特权的系统部分一起预装的 ROM 镜像位于 [`rom/`](../rom/README.zh-CN.md)。
