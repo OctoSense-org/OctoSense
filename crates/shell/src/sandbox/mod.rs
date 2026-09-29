@@ -29,10 +29,14 @@
 //! **Child processes.** `processes: false`: no fork and no exec after the
 //! app's own start.
 //!
-//! **Environment.** Whatever the policy, a process app never inherits the
-//! kernel's descriptors or tokens: [`scrub_env`] removes every `OCTOS_*`
-//! and `OCTOSENSE_*` variable (host and external tokens, the core and
-//! kernel directories, the secrets vault) before the child starts, and on
+//! **Environment.** Whatever the policy, a process app inherits only an
+//! allow-list of the shell's environment ([`inherited_var`]: the path, the
+//! home, the locale, the terminal, the temp dir, the display and Wayland
+//! variables, Makepad's own, and what a `cargo run` build needs), never a
+//! provider key (`OPENAI_API_KEY`, ...), a token, or the kernel's
+//! descriptors: [`scrub_env`] clears everything else, and a name that looks
+//! like a secret ([`is_secret_var`]: `*_API_KEY`, `*_TOKEN`, `OCTOS*`, ...)
+//! is dropped even from the allow-list and from what the shell sets. On
 //! macOS a `cargo run` launch drops the ones the checkout's
 //! `.cargo/config.toml` `[env]` would hand back (build paths) in its
 //! runner. A process app reaches its agent only over the peer link
@@ -257,6 +261,45 @@ pub fn is_host_secret_var(name: &str) -> bool {
     upper.starts_with("OCTOS_") || upper.starts_with("OCTOSENSE_")
 }
 
+/// A name that holds, or looks like it holds, a secret: the host's own
+/// (`OCTOS*`), provider keys and tokens of any kind. Never passed to a
+/// process app, whatever else says so.
+pub fn is_secret_var(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    if upper.starts_with("OCTOS") || is_host_secret_var(&upper) {
+        return true;
+    }
+    const PREFIXES: &[&str] = &["AWS_", "AZURE_", "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_", "HF_", "HUGGING"];
+    const MARKS: &[&str] = &["API_KEY", "APIKEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "PRIVATE_KEY", "ACCESS_KEY", "AUTH_"];
+    PREFIXES.iter().any(|p| upper.starts_with(p)) || MARKS.iter().any(|m| upper.contains(m)) || upper.ends_with("_KEY")
+}
+
+/// The shell's variables a process app inherits (ADR 0004 §3): what a
+/// Makepad app, a shell in the Terminal, or a `cargo run` build needs to
+/// start and draw. Everything else stays with the shell.
+pub fn inherited_var(name: &str) -> bool {
+    if is_secret_var(name) {
+        return false;
+    }
+    const EXACT: &[&str] = &[
+        // Every platform.
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "COLORTERM", "TMPDIR", "TMP", "TEMP", "TZ",
+        "RUST_BACKTRACE", "RUST_LOG",
+        // The display: X11, Wayland and the session bus the GPU stack uses.
+        "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "VK_ICD_FILENAMES", "VK_DRIVER_FILES",
+        "__GLX_VENDOR_LIBRARY_NAME", "__EGL_VENDOR_LIBRARY_FILENAMES",
+        // A `cargo run` launch: the toolchain and where it builds.
+        "CARGO_HOME", "RUSTUP_HOME", "RUSTUP_TOOLCHAIN", "CARGO_TARGET_DIR", "CARGO_TERM_COLOR", "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RUSTC",
+        "RUSTC_WRAPPER", "CC", "CXX", "AR", "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET", "PKG_CONFIG_PATH",
+        // Windows.
+        "SYSTEMROOT", "WINDIR", "USERPROFILE", "USERNAME", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "COMSPEC",
+        "PATHEXT", "HOMEDRIVE", "HOMEPATH", "OS", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
+    ];
+    const PREFIXES: &[&str] = &["LC_", "XDG_", "MAKEPAD_", "STUDIO_", "MESA_", "LIBGL_", "CARGO_BUILD_", "CARGO_PROFILE_"];
+    let upper = name.to_ascii_uppercase();
+    EXACT.contains(&upper.as_str()) || PREFIXES.iter().any(|p| upper.starts_with(p))
+}
+
 /// The host variables (`OCTOS_*`, `OCTOSENSE_*`) a checkout's
 /// `.cargo/config.toml` `[env]` sets, which `cargo run` hands the app.
 pub fn cargo_env_host_vars(config: &str) -> Vec<String> {
@@ -281,18 +324,29 @@ pub fn cargo_env_host_vars(config: &str) -> Vec<String> {
     out
 }
 
-/// Remove every host variable from what `cmd` passes on (ADR 0004 §3: a
-/// process app never connects to the kernel and never sees the host token).
+/// What `cmd` passes on, from an allow-list (ADR 0004 §3: a process app
+/// never connects to the kernel, never sees the host token, and never gets
+/// the shell's provider keys): the shell's own variables that
+/// [`inherited_var`] allows, then what the shell set on `cmd` itself, minus
+/// anything that looks like a secret ([`is_secret_var`]).
 pub fn scrub_env(cmd: &mut Command) {
-    for (name, _) in std::env::vars_os() {
-        if name.to_str().is_some_and(is_host_secret_var) {
-            cmd.env_remove(&name);
+    scrub_env_from(cmd, std::env::vars_os());
+}
+
+/// [`scrub_env`] with `inherited` standing for the shell's environment.
+pub fn scrub_env_from(cmd: &mut Command, inherited: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>) {
+    let explicit: Vec<(std::ffi::OsString, std::ffi::OsString)> =
+        cmd.get_envs().filter_map(|(k, v)| v.map(|v| (k.to_os_string(), v.to_os_string()))).collect();
+    cmd.env_clear();
+    for (name, value) in inherited {
+        if name.to_str().is_some_and(inherited_var) {
+            cmd.env(name, value);
         }
     }
-    let explicit: Vec<std::ffi::OsString> =
-        cmd.get_envs().filter(|(k, v)| v.is_some() && k.to_str().is_some_and(is_host_secret_var)).map(|(k, _)| k.to_os_string()).collect();
-    for name in explicit {
-        cmd.env_remove(name);
+    for (name, value) in explicit {
+        if name.to_str().is_some_and(|n| !is_secret_var(n)) {
+            cmd.env(name, value);
+        }
     }
 }
 

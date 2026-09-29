@@ -314,3 +314,68 @@ fn landlock_splits_a_grant_around_the_private_dirs() {
     assert!(!paths.iter().any(|p| p.starts_with(&octo) || p == root), "{paths:?}");
     assert!(!paths.contains(&root.join("sneaky")), "a link into a private dir gets nothing: {paths:?}");
 }
+
+// ---------------------------------------------------------------- the environment (G9)
+
+fn secret_shaped(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    upper.ends_with("_API_KEY") || upper.ends_with("_TOKEN") || upper.starts_with("OCTOS")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_child_gets_only_the_allow_list_and_never_a_key_or_token() {
+    // As if the shell's environment held provider keys and tokens (fake
+    // values: no real key is ever read or printed here).
+    let fake = "fake-value-for-the-test";
+    let shell_env: Vec<(std::ffi::OsString, std::ffi::OsString)> = [
+        ("PATH", "/usr/bin:/bin"),
+        ("HOME", "/home/person"),
+        ("LANG", "en_US.UTF-8"),
+        ("TERM", "xterm-256color"),
+        ("TMPDIR", "/tmp"),
+        ("WAYLAND_DISPLAY", "wayland-0"),
+        ("DISPLAY", ":0"),
+        ("XAUTHORITY", "/home/person/.Xauthority"),
+        ("MAKEPAD_WM_THEME_SPLASH", "dark"),
+        ("OPENAI_API_KEY", fake),
+        ("ANTHROPIC_API_KEY", fake),
+        ("DEEPSEEK_API_KEY", fake),
+        ("GITHUB_TOKEN", fake),
+        ("HF_TOKEN", fake),
+        ("CARGO_REGISTRY_TOKEN", fake),
+        ("OCTOS_AUTH_TOKEN", fake),
+        ("OCTOS_APP_CORE_DIR", "/core"),
+        ("OCTOSENSE_SECRETS", "/vault"),
+        ("OCTOSENSE_HOME", "/home/person/.octosense"),
+        ("AWS_SECRET_ACCESS_KEY", fake),
+        ("SOME_TOOLS_PRIVATE_SETTING", "x"),
+    ]
+    .iter()
+    .map(|(k, v)| (k.into(), v.into()))
+    .collect();
+    let mut cmd = Command::new("/usr/bin/env");
+    cmd.env("STUDIO_HOST", "http://127.0.0.1:8765").env("MY_SERVICE_API_KEY", fake);
+    scrub_env_from(&mut cmd, shell_env);
+    let out = cmd.output().unwrap();
+    let out = String::from_utf8_lossy(&out.stdout).to_string();
+    let names: Vec<&str> = out.lines().map(|l| l.split('=').next().unwrap_or("")).collect();
+    for name in &names {
+        assert!(!secret_shaped(name) && !is_secret_var(name), "the child sees {name}");
+    }
+    assert!(!out.contains(fake), "no secret value reaches the child");
+    for kept in ["PATH", "HOME", "LANG", "TERM", "TMPDIR", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "MAKEPAD_WM_THEME_SPLASH", "STUDIO_HOST"] {
+        assert!(names.contains(&kept), "{kept} is passed on: {names:?}");
+    }
+    assert!(!names.contains(&"SOME_TOOLS_PRIVATE_SETTING"), "anything not on the list stays with the shell");
+}
+
+#[test]
+fn the_allow_list_never_admits_a_secret_shaped_name() {
+    for name in ["OPENAI_API_KEY", "anthropic_api_key", "GITHUB_TOKEN", "OCTOS_HOST_EXTERNAL_TOKEN", "OCTOSENSE_WORKSPACE", "OCTOSX", "MAKEPAD_WM_TOKEN", "XDG_SECRET", "CARGO_BUILD_API_KEY"] {
+        assert!(is_secret_var(name) && !inherited_var(name), "{name}");
+    }
+    for name in ["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XAUTHORITY", "MAKEPAD_WM_ROOT", "CARGO_HOME", "RUSTUP_TOOLCHAIN"] {
+        assert!(inherited_var(name), "{name}");
+    }
+}
