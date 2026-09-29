@@ -50,7 +50,9 @@ pub mod module_host;
 mod module_panic_tests;
 pub mod module_view;
 pub mod native_apps;
+pub mod sandbox;
 pub mod pane_links;
+pub mod peer_link;
 pub mod preview;
 pub mod run_view;
 pub mod shell;
@@ -1541,8 +1543,9 @@ impl App {
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
-        // So does one of its extra windows.
-        if self.module_host.is_module(client) || self.module_windows.contains_key(&client) {
+        // So does one of its extra windows, and a stopped process's tile.
+        let stopped = self.state.as_ref().and_then(|s| s.clients.get(&client)).is_some_and(|s| s.stopped);
+        if stopped || self.module_host.is_module(client) || self.module_windows.contains_key(&client) {
             self.remove_client(cx, client);
             self.update_bar(cx);
             return;
@@ -1595,8 +1598,33 @@ impl App {
             .unwrap_or(false)
     }
 
+    /// A process app died unexpectedly: everything behind its tile goes
+    /// (the bus's registrations, its peer link's calls and contexts, the
+    /// process handle) and the tile stays, closed with a Restart.
+    fn process_stopped(&mut self, cx: &mut Cx, client: ClientId) {
+        let Some(slot) = self.state_mut().clients.get_mut(&client) else { return };
+        slot.stopped = true;
+        slot.sender = None;
+        slot.socket = None;
+        if let Some(mut child) = slot.child.take() {
+            let _ = child.wait();
+        }
+        let app = slot.app.clone();
+        let label = clients::find_app(&app).map(|a| a.label).unwrap_or_else(|| app.clone());
+        log!("wm: {app} (client {client}) stopped; its tile stays closed with Restart");
+        peer_link::process_gone(client);
+        if let Some(bye) = self.ai_bus.client_died(client) {
+            self.send_to_pane(bye);
+        }
+        self.pane_links.close_instance(client);
+        self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| d.with_run_view(cx, client, |cx, v| v.show_stopped(cx, client, &label)));
+        self.update_bar(cx);
+        self.redraw_all(cx);
+    }
+
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
         log!("wm: removing client {}", client);
+        peer_link::process_gone(client);
         // An instance's extra window: the tile lets go of the root (the
         // instance keeps the widget), and the instance hears it was closed.
         if let Some((owner, key)) = self.module_windows.remove(&client) {
@@ -1764,6 +1792,7 @@ impl App {
                 // Warm instances excluded: nobody is watching a tile that
                 // does not exist, and asking for one would build it.
                 !s.warm
+                    && !s.stopped
                     && s.linked
                     && s.sender.is_none()
                     && s.linked_at.map(|t| host::now() - t > GRACE).unwrap_or(false)
@@ -1821,7 +1850,14 @@ impl App {
             })
             .collect();
         for (id, failure) in dead {
-            self.remove_client(cx, id);
+            // ADR 0004 §2: a process app that dies takes only itself down;
+            // its tile stays, closed with a Restart.
+            let in_place = self.state_mut().clients.get(&id).is_some_and(|s| s.stops_in_place(failure.is_some()));
+            if in_place {
+                self.process_stopped(cx, id);
+            } else {
+                self.remove_client(cx, id);
+            }
             if let Some(message) = failure {
                 log!("octosense: {message}");
                 self.notify(cx, "App stopped", &message);
@@ -2210,7 +2246,8 @@ impl App {
     /// Restart on a failed module's tile: that window closes and the app
     /// opens afresh, as a launch from the menu would open it.
     fn restart_failed_module(&mut self, cx: &mut Cx, client: ClientId) {
-        if !self.module_host.is_failed(client) {
+        let stopped = self.state.as_ref().and_then(|s| s.clients.get(&client)).is_some_and(|s| s.stopped);
+        if !self.module_host.is_failed(client) && !stopped {
             return;
         }
         let Some(app) = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|slot| slot.app.clone()) else {
@@ -2536,6 +2573,9 @@ impl App {
                         .to_string_lossy()
                         .to_string();
                     if let Some(slot) = self.state_mut().clients.get_mut(&client) {
+                        // The peer link (ADR 0004 §5): the socket is this
+                        // slot's app; granted apps get a link on it.
+                        peer_link::connected(client, &slot.app, sender.clone());
                         slot.sender = Some(sender);
                         slot.socket = Some(socket);
                         if let Some(sender) = &slot.sender {
@@ -2567,6 +2607,7 @@ impl App {
                         .find(|(_, s)| s.socket == Some(socket))
                         .map(|(id, _)| *id);
                     if let Some(client) = client {
+                        peer_link::process_gone(client);
                         if let Some(slot) = self.state_mut().clients.get_mut(&client) {
                             slot.sender = None;
                             slot.socket = None;
@@ -2692,6 +2733,16 @@ impl App {
                 if let Some(ime) = makepad_platform::ime::HostedImeState::parse(&json) {
                     self.state_mut().phone.ime.insert(client,ime);
                     self.sync_phone_keyboard(cx);
+                    return;
+                }
+                // The peer link's own channel (ADR 0004 §5): never the
+                // bus's. Its app is the socket's slot, never the frame's.
+                if peer_link::wire::is_peer_frame(&json) {
+                    let (app, sender) = match self.state_mut().clients.get(&client) {
+                        Some(slot) => (slot.app.clone(), slot.sender.clone()),
+                        None => return,
+                    };
+                    peer_link::on_frame(client, &app, &json, sender);
                     return;
                 }
                 // The typed app<->WM vocabulary (libs/wm_api) first; what
@@ -3121,6 +3172,7 @@ impl App {
     /// must be told (every automatic approval among it).
     fn approvals_tick(&mut self, cx: &mut Cx) {
         approvals::tick();
+        peer_link::tick();
         self.approvals_changed(cx);
     }
 
