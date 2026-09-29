@@ -826,12 +826,28 @@ fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
 /// needs the confirmation typed into the menu's filter (the row carries it
 /// as an alias, so typing keeps it listed) and says what it risks.
 fn command_items() -> Vec<MenuItem> {
+    command_items_given(crate::system_chat::grants::command_execution(), crate::apps::terminal_runs_as_process())
+}
+
+/// [`command_items`] for a switch and a Terminal: without a process
+/// Terminal on this device the switch cannot take effect, and says so (G12).
+fn command_items_given(on: bool, terminal_process: bool) -> Vec<MenuItem> {
     use crate::system_chat::grants;
-    let on = grants::command_execution();
+    let describe = match (on, terminal_process) {
+        (_, false) => format!("{}: {}", if on { "On, but it" } else { "It" }, grants::NEEDS_PROCESS_TERMINAL),
+        (true, true) => "On: each command asks you first".to_string(),
+        (false, true) => "Off: the assistant runs no commands".to_string(),
+    };
     let mut items = vec![MenuItem::new(COMMANDS_ROW, "Command execution", MenuKind::Menu)
         .icon(Ico::Keyboard)
         .aliases(&["commands", "terminal", "run commands"])
-        .describe(if on { "On: each command asks you first" } else { "Off: the assistant runs no commands" })];
+        .describe(&describe)];
+    if !terminal_process {
+        items.push(
+            MenuItem::new(&format!("{COMMANDS_ROW}.needs"), "Command execution needs Terminal as a process on this device", MenuKind::Inert)
+                .describe("Commands are typed into a Terminal that runs as its own sandboxed process; here the Terminal runs inside OctoSense (or not at all), so the assistant is not offered commands even if you allow them."),
+        );
+    }
     items.push(MenuItem::new(&format!("{COMMANDS_ROW}.risk"), "What this allows", MenuKind::Inert).describe(grants::RISK));
     if on {
         items.push(MenuItem::new(COMMANDS_OFF_ROW, "Turn off command execution", MenuKind::Action).icon(Ico::Close).describe("The assistant runs no commands"));
@@ -1794,6 +1810,20 @@ mod tests {
         }
         model.sel = model.rows.iter().position(|r| r.target == COMMANDS_ALLOW_ROW).unwrap();
         assert_eq!(model.activate().as_deref(), Some("setup.assistant.commands.allow:let the assistant run commands"));
+    }
+
+    /// G12: without the Terminal as a process on this device, Setup ›
+    /// Assistant › Command execution says so, on or off.
+    #[test]
+    fn command_execution_says_it_needs_a_process_terminal_where_there_is_none() {
+        let text = |items: &[MenuItem]| items.iter().map(|i| format!("{} {}", i.label, i.description)).collect::<Vec<_>>().join("\n");
+        for on in [false, true] {
+            let items = command_items_given(on, false);
+            assert!(text(&items).contains("needs Terminal as a process on this device"), "{on}: {}", text(&items));
+        }
+        let items = command_items_given(true, true);
+        assert!(!text(&items).contains("needs Terminal as a process"), "{}", text(&items));
+        assert!(text(&items).contains("On: each command asks you first"));
     }
 
     /// Setup → Assistant → Approvals opens the Approvals page.
