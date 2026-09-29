@@ -95,6 +95,18 @@ separate kernel would be a different assistant with different memory.
    view (`/proc/self`, `/proc/<pid>/…`, `/dev/fd`), judged on the raw,
    normalized and canonical path. The shell policy's text check on
    `/proc/<pid>/environ` is only a backstop for the host's own turns.
+
+   *Amended 2026-09-29:* since
+   [#117](https://github.com/OctoSense-org/OctoSense/pull/117) OctoSense does
+   configure the tool set, in one place: before every kernel start the shell
+   writes a `tool_policy` denying `group:runtime` (`shell`, `bash`,
+   `exec_command`, `write_stdin`) into the `_main` profile
+   (`crates/kernel/src/system_tools.rs`, `enforce`), so no `_main` session
+   (the system agent, the app peers) gets octos's shell either. It replaces
+   only a policy OctoSense wrote and refuses a foreign policy or the person's
+   own octos home; on such a refusal the kernel still starts without the
+   denial (a known gap). The sandbox is still octos's default. See
+   [ADR 0004 §12](0004-native-apps-hosting-and-peers.md#12-agent-tools-what-the-manifest-declares-and-the-person-grants).
 3. **Pairing, not copying.** A web client gets the external token only
    through octos's pairing: an 8-character code shown on the trusted sheet
    (with a QR of the web client's link), valid for five minutes and one claim.

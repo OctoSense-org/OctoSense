@@ -352,7 +352,7 @@ fn the_chats_approvals_reach_the_router_batched_per_request() {
     let mut a = Approvals::memory();
     let ask = |id: &str| super::model::ApprovalAsk {
         approval_id: id.into(), turn: "t1".into(), tool: "write_file".into(), title: "t".into(), body: "b".into(),
-        args: json!({"path": id}), plan: "Tidy my notes".into(), app: None, outcome_unknown: false,
+        args: json!({"path": id}), plan: "Tidy my notes".into(), app: None, outcome_unknown: false, external: false,
     };
     // What `route_approval` sends, on a router of our own.
     for id in ["a1", "a2"] {
@@ -678,4 +678,94 @@ fn a_host_tool_approval_names_the_owning_app_the_tool_and_the_exact_arguments() 
     let context = crate::approvals::RequestContext { call_id: "syschat:a10".into(), ..context };
     let route = a.router.request(crate::approvals::router::make_request(super::grants::COMMAND_APP, spec, ask.args.clone(), crate::approvals::Caller::SystemAgent, context, 1, 0), 1);
     assert!(matches!(route, Route::Approved(_)), "{route:?}");
+}
+
+// ---------------------------------------------------------------- external clients (G1)
+
+/// Another client (Talk to Octos) runs a turn on the same session, and its
+/// approval reaches this connection too.
+fn external_turn_approval(fake: &Fake, approval: &str) {
+    fake.notify("turn/started", json!({"turn_id": "talk-to-octos-1"}));
+    fake.notify("approval/requested", json!({"turn_id": "talk-to-octos-1", "approval_id": approval, "tool_name": "write_file", "title": "Write", "body": "b"}));
+}
+
+#[test]
+fn only_the_chats_own_turns_are_routed_as_the_system_agents() {
+    let (mut d, fake) = opened();
+    d.command(Command::Send("tidy my notes".into()));
+    let own = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    fake.notify("approval/requested", json!({"turn_id": own, "approval_id": "mine", "tool_name": "write_file", "title": "t", "body": "b"}));
+    external_turn_approval(&fake, "theirs");
+    settle(&mut d);
+    let asks: Vec<_> = d.effects.iter().filter_map(|e| match e { Effect::Approval(a) => Some(a.clone()), _ => None }).collect();
+    assert_eq!(asks.len(), 2);
+    let mine = asks.iter().find(|a| a.approval_id == "mine").unwrap();
+    let theirs = asks.iter().find(|a| a.approval_id == "theirs").unwrap();
+    assert!(!mine.external && theirs.external, "only the chat's own turn is its own");
+    assert!(matches!(d.model.items.iter().find(|i| matches!(i, Item::Approval { id, .. } if id == "theirs")), Some(Item::Approval { state: ApprovalState::External, .. })));
+
+    // What the router gets: the chat's own turn is the system agent's; the
+    // other is an external caller on an external connection.
+    use crate::approvals::{Caller, Connection, Trigger};
+    let (_, _, _, caller, context) = super::approval_request(mine);
+    assert_eq!((caller, context.connection, context.trigger), (Caller::SystemAgent, Connection::Host, Trigger::Person));
+    let (_, _, _, caller, context) = super::approval_request(theirs);
+    assert_eq!(caller, Caller::External { client: None });
+    assert_eq!(context.connection, Connection::External);
+    assert_ne!(context.trigger, Trigger::Person, "never 'triggered by the person'");
+    assert!(context.batch.is_none(), "never batched with the system agent's request");
+}
+
+#[test]
+fn an_external_turns_approval_is_never_auto_approved_or_answered() {
+    use crate::approvals::{dev_hooks::FixedDevMode, rules::RuleDraft, rules::ApprovalGesture, Approvals, Route};
+    let (mut d, fake) = opened();
+    external_turn_approval(&fake, "theirs");
+    settle(&mut d);
+    let Some(Effect::Approval(ask)) = d.effects.first().cloned() else { panic!("{:?}", d.effects) };
+    // Developer mode on for everything, and a time-boxed "everything" rule
+    // on the system agent's app that also covers incoming content.
+    let mut a = Approvals::memory();
+    a.router.set_hooks(Box::new(FixedDevMode::all()));
+    let mut everything = RuleDraft::everything(super::APP, 30);
+    everything.include_incoming = true;
+    a.router.create_rule(&ApprovalGesture::settings_tap(), everything, 1).unwrap();
+    let (app, tool, args, caller, context) = super::approval_request(&ask);
+    let route = a.router.request(crate::approvals::router::make_request(&app, tool, args, caller, context, 1, 0), 1);
+    assert!(matches!(route, Route::LeftToClient(_)), "{route:?}");
+    assert_eq!(a.router.pending(), 0);
+    assert!(a.router.sheets().is_empty());
+    assert!(crate::approvals::take_system_chat_decisions().is_empty());
+    // Even a stray decision for it is not sent to the kernel.
+    d.command(Command::Approval { approval_id: "theirs".into(), approve: true });
+    assert!(fake.sent("approval/respond").is_empty(), "the shell never answers another client's approval");
+    // The other client answers; the pane shows the outcome.
+    fake.notify("approval/decided", json!({"turn_id": "talk-to-octos-1", "approval_id": "theirs", "decision": "approve"}));
+    settle(&mut d);
+    assert!(matches!(d.model.items.iter().find(|i| matches!(i, Item::Approval { id, .. } if id == "theirs")), Some(Item::Approval { state: ApprovalState::Approved, .. })));
+}
+
+#[test]
+fn a_new_conversation_turn_is_the_chats_own() {
+    let (mut d, fake) = opened();
+    d.command(Command::NewConversation);
+    let turn = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    assert!(d.model.is_own_turn(&turn));
+    assert!(!d.model.is_own_turn("talk-to-octos-1"));
+}
+
+#[test]
+fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
+    use crate::ai_host::app_peers::TurnTrigger;
+    let (mut d, fake) = opened();
+    d.command(Command::Send("list my files".into()));
+    let own = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    let call = |id: &str, turn: &str| json!({"peer": null, "context_id": null, "turn_id": turn, "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "d",
+        "name": "terminal.run", "app": "terminal", "caller": {"kind": "system", "peer": null, "session_id": SYSTEM_SESSION, "turn_id": turn},
+        "args": {"command": "ls"}, "risk": "destructive", "confirm_required": false, "timeout_ms": 30000, "tools_version": 1});
+    fake.notify("peer/tool/call", call("c1", &own));
+    fake.notify("peer/tool/call", call("c2", "talk-to-octos-1"));
+    settle(&mut d);
+    let triggers: Vec<(String, TurnTrigger)> = d.effects.iter().filter_map(|e| match e { Effect::ToolCall { call, .. } => Some((call.call_id.clone(), call.trigger.clone())), _ => None }).collect();
+    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person), ("c2".to_string(), TurnTrigger::Unknown)]);
 }

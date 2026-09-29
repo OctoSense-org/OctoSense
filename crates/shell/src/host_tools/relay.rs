@@ -28,6 +28,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, CallOrigin, CallerKind, HostToolApproval, HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
+use crate::ai_host::app_peers::TurnTrigger;
 use crate::approvals::{Caller, Decision, RequestContext, RequestId, Route, ToolSpec, Trigger};
 use crate::peer_link::{KernelToolCall, Refused, Risk, ToolCallResult};
 
@@ -221,11 +222,26 @@ impl Default for Relay {
     }
 }
 
-fn trigger(origin: CallOrigin) -> Trigger {
-    match origin {
-        CallOrigin::Context | CallOrigin::System => Trigger::Person,
+/// What started a turn, as its host stamped it (G2): never "the person"
+/// unless the host that started the turn saw the person ask. A turn nobody
+/// vouched for is [`Trigger::Unknown`], which standing rules skip unless
+/// they opt in, like incoming content (ADR 0004 §8).
+pub fn trigger_of(stamped: &TurnTrigger) -> Trigger {
+    match stamped {
+        TurnTrigger::Person => Trigger::Person,
+        TurnTrigger::App => Trigger::App,
+        TurnTrigger::Incoming { from } => Trigger::IncomingContent { from: from.clone() },
+        TurnTrigger::SystemAgent => Trigger::SystemAgent,
+        TurnTrigger::Unknown => Trigger::Unknown,
+    }
+}
+
+/// A call's trigger: a `peer/input` turn is the system agent's whatever was
+/// stamped; otherwise the host's stamp.
+fn trigger(call: &HostToolCall) -> Trigger {
+    match call.origin {
         CallOrigin::PeerInput => Trigger::SystemAgent,
-        CallOrigin::PeerOwn => Trigger::App,
+        _ => trigger_of(&call.trigger),
     }
 }
 
@@ -320,7 +336,7 @@ impl Relay {
                 timeout_ms: call.timeout_ms,
                 context_id: call.context_id.clone(),
                 caller,
-                trigger: trigger(call.origin),
+                trigger: trigger(&call),
                 outcome_unknown: false,
                 approved: !call.confirm_required,
                 confirm_required: call.confirm_required,
@@ -355,7 +371,7 @@ impl Relay {
             let id = format!("{CONFIRM_PREFIX}{}", call.call_id);
             let context = RequestContext {
                 call_id: id.clone(),
-                trigger: trigger(call.origin),
+                trigger: trigger(&call),
                 context_id: call.context_id.clone(),
                 account: call.account.clone(),
                 ..RequestContext::default()
@@ -430,7 +446,7 @@ impl Relay {
         let id = format!("{APPROVAL_PREFIX}{}", approval.approval_id);
         let context = RequestContext {
             call_id: id.clone(),
-            trigger: if approval.context_id.is_some() { Trigger::Person } else { Trigger::App },
+            trigger: trigger_of(&approval.trigger),
             context_id: approval.context_id.clone(),
             account,
             outcome_unknown: approval.outcome_unknown_before,

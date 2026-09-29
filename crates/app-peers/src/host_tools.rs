@@ -130,6 +130,10 @@ pub struct HostToolCall {
     /// the host's own context table.
     pub client: Option<String>,
     pub origin: CallOrigin,
+    /// What started the call's turn, stamped by the host from its own
+    /// record of the turns it started ([`crate::TurnTrigger::Unknown`]
+    /// when it did not start it).
+    pub trigger: crate::TurnTrigger,
 }
 
 impl HostToolCall {
@@ -164,6 +168,7 @@ impl HostToolCall {
             account: None,
             client: None,
             origin: if caller_kind == CallerKind::System { CallOrigin::System } else { CallOrigin::PeerOwn },
+            trigger: crate::TurnTrigger::Unknown,
             name,
         })
     }
@@ -338,6 +343,9 @@ pub struct HostToolApproval {
     pub tool_call_id: Option<String>,
     /// The same call ran before and its outcome is unknown: always the person.
     pub outcome_unknown_before: bool,
+    /// What started the turn, stamped by the host (see
+    /// [`HostToolCall::trigger`]); `Unknown` until then.
+    pub trigger: crate::TurnTrigger,
 }
 
 impl HostToolApproval {
@@ -363,6 +371,7 @@ impl HostToolApproval {
             context_id: s(d, "context_id"),
             tool_call_id: s(d, "tool_call_id"),
             outcome_unknown_before: d.get("outcome_unknown_before").and_then(Value::as_bool).unwrap_or(false),
+            trigger: crate::TurnTrigger::Unknown,
         })
     }
 }

@@ -12,7 +12,11 @@
 //!   `ask_user_question`), answered from the pane.
 //! - **Approvals** are NOT answered here: `approval/requested` becomes an
 //!   [`Effect::Approval`] for the shell's approval router (ADR 0004 §8); the
-//!   pane only notes that the sheet is waiting and what was decided.
+//!   pane only notes that the sheet is waiting and what was decided. Only a
+//!   turn this chat started ([`ChatModel::start_turn`]) is the system
+//!   agent's on the person's behalf; an approval of any other turn on the
+//!   session (an external client's, e.g. Talk to Octos) is marked
+//!   [`ApprovalAsk::external`] and shown read-only: that client answers it.
 //! - **History**: `session/hydrate`'s rows replace the transcript.
 
 use serde_json::Value;
@@ -38,6 +42,9 @@ pub enum ApprovalState {
     Denied,
     /// The kernel withdrew it (the turn ended).
     Cancelled,
+    /// Another client's turn asked it: shown read-only, that client
+    /// answers it.
+    External,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,6 +131,9 @@ pub struct ApprovalAsk {
     pub app: Option<String>,
     /// The same call ran before and its outcome is unknown.
     pub outcome_unknown: bool,
+    /// The turn is not one this chat started (an external client's turn on
+    /// the same session): never the shell's to answer.
+    pub external: bool,
 }
 
 /// What the driver must do after a frame.
@@ -149,6 +159,9 @@ pub struct ChatModel {
     pub generation: u64,
     /// The prompt of each turn this model saw start (for approval batches).
     prompts: Vec<(String, String)>,
+    /// Every turn id this chat started itself (its own `turn/start`), kept
+    /// across a new conversation: only these turns' approvals are routed.
+    own_turns: std::collections::HashSet<String>,
     /// v2 envelope segments whose saved text arrived.
     persisted: Vec<String>,
     segment: String,
@@ -183,8 +196,19 @@ impl ChatModel {
     pub fn start_turn(&mut self, turn: &str, text: &str) {
         self.items.push(Item::Message { role: Role::User, text: text.to_string(), turn: Some(turn.to_string()) });
         self.prompts.push((turn.to_string(), text.to_string()));
+        self.own_turns.insert(turn.to_string());
         self.phase = Phase::Running { turn: turn.to_string() };
         self.changed();
+    }
+
+    /// A turn this chat started without a visible prompt (`/new`).
+    pub fn own_turn(&mut self, turn: &str) {
+        self.own_turns.insert(turn.to_string());
+    }
+
+    /// Whether this chat started `turn` itself.
+    pub fn is_own_turn(&self, turn: &str) -> bool {
+        self.own_turns.contains(turn)
     }
 
     /// The prompt that started `turn`, if this model saw it.
@@ -202,7 +226,7 @@ impl ChatModel {
                 }
             }
             if let Item::Approval { state, .. } = item {
-                if *state == ApprovalState::Waiting {
+                if matches!(*state, ApprovalState::Waiting | ApprovalState::External) {
                     *state = ApprovalState::Cancelled;
                 }
             }
@@ -330,10 +354,16 @@ impl ChatModel {
                         outcome_unknown = host["outcome_unknown_before"] == true;
                     }
                 }
-                let plan = self.prompt_of(&turn).unwrap_or("The system agent's request").to_string();
-                self.items.push(Item::Approval { id: id.clone(), tool: tool.clone(), title: title.clone(), state: ApprovalState::Waiting });
+                let external = !self.is_own_turn(&turn);
+                let plan = match self.prompt_of(&turn) {
+                    Some(p) if !external => p.to_string(),
+                    _ if external => "An outside client's request".to_string(),
+                    _ => "The system agent's request".to_string(),
+                };
+                let state = if external { ApprovalState::External } else { ApprovalState::Waiting };
+                self.items.push(Item::Approval { id: id.clone(), tool: tool.clone(), title: title.clone(), state });
                 self.changed();
-                effects.push(Effect::Approval(ApprovalAsk { approval_id: id, turn, tool, title, body, args, plan, app, outcome_unknown }));
+                effects.push(Effect::Approval(ApprovalAsk { approval_id: id, turn, tool, title, body, args, plan, app, outcome_unknown, external }));
             }
             "approval/decided" => {
                 let approved = params.get("decision").and_then(Value::as_str) == Some("approve");
@@ -395,12 +425,17 @@ impl ChatModel {
     fn set_approval(&mut self, id: &str, to: ApprovalState) {
         for item in &mut self.items {
             if let Item::Approval { id: i, state, .. } = item {
-                if i == id && *state == ApprovalState::Waiting {
+                if i == id && matches!(*state, ApprovalState::Waiting | ApprovalState::External) {
                     *state = to.clone();
                 }
             }
         }
         self.changed();
+    }
+
+    /// An approval of another client's turn (shown read-only).
+    pub fn is_external_approval(&self, id: &str) -> bool {
+        self.items.iter().any(|i| matches!(i, Item::Approval { id: i, state: ApprovalState::External, .. } if i == id))
     }
 
     /// The router decided (the person, a rule or developer mode).
@@ -453,7 +488,7 @@ impl ChatModel {
         for item in std::mem::take(&mut self.items) {
             let keep = match &item {
                 Item::Question { answered: None, .. } => true,
-                Item::Approval { state: ApprovalState::Waiting, .. } => true,
+                Item::Approval { state: ApprovalState::Waiting | ApprovalState::External, .. } => true,
                 _ => false,
             };
             if keep {

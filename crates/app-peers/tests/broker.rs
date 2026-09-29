@@ -726,6 +726,7 @@ fn the_system_agents_input_starts_the_peers_turn_once_and_queues_while_busy() {
     notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "turn-1", None));
     wait_for("the call", || host.calls.lock().unwrap().len() == 1);
     assert_eq!(host.calls.lock().unwrap()[0].0.origin, CallOrigin::PeerInput);
+    assert_eq!(host.calls.lock().unwrap()[0].0.trigger, TurnTrigger::SystemAgent);
     notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-1"}));
     wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
     assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-2");
@@ -800,4 +801,38 @@ fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was
     assert!(calls_of(&script, "peer/prepare")[0].1.get("cwd").is_none());
     drop(broker);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn each_turns_trigger_is_stamped_on_its_calls_and_approvals() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "app#1", &ALL)).unwrap();
+    // A turn the app started because a message arrived.
+    let (sink, _rx) = collect();
+    let incoming = TurnTrigger::Incoming { from: Some("@bo:x".into()) };
+    ctx.call(ContextOp::TurnFrom { text: "reply to Bo".into(), trigger: incoming.clone() }, sink).unwrap();
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let turn = calls_of(&script, "turn/start")[0].1["turn_id"].as_str().unwrap().to_owned();
+    let context_id = calls_of(&script, "peer/context/open")[0].1["context_id"].as_str().unwrap().to_owned();
+    let slug = peer_slug(&script);
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", &turn, Some(&context_id)));
+    wait_for("the call", || host.calls.lock().unwrap().len() == 1);
+    assert_eq!(host.calls.lock().unwrap()[0].0.trigger, incoming, "the turn's trigger, never 'the person'");
+    // Its approval carries the same trigger.
+    let session = format!("_main:api:octosense#peerctx-{slug}.{context_id}");
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "a1", "turn_id": turn, "approval_kind": "host_tool",
+        "typed_details": {"host_tool": {"app": "mail", "tool": "mail.send", "args": {}, "risk": "act", "calling_kind": "app_peer", "context_id": context_id}}}));
+    wait_for("the approval", || host.approvals.lock().unwrap().len() == 1);
+    assert_eq!(host.approvals.lock().unwrap()[0].0.trigger, incoming);
+    // A turn this broker did not start (the peer's own), and a legacy
+    // `Turn` that says nothing: unknown.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c2", "someone-elses-turn", None));
+    wait_for("the second call", || host.calls.lock().unwrap().len() == 2);
+    assert_eq!(host.calls.lock().unwrap()[1].0.trigger, TurnTrigger::Unknown);
+    let parsed = HostToolCall::parse(&tool_call_params(&slug, "c3", &turn, None)).unwrap();
+    assert_eq!(parsed.trigger, TurnTrigger::Unknown, "the default until the host stamps it");
+    drop(broker);
 }

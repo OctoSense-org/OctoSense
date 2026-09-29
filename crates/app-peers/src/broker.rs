@@ -286,6 +286,29 @@ enum Occurrence {
 /// How many finished occurrences, interrupted turns and inputs are kept.
 const REMEMBERED: usize = 512;
 
+impl State {
+    /// Record what started `turn` (a context turn this broker started).
+    fn note_trigger(&mut self, turn: &str, trigger: TurnTrigger) {
+        if self.turn_triggers.insert(turn.to_owned(), trigger).is_none() {
+            self.trigger_order.push_back(turn.to_owned());
+            while self.trigger_order.len() > REMEMBERED {
+                if let Some(old) = self.trigger_order.pop_front() {
+                    self.turn_triggers.remove(&old);
+                }
+            }
+        }
+    }
+
+    /// What started `turn`: a `peer/input` turn is the system agent's; a
+    /// context turn is what its starter said; anything else is unknown.
+    fn trigger_of(&self, turn: &str) -> TurnTrigger {
+        if self.input_turns.iter().any(|t| t == turn) {
+            return TurnTrigger::SystemAgent;
+        }
+        self.turn_triggers.get(turn).cloned().unwrap_or_default()
+    }
+}
+
 fn remember(list: &mut VecDeque<String>, item: String) {
     if !list.contains(&item) {
         list.push_back(item);
@@ -339,6 +362,10 @@ struct State {
     /// `peer/input` ids taken, and the turns started for them.
     inputs_seen: VecDeque<String>,
     input_turns: VecDeque<String>,
+    /// What started each context turn this broker started (G2), and their
+    /// order, so the oldest is forgotten first.
+    turn_triggers: HashMap<String, TurnTrigger>,
+    trigger_order: VecDeque<String>,
     /// Inputs waiting for the peer's running turn to end.
     input_queue: VecDeque<PeerInput>,
     /// Workspaces new peers were created with, when no state dir keeps them.
@@ -393,6 +420,8 @@ impl Broker {
                 interrupted: VecDeque::new(),
                 inputs_seen: VecDeque::new(),
                 input_turns: VecDeque::new(),
+                turn_triggers: HashMap::new(),
+                trigger_order: VecDeque::new(),
                 input_queue: VecDeque::new(),
                 cwds: HashMap::new(),
             }),
@@ -1170,6 +1199,7 @@ impl Inner {
                         Some(context) => {
                             call.client = Some(context.instance.clone());
                             call.origin = CallOrigin::Context;
+                            call.trigger = st.trigger_of(&call.turn_id);
                         }
                         None => {
                             drop(st);
@@ -1179,6 +1209,7 @@ impl Inner {
                 }
                 None => {
                     call.origin = if st.input_turns.contains(&call.turn_id) { CallOrigin::PeerInput } else { CallOrigin::PeerOwn };
+                    call.trigger = st.trigger_of(&call.turn_id);
                 }
             }
             let repeat = match st.occurrences.get_mut(&occurrence) {
@@ -1319,9 +1350,10 @@ impl Inner {
     }
 
     /// A `host_tool` approval: the host draws it and answers on this link.
-    fn on_host_approval(self: &Arc<Self>, approval: HostToolApproval) -> bool {
+    fn on_host_approval(self: &Arc<Self>, mut approval: HostToolApproval) -> bool {
         let (link, account) = {
             let st = self.lock();
+            approval.trigger = st.trigger_of(&approval.turn_id);
             (st.link.clone(), st.account.clone())
         };
         let Some(link) = link else { return false };
@@ -1628,6 +1660,11 @@ impl ContextInner {
     async fn run(self: &Arc<Self>, inner: &Arc<Inner>, op: ContextOp) -> Result<Value, String> {
         let session = self.ensure_bound(inner).await?;
         self.check(inner, Some(op.service()))?;
+        // One turn path; what started it is recorded per turn id below.
+        let (op, trigger) = match op.turn() {
+            Some((text, trigger)) => (ContextOp::Turn { text: text.to_owned() }, trigger),
+            None => (op, TurnTrigger::Unknown),
+        };
         let result = match op {
             ContextOp::Open => Ok(json!({
                 "open": true,
@@ -1649,6 +1686,7 @@ impl ContextInner {
                     return Err("Provide text (at most 32 KiB)".into());
                 }
                 let turn_id = uuid::Uuid::new_v4().to_string();
+                inner.lock().note_trigger(&turn_id, trigger);
                 let (done_tx, done_rx) = oneshot::channel();
                 {
                     let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
@@ -1721,6 +1759,7 @@ impl ContextInner {
                 }
                 Ok(json!({"turn_id": turn_id, "text": saved.unwrap_or(streamed)}))
             }
+            ContextOp::TurnFrom { .. } => Err("a turn reached the broker unnormalized".into()),
             ContextOp::Interrupt => {
                 let turn = self
                     .turn
@@ -1767,7 +1806,7 @@ impl OctosContext for BrokerContext {
             .upgrade()
             .ok_or("The assistant service is gone")?;
         self.0.check(&inner, Some(op.service()))?;
-        if matches!(op, ContextOp::Turn { .. })
+        if op.turn().is_some()
             && self
                 .0
                 .turn

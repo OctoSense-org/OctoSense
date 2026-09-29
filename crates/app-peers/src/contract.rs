@@ -101,6 +101,47 @@ pub struct ContextSpec {
     pub services: BTreeSet<String>,
 }
 
+/// What started a turn, as the host that started it knows (ADR 0004 §8).
+/// Never "the person" unless the host saw the person ask.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum TurnTrigger {
+    /// The person asked: a button or composer in the app's UI, the chat.
+    Person,
+    /// The app's own schedule or background work (a timer, a data change).
+    App,
+    /// Content someone else sent (a message, an email) started it.
+    Incoming { from: Option<String> },
+    /// The system agent's request (a `peer/input` turn).
+    SystemAgent,
+    /// Not said.
+    #[default]
+    Unknown,
+}
+
+impl TurnTrigger {
+    /// The wire form an app may give with `octos.turn.start`:
+    /// `"trigger": "person" | "app" | "schedule" | "background" | "incoming"`
+    /// and, for incoming content, `"from"`. Anything else is
+    /// [`TurnTrigger::Unknown`]; `system_agent` is the host's alone.
+    pub fn from_args(args: &Value) -> TurnTrigger {
+        match args.get("trigger").and_then(Value::as_str) {
+            Some("person") => TurnTrigger::Person,
+            Some("app" | "schedule" | "background") => TurnTrigger::App,
+            Some("incoming") => TurnTrigger::Incoming { from: args.get("from").and_then(Value::as_str).map(str::to_owned) },
+            _ => TurnTrigger::Unknown,
+        }
+    }
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TurnTrigger::Person => "person",
+            TurnTrigger::App => "app",
+            TurnTrigger::Incoming { .. } => "incoming",
+            TurnTrigger::SystemAgent => "system_agent",
+            TurnTrigger::Unknown => "unknown",
+        }
+    }
+}
+
 /// An operation on a request context. The app supplies input text and
 /// decisions its native UI collected, never session, profile, workspace or
 /// raw method identity.
@@ -110,8 +151,14 @@ pub enum ContextOp {
     Open,
     /// `octos.session.history`: its messages.
     History,
-    /// `octos.turn.start`: run a turn on `text`.
+    /// `octos.turn.start`: run a turn on `text`. What started it is not
+    /// said, so it counts as [`TurnTrigger::Unknown`] (the least trusted).
     Turn { text: String },
+    /// `octos.turn.start` with what started the turn: the person in the
+    /// app's UI, the app's own schedule, or content someone else sent. The
+    /// host stamps it on every tool call and approval of the turn (ADR 0004
+    /// §8: standing rules skip incoming content and unknown runs).
+    TurnFrom { text: String, trigger: TurnTrigger },
     /// `octos.turn.interrupt`: stop the context's running turn.
     Interrupt,
     /// A person's decision on a tool approval raised in this context,
@@ -120,12 +167,21 @@ pub enum ContextOp {
 }
 
 impl ContextOp {
+    /// A turn's text and trigger (`None` for any other operation).
+    pub fn turn(&self) -> Option<(&str, TurnTrigger)> {
+        match self {
+            ContextOp::Turn { text } => Some((text, TurnTrigger::Unknown)),
+            ContextOp::TurnFrom { text, trigger } => Some((text, trigger.clone())),
+            _ => None,
+        }
+    }
+
     /// The service an operation needs.
     pub fn service(&self) -> &'static str {
         match self {
             ContextOp::Open => "octos.session.open",
             ContextOp::History => "octos.session.history",
-            ContextOp::Turn { .. } | ContextOp::Approval { .. } => "octos.turn.start",
+            ContextOp::Turn { .. } | ContextOp::TurnFrom { .. } | ContextOp::Approval { .. } => "octos.turn.start",
             ContextOp::Interrupt => "octos.turn.interrupt",
         }
     }

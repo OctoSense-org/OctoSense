@@ -301,7 +301,7 @@ fn a_cancel_ends_the_call_wherever_it_is_and_nothing_answers_after() {
     assert_eq!(app, "notes");
     assert!(forwarded.confirm_required && !forwarded.approved, "the link hands it to the app's own sheet");
     assert_eq!(forwarded.caller, Caller::OwnAgent { client: Some("mini.news".into()) });
-    assert_eq!(forwarded.trigger, Trigger::Person);
+    assert_eq!(forwarded.trigger, Trigger::Unknown, "a context turn nobody vouched for is never 'the person'");
     relay.handle(Event::LinkOutcome { app: "notes".into(), call_id: "c2".into(), result: None }, &mut w);
     relay.handle(Event::LinkOutcome { app: "notes".into(), call_id: "c2".into(), result: Some(ToolCallResult::Error("declined: not now".into())) }, &mut w);
     let sent = sent.lock().unwrap().clone();
@@ -459,4 +459,73 @@ fn no_toolbox_call_runs_before_consent_or_without_a_grant() {
     // A cancel reaches the toolbox.
     relay.handle(Event::Cancel { call_id: "c4".into(), reason: "timeout".into() }, &mut w);
     assert_eq!(*exec.1.lock().unwrap(), ["c4"]);
+}
+
+// ---------------------------------------------------------------- triggers (G2)
+
+use crate::ai_host::app_peers::TurnTrigger;
+use crate::approvals::rules::{ApprovalGesture, Conditions, RuleDraft};
+
+fn approval_with(id: &str, trigger: TurnTrigger) -> HostToolApproval {
+    let mut a = HostToolApproval::parse(
+        &json!({"approval_id": id, "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "mail", "tool": "mail.send", "args": {"to": ["bo@example.org"]}, "risk": "act", "calling_kind": "app_peer", "calling_peer": "mail-1", "context_id": "ctx"}}}),
+        "s#peerctx-mail-1.ctx",
+    )
+    .unwrap();
+    a.trigger = trigger;
+    a
+}
+
+#[test]
+fn a_calls_trigger_is_the_one_its_host_stamped_and_unknown_by_default() {
+    let (mut relay, exec) = relay_with("notes", vec![decl("notes.add", false, "app")]);
+    let mut w = World::new(FixedDevMode::off());
+    let cases = [
+        (TurnTrigger::Unknown, CallOrigin::Context, Trigger::Unknown),
+        (TurnTrigger::Person, CallOrigin::Context, Trigger::Person),
+        (TurnTrigger::Incoming { from: Some("@bo:x".into()) }, CallOrigin::Context, Trigger::IncomingContent { from: Some("@bo:x".into()) }),
+        (TurnTrigger::App, CallOrigin::PeerOwn, Trigger::App),
+        (TurnTrigger::Unknown, CallOrigin::PeerOwn, Trigger::Unknown),
+        (TurnTrigger::Unknown, CallOrigin::System, Trigger::Unknown),
+        (TurnTrigger::Person, CallOrigin::PeerInput, Trigger::SystemAgent),
+    ];
+    for (i, (stamped, origin, want)) in cases.into_iter().enumerate() {
+        let id = format!("c{i}");
+        let mut c = call(&id, "notes.add", "notes");
+        c.confirm_required = true;
+        c.trigger = stamped;
+        c.origin = origin;
+        let (r, _) = reply(&id);
+        relay.handle(Event::Call { call: c, reply: r }, &mut w);
+        assert_eq!(w.asked[i].3.trigger, want, "case {i}");
+    }
+    assert!(exec.0.lock().unwrap().is_empty(), "nothing ran before the app's sheet");
+}
+
+#[test]
+fn a_context_approval_is_never_triggered_by_the_person_unless_stamped() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    // A rule for Mail's own agent, "only when I asked".
+    let by_person = Conditions { triggered_by_person: true, ..Conditions::default() };
+    w.router.create_rule(&ApprovalGesture::settings_tap(), RuleDraft::tool("mail", "mail.send", by_person), 1).unwrap();
+    let answers: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let answer = || {
+        let a = answers.clone();
+        ApprovalAnswer::new(move |ok| a.lock().unwrap().push(ok))
+    };
+    // Unknown and incoming content: the rule never answers, the person does.
+    for (id, trigger) in [("a1", TurnTrigger::Unknown), ("a2", TurnTrigger::Incoming { from: Some("@eve:x".into()) })] {
+        relay.handle(Event::Approval { app: "mail".into(), account: None, approval: approval_with(id, trigger), answer: answer() }, &mut w);
+        assert!(w.router.is_pending(&RequestId(format!("hostappr:{id}"))), "{id} waits for the person");
+    }
+    assert_ne!(w.asked[0].3.trigger, Trigger::Person);
+    assert!(matches!(w.asked[1].3.trigger, Trigger::IncomingContent { .. }));
+    assert!(w.decided().is_empty() && answers.lock().unwrap().is_empty());
+    // The person's own turn: the rule answers.
+    relay.handle(Event::Approval { app: "mail".into(), account: None, approval: approval_with("a3", TurnTrigger::Person), answer: answer() }, &mut w);
+    for event in w.decided() {
+        relay.handle(event, &mut w);
+    }
+    assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
 }
