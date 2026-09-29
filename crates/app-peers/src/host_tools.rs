@@ -34,6 +34,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -104,6 +105,54 @@ impl std::fmt::Display for InputRefusal {
         }
     }
 }
+/// How long an approval or question on an app peer's session (or one of
+/// its request contexts) waits for the person before it expires: denied, or
+/// declined, never approved (ADR 0004 §8). The shell's approval router and
+/// request model expire what they hold at this deadline; the broker backs
+/// them up and frees the turn ([`EXPIRY_GRACE`]).
+pub const DEFAULT_PROMPT_DEADLINE: Duration = Duration::from_secs(600);
+/// Overrides [`DEFAULT_PROMPT_DEADLINE`] in seconds (tests, demos).
+pub const PROMPT_DEADLINE_ENV: &str = "OCTOSENSE_PROMPT_DEADLINE_SECS";
+/// After a request expired, how long its turn may still run before the
+/// broker interrupts it (so the peer's queue moves on).
+pub const EXPIRY_GRACE: Duration = Duration::from_secs(30);
+
+/// The prompt deadline: [`PROMPT_DEADLINE_ENV`] when it names a positive
+/// number of seconds, else [`DEFAULT_PROMPT_DEADLINE`].
+pub fn prompt_deadline() -> Duration {
+    deadline_from(std::env::var(PROMPT_DEADLINE_ENV).ok().as_deref())
+}
+
+fn deadline_from(value: Option<&str>) -> Duration {
+    value
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|s| *s > 0)
+        .map(Duration::from_secs)
+        .unwrap_or(DEFAULT_PROMPT_DEADLINE)
+}
+
+/// Why a request expired, as the person and the agent read it: "no answer
+/// in 10 min" (seconds below a minute).
+pub fn expiry_reason(deadline: Duration) -> String {
+    let secs = deadline.as_secs().max(1);
+    if secs >= 60 && secs.is_multiple_of(60) {
+        format!("no answer in {} min", secs / 60)
+    } else {
+        format!("no answer in {secs} s")
+    }
+}
+
+/// What an expired question answers for each of its questions: free text
+/// (octos always allows it), so the agent knows nobody chose anything.
+pub fn expired_question_text(reason: &str) -> String {
+    format!("(No answer: the question expired, {reason}. Nobody chose an option; do not assume one.)")
+}
+
+/// What an app's context or conversation hears when an approval or
+/// question it was told about expired (`{approval_id | question_id,
+/// reason}`).
+pub const PROMPT_EXPIRED: &str = "prompt/expired";
+
 /// `approval/requested`'s `approval_kind` for a host-routed tool.
 pub const HOST_TOOL_KIND: &str = "host_tool";
 /// What an app's context sees instead of a `host_tool` approval: the host
@@ -496,12 +545,17 @@ impl HostToolApproval {
     }
 }
 
+/// Sends a decision with its note.
+type DecisionFn = Arc<dyn Fn(bool, &str) + Send + Sync>;
+/// Sends a question's answers with a note.
+type AnswersFn = Arc<dyn Fn(Value, &str) + Send + Sync>;
+
 /// The one answer to one `host_tool` approval (`approval/respond` on the
 /// connection it was raised to). Sent once.
 #[derive(Clone)]
 pub struct ApprovalAnswer {
     sent: Arc<Mutex<bool>>,
-    send: Arc<dyn Fn(bool) + Send + Sync>,
+    send: DecisionFn,
 }
 
 impl std::fmt::Debug for ApprovalAnswer {
@@ -512,10 +566,18 @@ impl std::fmt::Debug for ApprovalAnswer {
 
 impl ApprovalAnswer {
     pub fn new(send: impl Fn(bool) + Send + Sync + 'static) -> ApprovalAnswer {
+        ApprovalAnswer::with_note(move |approve, _note| send(approve))
+    }
+    /// `send` also gets the note the decision carries (`""`: none).
+    pub fn with_note(send: impl Fn(bool, &str) + Send + Sync + 'static) -> ApprovalAnswer {
         ApprovalAnswer { sent: Arc::new(Mutex::new(false)), send: Arc::new(send) }
     }
     /// The person's (or the host's rule's) decision. False when already sent.
     pub fn respond(&self, approve: bool) -> bool {
+        self.respond_with(approve, "")
+    }
+    /// A decision with the reason the kernel records (`client_note`).
+    pub fn respond_with(&self, approve: bool, note: &str) -> bool {
         {
             let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
             if *sent {
@@ -523,8 +585,15 @@ impl ApprovalAnswer {
             }
             *sent = true;
         }
-        (self.send)(approve);
+        (self.send)(approve, note);
         true
+    }
+    /// Nobody answered in time: denied, with why. Never an approval.
+    pub fn expire(&self, reason: &str) -> bool {
+        self.respond_with(false, &format!("expired: {reason}"))
+    }
+    pub fn is_sent(&self) -> bool {
+        *self.sent.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -692,7 +761,7 @@ impl QuestionReply {
 #[derive(Clone)]
 pub struct QuestionAnswer {
     sent: Arc<Mutex<bool>>,
-    send: Arc<dyn Fn(Value) + Send + Sync>,
+    send: AnswersFn,
 }
 
 impl std::fmt::Debug for QuestionAnswer {
@@ -704,10 +773,17 @@ impl std::fmt::Debug for QuestionAnswer {
 impl QuestionAnswer {
     /// `send` gets the `answers` array.
     pub fn new(send: impl Fn(Value) + Send + Sync + 'static) -> QuestionAnswer {
+        QuestionAnswer::with_note(move |answers, _note| send(answers))
+    }
+    /// `send` also gets the note the answer carries (`""`: none).
+    pub fn with_note(send: impl Fn(Value, &str) + Send + Sync + 'static) -> QuestionAnswer {
         QuestionAnswer { sent: Arc::new(Mutex::new(false)), send: Arc::new(send) }
     }
     /// The person's answers, one per question. False when already sent.
     pub fn respond(&self, answers: &[QuestionReply]) -> bool {
+        self.respond_with(answers, "")
+    }
+    fn respond_with(&self, answers: &[QuestionReply], note: &str) -> bool {
         {
             let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
             if *sent {
@@ -715,8 +791,16 @@ impl QuestionAnswer {
             }
             *sent = true;
         }
-        (self.send)(Value::Array(answers.iter().map(QuestionReply::to_json).collect()));
+        (self.send)(Value::Array(answers.iter().map(QuestionReply::to_json).collect()), note);
         true
+    }
+    /// Nobody answered in time: declined (octos has no cancel short of
+    /// interrupting the turn), `count` answers of free text saying so.
+    /// Never an option chosen for the person.
+    pub fn expire(&self, count: usize, reason: &str) -> bool {
+        let text = expired_question_text(reason);
+        let answers: Vec<QuestionReply> = (0..count.max(1)).map(|_| QuestionReply::text(text.clone())).collect();
+        self.respond_with(&answers, &format!("expired: {reason}"))
     }
     pub fn is_sent(&self) -> bool {
         *self.sent.lock().unwrap_or_else(|e| e.into_inner())
@@ -811,6 +895,10 @@ impl ConfirmRequest {
 /// send sheet), shown for callers of every kind.
 pub trait ConfirmSheet: Send + Sync {
     fn confirm(&self, request: ConfirmRequest);
+    /// The request `id` is no longer the app's to answer: nobody answered
+    /// in time (`reason`: "expired: no answer in 10 min") and the host
+    /// denied it. The sheet shows it expired; a later answer is refused.
+    fn withdrawn(&self, _id: &str, _reason: &str) {}
 }
 
 /// An in-process app's executor for its own tools. It answers each call
@@ -989,6 +1077,32 @@ mod tests {
         assert_eq!(InputRefusal::Other("a\nb".into()).fields(), json!({"reason": "other", "message": "a b"}));
         assert_eq!(InputRefusal::Other("x".repeat(400)).message().unwrap().len(), 256);
         assert_eq!(InputRefusal::Other("  ".into()).message().unwrap(), "refused by the host");
+    }
+
+    #[test]
+    fn the_deadline_defaults_to_ten_minutes_and_expiry_never_approves() {
+        assert_eq!(deadline_from(None), Duration::from_secs(600));
+        assert_eq!(deadline_from(Some(" 5 ")), Duration::from_secs(5));
+        assert_eq!(deadline_from(Some("0")), DEFAULT_PROMPT_DEADLINE);
+        assert_eq!(deadline_from(Some("soon")), DEFAULT_PROMPT_DEADLINE);
+        assert_eq!(expiry_reason(DEFAULT_PROMPT_DEADLINE), "no answer in 10 min");
+        assert_eq!(expiry_reason(Duration::from_secs(90)), "no answer in 90 s");
+        let sent = Arc::new(Mutex::new(Vec::<(bool, String)>::new()));
+        let s = sent.clone();
+        let approval = ApprovalAnswer::with_note(move |ok, note| s.lock().unwrap().push((ok, note.to_owned())));
+        assert!(approval.expire("no answer in 10 min"));
+        assert!(!approval.respond(true), "an expired approval cannot be approved later");
+        assert_eq!(*sent.lock().unwrap(), vec![(false, "expired: no answer in 10 min".to_string())]);
+        let got = Arc::new(Mutex::new(Vec::<(Value, String)>::new()));
+        let g = got.clone();
+        let question = QuestionAnswer::with_note(move |v, note| g.lock().unwrap().push((v, note.to_owned())));
+        assert!(question.expire(2, "no answer in 10 min"));
+        assert!(!question.respond(&[QuestionReply::option("#a")]));
+        let (answers, note) = got.lock().unwrap()[0].clone();
+        assert_eq!(answers.as_array().unwrap().len(), 2);
+        assert!(answers[0].get("selected_labels").is_none(), "no option is chosen for the person");
+        assert!(answers[0]["free_text"].as_str().unwrap().contains("expired"));
+        assert_eq!(note, "expired: no answer in 10 min");
     }
 
     #[test]

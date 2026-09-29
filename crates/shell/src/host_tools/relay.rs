@@ -701,7 +701,9 @@ impl Relay {
 
     fn decided(&mut self, id: &RequestId, decision: Decision, reason: &str, env: &mut dyn Env) {
         if let Some(answer) = self.approvals.remove(&id.0) {
-            answer.respond(decision.approved());
+            // The reason reaches the kernel's record (`client_note`): an
+            // expiry says so ("expired: no answer in 10 min").
+            answer.respond_with(decision.approved(), reason);
             return;
         }
         let Some(call_id) = id.0.strip_prefix(CONFIRM_PREFIX) else { return };

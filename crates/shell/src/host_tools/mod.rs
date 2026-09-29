@@ -262,6 +262,23 @@ impl ToolHost for ShellToolHost {
     }
 }
 
+/// Stop the turn running on `app`'s agent's shared conversation, whoever
+/// started it (the Stop on the shell's app-conversation surface; ADR 0004
+/// §6): every live broker of the app's peer (`app`, or a script app's
+/// `card.<app>`). The turns stopped.
+pub fn interrupt_agent(app: &str) -> Vec<String> {
+    #[cfg(kernel)]
+    {
+        let app = app.to_string();
+        crate::ai_host::app_peers::broker::interrupt_where(move |peer_app| app_of_peer(peer_app) == app)
+    }
+    #[cfg(not(kernel))]
+    {
+        let _ = app;
+        Vec::new()
+    }
+}
+
 /// A script app's agent block, loaded from its admitted bundle the first
 /// time its peer registers (a native app's is in the shipped catalog).
 fn ensure_loaded(app_id: &str) {
@@ -297,6 +314,10 @@ pub struct SheetBridge {
 }
 
 impl approvals::AppConfirm for SheetBridge {
+    fn withdrawn(&mut self, id: &RequestId, reason: &str) {
+        self.sheet.withdrawn(&id.0, reason);
+    }
+
     fn confirm(&mut self, request: &approvals::AppConfirmRequest) {
         let id = request.id.clone();
         let client = match &request.caller {

@@ -72,6 +72,15 @@ service.release();                            // app closed
 - **Background work after close**: `release()` closes every context and
   interrupts the peer's running turn. The peer and its memory stay for the
   next launch.
+- **Nobody answers**: an approval or question on the peer's session or a
+  context expires after `BrokerConfig::prompt_deadline` (10 min;
+  `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with
+  the reason, never approved; the app hears `prompt/expired`. A turn still
+  running `expiry_grace` (30 s) later is interrupted, and the peer's next
+  queued turn starts.
+- **Stop**: `ContextOp::Interrupt` on a conversation stops whatever turn
+  runs on the peer, the system agent's included (the person owns the
+  device); the shell's own surfaces use `broker::interrupt_where`.
 
 ## Testing
 

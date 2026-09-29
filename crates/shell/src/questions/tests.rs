@@ -174,3 +174,44 @@ fn no_app_facing_path_can_answer() {
         assert!(crate::ai_host::contained::parse(method, &json!({})).is_err(), "the octos host service has no {method}");
     }
 }
+
+
+/// ADR 0004 §8: a question nobody answers within the deadline is declined
+/// (free text saying it expired, never an option chosen for the person),
+/// shown expired rather than removed, and takes no late answer.
+#[test]
+fn a_question_expires_declined_and_shows_as_expired() {
+    let mut model = Questions { deadline_s: Some(600), ..Questions::default() };
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    model.subscribe(Box::new(Recorder(heard.clone())));
+    let (answer, sent) = answer_handle();
+    let id = model.requested_at("rinx", Some("@a:x"), question("q1", "t1", CallOrigin::Context, Some("ctx")), answer, 1_000);
+    assert!(!model.tick(1_599));
+    assert!(model.tick(1_600));
+    let r = model.get(id).unwrap().clone();
+    assert_eq!(r.state, State::Expired("no answer in 10 min".into()));
+    let sent = sent.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0][0].get("selected_labels").is_none());
+    assert!(sent[0][0]["free_text"].as_str().unwrap().contains("expired, no answer in 10 min"));
+    assert!(model.answer(id, &[QuestionReply::option("#a")], &PersonAnswer::from_shell_surface()).is_err(), "no late answer");
+    assert!(model.open_in_apps().is_empty(), "no longer asked");
+    assert_eq!(model.expired_in_apps().len(), 1, "still shown, as expired");
+    assert_eq!(heard.lock().unwrap().last().unwrap().2, State::Expired("no answer in 10 min".into()));
+    model.dismiss(id);
+    assert!(model.expired_in_apps().is_empty());
+}
+
+#[test]
+fn stop_declines_the_stopped_apps_open_questions() {
+    let mut model = Questions::default();
+    let (a1, sent1) = answer_handle();
+    let (a2, sent2) = answer_handle();
+    let rinx = model.requested("rinx", None, question("q1", "t1", CallOrigin::PeerOwn, None), a1);
+    let news = model.requested("card.os.news", None, question("q2", "t2", CallOrigin::PeerOwn, None), a2);
+    assert_eq!(model.stop_agent("rinx"), 1);
+    assert_eq!(model.get(rinx).unwrap().state, State::Answered("(stopped)".into()));
+    assert!(sent1.lock().unwrap()[0][0]["free_text"].as_str().unwrap().contains("stopped"));
+    assert_eq!(model.get(news).unwrap().state, State::Open);
+    assert!(sent2.lock().unwrap().is_empty());
+}

@@ -402,7 +402,115 @@ fn an_unanswered_sheet_expires_declined() {
     assert!(r.tick(T0 + r.sheet_expiry_s));
     assert_eq!(relay.last().unwrap().1, Decision::Deny);
     assert!(r.sheets().is_empty());
-    assert_eq!(r.audit.all().last().unwrap().by, "timeout");
+    assert_eq!(r.audit.all().last().unwrap().by, "expired");
+}
+
+/// ADR 0004 §8: the prompt deadline is 10 min unless the env says
+/// otherwise; an unanswered request is denied with why, never approved,
+/// audited, and stays visible as expired (a record and a notice) until the
+/// person dismisses it.
+#[test]
+fn an_approval_expires_to_deny_with_its_reason_and_stays_visible() {
+    let (mut r, relay) = router();
+    assert_eq!(r.sheet_expiry_s, crate::ai_host::app_peers::host_tools::prompt_deadline().as_secs());
+    r.sheet_expiry_s = 600;
+    // A standing rule for another tool changes nothing.
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.archive", Conditions::default()));
+    r.request(send("1", json!({"to": "eve@example.org"})), T0);
+    r.take_notices();
+    assert!(!r.tick(T0 + 599));
+    assert!(r.tick(T0 + 600));
+    let (id, decision, reason) = relay.last().unwrap();
+    assert_eq!((id, decision), (RequestId("1".into()), Decision::Deny));
+    assert_eq!(reason, "expired: no answer in 10 min");
+    assert!(relay.take().iter().all(|(_, d, _)| !d.approved()), "nothing is approved on expiry");
+    let audit = r.audit.all().last().unwrap().clone();
+    assert_eq!((audit.by.as_str(), audit.result.as_str(), audit.reason.as_str()), ("expired", "denied", "expired: no answer in 10 min"));
+    assert!(!r.is_pending(&RequestId("1".into())) && r.sheets().is_empty(), "withdrawn from pending");
+    let expired = r.expired().to_vec();
+    assert_eq!(expired.len(), 1);
+    assert_eq!(expired[0].status(), "Expired: no answer in 10 min");
+    assert_eq!(expired[0].heading, "Mail \u{00b7} mail.send");
+    assert_eq!(expired[0].caller, "Calendar's agent");
+    let notices = r.take_notices();
+    assert!(notices.iter().any(|n| n.title == "Expired: Mail \u{00b7} mail.send" && n.body.contains("Nothing was approved")), "{notices:?}");
+    r.dismiss_expired(&RequestId("1".into()));
+    assert!(r.expired().is_empty());
+}
+
+/// Each request keeps its own deadline, a batched sheet's later lines too.
+#[test]
+fn a_batched_sheets_lines_expire_each_at_their_own_deadline() {
+    let (mut r, relay) = router();
+    r.sheet_expiry_s = 60;
+    let batch = Some(Batch { id: "p1".into(), plan: "Invite two".into() });
+    let mut first = send("b1", json!({"to": "eve@example.org"}));
+    first.context.batch = batch.clone();
+    let mut second = send("b2", json!({"to": "zed@example.org"}));
+    second.context.batch = batch;
+    second.received = T0 + 30;
+    r.request(first, T0);
+    r.request(second, T0 + 30);
+    assert_eq!(r.sheets().len(), 1);
+    r.tick(T0 + 60);
+    assert_eq!(relay.take().iter().map(|(id, _, _)| id.0.clone()).collect::<Vec<_>>(), ["b1"]);
+    assert!(r.is_pending(&RequestId("b2".into())), "the later line has its own deadline");
+    r.tick(T0 + 90);
+    assert_eq!(relay.last().unwrap().0, RequestId("b2".into()));
+    assert_eq!(r.expired().len(), 2);
+}
+
+/// External clients' requests are not the shell's (octos#2624): whatever
+/// sheet shows one, it never expires here.
+#[test]
+fn an_external_connections_request_never_expires_here() {
+    let (mut r, relay) = router();
+    r.sheet_expiry_s = 60;
+    let mut req = send("e1", json!({"to": "ana@example.org"}));
+    req.context.connection = Connection::External;
+    r.request(req, T0);
+    r.tick(T0 + 10_000);
+    assert!(relay.take().is_empty());
+    assert!(r.is_pending(&RequestId("e1".into())));
+    assert!(r.expired().is_empty());
+}
+
+#[test]
+fn a_confirm_app_request_on_the_apps_sheet_expires_and_the_sheet_hears_it() {
+    #[derive(Clone, Default)]
+    struct Sheet(Arc<Mutex<Vec<(RequestId, String)>>>);
+    impl AppConfirm for Sheet {
+        fn confirm(&mut self, _request: &AppConfirmRequest) {}
+        fn withdrawn(&mut self, id: &RequestId, reason: &str) {
+            self.0.lock().unwrap().push((id.clone(), reason.to_string()));
+        }
+    }
+    let (mut r, relay) = router();
+    r.sheet_expiry_s = 600;
+    let sheet = Sheet::default();
+    r.register_app_confirm("rinx", Box::new(sheet.clone()));
+    assert_eq!(r.request(rinx_send("m1"), T0), Route::HandedToApp);
+    r.tick(T0 + 600);
+    assert_eq!(relay.last().unwrap(), (RequestId("m1".into()), Decision::Deny, "expired: no answer in 10 min".into()));
+    assert_eq!(sheet.0.lock().unwrap().as_slice(), &[(RequestId("m1".into()), "expired: no answer in 10 min".to_string())]);
+    assert!(r.app_confirm_answered(&RequestId("m1".into()), true, "late", T0 + 601).is_err(), "a late yes is refused");
+}
+
+/// The Stop on an app's conversation denies what that app's agent asks
+/// (not other agents'), with why.
+#[test]
+fn stop_denies_what_the_stopped_agent_asks() {
+    let (mut r, relay) = router();
+    r.request(send("c1", json!({"to": "eve@example.org"})), T0);
+    let mut own = send("n1", json!({"to": "eve@example.org"}));
+    own.caller = Caller::OwnAgent { client: None };
+    r.request(own, T0);
+    assert_eq!(r.front_sheet().unwrap().stop_target(), Some("calendar"));
+    let stopped = r.stop_agent("calendar", T0 + 5);
+    assert_eq!(stopped, [RequestId("c1".into())]);
+    assert_eq!(relay.last().unwrap(), (RequestId("c1".into()), Decision::Deny, "the person stopped the agent's turn".into()));
+    assert!(r.is_pending(&RequestId("n1".into())), "Mail's own agent is not stopped");
+    assert_eq!(r.sheets().len(), 1);
 }
 
 // ---------------------------------------------------------------- confirm: app

@@ -22,6 +22,15 @@
 //!
 //! Every decision reaches the relay once ([`ApprovalRelay`]) and the audit
 //! ([`AuditLog`]); every automatic one is also a notice for the person.
+//!
+//! **Deadline.** A request the shell holds (a sheet line, a `confirm: app`
+//! request on the owning app's sheet) that nobody answers within
+//! [`Router::sheet_expiry_s`] (`host_tools::prompt_deadline`, 10 min unless
+//! `OCTOSENSE_PROMPT_DEADLINE_SECS` says otherwise) expires: denied with the
+//! reason ("expired: no answer in 10 min"), never approved, audited `by:
+//! expired`, and kept visible as an [`Expired`] record and a notice until
+//! the person dismisses it. External connections' requests never expire
+//! here: they are not the shell's (octos#2624).
 
 use super::audit::{AuditLog, Entry};
 use super::dev_hooks::{DevKind, DevModeHooks};
@@ -75,7 +84,37 @@ pub struct AppConfirmRequest {
 /// (the global [`super::app_confirm_answered`]).
 pub trait AppConfirm: Send {
     fn confirm(&mut self, request: &AppConfirmRequest);
+    /// `id` is no longer the app's to answer (it expired and was denied):
+    /// its sheet shows why; a later answer is refused.
+    fn withdrawn(&mut self, _id: &RequestId, _reason: &str) {}
 }
+
+/// A request that expired unanswered: withdrawn from pending, kept for the
+/// surfaces ("Expired: no answer in 10 min") until the person dismisses it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Expired {
+    pub id: RequestId,
+    /// The owning app.
+    pub app: String,
+    /// "Mail · mail.send".
+    pub heading: String,
+    /// "Calendar's agent".
+    pub caller: String,
+    /// "no answer in 10 min".
+    pub reason: String,
+    /// Unix seconds.
+    pub at: u64,
+}
+
+impl Expired {
+    /// "Expired: no answer in 10 min".
+    pub fn status(&self) -> String {
+        format!("Expired: {}", self.reason)
+    }
+}
+
+/// How many expired records the surfaces keep.
+const EXPIRED_KEPT: usize = 16;
 
 /// Something the person is told (the shell shows it as a notification).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -103,8 +142,11 @@ pub struct Router {
     notices: Vec<Notice>,
     /// How long a `confirm: app` call waits for its app (0: refused at once).
     pub app_wait_s: u64,
-    /// A sheet line nobody answers is declined after this (ADR 0002 §10).
+    /// A request nobody answers is denied after this (ADR 0002 §10, ADR
+    /// 0004 §8): the prompt deadline.
     pub sheet_expiry_s: u64,
+    /// Requests that expired, newest last, until dismissed.
+    expired: Vec<Expired>,
     generation: u64,
     next_request: u64,
 }
@@ -125,7 +167,8 @@ impl Router {
             waiting: BTreeMap::new(),
             notices: Vec::new(),
             app_wait_s: 120,
-            sheet_expiry_s: 600,
+            sheet_expiry_s: crate::ai_host::app_peers::host_tools::prompt_deadline().as_secs(),
+            expired: Vec::new(),
             generation: 0,
             next_request: 1,
         }
@@ -173,6 +216,38 @@ impl Router {
     }
     pub fn is_pending(&self, id: &RequestId) -> bool {
         self.pending.contains_key(id)
+    }
+    /// What expired unanswered and is not dismissed yet, oldest first.
+    pub fn expired(&self) -> &[Expired] {
+        &self.expired
+    }
+    /// The person saw an expired record.
+    pub fn dismiss_expired(&mut self, id: &RequestId) {
+        let before = self.expired.len();
+        self.expired.retain(|e| e.id != *id);
+        if self.expired.len() != before {
+            self.changed();
+        }
+    }
+    /// The Stop of an app agent's turn (the app conversation's surface):
+    /// what `app`'s agent asks and the shell holds is denied, with why.
+    /// The requests denied.
+    pub fn stop_agent(&mut self, app: &str, now: u64) -> Vec<RequestId> {
+        let ids: Vec<RequestId> = self
+            .pending
+            .values()
+            .filter(|r| r.context.connection == Connection::Host && agent_of(r).as_deref() == Some(app))
+            .map(|r| r.id.clone())
+            .collect();
+        for id in &ids {
+            self.decide(id, Decision::Deny, "person", None, "the person stopped the agent's turn", now);
+            if let Some(line) = self.sheets.iter_mut().flat_map(|s| s.lines.iter_mut()).find(|l| l.request == *id) {
+                line.answer = Some(super::sheet::Answer::Deny);
+            }
+        }
+        self.sheets.retain(|s| !s.done());
+        self.changed();
+        ids
     }
     pub fn take_notices(&mut self) -> Vec<Notice> {
         std::mem::take(&mut self.notices)
@@ -426,21 +501,50 @@ impl Router {
             let app = self.pending.get(&id).map(|r| app_label(&r.app)).unwrap_or_default();
             self.refuse_visibly(&id, &format!("{app} wasn't opened in time to confirm it"), now);
         }
-        let expired: Vec<(u64, RequestId)> = self
-            .sheets
-            .iter()
-            .filter(|s| now >= s.opened + self.sheet_expiry_s)
-            .flat_map(|s| s.open_lines().map(move |l| (s.id, l.request.clone())))
+        // The prompt deadline, per request (a batched sheet's later lines
+        // keep their own): sheet lines and `confirm: app` requests on an
+        // app's sheet. Never an external connection's.
+        let deadline = self.sheet_expiry_s;
+        let due: Vec<RequestId> = self
+            .pending
+            .values()
+            .filter(|r| r.context.connection == Connection::Host && now >= r.received.saturating_add(deadline))
+            .filter(|r| self.at_app.contains_key(&r.id) || self.sheets.iter().any(|s| s.open_lines().any(|l| l.request == r.id)))
+            .map(|r| r.id.clone())
             .collect();
-        for (sheet, id) in expired {
-            self.decide(&id, Decision::Deny, "timeout", None, "nobody answered; an expired request is declined", now);
-            if let Some(line) = self.sheets.iter_mut().find(|s| s.id == sheet).and_then(|s| s.lines.iter_mut().find(|l| l.request == id)) {
-                line.answer = Some(Answer::Deny);
-            }
-            self.changed();
+        for id in due {
+            self.expire(&id, now);
         }
         self.sheets.retain(|s| !s.done());
         self.generation != before
+    }
+
+    /// `id` reached the deadline unanswered: denied (never approved), with
+    /// the reason, audited `by: expired`; withdrawn from its sheet (or the
+    /// app's) and kept visible as an [`Expired`] record and a notice.
+    fn expire(&mut self, id: &RequestId, now: u64) {
+        let Some(req) = self.pending.get(id).cloned() else { return };
+        let reason = crate::ai_host::app_peers::host_tools::expiry_reason(std::time::Duration::from_secs(self.sheet_expiry_s));
+        let on_app = self.at_app.get(id).cloned();
+        self.decide(id, Decision::Deny, "expired", None, &format!("expired: {reason}"), now);
+        if let Some(app) = on_app {
+            if let Some(handler) = self.app_confirms.get_mut(&app) {
+                handler.withdrawn(id, &format!("expired: {reason}"));
+            }
+        }
+        for sheet in &mut self.sheets {
+            if let Some(line) = sheet.lines.iter_mut().find(|l| l.request == *id) {
+                line.answer = Some(super::sheet::Answer::Deny);
+            }
+        }
+        let heading = format!("{} \u{00b7} {}", app_label(&req.app), req.tool.name);
+        let caller = caller_label(&req.app, &req.caller);
+        self.notice(format!("Expired: {heading}"), format!("{caller} asked; no answer in time ({reason}), so it was denied. Nothing was approved."));
+        self.expired.push(Expired { id: id.clone(), app: req.app.clone(), heading, caller, reason, at: now });
+        if self.expired.len() > EXPIRED_KEPT {
+            self.expired.remove(0);
+        }
+        self.changed();
     }
 
     /// The one exit: relay, audit, notice.
@@ -471,6 +575,15 @@ impl Router {
             self.notice(format!("Approved automatically: {} \u{00b7} {}", app_label(&req.app), req.tool.name), format!("{why} Asked by {}.", caller_label(&req.app, &req.caller)));
         }
         self.relay.approval_decided(id, decision, reason);
+    }
+}
+
+/// The app whose agent asked (a Stop on its conversation stops it).
+pub fn agent_of(req: &Request) -> Option<String> {
+    match &req.caller {
+        Caller::OwnAgent { .. } => Some(req.app.clone()),
+        Caller::AppAgent { app } => Some(app.clone()),
+        Caller::SystemAgent | Caller::External { .. } => None,
     }
 }
 

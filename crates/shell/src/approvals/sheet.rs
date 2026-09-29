@@ -79,6 +79,9 @@ pub struct Line {
     pub surfaced: Surfaced,
     pub always: Vec<AlwaysChoice>,
     pub answer: Option<Answer>,
+    /// The app whose agent asked (its conversation's Stop stops that
+    /// agent's turn); `None` for the system agent.
+    pub agent: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,6 +132,7 @@ impl Line {
             surfaced,
             always,
             answer: None,
+            agent: super::router::agent_of(req),
         }
     }
     /// "Mail · mail.send".
@@ -204,6 +208,14 @@ impl Sheet {
     /// Every line answered: the sheet closes.
     pub fn done(&self) -> bool {
         self.lines.iter().all(|l| l.answer.is_some())
+    }
+    /// The agent a Stop on this sheet stops: an app-conversation sheet's
+    /// asking agent.
+    pub fn stop_target(&self) -> Option<&str> {
+        match &self.place {
+            Place::AppConversation { .. } => self.open_lines().find_map(|l| l.agent.as_deref()),
+            Place::SystemChat { .. } => None,
+        }
     }
     pub fn batch_id(&self) -> Option<&str> {
         match &self.place {

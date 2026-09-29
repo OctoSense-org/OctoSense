@@ -26,6 +26,8 @@ struct Script {
     /// The next this-many turn/starts are refused `turn_in_progress` (the
     /// kernel still runs a turn the host has not seen end).
     busy_starts: usize,
+    /// turn/interrupt ends the turn (a v2 `turn_terminal`, `interrupted`).
+    interrupts_end: bool,
     /// What session/hydrate answers (`messages`).
     history: Vec<Value>,
     connects: usize,
@@ -97,6 +99,7 @@ impl Connector for FakeConnector {
                     let method = frame["method"].as_str().unwrap().to_owned();
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
+                    let interrupts_end = script.lock().unwrap().interrupts_end;
                     let (legacy, hold, refuse_register, busy, history) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
@@ -176,6 +179,15 @@ impl Connector for FakeConnector {
                             }
                         }
                         "session/hydrate" => send(reply(json!({"messages": history}))),
+                        "turn/interrupt" => {
+                            send(reply(json!({"interrupted": true})));
+                            if interrupts_end {
+                                let session = params["session_id"].as_str().unwrap_or("");
+                                let (base, topic) = session.split_once('#').unwrap_or((session, ""));
+                                send(json!({"jsonrpc": "2.0", "method": "projection/envelope", "params": {"session_id": base, "topic": topic, "turn_id": params["turn_id"], "thread_id": params["turn_id"], "seq": 99,
+                                    "payload": {"type": "turn_terminal", "data": {"outcome": "interrupted"}}}}).to_string());
+                            }
+                        }
                         _ => send(reply(json!({}))),
                     }
                 }
@@ -197,17 +209,31 @@ fn new_broker(services: &[&str]) -> (Broker, Arc<Mutex<Script>>) {
 }
 
 fn new_broker_with(services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_timed(services, host, state_dir, None)
+}
+
+/// With a short prompt deadline and grace (ms), injected (never the env:
+/// tests share a process).
+fn new_broker_timed(services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_app("rinx", services, host, state_dir, timing)
+}
+
+fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>) -> (Broker, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));
     let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
         "_main",
         "_main:api:octosense#system",
-        "rinx",
+        app,
         "Rinx",
         services.iter().map(|s| s.to_string()).collect(),
     );
     cfg.tool_host = host.map(|h| ToolHostHandle(h as Arc<dyn ToolHost>));
     cfg.state_dir = state_dir;
+    if let Some((deadline, grace)) = timing {
+        cfg.prompt_deadline = Duration::from_millis(deadline);
+        cfg.expiry_grace = Duration::from_millis(grace);
+    }
     (
         Broker::new(cfg, Arc::new(FakeConnector(script.clone()))),
         script,
@@ -1293,4 +1319,203 @@ fn a_request_context_for_an_explicit_client_still_works() {
     ctx.call(ContextOp::Open, sink2).unwrap();
     assert_eq!(complete(&rx2).unwrap()["conversation"], false);
     assert!(events(&rx, Duration::from_millis(100)).is_empty(), "a request context has no follower");
+}
+
+
+// ---------------------------------------------------------------------------
+// Deadlines (ADR 0004 §8): an approval or question nobody answers expires,
+// denied or declined, never approved; a turn still running after the grace
+// is interrupted so the peer's queue moves on; the person's Stop ends
+// whichever turn runs on the shared conversation.
+
+fn approval_on(session: &str, id: &str, turn: &str) -> Value {
+    json!({"session_id": session, "approval_id": id, "turn_id": turn, "tool_name": "write_file", "title": "Write", "body": "notes.md"})
+}
+
+/// A running `peer/input` turn (the system agent's) and a second input
+/// queued behind it; the peer's session.
+fn busy_peer(broker: &Broker, script: &Arc<Mutex<Script>>) -> (String, String) {
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    for id in ["i1", "i2"] {
+        notify(script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id}));
+    }
+    wait_for("the first turn and one queued", || calls_of(script, "turn/start").len() == 1 && broker.queued_turns() == 1);
+    (slug, session)
+}
+
+#[test]
+fn an_approval_nobody_answers_expires_to_deny_and_the_stuck_turn_is_interrupted_after_the_grace() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((400, 1_500)));
+    let (slug, session) = busy_peer(&broker, &script);
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (follow, follow_rx) = collect();
+    chat.subscribe(Some(follow));
+    notify(&script, "approval/requested", approval_on(&session, "a1", "turn-i1"));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    assert_eq!(broker.pending_prompts(), 1);
+    // The deadline: the app's conversation hears it expired; the host's
+    // router expires it (here, the test does what the shell's router does).
+    let expired = loop {
+        match follow_rx.recv_timeout(Duration::from_secs(5)).expect("prompt/expired") {
+            ContextEvent::Data(d) if d["method"] == "prompt/expired" => break d,
+            _ => {}
+        }
+    };
+    assert_eq!(expired["params"]["id"], "a1");
+    assert_eq!(expired["params"]["reason"], "no answer in 1 s", "the reason says how long");
+    let answer = host.approvals.lock().unwrap()[0].1.clone();
+    assert!(answer.expire("no answer in 1 s"));
+    wait_for("the deny", || position(&script, "approval/respond").is_some());
+    // The grace: the turn still runs, so it is interrupted and the queued
+    // input starts; nothing is approved and nothing is answered twice.
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1["turn_id"], "turn-i1");
+    wait_for("the next queued turn", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-i2");
+    let responds = calls_of(&script, "approval/respond");
+    assert_eq!(responds.len(), 1, "{responds:?}");
+    assert_eq!(responds[0].1["decision"], "deny");
+    assert!(responds[0].1["client_note"].as_str().unwrap().starts_with("expired: no answer in"), "{}", responds[0].1);
+    assert!(calls_of(&script, "approval/respond").iter().all(|(_, p)| p["decision"] != "approve"));
+    // N1: a late call of the interrupted turn never runs.
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", "turn-i1", None));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    let late = calls_of(&script, "peer/tool/result").into_iter().find(|(_, p)| p["call_id"] == "c-late").unwrap().1;
+    assert_eq!(late["error"]["kind"], "turn_interrupted");
+    assert!(host.calls.lock().unwrap().is_empty());
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+#[test]
+fn a_host_that_never_answers_is_answered_for_with_a_deny_after_the_grace() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((200, 300)));
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", approval_on(&session, "a1", "turn-i1"));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    wait_for("the broker's deny", || position(&script, "approval/respond").is_some());
+    let respond = calls_of(&script, "approval/respond")[0].1.clone();
+    assert_eq!((respond["approval_id"].as_str(), respond["decision"].as_str()), (Some("a1"), Some("deny")));
+    assert!(!host.approvals.lock().unwrap()[0].1.respond(true), "the host can no longer approve it");
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    wait_for("the next queued turn", || calls_of(&script, "turn/start").len() == 2);
+    drop(broker);
+}
+
+#[test]
+fn a_question_nobody_answers_expires_declined_never_with_an_option_chosen() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((300, 300)));
+    script.lock().unwrap().interrupts_end = true;
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "user_question/requested", json!({"session_id": session, "question_id": "q1", "turn_id": "turn-i1", "title": "Which room?", "body": "",
+        "questions": [{"header": "Room", "question": "Post where?", "options": [{"label": "#a", "description": ""}, {"label": "#b", "description": ""}]}, {"header": "When", "question": "Now?", "options": [{"label": "yes", "description": ""}, {"label": "no", "description": ""}]}]}));
+    wait_for("the host", || host.questions.lock().unwrap().len() == 1);
+    // The host never answers: the broker declines it after the grace, one
+    // free-text answer per question, then interrupts the turn.
+    wait_for("the decline", || position(&script, "user_question/respond").is_some());
+    let respond = calls_of(&script, "user_question/respond")[0].1.clone();
+    assert_eq!(respond["question_id"], "q1");
+    let answers = respond["answers"].as_array().unwrap();
+    assert_eq!(answers.len(), 2);
+    assert!(answers.iter().all(|a| a.get("selected_labels").is_none() && a["free_text"].as_str().unwrap().contains("expired")), "{respond}");
+    assert!(respond["client_note"].as_str().unwrap().contains("no answer in"));
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    // The kernel's interrupted terminal frees the peer: the next input runs.
+    wait_for("the next queued turn", || calls_of(&script, "turn/start").len() == 2);
+    wait_for("closed", || host.closed_questions.lock().unwrap().contains(&"q1".to_string()));
+
+    // Asked in a request context of a host that takes no questions: the
+    // broker declines it at the deadline itself, and the context hears it.
+    let (plain, script) = new_broker_timed(&ALL, None, None, Some((200, 5_000)));
+    script.lock().unwrap().hold_turns = true;
+    plain.set_account(Some("@a:x"));
+    let ctx = plain.open_context(spec("@a:x", "mini#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "post it".into() }, sink).unwrap();
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let start = calls_of(&script, "turn/start")[0].1.clone();
+    notify(&script, "user_question/requested", json!({"session_id": start["session_id"], "question_id": "q2", "turn_id": start["turn_id"], "title": "?", "body": "", "questions": [{"header": "h", "question": "q", "options": []}]}));
+    wait_for("the decline", || position(&script, "user_question/respond").is_some());
+    assert!(position(&script, "turn/interrupt").is_none(), "the grace has not passed");
+    let seen = events(&rx, Duration::from_millis(300));
+    assert!(seen.iter().any(|d| d["method"] == "prompt/expired" && d["params"]["id"] == "q2"), "{seen:?}");
+    drop(plain);
+    drop(broker);
+}
+
+#[test]
+fn an_answered_approval_neither_expires_nor_interrupts() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((300, 200)));
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", approval_on(&session, "a1", "turn-i1"));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    assert!(host.approvals.lock().unwrap()[0].1.respond(true));
+    std::thread::sleep(Duration::from_millis(900));
+    let responds = calls_of(&script, "approval/respond");
+    assert_eq!(responds.len(), 1);
+    assert_eq!(responds[0].1["decision"], "approve");
+    assert!(position(&script, "turn/interrupt").is_none());
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+/// Approvals and questions of sessions that are not this app's peer or its
+/// contexts (an external client's, octos#2624, G1) are not the shell's:
+/// no deadline, no answer, no interrupt.
+#[test]
+fn prompts_of_an_external_clients_session_never_expire_here() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((150, 150)));
+    let _ = busy_peer(&broker, &script);
+    for session in ["_main:api:octosense#system", "_main:api:talk-to-octos#s1"] {
+        notify(&script, "approval/requested", approval_on(session, &format!("ext-{session}"), "turn-ext"));
+        notify(&script, "user_question/requested", json!({"session_id": session, "question_id": format!("q-{session}"), "turn_id": "turn-ext", "title": "?", "body": "", "questions": []}));
+    }
+    std::thread::sleep(Duration::from_millis(800));
+    assert!(host.approvals.lock().unwrap().is_empty() && host.questions.lock().unwrap().is_empty());
+    assert_eq!(broker.pending_prompts(), 0);
+    assert!(position(&script, "approval/respond").is_none());
+    assert!(position(&script, "user_question/respond").is_none());
+    assert!(position(&script, "turn/interrupt").is_none());
+    drop(broker);
+}
+
+/// The person's Stop on the shared conversation ends whichever turn runs
+/// there, the system agent's included; its late calls are refused and the
+/// next queued turn starts. The shell's own surfaces reach it by app.
+#[test]
+fn stop_on_the_conversation_interrupts_the_system_agents_turn() {
+    let host = Arc::new(RecordingHost::default());
+    // Its own app id: the registry is the process's, and tests share one.
+    let (broker, script) = new_broker_app("stop-test", &ALL, Some(host.clone()), None, None);
+    let (slug, session) = busy_peer(&broker, &script);
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Interrupt, sink).unwrap();
+    let stopped = complete(&rx).unwrap();
+    assert_eq!(stopped["interrupted"], "turn-i1");
+    assert_eq!(stopped["speaker"]["kind"], "system_agent");
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1, json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("the next queued turn", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-i2");
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", "turn-i1", None));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    // The shell's Stop, by app id: the input now running stops too.
+    let stopped = octosense_app_peers::broker::interrupt_where(|app| app == "stop-test");
+    assert_eq!(stopped, ["turn-i2"]);
+    wait_for("the second interrupt", || calls_of(&script, "turn/interrupt").len() == 2);
+    assert!(octosense_app_peers::broker::interrupt_where(|app| app == "other").is_empty());
+    // Nothing running: said so.
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Interrupt, sink).unwrap();
+    assert!(complete(&rx).unwrap_err().contains("Nothing is running"));
+    drop(broker);
 }

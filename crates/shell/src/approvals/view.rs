@@ -14,6 +14,12 @@
 //!   conversation): who asks, the question and its options; a tap answers
 //!   it (the person's answer, [`crate::questions::PersonAnswer`]). Modal,
 //!   after any approval sheet.
+//! - **Stop** on an app-conversation sheet or question: denies or declines
+//!   what that app's agent asks and stops the turn running on its shared
+//!   conversation, whoever started it ([`super::stop_agent`]).
+//! - **Expired** requests (ADR 0004 §8): an approval or question nobody
+//!   answered in time ("Expired: no answer in 10 min"), withdrawn from the
+//!   modal cards and kept as a small non-modal card until dismissed.
 //!
 //! A press on a button is the person's gesture: only here (and on the
 //! Settings page) is a [`ApprovalGesture`] made.
@@ -55,6 +61,11 @@ pub enum Hit {
     StopRule(RuleId),
     /// An option of an app agent's question (`None`: "Don't answer").
     QuestionOption { id: u64, label: Option<String> },
+    /// Stop the app agent's running turn (the app's conversation).
+    StopAgent { app: String },
+    /// Dismiss an expired approval's record, or an expired question's.
+    DismissExpired(RequestId),
+    DismissQuestion(u64),
     /// The card itself (swallowed).
     Card,
 }
@@ -109,6 +120,9 @@ struct Frame {
     everything: Vec<Rule>,
     /// The oldest open question of an app's conversation.
     question: Option<crate::questions::Request>,
+    /// What expired unanswered: approvals, then questions.
+    expired: Vec<super::router::Expired>,
+    expired_questions: Vec<crate::questions::Request>,
     now: u64,
 }
 
@@ -121,11 +135,14 @@ fn frame() -> Frame {
             consent: a.consent.prompt().cloned(),
             everything: a.router.rules.active_everything(now).into_iter().cloned().collect(),
             question: None,
+            expired: a.router.expired().to_vec(),
+            expired_questions: Vec::new(),
             now,
         }
     })
     .map(|mut f| {
         f.question = crate::questions::open_in_apps().into_iter().next();
+        f.expired_questions = crate::questions::expired_in_apps();
         f
     })
     .unwrap_or_default()
@@ -216,6 +233,7 @@ impl ShellApprovals {
         let f = frame();
         let tok = self.d.tokens(self.tokens);
         self.draw_indicator(cx, screen, &f, tok);
+        self.draw_expired(cx, screen, &f, tok);
         if let Some(summary) = &f.consent {
             self.modal = true;
             self.draw_consent(cx, screen, summary, tok);
@@ -233,7 +251,7 @@ impl ShellApprovals {
     fn draw_question(&mut self, cx: &mut Cx2d, screen: Rect, q: &crate::questions::Request, tok: ShellTokens) {
         self.scrim(cx, screen);
         let options = q.options();
-        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + 40.0 + 12.0 + (options.len() as f64 + 1.0) * (BUTTON_H + 8.0));
+        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + 40.0 + 12.0 + (options.len() as f64 + 2.0) * (BUTTON_H + 8.0));
         self.d.card(cx, card, &tok.popups);
         self.hits.push((card, Hit::Card));
         let ink = tok.popups.text;
@@ -259,7 +277,12 @@ impl ShellApprovals {
         }
         let r = buttons.draw(cx, x, y, w, "Don't answer", false);
         hits.push((r, Hit::QuestionOption { id: q.id, label: None }));
+        y += BUTTON_H + 8.0;
+        let stop = stop_label(&q.app);
+        let r = buttons.draw(cx, x, y, w, &stop, false);
+        hits.push((r, Hit::StopAgent { app: q.app.clone() }));
         self.hits.extend(hits);
+        self.shown.push(stop);
         self.shown.push(title);
         self.shown.push(sub);
         self.shown.push(text);
@@ -288,6 +311,37 @@ impl ShellApprovals {
         }
     }
 
+    /// Expired requests, non-modal, at the bottom: "Expired: no answer in
+    /// 10 min" with what it was, and Dismiss.
+    fn draw_expired(&mut self, cx: &mut Cx2d, screen: Rect, f: &Frame, tok: ShellTokens) {
+        let mut rows: Vec<(String, Hit)> = f
+            .expired
+            .iter()
+            .map(|e| (format!("{} \u{00b7} {} ({})", e.status(), e.heading, e.caller), Hit::DismissExpired(e.id.clone())))
+            .collect();
+        rows.extend(f.expired_questions.iter().filter_map(|q| {
+            let crate::questions::State::Expired(reason) = &q.state else { return None };
+            Some((format!("Expired: {reason} \u{00b7} {}", q.asked_by()), Hit::DismissQuestion(q.id)))
+        }));
+        let px = tok.font.body_small;
+        let mut y = screen.pos.y + screen.size.y - 16.0;
+        for (text, hit) in rows.into_iter().rev().take(3) {
+            let w = (self.d.measure(cx, false, px, &text) + 110.0).min(screen.size.x - 24.0);
+            y -= INDICATOR_H + 6.0;
+            let pill = rect(screen.pos.x + (screen.size.x - w) * 0.5, y, w, INDICATOR_H);
+            let ground = alpha(tok.popups.text, 0.85);
+            let ink = contrast(ground);
+            self.d.bordered(cx, pill, ground, ground, ground, 0.0, 0.0);
+            let dismiss = rect(pill.pos.x + pill.size.x - 78.0, pill.pos.y + 4.0, 72.0, INDICATOR_H - 8.0);
+            self.d.solid(cx, dismiss, alpha(ink, 0.15));
+            self.d.label(cx, dismiss, false, px, ink, HAlign::Center, "Dismiss");
+            self.d.label_elided(cx, rect(pill.pos.x + 12.0, pill.pos.y, dismiss.pos.x - pill.pos.x - 20.0, INDICATOR_H), false, px, ink, HAlign::Left, &text);
+            self.hits.push((dismiss, hit));
+            self.hits.push((pill, Hit::Card));
+            self.shown.push(text);
+        }
+    }
+
     fn card_rect(screen: Rect, h: f64) -> Rect {
         let w = CARD_MAX_W.min(screen.size.x - 32.0).max(200.0);
         let h = h.min(screen.size.y - 48.0);
@@ -310,7 +364,8 @@ impl ShellApprovals {
         let lines: Vec<&Line> = sheet.open_lines().collect();
         let header = 26.0 + 20.0 + 14.0;
         let body: f64 = lines.iter().map(|l| Self::line_height(l)).sum();
-        let footer = if more > 0 { 20.0 } else { 0.0 };
+        let stop = sheet.stop_target().map(str::to_string);
+        let footer = if more > 0 { 20.0 } else { 0.0 } + if stop.is_some() { BUTTON_H + 8.0 } else { 0.0 };
         let card = Self::card_rect(screen, PAD * 2.0 + header + body + footer);
         self.d.card(cx, card, &tok.popups);
         self.hits.push((card, Hit::Card));
@@ -389,6 +444,13 @@ impl ShellApprovals {
             self.shown.push(asked);
             self.shown.extend(line.args.iter().cloned());
         }
+        if let Some(app) = &stop {
+            let label = stop_label(app);
+            let top = if more > 0 { bottom - 20.0 - BUTTON_H - 4.0 } else { bottom - BUTTON_H };
+            let r = buttons.draw(cx, x, top, w, &label, false);
+            hits.push((r, Hit::StopAgent { app: app.clone() }));
+            self.shown.push(label);
+        }
         if more > 0 {
             buttons.d.label_elided(cx, rect(x, bottom - 18.0, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, &format!("{more} more sheet{} after this one", if more == 1 { "" } else { "s" }));
         }
@@ -438,6 +500,11 @@ impl ShellApprovals {
     }
 }
 
+/// "Stop Rinx's agent".
+fn stop_label(app: &str) -> String {
+    format!("Stop {}'s agent", app_label(app))
+}
+
 /// What a press does. Each answer here is the person's.
 fn act(hit: Hit) {
     let now = super::now();
@@ -464,6 +531,12 @@ fn act(hit: Hit) {
                 log!("questions: {e}");
             }
         }
+        Hit::StopAgent { app } => {
+            let stopped = super::stop_agent(&app);
+            log!("approvals: the person stopped {app}'s agent ({} turn(s))", stopped.len());
+        }
+        Hit::DismissExpired(id) => super::dismiss_expired(&id),
+        Hit::DismissQuestion(id) => crate::questions::dismiss(id),
         Hit::Card => {}
     }
 }
