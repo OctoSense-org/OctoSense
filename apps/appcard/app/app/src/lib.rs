@@ -11508,8 +11508,11 @@ mod tests {
         // which carries the reasoning: both endpoints became tappable rows that open
         // a find state, because a permanently-live `Field` cannot be focused on this
         // renderer and both were inert.
+        // 400, raised with its twin again: octoscript-ui-l0's test now keeps
+        // the documented 400-line budget because both origin modes retain a stop
+        // in the drive screen and expose loading/location failures.
         assert!(
-            code < 300,
+            code < 400,
             "the exemplar must be the L0 rewrite, not the 664-line L2 card; \
              this is {code} lines of declarations"
         );

@@ -229,6 +229,10 @@ const ACCENTS: &[(&str, &str, &str)] = &[
     accent!("magenta", "atro"), accent!("magenta", "atro_light"),
     accent!("red", "atro"), accent!("red", "atro_light"),
     accent!("violet", "atro"), accent!("violet", "atro_light"),
+    accent!("amber", "taskplan_light"), accent!("blue", "taskplan_light"),
+    accent!("cyan", "taskplan_light"), accent!("green", "taskplan_light"),
+    accent!("indigo", "taskplan_light"), accent!("magenta", "taskplan_light"),
+    accent!("red", "taskplan_light"), accent!("violet", "taskplan_light"),
 ];
 
 /// The kit as this host assembles it for `source`: base, the card's declared
@@ -2259,7 +2263,13 @@ mod resolve_tests {
 /// never implemented. Neither implies the other and the gap needed both.
 #[cfg(test)]
 mod capability_bridge {
-    const BACKEND: &str = include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash.rs"));
+    // `splash.rs` installs its own helpers plus those of the modules it pulls in.
+    const BACKEND: &[&str] = &[
+        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash.rs")),
+        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_l0.rs")),
+        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_dataset.rs")),
+        include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/makepad/widgets/src/splash_news.rs")),
+    ];
     const LOWERING: &str =
         include_str!(concat!(env!("OCTOSENSE_WORKSPACE"), "/octoscript/crates/octoscript-ui-l0/src/lib.rs"));
 
@@ -2279,7 +2289,8 @@ mod capability_bridge {
 
     #[test]
     fn every_call_the_lowering_emits_has_a_helper() {
-        let registered = between(BACKEND, "id_lut!(", ')');
+        let registered: std::collections::BTreeSet<String> =
+            BACKEND.iter().flat_map(|src| between(src, "id_lut!(", ')')).collect();
         assert!(
             registered.len() > 20,
             "the registration list did not parse: {registered:?}"
