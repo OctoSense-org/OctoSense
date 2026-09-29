@@ -29,6 +29,8 @@ struct World {
     bus: Vec<(String, String, String, String)>,
     bus_cancels: Vec<String>,
     asked: Vec<(String, ToolSpec, Caller, RequestContext)>,
+    /// The clock budgets count days by.
+    now: u64,
 }
 
 impl World {
@@ -48,6 +50,7 @@ impl World {
             bus: Vec::new(),
             bus_cancels: Vec::new(),
             asked: Vec::new(),
+            now: 1_000_000,
         }
     }
     /// The router's decisions, as the shell hands them back to the relay.
@@ -95,6 +98,9 @@ impl Env for World {
         self.bus_cancels.push(call_id.into());
     }
     fn log(&mut self, _line: String) {}
+    fn now(&self) -> u64 {
+        self.now
+    }
 }
 
 type Sent = Arc<Mutex<Vec<Value>>>;
@@ -191,6 +197,7 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
 
     // The system agent calls only what Setup granted it.
     let mut system = call("c4", TERMINAL_RUN, "system");
+    system.args = json!({"command": "ls -la"});
     system.caller_kind = CallerKind::System;
     system.origin = CallOrigin::System;
     let (r, sent) = reply("c4");
@@ -201,7 +208,7 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
     system.call_id = "c5".into();
     relay.handle(Event::Call { call: system, reply: r }, &mut w);
     // Typed into the Terminal the person sees, on the AI bus, by its short name.
-    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c5"), "terminal".into(), "run".into(), json!({"to": ["ana@example.org"], "text": "hi"}).to_string())]);
+    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c5"), "terminal".into(), "run".into(), json!({"command": "ls -la"}).to_string())]);
     relay.handle(Event::BusResult { call_id: "c5".into(), outcome: ToolOutcome::Ok(json!({"text": "typed"})) }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["ok"], true);
 }
@@ -486,6 +493,8 @@ fn no_toolbox_call_runs_before_consent_or_without_a_grant() {
         let mut c = call(id, name, calling);
         c.app = super::TOOLBOX.into();
         c.risk = "read".into();
+        // Arguments the tool declares (the relay checks them, G8).
+        c.args = if name == "toolbox.deep_crawl" { json!({"url": "https://example.org"}) } else { json!({"query": "news"}) };
         c
     };
     w.consent = false;
@@ -637,4 +646,98 @@ fn developer_mode_answers_octos_own_approvals_through_the_router() {
     }
     assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
     assert_eq!(w.router.audit.all()[0].by, "developer_mode");
+}
+
+
+// ---------------------------------------------------------------- G8
+
+fn schema_decl() -> Value {
+    json!({"name": "notes.find", "description": "d", "risk": "read", "shareable": false,
+        "input_schema": {"type": "object", "properties": {"q": {"type": "string", "maxLength": 8}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["q"], "additionalProperties": false},
+        "output_schema": {"type": "object", "properties": {"hits": {"type": "array", "items": {"type": "string"}}}, "required": ["hits"]}})
+}
+
+fn find(id: &str, turn: &str, args: Value) -> HostToolCall {
+    let mut c = call(id, "notes.find", "notes");
+    c.args = args;
+    c.turn_id = turn.to_string();
+    c
+}
+
+/// ADR 0004 §3 (G8): each call's arguments are checked against the tool's
+/// declared schema before anything runs.
+#[test]
+fn arguments_outside_the_declared_schema_are_refused_before_anything_runs() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    let mut w = World::new(FixedDevMode::off());
+    for (id, args, why) in [
+        ("c1", json!({}), "q is required"),
+        ("c2", json!({"q": 7}), "expected string"),
+        ("c3", json!({"q": "far too long"}), "longer than 8"),
+        ("c4", json!({"q": "x", "limit": 99}), "above the maximum"),
+        ("c5", json!({"q": "x", "sudo": true}), "sudo is not a declared field"),
+    ] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, "t1", args), reply: r }, &mut w);
+        let sent = sent.lock().unwrap().clone();
+        assert_eq!(sent[0]["error"]["kind"], "invalid_args", "{id}");
+        assert!(sent[0]["error"]["message"].as_str().unwrap().contains(why), "{id}: {sent:?}");
+    }
+    let (r, sent) = reply("c6");
+    relay.handle(Event::Call { call: find("c6", "t1", json!({"q": "x" .repeat(70_000)})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args", "over the size cap");
+    assert!(exec.0.lock().unwrap().is_empty(), "nothing reached the app");
+    let (r, _) = reply("c7");
+    relay.handle(Event::Call { call: find("c7", "t1", json!({"q": "ok", "limit": 3})), reply: r }, &mut w);
+    assert_eq!(exec.0.lock().unwrap().len(), 1);
+}
+
+/// Results are capped and checked against the declared result schema.
+#[test]
+fn results_are_capped_and_checked_against_the_declared_result() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    let mut w = World::new(FixedDevMode::off());
+    let mut sents = Vec::new();
+    for id in ["r1", "r2", "r3"] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, "t1", json!({"q": "x"})), reply: r }, &mut w);
+        sents.push(sent);
+    }
+    let replies: Vec<ToolReply> = exec.0.lock().unwrap().iter().map(|(_, r)| r.clone()).collect();
+    replies[0].finish(ToolOutcome::Ok(json!({"hits": ["a", "b"]})));
+    replies[1].finish(ToolOutcome::Ok(json!({"hits": [1]})));
+    replies[2].finish(ToolOutcome::Ok(json!({"hits": ["x".repeat(super::relay::MAX_RESULT_BYTES)]})));
+    assert_eq!(sents[0].lock().unwrap()[0]["data"], json!({"hits": ["a", "b"]}));
+    assert_eq!(sents[1].lock().unwrap()[0]["error"]["kind"], "invalid_result");
+    assert_eq!(sents[2].lock().unwrap()[0]["error"]["kind"], "result_too_large");
+    // An error passes through as the app said it.
+    let (r, sent) = reply("r4");
+    relay.handle(Event::Call { call: find("r4", "t1", json!({"q": "x"})), reply: r }, &mut w);
+    exec.0.lock().unwrap()[3].1.finish(ToolOutcome::error("not_found", "none"));
+    assert_eq!(sent.lock().unwrap()[0]["error"], json!({"kind": "not_found", "message": "none"}));
+}
+
+/// Per-app budgets: calls per turn and per day, from the manifest (or the
+/// defaults); a new turn, and a new day, start again.
+#[test]
+fn an_agents_calls_are_budgeted_per_turn_and_per_day() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    relay.catalog.set_budget("notes", Some(2), Some(3));
+    let mut w = World::new(FixedDevMode::off());
+    let mut kinds = Vec::new();
+    for (id, turn) in [("b1", "t1"), ("b2", "t1"), ("b3", "t1"), ("b4", "t2"), ("b5", "t2")] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, turn, json!({"q": "x"})), reply: r }, &mut w);
+        kinds.push(sent.lock().unwrap().first().map(|s| s["error"]["kind"].as_str().unwrap_or("").to_string()).unwrap_or_default());
+    }
+    assert_eq!(kinds, ["", "", "budget_exceeded", "", "budget_exceeded"], "2 per turn, 3 per day");
+    assert_eq!(exec.0.lock().unwrap().len(), 3);
+    w.now += 86_400;
+    let (r, sent) = reply("b6");
+    relay.handle(Event::Call { call: find("b6", "t3", json!({"q": "x"})), reply: r }, &mut w);
+    assert!(sent.lock().unwrap().is_empty(), "a new day");
+    assert_eq!(exec.0.lock().unwrap().len(), 4);
+    // The defaults, and a native app's own budget from its manifest.
+    assert_eq!(Catalog::default().budget("anyone"), super::relay::Budget::default());
+    assert_eq!(super::relay::Budget::default().per_turn, super::relay::DEFAULT_CALLS_PER_TURN);
 }

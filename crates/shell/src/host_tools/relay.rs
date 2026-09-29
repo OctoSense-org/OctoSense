@@ -3,6 +3,11 @@
 //!
 //! One [`Relay::handle`] per [`Event`], on the UI thread. For a call:
 //!
+//! 0. **Check** (ADR 0004 §3, G8): the arguments against the tool's
+//!    declared `input_schema` (and a size cap), and the calling agent's
+//!    budget (calls per turn and per day, from its manifest or the
+//!    defaults); the result, on its way back, against its `output_schema`
+//!    and [`MAX_RESULT_BYTES`] ([`schema`](super::schema)).
 //! 1. **Authorize** by (owning app, tool) and caller: the owning app's own
 //!    agent calls its own declared tools; another app's agent only the tools
 //!    granted to it ([`Catalog::may_call`]); the system agent only its
@@ -98,6 +103,41 @@ pub trait Env {
     fn bus_call(&mut self, call_id: &str, app: &str, tool: &str, args: String);
     fn bus_cancel(&mut self, call_id: &str);
     fn log(&mut self, line: String);
+    /// Unix seconds (the day a budget counts in).
+    fn now(&self) -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    }
+}
+
+/// The largest arguments a call may carry.
+pub const MAX_ARGS_BYTES: usize = 64 * 1024;
+/// The largest result the relay hands back (octos's own default cap).
+pub const MAX_RESULT_BYTES: usize = 256 * 1024;
+/// An agent's tool calls per turn and per day, unless its manifest says
+/// otherwise (`native-apps.json` `agent.budget`).
+pub const DEFAULT_CALLS_PER_TURN: u32 = 32;
+pub const DEFAULT_CALLS_PER_DAY: u32 = 1000;
+
+/// One calling agent's budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Budget {
+    pub per_turn: u32,
+    pub per_day: u32,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Budget { per_turn: DEFAULT_CALLS_PER_TURN, per_day: DEFAULT_CALLS_PER_DAY }
+    }
+}
+
+/// What one calling agent spent.
+#[derive(Default)]
+struct Usage {
+    day: u64,
+    today: u32,
+    /// Calls per turn, the newest turns only.
+    turns: std::collections::VecDeque<(String, u32)>,
 }
 
 /// The octos kernel tools an app agent may be granted under developer
@@ -150,6 +190,8 @@ pub struct Catalog {
     grants: BTreeMap<String, BTreeSet<(String, String)>>,
     /// Exactly the octos kernel tools each app's agent keeps.
     generic: BTreeMap<String, Vec<String>>,
+    /// Each calling agent's budget (the defaults unless set).
+    budgets: BTreeMap<String, Budget>,
 }
 
 impl Catalog {
@@ -174,6 +216,17 @@ impl Catalog {
             self.grant(app.id, owner, tool);
         }
         self.set_generic(app.id, app.generic_tools.iter().map(|t| t.to_string()).collect());
+        self.set_budget(app.id, app.calls_per_turn, app.calls_per_day);
+    }
+
+    /// `app`'s agent's budget; `None` keeps the default.
+    pub fn set_budget(&mut self, app: &str, per_turn: Option<u32>, per_day: Option<u32>) {
+        let d = Budget::default();
+        self.budgets.insert(app.to_string(), Budget { per_turn: per_turn.unwrap_or(d.per_turn), per_day: per_day.unwrap_or(d.per_day) });
+    }
+
+    pub fn budget(&self, app: &str) -> Budget {
+        self.budgets.get(app).copied().unwrap_or_default()
     }
 
     /// An app's `tools.json` (replaces what it declared before).
@@ -302,12 +355,48 @@ pub struct Relay {
     executors: HashMap<String, Arc<dyn ToolExecutor>>,
     calls: HashMap<String, Pending>,
     approvals: HashMap<String, ApprovalAnswer>,
+    /// Each calling agent's spending against its budget.
+    usage: HashMap<String, Usage>,
+    /// The caller's own reply for each checked one (a cancel closes both).
+    outers: HashMap<String, ToolReply>,
 }
 
 impl Default for Relay {
     fn default() -> Self {
-        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new() }
+        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new(), usage: HashMap::new(), outers: HashMap::new() }
     }
+}
+
+/// How many turns' counts are kept per agent.
+const TURNS_KEPT: usize = 64;
+
+/// `reply`, with the result checked on its way back (G8): at most
+/// `max_bytes`, and matching `schema` (the tool's `output_schema`) when it
+/// declares one. Acknowledgements and errors pass through.
+fn checked_reply(reply: ToolReply, tool: &str, schema: Option<Value>, max_bytes: usize) -> ToolReply {
+    let outer = reply.clone();
+    let tool = tool.to_string();
+    ToolReply::new(reply.call_id().to_string(), move |fields: Value| {
+        if fields.get("status").is_some() {
+            outer.acknowledge();
+            return;
+        }
+        if fields["ok"] != true {
+            let kind = fields["error"]["kind"].as_str().unwrap_or("error");
+            outer.finish(ToolOutcome::error(kind, fields["error"]["message"].as_str().unwrap_or("").to_string()));
+            return;
+        }
+        let data = fields.get("data").cloned().unwrap_or(Value::Null);
+        let size = data.to_string().len();
+        let outcome = if size > max_bytes {
+            ToolOutcome::error("result_too_large", format!("{tool} answered {size} bytes, over the {max_bytes}-byte cap"))
+        } else if let Some(Err(why)) = schema.as_ref().map(|s| super::schema::check(s, &data)) {
+            ToolOutcome::error("invalid_result", format!("{tool} answered outside its declared result: {why}"))
+        } else {
+            ToolOutcome::Ok(data)
+        };
+        outer.finish(outcome);
+    })
 }
 
 /// What started a turn, as its host stamped it (G2): never "the person"
@@ -377,6 +466,37 @@ impl Relay {
         }
         // Executors answer on their own; forget what they finished.
         self.calls.retain(|_, p| p.reply.is_open());
+        let calls = &self.calls;
+        self.outers.retain(|id, outer| outer.is_open() && calls.contains_key(id));
+    }
+
+    /// Spend one call of `agent`'s budget in `turn`; why not, when spent.
+    fn spend(&mut self, agent: &str, turn: &str, now: u64) -> Result<(), String> {
+        let budget = self.catalog.budget(agent);
+        let usage = self.usage.entry(agent.to_string()).or_default();
+        let day = now / 86_400;
+        if usage.day != day {
+            usage.day = day;
+            usage.today = 0;
+        }
+        if usage.today >= budget.per_day {
+            return Err(format!("its agent used its {} tool calls for today", budget.per_day));
+        }
+        let this_turn = usage.turns.iter().find(|(t, _)| t == turn).map_or(0, |(_, n)| *n);
+        if !turn.is_empty() && this_turn >= budget.per_turn {
+            return Err(format!("its agent used its {} tool calls for this turn", budget.per_turn));
+        }
+        usage.today += 1;
+        match usage.turns.iter_mut().find(|(t, _)| t == turn) {
+            Some((_, n)) => *n += 1,
+            None => {
+                usage.turns.push_back((turn.to_string(), 1));
+                while usage.turns.len() > TURNS_KEPT {
+                    usage.turns.pop_front();
+                }
+            }
+        }
+        Ok(())
     }
 
     fn call(&mut self, call: HostToolCall, reply: ToolReply, env: &mut dyn Env) {
@@ -410,6 +530,28 @@ impl Relay {
                 return refuse(&reply, "signed_out", "the account is signed out".into());
             }
         }
+        // 0. The arguments against the declared schema (G8).
+        let entry = self.catalog.entry(&owner, &tool).cloned();
+        let size = call.args.to_string().len();
+        if size > MAX_ARGS_BYTES {
+            return refuse(&reply, "invalid_args", format!("{tool}'s arguments are {size} bytes, over the {MAX_ARGS_BYTES}-byte cap"));
+        }
+        if let Some(schema) = entry.as_ref().and_then(|e| e.get("input_schema")) {
+            if let Err(why) = super::schema::check(schema, &call.args) {
+                env.log(format!("host tools: {tool} refused for {}: arguments {why}", caller.as_audit()));
+                return refuse(&reply, "invalid_args", format!("{tool}: {why}"));
+            }
+        }
+        // ... and the calling agent's budget.
+        let spender = if call.caller_kind == CallerKind::System { SYSTEM.to_string() } else { calling.clone() };
+        if let Err(why) = self.spend(&spender, &call.turn_id, env.now()) {
+            env.log(format!("host tools: {tool} refused for {}: {why}", caller.as_audit()));
+            return refuse(&reply, "budget_exceeded", why);
+        }
+        // The result is checked on its way back.
+        let outer = reply.clone();
+        let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
+        self.outers.insert(call.call_id.clone(), outer);
         // 2. Route to the owning app's executor.
         if env.has_link(&owner) {
             let kernel_call = KernelToolCall {
@@ -505,6 +647,9 @@ impl Relay {
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {
+        if let Some(outer) = self.outers.remove(call_id) {
+            outer.cancel();
+        }
         let Some(p) = self.calls.remove(call_id) else { return };
         p.reply.cancel();
         match p.at {

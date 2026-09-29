@@ -32,6 +32,7 @@
 //! router here ([`SheetBridge`]).
 
 pub mod relay;
+pub mod schema;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
 #[cfg(any(feature = "app-hub", native_mobile))]
