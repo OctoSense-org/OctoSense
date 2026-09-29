@@ -71,6 +71,32 @@ class Fixture(unittest.TestCase):
 
 
 class Validation(Fixture):
+    def test_rinx_is_taken_only_as_a_tagged_release(self):
+        source = self.app("rinx")["source"]
+        del source["tag"]
+        self.assertRefused(r"rinx.*tagged release")
+
+    def test_refuses_a_tag_that_is_not_a_release(self):
+        self.app("rinx")["source"]["tag"] = "main"
+        self.assertRefused(r"release tag vX\.Y\.Z")
+        self.app("rinx")["source"]["tag"] = "v1.1.0-rc.2"
+        native_apps.validate(self.data)
+
+    def test_a_tag_pin_names_the_tag_and_the_lock_its_commit(self):
+        rinx = self.app("rinx")
+        self.assertIn('tag = "%s"' % rinx["source"]["tag"], native_apps.pin_line(rinx))
+        self.assertNotIn("rev =", native_apps.pin_line(rinx))
+        shutil.copy(ROOT / "Cargo.lock", self.root / "Cargo.lock")
+        self.assertEqual(native_apps.check_tagged_locks(self.root, native_apps.load(self.root)), [])
+
+    def test_a_moved_tag_fails_the_check(self):
+        shutil.copy(ROOT / "Cargo.lock", self.root / "Cargo.lock")
+        self.app("rinx")["source"]["rev"] = "f" * 40
+        self.save()
+        problems = native_apps.check_tagged_locks(self.root, native_apps.load(self.root))
+        self.assertTrue(problems and "moved tag" in problems[0], problems)
+        self.assertEqual(self.run_main("--check"), 1)
+
     def test_refuses_process_on_mobile_and_wasm(self):
         for target in ("android", "ios", "ohos", "wasm"):
             self.app("terminal")["hosting"][target] = "process"
@@ -274,13 +300,13 @@ class Generation(Fixture):
             native_apps.generate(self.root)
 
     def test_a_changed_pin_is_updated_through_cargo(self):
-        self.app("rinx")["source"]["rev"] = "1" * 40
+        self.app("rinx")["source"].update(tag="v1.0.1", rev="1" * 40)
         self.save()
         with patch.object(native_apps.subprocess, "run") as run:
             self.assertEqual(self.run_main(), 0)
         commands = [call.args[0] for call in run.call_args_list]
         self.assertEqual(commands, [["cargo", "update", "-p", "rinx"], ["cargo", "metadata", "--format-version", "1"]])
-        self.assertIn('rinx = { git = "https://github.com/hagency-org/Rinx.git", rev = "' + "1" * 40 + '"',
+        self.assertIn('rinx = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.0.1"',
                       (self.root / "Cargo.toml").read_text())
 
     def test_nothing_changed_runs_no_cargo(self):

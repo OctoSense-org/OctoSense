@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "article-core",
  "libc",
@@ -8887,8 +8887,8 @@ dependencies = [
 
 [[package]]
 name = "rinx"
-version = "1.0.0-beta.1"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+version = "1.0.0"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8962,7 +8962,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-catalog"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
@@ -8974,7 +8974,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "serde",
  "serde_json",
@@ -8983,7 +8983,7 @@ dependencies = [
 [[package]]
 name = "rinx-system-apps"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?rev=68afcf796d303aaf646eeb832d65c450a56c92b5#68afcf796d303aaf646eeb832d65c450a56c92b5"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
 dependencies = [
  "octosense-app-policy",
  "serde",

@@ -28,7 +28,10 @@ agent is granted, which `Policy::shipped()` hands out.
 It refuses `process` hosting on mobile or wasm targets, plain `process` on
 Linux (non-Vulkan Linux runs every app in-process: `process-if-vulkan`),
 `process` without a `bin`, and two revisions of one git repository in the
-root pins. After a write, Cargo.lock is brought in step by cargo itself
+root pins. Apps released by tag (Rinx, hagency-org/Rinx#37) must be pinned by
+a release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`) together with the commit it names:
+the root pin says `tag = …`, and --check also reads Cargo.lock and refuses a
+lock whose commit for that tag is not the manifest's `rev` (a moved tag). After a write, Cargo.lock is brought in step by cargo itself
 (`cargo update -p` for a pin that changed, then `cargo metadata`); --no-lock
 skips that.
 
@@ -45,6 +48,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = "native-apps.json"
 RUST_FILE = "crates/shell/src/native_apps.rs"
+# Apps OctoSense takes only as tagged releases (hagency-org/Rinx#37): never a
+# raw commit. main may take a release candidate; OctoSense's own releases take
+# only a final release (checked by their release workflows, not here).
+TAGGED_RELEASES = {"rinx"}
+RELEASE_TAG = r"v\d+\.\d+\.\d+(-rc\.\d+)?"
 AGENTS_FILE = "crates/ai-host/src/native_agents.rs"
 PACKAGES = {"desktop": "desktop/Cargo.toml", "phone": "phone/Cargo.toml"}
 
@@ -122,10 +130,14 @@ def validate(data):
         elif "path" in source:
             if set(source) != {"path"}:
                 problems.append(f"{where}: a path source has only 'path'")
-        elif set(source) != {"git", "rev", "local"}:
-            problems.append(f"{where}: source is {{git, rev, local}} or {{path}}")
+        elif set(source) not in ({"git", "rev", "local"}, {"git", "tag", "rev", "local"}):
+            problems.append(f"{where}: source is {{git, rev, local}}, {{git, tag, rev, local}} or {{path}}")
         elif not re.fullmatch(r"[0-9a-f]{40}", str(source["rev"])):
-            problems.append(f"{where}: source.rev must be a full commit id")
+            problems.append(f"{where}: source.rev must be a full commit id (for a tag: the commit it names)")
+        elif "tag" in source and not re.fullmatch(RELEASE_TAG, str(source["tag"])):
+            problems.append(f"{where}: source.tag must be a release tag vX.Y.Z or vX.Y.Z-rc.N")
+        if isinstance(source, dict) and ident in TAGGED_RELEASES and "tag" not in source:
+            problems.append(f"{where}: is taken only as a tagged release (hagency-org/Rinx#37): pin source.tag, not a raw rev")
         if not modules_of(app) or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)+", m) for m in modules_of(app)):
             problems.append(f"{where}: module must be a Rust path (or a list of them)")
         if app["bin"] is not None and not (isinstance(app["bin"], str) and app["bin"]):
@@ -402,7 +414,8 @@ def pin_line(app):
     if "path" in source:
         fields = [f"path = {s(source['path'])}"]
     else:
-        fields = [f"git = {s(source['git'])}", f"rev = {s(source['rev'])}"]
+        pin = f"tag = {s(source['tag'])}" if "tag" in source else f"rev = {s(source['rev'])}"
+        fields = [f"git = {s(source['git'])}", pin]
     if not app["default_features"]:
         fields.append("default-features = false")
     if app["crate_features"]:
@@ -763,7 +776,7 @@ def check_one_revision(apps, text):
     problems = []
     for app in apps:
         source = app["source"]
-        if "git" not in source:
+        if "git" not in source or "tag" in source:
             continue
         for crate, git, rev in workspace_pins(text):
             if same_git(git, source["git"]) and rev != source["rev"]:
@@ -801,6 +814,29 @@ def generate(root):
     out[RUST_FILE] = (read(RUST_FILE), render_rust(apps))
     out[AGENTS_FILE] = (read(AGENTS_FILE), render_agents(apps))
     return out
+
+
+def check_tagged_locks(root, apps):
+    """A tag-pinned app's Cargo.lock entry names the manifest's commit.
+
+    Cargo records `git+<url>?tag=<tag>#<commit>`; a tag moved after review
+    shows up here as a different commit."""
+    lock = Path(root) / "Cargo.lock"
+    if not lock.is_file():
+        return []
+    text, problems = lock.read_text(), []
+    for app in apps:
+        source = app["source"]
+        if "tag" not in source:
+            continue
+        pattern = re.compile(r'name = "%s"\nversion = "[^"]*"\nsource = "git\+([^"?#]+)\?tag=([^"#]+)#([0-9a-f]{40})"' % re.escape(app["crate"]))
+        found = [m for m in pattern.finditer(text) if same_git(m.group(1), source["git"])]
+        if not found:
+            problems.append(f"Cargo.lock has no {app['crate']} from {source['git']} at tag {source['tag']}; run python3 tools/native_apps.py")
+        for m in found:
+            if m.group(2) != source["tag"] or m.group(3) != source["rev"]:
+                problems.append(f"Cargo.lock: {app['crate']} {m.group(2)} is {m.group(3)[:12]}, native-apps.json says {source['tag']} is {source['rev'][:12]} (a moved tag?)")
+    return problems
 
 
 def changed_pins(old, new):
@@ -842,9 +878,12 @@ def main(argv=None, root=ROOT):
     if args.check:
         for rel in drifted:
             print(f"::error::{rel} is not what native-apps.json generates; run python3 tools/native_apps.py")
-        if not drifted:
+        lock_problems = check_tagged_locks(root, load(root))
+        for problem in lock_problems:
+            print(f"::error::{problem}")
+        if not drifted and not lock_problems:
             note("every generated place matches native-apps.json")
-        return 1 if drifted else 0
+        return 1 if drifted or lock_problems else 0
     for rel in drifted:
         (Path(root) / rel).write_text(results[rel][1])
         note(f"wrote {rel}")
