@@ -780,8 +780,9 @@ impl PhoneSurface {
         }
     }
     /// What the home page shows while a finger pulls it down for search:
-    /// the page dims and a search field slides in from the top, so
-    /// the pull has something to follow before it commits (40 % of the way).
+    /// the page dims and the search field rises from the bottom, where
+    /// search opens (as on iOS), so the pull has something to follow
+    /// before it commits (40 % of the way).
     /// Idle, the footer carries the first-use hint for a gesture the
     /// person has not found yet (mobile_hints.rs).
     fn draw_home_pull(&mut self, cx: &mut Cx2d, state: &WmState, screen: Rect, dark: bool, ink: Vec4f, opacity: f32) {
@@ -794,7 +795,7 @@ impl PhoneSurface {
             // Eased: most of the motion happens early, like the finger.
             let eased=1.0-(1.0-p)*(1.0-p);
             self.rounded(cx,screen,0.0,alpha(rgb(0,0,0),0.28*eased*opacity));
-            let y=screen.pos.y+8.0+(eased as f64)*52.0;
+            let y=screen.pos.y+screen.size.y-56.0-(eased as f64)*52.0;
             let pill=rect(x,y,pill_w,48.0);
             let face=self.theme_face(if dark {rgb(44,46,60)} else {rgb(255,255,255)});
             self.rounded(cx,pill,24.0,alpha(face,(0.35+0.65*eased)*opacity));

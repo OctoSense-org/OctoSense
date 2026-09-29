@@ -2,25 +2,75 @@
 //! clipboard and native IME stay with TextInput. Only its soft keys are hosted.
 use super::*;
 
-/// The catalog positions of the apps matching `query`, best first.
+/// Lowercase with the common Latin accents folded, so "cafe" finds "Café".
+fn fold(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' => 'a',
+            'ç' | 'ć' | 'č' => 'c',
+            'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ę' => 'e',
+            'ì' | 'í' | 'î' | 'ï' | 'ī' => 'i',
+            'ñ' | 'ń' => 'n',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' => 'o',
+            'ù' | 'ú' | 'û' | 'ü' | 'ū' => 'u',
+            'ý' | 'ÿ' => 'y',
+            'ś' | 'š' => 's',
+            'ź' | 'ż' | 'ž' => 'z',
+            other => other,
+        })
+        .collect()
+}
+
+/// Where a name's words start, as iOS's app search sees them: after a space
+/// or punctuation, and at a capital inside a word ("YouTube" starts "tube").
+fn word_starts(label: &str) -> Vec<usize> {
+    let chars: Vec<char> = label.chars().collect();
+    let mut starts = Vec::new();
+    for (i, c) in chars.iter().enumerate() {
+        if !c.is_alphanumeric() { continue; }
+        let start = match i.checked_sub(1).map(|j| chars[j]) {
+            None => true,
+            Some(prev) if !prev.is_alphanumeric() => true,
+            Some(prev) => c.is_uppercase() && prev.is_lowercase(),
+        };
+        if start { starts.push(i); }
+    }
+    starts
+}
+
+/// How well `label` answers `query`: `Some(0)` when the name starts with
+/// it, `Some(1)` when a later word does, `None` when it does not match.
+/// Like iOS, matching is by word prefix, never from the middle of a word,
+/// and every word of a multi-word query must start some word of the name.
+fn rank(label: &str, query: &str) -> Option<u8> {
+    let chars: Vec<char> = label.chars().collect();
+    let folded: Vec<String> = word_starts(label)
+        .into_iter()
+        .map(|i| fold(&chars[i..].iter().collect::<String>()))
+        .collect();
+    let whole = fold(label);
+    let query = fold(query);
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if words.is_empty() { return None; }
+    if whole.starts_with(query.trim()) { return Some(0); }
+    words
+        .iter()
+        .all(|word| folded.iter().any(|tail| tail.starts_with(word)))
+        .then_some(1)
+}
+
+/// The catalog positions of the apps matching `query`, best first: names
+/// that start with the query, then names with a word that does, each
+/// alphabetically. An empty query matches nothing, as on iOS.
 fn matching_indices(apps: &[(String, String)], query: &str) -> Vec<usize> {
-    let words: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
-    let mut found: Vec<(usize, String)> = apps
+    let mut found: Vec<(u8, String, usize)> = apps
         .iter()
         .enumerate()
-        .filter(|(_, (id, label))| {
-            let name = format!("{id} {label}").to_lowercase();
-            words.iter().all(|word| name.contains(word))
-        })
-        .map(|(index, (_, label))| (index, label.to_lowercase()))
+        .filter_map(|(index, (_, label))| rank(label, query).map(|r| (r, fold(label), index)))
         .collect();
-    // What the person typed first is most likely the start of a name: labels
-    // beginning with the first word come first, then the rest alphabetically.
-    let first = words.first().cloned().unwrap_or_default();
-    found.sort_by_cached_key(|(_, lower)| {
-        (!lower.starts_with(&first), !lower.split_whitespace().any(|w| w.starts_with(&first)), lower.clone())
-    });
-    found.into_iter().map(|(index, _)| index).collect()
+    found.sort();
+    found.into_iter().map(|(_, _, index)| index).collect()
 }
 fn matching_apps<'a>(apps: &'a [(String, String)], query: &str) -> Vec<&'a (String, String)> {
     matching_indices(apps, query).into_iter().map(|index| &apps[index]).collect()
@@ -177,14 +227,16 @@ impl PhoneSurface {
     ) -> Rect {
         let ios = state.style.target == DesktopStyle::Ios;
         let editing = state.phone.searching();
-        let top = if screen.size.x > screen.size.y {
-            24.0
-        } else {
-            42.0
-        };
+        // At the bottom, just above the keyboard, as in iOS's search: the
+        // field sits where the thumb already is. A native IME has reflowed
+        // the viewport above itself; only the shell's own soft keyboard (a
+        // desktop preview) is drawn over it and taken off here.
+        let bottom = screen.pos.y + screen.size.y
+            - state.phone.keyboard.max(state.phone.keyboard_target)
+            - if state.phone.search_focused { 10.0 } else { 34.0 };
         let pill = rect(
             screen.pos.x + 20.0,
-            screen.pos.y + top + 10.0,
+            bottom - 40.0,
             screen.size.x - 40.0 - if editing { 64.0 } else { 0.0 },
             40.0,
         );
@@ -204,7 +256,7 @@ impl PhoneSurface {
                     color_empty: #(muted)
                 }
             });
-            input.set_empty_text(cx, if ios { "App Library" } else { "Search apps" }.into());
+            input.set_empty_text(cx, if ios { "Search" } else { "Search apps" }.into());
             self.search_style = Some((ios, state.style.dark));
             crate::mobile_perf::work_end("search.style", timing);
         }
@@ -275,25 +327,24 @@ impl PhoneSurface {
         let mut results = std::mem::take(&mut self.search_found);
         let count = results.update(apps, &state.phone.search_query).len();
         crate::mobile_perf::work_end("search.matching", matching);
-        let top = pill.pos.y + pill.size.y + 14.0;
-        // Only the shell's own soft keyboard (a desktop preview) is drawn
-        // over the viewport. A native IME has already reflowed the viewport
-        // above itself (KeyboardView), so taking its height off again left
-        // the results a single row tall under Android's keyboard.
-        let bottom = screen.pos.y + screen.size.y
-            - state.phone.keyboard.max(state.phone.keyboard_target)
-            - 28.0;
+        // The results fill the space between the status bar and the field.
+        let top = screen.pos.y + if screen.size.x > screen.size.y { 24.0 } else { 42.0 };
+        let bottom = pill.pos.y - 10.0;
         let height = (bottom - top).max(0.0);
         if count == 0 {
             self.search_found = results;
-            self.label(
-                cx,
-                rect(screen.pos.x + 20.0, top + 24.0, screen.size.x - 40.0, 30.0),
-                "No apps found",
-                15.0,
-                false,
-                alpha(ink, 0.6),
-            );
+            self.search_scroll_max = 0.0;
+            // Nothing typed yet: nothing listed, as on iOS.
+            if !state.phone.search_query.trim().is_empty() {
+                self.label(
+                    cx,
+                    rect(screen.pos.x + 20.0, bottom - 54.0, screen.size.x - 40.0, 30.0),
+                    "No Results",
+                    15.0,
+                    false,
+                    alpha(ink, 0.6),
+                );
+            }
             return;
         }
         self.search_scroll_max = (count as f64 * ROW - height).max(0.0);
@@ -357,31 +408,46 @@ impl PhoneSurface {
 mod tests {
     use super::*;
     #[test]
-    fn search_matches_every_word_in_names_and_ids_and_sorts_labels() {
-        let apps = vec![
-            ("task".into(), "Task Manager".into()),
-            ("files".into(), "Files".into()),
-            ("photos".into(), "Photos".into()),
-        ];
-        assert_eq!(matching_apps(&apps, "TASK man")[0].0, "task");
-        assert_eq!(
-            matching_apps(&apps, "")
-                .iter()
-                .map(|a| a.0.as_str())
-                .collect::<Vec<_>>(),
-            ["files", "photos", "task"]
-        );
-        assert!(matching_apps(&apps, "task photos").is_empty());
+    fn search_matches_word_starts_like_ios() {
+        let apps: Vec<(String, String)> = [
+            ("task", "Task Manager"),
+            ("files", "Files"),
+            ("photos", "Photos"),
+            ("youtube", "YouTube"),
+            ("mail", "Mail"),
+            ("maps", "Maps"),
+            ("hub", "App Hub"),
+            ("cafe", "Café Menu"),
+        ]
+        .into_iter()
+        .map(|(id, label)| (id.to_string(), label.to_string()))
+        .collect();
+        let ids = |q: &str| matching_apps(&apps, q).iter().map(|a| a.0.as_str()).collect::<Vec<_>>();
+        assert!(ids("").is_empty(), "nothing typed lists nothing");
+        assert!(ids("   ").is_empty());
+        assert_eq!(ids("m"), ["mail", "maps", "cafe", "task"], "each keystroke: name starts first, then later words");
+        assert_eq!(ids("ma"), ["mail", "maps", "task"]);
+        assert_eq!(ids("me"), ["cafe"]);
+        assert_eq!(ids("map"), ["maps"]);
+        assert_eq!(ids("TASK man"), ["task"]);
+        assert_eq!(ids("man"), ["task"], "a later word of the name");
+        assert_eq!(ids("tube"), ["youtube"], "a capital inside a word starts a word");
+        assert!(ids("ube").is_empty(), "never from the middle of a word");
+        assert!(ids("hotos").is_empty());
+        assert_eq!(ids("hub"), ["hub"]);
+        assert_eq!(ids("cafe"), ["cafe"], "accents fold");
+        assert!(ids("task photos").is_empty());
+        assert!(ids("youtube").len() == 1 && ids("you").len() == 1);
     }
     #[test]
     fn results_are_kept_per_query_and_catalog() {
         let mut apps: Vec<(String, String)> = vec![("files".into(), "Files".into()), ("photos".into(), "Photos".into())];
         let mut results = SearchResults::default();
-        assert_eq!(results.update(&apps, "o"), [1]);
+        assert_eq!(results.update(&apps, "p"), [1]);
         results.found.push(9);
-        assert_eq!(results.update(&apps, "o"), [1, 9], "the same query and catalog are not matched again");
-        assert_eq!(results.update(&apps, ""), [0, 1]);
-        apps.push(("zoo".into(), "Zoo".into()));
-        assert_eq!(results.update(&apps, ""), [0, 1, 2], "a changed catalog is");
+        assert_eq!(results.update(&apps, "p"), [1, 9], "the same query and catalog are not matched again");
+        assert_eq!(results.update(&apps, "f"), [0]);
+        apps.push(("fun".into(), "Fun".into()));
+        assert_eq!(results.update(&apps, "f"), [0, 2], "a changed catalog is");
     }
 }
