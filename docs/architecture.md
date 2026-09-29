@@ -28,6 +28,12 @@ The decisions behind it are [ADR 0001](adr/0001-one-octosense-repository.md) (on
 
 ## The big picture
 
+![OctoSense AI services: processes and transports](images/ai-services-processes.png)
+
+![OctoSense AI services: one granted cross-app call](images/ai-services-cross-app-call.png)
+
+*Illustrations (generated). Solid lines are on main; dashed ones are planned or in progress (the peer link for process apps, and `peer/input` with octos#2567). Where a picture and the text below differ, the text is authoritative: for example, `peer_send_input` puts the message in the peer's inbox, and the peer takes it as its next turn.*
+
 ```mermaid
 flowchart LR
   person(["The person"])

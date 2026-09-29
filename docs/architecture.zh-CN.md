@@ -28,6 +28,12 @@ OctoSense 的各部分如何组合在一起：每个平台上运行哪些进程�
 
 ## 全局
 
+![OctoSense AI 服务：进程与传输](images/ai-services-processes.png)
+
+![OctoSense AI 服务：一次已授权的跨应用调用](images/ai-services-cross-app-call.png)
+
+*示意图（生成）。实线表示已在 main 上；虚线表示计划中或进行中（进程应用的 peer link，以及随 octos#2567 的 `peer/input`）。图与下文不一致时以文字为准：例如 `peer_send_input` 把消息放入 peer 的收件箱，peer 在下一轮处理它。*
+
 ```mermaid
 flowchart LR
   person(["用户"])
