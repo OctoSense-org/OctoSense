@@ -16,12 +16,18 @@
 //! when it closes with nothing running, so the kernel's idle stop still
 //! works.
 //!
-//! **Approvals.** Every `approval/requested` of the conversation goes to the
-//! shell's approval router ([`crate::approvals`]) as the system agent's
-//! call, batched per request (the turn; its prompt is the plan), with the
-//! id `syschat:<approval id>`; the router's decisions come back through
-//! [`crate::approvals::take_system_chat_decisions`] and only then does the
-//! chat answer the kernel. The pane never approves anything.
+//! **Approvals.** Every `approval/requested` of a turn this chat started
+//! goes to the shell's approval router ([`crate::approvals`]) as the system
+//! agent's call, batched per request (the turn; its prompt is the plan),
+//! with the id `syschat:<approval id>`; the router's decisions come back
+//! through [`crate::approvals::take_system_chat_decisions`] and only then
+//! does the chat answer the kernel. The pane never approves anything.
+//!
+//! The kernel also delivers approvals of OTHER clients' turns on the same
+//! session (Talk to Octos): those are external. They go to the router as
+//! [`crate::approvals::Caller::External`] on an external connection, which
+//! holds and answers nothing (no developer mode, no rule, no sheet); the
+//! pane shows them read-only and the chat never answers them.
 
 pub mod grants;
 pub mod model;
@@ -45,6 +51,9 @@ use std::time::Duration;
 
 /// The approval router's ids for this chat's approvals.
 pub const HELD_PREFIX: &str = "syschat:";
+/// The router's ids for another client's approvals on this session (never
+/// held, never answered by the shell).
+pub const EXTERNAL_PREFIX: &str = "syschat-external:";
 /// The owning app of the system agent's own octos tool approvals, as the
 /// sheet names it.
 pub const APP: &str = "assistant";
@@ -261,8 +270,10 @@ pub fn pump() {
         match effect {
             Effect::Approval(ask) => {
                 let route = route_approval(&ask);
-                if let crate::approvals::Route::Refused(why) = route {
-                    log!("system chat: approval {} refused: {why}", ask.approval_id);
+                match route {
+                    crate::approvals::Route::Refused(why) => log!("system chat: approval {} refused: {why}", ask.approval_id),
+                    crate::approvals::Route::LeftToClient(_) => log!("system chat: approval {} belongs to another client's turn; left to it", ask.approval_id),
+                    _ => {}
                 }
             }
             Effect::ApprovalGone(_) => {}
@@ -280,12 +291,36 @@ pub fn pump() {
 /// One of the conversation's approvals, to the router: the system agent's
 /// call, batched per request (its turn; the prompt is the plan).
 pub fn route_approval(ask: &model::ApprovalAsk) -> crate::approvals::Route {
-    use crate::approvals::{Batch, Caller, RequestContext, ToolSpec, Trigger};
+    let (app, tool, args, caller, context) = approval_request(ask);
+    crate::approvals::approval_requested(&app, tool, args, caller, context)
+}
+
+/// What [`route_approval`] hands the router for `ask`: the owning app, the
+/// tool, the exact arguments, the caller and the context.
+///
+/// - A turn this chat started: the system agent's call, triggered by the
+///   person, batched per turn, on the host connection.
+/// - Any other turn on the session (an external client's): an
+///   [`Caller::External`](crate::approvals::Caller::External) call on an
+///   external connection, trigger unknown, never batched; the router
+///   answers nothing for it.
+pub fn approval_request(ask: &model::ApprovalAsk) -> (String, crate::approvals::ToolSpec, serde_json::Value, crate::approvals::Caller, crate::approvals::RequestContext) {
+    use crate::approvals::{Batch, Caller, Connection, RequestContext, ToolSpec, Trigger};
     // Command execution (`terminal.run`, the host tool Setup's switch grants
     // the system agent) is a command: `auto_approvable: false`, no standing
     // rule answers it, developer mode may (ADR 0004 §12, §13).
     let tool = if ask.tool == grants::COMMAND_TOOL { ToolSpec::host(&ask.tool).command() } else { ToolSpec::host(&ask.tool) };
-    let app = if ask.tool == grants::COMMAND_TOOL { grants::COMMAND_APP } else { ask.app.as_deref().unwrap_or(APP) };
+    let app = if ask.tool == grants::COMMAND_TOOL { grants::COMMAND_APP } else { ask.app.as_deref().unwrap_or(APP) }.to_string();
+    if ask.external {
+        let context = RequestContext {
+            call_id: format!("{EXTERNAL_PREFIX}{}", ask.approval_id),
+            trigger: Trigger::Unknown,
+            connection: Connection::External,
+            outcome_unknown: ask.outcome_unknown,
+            ..RequestContext::default()
+        };
+        return (app, tool, ask.args.clone(), Caller::External { client: None }, context);
+    }
     let context = RequestContext {
         call_id: format!("{HELD_PREFIX}{}", ask.approval_id),
         trigger: Trigger::Person,
@@ -293,7 +328,7 @@ pub fn route_approval(ask: &model::ApprovalAsk) -> crate::approvals::Route {
         outcome_unknown: ask.outcome_unknown,
         ..RequestContext::default()
     };
-    crate::approvals::approval_requested(app, tool, ask.args.clone(), Caller::SystemAgent, context)
+    (app, tool, ask.args.clone(), Caller::SystemAgent, context)
 }
 
 /// The keyboard while the pane is open. True when it was the pane's.

@@ -226,6 +226,7 @@ impl ShellSystemChat {
                         ApprovalState::Approved => "approved",
                         ApprovalState::Denied => "denied",
                         ApprovalState::Cancelled => "withdrawn",
+                        ApprovalState::External => "asked by an outside client; that client answers it",
                     };
                     let what = if title.is_empty() { tool.clone() } else { format!("{tool}: {title}") };
                     push_wrapped(&mut self.d, cx, &mut lines, &format!("\u{2691} Approval \u{00b7} {what} \u{00b7} {state}"), true, false, true, 6.0);

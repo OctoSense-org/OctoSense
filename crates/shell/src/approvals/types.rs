@@ -102,16 +102,27 @@ pub enum Caller {
     AppAgent { app: String },
     /// The system agent.
     SystemAgent,
+    /// An external client's turn (Talk to Octos, another UI Protocol client
+    /// on a session the shell also has open): not the shell's to answer.
+    /// The router never approves it, by developer mode, a rule or a sheet
+    /// ([`super::Route::LeftToClient`]); the client that started the turn
+    /// answers it (ADR 0003, ADR 0004 §8, §13).
+    External { client: Option<String> },
 }
 
 impl Caller {
     /// The audit's short form.
+    pub fn is_external(&self) -> bool {
+        matches!(self, Caller::External { .. })
+    }
     pub fn as_audit(&self) -> String {
         match self {
             Caller::OwnAgent { client: None } => "own_agent".into(),
             Caller::OwnAgent { client: Some(c) } => format!("own_agent/{c}"),
             Caller::AppAgent { app } => format!("app/{app}"),
             Caller::SystemAgent => "system_agent".into(),
+            Caller::External { client: None } => "external".into(),
+            Caller::External { client: Some(c) } => format!("external/{c}"),
         }
     }
 }
