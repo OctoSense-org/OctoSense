@@ -258,7 +258,9 @@ pub fn found_item(item: &MetaItem, searched: Option<&str>, renders: bool) -> Fou
 }
 
 /// One note per engine call that did not answer: failed, timed out,
-/// suspended by octos's backoff, rate limited, or refused by robots.txt.
+/// suspended by octos's backoff, rate limited, refused by robots.txt, or
+/// challenged by a bot check (a CAPTCHA page; a miss like an error, and the
+/// note carries the page for the person to open).
 pub fn engine_notes(reports: &[EngineReport]) -> Vec<String> {
     reports
         .iter()
@@ -270,6 +272,9 @@ pub fn engine_notes(reports: &[EngineReport]) -> Vec<String> {
                 EngineStatus::Suspended => "suspended after earlier errors (octos backoff)",
                 EngineStatus::RateLimited => "skipped: its host's rate limit",
                 EngineStatus::Robots => "skipped: robots.txt",
+                // A miss for this engine, like an error: octos suspends it and the
+                // others answer (the challenge is never worked around).
+                EngineStatus::Challenge => "challenged (bot check); skipped",
             };
             let lang = r
                 .lang
@@ -281,7 +286,12 @@ pub fn engine_notes(reports: &[EngineReport]) -> Vec<String> {
                 .as_deref()
                 .map(|e| format!(": {e}"))
                 .unwrap_or_default();
-            Some(format!("engine {}{lang} {what}{error}", r.engine))
+            let page = r
+                .challenge_url
+                .as_deref()
+                .map(|u| format!(" ({u})"))
+                .unwrap_or_default();
+            Some(format!("engine {}{lang} {what}{error}{page}", r.engine))
         })
         .collect()
 }
@@ -305,6 +315,7 @@ fn engines_line(reports: &[EngineReport]) -> Option<String> {
                     EngineStatus::Suspended => "suspended".into(),
                     EngineStatus::RateLimited => "rate limited".into(),
                     EngineStatus::Robots => "robots".into(),
+                    EngineStatus::Challenge => "challenged".into(),
                 };
                 let cached = if r.cached { " cached" } else { "" };
                 format!("{}{lang} {outcome}{cached}", r.engine)
@@ -452,7 +463,12 @@ impl ResearchBackend for OctosResearch {
             let failed_now = response
                 .engines
                 .iter()
-                .filter(|r| matches!(r.status, EngineStatus::Error | EngineStatus::Timeout))
+                .filter(|r| {
+                    matches!(
+                        r.status,
+                        EngineStatus::Error | EngineStatus::Timeout | EngineStatus::Challenge
+                    )
+                })
                 .count();
             let answered = response
                 .engines
@@ -498,6 +514,7 @@ impl ResearchBackend for OctosResearch {
                                 | EngineStatus::Empty
                                 | EngineStatus::Error
                                 | EngineStatus::Timeout
+                                | EngineStatus::Challenge
                         )
                 })
                 .count() as u32;
@@ -744,22 +761,36 @@ mod tests {
             elapsed_ms: 5,
             error: error.map(str::to_owned),
             cached: false,
+            challenge_url: None,
+            in_browser: false,
         };
         let reports = vec![
             report("google_news", EngineStatus::Ok, None),
             report("gdelt", EngineStatus::Suspended, None),
             report("mastodon", EngineStatus::Error, Some("HTTP 500")),
+            EngineReport {
+                challenge_url: Some("https://www.bing.com/turing/captcha".into()),
+                ..report(
+                    "bing",
+                    EngineStatus::Challenge,
+                    Some("challenge (captcha): open the page to continue"),
+                )
+            },
         ];
         assert_eq!(
             engine_notes(&reports),
             vec![
                 "engine gdelt (zh) suspended after earlier errors (octos backoff)".to_string(),
                 "engine mastodon (zh) failed: HTTP 500".to_string(),
+                "engine bing (zh) challenged (bot check); skipped: challenge (captcha): \
+                 open the page to continue (https://www.bing.com/turing/captcha)"
+                    .to_string(),
             ]
         );
         assert_eq!(
             engines_line(&reports).unwrap(),
-            "engines: google_news (zh) 0, gdelt (zh) suspended, mastodon (zh) failed"
+            "engines: google_news (zh) 0, gdelt (zh) suspended, mastodon (zh) failed, \
+             bing (zh) challenged"
         );
     }
 

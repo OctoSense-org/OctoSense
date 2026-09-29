@@ -130,6 +130,8 @@ async fn live_smoke_session_open_and_turn() {
             reasoning_effort: None,
             tool_context: None,
             live_video: false,
+            // Only the host sets who is speaking; this is an external client.
+            origin: None,
         }))
         .await
         .expect("send StartTurn");

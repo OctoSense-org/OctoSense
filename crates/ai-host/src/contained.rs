@@ -72,10 +72,13 @@ pub fn set_consent(check: fn(&str) -> bool) {
 
 /// The `octos.*` services an app's manifest declares (`None`: the shell
 /// knows no such app). Unset (this crate's tests): all of them.
-static DECLARED: std::sync::OnceLock<fn(&str) -> Option<BTreeSet<String>>> = std::sync::OnceLock::new();
+static DECLARED: std::sync::OnceLock<DeclaredLookup> = std::sync::OnceLock::new();
+
+/// Maps an app id to the `octos.*` services its manifest declares.
+pub type DeclaredLookup = fn(&str) -> Option<BTreeSet<String>>;
 
 /// The shell installs its manifest lookup once, at startup.
-pub fn set_declared(lookup: fn(&str) -> Option<BTreeSet<String>>) {
+pub fn set_declared(lookup: DeclaredLookup) {
     let _ = DECLARED.set(lookup);
 }
 
