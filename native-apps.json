@@ -15,7 +15,12 @@
       "native_mobile": "feature",
       "sandbox": { "network": "any", "processes": false },
       "storage": { "accounts": true, "agent_workspace": "account", "external": [] },
-      "agent": { "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"], "tools": null }
+      "agent": {
+        "octos": ["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
+        "tools": null,
+        "generic_tools": ["read_file", "write_file", "edit_file", "diff_edit", "apply_patch", "glob", "grep", "list_dir", "code_structure", "ask_user_question", "view_image", "recall", "recall_memory", "memory_search", "memory_load", "save_memory", "memory_note", "web_search", "web_fetch", "tool_search"],
+        "grants": []
+      }
     },
     {
       "id": "reference",
@@ -63,7 +68,15 @@
       "native_mobile": "feature",
       "sandbox": { "network": "any", "processes": true },
       "storage": { "accounts": false, "agent_workspace": "none", "external": ["home:rw"] },
-      "agent": { "octos": [], "tools": null, "tool_policy": { "run": { "confirm": "host", "auto_approvable": false } } }
+      "agent": {
+        "octos": [],
+        "tools": [
+          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
+          {"name": "terminal.read_screen", "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
+          {"name": "terminal.read_scrollback", "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).", "input_schema": {"type": "object", "properties": {"lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, "additionalProperties": false}, "risk": "read", "shareable": true}
+        ],
+        "tool_policy": { "run": { "confirm": "host", "auto_approvable": false } }
+      }
     },
     {
       "id": "appcard",

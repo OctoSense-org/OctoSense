@@ -10,6 +10,10 @@
 //!   and use and where the model runs; Allow or Don't allow. Modal.
 //! - **The time-box indicator**: while a rule approves everything one app
 //!   asks, a pill at the top says so, with the minutes left and Stop.
+//! - **An app agent's question** ([`crate::questions`], the app's
+//!   conversation): who asks, the question and its options; a tap answers
+//!   it (the person's answer, [`crate::questions::PersonAnswer`]). Modal,
+//!   after any approval sheet.
 //!
 //! A press on a button is the person's gesture: only here (and on the
 //! Settings page) is a [`ApprovalGesture`] made.
@@ -49,6 +53,8 @@ pub enum Hit {
     Answer { sheet: u64, request: RequestId, answer: Answer },
     Consent { app: String, allow: bool },
     StopRule(RuleId),
+    /// An option of an app agent's question (`None`: "Don't answer").
+    QuestionOption { id: u64, label: Option<String> },
     /// The card itself (swallowed).
     Card,
 }
@@ -101,6 +107,8 @@ struct Frame {
     more_sheets: usize,
     consent: Option<AgentSummary>,
     everything: Vec<Rule>,
+    /// The oldest open question of an app's conversation.
+    question: Option<crate::questions::Request>,
     now: u64,
 }
 
@@ -112,8 +120,13 @@ fn frame() -> Frame {
             more_sheets: a.router.sheets().len().saturating_sub(1),
             consent: a.consent.prompt().cloned(),
             everything: a.router.rules.active_everything(now).into_iter().cloned().collect(),
+            question: None,
             now,
         }
+    })
+    .map(|mut f| {
+        f.question = crate::questions::open_in_apps().into_iter().next();
+        f
     })
     .unwrap_or_default()
 }
@@ -209,7 +222,48 @@ impl ShellApprovals {
         } else if let Some(sheet) = &f.sheet {
             self.modal = true;
             self.draw_sheet(cx, screen, sheet, f.more_sheets, tok);
+        } else if let Some(question) = &f.question {
+            self.modal = true;
+            self.draw_question(cx, screen, question, tok);
         }
+    }
+
+    /// An app agent's question, in the app's conversation: who asks, the
+    /// question, one button per option and "Don't answer".
+    fn draw_question(&mut self, cx: &mut Cx2d, screen: Rect, q: &crate::questions::Request, tok: ShellTokens) {
+        self.scrim(cx, screen);
+        let options = q.options();
+        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + 40.0 + 12.0 + (options.len() as f64 + 1.0) * (BUTTON_H + 8.0));
+        self.d.card(cx, card, &tok.popups);
+        self.hits.push((card, Hit::Card));
+        let ink = tok.popups.text;
+        let dim = alpha(ink, 0.65);
+        let x = card.pos.x + PAD;
+        let w = card.size.x - PAD * 2.0;
+        let mut y = card.pos.y + PAD;
+        let title = if q.title.is_empty() { q.asked_by() } else { q.title.clone() };
+        self.d.label_elided(cx, rect(x, y, w, 24.0), true, tok.font.heading, ink, HAlign::Left, &title);
+        y += 26.0;
+        let sub = format!("{} \u{00b7} in {}'s conversation", q.asked_by(), app_label(&q.app));
+        self.d.label_elided(cx, rect(x, y, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, &sub);
+        y += 20.0 + 12.0;
+        let text = q.text().to_string();
+        self.d.label_elided(cx, rect(x, y, w, 36.0), false, tok.font.body, ink, HAlign::Left, &text);
+        y += 40.0 + 12.0;
+        let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
+        let mut hits = Vec::new();
+        for (i, label) in options.iter().enumerate() {
+            let r = buttons.draw(cx, x, y, w, label, i == 0);
+            hits.push((r, Hit::QuestionOption { id: q.id, label: Some(label.clone()) }));
+            y += BUTTON_H + 8.0;
+        }
+        let r = buttons.draw(cx, x, y, w, "Don't answer", false);
+        hits.push((r, Hit::QuestionOption { id: q.id, label: None }));
+        self.hits.extend(hits);
+        self.shown.push(title);
+        self.shown.push(sub);
+        self.shown.push(text);
+        self.shown.extend(options);
     }
 
     fn draw_indicator(&mut self, cx: &mut Cx2d, screen: Rect, f: &Frame, tok: ShellTokens) {
@@ -399,6 +453,16 @@ fn act(hit: Hit) {
         }
         Hit::StopRule(id) => {
             super::with(|a| a.router.delete_rule(&id));
+        }
+        Hit::QuestionOption { id, label } => {
+            use crate::ai_host::app_peers::host_tools::QuestionReply;
+            let reply = match label {
+                Some(label) => QuestionReply::option(label),
+                None => QuestionReply::text("The person chose not to answer."),
+            };
+            if let Err(e) = crate::questions::answer(id, &[reply], &crate::questions::PersonAnswer::from_shell_surface()) {
+                log!("questions: {e}");
+            }
         }
         Hit::Card => {}
     }

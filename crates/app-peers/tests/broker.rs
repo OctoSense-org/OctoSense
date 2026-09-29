@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
-use octosense_app_peers::host_tools::{ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, ToolHost, ToolOutcome, ToolReply};
+use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, InputRefusal, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply, TurnOrigin};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -467,6 +467,11 @@ struct RecordingHost {
     cancels: Mutex<Vec<(String, String)>>,
     inputs: Mutex<Vec<PeerInput>>,
     approvals: Mutex<Vec<(HostToolApproval, ApprovalAnswer)>>,
+    questions: Mutex<Vec<(AgentQuestion, QuestionAnswer)>>,
+    closed_questions: Mutex<Vec<String>>,
+    generic: Mutex<Option<Vec<String>>>,
+    /// Refuse each `peer/input` with this.
+    refuse_input: Mutex<Option<InputRefusal>>,
 }
 
 impl ToolHost for RecordingHost {
@@ -475,6 +480,9 @@ impl ToolHost for RecordingHost {
     }
     fn agent_workspace(&self, _app: &str, _account: &str) -> Option<std::path::PathBuf> {
         self.workspace.lock().unwrap().clone()
+    }
+    fn generic_tools(&self, _app: &str, _account: &str) -> Option<Vec<String>> {
+        self.generic.lock().unwrap().clone()
     }
     fn suspended(&self, _app: &str, _account: &str) -> bool {
         *self.suspended.lock().unwrap()
@@ -488,13 +496,23 @@ impl ToolHost for RecordingHost {
     fn tool_cancel(&self, _app: &str, call_id: &str, reason: &str) {
         self.cancels.lock().unwrap().push((call_id.into(), reason.into()));
     }
-    fn admit_input(&self, _app: &str, _account: &str, input: &PeerInput) -> Result<(), String> {
+    fn admit_input(&self, _app: &str, _account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         self.inputs.lock().unwrap().push(input.clone());
-        Ok(())
+        match self.refuse_input.lock().unwrap().clone() {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
     }
     fn host_tool_approval(&self, _app: &str, _account: Option<&str>, approval: HostToolApproval, answer: ApprovalAnswer) -> bool {
         self.approvals.lock().unwrap().push((approval, answer));
         true
+    }
+    fn user_question(&self, _app: &str, _account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> bool {
+        self.questions.lock().unwrap().push((question, answer));
+        true
+    }
+    fn user_question_closed(&self, _app: &str, question_id: &str) {
+        self.closed_questions.lock().unwrap().push(question_id.to_owned());
     }
 }
 
@@ -551,10 +569,24 @@ fn the_apps_tools_are_registered_on_the_driving_link_after_prepare_and_before_an
     let (conn, params) = &registrations[0];
     assert_eq!(params["session_id"], "_main:api:octosense#system", "the originator names the peer");
     assert_eq!(params["host_token"], "fixture-host-token");
-    assert!(params.get("generic_tools").is_none(), "omitted: the peer keeps its kernel roster");
+    assert!(params.get("generic_tools").is_none(), "a host that sets none: omitted");
     assert_eq!(params["tools"][0]["name"], "rinx.message.send");
     let (turn_conn, _) = &calls_of(&script, "turn/start")[0];
     assert_eq!(conn, turn_conn, "registered on the connection that drives the turns");
+}
+
+/// ADR 0004 §12: the peer keeps exactly the kernel tools the host grants
+/// its agent; an empty list keeps none.
+#[test]
+fn the_hosts_exact_kernel_tools_are_registered_with_the_apps_tools() {
+    for generic in [vec!["read_file".to_string(), "ask_user_question".to_string()], Vec::new()] {
+        let host = Arc::new(RecordingHost::default());
+        *host.generic.lock().unwrap() = Some(generic.clone());
+        let (broker, script) = new_broker_with(&ALL, Some(host), None);
+        broker.set_account(Some("@a:x"));
+        wait_for("registered", || calls_of(&script, "peer/tools/register").len() == 1);
+        assert_eq!(calls_of(&script, "peer/tools/register")[0].1["generic_tools"], json!(generic), "exact, never omitted");
+    }
 }
 
 #[test]
@@ -769,6 +801,86 @@ fn a_host_tool_approval_goes_to_the_host_and_is_answered_on_its_link() {
     drop(broker);
 }
 
+/// ADR 0004 §6 (G11): an agent's `ask_user_question` goes to the host with
+/// the turn's origin, never to the app; only the host's answer reaches the
+/// kernel, on the link it came on; the app's context cannot answer it (nor
+/// a `host_tool` approval the host holds); the turn's end closes it.
+#[test]
+fn an_agents_question_goes_to_the_host_and_only_the_host_answers_it() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let ctx_session = calls_of(&script, "session/open").last().unwrap().1["session_id"].as_str().unwrap().to_owned();
+    let question = |session: &str, id: &str, turn: &str| {
+        json!({"session_id": session, "question_id": id, "turn_id": turn, "title": "Which room?", "body": "Pick one",
+            "questions": [{"header": "Room", "question": "Post where?", "options": [{"label": "#a", "description": ""}, {"label": "#b", "description": ""}], "allow_free_text": true}]})
+    };
+    // A context's turn (the person, in the app): the app's conversation.
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "post it".into() }, sink).unwrap();
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let ctx_turn = calls_of(&script, "turn/start")[0].1["turn_id"].as_str().unwrap().to_owned();
+    notify(&script, "user_question/requested", question(&ctx_session, "q1", &ctx_turn));
+    wait_for("the host", || host.questions.lock().unwrap().len() == 1);
+    let (q, answer) = host.questions.lock().unwrap()[0].clone();
+    assert_eq!(q.origin, CallOrigin::Context);
+    assert_eq!(q.client.as_deref(), Some("mini.news#1"), "stamped from the host's context table");
+    assert!(q.context_id.is_some());
+    assert_eq!(q.questions[0].options.len(), 2);
+    let mut seen = Vec::new();
+    while let Ok(ContextEvent::Data(d)) = rx.recv_timeout(Duration::from_millis(300)) {
+        seen.push(d["method"].as_str().unwrap_or("").to_owned());
+    }
+    assert!(seen.iter().any(|m| m == "user_question/handled_by_host"), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "user_question/requested"), "the app is never asked: {seen:?}");
+    // The app cannot answer it (nor anything else the host holds).
+    let (sink, rx2) = collect();
+    ctx.call(ContextOp::Approval { id: "q1".into(), approve: true }, sink).unwrap();
+    let refused = complete(&rx2).unwrap_err();
+    assert!(refused.contains("OctoSense"), "{refused}");
+    assert!(position(&script, "approval/respond").is_none() && position(&script, "user_question/respond").is_none());
+    // The host's answer goes to the kernel, once, on the link it came on.
+    assert!(answer.respond(&[QuestionReply::option("#b")]));
+    wait_for("the answer", || position(&script, "user_question/respond").is_some());
+    let (conn, respond) = calls_of(&script, "user_question/respond")[0].clone();
+    assert_eq!(respond["question_id"], "q1");
+    assert_eq!(respond["session_id"], ctx_session.as_str());
+    assert_eq!(respond["answers"], json!([{"selected_labels": ["#b"]}]));
+    assert_eq!(conn, calls_of(&script, "turn/start")[0].0);
+
+    // The system agent's `peer/input` turn: its question is the system chat's.
+    let slug = peer_slug(&script);
+    let peer_session = format!("_main:api:octosense#peer-{slug}");
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": peer_session, "input_id": "i1", "turn_id": "turn-in", "text": "ask them"}));
+    wait_for("the input turn", || calls_of(&script, "turn/start").len() == 2);
+    notify(&script, "user_question/requested", question(&peer_session, "q2", "turn-in"));
+    // The peer's own turn (the app's agent): the app's conversation.
+    notify(&script, "user_question/requested", question(&peer_session, "q3", "turn-own"));
+    wait_for("both", || host.questions.lock().unwrap().len() == 3);
+    let origins: Vec<(String, CallOrigin)> = host.questions.lock().unwrap().iter().map(|(q, _)| (q.question_id.clone(), q.origin)).collect();
+    assert_eq!(origins[1], ("q2".to_string(), CallOrigin::PeerInput));
+    assert_eq!(origins[2], ("q3".to_string(), CallOrigin::PeerOwn));
+    let turn_origins: Vec<(TurnOrigin, bool)> = host.questions.lock().unwrap().iter().map(|(q, _)| (q.turn_origin, q.origin_reported)).collect();
+    assert_eq!(turn_origins, [(TurnOrigin::Person, false), (TurnOrigin::SystemAgent, false), (TurnOrigin::App, false)], "derived by the host");
+    // A turn origin the kernel reports replaces the derivation.
+    let mut reported = question(&peer_session, "q4", "turn-own");
+    reported["origin"] = json!("system_agent");
+    notify(&script, "user_question/requested", reported);
+    wait_for("the reported one", || host.questions.lock().unwrap().len() == 4);
+    let fourth = host.questions.lock().unwrap()[3].0.clone();
+    assert_eq!((fourth.turn_origin, fourth.origin_reported), (TurnOrigin::SystemAgent, true));
+    // A turn that ends closes its unanswered question.
+    notify(&script, "turn/completed", json!({"session_id": peer_session, "turn_id": "turn-in"}));
+    wait_for("closed", || host.closed_questions.lock().unwrap().contains(&"q2".to_string()));
+    assert!(!host.closed_questions.lock().unwrap().contains(&"q3".to_string()));
+    drop(broker);
+}
+
 #[test]
 fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was_made_with() {
     let dir = std::env::temp_dir().join(format!("app-peers-cwd-{}", std::process::id()));
@@ -875,4 +987,66 @@ fn octos_own_approvals_on_a_context_or_the_peers_session_go_to_the_host() {
     let (approval, _) = host.approvals.lock().unwrap()[1].clone();
     assert!(approval.octos && approval.context_id.is_none() && approval.client.is_none());
     drop(broker);
+}
+
+
+/// octos#2621: a `peer/input` the host will not act on is refused on the
+/// connection it came on, with the reason (signed_out, no_consent, busy,
+/// other + message), before any `turn/start` with its turn id; queued
+/// inputs still start later with theirs.
+#[test]
+fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    let rejects = || calls_of(&script, "peer/input/reject");
+
+    // no_consent, other (with its one-line message), from the host.
+    *host.refuse_input.lock().unwrap() = Some(InputRefusal::NoConsent);
+    notify(&script, "peer/input", input("n1"));
+    wait_for("no_consent", || rejects().len() == 1);
+    *host.refuse_input.lock().unwrap() = Some(InputRefusal::Other("the app is updating".into()));
+    notify(&script, "peer/input", input("o1"));
+    wait_for("other", || rejects().len() == 2);
+    *host.refuse_input.lock().unwrap() = None;
+    // signed_out: the account is suspended.
+    *host.suspended.lock().unwrap() = true;
+    notify(&script, "peer/input", input("s1"));
+    wait_for("signed_out", || rejects().len() == 3);
+    *host.suspended.lock().unwrap() = false;
+    let got: Vec<(String, Value)> = rejects().iter().map(|(_, p)| (p["input_id"].as_str().unwrap().to_string(), p.clone())).collect();
+    assert_eq!(got[0].1["reason"], "no_consent");
+    assert!(got[0].1.get("message").is_none(), "a message only with other");
+    assert_eq!((got[1].1["reason"].as_str(), got[1].1["message"].as_str()), (Some("other"), Some("the app is updating")));
+    assert_eq!(got[2].1["reason"], "signed_out");
+    for (_, p) in &got {
+        assert_eq!(p["peer"], slug.as_str());
+        assert_eq!(p["session_id"], "_main:api:octosense#system", "the peer's originator");
+        assert_eq!(p["host_token"], "fixture-host-token");
+    }
+    assert!(calls_of(&script, "turn/start").is_empty(), "no turn for a refused input");
+    let register_conn = calls_of(&script, "peer/tools/register")[0].0;
+    assert!(rejects().iter().all(|(c, _)| *c == register_conn), "on the connection the input came on");
+
+    // busy: one running, MAX_QUEUED_INPUTS queued, the next refused.
+    notify(&script, "peer/input", input("b0"));
+    wait_for("the running turn", || calls_of(&script, "turn/start").len() == 1);
+    for i in 1..=octosense_app_peers::host_tools::MAX_QUEUED_INPUTS {
+        notify(&script, "peer/input", input(&format!("b{i}")));
+    }
+    wait_for("the queue", || broker.queued_inputs() == octosense_app_peers::host_tools::MAX_QUEUED_INPUTS);
+    notify(&script, "peer/input", input("full"));
+    wait_for("busy", || rejects().len() == 4);
+    assert_eq!(rejects()[3].1["reason"], "busy");
+    assert_eq!(rejects()[3].1["input_id"], "full");
+    // The queued ones still start, each with its own turn id.
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-b0"}));
+    wait_for("the next queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-b1");
+    assert!(!calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-full"));
 }

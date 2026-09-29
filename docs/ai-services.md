@@ -202,7 +202,7 @@ The manifest's `agent` field (a permission profile, generic tools, iteration and
 | --- | --- | --- |
 | `tools.json`: tools named `<app>.<tool>`, JSON Schema input and output, `risk` (`read`, `act`, `destructive`), `confirm` (`host` or `app`), `background`, `shareable`, `implemented_by` (`host-service` or `app`) | §4, §12 | App Hub admits and pins it ([App-Hub#18](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/18), `crates/app-policy/src/agent.rs`). No shell loads it yet. |
 | `AGENT.md`, data-only skills, model **requirements** (never a provider or model name), `background`, `triggers` (cron, host-service events) | §2, §3 | Same: admitted by App Hub (`crates/app-policy/src/agent.rs`), and the shells' App Hub pin `e8601b80` includes them. No shell runs them yet. |
-| Kernel: host-registered tools per peer (`peer/tools/register`, `peer/tool/call`/`result`/`cancel`), tool-list and risk enforcement, approvals only on the host connection, an allowlist of generic tools, `peer/input` | §4, §13 | Kernel side merged: [octos#2567](https://github.com/octos-org/octos/pull/2567) (UPCR-2026-035), in the pin with its follow-ups (octos#2616). The shell side is in part on main ([#145](https://github.com/OctoSense-org/OctoSense/pull/145): tool registration with `generic_tools` omitted, the relay, `peer/input`); per-app `generic_tools`, `tools.json` loading and grants are ADR 0004 plan step 6. |
+| Kernel: host-registered tools per peer (`peer/tools/register`, `peer/tool/call`/`result`/`cancel`), tool-list and risk enforcement, approvals only on the host connection, an allowlist of generic tools, `peer/input` | §4, §13 | Kernel side merged: [octos#2567](https://github.com/octos-org/octos/pull/2567) (UPCR-2026-035), in the pin with its follow-ups (octos#2616). The shell side is on main: [#145](https://github.com/OctoSense-org/OctoSense/pull/145) (tool registration, the relay, `peer/input`) and G3 (per-app `generic_tools` from the manifests, `tools.json` loading, grants, executors for script apps' host services, schema and budget checks; `peer/input/reject`, octos#2621). |
 | Risk decides supervision: read and in-app act run unattended; destructive waits for the person (`confirm: host`: the kernel's approval path; `confirm: app`: the app's own sheet when the person is present, an approval request in the app's conversation when absent) | §4, §12 | Declared in App Hub (#18) and octos#2567. The shell's approval router, sheets and standing rules are merged ([#120](https://github.com/OctoSense-org/OctoSense/pull/120)) and take the AI services bus's `confirm: host` calls; since [#145](https://github.com/OctoSense-org/OctoSense/pull/145) the kernel's `host_tool` approvals reach it through the relay ([architecture § Approvals](architecture.md#5-approvals)). Rinx's `send_message` already works the `confirm: app` way on its own surface. |
 | News M1: the `news` data service (no model) | First slice | Merged ([#69](https://github.com/OctoSense-org/OctoSense/pull/69)); issue [#60](https://github.com/OctoSense-org/OctoSense/issues/60). |
 | News M2: `os.news` gets a peer and its tools are registered | First slice | Planned: [#61](https://github.com/OctoSense-org/OctoSense/issues/61). |
@@ -219,10 +219,10 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
 
 ### Desktop, with a throwaway kernel and profile
 
-1. Build octos at the revision the root `Cargo.toml` pins (`acffad3b`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
+1. Build octos at the revision the root `Cargo.toml` pins (`c608384d`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
 
    ```sh
-   git checkout acffad3b493b70d6620b57394265ec84d260ce13
+   git checkout c608384ddd217c0d857656488b3d93ba3df0dc5a
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 

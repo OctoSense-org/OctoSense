@@ -200,7 +200,13 @@ pub(crate) fn phone_stdio(program: PathBuf, core_dir: &Path, extra: &[(String, S
 /// spawn's chdir with ENOENT, permanently, since the kernel would create it),
 /// on Android the kernel config's memory budget (as AppCard did), and the
 /// system agent's tool policy in the profile ([`crate::system_tools`]).
-pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
+///
+/// **Fails closed** (ADR 0004 §12, G13): when the tool policy cannot be
+/// written and read back (a foreign policy in the profile, the person's own
+/// octos home, an unwritable profile), `Err` says why and the kernel is not
+/// started: every consumer's connection closes with that reason. A kernel
+/// without the policy would give the system agent octos's shell.
+pub(crate) fn prepare(launch: &Launch, core_dir: &Path) -> Result<(), String> {
     if let Err(e) = std::fs::create_dir_all(core_dir) {
         log::warn!("octos-core: could not create {}: {e}", core_dir.display());
     }
@@ -219,11 +225,16 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
         ensure_kernel_config(&dirs::kernel_home(core_dir));
     }
     // Every start: the system agent's tool set (ADR 0004 §12) as the
-    // profile's tool policy, which octos reads at start.
-    crate::system_tools::enforce(core_dir);
+    // profile's tool policy, which octos reads at start. Refused: no start.
+    if let crate::system_tools::Enforced::Refused(why) = crate::system_tools::enforce(core_dir) {
+        return Err(format!(
+            "The assistant was not started: OctoSense could not enforce its tool policy (no octos shell for any agent), because {why}"
+        ));
+    }
     // ... and the grants it starts with (a Settings change applies from the
     // next start: the shell offers a restart).
     crate::system_tools::take_grants_for_start();
+    Ok(())
 }
 
 /// Floor for `memory.max_inject_tokens` in the phone kernel's config.

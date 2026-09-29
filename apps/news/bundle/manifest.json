@@ -3,7 +3,8 @@
     "storage",
     "net",
     "images",
-    "web"
+    "web",
+    "news"
   ],
   "id": "os.news",
   "integrity": {

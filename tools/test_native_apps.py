@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import io
 import json
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -15,7 +16,7 @@ native_apps = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native_apps)
 
 GENERATED = ["Cargo.toml", "crates/shell/Cargo.toml", "desktop/Cargo.toml", "phone/Cargo.toml",
-             native_apps.RUST_FILE, native_apps.MANIFEST]
+             native_apps.RUST_FILE, native_apps.AGENTS_FILE, native_apps.MANIFEST]
 
 
 def quiet():
@@ -141,6 +142,68 @@ class Validation(Fixture):
                          {"run": {"confirm": "host", "auto_approvable": False}})
         rust = native_apps.render_rust(native_apps.validate(self.data))
         self.assertIn('ToolPolicy { tool: "run", confirm: Confirm::Host, auto_approvable: false }', rust)
+
+    def test_the_agent_block_is_checked(self):
+        agent = self.app("terminal")["agent"]
+        agent["tools"][0]["name"] = "run"
+        self.assertRefused(r"agent\.tools\[0\]: name must be terminal\.<tool>")
+        agent["tools"][0]["name"] = "terminal.run"
+        agent["tools"][1]["auto_approvable"] = False
+        self.assertRefused(r"unknown auto_approvable \(the kernel refuses them\)")
+        del agent["tools"][1]["auto_approvable"]
+        agent["tools"][1]["risk"] = "harmless"
+        self.assertRefused(r"risk must be one of read, act, destructive")
+        agent["tools"][1]["risk"] = "read"
+        agent["tool_policy"]["type"] = {"confirm": "host", "auto_approvable": False}
+        self.assertRefused(r"tool_policy\.type: terminal declares no tool terminal\.type")
+        del agent["tool_policy"]["type"]
+        agent["budget"] = {"calls_per_turn": 0}
+        self.assertRefused(r"agent\.budget\.calls_per_turn must be a positive integer")
+        agent["budget"] = {"calls_per_turn": 5, "calls_per_day": 50}
+        native_apps.validate(self.data)
+
+    def test_no_app_agent_gets_octos_shell(self):
+        for shell in ("shell", "bash", "exec_command", "write_stdin", "group:runtime"):
+            self.app("rinx")["agent"]["generic_tools"] = ["read_file", shell]
+            self.assertRefused(rf"agent\.generic_tools: {re.escape(shell)} is octos's own shell")
+
+    def test_grants_name_another_apps_shareable_tool(self):
+        rinx = self.app("rinx")["agent"]
+        rinx["grants"] = [{"app": "terminal", "tool": "terminal.read_screen"}, {"app": "os.mail", "tool": "mail.send"}]
+        native_apps.validate(self.data)
+        rinx["grants"] = [{"app": "terminal", "tool": "terminal.nope"}]
+        self.assertRefused(r"agent\.grants terminal/terminal\.nope: terminal declares no terminal\.nope")
+        self.app("terminal")["agent"]["tools"][1]["shareable"] = False
+        rinx["grants"] = [{"app": "terminal", "tool": "terminal.read_screen"}]
+        self.assertRefused(r"terminal\.read_screen is not shareable")
+        rinx["grants"] = [{"app": "rinx", "tool": "rinx.x"}]
+        self.assertRefused(r"an app's own tools need no grant")
+        rinx["grants"] = [{"app": "nowhere", "tool": "nowhere.x"}]
+        self.assertRefused(r"no native app nowhere")
+
+    def test_the_agent_block_is_generated(self):
+        self.app("rinx")["agent"]["grants"] = [{"app": "terminal", "tool": "terminal.read_screen"}]
+        self.app("rinx")["agent"]["budget"] = {"calls_per_day": 99}
+        apps = native_apps.validate(self.data)
+        rust = native_apps.render_rust(apps)
+        self.assertIn('grants: &[("terminal", "terminal.read_screen")],', rust)
+        self.assertIn("calls_per_turn: None,\n        calls_per_day: Some(99),", rust)
+        self.assertIn('generic_tools: &["read_file",', rust)
+        self.assertIn('tools_json: r##"[{"name":"terminal.run",', rust)
+        agents = native_apps.render_agents(apps)
+        self.assertIn('("rinx", &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"]),', agents)
+        self.assertNotIn('"terminal"', agents, "an app granted no octos.* services has no line")
+
+    def test_the_shipped_agent_blocks(self):
+        rinx = self.app("rinx")["agent"]
+        self.assertIn("ask_user_question", rinx["generic_tools"], "Rinx's agent may ask the person (ADR 0004 §6)")
+        terminal = self.app("terminal")["agent"]
+        self.assertEqual([t["name"] for t in terminal["tools"]], ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"])
+        self.assertEqual({t["name"]: t["risk"] for t in terminal["tools"]},
+                         {"terminal.run": "destructive", "terminal.read_screen": "read", "terminal.read_scrollback": "read"})
+        for app in self.data["apps"]:
+            for tool in app["agent"].get("generic_tools", []):
+                self.assertNotIn(tool, native_apps.OCTOS_SHELL, app["id"])
 
     def test_refuses_unknown_keys(self):
         self.app("reference")["hosted"] = "yes"

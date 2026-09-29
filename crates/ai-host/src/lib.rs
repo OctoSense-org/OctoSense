@@ -53,6 +53,8 @@
 
 mod bridge;
 pub mod contained;
+/// Generated from `native-apps.json` (`tools/native_apps.py`).
+pub mod native_agents;
 mod qr;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox_peers;
@@ -151,9 +153,12 @@ impl Policy {
         Policy::default()
     }
 
-    /// The native modules that ship with OctoSense: Rinx (its native mini-app
-    /// host serves these to reviewed mini apps). The person's AI provider
-    /// choice lives in AI providers; a per-app toggle is future work.
+    /// The native apps that ship with OctoSense, each with the `octos.*`
+    /// services its reviewed `native-apps.json` entry grants its agent
+    /// (`agent.octos`; generated into [`native_agents::NATIVE_AGENTS`] by
+    /// `tools/native_apps.py`): today Rinx, whose native mini-app host serves
+    /// them to reviewed mini apps. The person's AI provider choice lives in
+    /// AI providers; the person consents per app at first use.
     ///
     /// The `octos` service for contained apps follows consent in the
     /// shipped policy: an app gets its agent once the person allowed it at
@@ -162,7 +167,10 @@ impl Policy {
     /// on for every app without asking, `0` off.
     pub fn shipped() -> Self {
         let gate = contained_gate_from(std::env::var("OCTOSENSE_CONTAINED_APPS").ok().as_deref());
-        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_gate(gate)
+        native_agents::NATIVE_AGENTS
+            .iter()
+            .fold(Policy::none(), |policy, (app, services)| policy.allow(app, services.iter().copied()))
+            .with_contained_gate(gate)
     }
 
     /// On (behind consent) or off.

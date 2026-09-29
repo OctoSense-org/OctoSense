@@ -74,6 +74,24 @@ jobs:
         run: python3 tools/setup.py --check --cargo
       - name: The native apps' generated places match native-apps.json
         run: python3 tools/native_apps.py --check
+      # The shell's real-kernel test (crates/shell/src/host_tools/
+      # real_kernel_tests.rs: kernel -> app-peers broker -> the shell's relay
+      # -> News's host service -> the model's turn) needs an octos binary at
+      # the revision Cargo.lock pins; built once per revision and cached.
+      - name: The pinned octos revision
+        id: octos
+        run: echo "rev=$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("k","tools/kernel-artifact.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(m.octos_revision())')" >> "$GITHUB_OUTPUT"
+      # Outside target/: rust-cache restores and prunes target/.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/octos-kernel/target/release/octos
+          key: octos-kernel-${{ runner.os }}-${{ steps.octos.outputs.rev }}
+      - name: Build octos (unless cached)
+        timeout-minutes: 45
+        run: |
+          if [ ! -x "$RUNNER_TEMP/octos-kernel/target/release/octos" ]; then
+            python3 tools/kernel-artifact.py --host --work "$RUNNER_TEMP/octos-kernel"
+          fi
       - name: Build Home, App Hub admission and runtime policy tests
         working-directory: phone
         timeout-minutes: 60
@@ -81,6 +99,9 @@ jobs:
       - name: Test Home, App Hub admission and runtime policy
         working-directory: phone
         timeout-minutes: 30
+        env:
+          # Runs the shell's real-kernel relay test instead of skipping it.
+          OCTOS_SHELL_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
         run: |
           # octosense-app-hub-app is App Hub's shared shell crate, a git
           # dependency with dev-dependencies: cargo cannot test it from here;

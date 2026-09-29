@@ -3,6 +3,11 @@
 //!
 //! One [`Relay::handle`] per [`Event`], on the UI thread. For a call:
 //!
+//! 0. **Check** (ADR 0004 §3, G8): the arguments against the tool's
+//!    declared `input_schema` (and a size cap), and the calling agent's
+//!    budget (calls per turn and per day, from its manifest or the
+//!    defaults); the result, on its way back, against its `output_schema`
+//!    and [`MAX_RESULT_BYTES`] ([`schema`](super::schema)).
 //! 1. **Authorize** by (owning app, tool) and caller: the owning app's own
 //!    agent calls its own declared tools; another app's agent only the tools
 //!    granted to it ([`Catalog::may_call`]); the system agent only its
@@ -42,6 +47,8 @@ pub const BUS_PREFIX: &str = "hosttool-";
 pub const SYSTEM: &str = "system";
 /// The Terminal's shareable tool (ADR 0004 §10, §12).
 pub const TERMINAL_RUN: &str = "terminal.run";
+/// The Terminal, whose tools the relay runs on the AI bus.
+pub const TERMINAL_APP: &str = "terminal";
 /// Developer mode's command tool (§13).
 pub const DEV_RUN: &str = "dev.run";
 /// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
@@ -96,46 +103,183 @@ pub trait Env {
     fn bus_call(&mut self, call_id: &str, app: &str, tool: &str, args: String);
     fn bus_cancel(&mut self, call_id: &str);
     fn log(&mut self, line: String);
+    /// Unix seconds (the day a budget counts in).
+    fn now(&self) -> u64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    }
 }
 
-/// Which apps declare which tools, and which are granted to whom.
+/// The largest arguments a call may carry.
+pub const MAX_ARGS_BYTES: usize = 64 * 1024;
+/// The largest result the relay hands back (octos's own default cap).
+pub const MAX_RESULT_BYTES: usize = 256 * 1024;
+/// An agent's tool calls per turn and per day, unless its manifest says
+/// otherwise (`native-apps.json` `agent.budget`).
+pub const DEFAULT_CALLS_PER_TURN: u32 = 32;
+pub const DEFAULT_CALLS_PER_DAY: u32 = 1000;
+
+/// One calling agent's budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Budget {
+    pub per_turn: u32,
+    pub per_day: u32,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Budget { per_turn: DEFAULT_CALLS_PER_TURN, per_day: DEFAULT_CALLS_PER_DAY }
+    }
+}
+
+/// What one calling agent spent.
+#[derive(Default)]
+struct Usage {
+    day: u64,
+    today: u32,
+    /// Calls per turn, the newest turns only.
+    turns: std::collections::VecDeque<(String, u32)>,
+}
+
+/// The octos kernel tools an app agent may be granted under developer
+/// mode ("everything granted", ADR 0004 §13): its workspace's files, the
+/// person, memory, the web, tool discovery. Never octos's shell (§12).
+pub const DEV_GENERIC_TOOLS: &[&str] = &[
+    "read_file",
+    "write_file",
+    "edit_file",
+    "diff_edit",
+    "apply_patch",
+    "glob",
+    "grep",
+    "list_dir",
+    "code_structure",
+    "check_workspace_contract",
+    "ask_user_question",
+    "view_image",
+    "view_video",
+    "recall",
+    "recall_memory",
+    "memory_search",
+    "memory_load",
+    "save_memory",
+    "memory_note",
+    "web_search",
+    "web_fetch",
+    "deep_search",
+    "tool_search",
+];
+
+/// octos's own shell and its aliases: never in an app agent's kernel tools
+/// (ADR 0004 §12; command execution is a host tool with a live approval).
+pub const OCTOS_SHELL: &[&str] = &["shell", "bash", "exec_command", "write_stdin", "group:runtime"];
+
+/// Which apps declare which tools, which are granted to whom, and which
+/// octos kernel tools each app's agent keeps.
+///
+/// **The seams** (ADR 0004 §7, §12; #108's toolbox tools use the same):
+/// [`Catalog::declare`] an owning app's `tools.json` entries,
+/// [`Catalog::grant`] a caller one of another app's shareable tools (marked
+/// with its owner), [`Catalog::set_generic`] the exact kernel tools an
+/// app's agent keeps; the relay then routes each call to the owning app's
+/// executor ([`Relay::set_executor`]).
 #[derive(Default)]
 pub struct Catalog {
     /// `tools.json` entries by owning app.
     tools: BTreeMap<String, Vec<Value>>,
-    /// Cross-app grants: calling app → declared tool names of other apps.
-    grants: BTreeMap<String, BTreeSet<String>>,
+    /// Cross-app grants: calling app → (owning app, tool).
+    grants: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Exactly the octos kernel tools each app's agent keeps.
+    generic: BTreeMap<String, Vec<String>>,
+    /// Each calling agent's budget (the defaults unless set).
+    budgets: BTreeMap<String, Budget>,
 }
 
 impl Catalog {
-    /// With the tools the shell itself knows: the Terminal's `run`.
+    /// With what the native apps' reviewed entries declare
+    /// (`native-apps.json` `agent`): the Terminal's tools, every native
+    /// app's grants and kernel tools.
     pub fn shipped() -> Catalog {
         let mut c = Catalog::default();
-        c.declare("terminal", vec![terminal_run_declaration()]);
+        for app in crate::native_apps::APPS {
+            c.load_native(app);
+        }
         c
     }
+
+    /// One native app's agent block.
+    pub fn load_native(&mut self, app: &crate::native_apps::NativeApp) {
+        let tools: Vec<Value> = serde_json::from_str(app.tools_json).unwrap_or_default();
+        if !tools.is_empty() {
+            self.declare(app.id, tools);
+        }
+        for (owner, tool) in app.grants {
+            self.grant(app.id, owner, tool);
+        }
+        self.set_generic(app.id, app.generic_tools.iter().map(|t| t.to_string()).collect());
+        self.set_budget(app.id, app.calls_per_turn, app.calls_per_day);
+    }
+
+    /// `app`'s agent's budget; `None` keeps the default.
+    pub fn set_budget(&mut self, app: &str, per_turn: Option<u32>, per_day: Option<u32>) {
+        let d = Budget::default();
+        self.budgets.insert(app.to_string(), Budget { per_turn: per_turn.unwrap_or(d.per_turn), per_day: per_day.unwrap_or(d.per_day) });
+    }
+
+    pub fn budget(&self, app: &str) -> Budget {
+        self.budgets.get(app).copied().unwrap_or_default()
+    }
+
     /// An app's `tools.json` (replaces what it declared before).
     pub fn declare(&mut self, app: &str, entries: Vec<Value>) {
         self.tools.insert(app.to_string(), entries);
     }
-    /// A grant of another app's shareable tool to `caller`.
-    pub fn grant(&mut self, caller: &str, tool: &str) {
-        self.grants.entry(caller.to_string()).or_default().insert(tool.to_string());
+
+    /// A grant of `owner`'s shareable `tool` to `caller`'s agent.
+    pub fn grant(&mut self, caller: &str, owner: &str, tool: &str) {
+        self.grants.entry(caller.to_string()).or_default().insert((owner.to_string(), tool.to_string()));
     }
     /// `caller`'s grants of `owner`'s tools become exactly `tools` (a
     /// toolbox grant computed again).
     pub fn set_grants(&mut self, caller: &str, owner: &str, tools: &[&str]) {
-        let owned: BTreeSet<String> = self.tools.get(owner).into_iter().flatten().filter_map(|e| e["name"].as_str().map(str::to_string)).collect();
         let grants = self.grants.entry(caller.to_string()).or_default();
-        grants.retain(|t| !owned.contains(t));
-        grants.extend(tools.iter().map(|t| t.to_string()));
+        grants.retain(|(o, _)| o != owner);
+        grants.extend(tools.iter().map(|t| (owner.to_string(), t.to_string())));
     }
+
+    /// Exactly the octos kernel tools `app`'s agent keeps; octos's shell is
+    /// dropped whatever the list says.
+    pub fn set_generic(&mut self, app: &str, tools: Vec<String>) {
+        let tools = tools.into_iter().filter(|t| !OCTOS_SHELL.contains(&t.as_str())).collect();
+        self.generic.insert(app.to_string(), tools);
+    }
+
+    /// The kernel tools `app`'s agent keeps (none unless granted);
+    /// developer mode's set when it covers the app.
+    pub fn generic(&self, app: &str, dev_all: bool) -> Vec<String> {
+        if dev_all {
+            return DEV_GENERIC_TOOLS.iter().map(|t| t.to_string()).collect();
+        }
+        self.generic.get(app).cloned().unwrap_or_default()
+    }
+
+    /// Whether anything was declared, granted or set for `app`.
+    pub fn knows(&self, app: &str) -> bool {
+        self.tools.contains_key(app) || self.grants.contains_key(app) || self.generic.contains_key(app)
+    }
+
     pub fn entry(&self, owner: &str, tool: &str) -> Option<&Value> {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
+
+    /// The owning app of a declared tool name.
+    pub fn owner_of(&self, tool: &str) -> Option<&str> {
+        self.tools.iter().find(|(_, entries)| entries.iter().any(|e| e["name"] == tool)).map(|(owner, _)| owner.as_str())
+    }
+
     fn shareable(entry: &Value) -> bool {
         entry["shareable"] == true
     }
+
     /// Whether `caller`'s agent may call `owner`'s `tool`. Developer mode
     /// grants every shareable tool, except the toolbox's: those run under
     /// the grant's scope, which developer mode cannot invent.
@@ -145,12 +289,13 @@ impl Catalog {
             return true;
         }
         let dev_all = dev_all && owner != TOOLBOX;
-        Self::shareable(entry) && (dev_all || self.grants.get(caller).is_some_and(|g| g.contains(tool)))
+        Self::shareable(entry) && (dev_all || self.grants.get(caller).is_some_and(|g| g.contains(&(owner.to_string(), tool.to_string()))))
     }
+
     /// What `app`'s peer registers: its own tools, and the shareable tools of
-    /// other apps granted to it, each naming its owner.
+    /// other apps granted to it; each names its owning app (`app`).
     pub fn declarations(&self, app: &str, dev_all: bool) -> Vec<Value> {
-        let mut out: Vec<Value> = self.tools.get(app).into_iter().flatten().filter_map(|e| host_tools::declaration(e, None)).collect();
+        let mut out: Vec<Value> = self.tools.get(app).into_iter().flatten().filter_map(|e| host_tools::declaration(e, Some(app))).collect();
         for (owner, entries) in &self.tools {
             if owner == app {
                 continue;
@@ -176,19 +321,11 @@ impl Catalog {
     }
 }
 
-/// `terminal.run` as the Terminal declares it for the host: destructive, the
-/// shell's sheet, shareable; `auto_approvable: false` is the shell's rule
-/// (`native-apps.json` `agent.tool_policy`), never a declaration field.
+/// `terminal.run` as the Terminal declares it (`native-apps.json`):
+/// destructive, the shell's sheet, shareable; `auto_approvable: false` is
+/// the shell's rule (`agent.tool_policy`), never a declaration field.
 pub fn terminal_run_declaration() -> Value {
-    serde_json::json!({
-        "name": TERMINAL_RUN,
-        "app": "terminal",
-        "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.",
-        "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false},
-        "risk": "destructive",
-        "confirm": "host",
-        "shareable": true,
-    })
+    Catalog::shipped().entry("terminal", TERMINAL_RUN).cloned().expect("native-apps.json declares terminal.run")
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -218,12 +355,48 @@ pub struct Relay {
     executors: HashMap<String, Arc<dyn ToolExecutor>>,
     calls: HashMap<String, Pending>,
     approvals: HashMap<String, ApprovalAnswer>,
+    /// Each calling agent's spending against its budget.
+    usage: HashMap<String, Usage>,
+    /// The caller's own reply for each checked one (a cancel closes both).
+    outers: HashMap<String, ToolReply>,
 }
 
 impl Default for Relay {
     fn default() -> Self {
-        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new() }
+        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new(), usage: HashMap::new(), outers: HashMap::new() }
     }
+}
+
+/// How many turns' counts are kept per agent.
+const TURNS_KEPT: usize = 64;
+
+/// `reply`, with the result checked on its way back (G8): at most
+/// `max_bytes`, and matching `schema` (the tool's `output_schema`) when it
+/// declares one. Acknowledgements and errors pass through.
+fn checked_reply(reply: ToolReply, tool: &str, schema: Option<Value>, max_bytes: usize) -> ToolReply {
+    let outer = reply.clone();
+    let tool = tool.to_string();
+    ToolReply::new(reply.call_id().to_string(), move |fields: Value| {
+        if fields.get("status").is_some() {
+            outer.acknowledge();
+            return;
+        }
+        if fields["ok"] != true {
+            let kind = fields["error"]["kind"].as_str().unwrap_or("error");
+            outer.finish(ToolOutcome::error(kind, fields["error"]["message"].as_str().unwrap_or("").to_string()));
+            return;
+        }
+        let data = fields.get("data").cloned().unwrap_or(Value::Null);
+        let size = data.to_string().len();
+        let outcome = if size > max_bytes {
+            ToolOutcome::error("result_too_large", format!("{tool} answered {size} bytes, over the {max_bytes}-byte cap"))
+        } else if let Some(Err(why)) = schema.as_ref().map(|s| super::schema::check(s, &data)) {
+            ToolOutcome::error("invalid_result", format!("{tool} answered outside its declared result: {why}"))
+        } else {
+            ToolOutcome::Ok(data)
+        };
+        outer.finish(outcome);
+    })
 }
 
 /// What started a turn, as its host stamped it (G2): never "the person"
@@ -293,6 +466,37 @@ impl Relay {
         }
         // Executors answer on their own; forget what they finished.
         self.calls.retain(|_, p| p.reply.is_open());
+        let calls = &self.calls;
+        self.outers.retain(|id, outer| outer.is_open() && calls.contains_key(id));
+    }
+
+    /// Spend one call of `agent`'s budget in `turn`; why not, when spent.
+    fn spend(&mut self, agent: &str, turn: &str, now: u64) -> Result<(), String> {
+        let budget = self.catalog.budget(agent);
+        let usage = self.usage.entry(agent.to_string()).or_default();
+        let day = now / 86_400;
+        if usage.day != day {
+            usage.day = day;
+            usage.today = 0;
+        }
+        if usage.today >= budget.per_day {
+            return Err(format!("its agent used its {} tool calls for today", budget.per_day));
+        }
+        let this_turn = usage.turns.iter().find(|(t, _)| t == turn).map_or(0, |(_, n)| *n);
+        if !turn.is_empty() && this_turn >= budget.per_turn {
+            return Err(format!("its agent used its {} tool calls for this turn", budget.per_turn));
+        }
+        usage.today += 1;
+        match usage.turns.iter_mut().find(|(t, _)| t == turn) {
+            Some((_, n)) => *n += 1,
+            None => {
+                usage.turns.push_back((turn.to_string(), 1));
+                while usage.turns.len() > TURNS_KEPT {
+                    usage.turns.pop_front();
+                }
+            }
+        }
+        Ok(())
     }
 
     fn call(&mut self, call: HostToolCall, reply: ToolReply, env: &mut dyn Env) {
@@ -326,6 +530,28 @@ impl Relay {
                 return refuse(&reply, "signed_out", "the account is signed out".into());
             }
         }
+        // 0. The arguments against the declared schema (G8).
+        let entry = self.catalog.entry(&owner, &tool).cloned();
+        let size = call.args.to_string().len();
+        if size > MAX_ARGS_BYTES {
+            return refuse(&reply, "invalid_args", format!("{tool}'s arguments are {size} bytes, over the {MAX_ARGS_BYTES}-byte cap"));
+        }
+        if let Some(schema) = entry.as_ref().and_then(|e| e.get("input_schema")) {
+            if let Err(why) = super::schema::check(schema, &call.args) {
+                env.log(format!("host tools: {tool} refused for {}: arguments {why}", caller.as_audit()));
+                return refuse(&reply, "invalid_args", format!("{tool}: {why}"));
+            }
+        }
+        // ... and the calling agent's budget.
+        let spender = if call.caller_kind == CallerKind::System { SYSTEM.to_string() } else { calling.clone() };
+        if let Err(why) = self.spend(&spender, &call.turn_id, env.now()) {
+            env.log(format!("host tools: {tool} refused for {}: {why}", caller.as_audit()));
+            return refuse(&reply, "budget_exceeded", why);
+        }
+        // The result is checked on its way back.
+        let outer = reply.clone();
+        let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
+        self.outers.insert(call.call_id.clone(), outer);
         // 2. Route to the owning app's executor.
         if env.has_link(&owner) {
             let kernel_call = KernelToolCall {
@@ -361,7 +587,9 @@ impl Relay {
         }
         let target = if self.executors.contains_key(&owner) {
             Target::Executor(owner.clone())
-        } else if tool == TERMINAL_RUN && owner == "terminal" {
+        } else if owner == TERMINAL_APP {
+            // The Terminal's tools run on its AI bus service, in the
+            // terminal the person sees.
             Target::Bus
         } else {
             return refuse(&reply, "app_not_running", format!("{} isn't running", crate::approvals::sheet::app_label(&owner)));
@@ -419,6 +647,9 @@ impl Relay {
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {
+        if let Some(outer) = self.outers.remove(call_id) {
+            outer.cancel();
+        }
         let Some(p) = self.calls.remove(call_id) else { return };
         p.reply.cancel();
         match p.at {

@@ -428,6 +428,26 @@ pub fn process_form(id: &str) -> bool {
     crate::clients::find_app(id).is_some_and(|app| app.is_available())
 }
 
+/// Whether the Terminal runs as its own process on this device (ADR 0004
+/// §10, §12, G12): a device with processes, the Terminal's hosting resolved
+/// to a process (its manifest's `process`, or `process-if-vulkan` on a
+/// Vulkan build in a Wayland session, unless the person switched it to a
+/// module) and a process form to start. Only then does `terminal.run`
+/// exist: the in-process Terminal offers its read tools only.
+pub fn terminal_runs_as_process() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    let registry = AppRegistry::load(&crate::theme::makepad_home().join("wm/apps.splash"), &args);
+    runs_as_process(registry.hosting(TERMINAL), crate::host::processes_available(), process_form(TERMINAL))
+}
+
+/// The Terminal's app id.
+pub const TERMINAL: &str = "terminal";
+
+/// [`terminal_runs_as_process`] for a given hosting, device and process form.
+pub fn runs_as_process(hosting: Hosting, processes: bool, process_form: bool) -> bool {
+    hosting == Hosting::Process && processes && process_form
+}
+
 /// A Makepad Vulkan build (`MAKEPAD=vulkan`, crates/shell/build.rs) running
 /// in a Wayland session: where Linux shares a child's frames zero-copy
 /// (DMA-BUF). Vulkan windowing panics on X11.
@@ -700,6 +720,20 @@ mod tests {
                 .unwrap_or_default();
             assert_eq!(granted, app.octos, "{}'s agent grants", app.id);
         }
+    }
+
+    /// G12: `terminal.run` has a target only where the Terminal runs as a
+    /// process on this device.
+    #[test]
+    fn the_terminal_runs_as_a_process_only_with_processes_a_process_hosting_and_a_process_form() {
+        assert!(runs_as_process(Hosting::Process, true, true));
+        assert!(!runs_as_process(Hosting::Module, true, true), "in-process (Linux without Vulkan, switched to a module)");
+        assert!(!runs_as_process(Hosting::Process, false, true), "no processes (phones, wasm)");
+        assert!(!runs_as_process(Hosting::Process, true, false), "no binary to start");
+        // process-if-vulkan resolves to a module without Vulkan and Wayland.
+        use crate::native_apps::Hosting as Declared;
+        assert!(!runs_as_process(manifest_default(Declared::ProcessIfVulkan, || true, false), true, true));
+        assert!(runs_as_process(manifest_default(Declared::ProcessIfVulkan, || true, true), true, true));
     }
 
     /// A declared process runs in-process where it cannot start one;

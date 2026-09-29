@@ -123,7 +123,8 @@ impl Approvals {
         let now = now();
         // The time-box indicator counts minutes down.
         let minute = if self.router.rules.active_everything(now).is_empty() { 0 } else { now / 60 };
-        self.router.generation() + self.consent.generation() + self.router.contacts().generation() + u64::from(self.settings_open) + minute
+        // An app agent's question is drawn on the same surface.
+        self.router.generation() + self.consent.generation() + self.router.contacts().generation() + u64::from(self.settings_open) + minute + crate::questions::generation()
     }
     pub fn consent_granted(&self, app: &str) -> bool {
         self.consent.granted(app, self.router.hooks().grants_all(app))

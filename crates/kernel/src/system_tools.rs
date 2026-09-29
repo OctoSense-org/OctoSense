@@ -32,13 +32,13 @@
 //!   client's turns on the session, so the shell registers without it; the
 //!   exact list waits for a durable host-only list (octos#2605). The
 //!   real-kernel exact-list test is kept, ignored until then.
-//! - **App peers are not capped below what they can be granted**, and are
-//!   not yet narrowed to their grants either: the broker registers them with
-//!   `generic_tools` omitted, so each keeps octos's whole kernel roster
-//!   except what this policy denies (octos's shell). Narrowing each peer to
-//!   its grants through `generic_tools` is plan step 6, not done yet.
-//!   Host-routed tools (app, toolbox, cross-app tools, command execution)
-//!   are registered after the policy, so it never strips them.
+//! - **App peers are narrowed to their grants**: the shell registers each
+//!   with `generic_tools`, exactly the kernel tools its manifest declares
+//!   and the person granted (`native-apps.json` `agent.generic_tools`, a
+//!   script app's `agent.tools`; none when it names none), never octos's
+//!   shell; this policy is a second barrier. Host-routed tools (app,
+//!   toolbox, cross-app tools, command execution) are registered after the
+//!   policy, so it never strips them.
 //! - **Talk to Octos external turns are unaffected**: octos confines them to
 //!   its external allowlist ([`EXTERNAL_TURN_TOOLS`]), none of which is the
 //!   shell (UPCR-2026-036).
@@ -48,6 +48,12 @@
 //! person's standalone octos home, and [`enforce`] replaces only a policy
 //! OctoSense wrote ([`POLICY_OWNER`]): it refuses, and warns, on a foreign
 //! policy and on the person's own octos home.
+//!
+//! **Fails closed** (G13): a refused (or unwritable, or not read back)
+//! policy starts no kernel (`launch::prepare`); every consumer's connection
+//! closes with the reason. App peers do not rely on the policy alone: the
+//! shell registers each with exactly the kernel tools its manifest grants
+//! (`generic_tools`), which never include octos's shell.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -313,12 +319,21 @@ pub(crate) fn enforce_unless_shared(core_dir: &Path, shared: Option<&Path>) -> E
             crate::network::write_private(dir, name, &body).map_err(|e| e.to_string())
         });
     match result {
-        Ok(()) => {
+        Ok(()) if reads_back(&path) => {
             log::info!("octos-core: wrote OctoSense's tool policy to {}", path.display());
             Enforced::Written
         }
+        Ok(()) => refused("does not read back with OctoSense's tool policy after writing it"),
         Err(e) => Enforced::Refused(format!("could not write {}: {e}", path.display())),
     }
+}
+
+/// Whether the profile at `path` carries [`tool_policy`] now.
+fn reads_back(path: &Path) -> bool {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .is_some_and(|root| root["config"]["tool_policy"] == tool_policy())
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {

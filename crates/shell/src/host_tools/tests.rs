@@ -29,6 +29,8 @@ struct World {
     bus: Vec<(String, String, String, String)>,
     bus_cancels: Vec<String>,
     asked: Vec<(String, ToolSpec, Caller, RequestContext)>,
+    /// The clock budgets count days by.
+    now: u64,
 }
 
 impl World {
@@ -48,6 +50,7 @@ impl World {
             bus: Vec::new(),
             bus_cancels: Vec::new(),
             asked: Vec::new(),
+            now: 1_000_000,
         }
     }
     /// The router's decisions, as the shell hands them back to the relay.
@@ -95,6 +98,9 @@ impl Env for World {
         self.bus_cancels.push(call_id.into());
     }
     fn log(&mut self, _line: String) {}
+    fn now(&self) -> u64 {
+        self.now
+    }
 }
 
 type Sent = Arc<Mutex<Vec<Value>>>;
@@ -171,8 +177,12 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
     let (r, sent) = reply("c1");
     relay.handle(Event::Call { call: call("c1", "mail.send", "calendar"), reply: r }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "no grant yet");
-    relay.catalog.grant("calendar", "mail.send");
-    relay.catalog.grant("calendar", "mail.purge");
+    relay.catalog.grant("calendar", "notes", "mail.send");
+    let (r, sent) = reply("c1b");
+    relay.handle(Event::Call { call: call("c1b", "mail.send", "calendar"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "a grant names its owning app");
+    relay.catalog.grant("calendar", "mail", "mail.send");
+    relay.catalog.grant("calendar", "mail", "mail.purge");
     let (r, _) = reply("c2");
     relay.handle(Event::Call { call: call("c2", "mail.send", "calendar"), reply: r }, &mut w);
     let (r, sent) = reply("c3");
@@ -187,6 +197,7 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
 
     // The system agent calls only what Setup granted it.
     let mut system = call("c4", TERMINAL_RUN, "system");
+    system.args = json!({"command": "ls -la"});
     system.caller_kind = CallerKind::System;
     system.origin = CallOrigin::System;
     let (r, sent) = reply("c4");
@@ -197,7 +208,7 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
     system.call_id = "c5".into();
     relay.handle(Event::Call { call: system, reply: r }, &mut w);
     // Typed into the Terminal the person sees, on the AI bus, by its short name.
-    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c5"), "terminal".into(), "run".into(), json!({"to": ["ana@example.org"], "text": "hi"}).to_string())]);
+    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c5"), "terminal".into(), "run".into(), json!({"command": "ls -la"}).to_string())]);
     relay.handle(Event::BusResult { call_id: "c5".into(), outcome: ToolOutcome::Ok(json!({"text": "typed"})) }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["ok"], true);
 }
@@ -230,7 +241,7 @@ impl ConfirmSheet for SendSheet {
 #[test]
 fn a_confirm_app_call_is_acknowledged_then_handed_to_the_owning_apps_sheet_and_runs_once_approved() {
     let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.message.send", true, "app")]);
-    relay.catalog.grant("calendar", "rinx.message.send");
+    relay.catalog.grant("calendar", "rinx", "rinx.message.send");
     let mut w = World::new(FixedDevMode::off());
     // Rinx's send sheet, registered as the router's confirm: app handler.
     let sheet = Arc::new(SendSheet::default());
@@ -375,7 +386,57 @@ fn the_shipped_catalog_offers_the_terminals_run_to_those_granted_it() {
     let run = catalog.entry("terminal", TERMINAL_RUN).unwrap();
     assert_eq!((run["risk"].as_str(), run["confirm"].as_str()), (Some("destructive"), Some("host")));
     assert!(catalog.declarations("rinx", false).is_empty(), "nobody gets it without a grant");
-    assert_eq!(catalog.declarations("rinx", true).len(), 1, "developer mode grants every shareable tool");
+    assert_eq!(catalog.declarations("rinx", true).len(), 3, "developer mode grants every shareable tool");
+}
+
+/// G3: the native apps' agent blocks (`native-apps.json`) are the shipped
+/// catalog: the Terminal's own tools, each app's exact kernel tools.
+#[test]
+fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
+    let catalog = Catalog::shipped();
+    for tool in ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"] {
+        assert!(catalog.entry("terminal", tool).is_some(), "{tool}");
+        assert_eq!(catalog.owner_of(tool), Some("terminal"));
+    }
+    let rinx = crate::native_apps::find("rinx").unwrap();
+    assert_eq!(catalog.generic("rinx", false), rinx.generic_tools.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+    assert!(catalog.generic("rinx", false).contains(&"ask_user_question".to_string()));
+    assert!(catalog.generic("sheets", false).is_empty(), "an app granted no kernel tools keeps none");
+    assert!(catalog.generic("nowhere", false).is_empty());
+    for dev in [false, true] {
+        for shell in super::relay::OCTOS_SHELL {
+            assert!(!catalog.generic("rinx", dev).iter().any(|t| t == shell), "never octos's shell");
+        }
+    }
+    // Every declaration names its owning app.
+    let own = Catalog::shipped().declarations("terminal", false);
+    assert_eq!(own.len(), 3);
+    assert!(own.iter().all(|d| d["app"] == "terminal" && d.get("auto_approvable").is_none()));
+}
+
+#[test]
+fn a_kernel_tool_list_never_keeps_octos_shell() {
+    let mut catalog = Catalog::default();
+    catalog.set_generic("notes", vec!["read_file".into(), "shell".into(), "bash".into(), "exec_command".into(), "web_search".into()]);
+    assert_eq!(catalog.generic("notes", false), vec!["read_file".to_string(), "web_search".to_string()]);
+}
+
+/// The Terminal's read tools run on its AI bus service, in every hosting.
+#[test]
+fn the_terminals_read_tools_are_granted_then_read_on_the_bus() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let (r, sent) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "terminal.read_screen", "rinx"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    relay.catalog.grant("rinx", "terminal", "terminal.read_screen");
+    let mut c = call("c2", "terminal.read_screen", "rinx");
+    c.args = json!({});
+    let (r, sent) = reply("c2");
+    relay.handle(Event::Call { call: c, reply: r }, &mut w);
+    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c2"), "terminal".into(), "read_screen".into(), "{}".into())]);
+    relay.handle(Event::BusResult { call_id: "c2".into(), outcome: ToolOutcome::Ok(json!({"text": "$ ls"})) }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["data"]["text"], "$ ls");
 }
 
 /// The system toolbox's tools as its catalog declares them (the real ones
@@ -420,7 +481,7 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     // No grant, no toolbox tools; developer mode does not invent a grant
     // (the toolbox needs its scope), though it grants other shareable tools.
     assert!(offered_names(&relay, "calendar", false, true).is_empty());
-    assert_eq!(offered_names(&relay, "calendar", true, true), [TERMINAL_RUN]);
+    assert_eq!(offered_names(&relay, "calendar", true, true), ["terminal.read_screen", "terminal.read_scrollback", TERMINAL_RUN]);
 }
 
 #[test]
@@ -432,6 +493,8 @@ fn no_toolbox_call_runs_before_consent_or_without_a_grant() {
         let mut c = call(id, name, calling);
         c.app = super::TOOLBOX.into();
         c.risk = "read".into();
+        // Arguments the tool declares (the relay checks them, G8).
+        c.args = if name == "toolbox.deep_crawl" { json!({"url": "https://example.org"}) } else { json!({"query": "news"}) };
         c
     };
     w.consent = false;
@@ -583,4 +646,98 @@ fn developer_mode_answers_octos_own_approvals_through_the_router() {
     }
     assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
     assert_eq!(w.router.audit.all()[0].by, "developer_mode");
+}
+
+
+// ---------------------------------------------------------------- G8
+
+fn schema_decl() -> Value {
+    json!({"name": "notes.find", "description": "d", "risk": "read", "shareable": false,
+        "input_schema": {"type": "object", "properties": {"q": {"type": "string", "maxLength": 8}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["q"], "additionalProperties": false},
+        "output_schema": {"type": "object", "properties": {"hits": {"type": "array", "items": {"type": "string"}}}, "required": ["hits"]}})
+}
+
+fn find(id: &str, turn: &str, args: Value) -> HostToolCall {
+    let mut c = call(id, "notes.find", "notes");
+    c.args = args;
+    c.turn_id = turn.to_string();
+    c
+}
+
+/// ADR 0004 §3 (G8): each call's arguments are checked against the tool's
+/// declared schema before anything runs.
+#[test]
+fn arguments_outside_the_declared_schema_are_refused_before_anything_runs() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    let mut w = World::new(FixedDevMode::off());
+    for (id, args, why) in [
+        ("c1", json!({}), "q is required"),
+        ("c2", json!({"q": 7}), "expected string"),
+        ("c3", json!({"q": "far too long"}), "longer than 8"),
+        ("c4", json!({"q": "x", "limit": 99}), "above the maximum"),
+        ("c5", json!({"q": "x", "sudo": true}), "sudo is not a declared field"),
+    ] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, "t1", args), reply: r }, &mut w);
+        let sent = sent.lock().unwrap().clone();
+        assert_eq!(sent[0]["error"]["kind"], "invalid_args", "{id}");
+        assert!(sent[0]["error"]["message"].as_str().unwrap().contains(why), "{id}: {sent:?}");
+    }
+    let (r, sent) = reply("c6");
+    relay.handle(Event::Call { call: find("c6", "t1", json!({"q": "x" .repeat(70_000)})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args", "over the size cap");
+    assert!(exec.0.lock().unwrap().is_empty(), "nothing reached the app");
+    let (r, _) = reply("c7");
+    relay.handle(Event::Call { call: find("c7", "t1", json!({"q": "ok", "limit": 3})), reply: r }, &mut w);
+    assert_eq!(exec.0.lock().unwrap().len(), 1);
+}
+
+/// Results are capped and checked against the declared result schema.
+#[test]
+fn results_are_capped_and_checked_against_the_declared_result() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    let mut w = World::new(FixedDevMode::off());
+    let mut sents = Vec::new();
+    for id in ["r1", "r2", "r3"] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, "t1", json!({"q": "x"})), reply: r }, &mut w);
+        sents.push(sent);
+    }
+    let replies: Vec<ToolReply> = exec.0.lock().unwrap().iter().map(|(_, r)| r.clone()).collect();
+    replies[0].finish(ToolOutcome::Ok(json!({"hits": ["a", "b"]})));
+    replies[1].finish(ToolOutcome::Ok(json!({"hits": [1]})));
+    replies[2].finish(ToolOutcome::Ok(json!({"hits": ["x".repeat(super::relay::MAX_RESULT_BYTES)]})));
+    assert_eq!(sents[0].lock().unwrap()[0]["data"], json!({"hits": ["a", "b"]}));
+    assert_eq!(sents[1].lock().unwrap()[0]["error"]["kind"], "invalid_result");
+    assert_eq!(sents[2].lock().unwrap()[0]["error"]["kind"], "result_too_large");
+    // An error passes through as the app said it.
+    let (r, sent) = reply("r4");
+    relay.handle(Event::Call { call: find("r4", "t1", json!({"q": "x"})), reply: r }, &mut w);
+    exec.0.lock().unwrap()[3].1.finish(ToolOutcome::error("not_found", "none"));
+    assert_eq!(sent.lock().unwrap()[0]["error"], json!({"kind": "not_found", "message": "none"}));
+}
+
+/// Per-app budgets: calls per turn and per day, from the manifest (or the
+/// defaults); a new turn, and a new day, start again.
+#[test]
+fn an_agents_calls_are_budgeted_per_turn_and_per_day() {
+    let (mut relay, exec) = relay_with("notes", vec![schema_decl()]);
+    relay.catalog.set_budget("notes", Some(2), Some(3));
+    let mut w = World::new(FixedDevMode::off());
+    let mut kinds = Vec::new();
+    for (id, turn) in [("b1", "t1"), ("b2", "t1"), ("b3", "t1"), ("b4", "t2"), ("b5", "t2")] {
+        let (r, sent) = reply(id);
+        relay.handle(Event::Call { call: find(id, turn, json!({"q": "x"})), reply: r }, &mut w);
+        kinds.push(sent.lock().unwrap().first().map(|s| s["error"]["kind"].as_str().unwrap_or("").to_string()).unwrap_or_default());
+    }
+    assert_eq!(kinds, ["", "", "budget_exceeded", "", "budget_exceeded"], "2 per turn, 3 per day");
+    assert_eq!(exec.0.lock().unwrap().len(), 3);
+    w.now += 86_400;
+    let (r, sent) = reply("b6");
+    relay.handle(Event::Call { call: find("b6", "t3", json!({"q": "x"})), reply: r }, &mut w);
+    assert!(sent.lock().unwrap().is_empty(), "a new day");
+    assert_eq!(exec.0.lock().unwrap().len(), 4);
+    // The defaults, and a native app's own budget from its manifest.
+    assert_eq!(Catalog::default().budget("anyone"), super::relay::Budget::default());
+    assert_eq!(super::relay::Budget::default().per_turn, super::relay::DEFAULT_CALLS_PER_TURN);
 }

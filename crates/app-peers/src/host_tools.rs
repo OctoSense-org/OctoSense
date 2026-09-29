@@ -5,8 +5,9 @@
 //! The kernel never talks to an app. The shell is every app peer's **tool
 //! host**: the broker registers the app's tools on the connection that
 //! drives the peer's turns (`peer/tools/register`, after every `peer/prepare`
-//! and every reconnect, `generic_tools` omitted so the peer keeps its kernel
-//! roster), receives each `peer/tool/call` on that connection and hands it
+//! and every reconnect, with the exact kernel tools the host grants the
+//! app's agent as `generic_tools`: [`ToolHost::generic_tools`]; octos's own
+//! shell is never among them), receives each `peer/tool/call` on that connection and hands it
 //! to the installed [`ToolHost`] with the identity the host stamps (account,
 //! client, calling app). The host authorizes it, routes it to the owning
 //! app's executor and answers once through the [`ToolReply`] it was given.
@@ -15,8 +16,15 @@
 //! | --- | --- |
 //! | `peer/tool/call` | [`ToolHost::tool_call`] with a [`HostToolCall`] and its [`ToolReply`] |
 //! | `peer/tool/cancel` (timeout, interrupt), the link closing | [`ToolHost::tool_cancel`]; the reply is closed first |
-//! | `peer/input` (the system agent's input) | the broker starts the turn; [`ToolHost::admit_input`] may refuse it |
+//! | `peer/input` (the system agent's input) | the broker starts the turn; [`ToolHost::admit_input`] may refuse it, and the broker says why (`peer/input/reject`, [`InputRefusal`]) |
 //! | `approval/requested` with `approval_kind: "host_tool"` | [`ToolHost::host_tool_approval`] with an [`ApprovalAnswer`] |
+//! | `user_question/requested` on the peer's session or a context (octos's `ask_user_question`) | [`ToolHost::user_question`] with a [`QuestionAnswer`]; the turn's end closes it ([`ToolHost::user_question_closed`]) |
+//!
+//! **Only the host answers.** An [`ApprovalAnswer`] or a [`QuestionAnswer`]
+//! is made by the broker for the connection the request came on and handed
+//! to the host alone; the app's context hears only that the host took it
+//! ([`HANDLED_BY_HOST`], [`QUESTION_HANDLED_BY_HOST`]), and the broker
+//! refuses an app's attempt to answer an id the host holds.
 //!
 //! Apps reach the host through their service ([`crate::OctosAppService`]):
 //! an in-process module installs its executor
@@ -35,11 +43,76 @@ pub const TOOL_CALL: &str = "peer/tool/call";
 pub const TOOL_RESULT: &str = "peer/tool/result";
 pub const TOOL_CANCEL: &str = "peer/tool/cancel";
 pub const PEER_INPUT: &str = "peer/input";
+/// The host refuses a `peer/input` it will not act on (octos#2621).
+pub const PEER_INPUT_REJECT: &str = "peer/input/reject";
+/// How many of the system agent's inputs wait for a busy peer before the
+/// host refuses more (`busy`).
+pub const MAX_QUEUED_INPUTS: usize = 8;
+
+/// Why the host refuses a `peer/input` (`peer/input/reject`'s `reason`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InputRefusal {
+    /// The account is signed out or suspended (ADR 0004 §11).
+    SignedOut,
+    /// The person has not allowed the app's agent (ADR 0004 §4).
+    NoConsent,
+    /// The peer is busy past the host's queue limit.
+    Busy,
+    /// Anything else, said in one line.
+    Other(String),
+}
+
+impl InputRefusal {
+    pub fn reason(&self) -> &'static str {
+        match self {
+            InputRefusal::SignedOut => "signed_out",
+            InputRefusal::NoConsent => "no_consent",
+            InputRefusal::Busy => "busy",
+            InputRefusal::Other(_) => "other",
+        }
+    }
+    /// The message octos takes with `other` only: one line, 1–256 bytes,
+    /// no control characters.
+    pub fn message(&self) -> Option<String> {
+        let InputRefusal::Other(text) = self else { return None };
+        let mut line: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().to_owned();
+        if line.is_empty() {
+            line = "refused by the host".into();
+        }
+        while line.len() > 256 {
+            line.pop();
+        }
+        Some(line)
+    }
+    /// `peer/input/reject`'s `reason` and `message` fields.
+    pub fn fields(&self) -> Value {
+        let mut out = json!({"reason": self.reason()});
+        if let Some(message) = self.message() {
+            out["message"] = json!(message);
+        }
+        out
+    }
+}
+
+impl std::fmt::Display for InputRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputRefusal::Other(text) => write!(f, "other: {text}"),
+            other => f.write_str(other.reason()),
+        }
+    }
+}
 /// `approval/requested`'s `approval_kind` for a host-routed tool.
 pub const HOST_TOOL_KIND: &str = "host_tool";
 /// What an app's context sees instead of a `host_tool` approval: the host
 /// draws that sheet, the app never answers it.
 pub const HANDLED_BY_HOST: &str = "approval/handled_by_host";
+/// octos's `ask_user_question` (UPCR-2026-023).
+pub const USER_QUESTION_REQUESTED: &str = "user_question/requested";
+pub const USER_QUESTION_RESPOND: &str = "user_question/respond";
+/// What an app's context sees instead of a question the host routes: the
+/// shell asks the person in the right conversation; the app never answers.
+pub const QUESTION_HANDLED_BY_HOST: &str = "user_question/handled_by_host";
 
 /// The fields a `tools.json` entry (octos `ToolDecl`) may carry; the kernel
 /// refuses any other.
@@ -451,6 +524,192 @@ impl ApprovalAnswer {
     }
 }
 
+/// One structured question of a `user_question/requested` (octos
+/// `UserQuestion`): 2–4 options, maybe several of them, and always a free
+/// text escape.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuestionItem {
+    pub header: String,
+    pub question: String,
+    /// (label, description).
+    pub options: Vec<(String, String)>,
+    pub multi_select: bool,
+}
+
+/// Who started the turn that asked (the peer's one conversation is shared:
+/// the person or the app drive some turns, the system agent others).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnOrigin {
+    /// The person, in the app (its UI, its cards).
+    Person,
+    /// The app itself (a trigger, its own run).
+    App,
+    /// The system agent (`peer/input`).
+    SystemAgent,
+}
+
+impl TurnOrigin {
+    /// octos's spelling (`person` | `app` | `system_agent`).
+    pub fn parse(text: &str) -> Option<TurnOrigin> {
+        match text {
+            "person" | "user" => Some(TurnOrigin::Person),
+            "app" => Some(TurnOrigin::App),
+            "system_agent" | "system" => Some(TurnOrigin::SystemAgent),
+            _ => None,
+        }
+    }
+}
+
+/// An agent's `ask_user_question` on an app peer's session or one of its
+/// request contexts, with what the host knows about the turn that asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentQuestion {
+    /// The kernel's id (`user_question/respond`'s `question_id`).
+    pub question_id: String,
+    /// The session it was asked on (the peer's, or a context's).
+    pub session_id: String,
+    pub turn_id: String,
+    pub context_id: Option<String>,
+    /// The calling context's client (a Rinx mini app), from the host's
+    /// own context table.
+    pub client: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub questions: Vec<QuestionItem>,
+    /// Which turn asked: a context's (the person, in the app), the peer's
+    /// own (the app's agent), or a `peer/input` turn (the system agent's).
+    pub origin: CallOrigin,
+    /// Who started that turn: what the kernel reports (`origin` on the
+    /// event, once octos carries it), else what the host derives: the turns
+    /// it started for `peer/input` are the system agent's, a context's the
+    /// person's, any other the app's (or the person's: one shared
+    /// conversation).
+    pub turn_origin: TurnOrigin,
+    /// Whether `turn_origin` came from the kernel (not derived).
+    pub origin_reported: bool,
+}
+
+impl AgentQuestion {
+    /// A `user_question/requested`'s params; `session` is the full session
+    /// key (topic joined). The host fills `context_id`, `client`, `origin`.
+    pub fn parse(params: &Value, session: &str) -> Option<AgentQuestion> {
+        let s = |v: &Value, key: &str| v.get(key).and_then(Value::as_str).unwrap_or("").to_owned();
+        let question_id = s(params, "question_id");
+        if question_id.is_empty() {
+            return None;
+        }
+        let questions = params
+            .get("questions")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|q| QuestionItem {
+                        header: s(q, "header"),
+                        question: s(q, "question"),
+                        options: q
+                            .get("options")
+                            .and_then(Value::as_array)
+                            .map(|o| o.iter().map(|o| (s(o, "label"), s(o, "description"))).filter(|(l, _)| !l.is_empty()).collect())
+                            .unwrap_or_default(),
+                        multi_select: q.get("multi_select").and_then(Value::as_bool).unwrap_or(false),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Some(AgentQuestion {
+            question_id,
+            session_id: session.to_owned(),
+            turn_id: s(params, "turn_id"),
+            context_id: None,
+            client: None,
+            title: s(params, "title"),
+            body: s(params, "body"),
+            questions,
+            origin: CallOrigin::PeerOwn,
+            turn_origin: TurnOrigin::App,
+            origin_reported: false,
+        })
+        .map(|mut q| {
+            let reported = ["origin", "turn_origin"].iter().find_map(|k| params.get(*k).and_then(Value::as_str).and_then(TurnOrigin::parse));
+            if let Some(origin) = reported {
+                q.turn_origin = origin;
+                q.origin_reported = true;
+            }
+            q
+        })
+    }
+
+    /// How many answers `user_question/respond` carries (one per question,
+    /// at least one).
+    pub fn answer_count(&self) -> usize {
+        self.questions.len().max(1)
+    }
+}
+
+/// One answer of a `user_question/respond` (octos `UserQuestionAnswer`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct QuestionReply {
+    pub selected_labels: Vec<String>,
+    pub free_text: Option<String>,
+}
+
+impl QuestionReply {
+    pub fn option(label: impl Into<String>) -> QuestionReply {
+        QuestionReply { selected_labels: vec![label.into()], free_text: None }
+    }
+    pub fn text(text: impl Into<String>) -> QuestionReply {
+        QuestionReply { selected_labels: Vec::new(), free_text: Some(text.into()) }
+    }
+    fn to_json(&self) -> Value {
+        let mut out = json!({});
+        if !self.selected_labels.is_empty() {
+            out["selected_labels"] = json!(self.selected_labels);
+        }
+        if let Some(text) = &self.free_text {
+            out["free_text"] = json!(text);
+        }
+        out
+    }
+}
+
+/// The one answer to one agent question: `user_question/respond` on the
+/// connection it was asked on. Sent once. The broker makes it and hands it
+/// to the host only.
+#[derive(Clone)]
+pub struct QuestionAnswer {
+    sent: Arc<Mutex<bool>>,
+    send: Arc<dyn Fn(Value) + Send + Sync>,
+}
+
+impl std::fmt::Debug for QuestionAnswer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "QuestionAnswer(sent: {})", *self.sent.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+impl QuestionAnswer {
+    /// `send` gets the `answers` array.
+    pub fn new(send: impl Fn(Value) + Send + Sync + 'static) -> QuestionAnswer {
+        QuestionAnswer { sent: Arc::new(Mutex::new(false)), send: Arc::new(send) }
+    }
+    /// The person's answers, one per question. False when already sent.
+    pub fn respond(&self, answers: &[QuestionReply]) -> bool {
+        {
+            let mut sent = self.sent.lock().unwrap_or_else(|e| e.into_inner());
+            if *sent {
+                return false;
+            }
+            *sent = true;
+        }
+        (self.send)(Value::Array(answers.iter().map(QuestionReply::to_json).collect()));
+        true
+    }
+    pub fn is_sent(&self) -> bool {
+        *self.sent.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 /// The system agent's input to a host-owned peer (`peer/input`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PeerInput {
@@ -562,6 +821,16 @@ pub trait ToolHost: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Exactly the octos kernel tools `app_id`'s agent keeps, sent as the
+    /// registration's `generic_tools` (octos keeps exactly those of the
+    /// peer's kernel roster; an empty list keeps none; ADR 0004 §12).
+    /// `None` omits the field, and the peer keeps its whole kernel roster:
+    /// only for a host that sets nothing (a standalone app, tests). The
+    /// shell always sets a list: the manifest's grants.
+    fn generic_tools(&self, _app_id: &str, _account: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// The account's agent workspace (ADR 0004 §11), the `cwd` a NEW peer
     /// is prepared with. `None`: the kernel provisions one.
     fn agent_workspace(&self, _app_id: &str, _account: &str) -> Option<PathBuf> {
@@ -584,8 +853,9 @@ pub trait ToolHost: Send + Sync {
     fn tool_cancel(&self, _app_id: &str, _call_id: &str, _reason: &str) {}
 
     /// A `peer/input` for `app_id`'s peer, before its turn starts: `Err`
-    /// refuses it (no turn runs).
-    fn admit_input(&self, _app_id: &str, _account: &str, _input: &PeerInput) -> Result<(), String> {
+    /// refuses it; no turn runs and the broker tells the kernel why
+    /// (`peer/input/reject`), so the system agent learns it.
+    fn admit_input(&self, _app_id: &str, _account: &str, _input: &PeerInput) -> Result<(), InputRefusal> {
         Ok(())
     }
 
@@ -597,6 +867,18 @@ pub trait ToolHost: Send + Sync {
     fn host_tool_approval(&self, _app_id: &str, _account: Option<&str>, _approval: HostToolApproval, _answer: ApprovalAnswer) -> bool {
         false
     }
+
+    /// An agent's `ask_user_question` on `app_id`'s peer or one of its
+    /// contexts. True when the host took it: the shell asks the person in
+    /// the right conversation and answers through `answer`; false leaves it
+    /// to the app's context, as before.
+    fn user_question(&self, _app_id: &str, _account: Option<&str>, _question: AgentQuestion, _answer: QuestionAnswer) -> bool {
+        false
+    }
+
+    /// The turn that asked `question_id` ended (answered or not): the
+    /// question can no longer be answered.
+    fn user_question_closed(&self, _app_id: &str, _question_id: &str) {}
 
     /// An in-process app installs its executor (through its service).
     fn set_executor(&self, _app_id: &str, _executor: Option<Arc<dyn ToolExecutor>>) {}
@@ -684,6 +966,32 @@ mod tests {
         let cross = declaration(&entry, Some("mail")).unwrap();
         assert_eq!(cross["app"], "mail", "a cross-app grant is marked with its owning app");
         assert!(declaration(&json!({"description": "no name"}), None).is_none());
+    }
+
+    #[test]
+    fn an_input_refusal_carries_octos_reasons_and_a_message_only_for_other() {
+        assert_eq!(InputRefusal::SignedOut.fields(), json!({"reason": "signed_out"}));
+        assert_eq!(InputRefusal::NoConsent.fields(), json!({"reason": "no_consent"}));
+        assert_eq!(InputRefusal::Busy.fields(), json!({"reason": "busy"}));
+        assert_eq!(InputRefusal::Other("a\nb".into()).fields(), json!({"reason": "other", "message": "a b"}));
+        assert_eq!(InputRefusal::Other("x".repeat(400)).message().unwrap().len(), 256);
+        assert_eq!(InputRefusal::Other("  ".into()).message().unwrap(), "refused by the host");
+    }
+
+    #[test]
+    fn a_question_parses_and_is_answered_once() {
+        let params = json!({"session_id": "_main:api:octosense", "topic": "peer-rinx-1", "question_id": "q1", "turn_id": "t1", "title": "Which room?", "body": "Pick one",
+            "questions": [{"header": "Room", "question": "Post where?", "options": [{"label": "#a", "description": "A"}, {"label": "#b", "description": ""}], "multi_select": false, "allow_free_text": true}]});
+        let q = AgentQuestion::parse(&params, "_main:api:octosense#peer-rinx-1").unwrap();
+        assert_eq!((q.question_id.as_str(), q.turn_id.as_str(), q.answer_count()), ("q1", "t1", 1));
+        assert_eq!(q.questions[0].options, vec![("#a".to_string(), "A".to_string()), ("#b".to_string(), String::new())]);
+        assert!(AgentQuestion::parse(&json!({"turn_id": "t"}), "s").is_none(), "no id, nothing to answer");
+        let sent = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let s = sent.clone();
+        let answer = QuestionAnswer::new(move |v| s.lock().unwrap().push(v));
+        assert!(answer.respond(&[QuestionReply::option("#b")]));
+        assert!(!answer.respond(&[QuestionReply::text("again")]), "once");
+        assert_eq!(*sent.lock().unwrap(), vec![json!([{"selected_labels": ["#b"]}])]);
     }
 
     #[test]

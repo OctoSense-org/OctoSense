@@ -341,7 +341,9 @@ impl Core {
             if let Some(mut previous) = previous {
                 let _ = previous.wait_for(|stopped| *stopped).await;
             }
-            launch::prepare(&launch, &core_dir);
+            // A tool policy that could not be enforced starts nothing
+            // (fails closed): the generation ends at once with the reason.
+            let refused = launch::prepare(&launch, &core_dir).err();
             let ended = move || {
                 if let Some(inner) = weak.upgrade() {
                     let mut st = inner.state.lock().unwrap();
@@ -350,7 +352,7 @@ impl Core {
                     }
                 }
             };
-            let config = kernel::GenerationConfig { generation: id, launch, network, core_dir, log };
+            let config = kernel::GenerationConfig { generation: id, launch, network, core_dir, log, refused };
             kernel::supervise(config, ready_tx, ctl_rx, done_tx, ended).await;
         });
         Ok(Connection { core: self.clone(), id: conn, generation: id, ctl, inbound: rx, ready, closed: None })

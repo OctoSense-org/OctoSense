@@ -10,6 +10,7 @@
 //! | `approval/requested` `host_tool` | the approval router ([`crate::approvals::approval_requested`]); its decision answers the kernel |
 //! | any other `approval/requested` on an app's peer session or context (octos's own tools) | the same router, as the app agent's call on its own app (ADR 0004 §8); the app hears only `approval/handled_by_host` |
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
+//! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
@@ -31,11 +32,16 @@
 //! router here ([`SheetBridge`]).
 
 pub mod relay;
+pub mod schema;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox;
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub mod script_apps;
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, kernel, any(feature = "app-hub", native_mobile)))]
+mod real_kernel_tests;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -43,7 +49,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 
-use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
+use crate::ai_host::app_peers::host_tools::{self, AgentQuestion, ApprovalAnswer, InputRefusal, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
 use crate::approvals::{self, Caller, Decision, RequestContext, RequestId, Route, ToolSpec};
 use crate::peer_link::{self, KernelToolCall, Refused, ToolCallResult};
 pub use relay::{app_of_peer, Event, Relay, APPROVAL_PREFIX, BUS_PREFIX, CONFIRM_PREFIX, SYSTEM, TERMINAL_RUN, TOOLBOX};
@@ -62,8 +68,11 @@ pub fn submit(event: Event) {
     makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
 }
 
-/// On the UI thread: handle everything queued (and what that queues).
+/// On the UI thread: handle everything queued (and what that queues), and
+/// deliver the host services' answers to script apps' tool calls.
 pub fn pump() {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    script_apps::poll();
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
@@ -91,15 +100,49 @@ pub fn init() {
     });
 }
 
-/// An app's `tools.json` (App Hub at install; tests).
+// ------------------------------------------------------------ the seams
+//
+// How an app offers tools and who may call them (ADR 0004 §7, §12), in
+// three steps; the toolbox (#108) uses the same:
+//
+// 1. `declare(app, tools)`: the owning app's `tools.json` entries (a native
+//    app's from `native-apps.json` `agent.tools`, loaded at startup; a
+//    script app's from its admitted bundle, `script_apps`);
+// 2. `grant(caller, owning_app, tool)`: another app's shareable tool for a
+//    caller's agent, marked with its owner (native: `agent.grants`; script:
+//    the dotted names in its manifest's `agent.tools`, at install);
+//    `set_generic(app, tools)`: exactly the octos kernel tools its agent
+//    keeps (native: `agent.generic_tools`; script: the plain names in
+//    `agent.tools`);
+// 3. an `Executor` per owning app runs its calls: `set_executor(app, …)`
+//    (an in-process module's through `OctosAppService::set_tool_executor`;
+//    a script app's host services, `script_apps::HostServiceExecutor`); a
+//    process app's calls go down its peer link, the Terminal's on the AI
+//    bus. The relay authorizes each call first.
+
+/// An app's `tools.json` (replaces what it declared before).
 pub fn declare(app: &str, entries: Vec<Value>) {
     with_relay(|r| r.catalog.declare(app, entries));
 }
 
-/// A cross-app grant (App Hub at install for a script app; a native app's
-/// reviewed `native-apps.json` entry).
-pub fn grant(caller: &str, tool: &str) {
-    with_relay(|r| r.catalog.grant(caller, tool));
+/// A cross-app grant: `owning_app`'s shareable `tool` for `caller`'s agent.
+pub fn grant(caller: &str, owning_app: &str, tool: &str) {
+    with_relay(|r| r.catalog.grant(caller, owning_app, tool));
+}
+
+/// Exactly the octos kernel tools `app`'s agent keeps (never octos's shell).
+pub fn set_generic(app: &str, tools: Vec<String>) {
+    with_relay(|r| r.catalog.set_generic(app, tools));
+}
+
+/// `app`'s executor for its own tools (`None` removes it).
+pub fn set_executor(app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
+    with_relay(|r| r.set_executor(app, executor));
+}
+
+/// The owning app of a declared tool.
+pub fn owner_of(tool: &str) -> Option<String> {
+    with_relay(|r| r.catalog.owner_of(tool).map(str::to_string))
 }
 
 /// A tool's declaration, as a host registers it (the system chat).
@@ -149,11 +192,19 @@ pub struct ShellToolHost;
 impl ToolHost for ShellToolHost {
     fn declarations(&self, app_id: &str, _account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
+        ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
         // The toolbox's tools only once the person allowed this app's agent
         // (ADR 0004 §4); its calls are refused before that too (the relay).
         let consented = approvals::consent_granted(&app) || dev;
         Ok(with_relay(|r| r.catalog.offered(&app, dev, consented)))
+    }
+
+    fn generic_tools(&self, app_id: &str, _account: &str) -> Option<Vec<String>> {
+        let app = app_of_peer(app_id).to_string();
+        ensure_loaded(app_id);
+        let dev = crate::dev_mode::grants_all(&app);
+        Some(with_relay(|r| r.catalog.generic(&app, dev)))
     }
 
     fn agent_workspace(&self, app_id: &str, account: &str) -> Option<PathBuf> {
@@ -172,13 +223,13 @@ impl ToolHost for ShellToolHost {
         submit(Event::Cancel { call_id: call_id.to_string(), reason: reason.to_string() });
     }
 
-    fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), String> {
+    fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         let app = app_of_peer(app_id);
         if suspended(app_id, Some(account)) {
-            return Err("the account is signed out".into());
+            return Err(InputRefusal::SignedOut);
         }
         if !approvals::consent_granted(app) && !crate::dev_mode::grants_all(app) {
-            return Err("the person has not allowed this app's agent".into());
+            return Err(InputRefusal::NoConsent);
         }
         makepad_widgets::log!("host tools: the system agent's input {} starts {app}'s turn {}", input.input_id, input.turn_id);
         Ok(())
@@ -187,6 +238,15 @@ impl ToolHost for ShellToolHost {
     fn host_tool_approval(&self, app_id: &str, account: Option<&str>, approval: HostToolApproval, answer: ApprovalAnswer) -> bool {
         submit(Event::Approval { app: app_id.to_string(), account: account.map(str::to_string), approval, answer });
         true
+    }
+
+    fn user_question(&self, app_id: &str, account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> bool {
+        crate::questions::requested(app_id, account, question, answer);
+        true
+    }
+
+    fn user_question_closed(&self, app_id: &str, question_id: &str) {
+        crate::questions::closed(app_id, question_id);
     }
 
     fn set_executor(&self, app_id: &str, executor: Option<Arc<dyn ToolExecutor>>) {
@@ -200,6 +260,33 @@ impl ToolHost for ShellToolHost {
             None => approvals::unregister_app_confirm(app),
         }
     }
+}
+
+/// A script app's agent block, loaded from its admitted bundle the first
+/// time its peer registers (a native app's is in the shipped catalog).
+fn ensure_loaded(app_id: &str) {
+    if app_id == app_of_peer(app_id) {
+        return;
+    }
+    let app = app_of_peer(app_id);
+    if with_relay(|r| r.catalog.knows(app)) {
+        return;
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(e) = script_apps::load(app) {
+        makepad_widgets::log!("host tools: {app}'s tools: {e}");
+    }
+}
+
+/// App Hub installed or updated a script app: its tools, grants and
+/// kernel tools again (the next registration of its peer takes them).
+pub fn script_app_installed(app: &str) {
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    if let Err(e) = script_apps::load(app) {
+        makepad_widgets::log!("host tools: {app}'s tools: {e}");
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    let _ = app;
 }
 
 /// An app's own sheet, as the approval router's `confirm: app` handler: the

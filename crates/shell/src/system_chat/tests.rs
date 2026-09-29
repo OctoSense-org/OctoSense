@@ -769,3 +769,16 @@ fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
     let triggers: Vec<(String, TurnTrigger)> = d.effects.iter().filter_map(|e| match e { Effect::ToolCall { call, .. } => Some((call.call_id.clone(), call.trigger.clone())), _ => None }).collect();
     assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person), ("c2".to_string(), TurnTrigger::Unknown)]);
 }
+
+
+/// G12: `terminal.run` is registered on the system session only when the
+/// person granted command execution AND the Terminal runs as a process on
+/// this device; granted without one, nothing is registered.
+#[test]
+fn terminal_run_needs_a_process_terminal_even_when_granted() {
+    use super::grants::{host_tools_given, COMMAND_TOOL};
+    assert!(host_tools_given(true, true).contains(COMMAND_TOOL));
+    assert!(host_tools_given(true, false).is_empty(), "granted, but the Terminal runs in-process here");
+    assert!(host_tools_given(false, true).is_empty());
+    assert!(host_tools_given(false, false).is_empty());
+}

@@ -42,7 +42,7 @@ docs/             Architecture, protocol, build and review notes.
 Every octos crate (`octos-core`, and on OpenHarmony `octos-cli` with the
 ~20 crates it pulls in) comes from **one** source: git
 `https://github.com/octos-org/octos.git` at the single rev in the repository's
-root `Cargo.toml` `[workspace.dependencies]` (today `acffad3b`, octos main),
+root `Cargo.toml` `[workspace.dependencies]` (today `c608384d`, octos main),
 shared with `crates/kernel` and both shells. octos's OpenHarmony-safe `nix`
 is patched in the root `[patch.crates-io]` (from octos `18fcd3f1`). There is
 no octos submodule; check the graph keeps one octos with
