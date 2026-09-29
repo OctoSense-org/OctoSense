@@ -19,6 +19,10 @@ Rules, looking at the request's messages and offered tools:
   - "TELL_PEER_TOOL:<slug>": send the peer "CALL_APP_TOOL", on which the
     peer calls the host-registered app tool `rinx_echo` when it is offered
     (UPCR-2026-035), else says "NO APP TOOL OFFERED";
+  - "TELL_PEER_SHOW:<slug>": send the peer "SHOW_SHARED";
+  - "SHOW_SHARED": answer "SHARED " and the rows of the read-only
+    <shared_history> block the kernel showed (octos UPCR-2026-034, the
+    parallel person context), joined by " | ", or "SHARED NONE";
   - "RUN_TERMINAL": the system agent calls the host tool `terminal_run`
     registered on its session, else says "NO TERMINAL OFFERED";
   - "CALL_TOOL:<function>:<json args>": the same, spelled with a colon (the
@@ -83,6 +87,15 @@ def decide(body):
         return {"tool": "shell", "args": {"command": "rm -rf ./approval-probe && echo APPROVED_RAN"}}
     if "RUN_SUDO" in last_user:
         return {"text": "NO SHELL OFFERED"}
+    show = re.search(r"TELL_PEER_SHOW:([a-z0-9-]+)", last_user)
+    if show and "peer_send_input" in tools:
+        return {"tool": "peer_send_input", "args": {"slug": show.group(1), "message": "SHOW_SHARED"}}
+    if "SHOW_SHARED" in last_user:
+        shared = [text_of(m) for m in messages if text_of(m).startswith("<shared_history")]
+        if not shared:
+            return {"text": "SHARED NONE"}
+        rows = [line for line in shared[-1].splitlines() if line.startswith("- ")]
+        return {"text": "SHARED " + " | ".join(rows)}
     tool = re.search(r"TELL_PEER_TOOL:([a-z0-9-]+)", last_user)
     if tool and "peer_send_input" in tools:
         return {"tool": "peer_send_input", "args": {"slug": tool.group(1), "message": "CALL_APP_TOOL"}}

@@ -262,10 +262,11 @@ impl ToolHost for ShellToolHost {
     }
 }
 
-/// Stop the turn running on `app`'s agent's shared conversation, whoever
-/// started it (the Stop on the shell's app-conversation surface; ADR 0004
-/// §6): every live broker of the app's peer (`app`, or a script app's
-/// `card.<app>`). The turns stopped.
+/// Stop the turns running in both lanes of `app`'s agent's conversation,
+/// the person's and the system agent's, whoever started them (the Stop on
+/// the shell's app-conversation surface; ADR 0004 §6): every live broker
+/// of the app's peer (`app`, or a script app's `card.<app>`). The turns
+/// stopped.
 pub fn interrupt_agent(app: &str) -> Vec<String> {
     #[cfg(kernel)]
     {

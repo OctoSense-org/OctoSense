@@ -527,11 +527,12 @@ fn a_call_the_kernel_already_approved_is_not_asked_again_and_confirm_app_goes_to
 }
 
 
-/// ADR 0004 §6: a process app without a `client` talks in its peer's ONE
-/// shared conversation and follows all of it (the system agent's turns
-/// too); with a `client` (a mini app of its own) it gets a request context.
+/// ADR 0004 §6: a process app without a `client` talks in its
+/// conversation (the person's lane) and follows both lanes (the system
+/// agent's turns too, each event with its lane); with a `client` (a mini
+/// app of its own) it gets a plain request context.
 #[test]
-fn a_session_without_a_client_is_the_shared_conversation_and_follows_it() {
+fn a_session_without_a_client_is_the_apps_conversation_and_follows_both_lanes() {
     let (mut links, world, _relay) = setup();
     let (o, frames) = out();
     links.connected(7, "notes", o);
@@ -540,11 +541,11 @@ fn a_session_without_a_client_is_the_shared_conversation_and_follows_it() {
     assert_eq!(world.with(|s| s.opened.clone()), ["conversation", "context"]);
     // The system agent's turn reaches the app, named for the context.
     let follower = world.with(|s| s.contexts[0].follower.lock().unwrap().clone()).expect("followed");
-    follower(ContextEvent::Data(json!({"method": "turn/started", "params": {"turn_id": "t-sa"}, "speaker": {"kind": "system_agent"}})));
+    follower(ContextEvent::Data(json!({"method": "turn/started", "params": {"turn_id": "t-sa"}, "speaker": {"kind": "system_agent"}, "lane": "system_agent"})));
     match downs(&frames).pop() {
         Some(Down::Conversation { context, event }) => {
             assert_eq!(context, chat);
-            assert_eq!(event["speaker"]["kind"], "system_agent");
+            assert_eq!((event["speaker"]["kind"].as_str(), event["lane"].as_str()), (Some("system_agent"), Some("system_agent")));
         }
         other => panic!("{other:?}"),
     }

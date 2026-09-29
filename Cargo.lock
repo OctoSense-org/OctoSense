@@ -759,6 +759,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindgen"
+version = "0.72.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
+dependencies = [
+ "bitflags 2.13.2",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.13.0",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 2.1.3",
+ "shlex 1.3.0",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 dependencies = [
@@ -931,6 +949,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "btls"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c5e60b8c8d282c86360cab651ded04ab0335a7b5390c8d34145cbeab8cacf5f"
+dependencies = [
+ "bitflags 2.13.2",
+ "btls-sys",
+ "foreign-types",
+ "libc",
+ "openssl-macros",
+]
+
+[[package]]
+name = "btls-sys"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b1b8638a2e1c38a5ae4efa90ae57e643baec35a30d03fc5b399b893adc4954b"
+dependencies = [
+ "bindgen",
+ "cmake",
+ "fs_extra",
+ "fslock",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1046,6 +1089,15 @@ name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
+
+[[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom 7.1.3",
+]
 
 [[package]]
 name = "cff-parser"
@@ -1249,6 +1301,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clang-sys"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading 0.8.9 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1398,6 +1461,7 @@ version = "0.4.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef16c47ba2797aa6a909cc37d39911f3a6743811fe7408ac0b0cc0276b656e9"
 dependencies = [
+ "brotli",
  "compression-core",
  "flate2",
  "memchr 2.8.3",
@@ -1663,6 +1727,19 @@ dependencies = [
  "getrandom 0.4.3",
  "hybrid-array",
  "rand_core 0.10.1",
+]
+
+[[package]]
+name = "cssparser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7c66d1cd8ed61bf80b38432613a7a2f09401ab8d0501110655f8b341484a3e3"
+dependencies = [
+ "cssparser-macros 0.6.1",
+ "dtoa-short",
+ "itoa",
+ "phf 0.11.3",
+ "smallvec 1.16.1",
 ]
 
 [[package]]
@@ -1986,6 +2063,17 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
+version = "0.99.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6edb4b64a43d977b8e99788fe3a04d483834fba1215a7e02caa415b626497f7f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "derive_more"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
@@ -2116,7 +2204,7 @@ dependencies = [
  "cssparser 0.37.0",
  "foldhash 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "html5ever 0.39.0",
- "nom",
+ "nom 8.0.0",
  "precomputed-hash",
  "selectors 0.38.0",
  "tendril 0.5.1",
@@ -2643,6 +2731,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "foreign-types"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d737d9aa519fb7b749cbc3b962edcf310a8dd1f4b67c91c4f83975dbdd17d965"
+dependencies = [
+ "foreign-types-macros",
+ "foreign-types-shared",
+]
+
+[[package]]
+name = "foreign-types-macros"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea5190182e6915eb873ddbc16e23b711b6eb1f9c00a0d0a3a91b5f6228475225"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
+
+[[package]]
+name = "foreign-types-shared"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2675,6 +2790,16 @@ name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
+
+[[package]]
+name = "fslock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04412b8935272e3a9bae6f48c7bfff74c2911f60525404edfdd28e49884c3bfb"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "futf"
@@ -3981,13 +4106,25 @@ checksum = "c9356095b4b41197bba32173600e1582792cda618f65d12f68e2e77d273413c5"
 
 [[package]]
 name = "html5ever"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b7410cae13cbc75623c98ac4cbfd1f0bedddf3227afc24f370cf0f50a44a11c"
+dependencies = [
+ "log",
+ "mac",
+ "markup5ever 0.14.1",
+ "match_token 0.1.0",
+]
+
+[[package]]
+name = "html5ever"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55d958c2f74b664487a2035fe1dadb032c48718a03b63f3ab0b8537db8549ed4"
 dependencies = [
  "log",
  "markup5ever 0.35.0",
- "match_token",
+ "match_token 0.35.0",
 ]
 
 [[package]]
@@ -4054,6 +4191,25 @@ dependencies = [
  "http",
  "http-body",
  "pin-project-lite",
+]
+
+[[package]]
+name = "http2"
+version = "0.5.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92d3114be2f413b2e491e686b93a28cda30c355cffc8d091a57f8be4b1342896"
+dependencies = [
+ "atomic-waker",
+ "bytes",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http",
+ "indexmap 2.14.2",
+ "slab",
+ "smallvec 1.16.1",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4491,6 +4647,15 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -4807,7 +4972,7 @@ dependencies = [
  "httpdate",
  "idna",
  "mime",
- "nom",
+ "nom 8.0.0",
  "percent-encoding",
  "quoted_printable",
  "rustls",
@@ -4953,7 +5118,7 @@ dependencies = [
  "itoa",
  "log",
  "md-5",
- "nom",
+ "nom 8.0.0",
  "nom_locate",
  "rand 0.9.5",
  "rangemap",
@@ -4970,6 +5135,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "lru"
+version = "0.18.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
+dependencies = [
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5669,6 +5843,20 @@ checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "markup5ever"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7a7213d12e1864c0f002f52c2923d4556935a43dec5e71355c2760e0f6e7a18"
+dependencies = [
+ "log",
+ "phf 0.11.3",
+ "phf_codegen 0.11.3",
+ "string_cache 0.8.9",
+ "string_cache_codegen 0.5.4",
+ "tendril 0.4.3",
+]
+
+[[package]]
+name = "markup5ever"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "311fe69c934650f8f19652b3946075f0fc41ad8757dbb68f1ca14e7900ecc1c3"
@@ -5722,6 +5910,17 @@ dependencies = [
  "markup5ever 0.38.0",
  "tendril 0.5.1",
  "xml5ever 0.38.0",
+]
+
+[[package]]
+name = "match_token"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88a9689d8d44bf9964484516275f5cd4c9b59457a6940c1d5d0ecbb94510a36b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -6213,6 +6412,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6443,6 +6648,16 @@ dependencies = [
 
 [[package]]
 name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr 2.8.3",
+ "minimal-lexical",
+]
+
+[[package]]
+name = "nom"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
@@ -6458,7 +6673,7 @@ checksum = "0b577e2d69827c4740cba2b52efaad1c4cc7c73042860b199710b3575c68438d"
 dependencies = [
  "bytecount",
  "memchr 2.8.3",
- "nom",
+ "nom 8.0.0",
 ]
 
 [[package]]
@@ -6702,7 +6917,7 @@ dependencies = [
 [[package]]
 name = "octos-agent"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6831,7 +7046,7 @@ dependencies = [
 [[package]]
 name = "octos-bus"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "aes 0.8.4",
  "async-trait",
@@ -6843,7 +7058,7 @@ dependencies = [
  "cron",
  "eyre",
  "futures",
- "lru",
+ "lru 0.16.4",
  "metrics",
  "octos-core",
  "reqwest 0.12.28",
@@ -6860,7 +7075,7 @@ dependencies = [
 [[package]]
 name = "octos-cli"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "agent-client-protocol",
  "argon2",
@@ -6941,7 +7156,7 @@ dependencies = [
 [[package]]
 name = "octos-core"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "chrono",
  "eyre",
@@ -6955,7 +7170,7 @@ dependencies = [
 [[package]]
 name = "octos-diagnostics"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6967,7 +7182,7 @@ dependencies = [
 [[package]]
 name = "octos-fleet"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "eyre",
  "octos-core",
@@ -6983,7 +7198,7 @@ dependencies = [
 [[package]]
 name = "octos-fleet-worker"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "async-trait",
  "eyre",
@@ -7000,7 +7215,7 @@ dependencies = [
 [[package]]
 name = "octos-llm"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7024,7 +7239,7 @@ dependencies = [
 [[package]]
 name = "octos-memory"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "bincode",
  "chrono",
@@ -7043,7 +7258,7 @@ dependencies = [
 [[package]]
 name = "octos-pipeline"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7065,7 +7280,7 @@ dependencies = [
 [[package]]
 name = "octos-plugin"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "eyre",
  "metrics",
@@ -7079,8 +7294,10 @@ dependencies = [
 [[package]]
 name = "octos-research"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
+ "base64 0.22.1",
+ "chromiumoxide",
  "chrono",
  "dom_smoothie",
  "futures",
@@ -7089,18 +7306,21 @@ dependencies = [
  "quick-xml",
  "regex",
  "reqwest 0.12.28",
+ "scraper 0.22.0",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
  "tracing",
  "url",
+ "wreq",
+ "wreq-util",
 ]
 
 [[package]]
 name = "octos-sandbox"
 version = "0.1.0"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "clap",
  "eyre",
@@ -7115,7 +7335,7 @@ dependencies = [
 [[package]]
 name = "octos-services"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "chrono",
  "dirs",
@@ -7137,7 +7357,7 @@ dependencies = [
 [[package]]
 name = "octos-store"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -7157,7 +7377,7 @@ dependencies = [
 [[package]]
 name = "octos-swarm"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -7176,7 +7396,7 @@ dependencies = [
 [[package]]
 name = "octos-workflows"
 version = "2.0.3-rc.13"
-source = "git+https://github.com/octos-org/octos.git?rev=0e6db72d8c8d5f8101535690975b30a3f2cf7249#0e6db72d8c8d5f8101535690975b30a3f2cf7249"
+source = "git+https://github.com/octos-org/octos.git?rev=e045c727492f9d2112391ffdce4dcf635c77bec7#e045c727492f9d2112391ffdce4dcf635c77bec7"
 dependencies = [
  "chrono",
  "eyre",
@@ -7453,7 +7673,7 @@ dependencies = [
  "makepad-jni-sys",
  "octosense-appstore",
  "rustls",
- "scraper",
+ "scraper 0.24.0",
  "serde_json",
  "sha2 0.10.9",
  "webpki-roots 1.0.9",
@@ -7572,6 +7792,17 @@ checksum = "aa576c76302b7b808eecc68061e67336c47833ef9d22caa74dda10fa9675eebc"
 dependencies = [
  "is-wsl",
  "libc",
+]
+
+[[package]]
+name = "openssl-macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -8993,7 +9224,7 @@ checksum = "ffbe87d9e8db95652c25ded2418150e00b08c2fde09e23ec15896d2c470c6631"
 dependencies = [
  "g2p",
  "image",
- "lru",
+ "lru 0.16.4",
 ]
 
 [[package]]
@@ -9521,6 +9752,21 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "scraper"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc3d051b884f40e309de6c149734eab57aa8cc1347992710dc80bcc1c2194c15"
+dependencies = [
+ "cssparser 0.34.0",
+ "ego-tree",
+ "getopts",
+ "html5ever 0.29.1",
+ "precomputed-hash",
+ "selectors 0.26.0",
+ "tendril 0.4.3",
+]
+
+[[package]]
+name = "scraper"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5f3a24d916e78954af99281a455168d4a9515d65eca99a18da1b813689c4ad9"
@@ -9632,6 +9878,25 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "selectors"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd568a4c9bb598e291a08244a5c1f5a8a6650bee243b5b0f8dbb3d9cc1d87fe8"
+dependencies = [
+ "bitflags 2.13.2",
+ "cssparser 0.34.0",
+ "derive_more 0.99.20",
+ "fxhash 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "new_debug_unreachable",
+ "phf 0.11.3",
+ "phf_codegen 0.11.3",
+ "precomputed-hash",
+ "servo_arc",
+ "smallvec 1.16.1",
 ]
 
 [[package]]
@@ -10585,6 +10850,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-btls"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e1fd638ec35427faf3b8f412e0fdd6fae76591d79dba40f38fa667d22bc44dd"
+dependencies = [
+ "btls",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-macros"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11081,6 +11356,26 @@ name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
+name = "typed-builder"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31aa81521b70f94402501d848ccc0ecaa8f93c8eb6999eb9747e72287757ffda"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "076a02dc54dd46795c2e9c8282ed40bcfb1e22747e955de9389a1de28190fb26"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "typenum"
@@ -12464,6 +12759,81 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "wreq"
+version = "6.0.0-rc.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b100d81c46113fa7f0719e43b26b13264b38589a4f059e6ebfccb5308159336"
+dependencies = [
+ "btls",
+ "btls-sys",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "http2",
+ "httparse",
+ "ipnet",
+ "libc",
+ "lru 0.18.5",
+ "percent-encoding",
+ "pin-project-lite",
+ "socket2",
+ "tokio",
+ "tokio-btls",
+ "tower",
+ "tower-http",
+ "url",
+ "webpki-root-certs",
+ "wreq-proto",
+ "wreq-rt",
+]
+
+[[package]]
+name = "wreq-proto"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb4d829f0427a5064829976fe790641ca21abb1d83d844812baf022dc0bdf2db"
+dependencies = [
+ "bytes",
+ "futures-channel",
+ "futures-util",
+ "http",
+ "http-body",
+ "http2",
+ "httparse",
+ "pin-project-lite",
+ "smallvec 1.16.1",
+ "tokio",
+ "tokio-util",
+ "want",
+]
+
+[[package]]
+name = "wreq-rt"
+version = "0.2.2-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99e9bce67a3fa3dd3f1503f066d86661c9caf399a763d3bd184da7afaf886c8b"
+dependencies = [
+ "pin-project-lite",
+ "tokio",
+ "wreq-proto",
+]
+
+[[package]]
+name = "wreq-util"
+version = "3.0.0-rc.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d8d73c75be86fbde675988dbe5cb15f02567025c13f6ffab910361ad1ba6c89"
+dependencies = [
+ "brotli",
+ "flate2",
+ "typed-builder",
+ "wreq",
+ "zstd",
+]
 
 [[package]]
 name = "writeable"

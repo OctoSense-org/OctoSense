@@ -8,13 +8,15 @@
 //! host-owned peer contract Rinx uses (ADR 0007), named `card.<app id>` so a
 //! store app can never share a native module's peer or memory.
 //!
-//! The app and its cards talk in the peer's ONE shared conversation (ADR
-//! 0004 §6, octos#2626): the peer's own session, which the system agent
-//! drives too. A turn is the person's (`origin: person`, labelled with the
-//! app) unless the app says it started the run itself (`trigger: app`);
-//! `octos.session.history` is the peer's transcript, with each message's
-//! speaker. A script app gets no pushed events: it reads the whole
-//! conversation, the system agent's turns included, with history.
+//! The app and its cards talk in the app's conversation (ADR 0004 §6,
+//! 2026-09-29): the person's lane, a request context of the peer that
+//! shares history with the peer's own session (the system agent's lane),
+//! the two running in parallel. A turn is the person's (`origin: person`,
+//! labelled with the app) unless the app says it started the run itself
+//! (`trigger: app`); `octos.session.history` is both lanes' transcripts
+//! merged by time, each message with its `lane` and speaker. A script app
+//! gets no pushed events: it reads the whole conversation, the system
+//! agent's turns included, with history.
 //!
 //! What an app sends is input text (and what started the turn) only. It
 //! never names a session, profile, workspace or provider, and it cannot
@@ -195,8 +197,8 @@ impl ContainedOctos {
         ContainedOctos { gate, factory, apps: HashMap::new() }
     }
 
-    /// The app's handle on its peer's shared conversation, creating the
-    /// peer and (re)opening the handle as needed.
+    /// The app's handle on its conversation (the person's lane), creating
+    /// the peer and (re)opening the handle, with a new context, as needed.
     fn context_for(&mut self, app_id: &str, services: &BTreeSet<String>) -> Result<Arc<dyn OctosContext>, String> {
         // A peer revoked since (Settings turned the agent off) is gone.
         if self.apps.contains_key(app_id) && !live(|l| l.contains_key(app_id)) {

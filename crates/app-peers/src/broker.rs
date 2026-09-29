@@ -12,17 +12,23 @@
 //! - opens one kernel request context per client instance
 //!   (`peer/context/open`), and closes it (`peer/context/close`) when the
 //!   instance closes, the account changes or the app releases;
-//! - hands out handles on the peer's ONE shared conversation
-//!   ([`OctosAppService::open_conversation`], ADR 0004 §6, octos#2626): a
-//!   person's message runs on the peer's own session, started on this link
-//!   (the one that registered the peer's tools) with `origin` (`person`, or
-//!   `app` when the app started the run); every event of that session,
-//!   the system agent's turns included, reaches every open conversation's
-//!   follower with its speaker;
-//! - keeps ONE queue per peer for the person's messages and the system
-//!   agent's `peer/input`s, one turn at a time (the kernel admits one and
-//!   queues none; `turn_in_progress` is retried), bounded: a full queue
-//!   refuses an input `busy` and a person's message with an error;
+//! - hands out handles on the app's conversation
+//!   ([`OctosAppService::open_conversation`], ADR 0004 §6, 2026-09-29): the
+//!   person's lane, a request context opened with `share_history` (octos
+//!   UPCR-2026-034, "Parallel person context with shared history"), which
+//!   runs IN PARALLEL with the peer's own session (the system agent's
+//!   lane). Each handle gets a new context id. A person's message runs in
+//!   its context, started on this link (the one that registered the peer's
+//!   tools) with `origin` (`person`, or `app` when the app started the
+//!   run), waiting only for its own context's previous turn; the kernel
+//!   shows each lane's turns the other's recent rows read-only. The
+//!   follower hears both lanes (its context's events and the peer
+//!   session's), each event with its `lane` and speaker; history is both
+//!   transcripts merged by time;
+//! - keeps ONE queue per peer for the system agent's `peer/input`s on the
+//!   peer's session, one turn at a time (the kernel admits one per session
+//!   and queues none; `turn_in_progress` is retried), bounded: a full queue
+//!   refuses an input `busy`;
 //! - checks the lease on every call — context open, same account and account
 //!   generation, app not released, service in the app's grant AND the
 //!   instance's — before the request and again before any reply is
@@ -56,9 +62,10 @@
 //!   the host has not answered after [`BrokerConfig::expiry_grace`] (30 s)
 //!   the broker denies or declines it itself, and a turn still running then
 //!   is interrupted (N1 applies) so the peer's next queued turn starts;
-//! - stops whatever turn runs on the shared conversation on the person's
-//!   Stop (`ContextOp::Interrupt` on a conversation, [`interrupt_where`]
-//!   for the shell's own surfaces), the system agent's included.
+//! - on the person's Stop (`ContextOp::Interrupt` on a conversation,
+//!   [`interrupt_where`] for the shell's own surfaces) stops BOTH lanes:
+//!   the person's running turn and the system agent's (the person owns the
+//!   device). A plain request context's Stop stops its own turn only.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -324,16 +331,6 @@ enum Occurrence {
 /// How many finished occurrences, interrupted turns and inputs are kept.
 const REMEMBERED: usize = 512;
 
-/// A turn waiting for the peer's running one (the kernel admits one turn
-/// per session and queues none: the host does).
-enum Queued {
-    /// The system agent's input, started with the kernel's turn id.
-    Input(PeerInput),
-    /// A person's (or the app's) message in the shared conversation: its
-    /// sender is told when the peer is free, and then starts it.
-    Person { turn_id: String, go: oneshot::Sender<()> },
-}
-
 /// Who answers a pending approval or question.
 enum PromptAnswer {
     /// The host took the approval: its answer (the router's decision).
@@ -372,20 +369,19 @@ struct Prompt {
 /// from its own surfaces ([`interrupt_where`]).
 static BROKERS: Mutex<Vec<Weak<Inner>>> = Mutex::new(Vec::new());
 
-/// Stop the running turn on the shared conversation of every live broker
-/// whose app id `matches` (the Stop on a shell surface: the person owns the
-/// device, so the system agent's turns stop too). The turns interrupted.
+/// Stop the running turns of both lanes of every live broker whose app id
+/// `matches`: the system agent's on the peer's session and the person's in
+/// every open conversation (the Stop on a shell surface: the person owns
+/// the device, so the system agent's turns stop too). The turns
+/// interrupted.
 pub fn interrupt_where(matches: impl Fn(&str) -> bool) -> Vec<String> {
     let brokers: Vec<Arc<Inner>> = {
         let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
         all.retain(|b| b.strong_count() > 0);
         all.iter().filter_map(Weak::upgrade).collect()
     };
-    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).filter_map(|b| Broker(b).interrupt_running()).collect()
+    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_running()).collect()
 }
-
-/// The person's message is refused when this many turns already wait.
-pub const BUSY: &str = "The assistant is busy with other messages; try again in a moment";
 
 /// Whether a kernel refusal is `turn_in_progress` (the session runs another
 /// turn: the kernel queues nothing).
@@ -407,9 +403,9 @@ impl State {
         }
     }
 
-    /// Who speaks in `turn` of the peer's shared conversation, as this host
-    /// started it: the origin it sent, or the system agent for a
-    /// `peer/input` turn.
+    /// Who speaks in `turn` of the app's conversation, as this host started
+    /// it: the origin it sent (a person-lane turn), or the system agent for
+    /// a `peer/input` turn.
     fn speaker_of(&self, turn: &str) -> Option<Speaker> {
         if self.input_turns.iter().any(|t| t == turn) {
             return Some(Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None });
@@ -489,12 +485,14 @@ struct State {
     /// order, so the oldest is forgotten first.
     turn_triggers: HashMap<String, TurnTrigger>,
     trigger_order: VecDeque<String>,
-    /// Who speaks in each turn this broker started on the peer's shared
-    /// conversation (the origin it sent), by turn id.
+    /// Who speaks in each person-lane turn this broker started (the origin
+    /// it sent), by turn id.
     speakers: HashMap<String, Speaker>,
-    /// Turns waiting for the peer's running one to end: the system agent's
-    /// inputs and the person's messages, in order (one queue per peer).
-    queue: VecDeque<Queued>,
+    /// The system agent's inputs waiting for the peer's running turn, in
+    /// order (one queue per peer; the person's lane has its own session).
+    queue: VecDeque<PeerInput>,
+    /// Conversations opened: each gets a new kernel context id.
+    conversations: u64,
     /// Workspaces new peers were created with, when no state dir keeps them.
     cwds: HashMap<String, String>,
     /// Approval and question ids the host took: only the host answers them.
@@ -558,6 +556,7 @@ impl Broker {
                 trigger_order: VecDeque::new(),
                 speakers: HashMap::new(),
                 queue: VecDeque::new(),
+                conversations: 0,
                 cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
@@ -614,23 +613,23 @@ impl Broker {
             .map_err(|_| "binding the app peer timed out".to_owned())?
     }
 
-    /// Stop the turn running on the peer's shared conversation, whoever
-    /// started it (the person, the app or the system agent): the Stop of a
-    /// shell surface. Its late calls are refused (N1) and the peer's next
-    /// queued turn starts. The turn, or `None` when nothing runs.
-    pub fn interrupt_running(&self) -> Option<String> {
-        let (turn, session) = {
-            let st = self.0.lock();
-            (st.peer_turn.clone()?, st.peer.as_ref()?.1.session.clone())
-        };
-        let inner = self.0.clone();
-        let stopped = turn.clone();
-        self.0.rt().spawn(async move {
-            if let Err(e) = inner.interrupt_turn(&session, &stopped).await {
-                eprintln!("app-peers: {}: stopping turn {stopped}: {e}", inner.cfg.app_id);
-            }
-        });
-        Some(turn)
+    /// Stop the turns running in both lanes, whoever started them: the
+    /// system agent's on the peer's session and the person's (or the app's)
+    /// in every open conversation. The Stop of a shell surface. Their late
+    /// calls are refused (N1) and the peer's next queued input starts. The
+    /// turns stopped (none when nothing runs).
+    pub fn interrupt_running(&self) -> Vec<String> {
+        let running = self.0.running_turns();
+        for (session, turn, _) in &running {
+            let inner = self.0.clone();
+            let (session, turn) = (session.clone(), turn.clone());
+            self.0.rt().spawn(async move {
+                if let Err(e) = inner.interrupt_turn(&session, &turn).await {
+                    eprintln!("app-peers: {}: stopping turn {turn}: {e}", inner.cfg.app_id);
+                }
+            });
+        }
+        running.into_iter().map(|(_, turn, _)| turn).collect()
     }
 
     /// Approvals and questions still waiting for an answer.
@@ -643,21 +642,17 @@ impl Broker {
         self.0.lock().calls.len()
     }
 
-    /// `peer/input`s waiting for the peer's running turn.
+    /// `peer/input`s waiting for the peer's running turn (the person's
+    /// messages never wait for it: they run in their own lane).
     pub fn queued_inputs(&self) -> usize {
-        self.0.lock().queue.iter().filter(|q| matches!(q, Queued::Input(_))).count()
-    }
-
-    /// Every turn waiting for the peer's running one (inputs and the
-    /// person's messages).
-    pub fn queued_turns(&self) -> usize {
         self.0.lock().queue.len()
     }
 
-    /// A request context (`conversation: false`) or a handle on the
-    /// peer's shared conversation.
+    /// A request context (`conversation: false`) or a conversation: the
+    /// person's lane, a request context that shares history with the
+    /// peer's session.
     fn open_handle(&self, spec: ContextSpec, conversation: bool) -> Result<Arc<dyn OctosContext>, String> {
-        let st = self.0.lock();
+        let mut st = self.0.lock();
         if st.released {
             return Err("The app was closed".into());
         }
@@ -672,12 +667,20 @@ impl Broker {
         if services.is_empty() {
             return Err("This app was not granted the assistant".into());
         }
+        // A conversation's kernel context is new for every handle: a closed
+        // context id is never reopened, and the same instance may open again.
+        let kernel_instance = if conversation {
+            st.conversations += 1;
+            format!("p{}-{}", st.conversations, spec.instance)
+        } else {
+            spec.instance.clone()
+        };
         let context = Arc::new(ContextInner {
             broker: Arc::downgrade(&self.0),
             account: spec.account,
             generation: st.generation,
             services,
-            context_id: context_id(&self.0.nonce, &spec.instance),
+            context_id: context_id(&self.0.nonce, &kernel_instance),
             instance: spec.instance.clone(),
             open: AtomicBool::new(true),
             conversation,
@@ -688,8 +691,6 @@ impl Broker {
             calls: AtomicU64::new(0),
             seen: Mutex::new(BTreeSet::new()),
         });
-        drop(st);
-        let mut st = self.0.lock();
         st.contexts.retain(|c| c.strong_count() > 0);
         st.contexts.push(Arc::downgrade(&context));
         Ok(Arc::new(BrokerContext(context)))
@@ -870,9 +871,7 @@ impl Inner {
                 st.contexts.iter().filter_map(Weak::upgrade).collect();
             let calls: Vec<(String, ToolReply)> = st.calls.drain().map(|(id, f)| (id, f.reply)).collect();
             st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
-            // Queued person turns hear that the connection ended (their
-            // start signal is dropped); queued inputs are the kernel's to
-            // fail with the connection.
+            // Queued inputs are the kernel's to fail with the connection.
             st.queue.clear();
             // What waited on the link can no longer be answered there.
             st.prompts.clear();
@@ -1574,7 +1573,7 @@ impl Inner {
                 return self.reject_input(&peer, &input, InputRefusal::Busy);
             }
             // Queued: it starts later, with its own turn id.
-            self.lock().queue.push_back(Queued::Input(input));
+            self.lock().queue.push_back(input);
             // The running turn may have ended meanwhile.
             self.next_turn();
         } else {
@@ -1616,18 +1615,20 @@ impl Inner {
                 "turn_id": input.turn_id,
                 "input": [{"kind": "text", "text": input.text}],
             });
-            if let Err(e) = inner.start_peer_turn(params, &input.turn_id).await {
+            let turn = input.turn_id.clone();
+            let still = move |inner: &Inner| inner.lock().peer_turn.as_deref() == Some(turn.as_str());
+            if let Err(e) = inner.start_turn_retrying(params, still).await {
                 eprintln!("app-peers: {}: the system agent's input {} did not start: {e}", inner.cfg.app_id, input.input_id);
                 inner.peer_turn_ended(&input.turn_id);
             }
         });
     }
 
-    /// `turn/start` on the peer's session for the turn holding the peer
-    /// (`turn_id`), retried while the kernel still runs another turn there
-    /// (`turn_in_progress`: a turn whose end this host has not seen yet),
-    /// until the turn timeout.
-    async fn start_peer_turn(self: &Arc<Self>, params: Value, turn_id: &str) -> Result<Value, String> {
+    /// `turn/start`, retried while the kernel still runs another turn on
+    /// that session (`turn_in_progress`: a turn whose end this host has not
+    /// seen yet), until the turn timeout, and only while `still` says the
+    /// turn is still wanted.
+    async fn start_turn_retrying(self: &Arc<Self>, params: Value, still: impl Fn(&Inner) -> bool) -> Result<Value, String> {
         let until = tokio::time::Instant::now() + self.cfg.turn_timeout;
         let mut wait = Duration::from_millis(200);
         loop {
@@ -1635,13 +1636,39 @@ impl Inner {
                 Err(e) if turn_in_progress(&e) && tokio::time::Instant::now() + wait < until => {
                     tokio::time::sleep(wait).await;
                     wait = (wait * 2).min(Duration::from_secs(2));
-                    if self.lock().peer_turn.as_deref() != Some(turn_id) {
+                    if !still(self) {
                         return Err("The message was withdrawn".into());
                     }
                 }
                 other => return other,
             }
         }
+    }
+
+    /// The turns running now in both lanes: `(session, turn, lane)`, the
+    /// peer's own (the system agent's lane) first, then each open
+    /// conversation's (the person's lane).
+    fn running_turns(&self) -> Vec<(String, String, &'static str)> {
+        let st = self.lock();
+        let mut running = Vec::new();
+        if let (Some(turn), Some((_, peer))) = (&st.peer_turn, &st.peer) {
+            running.push((peer.session.clone(), turn.clone(), LANE_SYSTEM_AGENT));
+        }
+        let conversations: Vec<Arc<ContextInner>> = st
+            .contexts
+            .iter()
+            .filter_map(Weak::upgrade)
+            .filter(|c| c.conversation && c.generation == st.generation && c.open.load(Ordering::Acquire))
+            .collect();
+        drop(st);
+        for conversation in conversations {
+            let turn = conversation.turn.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|w| w.turn_id.clone());
+            let session = conversation.bound.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|b| b.session.clone());
+            if let (Some(turn), Some(session)) = (turn, session) {
+                running.push((session, turn, LANE_PERSON));
+            }
+        }
+        running
     }
 
     /// `turn` no longer holds the peer (it ended, failed to start or was
@@ -1660,60 +1687,18 @@ impl Inner {
         }
     }
 
-    /// The peer is free: the next queued turn, if any, takes it.
+    /// The peer is free: the next queued input, if any, takes it.
     fn next_turn(self: &Arc<Self>) {
-        loop {
-            let next = {
-                let mut st = self.lock();
-                if st.peer_turn.is_some() {
-                    return;
-                }
-                let next = st.queue.pop_front();
-                if let Some(Queued::Person { turn_id, .. }) = &next {
-                    st.peer_turn = Some(turn_id.clone());
-                }
-                next
-            };
-            match next {
-                None => return,
-                Some(Queued::Input(input)) => return self.start_input(input),
-                Some(Queued::Person { turn_id, go }) => {
-                    if go.send(()).is_ok() {
-                        return;
-                    }
-                    // Its sender gave up waiting: the next one.
-                    let mut st = self.lock();
-                    if st.peer_turn.as_deref() == Some(turn_id.as_str()) {
-                        st.peer_turn = None;
-                    }
-                }
+        let next = {
+            let mut st = self.lock();
+            if st.peer_turn.is_some() {
+                return;
             }
+            st.queue.pop_front()
+        };
+        if let Some(input) = next {
+            self.start_input(input);
         }
-    }
-
-    /// A person's message wants the peer: it holds it now (`None`), or waits
-    /// in the queue for the returned signal; refused when the queue is full.
-    fn enqueue_person(&self, turn_id: &str) -> Result<Option<oneshot::Receiver<()>>, String> {
-        let mut st = self.lock();
-        if !st.peer_busy() {
-            st.peer_turn = Some(turn_id.to_owned());
-            return Ok(None);
-        }
-        if st.queue.len() >= host_tools::MAX_QUEUED_INPUTS {
-            return Err(BUSY.into());
-        }
-        let (go, wait) = oneshot::channel();
-        st.queue.push_back(Queued::Person { turn_id: turn_id.to_owned(), go });
-        Ok(Some(wait))
-    }
-
-    /// Take a person's message out of the queue before it started: true
-    /// when it was still waiting.
-    fn withdraw_person(&self, turn_id: &str) -> bool {
-        let mut st = self.lock();
-        let before = st.queue.len();
-        st.queue.retain(|q| !matches!(q, Queued::Person { turn_id: t, .. } if t == turn_id));
-        st.queue.len() != before
     }
 
     /// A `host_tool` approval: the host draws it and answers on this link.
@@ -1944,16 +1929,6 @@ impl Inner {
         }
     }
 
-    /// Stop `turn` on the peer's session (a person's message whose handle
-    /// closed or asked to stop): its late calls are refused.
-    fn interrupt_peer_turn(self: &Arc<Self>, turn: String, session: String) {
-        self.note_interrupted(&turn);
-        let inner = self.clone();
-        self.rt().spawn(async move {
-            let _ = inner.request("turn/interrupt", json!({"session_id": session, "turn_id": turn})).await;
-        });
-    }
-
     /// Deliver one event of the peer's session to every open conversation
     /// of the current account (octos's own approval answered by the host
     /// once here, not by each of them).
@@ -2038,6 +2013,22 @@ impl Inner {
     }
 }
 
+/// The lanes of an app agent's conversation (ADR 0004 §6): the peer's own
+/// session, which the system agent drives, and the person's sharing
+/// context.
+pub const LANE_SYSTEM_AGENT: &str = "system_agent";
+pub const LANE_PERSON: &str = "person";
+
+/// The session a notification names (v2 envelopes name the base session
+/// and carry the topic separately).
+fn session_of(params: &Value) -> String {
+    match (params["session_id"].as_str(), params["topic"].as_str()) {
+        (Some(id), Some(topic)) if !id.contains('#') => format!("{id}#{topic}"),
+        (Some(id), _) => id.to_owned(),
+        _ => String::new(),
+    }
+}
+
 /// The turn a notification ends, if it ends one.
 fn turn_ended<'a>(method: &str, params: &'a Value) -> Option<&'a str> {
     let ended = match method {
@@ -2075,9 +2066,9 @@ async fn saved_answer(inner: &Arc<Inner>, session: &str, turn_id: &str, streamed
     saved.unwrap_or(streamed)
 }
 
-/// The shared conversation's transcript as a surface shows it: each user
-/// message the kernel marked with its speaker gets `speaker` and
-/// `display_text` (the text after the marker); `content` keeps the marker.
+/// A transcript as a surface shows it: each user message the kernel marked
+/// with its speaker gets `speaker` and `display_text` (the text after the
+/// marker); `content` keeps the marker.
 fn speakers_in_history(mut history: Value) -> Value {
     for row in history["messages"].as_array_mut().into_iter().flatten() {
         if row["role"] != "user" {
@@ -2088,6 +2079,49 @@ fn speakers_in_history(mut history: Value) -> Value {
         row["display_text"] = json!(text);
     }
     history
+}
+
+/// A `persisted_at` (RFC 3339, UTC) as a key that sorts by time whatever
+/// its fraction digits: `YYYY-MM-DDTHH:MM:SS` then nine fraction digits.
+fn time_key(row: &Value) -> Option<String> {
+    let at = row["persisted_at"].as_str()?;
+    let at = at.strip_suffix('Z').unwrap_or(at);
+    let (seconds, fraction) = at.split_once('.').unwrap_or((at, ""));
+    let digits: String = fraction.chars().take_while(char::is_ascii_digit).take(9).collect();
+    Some(format!("{seconds}.{digits:0<9}"))
+}
+
+/// The app's conversation as one history (ADR 0004 §6): the person's lane
+/// (its sharing context's transcript) and the system agent's lane (the
+/// peer's), each row with its `lane` and, for a marked user message, its
+/// `speaker` and `display_text`, merged by `persisted_at` (a row without one
+/// keeps its place in its own lane's order).
+fn merged_history(person: Value, system_agent: Value) -> Value {
+    let mut out = speakers_in_history(person);
+    let lane_rows = |history: Value, lane: &str| -> Vec<Value> {
+        let mut rows = match speakers_in_history(history)["messages"].take() {
+            Value::Array(rows) => rows,
+            _ => Vec::new(),
+        };
+        for row in &mut rows {
+            row["lane"] = json!(lane);
+        }
+        rows
+    };
+    let mut rows = lane_rows(json!({"messages": out["messages"].take()}), LANE_PERSON);
+    rows.extend(lane_rows(system_agent, LANE_SYSTEM_AGENT));
+    // A stable sort: equal or missing times keep their lane order.
+    let mut last = String::new();
+    let mut keyed: Vec<(String, Value)> = Vec::with_capacity(rows.len());
+    for row in rows {
+        if let Some(key) = time_key(&row) {
+            last = key;
+        }
+        keyed.push((last.clone(), row));
+    }
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    out["messages"] = Value::Array(keyed.into_iter().map(|(_, row)| row).collect());
+    out
 }
 
 /// `approval/respond` params: the decision and why (`client_note`).
@@ -2152,13 +2186,14 @@ struct ContextInner {
     /// tool calls from this context as their `client`.
     instance: String,
     open: AtomicBool,
-    /// A handle on the peer's shared conversation (its own session), not a
-    /// request context of its own.
+    /// The app's conversation (ADR 0004 §6): the person's lane, a request
+    /// context opened with `share_history` that also follows the system
+    /// agent's lane (the peer's session). `false`: a plain request context.
     conversation: bool,
     bound: Mutex<Option<Bound>>,
     turn: Mutex<Option<TurnWaiter>>,
     sink: Mutex<Option<EventSink>>,
-    /// A conversation's follower: every event of the shared conversation.
+    /// A conversation's follower: every event of both lanes.
     subscriber: Mutex<Option<EventSink>>,
     calls: AtomicU64,
     /// (thread, seq) of v2 envelopes already applied: the kernel may deliver
@@ -2188,7 +2223,7 @@ impl ContextInner {
         Ok(())
     }
 
-    /// An event of this request context's session (the host's answer to
+    /// An event of this context's own session (the host's answer to
     /// octos's approval first, in developer mode).
     fn notification(&self, method: &str, params: &Value) {
         let Some(inner) = self.broker.upgrade() else {
@@ -2196,27 +2231,26 @@ impl ContextInner {
         };
         // The host may answer octos's approval itself (developer mode): then
         // the app hears that it was answered, and is never asked.
-        let session = match (params["session_id"].as_str(), params["topic"].as_str()) {
-            (Some(id), Some(topic)) if !id.contains('#') => format!("{id}#{topic}"),
-            (Some(id), _) => id.to_owned(),
-            _ => String::new(),
-        };
+        let session = session_of(params);
         let mut method = method;
-        if !self.conversation {
-            if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
-                if let Some(id) = respond["approval_id"].as_str() {
-                    inner.lock().prompts.remove(id);
-                }
-                let broker = inner.clone();
-                inner.rt().spawn(async move {
-                    if let Err(e) = broker.request("approval/respond", respond).await {
-                        eprintln!("app-peers: the host's approval answer failed: {e}");
-                    }
-                });
-                method = crate::host_approvals::ANSWERED_BY_HOST;
+        if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
+            if let Some(id) = respond["approval_id"].as_str() {
+                inner.lock().prompts.remove(id);
             }
+            let broker = inner.clone();
+            inner.rt().spawn(async move {
+                if let Err(e) = broker.request("approval/respond", respond).await {
+                    eprintln!("app-peers: the host's approval answer failed: {e}");
+                }
+            });
+            method = crate::host_approvals::ANSWERED_BY_HOST;
         }
         self.deliver(method, params);
+    }
+
+    /// The kernel session this handle is bound to, once bound.
+    fn session(&self) -> Option<String> {
+        self.bound.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|b| b.session.clone())
     }
 
     /// Hand one event to this handle: its running turn, the caller's sink
@@ -2282,6 +2316,10 @@ impl ContextInner {
             data["text"] = json!(text);
         }
         if self.conversation {
+            // Which lane: this context's own session is the person's; the
+            // peer's session is the system agent's.
+            let lane = if self.session().is_some_and(|own| own == session_of(params)) { LANE_PERSON } else { LANE_SYSTEM_AGENT };
+            data["lane"] = json!(lane);
             // Who speaks, from this host's own record of the turn, else
             // from the kernel's marker on the user message.
             let mut speaker = turn_id.and_then(|t| inner.lock().speaker_of(t));
@@ -2322,19 +2360,9 @@ impl ContextInner {
             .map(|w| w.turn_id);
         self.sink.lock().unwrap_or_else(|e| e.into_inner()).take();
         self.subscriber.lock().unwrap_or_else(|e| e.into_inner()).take();
-        if self.conversation {
-            // The conversation stays the peer's; only this handle's own
-            // message stops (withdrawn if it was still waiting).
-            let bound = self.bound.lock().unwrap_or_else(|e| e.into_inner()).take();
-            if let Some(turn) = turn {
-                if !inner.withdraw_person(&turn) {
-                    if let Some(bound) = bound {
-                        inner.interrupt_peer_turn(turn, bound.session);
-                    }
-                }
-            }
-            return;
-        }
+        // A conversation is a context too: its person's turn stops and its
+        // context closes for good (the next handle opens a new one). The
+        // system agent's lane goes on.
         if let Some(bound) = self.bound.lock().unwrap_or_else(|e| e.into_inner()).take() {
             inner.lock().routes.remove(&bound.session);
             inner.close_context_on_kernel(
@@ -2360,29 +2388,27 @@ impl ContextInner {
         if generation != self.generation {
             return Err("The account changed; reopen this app".into());
         }
+        let mut open = json!({
+            "profile_id": inner.cfg.profile_id,
+            "session_id": inner.cfg.originator,
+            "peer": peer.slug,
+            "context_id": self.context_id,
+            "host_token": peer.token,
+        });
         if self.conversation {
-            // The peer's own session: its events reach every conversation.
-            self.check(inner, None)?;
-            *self.bound.lock().unwrap_or_else(|e| e.into_inner()) = Some(Bound {
-                session: peer.session.clone(),
-                peer_slug: peer.slug,
-                context_id: String::new(),
-                token: peer.token,
-            });
-            return Ok(peer.session);
+            // The person's lane: runs in parallel with the peer's session,
+            // each shown the other's recent turns (the kernel's defaults).
+            open["share_history"] = json!({});
         }
-        let result = inner
-            .request(
-                "peer/context/open",
-                json!({
-                    "profile_id": inner.cfg.profile_id,
-                    "session_id": inner.cfg.originator,
-                    "peer": peer.slug,
-                    "context_id": self.context_id,
-                    "host_token": peer.token,
-                }),
-            )
-            .await?;
+        let result = inner.request("peer/context/open", open).await?;
+        // A kernel that ignored `share_history` opened a plain context: the
+        // person would talk without the system agent's side, and the system
+        // agent would never see the person's. Refuse it.
+        if self.conversation && !result["share_history"].is_object() {
+            return Err("This assistant kernel cannot share the app's conversation with its system agent \
+                        (octos UPCR-2026-034 share_history); update it"
+                .into());
+        }
         let session = result["session_id"]
             .as_str()
             .ok_or("peer/context/open returned no session")?
@@ -2410,11 +2436,13 @@ impl ContextInner {
         Ok(session)
     }
 
-    /// A person's (or the app's) message in the peer's shared conversation:
-    /// queued behind the peer's running turn, then `turn/start` on the
-    /// peer's session, on the link that registered its tools, with who is
-    /// speaking (`origin`). G2's trigger stays the authority for approval
-    /// rules; the origin only says who speaks.
+    /// A person's (or the app's) message in the app's conversation: a
+    /// `turn/start` in this handle's sharing context (the person's lane),
+    /// on the link that registered the peer's tools, with who is speaking
+    /// (`origin`). It never waits for the system agent's lane; only for this
+    /// context's previous turn still ending (`turn_in_progress`, retried).
+    /// G2's trigger stays the authority for approval rules; the origin only
+    /// says who speaks.
     async fn conversation_turn(self: &Arc<Self>, inner: &Arc<Inner>, session: &str, text: String, trigger: TurnTrigger) -> Result<Value, String> {
         let text = text.trim().to_owned();
         if text.is_empty() || text.len() > 32 * 1024 {
@@ -2440,38 +2468,10 @@ impl ContextInner {
             }
             *turn = Some(TurnWaiter::new(turn_id.clone(), done_tx));
         }
-        let release_waiter = || {
-            let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
-            if turn.as_ref().is_some_and(|w| w.turn_id == turn_id) {
-                turn.take();
-            }
-        };
         {
             let mut st = inner.lock();
             st.note_trigger(&turn_id, trigger);
             st.speakers.insert(turn_id.clone(), speaker.clone());
-        }
-        // One turn at a time on the peer: wait for the running one (the
-        // system agent's input, another surface's message).
-        match inner.enqueue_person(&turn_id) {
-            Err(busy) => {
-                release_waiter();
-                return Err(busy);
-            }
-            Ok(None) => {}
-            Ok(Some(go)) => match tokio::time::timeout(inner.cfg.turn_timeout, go).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) => {
-                    release_waiter();
-                    return Err("The assistant connection ended; try again".into());
-                }
-                Err(_) => {
-                    inner.withdraw_person(&turn_id);
-                    inner.peer_turn_ended(&turn_id);
-                    release_waiter();
-                    return Err("The assistant stayed busy; try again".into());
-                }
-            },
         }
         let params = json!({
             "session_id": session,
@@ -2479,11 +2479,13 @@ impl ContextInner {
             "input": [{"kind": "text", "text": text}],
             "origin": speaker.to_json(),
         });
-        let outcome = match inner.start_peer_turn(params, &turn_id).await {
-            Err(err) => {
-                inner.peer_turn_ended(&turn_id);
-                Err(err)
-            }
+        let me = Arc::downgrade(self);
+        let wanted = turn_id.clone();
+        let still = move |_: &Inner| {
+            me.upgrade().is_some_and(|c| c.turn.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|w| w.turn_id == wanted))
+        };
+        let outcome = match inner.start_turn_retrying(params, still).await {
+            Err(err) => Err(err),
             Ok(_) => match tokio::time::timeout(inner.cfg.turn_timeout, done_rx).await {
                 Ok(Ok(result)) => result,
                 Ok(Err(_)) => Err("The assistant's turn was cancelled".into()),
@@ -2494,12 +2496,44 @@ impl ContextInner {
                 }
             },
         };
-        // Its end frees the peer (the terminal usually did already).
-        inner.peer_turn_ended(&turn_id);
-        release_waiter();
+        {
+            let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
+            if turn.as_ref().is_some_and(|w| w.turn_id == turn_id) {
+                turn.take();
+            }
+        }
         let streamed = outcome?;
         let text = saved_answer(inner, session, &turn_id, streamed).await;
-        Ok(json!({"turn_id": turn_id, "text": text, "speaker": speaker.to_json()}))
+        Ok(json!({"turn_id": turn_id, "text": text, "speaker": speaker.to_json(), "lane": LANE_PERSON}))
+    }
+
+    /// Stop on the app's conversation: BOTH lanes' running turns, the
+    /// person's (this handle's) and the system agent's on the peer's
+    /// session (the person owns the device). Each stopped turn with its
+    /// lane and speaker.
+    async fn stop_both_lanes(self: &Arc<Self>, inner: &Arc<Inner>, session: &str) -> Result<Value, String> {
+        let mut running = Vec::new();
+        let own = self.turn.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|w| w.turn_id.clone());
+        if let Some(own) = own {
+            running.push((session.to_owned(), own, LANE_PERSON));
+        }
+        {
+            let st = inner.lock();
+            if let (Some(turn), Some((_, peer))) = (&st.peer_turn, &st.peer) {
+                running.push((peer.session.clone(), turn.clone(), LANE_SYSTEM_AGENT));
+            }
+        }
+        if running.is_empty() {
+            return Err("Nothing is running in this conversation".into());
+        }
+        let mut stopped = Vec::new();
+        for (session, turn, lane) in running {
+            let speaker = inner.lock().speaker_of(&turn).map(|s| s.to_json());
+            inner.interrupt_turn(&session, &turn).await?;
+            stopped.push(json!({"turn_id": turn, "lane": lane, "speaker": speaker}));
+        }
+        let turns: Vec<Value> = stopped.iter().map(|t| t["turn_id"].clone()).collect();
+        Ok(json!({"interrupted": turns, "turns": stopped}))
     }
 
     async fn run(self: &Arc<Self>, inner: &Arc<Inner>, op: ContextOp) -> Result<Value, String> {
@@ -2514,6 +2548,7 @@ impl ContextInner {
             ContextOp::Open => Ok(json!({
                 "open": true,
                 "conversation": self.conversation,
+                "shared_history": self.conversation,
                 "model": inner.lock().model.as_ref().map(|m| json!({
                     "lane": m.lane, "provider": m.provider, "model": m.model,
                 })),
@@ -2526,33 +2561,21 @@ impl ContextInner {
                     )
                     .await;
                 if self.conversation {
-                    history.map(speakers_in_history)
+                    // Both lanes: the person's context and the peer's session.
+                    let peer_session = inner.lock().peer.as_ref().map(|(_, p)| p.session.clone());
+                    let system_agent = match peer_session {
+                        Some(peer) => inner.request("session/hydrate", json!({"session_id": peer, "include": ["messages"]})).await?,
+                        None => json!({"messages": []}),
+                    };
+                    history.map(|person| merged_history(person, system_agent))
                 } else {
                     history
                 }
             }
             ContextOp::Turn { text } if self.conversation => self.conversation_turn(inner, &session, text, trigger).await,
-            // Stop, on the shared conversation: this handle's own message
-            // still waiting is withdrawn; otherwise whatever turn runs on
-            // the peer stops, whoever started it (the person owns the
-            // device, so the system agent's turns too).
-            ContextOp::Interrupt if self.conversation => {
-                let own = self.turn.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|w| w.turn_id.clone());
-                if let Some(own) = own.filter(|t| inner.withdraw_person(t)) {
-                    if let Some(mut waiter) = self.turn.lock().unwrap_or_else(|e| e.into_inner()).take() {
-                        waiter.finish(Err("The message was withdrawn before it started".into()));
-                    }
-                    Ok(json!({"withdrawn": own}))
-                } else {
-                    let (running, speaker) = {
-                        let st = inner.lock();
-                        let running = st.peer_turn.clone().ok_or("Nothing is running in this conversation")?;
-                        let speaker = st.speaker_of(&running).map(|s| s.to_json());
-                        (running, speaker)
-                    };
-                    inner.interrupt_turn(&session, &running).await.map(|_| json!({"interrupted": running, "speaker": speaker}))
-                }
-            }
+            // Stop, on the app's conversation: both lanes (the person owns
+            // the device, so the system agent's turn stops too).
+            ContextOp::Interrupt if self.conversation => self.stop_both_lanes(inner, &session).await,
             ContextOp::Turn { text } => {
                 let text = text.trim().to_owned();
                 if text.is_empty() || text.len() > 32 * 1024 {
