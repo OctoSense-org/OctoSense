@@ -141,8 +141,10 @@ pub fn with<R>(f: impl FnOnce(&mut Approvals) -> R) -> Option<R> {
 pub fn init(home: &Path) {
     let a = Approvals::in_home(home);
     *STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(a);
-    // Contained apps' `octos` service asks consent at first use too.
+    // Contained apps' `octos` service asks consent at first use too, and
+    // grants only the `octos.*` services the app's manifest declares.
     crate::ai_host::contained::set_consent(consent_for_contained);
+    crate::ai_host::contained::set_declared(crate::apps::declared_octos);
 }
 
 /// For tests and headless runs: approvals kept in memory only.
@@ -273,9 +275,28 @@ pub fn take_notices() -> Vec<Notice> {
 pub fn generation() -> u64 {
     with(|a| a.generation()).unwrap_or(0)
 }
-/// Settings → Assistant → Approvals.
+/// Settings → Assistant → Approvals: every app that declares an agent is
+/// listed with its switch, whether or not it has asked yet.
 pub fn open_settings() {
-    with(|a| a.settings_open = true);
+    let apps = crate::apps::agent_apps();
+    with(|a| {
+        register_agents(a, &apps);
+        a.settings_open = true;
+    });
+}
+
+/// Settings learns of every app that declares an agent.
+pub fn register_agents(a: &mut Approvals, apps: &[crate::apps::AgentApp]) {
+    for app in apps {
+        let summary = consent::AgentSummary::from_manifest(&app.id, &app.name, &app.manifest, &app.octos, "The model set in AI providers");
+        a.consent.register(summary);
+    }
+}
+
+/// The apps whose agent the person just turned off (Settings, or a denial
+/// on the first-use sheet): the shell revokes their live services.
+pub fn take_revoked() -> Vec<String> {
+    with(|a| a.consent.take_revoked()).unwrap_or_default()
 }
 pub fn close_settings() {
     with(|a| a.settings_open = false);

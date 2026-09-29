@@ -723,3 +723,38 @@ fn no_rule_matches_an_external_client_even_if_the_caller_is_mislabelled() {
     assert_eq!(r.front_sheet().unwrap().lines[0].surfaced, Surfaced::External);
     assert!(relay.take().is_empty());
 }
+
+// ---------------------------------------------------------------- consent (G10, G5)
+
+#[test]
+fn turning_an_agent_off_queues_its_revocation_once() {
+    let mut c = ConsentStore::memory();
+    c.set(&ApprovalGesture::settings_tap(), "rinx", true, T0);
+    assert!(c.take_revoked().is_empty(), "allowing revokes nothing");
+    c.turn_off("rinx", T0 + 1);
+    c.turn_off("rinx", T0 + 2);
+    c.set(&ApprovalGesture::sheet_tap(), "os.mail", false, T0 + 3);
+    assert_eq!(c.take_revoked(), vec!["rinx".to_string(), "os.mail".to_string()]);
+    assert!(c.take_revoked().is_empty());
+    assert!(!c.granted("rinx", false));
+}
+
+#[test]
+fn settings_lists_every_app_that_declares_an_agent_before_it_asks() {
+    let mut a = super::Approvals::memory();
+    let dir = std::env::temp_dir().join(format!("octosense-agent-apps-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("with.json"), r#"{"id":"org.example.trip","capabilities":["storage","octos.session.open","octos.turn.start"]}"#).unwrap();
+    std::fs::write(dir.join("without.json"), r#"{"id":"org.example.clock","capabilities":["storage"]}"#).unwrap();
+    let trip = crate::apps::script_agent_app(&dir.join("with.json"), "org.example.trip", "Trip").expect("declares octos.*");
+    assert_eq!(trip.octos, vec!["octos.session.open".to_string(), "octos.turn.start".to_string()]);
+    assert!(crate::apps::script_agent_app(&dir.join("without.json"), "org.example.clock", "Clock").is_none());
+    let mut apps = crate::apps::agent_apps();
+    assert!(apps.iter().any(|a| a.id == "rinx"), "native apps from native-apps.json");
+    apps.push(trip);
+    super::register_agents(&mut a, &apps);
+    let listed: Vec<(String, State)> = a.consent.agents().into_iter().map(|(id, _, s)| (id, s)).collect();
+    assert!(listed.contains(&("rinx".to_string(), State::Undecided)), "{listed:?}");
+    assert!(listed.contains(&("org.example.trip".to_string(), State::Undecided)), "listed before it ever asked: {listed:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

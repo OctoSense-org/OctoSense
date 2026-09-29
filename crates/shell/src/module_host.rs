@@ -465,6 +465,21 @@ impl ModuleHost {
         }
     }
 
+    /// The person turned `app`'s agent off (ADR 0004 §4): every instance of
+    /// it loses its assistant service now (its contexts close, its leases
+    /// go); the next instance is offered one only once allowed again. How
+    /// many were revoked.
+    pub fn revoke_assistant(&mut self, app: &str) -> usize {
+        let mut n = 0;
+        for instance in self.instances.values_mut().filter(|i| i.module.id() == app) {
+            if let Some(assistant) = instance.assistant.take() {
+                guarded_cleanup("revoking an instance's assistant", || assistant.release());
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// The assistant service the shell gave this instance, if any.
     pub fn assistant_of(&self, client: ClientId) -> Option<&crate::ai_host::Assistant> {
         self.instances.get(&client)?.assistant.as_ref()
@@ -976,6 +991,12 @@ mod assistant_tests {
         assert!(host.assistant_of(3).is_none());
         // An offer never outlives its create: nothing is left to claim.
         assert!(octosense_ai_host::app_peers::injection::claim("assistant-probe", "i1g1").is_none());
+        // The person turns its agent off: the live instance loses its
+        // service now, not at its next creation (G10).
+        assert_eq!(host.revoke_assistant("plain-probe"), 0);
+        assert_eq!(host.revoke_assistant("assistant-probe"), 1);
+        assert!(host.assistant_of(1).is_none());
+        assert_eq!(host.revoke_assistant("assistant-probe"), 0, "once");
         assert!(host.teardown(&mut cx, 1));
     }
 

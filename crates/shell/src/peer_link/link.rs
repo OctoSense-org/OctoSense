@@ -597,6 +597,25 @@ impl PeerLinks {
         }
     }
 
+    /// The person turned `app`'s agent off (ADR 0004 §4): every context of
+    /// it closes (the app is told), and its service is released and
+    /// forgotten, so nothing it held stays live. Its links stay: later
+    /// requests are refused until the person allows it again.
+    pub fn revoke(&mut self, app: &str) {
+        let handles: Vec<String> = self.contexts.iter().filter(|(_, c)| c.owner.app == app).map(|(h, _)| h.clone()).collect();
+        for handle in handles {
+            let client_id = self.contexts[&handle].owner.client_id;
+            self.close_context(&handle);
+            if let Some(link) = self.links.get(&client_id) {
+                (link.out)(Down::ContextClosed { context: handle.clone(), reason: "agent_turned_off".to_string() }.to_json());
+            }
+        }
+        if let Some(service) = self.services.remove(app) {
+            service.release();
+            self.log.push(format!("peer link: {app}'s agent was turned off; its service is released"));
+        }
+    }
+
     /// Whether the shell keeps a peer (service) for `app`.
     pub fn keeps_peer(&self, app: &str) -> bool {
         self.services.contains_key(app)

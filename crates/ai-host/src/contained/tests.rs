@@ -85,6 +85,7 @@ struct FakeService {
     accounts: Mutex<Vec<Option<String>>>,
     specs: Mutex<Vec<ContextSpec>>,
     contexts: Mutex<Vec<Arc<FakeContext>>>,
+    released: AtomicBool,
 }
 
 impl OctosAppService for FakeService {
@@ -117,7 +118,12 @@ impl OctosAppService for FakeService {
         self.contexts.lock().unwrap().push(context.clone());
         Ok(context)
     }
-    fn release(&self) {}
+    fn release(&self) {
+        self.released.store(true, Ordering::SeqCst);
+        for c in self.contexts.lock().unwrap().iter() {
+            c.open.store(false, Ordering::SeqCst);
+        }
+    }
     fn shutdown(&self) {}
 }
 
@@ -127,11 +133,13 @@ struct Peers {
     turn: Turn,
     close_after_call: bool,
     launched: Mutex<Vec<(String, Arc<FakeService>)>>,
+    /// The services each launch was granted.
+    granted: Mutex<Vec<(String, BTreeSet<String>)>>,
 }
 
 impl Peers {
     fn new(turn: Turn) -> Arc<Self> {
-        Arc::new(Peers { give: true, turn, close_after_call: false, launched: Mutex::default() })
+        Arc::new(Peers { give: true, turn, close_after_call: false, launched: Mutex::default(), granted: Mutex::default() })
     }
     fn ids(&self) -> Vec<String> {
         self.launched.lock().unwrap().iter().map(|(id, _)| id.clone()).collect()
@@ -145,7 +153,8 @@ impl Peers {
 }
 
 impl PeerFactory for Peers {
-    fn launch(&self, peer_id: &str, _app_id: &str) -> Option<Arc<dyn OctosAppService>> {
+    fn launch(&self, peer_id: &str, _app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+        self.granted.lock().unwrap().push((peer_id.to_owned(), services.clone()));
         if !self.give {
             return None;
         }
@@ -155,6 +164,7 @@ impl PeerFactory for Peers {
             accounts: Mutex::default(),
             specs: Mutex::default(),
             contexts: Mutex::default(),
+            released: AtomicBool::new(false),
         });
         self.launched.lock().unwrap().push((peer_id.to_owned(), service.clone()));
         Some(service)
@@ -312,7 +322,7 @@ fn contained_peer_ids_are_namespaced_and_bounded() {
 #[test]
 fn contained_unavailable_when_no_peer() {
     let _g = serial();
-    let peers = Arc::new(Peers { give: false, turn: Turn::Reply(json!({})), close_after_call: false, launched: Mutex::default() });
+    let peers = Arc::new(Peers { give: false, turn: Turn::Reply(json!({})), close_after_call: false, launched: Mutex::default(), granted: Mutex::default() });
     register(true, &peers);
     let err = ask(APP, "octos.session.open", json!({}), false).unwrap_err();
     assert_eq!(err, UNAVAILABLE);
@@ -321,7 +331,7 @@ fn contained_unavailable_when_no_peer() {
 #[test]
 fn contained_reopens_closed_context() {
     let _g = serial();
-    let peers = Arc::new(Peers { give: true, turn: Turn::Reply(json!({})), close_after_call: true, launched: Mutex::default() });
+    let peers = Arc::new(Peers { give: true, turn: Turn::Reply(json!({})), close_after_call: true, launched: Mutex::default(), granted: Mutex::default() });
     register(true, &peers);
     ask(APP, "octos.session.open", json!({}), false).expect("first");
     ask(APP, "octos.session.open", json!({}), false).expect("second");
@@ -376,11 +386,59 @@ fn contained_rejects_oversized_reply() {
 }
 
 #[test]
-fn policy_contained_apps_defaults() {
-    // Off until first-use consent exists (ADR 0004 section 4), unless a
-    // developer turns it on.
-    if std::env::var("OCTOSENSE_CONTAINED_APPS").as_deref() != Ok("1") {
-        assert!(!crate::Policy::shipped().contained_apps());
+fn policy_contained_apps_follow_consent() {
+    use crate::{contained_gate_from, ContainedGate};
+    // On behind first-use consent (ADR 0004 section 4); the variable is a
+    // developer override either way.
+    assert_eq!(contained_gate_from(None), ContainedGate::Consent);
+    assert_eq!(contained_gate_from(Some("1")), ContainedGate::Everyone);
+    assert_eq!(contained_gate_from(Some("0")), ContainedGate::Off);
+    if std::env::var("OCTOSENSE_CONTAINED_APPS").is_err() {
+        assert_eq!(crate::Policy::shipped().contained_gate(), ContainedGate::Consent);
+        assert!(crate::Policy::shipped().contained_apps());
     }
     assert!(!crate::Policy::none().contained_apps());
+}
+
+/// The shell's manifest lookup, as a test sets it once for the whole crate:
+/// every app declares everything but these two.
+fn manifests(app: &str) -> Option<BTreeSet<String>> {
+    match app {
+        "com.example.reader" => Some(["octos.session.open", "octos.session.history", "not.octos"].iter().map(|s| s.to_string()).collect()),
+        "com.example.unknown" => None,
+        _ => Some(OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()),
+    }
+}
+
+#[test]
+fn contained_apps_get_only_the_octos_services_their_manifest_declares() {
+    let _g = serial();
+    set_declared(manifests);
+    let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
+    register(true, &peers);
+    ask("com.example.reader", "octos.session.open", json!({}), false).expect("declared");
+    let granted = peers.granted.lock().unwrap().clone();
+    assert_eq!(granted.len(), 1);
+    assert_eq!(granted[0].1, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>(), "never all four");
+    let err = ask("com.example.reader", "octos.turn.start", json!({"text": "hi"}), false).unwrap_err();
+    assert_eq!(err, NOT_DECLARED);
+    let err = ask("com.example.unknown", "octos.session.open", json!({}), false).unwrap_err();
+    assert_eq!(err, NOT_DECLARED);
+    assert_eq!(peers.ids(), vec!["card.com.example.reader".to_string()], "no peer for an app the shell does not know");
+}
+
+#[test]
+fn turning_an_agent_off_releases_its_live_peer_at_once() {
+    let _g = serial();
+    let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
+    register(true, &peers);
+    ask(APP, "octos.turn.start", json!({"text": "hi"}), false).expect("a reply");
+    let first = peers.service("card.com.example.trip");
+    assert!(revoke(APP), "the peer was live");
+    assert!(first.released.load(Ordering::SeqCst), "released now, not at the next launch");
+    assert!(first.contexts.lock().unwrap().iter().all(|c| !c.open.load(Ordering::SeqCst)), "its contexts are closed");
+    assert!(!revoke(APP), "once");
+    // Allowed again later: a fresh peer, never the revoked one.
+    ask(APP, "octos.turn.start", json!({"text": "again"}), false).expect("a reply");
+    assert_eq!(peers.ids().len(), 2);
 }
