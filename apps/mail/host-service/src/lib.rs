@@ -53,6 +53,36 @@ mod network;
 
 pub const INBOX: &str = "INBOX";
 
+/// An account an app gained or lost through this service (ADR 0004 §11):
+/// the shell's account lifecycle opens the app's folder for it on
+/// `Added` and deletes that folder (its agent suspended) on `Removed`.
+/// `account` is the service's account id (`{id}` in `mail.accounts`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccountEvent {
+    Added { app_id: String, account: String },
+    Removed { app_id: String, account: String },
+}
+
+/// Who hears [`AccountEvent`]s: the shell, once at startup.
+pub type AccountListener = Arc<dyn Fn(AccountEvent) + Send + Sync>;
+
+fn account_listener() -> &'static Mutex<Option<AccountListener>> {
+    static LISTENER: std::sync::OnceLock<Mutex<Option<AccountListener>>> = std::sync::OnceLock::new();
+    LISTENER.get_or_init(Default::default)
+}
+
+/// Install (or with `None` remove) the account listener.
+pub fn on_account_event(listener: Option<AccountListener>) {
+    *account_listener().lock().unwrap_or_else(|e| e.into_inner()) = listener;
+}
+
+fn account_event(event: AccountEvent) {
+    let listener = account_listener().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(listener) = listener {
+        listener(event);
+    }
+}
+
 /// How mail moves: IMAP or POP3 and SMTP in the shell, or a fake in tests.
 pub trait Transport: Send + Sync {
     /// Sign in and out again: the account works.
@@ -458,6 +488,7 @@ impl HostService for MailService {
                         return reply.send(Err(e));
                     }
                     close_sheet_later(&app_id);
+                    account_event(AccountEvent::Added { app_id: app_id.clone(), account: id.clone() });
                     if let Some((_, waiting)) = pending.lock().unwrap().take() {
                         waiting.send(Ok(json!({"id": id, "address": account["address"]})));
                     }
@@ -466,9 +497,12 @@ impl HostService for MailService {
             }
             "remove_account" => {
                 let mut accounts = store.accounts();
+                let mut removed = false;
                 if let Some(account) = accounts.iter_mut().find(|a| text(a, "id") == account_arg) {
                     if let Some(apps) = account["apps"].as_array_mut() {
+                        let before = apps.len();
                         apps.retain(|a| a != call.app_id.as_str());
+                        removed = apps.len() < before;
                     }
                 }
                 let orphaned: Vec<String> = accounts
@@ -480,7 +514,11 @@ impl HostService for MailService {
                 for id in &orphaned {
                     store.forget(id);
                 }
-                reply.send(store.save_accounts(&accounts).map(|_| json!({})));
+                let saved = store.save_accounts(&accounts);
+                if removed && saved.is_ok() {
+                    account_event(AccountEvent::Removed { app_id: call.app_id.clone(), account: account_arg.clone() });
+                }
+                reply.send(saved.map(|_| json!({})));
             }
             "folders" => {
                 let account = match store.account_for(&call.app_id, &account_arg) {
@@ -784,6 +822,10 @@ mod tests {
         let fake = Arc::new(Fake { password: "s3cret".into(), inbox: vec![message("u1", "First"), html_mail], sent: Mutex::default(), marked: Mutex::default() });
         register_with_vault(fake.clone(), Arc::new(vault::FileVault));
         let mut host = Host::default();
+        // The shell's account lifecycle hears who gained and lost an account.
+        let events: Arc<Mutex<Vec<AccountEvent>>> = Arc::default();
+        let heard = events.clone();
+        on_account_event(Some(Arc::new(move |e| heard.lock().unwrap().push(e))));
 
         // The app cannot hand the service a password itself.
         assert!(ask(&dir, "os.mail", "mail.sheet.submit", json!({"address": "me@example.com", "password": "s3cret"}), false, &mut host)
@@ -803,6 +845,7 @@ mod tests {
         let added = wait(add).unwrap();
         let id = text(&added, "id").to_string();
         assert_eq!(added["address"], "me@example.com");
+        assert_eq!(*events.lock().unwrap(), [AccountEvent::Added { app_id: "os.mail".into(), account: id.clone() }]);
         assert!(!std::fs::read_to_string(dir.join("mail/accounts.json")).unwrap().contains("s3cret"), "no password in the account list");
 
         // Another app cannot reach the account.
@@ -854,7 +897,12 @@ mod tests {
         assert_eq!(contacts::known_addresses(&dir), ["alex@example.com", "me@example.com"]);
         assert!(!std::fs::read_to_string(dir.join("mail").join(contacts::SENT_TO_FILE)).unwrap().contains("s3cret"));
 
+        // An app that never had the account removes nothing.
+        ask(&dir, "os.other", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();
+        assert_eq!(events.lock().unwrap().len(), 1);
         ask(&dir, "os.mail", "mail.remove_account", json!({"account": id}), false, &mut host).unwrap();
+        assert_eq!(events.lock().unwrap()[1], AccountEvent::Removed { app_id: "os.mail".into(), account: id.clone() });
+        on_account_event(None);
         assert!(!dir.join("mail/secrets").join(&id).exists(), "the last app out takes the password with it");
         assert!(std::fs::read_dir(dir.join("mail")).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with("box-")), "and its mail");
         assert!(contacts::known_addresses(&dir).is_empty(), "and whom it wrote to");
