@@ -215,9 +215,9 @@ pub enum CallOrigin {
     /// The peer's own session, a turn the host started for a `peer/input`
     /// (the system agent's request, made for the person).
     PeerInput,
-    /// The peer's own session, any other turn: the person's and the app's
-    /// turns in the shared conversation (their trigger says which), and the
-    /// app agent's own runs.
+    /// The peer's own session, any other turn: the app agent's own runs
+    /// (the person's and the app's turns run in the person's lane, a
+    /// [`CallOrigin::Context`]).
     PeerOwn,
     /// The system agent's conversation.
     System,

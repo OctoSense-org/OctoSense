@@ -922,15 +922,17 @@ fn the_system_session_hosts_terminal_run_while_it_is_registered() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// ADR 0004 §6 against the real kernel (octos#2626): the person, through
-/// the app's conversation, and the system agent (`peer_send_input` →
-/// `peer/input`) talk to the SAME peer session. The person's turn carries
-/// `origin: person` (labelled with the app), the input's turn none (the
-/// kernel labels it); the transcript keeps both markers and the app's
-/// history names each speaker; the app's follower sees the system agent's
-/// turn stream.
+/// ADR 0004 §6 against the real kernel (octos UPCR-2026-034, "Parallel
+/// person context with shared history"): the person, through the app's
+/// conversation, talks in their own lane (a sharing request context), and
+/// the system agent (`peer_send_input` → `peer/input`) in the peer's
+/// session; each lane's model sees the other's recent turns read-only. The
+/// person's turn carries `origin: person` (labelled with the app), the
+/// input's none (the kernel labels it); the app's history merges both
+/// transcripts with each row's lane and speaker; the app's follower sees
+/// the system agent's turn stream.
 #[test]
-fn the_person_and_the_system_agent_share_the_peers_conversation() {
+fn the_person_and_the_system_agent_talk_in_parallel_lanes_that_share_history() {
     let Some(program) = kernel() else { return };
     struct EchoHost;
     impl ToolHost for EchoHost {
@@ -943,7 +945,7 @@ fn the_person_and_the_system_agent_share_the_peers_conversation() {
         }
     }
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
-    let dir = temp("shared-conversation");
+    let dir = temp("parallel-lanes");
     std::fs::create_dir_all(&dir).unwrap();
     let mut child = std::process::Command::new("python3")
         .arg(script)
@@ -974,43 +976,74 @@ fn the_person_and_the_system_agent_share_the_peers_conversation() {
             log.lock().unwrap().push(d);
         }
     })));
-    // The person's message: on the peer's own session, labelled.
+    // The person's message: in the person's lane, labelled.
     let answer = run(&chat, ContextOp::TurnFrom { text: "hello from the app".into(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
         .expect("a completion")
         .expect("the person's turn completed");
     assert_eq!(answer["speaker"], json!({"kind": "person", "label": "Rinx"}));
+    assert_eq!(answer["lane"], "person");
     assert!(answer["text"].as_str().unwrap().contains("hello from the app"), "{answer}");
 
-    // The system agent's input to the same peer.
-    rinx.host_request(
-        "turn/start",
-        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
-               "input": [{"kind": "text", "text": format!("TELL_PEER_TOOL:{slug}")}]}),
-    )
-    .expect("system turn");
-    let mut rows = Value::Null;
-    for _ in 0..120 {
-        rows = run(&chat, ContextOp::History, Duration::from_secs(30)).expect("history").expect("history ok")["messages"].clone();
-        let done = rows.as_array().is_some_and(|r| r.iter().any(|m| m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| c.contains("OK"))));
-        if done {
-            break;
+    // The system agent's input to the same peer, in its own lane.
+    let system_turn = |text: String| {
+        rinx.host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": text}]}),
+        )
+        .expect("system turn");
+    };
+    let history_until = |done: &dyn Fn(&[Value]) -> bool| -> Vec<Value> {
+        let mut rows = Vec::new();
+        for _ in 0..120 {
+            rows = run(&chat, ContextOp::History, Duration::from_secs(30)).expect("history").expect("history ok")["messages"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if done(&rows) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
         }
-        std::thread::sleep(Duration::from_millis(500));
-    }
-    let users: Vec<&Value> = rows.as_array().unwrap().iter().filter(|m| m["role"] == "user").collect();
-    let person = users.iter().find(|m| m["display_text"] == "hello from the app").unwrap_or_else(|| panic!("{rows}"));
+        rows
+    };
+    system_turn(format!("TELL_PEER_TOOL:{slug}"));
+    let rows = history_until(&|rows| rows.iter().any(|m| m["lane"] == "system_agent" && m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| c.contains("OK"))));
+    let users: Vec<&Value> = rows.iter().filter(|m| m["role"] == "user").collect();
+    let person = users.iter().find(|m| m["display_text"] == "hello from the app").unwrap_or_else(|| panic!("{rows:?}"));
     assert_eq!(person["content"], "[from the person: Rinx] hello from the app", "the transcript keeps the kernel's marker");
-    assert_eq!(person["speaker"], json!({"kind": "person", "label": "Rinx"}));
-    let agent = users.iter().find(|m| m["display_text"] == "CALL_APP_TOOL").unwrap_or_else(|| panic!("{rows}"));
-    assert_eq!(agent["speaker"], json!({"kind": "system_agent"}), "one conversation: the system agent's turn is in it");
+    assert_eq!((person["speaker"].clone(), person["lane"].clone()), (json!({"kind": "person", "label": "Rinx"}), json!("person")));
+    let agent = users.iter().find(|m| m["display_text"] == "CALL_APP_TOOL").unwrap_or_else(|| panic!("{rows:?}"));
+    assert_eq!((agent["speaker"].clone(), agent["lane"].clone()), (json!({"kind": "system_agent"}), json!("system_agent")));
     assert_eq!(rinx.peer().unwrap().1, peer_session);
     // The app followed the system agent's turn as it ran.
     let seen = followed.lock().unwrap().clone();
     assert!(
-        seen.iter().any(|d| d["speaker"]["kind"] == "system_agent" && d["params"]["session_id"].as_str().is_some_and(|s| peer_session.starts_with(s))),
+        seen.iter().any(|d| d["speaker"]["kind"] == "system_agent" && d["lane"] == "system_agent" && d["params"]["session_id"].as_str().is_some_and(|s| peer_session.starts_with(s))),
         "the system agent's turn streamed to the app: {} events",
         seen.len()
     );
+
+    // The person's lane sees the system agent's recent turns, read-only...
+    let shown = run(&chat, ContextOp::TurnFrom { text: "SHOW_SHARED".into(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the person's turn completed");
+    let shown = shown["text"].as_str().unwrap().to_owned();
+    assert!(shown.contains("[from the system agent] CALL_APP_TOOL"), "{shown}");
+    assert!(!shown.contains("hello from the app"), "only the other lane: {shown}");
+    // ...and the system agent's lane the person's.
+    system_turn(format!("TELL_PEER_SHOW:{slug}"));
+    let rows = history_until(&|rows| rows.iter().any(|m| m["lane"] == "system_agent" && m["content"].as_str().is_some_and(|c| c.starts_with("SHARED"))));
+    let seen_by_agent = rows
+        .iter()
+        .find(|m| m["lane"] == "system_agent" && m["content"].as_str().is_some_and(|c| c.starts_with("SHARED")))
+        .unwrap_or_else(|| panic!("{rows:?}"))["content"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(seen_by_agent.contains("[from the person: Rinx] hello from the app"), "{seen_by_agent}");
+    // The block is never part of either transcript.
+    assert!(rows.iter().all(|m| !m["content"].as_str().unwrap_or("").contains("<shared_history")), "{rows:?}");
     rinx.release();
     drop(rinx);
     core.shutdown_within(Duration::from_secs(5));

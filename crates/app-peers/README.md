@@ -7,10 +7,13 @@ an OctoSense shell runs ONE octos kernel and ONE provider profile
 ([`crates/kernel`](../kernel)). A native app that declares assistant
 services (the exact `octos.*` names App Hub publishes) and that host policy
 grants gets ONE octos peer owned by the shell's system agent, and a scoped
-service handle injected at module creation. The app talks in its peer's ONE
-shared conversation (`open_conversation`: the peer's own session, which the
-system agent drives too; each turn carries who is speaking, octos#2626), and
-opens request contexts of that peer for per-client work
+service handle injected at module creation. The app talks with its agent in
+its conversation (`open_conversation`): the person's lane, a request context
+opened with `share_history` that runs in parallel with the peer's own session
+(the system agent's lane, `peer/input`); each lane's model sees the other's
+recent turns read-only, each turn carries who is speaking, the app follows
+both lanes and its history merges them (octos UPCR-2026-034). It also
+opens plain request contexts of that peer for per-client work
 (`open_context`: one per client instance, e.g. a Rinx mini app). It never sees raw
 kernel protocol, provider settings or credentials, and it never starts a
 kernel. An app without granted assistant services allocates no peer.

@@ -11,9 +11,10 @@
 //! | the person pressed Stop on the app's conversation | [`Questions::stop_agent`] | declined, the consumers hear it answered |
 //!
 //! **Which conversation: the turn's origin, not the session.** An app
-//! agent has one shared conversation on its peer session (and its request
-//! contexts); the person (the app's UI, its cards), the app and the system
-//! agent all drive turns there. A question from a turn the person or the
+//! agent's conversation has two lanes that run in parallel: the person's
+//! (a sharing request context: the app's UI, its cards, the app) and the
+//! system agent's (the peer session, `peer/input`); plain request contexts
+//! are the app's too. A question from a turn the person or the
 //! app started is the app's: [`Conversation::App`]. A question from a turn
 //! the system agent started (`peer/input`) is the system agent's to relay,
 //! so it goes to the system chat: [`Conversation::SystemChat`]. The

@@ -142,8 +142,8 @@ impl TurnTrigger {
     }
 }
 
-/// Who spoke in one turn of the app peer's shared conversation (octos
-/// UPCR-2026-034, "The shared peer conversation"): the kernel records it as
+/// Who spoke in one turn of the app's conversation, in either lane (octos
+/// UPCR-2026-034, turn origin): the kernel records it as
 /// a marker in front of the turn's user message, `[from the person]`,
 /// `[from the person: <label>]`, `[from the system agent]` or
 /// `[from the app]`. A surface shows the speaker and the text after the
@@ -207,12 +207,12 @@ pub enum ContextOp {
     /// §8: standing rules skip incoming content and unknown runs).
     TurnFrom { text: String, trigger: TurnTrigger },
     /// `octos.turn.interrupt`: stop the context's running turn. On the
-    /// peer's shared conversation ([`OctosAppService::open_conversation`])
-    /// it is the Stop: this handle's own message still waiting is
-    /// withdrawn, otherwise whatever turn runs on the peer stops, whoever
-    /// started it (the person, the app or the system agent: the person owns
-    /// the device). The reply names the turn (`interrupted`) and its
-    /// `speaker`; the peer's next queued turn then starts.
+    /// app's conversation ([`OctosAppService::open_conversation`]) it is
+    /// the Stop of BOTH lanes: this handle's running turn (the person's
+    /// lane) and the system agent's running turn on the peer's session (the
+    /// person owns the device). The reply lists the turns stopped
+    /// (`interrupted`) and, per turn, its `lane` and `speaker` (`turns`);
+    /// the peer's next queued input then starts.
     Interrupt,
     /// A person's decision on a tool approval raised in this context,
     /// collected by the app's native UI (requires `octos.turn.start`).
@@ -262,12 +262,12 @@ pub trait OctosContext: Send + Sync {
     fn close(&self);
     /// Whether the context can still take calls.
     fn is_open(&self) -> bool;
-    /// Follow the whole conversation (`None` stops): every event of the
-    /// app peer's shared conversation, whoever speaks (the person from any
-    /// of the app's surfaces, the app, the system agent), as
-    /// [`ContextEvent::Data`] with `speaker` ([`Speaker::to_json`]) when
-    /// known, and for a user message `display_text`, its text without the
-    /// kernel's marker. Never a `Complete`. Only a conversation
+    /// Follow the whole conversation (`None` stops): every event of both
+    /// lanes, this handle's (the person's) and the peer's session (the
+    /// system agent's), as [`ContextEvent::Data`] with `lane`
+    /// (`"person"` | `"system_agent"`), `speaker` ([`Speaker::to_json`])
+    /// when known, and for a user message `display_text`, its text without
+    /// the kernel's marker. Never a `Complete`. Only a conversation
     /// ([`OctosAppService::open_conversation`]) has one; a request context
     /// is its own caller's, and ignores it.
     fn subscribe(&self, _sink: Option<EventSink>) {}
@@ -292,13 +292,16 @@ pub trait OctosAppService: Send + Sync {
     /// client (Rinx's mini apps; a process app's `octos.session.open` with a
     /// `client`).
     fn open_context(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String>;
-    /// A handle on the app peer's ONE shared conversation (ADR 0004 §6):
-    /// the peer's own session, which the person (through the app's UI and
-    /// its cards) and the system agent both talk to. Its turns carry who is
-    /// speaking (`origin: person`, or `app` when the app started the run),
-    /// wait their turn behind the peer's running one, and its history is the
-    /// peer's transcript. The default (a service without a shared
-    /// conversation) is a request context.
+    /// The app's conversation with its agent (ADR 0004 §6, 2026-09-29):
+    /// the person's lane, a request context of the peer opened with shared
+    /// history, running in parallel with the peer's own session (the
+    /// system agent's lane); the kernel shows each lane's turns the other's
+    /// recent turns read-only. Its turns carry who is speaking (`origin:
+    /// person`, or `app` when the app started the run) and wait only for
+    /// this handle's previous turn; it follows both lanes
+    /// ([`OctosContext::subscribe`]); its history is both transcripts merged
+    /// by time, each row with its `lane`. Every handle is a new context.
+    /// The default (a service without one) is a request context.
     fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
         self.open_context(spec)
     }

@@ -85,7 +85,7 @@ struct FakeService {
     accounts: Mutex<Vec<Option<String>>>,
     specs: Mutex<Vec<ContextSpec>>,
     contexts: Mutex<Vec<Arc<FakeContext>>>,
-    /// How many handles were the shared conversation (not a request context).
+    /// How many handles were the app's conversation (not a request context).
     conversations: AtomicUsize,
     released: AtomicBool,
 }
@@ -219,8 +219,9 @@ fn contained_turn_reaches_app_peer_and_replies() {
     let service = peers.service("card.com.example.trip");
     assert_eq!(service.accounts.lock().unwrap().clone(), vec![Some(ACCOUNT.to_string())]);
     assert_eq!(service.specs.lock().unwrap()[0].account, ACCOUNT);
-    // ADR 0004 §6: the app's turns go to its peer's shared conversation
-    // (the peer's own session, `origin: person`), not a request context.
+    // ADR 0004 §6: the app's turns go to its conversation (the person's
+    // lane, sharing history with the system agent's), not a plain request
+    // context.
     assert_eq!(service.conversations.load(Ordering::SeqCst), 1);
 }
 
