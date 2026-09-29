@@ -12,6 +12,17 @@
 //! - opens one kernel request context per client instance
 //!   (`peer/context/open`), and closes it (`peer/context/close`) when the
 //!   instance closes, the account changes or the app releases;
+//! - hands out handles on the peer's ONE shared conversation
+//!   ([`OctosAppService::open_conversation`], ADR 0004 §6, octos#2626): a
+//!   person's message runs on the peer's own session, started on this link
+//!   (the one that registered the peer's tools) with `origin` (`person`, or
+//!   `app` when the app started the run); every event of that session,
+//!   the system agent's turns included, reaches every open conversation's
+//!   follower with its speaker;
+//! - keeps ONE queue per peer for the person's messages and the system
+//!   agent's `peer/input`s, one turn at a time (the kernel admits one and
+//!   queues none; `turn_in_progress` is retried), bounded: a full queue
+//!   refuses an input `busy` and a person's message with an error;
 //! - checks the lease on every call — context open, same account and account
 //!   generation, app not released, service in the app's grant AND the
 //!   instance's — before the request and again before any reply is
@@ -293,6 +304,25 @@ enum Occurrence {
 /// How many finished occurrences, interrupted turns and inputs are kept.
 const REMEMBERED: usize = 512;
 
+/// A turn waiting for the peer's running one (the kernel admits one turn
+/// per session and queues none: the host does).
+enum Queued {
+    /// The system agent's input, started with the kernel's turn id.
+    Input(PeerInput),
+    /// A person's (or the app's) message in the shared conversation: its
+    /// sender is told when the peer is free, and then starts it.
+    Person { turn_id: String, go: oneshot::Sender<()> },
+}
+
+/// The person's message is refused when this many turns already wait.
+pub const BUSY: &str = "The assistant is busy with other messages; try again in a moment";
+
+/// Whether a kernel refusal is `turn_in_progress` (the session runs another
+/// turn: the kernel queues nothing).
+fn turn_in_progress(error: &str) -> bool {
+    error.contains("(turn_in_progress)")
+}
+
 impl State {
     /// Record what started `turn` (a context turn this broker started).
     fn note_trigger(&mut self, turn: &str, trigger: TurnTrigger) {
@@ -301,9 +331,25 @@ impl State {
             while self.trigger_order.len() > REMEMBERED {
                 if let Some(old) = self.trigger_order.pop_front() {
                     self.turn_triggers.remove(&old);
+                    self.speakers.remove(&old);
                 }
             }
         }
+    }
+
+    /// Who speaks in `turn` of the peer's shared conversation, as this host
+    /// started it: the origin it sent, or the system agent for a
+    /// `peer/input` turn.
+    fn speaker_of(&self, turn: &str) -> Option<Speaker> {
+        if self.input_turns.iter().any(|t| t == turn) {
+            return Some(Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None });
+        }
+        self.speakers.get(turn).cloned()
+    }
+
+    /// Whether a turn is running on the peer or waiting for it.
+    fn peer_busy(&self) -> bool {
+        self.peer_turn.is_some() || !self.queue.is_empty()
     }
 
     /// What started `turn`: a `peer/input` turn is the system agent's; a
@@ -373,8 +419,12 @@ struct State {
     /// order, so the oldest is forgotten first.
     turn_triggers: HashMap<String, TurnTrigger>,
     trigger_order: VecDeque<String>,
-    /// Inputs waiting for the peer's running turn to end.
-    input_queue: VecDeque<PeerInput>,
+    /// Who speaks in each turn this broker started on the peer's shared
+    /// conversation (the origin it sent), by turn id.
+    speakers: HashMap<String, Speaker>,
+    /// Turns waiting for the peer's running one to end: the system agent's
+    /// inputs and the person's messages, in order (one queue per peer).
+    queue: VecDeque<Queued>,
     /// Workspaces new peers were created with, when no state dir keeps them.
     cwds: HashMap<String, String>,
     /// Approval and question ids the host took: only the host answers them.
@@ -433,7 +483,8 @@ impl Broker {
                 input_turns: VecDeque::new(),
                 turn_triggers: HashMap::new(),
                 trigger_order: VecDeque::new(),
-                input_queue: VecDeque::new(),
+                speakers: HashMap::new(),
+                queue: VecDeque::new(),
                 cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
@@ -490,7 +541,54 @@ impl Broker {
 
     /// `peer/input`s waiting for the peer's running turn.
     pub fn queued_inputs(&self) -> usize {
-        self.0.lock().input_queue.len()
+        self.0.lock().queue.iter().filter(|q| matches!(q, Queued::Input(_))).count()
+    }
+
+    /// Every turn waiting for the peer's running one (inputs and the
+    /// person's messages).
+    pub fn queued_turns(&self) -> usize {
+        self.0.lock().queue.len()
+    }
+
+    /// A request context (`conversation: false`) or a handle on the
+    /// peer's shared conversation.
+    fn open_handle(&self, spec: ContextSpec, conversation: bool) -> Result<Arc<dyn OctosContext>, String> {
+        let st = self.0.lock();
+        if st.released {
+            return Err("The app was closed".into());
+        }
+        if st.account.as_deref() != Some(spec.account.as_str()) {
+            return Err("The account changed; reopen this app".into());
+        }
+        let services: BTreeSet<String> = spec
+            .services
+            .intersection(&self.0.cfg.services)
+            .cloned()
+            .collect();
+        if services.is_empty() {
+            return Err("This app was not granted the assistant".into());
+        }
+        let context = Arc::new(ContextInner {
+            broker: Arc::downgrade(&self.0),
+            account: spec.account,
+            generation: st.generation,
+            services,
+            context_id: context_id(&self.0.nonce, &spec.instance),
+            instance: spec.instance.clone(),
+            open: AtomicBool::new(true),
+            conversation,
+            bound: Mutex::new(None),
+            turn: Mutex::new(None),
+            sink: Mutex::new(None),
+            subscriber: Mutex::new(None),
+            calls: AtomicU64::new(0),
+            seen: Mutex::new(BTreeSet::new()),
+        });
+        drop(st);
+        let mut st = self.0.lock();
+        st.contexts.retain(|c| c.strong_count() > 0);
+        st.contexts.push(Arc::downgrade(&context));
+        Ok(Arc::new(BrokerContext(context)))
     }
 
     /// Send a raw request on this broker's link. For the HOST only (its own
@@ -668,7 +766,10 @@ impl Inner {
                 st.contexts.iter().filter_map(Weak::upgrade).collect();
             let calls: Vec<(String, ToolReply)> = st.calls.drain().map(|(id, f)| (id, f.reply)).collect();
             st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
-            st.input_queue.clear();
+            // Queued person turns hear that the connection ended (their
+            // start signal is dropped); queued inputs are the kernel's to
+            // fail with the connection.
+            st.queue.clear();
             let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
             (pending, contexts, calls, rebind)
         };
@@ -799,6 +900,8 @@ impl Inner {
                 if self.on_user_question(question, context.as_deref()) {
                     if let Some(context) = context {
                         context.notification(host_tools::QUESTION_HANDLED_BY_HOST, &params);
+                    } else if peer_session.as_deref() == Some(session) {
+                        self.to_conversations(host_tools::QUESTION_HANDLED_BY_HOST, &params, session);
                     }
                     return;
                 }
@@ -827,6 +930,8 @@ impl Inner {
                     remember(&mut self.lock().host_held, id);
                     if let Some(context) = context {
                         context.notification(host_tools::HANDLED_BY_HOST, &params);
+                    } else if peer_session.as_deref() == Some(session) {
+                        self.to_conversations(host_tools::HANDLED_BY_HOST, &params, session);
                     }
                     return;
                 }
@@ -845,15 +950,23 @@ impl Inner {
             let ended = terminal || matches!(method, "turn/completed" | "turn/error");
             let mut next = false;
             if method == "turn/started" {
-                st.peer_turn = turn;
+                // A turn this host holds the peer for (one starting, or
+                // retrying after `turn_in_progress`) keeps it.
+                if st.peer_turn.is_none() {
+                    st.peer_turn = turn;
+                }
             } else if ended && st.peer_turn == turn {
                 st.peer_turn = None;
                 next = true;
             }
             drop(st);
             if next {
-                self.next_input();
+                self.next_turn();
             }
+            // The whole shared conversation reaches the app's
+            // conversations: the person's turns from every surface, the
+            // app's and the system agent's.
+            self.to_conversations(method, &params, session);
             return;
         }
         let Some((route_generation, context)) = route else {
@@ -1329,7 +1442,7 @@ impl Inner {
             if !seen {
                 remember(&mut st.inputs_seen, input.input_id.clone());
             }
-            (peer, st.account.clone(), st.peer_turn.is_some() || !st.input_queue.is_empty(), seen)
+            (peer, st.account.clone(), st.peer_busy(), seen)
         };
         if seen {
             return;
@@ -1347,12 +1460,14 @@ impl Inner {
             return self.reject_input(&peer, &input, why);
         }
         if busy {
-            let full = self.lock().input_queue.len() >= host_tools::MAX_QUEUED_INPUTS;
+            let full = self.lock().queue.len() >= host_tools::MAX_QUEUED_INPUTS;
             if full {
                 return self.reject_input(&peer, &input, InputRefusal::Busy);
             }
             // Queued: it starts later, with its own turn id.
-            self.lock().input_queue.push_back(input);
+            self.lock().queue.push_back(Queued::Input(input));
+            // The running turn may have ended meanwhile.
+            self.next_turn();
         } else {
             self.start_input(input);
         }
@@ -1376,6 +1491,9 @@ impl Inner {
         self.fire(&link, host_tools::PEER_INPUT_REJECT, params);
     }
 
+    /// Start the system agent's input as the peer's turn: the kernel's turn
+    /// id and NO origin (the kernel labels a `peer/input` turn
+    /// `system_agent` itself and refuses any other label on it).
     fn start_input(self: &Arc<Self>, input: PeerInput) {
         {
             let mut st = self.lock();
@@ -1384,45 +1502,109 @@ impl Inner {
         }
         let inner = self.clone();
         self.rt().spawn(async move {
-            let started = inner
-                .request(
-                    "turn/start",
-                    json!({
-                        "session_id": input.session_id,
-                        "turn_id": input.turn_id,
-                        "input": [{"kind": "text", "text": input.text}],
-                    }),
-                )
-                .await;
-            if let Err(e) = started {
+            let params = json!({
+                "session_id": input.session_id,
+                "turn_id": input.turn_id,
+                "input": [{"kind": "text", "text": input.text}],
+            });
+            if let Err(e) = inner.start_peer_turn(params, &input.turn_id).await {
                 eprintln!("app-peers: {}: the system agent's input {} did not start: {e}", inner.cfg.app_id, input.input_id);
-                let ended = {
-                    let mut st = inner.lock();
-                    let ours = st.peer_turn.as_deref() == Some(input.turn_id.as_str());
-                    if ours {
-                        st.peer_turn = None;
-                    }
-                    ours
-                };
-                if ended {
-                    inner.next_input();
-                }
+                inner.peer_turn_ended(&input.turn_id);
             }
         });
     }
 
-    /// The peer's turn ended: the next queued input, if any.
-    fn next_input(self: &Arc<Self>) {
-        let next = {
-            let mut st = self.lock();
-            if st.peer_turn.is_some() {
-                return;
+    /// `turn/start` on the peer's session for the turn holding the peer
+    /// (`turn_id`), retried while the kernel still runs another turn there
+    /// (`turn_in_progress`: a turn whose end this host has not seen yet),
+    /// until the turn timeout.
+    async fn start_peer_turn(self: &Arc<Self>, params: Value, turn_id: &str) -> Result<Value, String> {
+        let until = tokio::time::Instant::now() + self.cfg.turn_timeout;
+        let mut wait = Duration::from_millis(200);
+        loop {
+            match self.request("turn/start", params.clone()).await {
+                Err(e) if turn_in_progress(&e) && tokio::time::Instant::now() + wait < until => {
+                    tokio::time::sleep(wait).await;
+                    wait = (wait * 2).min(Duration::from_secs(2));
+                    if self.lock().peer_turn.as_deref() != Some(turn_id) {
+                        return Err("The message was withdrawn".into());
+                    }
+                }
+                other => return other,
             }
-            st.input_queue.pop_front()
-        };
-        if let Some(input) = next {
-            self.start_input(input);
         }
+    }
+
+    /// `turn` no longer holds the peer (it ended, failed to start or was
+    /// dropped): the next queued turn starts.
+    fn peer_turn_ended(self: &Arc<Self>, turn: &str) {
+        let ended = {
+            let mut st = self.lock();
+            let ours = st.peer_turn.as_deref() == Some(turn);
+            if ours {
+                st.peer_turn = None;
+            }
+            ours
+        };
+        if ended {
+            self.next_turn();
+        }
+    }
+
+    /// The peer is free: the next queued turn, if any, takes it.
+    fn next_turn(self: &Arc<Self>) {
+        loop {
+            let next = {
+                let mut st = self.lock();
+                if st.peer_turn.is_some() {
+                    return;
+                }
+                let next = st.queue.pop_front();
+                if let Some(Queued::Person { turn_id, .. }) = &next {
+                    st.peer_turn = Some(turn_id.clone());
+                }
+                next
+            };
+            match next {
+                None => return,
+                Some(Queued::Input(input)) => return self.start_input(input),
+                Some(Queued::Person { turn_id, go }) => {
+                    if go.send(()).is_ok() {
+                        return;
+                    }
+                    // Its sender gave up waiting: the next one.
+                    let mut st = self.lock();
+                    if st.peer_turn.as_deref() == Some(turn_id.as_str()) {
+                        st.peer_turn = None;
+                    }
+                }
+            }
+        }
+    }
+
+    /// A person's message wants the peer: it holds it now (`None`), or waits
+    /// in the queue for the returned signal; refused when the queue is full.
+    fn enqueue_person(&self, turn_id: &str) -> Result<Option<oneshot::Receiver<()>>, String> {
+        let mut st = self.lock();
+        if !st.peer_busy() {
+            st.peer_turn = Some(turn_id.to_owned());
+            return Ok(None);
+        }
+        if st.queue.len() >= host_tools::MAX_QUEUED_INPUTS {
+            return Err(BUSY.into());
+        }
+        let (go, wait) = oneshot::channel();
+        st.queue.push_back(Queued::Person { turn_id: turn_id.to_owned(), go });
+        Ok(Some(wait))
+    }
+
+    /// Take a person's message out of the queue before it started: true
+    /// when it was still waiting.
+    fn withdraw_person(&self, turn_id: &str) -> bool {
+        let mut st = self.lock();
+        let before = st.queue.len();
+        st.queue.retain(|q| !matches!(q, Queued::Person { turn_id: t, .. } if t == turn_id));
+        st.queue.len() != before
     }
 
     /// A `host_tool` approval: the host draws it and answers on this link.
@@ -1464,17 +1646,20 @@ impl Inner {
                 None => CallOrigin::PeerOwn,
             };
             // Until octos reports the turn's origin, derive it from what
-            // this host knows (what started each turn it started, G2): the
-            // turns it started for `peer/input` are the system agent's; a
-            // turn its starter said the person or the app started is theirs;
-            // an unsaid context turn is the person's, any other the app's.
+            // this host knows: a turn of the shared conversation it started
+            // says who speaks (the origin it sent, the system agent for a
+            // `peer/input`); otherwise what started each turn it started
+            // (G2): a turn its starter said the person or the app started
+            // is theirs; an unsaid context turn is the person's, any other
+            // the app's.
             if !question.origin_reported {
-                question.turn_origin = match (st.trigger_of(&question.turn_id), question.origin) {
-                    (TurnTrigger::SystemAgent, _) | (_, CallOrigin::PeerInput) => host_tools::TurnOrigin::SystemAgent,
-                    (TurnTrigger::Person, _) => host_tools::TurnOrigin::Person,
-                    (TurnTrigger::App | TurnTrigger::Incoming { .. }, _) => host_tools::TurnOrigin::App,
-                    (TurnTrigger::Unknown, CallOrigin::Context) => host_tools::TurnOrigin::Person,
-                    (TurnTrigger::Unknown, _) => host_tools::TurnOrigin::App,
+                question.turn_origin = match (st.speaker_of(&question.turn_id), st.trigger_of(&question.turn_id), question.origin) {
+                    (Some(speaker), _, _) => speaker.kind,
+                    (None, TurnTrigger::SystemAgent, _) | (None, _, CallOrigin::PeerInput) => host_tools::TurnOrigin::SystemAgent,
+                    (None, TurnTrigger::Person, _) => host_tools::TurnOrigin::Person,
+                    (None, TurnTrigger::App | TurnTrigger::Incoming { .. }, _) => host_tools::TurnOrigin::App,
+                    (None, TurnTrigger::Unknown, CallOrigin::Context) => host_tools::TurnOrigin::Person,
+                    (None, TurnTrigger::Unknown, _) => host_tools::TurnOrigin::App,
                 };
             }
             (st.link.clone(), st.account.clone())
@@ -1524,6 +1709,46 @@ impl Inner {
         let host = self.tool_host();
         for id in closed {
             host.user_question_closed(&self.cfg.app_id, &id);
+        }
+    }
+
+    /// Stop `turn` on the peer's session (a person's message whose handle
+    /// closed or asked to stop): its late calls are refused.
+    fn interrupt_peer_turn(self: &Arc<Self>, turn: String, session: String) {
+        self.note_interrupted(&turn);
+        let inner = self.clone();
+        self.rt().spawn(async move {
+            let _ = inner.request("turn/interrupt", json!({"session_id": session, "turn_id": turn})).await;
+        });
+    }
+
+    /// Deliver one event of the peer's session to every open conversation
+    /// of the current account (octos's own approval answered by the host
+    /// once here, not by each of them).
+    fn to_conversations(self: &Arc<Self>, method: &str, params: &Value, session: &str) {
+        let conversations: Vec<Arc<ContextInner>> = {
+            let st = self.lock();
+            st.contexts
+                .iter()
+                .filter_map(Weak::upgrade)
+                .filter(|c| c.conversation && c.generation == st.generation)
+                .collect()
+        };
+        if conversations.is_empty() {
+            return;
+        }
+        let mut method = method;
+        if let Some(respond) = crate::host_approvals::auto_answer(&self.cfg.app_id, method, session, params) {
+            let broker = self.clone();
+            self.rt().spawn(async move {
+                if let Err(e) = broker.request("approval/respond", respond).await {
+                    eprintln!("app-peers: the host's approval answer failed: {e}");
+                }
+            });
+            method = crate::host_approvals::ANSWERED_BY_HOST;
+        }
+        for conversation in conversations {
+            conversation.deliver(method, params);
         }
     }
 
@@ -1592,6 +1817,44 @@ fn turn_ended<'a>(method: &str, params: &'a Value) -> Option<&'a str> {
     }
 }
 
+/// The turn's persisted answer, else what streamed: the terminal can
+/// overtake the transcript lane, so look for THIS turn's answer (its
+/// thread) a few times.
+async fn saved_answer(inner: &Arc<Inner>, session: &str, turn_id: &str, streamed: String) -> String {
+    let mut saved = None;
+    for attempt in 0..10 {
+        let history = inner
+            .request("session/hydrate", json!({"session_id": session, "include": ["messages"]}))
+            .await
+            .unwrap_or(Value::Null);
+        saved = history["messages"]
+            .as_array()
+            .and_then(|rows| rows.iter().rev().find(|m| m["role"] == "assistant" && (m["turn_id"] == turn_id || m["thread_id"] == turn_id)))
+            .and_then(|m| m["content"].as_str())
+            .map(str::to_owned);
+        if saved.is_some() || attempt == 9 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    saved.unwrap_or(streamed)
+}
+
+/// The shared conversation's transcript as a surface shows it: each user
+/// message the kernel marked with its speaker gets `speaker` and
+/// `display_text` (the text after the marker); `content` keeps the marker.
+fn speakers_in_history(mut history: Value) -> Value {
+    for row in history["messages"].as_array_mut().into_iter().flatten() {
+        if row["role"] != "user" {
+            continue;
+        }
+        let Some((speaker, text)) = row["content"].as_str().and_then(split_origin_marker).map(|(s, t)| (s, t.to_owned())) else { continue };
+        row["speaker"] = speaker.to_json();
+        row["display_text"] = json!(text);
+    }
+    history
+}
+
 fn rpc_error_text(error: &Value) -> String {
     let message = error["message"].as_str().unwrap_or("request failed");
     match error["data"]["kind"].as_str() {
@@ -1634,9 +1897,14 @@ struct ContextInner {
     /// tool calls from this context as their `client`.
     instance: String,
     open: AtomicBool,
+    /// A handle on the peer's shared conversation (its own session), not a
+    /// request context of its own.
+    conversation: bool,
     bound: Mutex<Option<Bound>>,
     turn: Mutex<Option<TurnWaiter>>,
     sink: Mutex<Option<EventSink>>,
+    /// A conversation's follower: every event of the shared conversation.
+    subscriber: Mutex<Option<EventSink>>,
     calls: AtomicU64,
     /// (thread, seq) of v2 envelopes already applied: the kernel may deliver
     /// one twice (replay, shared consumers).
@@ -1665,7 +1933,37 @@ impl ContextInner {
         Ok(())
     }
 
+    /// An event of this request context's session (the host's answer to
+    /// octos's approval first, in developer mode).
     fn notification(&self, method: &str, params: &Value) {
+        let Some(inner) = self.broker.upgrade() else {
+            return;
+        };
+        // The host may answer octos's approval itself (developer mode): then
+        // the app hears that it was answered, and is never asked.
+        let session = match (params["session_id"].as_str(), params["topic"].as_str()) {
+            (Some(id), Some(topic)) if !id.contains('#') => format!("{id}#{topic}"),
+            (Some(id), _) => id.to_owned(),
+            _ => String::new(),
+        };
+        let mut method = method;
+        if !self.conversation {
+            if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
+                let broker = inner.clone();
+                inner.rt().spawn(async move {
+                    if let Err(e) = broker.request("approval/respond", respond).await {
+                        eprintln!("app-peers: the host's approval answer failed: {e}");
+                    }
+                });
+                method = crate::host_approvals::ANSWERED_BY_HOST;
+            }
+        }
+        self.deliver(method, params);
+    }
+
+    /// Hand one event to this handle: its running turn, the caller's sink
+    /// and (a conversation's) its follower.
+    fn deliver(&self, method: &str, params: &Value) {
         let Some(inner) = self.broker.upgrade() else {
             return;
         };
@@ -1685,27 +1983,12 @@ impl ContextInner {
                 }
             }
         }
-        // The host may answer octos's approval itself (developer mode): then
-        // the app hears that it was answered, and is never asked.
-        let session = match (params["session_id"].as_str(), params["topic"].as_str()) {
-            (Some(id), Some(topic)) if !id.contains('#') => format!("{id}#{topic}"),
-            (Some(id), _) => id.to_owned(),
-            _ => String::new(),
-        };
-        let mut method = method;
-        if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
-            let broker = inner.clone();
-            inner.rt().spawn(async move {
-                if let Err(e) = broker.request("approval/respond", respond).await {
-                    eprintln!("app-peers: the host's approval answer failed: {e}");
-                }
-            });
-            method = crate::host_approvals::ANSWERED_BY_HOST;
-        }
         let turn_id = params.get("turn_id").and_then(Value::as_str);
         let mut text_so_far = None;
+        let own_turn: bool;
         {
             let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
+            own_turn = turn.as_ref().is_some_and(|w| Some(w.turn_id.as_str()) == turn_id);
             if let Some(waiter) = turn
                 .as_mut()
                 .filter(|w| Some(w.turn_id.as_str()) == turn_id)
@@ -1736,13 +2019,36 @@ impl ContextInner {
                 }
             }
         }
-        let sink = self.sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        if let Some(sink) = sink {
-            let mut data = json!({"method": method, "params": params});
-            if let Some(text) = text_so_far {
-                data["text"] = json!(text);
+        let mut data = json!({"method": method, "params": params});
+        if let Some(text) = text_so_far {
+            data["text"] = json!(text);
+        }
+        if self.conversation {
+            // Who speaks, from this host's own record of the turn, else
+            // from the kernel's marker on the user message.
+            let mut speaker = turn_id.and_then(|t| inner.lock().speaker_of(t));
+            let user_text = (method == "projection/envelope" && params["payload"]["type"] == "user_message")
+                .then(|| params["payload"]["data"]["text"].as_str())
+                .flatten();
+            if let Some((marked, text)) = user_text.and_then(split_origin_marker) {
+                data["display_text"] = json!(text);
+                speaker.get_or_insert(marked);
             }
-            sink(ContextEvent::Data(data));
+            if let Some(speaker) = speaker {
+                data["speaker"] = speaker.to_json();
+            }
+        }
+        // A conversation's caller hears only its own turn; a request
+        // context's session is its caller's alone.
+        if !self.conversation || own_turn {
+            let sink = self.sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Some(sink) = sink {
+                sink(ContextEvent::Data(data.clone()));
+            }
+        }
+        let subscriber = self.subscriber.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(subscriber) = subscriber {
+            subscriber(ContextEvent::Data(data));
         }
     }
 
@@ -1757,6 +2063,20 @@ impl ContextInner {
             .take()
             .map(|w| w.turn_id);
         self.sink.lock().unwrap_or_else(|e| e.into_inner()).take();
+        self.subscriber.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if self.conversation {
+            // The conversation stays the peer's; only this handle's own
+            // message stops (withdrawn if it was still waiting).
+            let bound = self.bound.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(turn) = turn {
+                if !inner.withdraw_person(&turn) {
+                    if let Some(bound) = bound {
+                        inner.interrupt_peer_turn(turn, bound.session);
+                    }
+                }
+            }
+            return;
+        }
         if let Some(bound) = self.bound.lock().unwrap_or_else(|e| e.into_inner()).take() {
             inner.lock().routes.remove(&bound.session);
             inner.close_context_on_kernel(
@@ -1781,6 +2101,17 @@ impl ContextInner {
         let (generation, peer) = inner.ensure_peer().await?;
         if generation != self.generation {
             return Err("The account changed; reopen this app".into());
+        }
+        if self.conversation {
+            // The peer's own session: its events reach every conversation.
+            self.check(inner, None)?;
+            *self.bound.lock().unwrap_or_else(|e| e.into_inner()) = Some(Bound {
+                session: peer.session.clone(),
+                peer_slug: peer.slug,
+                context_id: String::new(),
+                token: peer.token,
+            });
+            return Ok(peer.session);
         }
         let result = inner
             .request(
@@ -1821,6 +2152,98 @@ impl ContextInner {
         Ok(session)
     }
 
+    /// A person's (or the app's) message in the peer's shared conversation:
+    /// queued behind the peer's running turn, then `turn/start` on the
+    /// peer's session, on the link that registered its tools, with who is
+    /// speaking (`origin`). G2's trigger stays the authority for approval
+    /// rules; the origin only says who speaks.
+    async fn conversation_turn(self: &Arc<Self>, inner: &Arc<Inner>, session: &str, text: String, trigger: TurnTrigger) -> Result<Value, String> {
+        let text = text.trim().to_owned();
+        if text.is_empty() || text.len() > 32 * 1024 {
+            return Err("Provide text (at most 32 KiB)".into());
+        }
+        let kind = match trigger {
+            // The system agent speaks only through its own `peer/input`.
+            TurnTrigger::SystemAgent => return Err("Only the system agent's own input speaks for it".into()),
+            // The app itself started the run (its schedule, content that
+            // arrived): the app speaks.
+            TurnTrigger::App | TurnTrigger::Incoming { .. } => host_tools::TurnOrigin::App,
+            // The person in the app's UI or its cards.
+            TurnTrigger::Person | TurnTrigger::Unknown => host_tools::TurnOrigin::Person,
+        };
+        let label = inner.cfg.app_label.trim();
+        let speaker = Speaker { kind, label: (!label.is_empty()).then(|| label.to_owned()) };
+        let turn_id = uuid::Uuid::new_v4().to_string();
+        let (done_tx, done_rx) = oneshot::channel();
+        {
+            let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
+            if turn.is_some() {
+                return Err("This app already has an assistant turn running".into());
+            }
+            *turn = Some(TurnWaiter::new(turn_id.clone(), done_tx));
+        }
+        let release_waiter = || {
+            let mut turn = self.turn.lock().unwrap_or_else(|e| e.into_inner());
+            if turn.as_ref().is_some_and(|w| w.turn_id == turn_id) {
+                turn.take();
+            }
+        };
+        {
+            let mut st = inner.lock();
+            st.note_trigger(&turn_id, trigger);
+            st.speakers.insert(turn_id.clone(), speaker.clone());
+        }
+        // One turn at a time on the peer: wait for the running one (the
+        // system agent's input, another surface's message).
+        match inner.enqueue_person(&turn_id) {
+            Err(busy) => {
+                release_waiter();
+                return Err(busy);
+            }
+            Ok(None) => {}
+            Ok(Some(go)) => match tokio::time::timeout(inner.cfg.turn_timeout, go).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    release_waiter();
+                    return Err("The assistant connection ended; try again".into());
+                }
+                Err(_) => {
+                    inner.withdraw_person(&turn_id);
+                    inner.peer_turn_ended(&turn_id);
+                    release_waiter();
+                    return Err("The assistant stayed busy; try again".into());
+                }
+            },
+        }
+        let params = json!({
+            "session_id": session,
+            "turn_id": turn_id,
+            "input": [{"kind": "text", "text": text}],
+            "origin": speaker.to_json(),
+        });
+        let outcome = match inner.start_peer_turn(params, &turn_id).await {
+            Err(err) => {
+                inner.peer_turn_ended(&turn_id);
+                Err(err)
+            }
+            Ok(_) => match tokio::time::timeout(inner.cfg.turn_timeout, done_rx).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => Err("The assistant's turn was cancelled".into()),
+                Err(_) => {
+                    inner.note_interrupted(&turn_id);
+                    let _ = inner.request("turn/interrupt", json!({"session_id": session, "turn_id": turn_id})).await;
+                    Err("The assistant's turn timed out".into())
+                }
+            },
+        };
+        // Its end frees the peer (the terminal usually did already).
+        inner.peer_turn_ended(&turn_id);
+        release_waiter();
+        let streamed = outcome?;
+        let text = saved_answer(inner, session, &turn_id, streamed).await;
+        Ok(json!({"turn_id": turn_id, "text": text, "speaker": speaker.to_json()}))
+    }
+
     async fn run(self: &Arc<Self>, inner: &Arc<Inner>, op: ContextOp) -> Result<Value, String> {
         let session = self.ensure_bound(inner).await?;
         self.check(inner, Some(op.service()))?;
@@ -1832,17 +2255,42 @@ impl ContextInner {
         let result = match op {
             ContextOp::Open => Ok(json!({
                 "open": true,
+                "conversation": self.conversation,
                 "model": inner.lock().model.as_ref().map(|m| json!({
                     "lane": m.lane, "provider": m.provider, "model": m.model,
                 })),
             })),
             ContextOp::History => {
-                inner
+                let history = inner
                     .request(
                         "session/hydrate",
                         json!({"session_id": session, "include": ["messages"]}),
                     )
-                    .await
+                    .await;
+                if self.conversation {
+                    history.map(speakers_in_history)
+                } else {
+                    history
+                }
+            }
+            ContextOp::Turn { text } if self.conversation => self.conversation_turn(inner, &session, text, trigger).await,
+            ContextOp::Interrupt if self.conversation => {
+                let turn = self
+                    .turn
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|w| w.turn_id.clone())
+                    .ok_or("No assistant turn of yours is running")?;
+                if inner.withdraw_person(&turn) {
+                    if let Some(mut waiter) = self.turn.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                        waiter.finish(Err("The message was withdrawn before it started".into()));
+                    }
+                    Ok(json!({"withdrawn": turn}))
+                } else {
+                    inner.note_interrupted(&turn);
+                    inner.request("turn/interrupt", json!({"session_id": session, "turn_id": turn})).await
+                }
             }
             ContextOp::Turn { text } => {
                 let text = text.trim().to_owned();
@@ -1893,35 +2341,8 @@ impl ContextInner {
                     }
                 }
                 let streamed = outcome?;
-                // The persisted answer is authoritative; the terminal can
-                // overtake the transcript lane, so look for THIS turn's
-                // answer (its thread) a few times before using the stream.
-                let mut saved = None;
-                for attempt in 0..10 {
-                    let history = inner
-                        .request(
-                            "session/hydrate",
-                            json!({"session_id": session, "include": ["messages"]}),
-                        )
-                        .await
-                        .unwrap_or(Value::Null);
-                    saved = history["messages"]
-                        .as_array()
-                        .and_then(|rows| {
-                            rows.iter().rev().find(|m| {
-                                m["role"] == "assistant"
-                                    && (m["turn_id"] == turn_id.as_str()
-                                        || m["thread_id"] == turn_id.as_str())
-                            })
-                        })
-                        .and_then(|m| m["content"].as_str())
-                        .map(str::to_owned);
-                    if saved.is_some() || attempt == 9 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-                Ok(json!({"turn_id": turn_id, "text": saved.unwrap_or(streamed)}))
+                let text = saved_answer(inner, &session, &turn_id, streamed).await;
+                Ok(json!({"turn_id": turn_id, "text": text}))
             }
             ContextOp::TurnFrom { .. } => Err("a turn reached the broker unnormalized".into()),
             ContextOp::Interrupt => {
@@ -2013,6 +2434,12 @@ impl OctosContext for BrokerContext {
     fn is_open(&self) -> bool {
         self.0.open.load(Ordering::Acquire)
     }
+
+    fn subscribe(&self, sink: Option<EventSink>) {
+        if self.0.conversation && self.0.open.load(Ordering::Acquire) {
+            *self.0.subscriber.lock().unwrap_or_else(|e| e.into_inner()) = sink;
+        }
+    }
 }
 
 impl OctosAppService for Broker {
@@ -2089,40 +2516,11 @@ impl OctosAppService for Broker {
     }
 
     fn open_context(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
-        let st = self.0.lock();
-        if st.released {
-            return Err("The app was closed".into());
-        }
-        if st.account.as_deref() != Some(spec.account.as_str()) {
-            return Err("The account changed; reopen this app".into());
-        }
-        let services: BTreeSet<String> = spec
-            .services
-            .intersection(&self.0.cfg.services)
-            .cloned()
-            .collect();
-        if services.is_empty() {
-            return Err("This app was not granted the assistant".into());
-        }
-        let context = Arc::new(ContextInner {
-            broker: Arc::downgrade(&self.0),
-            account: spec.account,
-            generation: st.generation,
-            services,
-            context_id: context_id(&self.0.nonce, &spec.instance),
-            instance: spec.instance.clone(),
-            open: AtomicBool::new(true),
-            bound: Mutex::new(None),
-            turn: Mutex::new(None),
-            sink: Mutex::new(None),
-            calls: AtomicU64::new(0),
-            seen: Mutex::new(BTreeSet::new()),
-        });
-        drop(st);
-        let mut st = self.0.lock();
-        st.contexts.retain(|c| c.strong_count() > 0);
-        st.contexts.push(Arc::downgrade(&context));
-        Ok(Arc::new(BrokerContext(context)))
+        self.open_handle(spec, false)
+    }
+
+    fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        self.open_handle(spec, true)
     }
 
     fn release(&self) {

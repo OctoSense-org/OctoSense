@@ -567,7 +567,9 @@ fn a_second_input_to_an_answered_peer_runs() {
     );
     let mut second = false;
     for _ in 0..180 {
-        if hydrate(&rinx).contains("ECHO: SECOND_INPUT") {
+        // The kernel marks the system agent's input (octos#2626).
+        let transcript = hydrate(&rinx);
+        if transcript.contains("ECHO: [from the system agent] SECOND_INPUT") || transcript.contains("ECHO: SECOND_INPUT") {
             second = true;
             break;
         }
@@ -914,6 +916,101 @@ fn the_system_session_hosts_terminal_run_while_it_is_registered() {
     assert!(tools_of("RUN_TERMINAL please").contains(&"terminal_run".to_string()));
     let after = tools_of("RUN_TERMINAL again");
     assert!(!after.is_empty() && !after.contains(&"terminal_run".to_string()), "withdrawn: {after:?}");
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ADR 0004 §6 against the real kernel (octos#2626): the person, through
+/// the app's conversation, and the system agent (`peer_send_input` →
+/// `peer/input`) talk to the SAME peer session. The person's turn carries
+/// `origin: person` (labelled with the app), the input's turn none (the
+/// kernel labels it); the transcript keeps both markers and the app's
+/// history names each speaker; the app's follower sees the system agent's
+/// turn stream.
+#[test]
+fn the_person_and_the_system_agent_share_the_peers_conversation() {
+    let Some(program) = kernel() else { return };
+    struct EchoHost;
+    impl ToolHost for EchoHost {
+        fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
+            Ok(vec![json!({"name": "rinx.echo", "description": "Echo a text back.", "risk": "read",
+                "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}})])
+        }
+        fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
+            reply.finish(ToolOutcome::Ok(json!({"echo": call.args["text"].clone()})));
+        }
+    }
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let dir = temp("shared-conversation");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+    cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+    cfg.tool_host = Some(ToolHostHandle(Arc::new(EchoHost) as Arc<dyn ToolHost>));
+    let rinx = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound and its tools registered");
+    let (slug, peer_session) = rinx.peer().unwrap();
+
+    let chat = rinx.open_conversation(spec("@alice:example.org", "rinx-chat")).unwrap();
+    let followed: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let log = followed.clone();
+    chat.subscribe(Some(Arc::new(move |e| {
+        if let ContextEvent::Data(d) = e {
+            log.lock().unwrap().push(d);
+        }
+    })));
+    // The person's message: on the peer's own session, labelled.
+    let answer = run(&chat, ContextOp::TurnFrom { text: "hello from the app".into(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the person's turn completed");
+    assert_eq!(answer["speaker"], json!({"kind": "person", "label": "Rinx"}));
+    assert!(answer["text"].as_str().unwrap().contains("hello from the app"), "{answer}");
+
+    // The system agent's input to the same peer.
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+               "input": [{"kind": "text", "text": format!("TELL_PEER_TOOL:{slug}")}]}),
+    )
+    .expect("system turn");
+    let mut rows = Value::Null;
+    for _ in 0..120 {
+        rows = run(&chat, ContextOp::History, Duration::from_secs(30)).expect("history").expect("history ok")["messages"].clone();
+        let done = rows.as_array().is_some_and(|r| r.iter().any(|m| m["role"] == "assistant" && m["content"].as_str().is_some_and(|c| c.contains("OK"))));
+        if done {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let users: Vec<&Value> = rows.as_array().unwrap().iter().filter(|m| m["role"] == "user").collect();
+    let person = users.iter().find(|m| m["display_text"] == "hello from the app").unwrap_or_else(|| panic!("{rows}"));
+    assert_eq!(person["content"], "[from the person: Rinx] hello from the app", "the transcript keeps the kernel's marker");
+    assert_eq!(person["speaker"], json!({"kind": "person", "label": "Rinx"}));
+    let agent = users.iter().find(|m| m["display_text"] == "CALL_APP_TOOL").unwrap_or_else(|| panic!("{rows}"));
+    assert_eq!(agent["speaker"], json!({"kind": "system_agent"}), "one conversation: the system agent's turn is in it");
+    assert_eq!(rinx.peer().unwrap().1, peer_session);
+    // The app followed the system agent's turn as it ran.
+    let seen = followed.lock().unwrap().clone();
+    assert!(
+        seen.iter().any(|d| d["speaker"]["kind"] == "system_agent" && d["params"]["session_id"].as_str().is_some_and(|s| peer_session.starts_with(s))),
+        "the system agent's turn streamed to the app: {} events",
+        seen.len()
+    );
     rinx.release();
     drop(rinx);
     core.shutdown_within(Duration::from_secs(5));

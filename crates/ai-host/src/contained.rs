@@ -8,6 +8,14 @@
 //! host-owned peer contract Rinx uses (ADR 0007), named `card.<app id>` so a
 //! store app can never share a native module's peer or memory.
 //!
+//! The app and its cards talk in the peer's ONE shared conversation (ADR
+//! 0004 §6, octos#2626): the peer's own session, which the system agent
+//! drives too. A turn is the person's (`origin: person`, labelled with the
+//! app) unless the app says it started the run itself (`trigger: app`);
+//! `octos.session.history` is the peer's transcript, with each message's
+//! speaker. A script app gets no pushed events: it reads the whole
+//! conversation, the system agent's turns included, with history.
+//!
 //! What an app sends is input text (and what started the turn) only. It
 //! never names a session, profile, workspace or provider, and it cannot
 //! decide a tool approval: the shell's approval router draws every one
@@ -187,8 +195,8 @@ impl ContainedOctos {
         ContainedOctos { gate, factory, apps: HashMap::new() }
     }
 
-    /// The app's open request context, creating its peer and (re)opening
-    /// the context as needed.
+    /// The app's handle on its peer's shared conversation, creating the
+    /// peer and (re)opening the handle as needed.
     fn context_for(&mut self, app_id: &str, services: &BTreeSet<String>) -> Result<Arc<dyn OctosContext>, String> {
         // A peer revoked since (Settings turned the agent off) is gone.
         if self.apps.contains_key(app_id) && !live(|l| l.contains_key(app_id)) {
@@ -206,7 +214,7 @@ impl ContainedOctos {
             return Ok(context.clone());
         }
         app.generation += 1;
-        let context = app.service.open_context(ContextSpec {
+        let context = app.service.open_conversation(ContextSpec {
             account: ACCOUNT.to_owned(),
             instance: format!("{}-g{}", app.peer, app.generation),
             services: app.service.services(),

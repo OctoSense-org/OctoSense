@@ -79,6 +79,11 @@ pub enum Down {
     ToolCall(ToolCallDown),
     ToolCancel { call_id: String },
     ContextClosed { context: String, reason: String },
+    /// An event of the app peer's shared conversation, for a context opened
+    /// without a `client` (the app's conversation): every turn, whoever
+    /// speaks (`event.speaker`), after the request that opened it answered.
+    /// A client that does not know the frame ignores it.
+    Conversation { context: String, event: Value },
 }
 
 pub fn id_ok(id: &str) -> bool {
@@ -157,6 +162,7 @@ impl Down {
             }),
             Down::ToolCancel { call_id } => json!({"down": "tool_cancel", "call_id": call_id}),
             Down::ContextClosed { context, reason } => json!({"down": "context_closed", "context": context, "reason": reason}),
+            Down::Conversation { context, event } => json!({"down": "conversation", "context": context, "event": event}),
         };
         json!({ PEER_KEY: inner }).to_string()
     }
@@ -190,6 +196,7 @@ impl Down {
             }),
             "tool_cancel" => Down::ToolCancel { call_id: opt("call_id")? },
             "context_closed" => Down::ContextClosed { context: opt("context")?, reason: opt("reason").unwrap_or_default() },
+            "conversation" => Down::Conversation { context: opt("context")?, event: v.get("event")?.clone() },
             _ => return None,
         })
     }

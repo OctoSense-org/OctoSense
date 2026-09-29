@@ -338,10 +338,27 @@ impl PeerLinks {
         self.next_context += 1;
         service.set_account(Some(&account));
         let spec = ContextSpec { account: account.clone(), instance: handle.clone(), services };
-        let ctx = match service.open_context(spec) {
+        // A `client` (one of the app's own clients, like a Rinx mini app)
+        // gets a request context: its own transcript. Without one, the app
+        // talks in its peer's ONE shared conversation (ADR 0004 §6), which
+        // the system agent drives too; the process follows all of it.
+        let opened = match &client {
+            Some(_) => service.open_context(spec),
+            None => service.open_conversation(spec),
+        };
+        let ctx = match opened {
             Ok(ctx) => ctx,
             Err(e) => return Self::reply(&out, req_id, Err(e)),
         };
+        if client.is_none() {
+            let follow_out = out.clone();
+            let context = handle.clone();
+            ctx.subscribe(Some(Arc::new(move |event: ContextEvent| {
+                if let ContextEvent::Data(event) = event {
+                    follow_out(Down::Conversation { context: context.clone(), event }.to_json());
+                }
+            })));
+        }
         let owner = ContextOwner { app: app.to_string(), client_id, account, client };
         self.contexts.insert(handle.clone(), Ctx { owner, ctx: ctx.clone() });
         if let Some(link) = self.links.get_mut(&client_id) {
