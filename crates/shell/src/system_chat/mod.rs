@@ -28,6 +28,12 @@
 //! [`crate::approvals::Caller::External`] on an external connection, which
 //! holds and answers nothing (no developer mode, no rule, no sheet); the
 //! pane shows them read-only and the chat never answers them.
+//!
+//! **App agents' questions.** A question an app's agent asks on a turn the
+//! system agent started (`peer/input`, ADR 0004 §6) is the system chat's:
+//! the chat subscribes to [`crate::questions`] and shows each one in its
+//! conversation (ids `routed:<n>`); the person's answer goes back through
+//! [`crate::questions::answer`], never through this chat's own session.
 
 pub mod grants;
 pub mod model;
@@ -77,6 +83,47 @@ struct Chat {
     worker: Option<Worker>,
     /// Scroll back from the newest line, in pixels.
     pub scroll: f64,
+    /// App agents' questions routed here ([`crate::questions`]), by id.
+    routed: Vec<(u64, model::Item)>,
+}
+
+/// The id prefix of a routed question in the conversation.
+pub const ROUTED_PREFIX: &str = "routed:";
+
+/// The system chat as a consumer of [`crate::questions`]: the questions of
+/// `peer/input` turns (the system agent's requests to app agents).
+struct RoutedQuestions;
+
+impl crate::questions::Consumer for RoutedQuestions {
+    fn changed(&mut self, request: &crate::questions::Request) {
+        if request.conversation != crate::questions::Conversation::SystemChat {
+            return;
+        }
+        let answered = match &request.state {
+            crate::questions::State::Open => None,
+            crate::questions::State::Answered(text) => Some(text.clone()),
+            crate::questions::State::Closed => Some("(no longer asked)".to_string()),
+        };
+        let item = model::Item::Question {
+            id: format!("{ROUTED_PREFIX}{}", request.id),
+            turn: request.turn_id.clone(),
+            title: if request.title.is_empty() { request.asked_by() } else { format!("{}: {}", request.asked_by(), request.title) },
+            body: request.text().to_string(),
+            options: request.options(),
+            count: request.answer_count(),
+            answered,
+        };
+        with(|c| {
+            match c.routed.iter_mut().find(|(id, _)| *id == request.id) {
+                Some(slot) => slot.1 = item,
+                None => c.routed.push((request.id, item)),
+            }
+            if c.routed.len() > 32 {
+                c.routed.remove(0);
+            }
+            c.ui_generation += 1;
+        });
+    }
 }
 
 static CHAT: Mutex<Option<Chat>> = Mutex::new(None);
@@ -90,6 +137,7 @@ fn with<R>(f: impl FnOnce(&mut Chat) -> R) -> R {
         shared: Arc::new(Mutex::new(Shared { model: ChatModel::new(), effects: Vec::new() })),
         worker: None,
         scroll: 0.0,
+        routed: Vec::new(),
     });
     f(chat)
 }
@@ -157,9 +205,17 @@ fn command(cmd: Command) {
 
 // ------------------------------------------------------------ the pane
 
-/// At startup: the command-execution grant of this home.
+/// At startup: the command-execution grant of this home, and the app
+/// agents' questions this chat shows.
 pub fn init(home: &std::path::Path) {
     grants::init(home);
+    subscribe_questions();
+}
+
+/// Show the system agent's routed questions here (once).
+pub fn subscribe_questions() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| crate::questions::subscribe(Box::new(RoutedQuestions)));
 }
 
 pub fn is_open() -> bool {
@@ -207,15 +263,29 @@ pub fn send(text: &str) {
     if text.is_empty() {
         return;
     }
-    let question = with(|c| c.shared.lock().unwrap_or_else(|e| e.into_inner()).model.open_question().map(|(id, n)| (id.to_string(), n)));
+    let question = snapshot().open_question().map(|(id, n)| (id.to_string(), n));
     match question {
-        Some((question, count)) => command(Command::Answer { question, count, text: text.to_string(), option: false }),
+        Some((question, count)) => answer(&question, count, text, false),
         None => command(Command::Send(text.to_string())),
     }
 }
 
 pub fn answer_option(question: &str, count: usize, label: &str) {
-    command(Command::Answer { question: question.to_string(), count, text: label.to_string(), option: true });
+    answer(question, count, label, true);
+}
+
+/// The person answered a question from the pane: the chat's own on its
+/// session; an app agent's routed one through [`crate::questions`].
+fn answer(question: &str, count: usize, text: &str, option: bool) {
+    if let Some(id) = question.strip_prefix(ROUTED_PREFIX).and_then(|n| n.parse::<u64>().ok()) {
+        use crate::ai_host::app_peers::host_tools::QuestionReply;
+        let reply = if option { QuestionReply::option(text) } else { QuestionReply::text(text) };
+        if let Err(e) = crate::questions::answer(id, &[reply], &crate::questions::PersonAnswer::from_shell_surface()) {
+            log!("system chat: question {id}: {e}");
+        }
+        return;
+    }
+    command(Command::Answer { question: question.to_string(), count, text: text.to_string(), option });
 }
 
 pub fn interrupt() {
@@ -237,9 +307,14 @@ pub fn new_conversation() {
     command(Command::NewConversation);
 }
 
-/// The model as the pane draws it.
+/// The model as the pane draws it: the conversation, then the app agents'
+/// questions routed here.
 pub fn snapshot() -> ChatModel {
-    with(|c| c.shared.lock().unwrap_or_else(|e| e.into_inner()).model.clone())
+    with(|c| {
+        let mut model = c.shared.lock().unwrap_or_else(|e| e.into_inner()).model.clone();
+        model.items.extend(c.routed.iter().map(|(_, item)| item.clone()));
+        model
+    })
 }
 
 pub fn draft() -> String {

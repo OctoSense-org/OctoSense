@@ -10,6 +10,7 @@
 //! | `approval/requested` `host_tool` | the approval router ([`crate::approvals::approval_requested`]); its decision answers the kernel |
 //! | any other `approval/requested` on an app's peer session or context (octos's own tools) | the same router, as the app agent's call on its own app (ADR 0004 §8); the app hears only `approval/handled_by_host` |
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
+//! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
@@ -43,7 +44,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 
-use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
+use crate::ai_host::app_peers::host_tools::{self, AgentQuestion, ApprovalAnswer, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
 use crate::approvals::{self, Caller, Decision, RequestContext, RequestId, Route, ToolSpec};
 use crate::peer_link::{self, KernelToolCall, Refused, ToolCallResult};
 pub use relay::{app_of_peer, Event, Relay, APPROVAL_PREFIX, BUS_PREFIX, CONFIRM_PREFIX, SYSTEM, TERMINAL_RUN, TOOLBOX};
@@ -187,6 +188,15 @@ impl ToolHost for ShellToolHost {
     fn host_tool_approval(&self, app_id: &str, account: Option<&str>, approval: HostToolApproval, answer: ApprovalAnswer) -> bool {
         submit(Event::Approval { app: app_id.to_string(), account: account.map(str::to_string), approval, answer });
         true
+    }
+
+    fn user_question(&self, app_id: &str, account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> bool {
+        crate::questions::requested(app_id, account, question, answer);
+        true
+    }
+
+    fn user_question_closed(&self, app_id: &str, question_id: &str) {
+        crate::questions::closed(app_id, question_id);
     }
 
     fn set_executor(&self, app_id: &str, executor: Option<Arc<dyn ToolExecutor>>) {

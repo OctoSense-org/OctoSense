@@ -55,6 +55,7 @@ pub mod sandbox;
 pub mod pane_links;
 pub mod peer_link;
 pub mod preview;
+pub mod questions;
 pub mod run_view;
 pub mod shell;
 pub mod theme;

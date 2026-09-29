@@ -29,7 +29,14 @@
 //!   closed link end calls before they run. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
 //!   id, once per input, queued while the peer is busy; `host_tool`
-//!   approvals go to the host, never to the app.
+//!   approvals go to the host, never to the app;
+//! - routes the agent's questions (`user_question/requested`, octos's
+//!   `ask_user_question`) on the peer's session and its contexts to the
+//!   host with the turn's origin (a context's, the peer's own, or a
+//!   `peer/input` turn's), answers them only as the host says
+//!   (`user_question/respond` on this link), tells the app's context only
+//!   that the host took it, closes them when their turn ends, and refuses
+//!   an app's attempt to answer an approval or question the host holds.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -45,7 +52,7 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::contract::*;
-use crate::host_tools::{self, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, ToolHost, ToolOutcome, ToolReply};
+use crate::host_tools::{self, AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolHost, ToolOutcome, ToolReply};
 
 /// A boxed future, for the object-safe transport traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -370,6 +377,10 @@ struct State {
     input_queue: VecDeque<PeerInput>,
     /// Workspaces new peers were created with, when no state dir keeps them.
     cwds: HashMap<String, String>,
+    /// Approval and question ids the host took: only the host answers them.
+    host_held: VecDeque<String>,
+    /// Questions the host holds, by id: the turn that asked.
+    questions: HashMap<String, String>,
 }
 
 struct Inner {
@@ -424,6 +435,8 @@ impl Broker {
                 trigger_order: VecDeque::new(),
                 input_queue: VecDeque::new(),
                 cwds: HashMap::new(),
+                host_held: VecDeque::new(),
+                questions: HashMap::new(),
             }),
             connecting: tokio::sync::Mutex::new(()),
             binding: tokio::sync::Mutex::new(()),
@@ -771,6 +784,25 @@ impl Inner {
         let ours = peer_session.as_deref() == Some(session) || route.is_some();
         if ours {
             self.note_terminal(method, &params);
+            if let Some(turn) = turn_ended(method, &params) {
+                self.close_questions(turn);
+            }
+        }
+        // An agent's question is the person's, asked by the shell in the
+        // right conversation: never the app context's to answer.
+        if ours && method == host_tools::USER_QUESTION_REQUESTED {
+            if let Some(question) = AgentQuestion::parse(&params, session) {
+                let context = route.as_ref().and_then(|(g, c)| (*g == generation).then(|| c.upgrade()).flatten());
+                if route.is_some() && context.is_none() {
+                    return;
+                }
+                if self.on_user_question(question, context.as_deref()) {
+                    if let Some(context) = context {
+                        context.notification(host_tools::QUESTION_HANDLED_BY_HOST, &params);
+                    }
+                    return;
+                }
+            }
         }
         // Every approval on the peer's session or one of its contexts is the
         // host's to draw (ADR 0004 §8): a host-routed tool's (the owning
@@ -790,7 +822,9 @@ impl Inner {
                     a
                 });
             if let Some(approval) = approval {
+                let id = approval.approval_id.clone();
                 if self.on_host_approval(approval) {
+                    remember(&mut self.lock().host_held, id);
                     if let Some(context) = context {
                         context.notification(host_tools::HANDLED_BY_HOST, &params);
                     }
@@ -1391,6 +1425,66 @@ impl Inner {
         self.tool_host().host_tool_approval(&self.cfg.app_id, account.as_deref(), approval, answer)
     }
 
+    /// An agent's question: stamped with its origin and handed to the host,
+    /// which answers on this link. False when the host did not take it.
+    fn on_user_question(self: &Arc<Self>, mut question: AgentQuestion, context: Option<&ContextInner>) -> bool {
+        let (link, account) = {
+            let st = self.lock();
+            question.origin = match context {
+                Some(_) => CallOrigin::Context,
+                None if st.input_turns.contains(&question.turn_id) => CallOrigin::PeerInput,
+                None => CallOrigin::PeerOwn,
+            };
+            (st.link.clone(), st.account.clone())
+        };
+        if let Some(context) = context {
+            question.context_id = Some(context.context_id.clone());
+            question.client = Some(context.instance.clone());
+        }
+        let Some(link) = link else { return false };
+        let weak = Arc::downgrade(self);
+        let session = question.session_id.clone();
+        let question_id = question.question_id.clone();
+        let turn = question.turn_id.clone();
+        let answer = QuestionAnswer::new(move |answers| {
+            if let Some(inner) = weak.upgrade() {
+                inner.lock().questions.remove(&question_id);
+                inner.fire(
+                    &link,
+                    host_tools::USER_QUESTION_RESPOND,
+                    json!({"session_id": session, "question_id": question_id, "answers": answers}),
+                );
+            }
+        });
+        let id = question.question_id.clone();
+        let taken = self.tool_host().user_question(&self.cfg.app_id, account.as_deref(), question, answer);
+        if taken {
+            let mut st = self.lock();
+            remember(&mut st.host_held, id.clone());
+            st.questions.insert(id, turn);
+        }
+        taken
+    }
+
+    /// `turn` ended: its unanswered questions can no longer be answered.
+    fn close_questions(&self, turn: &str) {
+        let closed: Vec<String> = {
+            let mut st = self.lock();
+            let ids: Vec<String> = st.questions.iter().filter(|(_, t)| t.as_str() == turn).map(|(q, _)| q.clone()).collect();
+            for id in &ids {
+                st.questions.remove(id);
+            }
+            ids
+        };
+        if closed.is_empty() {
+            return;
+        }
+        let host = self.tool_host();
+        for id in closed {
+            host.user_question_closed(&self.cfg.app_id, &id);
+        }
+    }
+
     fn close_context_on_kernel(
         self: &Arc<Self>,
         peer: String,
@@ -1439,6 +1533,20 @@ impl Inner {
         for context in contexts {
             context.revoke(self);
         }
+    }
+}
+
+/// The turn a notification ends, if it ends one.
+fn turn_ended<'a>(method: &str, params: &'a Value) -> Option<&'a str> {
+    let ended = match method {
+        "projection/envelope" => params["payload"]["type"] == "turn_terminal",
+        "turn/completed" | "turn/error" | "turn/interrupted" => true,
+        _ => false,
+    };
+    if ended {
+        params.get("turn_id").and_then(Value::as_str)
+    } else {
+        None
     }
 }
 
@@ -1791,6 +1899,11 @@ impl ContextInner {
                     .await
             }
             ContextOp::Approval { id, approve } => {
+                // What the host holds (a `host_tool` approval, an agent's
+                // question) only the host answers, on the person's word.
+                if inner.lock().host_held.contains(&id) {
+                    return Err("The person answers this in OctoSense, not the app".into());
+                }
                 inner
                     .request(
                         "approval/respond",

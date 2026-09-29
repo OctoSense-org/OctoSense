@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
-use octosense_app_peers::host_tools::{ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, ToolHost, ToolOutcome, ToolReply};
+use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -467,6 +467,8 @@ struct RecordingHost {
     cancels: Mutex<Vec<(String, String)>>,
     inputs: Mutex<Vec<PeerInput>>,
     approvals: Mutex<Vec<(HostToolApproval, ApprovalAnswer)>>,
+    questions: Mutex<Vec<(AgentQuestion, QuestionAnswer)>>,
+    closed_questions: Mutex<Vec<String>>,
 }
 
 impl ToolHost for RecordingHost {
@@ -495,6 +497,13 @@ impl ToolHost for RecordingHost {
     fn host_tool_approval(&self, _app: &str, _account: Option<&str>, approval: HostToolApproval, answer: ApprovalAnswer) -> bool {
         self.approvals.lock().unwrap().push((approval, answer));
         true
+    }
+    fn user_question(&self, _app: &str, _account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> bool {
+        self.questions.lock().unwrap().push((question, answer));
+        true
+    }
+    fn user_question_closed(&self, _app: &str, question_id: &str) {
+        self.closed_questions.lock().unwrap().push(question_id.to_owned());
     }
 }
 
@@ -766,6 +775,77 @@ fn a_host_tool_approval_goes_to_the_host_and_is_answered_on_its_link() {
         seen.push(d["method"].as_str().unwrap_or("").to_owned());
     }
     assert!(!seen.iter().any(|m| m == "approval/requested"), "{seen:?}");
+    drop(broker);
+}
+
+/// ADR 0004 §6 (G11): an agent's `ask_user_question` goes to the host with
+/// the turn's origin, never to the app; only the host's answer reaches the
+/// kernel, on the link it came on; the app's context cannot answer it (nor
+/// a `host_tool` approval the host holds); the turn's end closes it.
+#[test]
+fn an_agents_question_goes_to_the_host_and_only_the_host_answers_it() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    let ctx = broker.open_context(spec("@a:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let ctx_session = calls_of(&script, "session/open").last().unwrap().1["session_id"].as_str().unwrap().to_owned();
+    let question = |session: &str, id: &str, turn: &str| {
+        json!({"session_id": session, "question_id": id, "turn_id": turn, "title": "Which room?", "body": "Pick one",
+            "questions": [{"header": "Room", "question": "Post where?", "options": [{"label": "#a", "description": ""}, {"label": "#b", "description": ""}], "allow_free_text": true}]})
+    };
+    // A context's turn (the person, in the app): the app's conversation.
+    let (sink, rx) = collect();
+    ctx.call(ContextOp::Turn { text: "post it".into() }, sink).unwrap();
+    wait_for("the turn", || position(&script, "turn/start").is_some());
+    let ctx_turn = calls_of(&script, "turn/start")[0].1["turn_id"].as_str().unwrap().to_owned();
+    notify(&script, "user_question/requested", question(&ctx_session, "q1", &ctx_turn));
+    wait_for("the host", || host.questions.lock().unwrap().len() == 1);
+    let (q, answer) = host.questions.lock().unwrap()[0].clone();
+    assert_eq!(q.origin, CallOrigin::Context);
+    assert_eq!(q.client.as_deref(), Some("mini.news#1"), "stamped from the host's context table");
+    assert!(q.context_id.is_some());
+    assert_eq!(q.questions[0].options.len(), 2);
+    let mut seen = Vec::new();
+    while let Ok(ContextEvent::Data(d)) = rx.recv_timeout(Duration::from_millis(300)) {
+        seen.push(d["method"].as_str().unwrap_or("").to_owned());
+    }
+    assert!(seen.iter().any(|m| m == "user_question/handled_by_host"), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "user_question/requested"), "the app is never asked: {seen:?}");
+    // The app cannot answer it (nor anything else the host holds).
+    let (sink, rx2) = collect();
+    ctx.call(ContextOp::Approval { id: "q1".into(), approve: true }, sink).unwrap();
+    let refused = complete(&rx2).unwrap_err();
+    assert!(refused.contains("OctoSense"), "{refused}");
+    assert!(position(&script, "approval/respond").is_none() && position(&script, "user_question/respond").is_none());
+    // The host's answer goes to the kernel, once, on the link it came on.
+    assert!(answer.respond(&[QuestionReply::option("#b")]));
+    wait_for("the answer", || position(&script, "user_question/respond").is_some());
+    let (conn, respond) = calls_of(&script, "user_question/respond")[0].clone();
+    assert_eq!(respond["question_id"], "q1");
+    assert_eq!(respond["session_id"], ctx_session.as_str());
+    assert_eq!(respond["answers"], json!([{"selected_labels": ["#b"]}]));
+    assert_eq!(conn, calls_of(&script, "turn/start")[0].0);
+
+    // The system agent's `peer/input` turn: its question is the system chat's.
+    let slug = peer_slug(&script);
+    let peer_session = format!("_main:api:octosense#peer-{slug}");
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": peer_session, "input_id": "i1", "turn_id": "turn-in", "text": "ask them"}));
+    wait_for("the input turn", || calls_of(&script, "turn/start").len() == 2);
+    notify(&script, "user_question/requested", question(&peer_session, "q2", "turn-in"));
+    // The peer's own turn (the app's agent): the app's conversation.
+    notify(&script, "user_question/requested", question(&peer_session, "q3", "turn-own"));
+    wait_for("both", || host.questions.lock().unwrap().len() == 3);
+    let origins: Vec<(String, CallOrigin)> = host.questions.lock().unwrap().iter().map(|(q, _)| (q.question_id.clone(), q.origin)).collect();
+    assert_eq!(origins[1], ("q2".to_string(), CallOrigin::PeerInput));
+    assert_eq!(origins[2], ("q3".to_string(), CallOrigin::PeerOwn));
+    // A turn that ends closes its unanswered question.
+    notify(&script, "turn/completed", json!({"session_id": peer_session, "turn_id": "turn-in"}));
+    wait_for("closed", || host.closed_questions.lock().unwrap().contains(&"q2".to_string()));
+    assert!(!host.closed_questions.lock().unwrap().contains(&"q3".to_string()));
     drop(broker);
 }
 
