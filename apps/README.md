@@ -29,7 +29,7 @@ them. They live in `apps/` of the [OctoSense repository](../README.md); until
   `app-reference` (always on phones). Every native app the shells link is
   declared in [`../native-apps.json`](../native-apps.json). News, Photos and
   Maps are script apps only: their earlier native modules were deleted
-  (native-apps ADR 0004 §1, [#110](https://github.com/OctoSense-org/OctoSense/pull/110)). Photos' sample library, which Home mounts, is in
+  (native-apps ADR 0004 §1, [#113](https://github.com/OctoSense-org/OctoSense/pull/113)). Photos' sample library, which Home mounts, is in
   `photos/resources/`.
 
 The shell services these apps rely on are next door:
@@ -156,7 +156,7 @@ request.
 
 ```
 <name>/bundle/               a contained script app: manifest.json, main.splash, artwork
-<name>/native/               native comparison module (news, photos, maps); Photos' full-size library
+photos/resources/            Photos' sample library, which Home mounts
 mail/host-service/           octosense-mail-service, the `mail` host service (Rust)
 ai-providers/                the `llm` host service (host-service/) and octosense-llm-config (config/:
                              octos's model catalog and provider registry, the profile merge, OCTOS1/OCTOS1E QR)

@@ -39,7 +39,7 @@ flowchart LR
     aihost["ai-host + app-peers broker<br/>host connection to the kernel"]
     bus["AI services bus<br/>crates/shell/src/ai_bus.rs"]
   end
-  term["Process apps (desktop)<br/>Terminal; opt-in Sheets, Reference"]
+  term["Process app (desktop)<br/>Terminal"]
   subgraph kern["octos kernel (one per shell)"]
     sys["System agent session<br/>(profile _main)"]
     peers["App peers<br/>one per (app, account)"]
@@ -110,10 +110,10 @@ Native apps are first-party Rust crates declared only in [`native-apps.json`](..
 | App Hub (`apphub`: the store and the Card runner) | in process | in process | in process | default / default | – |
 | Rinx | in process | in process | in process | default / default | granted the four `octos.*` services |
 | Terminal | **own process** | own process with a Vulkan build and a Wayland session, else in process | in process | default / off | – (its `run` tool is `confirm: host`, `auto_approvable: false`) |
-| Sheets, Reference | own process | own process | in process | opt-in / `mobile-apps` | – |
+| Sheets, Reference | in process | in process | in process | opt-in / `mobile-apps` | – |
 | AppCard | in process | in process | in process | opt-in / opt-in | its own kernel connection |
 
-So among the apps a shell ships by default, **only the Terminal is a process app**, and only on the desktop. App Hub stays in process because it hosts the Card runner every script app runs in; Rinx stays in process until the peer link and the process sandboxes exist (ADR 0004 §2).
+So **only the Terminal is a process app**, and only on the desktop; `tools/native_apps.py` refuses plain `process` on Linux (`process-if-vulkan` only), so Linux without Vulkan and Wayland runs every app in process. App Hub stays in process because it hosts the Card runner every script app runs in; Rinx stays in process until the peer link and the process sandboxes exist (ADR 0004 §2).
 
 How the shell decides at run time (`crates/shell/src/apps.rs`, `AppRegistry::hosting`): if the target cannot run processes (`host::processes_available()` is false on wasm and native mobile), every app is a module; App Hub and Settings are always modules; otherwise a native app follows its manifest entry, and runs as a process only when a process form exists (a checkout to `cargo run` from, or a sibling binary). Release packages do not ship process apps' binaries yet ([#94](https://github.com/OctoSense-org/OctoSense/pull/94), in progress), so there they fall back to in-process. A per-app override (`~/.makepad/wm/apps.splash`, `--module <id>`) can switch a module to a process.
 
@@ -426,15 +426,15 @@ sequenceDiagram
 
 Found while writing this page (2026-09-28); none is fixed here, as this change is documentation only.
 
-1. **Process apps beyond the Terminal.** ADR 0004 §2 says the Terminal is the only process app for now and that Linux without Vulkan runs every app in process. `native-apps.json` declares the opt-in Sheets and Reference as `process` on macOS, Windows and Linux (plain `process`, not `process-if-vulkan`), so an OpenGL or X11 Linux build would run them as processes with CPU readback.
+1. **Process apps beyond the Terminal.** Fixed: the opt-in Sheets and Reference are `module` on every target, and the generator refuses plain `process` on Linux (ADR 0004 §2).
 2. **Restart of a dead process app.** ADR 0004 §2 says its tile shows it closed with a restart. The shell removes the client and posts "App stopped"; the Restart face exists only for in-process modules (`module_view.rs`).
 3. **Agent workspace = account folder.** ADR 0004 §11 names it the `peer/prepare` `cwd`. The broker sends no `cwd` to `peer/prepare` and binds the peer to the kernel-provisioned workspace; the storage API's `agent_workspace` is not connected to it. The account folder name (`account_hash`, SHA-256) and the memory namespace tag (FNV-1a in `broker.rs`) are also different hashes of the account.
 4. **ADR 0003 "What the profile runs"** says OctoSense configures neither the tool set nor the sandbox. Since [#117](https://github.com/OctoSense-org/OctoSense/pull/117) the shell writes a `tool_policy` denying `group:runtime` into the `_main` profile before every start, so the host's own turns have no octos shell either.
-5. **Stale context lines.** ADR 0004's context table and the root README's layout table still mention native News, Maps and Photos comparison modules (`apps/*/native`); ADR 0004 step 1 deleted them. [ai-services.md](ai-services.md) is dated 2026-09-27: its architecture diagram shows "no `octos.*` service" for the Card runner (merged in #106), and it says contained apps are off "until first-use consent lands" (consent landed in #120; the `Policy::contained_apps` switch is still off by default).
-6. **Command execution "turned on in Settings"** (`crates/kernel/README.md`, `system_tools.rs` docs): no Settings switch exists yet; `SystemAgentTools::grant_command_execution` is a seam.
+5. **Stale context lines.** Fixed: ADR 0004's context table and the README layout tables no longer list the native News, Maps and Photos modules ADR 0004 step 1 deleted (#113). Still open: [ai-services.md](ai-services.md) is dated 2026-09-27: its architecture diagram shows "no `octos.*` service" for the Card runner (merged in #106), and it says contained apps are off "until first-use consent lands" (consent landed in #120; the `Policy::contained_apps` switch is still off by default).
+6. **Command execution "turned on in Settings".** Fixed in the docs: `crates/kernel/README.md` and `system_tools.rs` now say it is planned (no Settings switch sets `SystemAgentTools::grant_command_execution`; the host tool needs octos#2567).
 7. **`host::processes_available()`'s test** checks only `wasm32` while the function also excludes native mobile.
 8. **Approvals, ADR 0004 §8.** Every app tool call is to reach the router through `peer/tool/call`; today only the AI bus feeds it (above). No app registers its own `confirm: app` sheet, so such a call would wait and be refused. The audit keeps a digest of the arguments, not the arguments. The send queue and undo window are not built.
-9. **Storage, ADR 0004 §11.** Secrets use the OS keychain only on macOS and iOS (plaintext 0600 files elsewhere). The startup check refuses workspaces that reach the secrets through links or containment rather than looking for a `secrets/` path, and does not stop startup. `storage.accounts` defaults to `false` in `spec.rs` but `consent.rs` treats a missing value as `true`.
+9. **Storage, ADR 0004 §11.** Secrets use the OS keychain only on macOS and iOS (plaintext 0600 files elsewhere). The startup check refuses workspaces that reach the secrets through links or containment rather than looking for a `secrets/` path, and does not stop startup. (Fixed: `storage.accounts` defaults to `false` in both app storage and the consent sheet, which now reads `StorageSpec`.)
 10. **Developer mode, ADR 0004 §13.** `dev.run` is not registered; Settings turns it on only for all apps (a chosen list only through `OCTOSENSE_DEV_MODE`); there is no phone gesture; in-process modules still show their own confirmation sheets.
 
 ## Source map

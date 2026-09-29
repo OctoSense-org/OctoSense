@@ -622,8 +622,8 @@ mod tests {
         assert_eq!(manifest_default(Declared::Process, || false, true), Hosting::Module, "no binary: in-process");
         assert_eq!(manifest_default(Declared::ProcessIfVulkan, || true, false), Hosting::Module, "OpenGL or X11");
         assert_eq!(manifest_default(Declared::ProcessIfVulkan, || true, true), Hosting::Process);
-        // App Hub and Rinx stay in-process everywhere (ADR 0004 §2).
-        for id in ["apphub", "rinx"] {
+        // Every app but the Terminal stays in-process everywhere (ADR 0004 §2).
+        for id in ["apphub", "rinx", "sheets", "reference", "appcard"] {
             let app = crate::native_apps::find(id).unwrap();
             assert_eq!(manifest_default(app.on_this_target(), || true, true), Hosting::Module, "{id}");
         }
@@ -650,8 +650,7 @@ mod tests {
             assert_eq!(registry.hosting("sheets"), Hosting::Module);
             assert!(registry.linked_ids().contains(&"sheets"));
             let plain = AppRegistry::default();
-            let expected = if process_form("sheets") { Hosting::Process } else { Hosting::Module };
-            assert_eq!(plain.hosting("sheets"), expected, "desktop default is a process where it can start");
+            assert_eq!(plain.hosting("sheets"), Hosting::Module, "Terminal is the only process app for now (ADR 0004 §2)");
         }
     }
 

@@ -35,8 +35,11 @@ class TheRepository(unittest.TestCase):
         self.assertEqual(hosting["terminal"]["macos"], "process")
         self.assertEqual(hosting["terminal"]["windows"], "process")
         self.assertEqual(hosting["terminal"]["linux"], "process-if-vulkan")
-        for ident in ("apphub", "rinx"):
+        for ident in ("apphub", "rinx", "sheets", "reference", "appcard"):
             self.assertEqual(set(hosting[ident].values()), {"module"}, ident)
+        # Non-Vulkan Linux is in-process for everything.
+        for ident, h in hosting.items():
+            self.assertIn(h["linux"], ("module", "process-if-vulkan"), ident)
 
 
 class Fixture(unittest.TestCase):
@@ -72,6 +75,10 @@ class Validation(Fixture):
             self.app("terminal")["hosting"][target] = "process"
             self.assertRefused(rf"hosting\.{target}: {target} has no processes")
             self.app("terminal")["hosting"][target] = "module"
+
+    def test_refuses_plain_process_on_linux(self):
+        self.app("terminal")["hosting"]["linux"] = "process"
+        self.assertRefused(r"terminal: hosting\.linux: 'process' would run without Vulkan\+Wayland")
 
     def test_refuses_process_without_a_bin(self):
         self.app("rinx")["hosting"]["macos"] = "process"

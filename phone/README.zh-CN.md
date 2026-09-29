@@ -22,7 +22,7 @@ cargo run --release -p octosense-home --features mobile-only
 
 | 开关 | 作用 |
 | --- | --- |
-| `--features mobile-apps` | 同时链接原生模块（Reference、Sheets，以及原生的 News、Photos 和 Maps，它们会替代对应的脚本应用）；不包括 AppCard |
+| `--features mobile-apps` | 同时链接原生模块 Reference 和 Sheets；不包括 AppCard |
 | `--features app-appcard` | 同时链接 AppCard 助手，它目前默认不随产品发布 |
 | `-- --module <id>` | 在进程内托管已链接的模块，而不是作为子进程 |
 | `-- --test-action <name>` | 启动时触发一个 Shell 动作（见[在桌面电脑上运行](#在桌面电脑上运行)） |
@@ -114,7 +114,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-早期的原生 News、Photos 和 Maps 模块已删除（原生应用 ADR 0004 §1，[#110](https://github.com/OctoSense-org/OctoSense/pull/110)）；所有系统应用都不再有原生模块。
+早期的原生 News、Photos 和 Maps 模块已删除（原生应用 ADR 0004 §1，[#113](https://github.com/OctoSense-org/OctoSense/pull/113)）；所有系统应用都不再有原生模块。
 
 ### octos 内核
 

@@ -486,6 +486,28 @@ fn news() -> AgentSummary {
     )
 }
 
+/// The consent sheet and app storage read one `storage` block the same
+/// way: `accounts` defaults to false (one `device` folder) in both.
+#[test]
+fn consent_and_app_storage_agree_on_accounts() {
+    use crate::app_storage::{AppKind, StorageSpec};
+    for manifest in [
+        json!({}),
+        json!({"storage": {}}),
+        json!({"storage": {"agent_workspace": "account"}}),
+        json!({"storage": {"accounts": false}}),
+        json!({"storage": {"accounts": true}}),
+        json!({"storage": {"accounts": true, "agent_workspace": "account"}}),
+    ] {
+        let per_account = StorageSpec::from_manifest(&manifest, AppKind::Script).unwrap().accounts;
+        let summary = AgentSummary::from_manifest("os.x", "X", &manifest, &[], "m");
+        let says_account = summary.reads.iter().any(|r| r.contains("signed-in account"));
+        let says_device = summary.reads.iter().any(|r| r.contains("on this device"));
+        assert_eq!((says_account, says_device), (per_account, !per_account), "{manifest}");
+    }
+    assert!(!StorageSpec::from_manifest(&json!({}), AppKind::Script).unwrap().accounts, "an app declares accounts");
+}
+
 #[test]
 fn consent_at_first_use_is_asked_once_and_remembered() {
     let mut c = ConsentStore::memory();

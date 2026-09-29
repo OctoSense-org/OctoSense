@@ -11,7 +11,7 @@
 
 | | Native app | Script system app |
 | --- | --- | --- |
-| Today | App Hub (the store and the Card runner), Rinx, Terminal; opt-in Sheets, Reference, AppCard; native News, Maps and Photos crates kept "for comparison" | News, Maps, Photos, Camera, Mail, AI providers |
+| Today | App Hub (the store and the Card runner), Rinx, Terminal; opt-in Sheets, Reference, AppCard; the native News, Maps and Photos crates once kept "for comparison" were deleted by [#113](https://github.com/OctoSense-org/OctoSense/pull/113) (the script apps are the only versions) | News, Maps, Photos, Camera, Mail, AI providers |
 | Source | a crate pinned in the root `Cargo.toml` | `apps/<name>/bundle/`, packed from the same commit (`desktop/system-apps.json`) |
 | Code | Rust: full process rights, `unsafe`, files, PTYs, threads | OctoScript in App Hub's Card runner; reaches the shell only through `host.request` for families its manifest was granted |
 | Runs | in the shell process, one splash isolate per instance (`crates/shell/src/module_host.rs`); the isolate separates the script heap only | in the shell process, a nested isolate per instance with `mod.res` and `mod.run` stripped |
@@ -230,7 +230,7 @@ The contract, one block in both manifests (App Hub's `manifest.json` extends its
 }
 ```
 
-- `accounts`: the app keeps data per account (one agent per account); `false` means one `device` folder.
+- `accounts`: the app keeps data per account (one agent per account); `false`, the default, means one `device` folder (an app with accounts declares `true`).
 - `agent_workspace`: `"account"` (default: the account folder) or `"none"` (the agent reads no files; tools only).
 - `external`: native apps only, paths outside the jail the app needs, reviewed in `native-apps.json` (the terminal's `home:rw`). They are part of its OS sandbox and are **never** in an agent's workspace.
 
@@ -319,6 +319,17 @@ How it is turned on and kept from leaking into normal use:
 9. Module panic containment.
 10. The storage layout and contract (section 11): App Hub's `storage` fields; the host paths and secrets APIs; Rinx and the host services move under `apps/` and `secrets/` (the Rinx move, #101, and any App Hub pin move through the tagged-Rinx rule and the lockstep fix, hagency-org/Rinx#37); the startup check.
 11. Developer mode (section 13): the developer profile, the grants, `dev.run`, the banner and audit, and a test that an external client gets neither developer grants nor `dev.run`; `terminal.run` as a confirmed shareable tool (section 12).
+
+### Follow-ups
+
+Gaps between this decision and `main` found after it was accepted (2026-09-28; see [the architecture overview](../architecture.md#where-the-code-and-the-adrs-disagree)):
+
+- **`dev.run` registration** (section 13) waits on octos#2567's host tool registration.
+- **Developer mode per app** (section 13): choosing which apps it covers in Settings (today only through `OCTOSENSE_DEV_MODE`), and the phone gesture that turns it on.
+- **The system agent's exact tool list** (section 12, step 4): the `_main` profile's `tool_policy` is a ceiling, not the list; the exact list needs octos#2567's session tool lists (its review item M1).
+- **The Settings switch for the system agent's command execution** (section 12): `SystemAgentTools::grant_command_execution` exists, but no Settings switch sets it, and its host tool needs octos#2567.
+- **The agent workspace is the account folder** (section 11): `peer/prepare` is to get the account folder as its `cwd` (today the broker sends none and the peer uses the kernel-provisioned workspace). The account folder name (SHA-256, `app_storage`'s `account_hash`) and the memory namespace tag (FNV-1a, `account_tag` in the `crates/app-peers` broker) are two different hashes of one account; one should derive from the other. Changing the memory tag re-keys every app's memory, so it needs a migration (or the folder name follows the tag).
+- **A shell-native chat with the system agent**: today only a paired Talk to Octos client reaches it; the desktop's AI pane is Makepad's `aichat`, not the system agent.
 
 ## Open questions
 

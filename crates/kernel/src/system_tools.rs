@@ -4,8 +4,9 @@
 //! - [`SYSTEM_AGENT_TOOLS`]: the octos tools the system agent
 //!   (`_main:api:octosense#system`) gets by default. With what the person
 //!   grants it ([`SystemAgentTools`]: toolbox tools, other apps' shareable
-//!   tools, and command execution when turned on in Settings) that is its
-//!   whole set: ADR 0004 §12's "exactly its grants".
+//!   tools, and, planned, command execution behind a Settings switch that
+//!   does not exist yet; see [`SystemAgentTools::grant_command_execution`])
+//!   that is its whole set: ADR 0004 §12's "exactly its grants".
 //! - [`tool_policy`]: the `_main` profile's policy, the ceiling for every
 //!   `_main` session. It is every tool any grant can give: OctoSense
 //!   hard-codes no exclusions (§12) except ONE, octos's own shell
@@ -66,7 +67,8 @@ use serde_json::{json, Value};
 ///   agent `toolbox.search` / `toolbox.web_read`.
 ///
 /// Anything else it may have is by grant ([`SystemAgentTools`]); command
-/// execution only as a host tool the person turns on in Settings.
+/// execution only as a host tool the person turns on (planned: no Settings
+/// switch yet, and it needs octos#2567's per-session tool registration).
 pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     // Supervision.
     "peer_send_input",
@@ -172,8 +174,9 @@ impl SystemAgentTools {
         self
     }
 
-    /// The person's Settings switch for the system agent's command
-    /// execution (ADR 0004 §12; off by default). On, the system agent gets
+    /// The seam for the person's planned Settings switch for the system
+    /// agent's command execution (ADR 0004 §12; off by default). Nothing
+    /// calls it outside tests yet. On, the system agent gets
     /// the host tool [`COMMAND_EXECUTION_TOOL`], each command approved live
     /// (section 8); never octos's shell.
     ///

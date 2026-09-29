@@ -46,7 +46,7 @@ cargo run --release -p octosense-home --features mobile-only
 
 | Switch | Effect |
 | --- | --- |
-| `--features mobile-apps` | Also link the native modules (Reference, Sheets, and the native News, Photos and Maps, which then replace their script apps); not AppCard |
+| `--features mobile-apps` | Also link the native modules Reference and Sheets; not AppCard |
 | `--features app-appcard` | Also link the AppCard assistant, which is not shipped by default for now |
 | `-- --module <id>` | Host a linked module in-process instead of as a child process |
 | `-- --test-action <name>` | Fire a shell action at startup (see [Run on a desktop](#run-on-a-desktop)) |
@@ -182,7 +182,7 @@ MAKEPAD_APP_CONFIG='{"mail_demo":true}' cargo run --release -p octosense-home --
 adb shell am start -n <package>/.MakepadApp --es makepad.APP_CONFIG '{"mail_demo":true}'
 ```
 
-The earlier native News, Photos and Maps modules are deleted (native-apps ADR 0004 §1, [#110](https://github.com/OctoSense-org/OctoSense/pull/110));
+The earlier native News, Photos and Maps modules are deleted (native-apps ADR 0004 §1, [#113](https://github.com/OctoSense-org/OctoSense/pull/113));
 none of the system apps has a native module any more.
 
 ### The octos kernel

@@ -39,7 +39,7 @@ flowchart LR
     aihost["ai-host + app-peers broker<br/>到内核的宿主连接"]
     bus["AI 服务总线<br/>crates/shell/src/ai_bus.rs"]
   end
-  term["进程应用（桌面端）<br/>Terminal；可选 Sheets、Reference"]
+  term["进程应用（桌面端）<br/>Terminal"]
   subgraph kern["octos 内核（每个 Shell 一个）"]
     sys["系统 Agent 会话<br/>（profile _main）"]
     peers["应用 peer<br/>每个（应用，账号）一个"]
@@ -110,10 +110,10 @@ flowchart LR
 | App Hub（`apphub`：商店和 Card runner） | 进程内 | 进程内 | 进程内 | 默认 / 默认 | – |
 | Rinx | 进程内 | 进程内 | 进程内 | 默认 / 默认 | 获授权四个 `octos.*` 服务 |
 | Terminal | **独立进程** | Vulkan 构建且在 Wayland 会话中时为独立进程，否则进程内 | 进程内 | 默认 / 关闭 | –（其 `run` 工具为 `confirm: host`、`auto_approvable: false`） |
-| Sheets、Reference | 独立进程 | 独立进程 | 进程内 | 可选 / `mobile-apps` | – |
+| Sheets、Reference | 进程内 | 进程内 | 进程内 | 可选 / `mobile-apps` | – |
 | AppCard | 进程内 | 进程内 | 进程内 | 可选 / 可选 | 自己的内核连接 |
 
-因此在 Shell 默认附带的应用中，**只有 Terminal 是进程应用**，而且只在桌面端。App Hub 留在进程内，因为它承载所有脚本应用运行所在的 Card runner；Rinx 留在进程内，直到 peer link 和进程沙箱就绪（ADR 0004 §2）。
+因此**只有 Terminal 是进程应用**，而且只在桌面端；`tools/native_apps.py` 拒绝 Linux 上的普通 `process`（只允许 `process-if-vulkan`），所以没有 Vulkan 和 Wayland 的 Linux 上所有应用都在进程内运行。App Hub 留在进程内，因为它承载所有脚本应用运行所在的 Card runner；Rinx 留在进程内，直到 peer link 和进程沙箱就绪（ADR 0004 §2）。
 
 Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::hosting`）：如果目标平台不能运行进程（在 wasm 和原生移动平台上 `host::processes_available()` 为 false），所有应用都作为模块；App Hub 和 Settings 始终是模块；其他情况下原生应用按清单条目托管，并且只有存在进程形态（可以 `cargo run` 的源码检出，或同目录下的二进制）时才作为进程运行。发布包目前还不附带进程应用的二进制（[#94](https://github.com/OctoSense-org/OctoSense/pull/94)，进行中），因此在发布包中会回退到进程内。按应用的覆盖设置（`~/.makepad/wm/apps.splash`、`--module <id>`）可以把模块切换为进程。
 
@@ -426,15 +426,15 @@ sequenceDiagram
 
 撰写本文时（2026-09-28）发现；本次改动只涉及文档，这里都没有修复。
 
-1. **Terminal 之外的进程应用。** ADR 0004 §2 说目前只有 Terminal 是进程应用，并且没有 Vulkan 的 Linux 上所有应用都在进程内运行。`native-apps.json` 把可选的 Sheets 和 Reference 在 macOS、Windows 和 Linux 上都声明为 `process`（普通的 `process`，不是 `process-if-vulkan`），因此 OpenGL 或 X11 的 Linux 构建会把它们作为进程运行，并经 CPU 回读画面。
+1. **Terminal 之外的进程应用。** 已修复：可选的 Sheets 和 Reference 在所有目标上都是 `module`，生成器拒绝 Linux 上的普通 `process`（ADR 0004 §2）。
 2. **崩溃进程应用的重启。** ADR 0004 §2 说它的磁贴会显示已关闭并提供重启。Shell 实际上移除客户端并发出 “App stopped” 通知；Restart 界面只用于进程内模块（`module_view.rs`）。
 3. **Agent 工作区 = 账号目录。** ADR 0004 §11 说它就是 `peer/prepare` 的 `cwd`。broker 不向 `peer/prepare` 发送 `cwd`，把 peer 绑定到内核分配的工作区；存储 API 的 `agent_workspace` 没有与之连接。账号目录名（`account_hash`，SHA-256）和记忆命名空间标签（`broker.rs` 中的 FNV-1a）也是对账号的两种不同 hash。
 4. **ADR 0003 的 “What the profile runs”** 说 OctoSense 既不配置工具集也不配置沙箱。自 [#117](https://github.com/OctoSense-org/OctoSense/pull/117) 起，Shell 每次启动前都向 `_main` profile 写入拒绝 `group:runtime` 的 `tool_policy`，因此宿主自己的回合也没有 octos shell。
-5. **过时的背景描述。** ADR 0004 的背景表格和根 README 的目录结构表仍提到原生 News、Maps 和 Photos 对比模块（`apps/*/native`）；ADR 0004 步骤 1 已删除它们。[ai-services.zh-CN.md](ai-services.zh-CN.md) 的日期是 2026-09-27：其架构图显示 Card runner “没有 `octos.*` 服务”（#106 已合入），并说脚本应用“在首次使用同意落地之前”关闭（同意机制已在 #120 落地；`Policy::contained_apps` 开关默认仍关闭）。
-6. **“在 Settings 中开启”命令执行**（`crates/kernel/README.md`、`system_tools.rs` 文档）：还没有 Settings 开关；`SystemAgentTools::grant_command_execution` 只是接口。
+5. **过时的背景描述。** 已修复：ADR 0004 的背景表格和各 README 的目录结构表不再列出 ADR 0004 步骤 1 删除的原生 News、Maps 和 Photos 模块（#113）。仍未修复：[ai-services.zh-CN.md](ai-services.zh-CN.md) 的日期是 2026-09-27：其架构图显示 Card runner “没有 `octos.*` 服务”（#106 已合入），并说脚本应用“在首次使用同意落地之前”关闭（同意机制已在 #120 落地；`Policy::contained_apps` 开关默认仍关闭）。
+6. **“在 Settings 中开启”命令执行。** 文档已修复：`crates/kernel/README.md` 和 `system_tools.rs` 现在说明它尚在计划中（没有 Settings 开关调用 `SystemAgentTools::grant_command_execution`；宿主工具需要 octos#2567）。
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都应通过 `peer/tool/call` 到达路由；目前只有 AI 总线向它提交请求（见上文）。没有应用注册自己的 `confirm: app` 面板，因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。
-9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。`spec.rs` 中 `storage.accounts` 默认为 `false`，而 `consent.rs` 把缺省值当作 `true`。
+9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。（已修复：app storage 和同意面板中 `storage.accounts` 都默认为 `false`，同意面板现在读取 `StorageSpec`。）
 10. **开发者模式，ADR 0004 §13。** `dev.run` 尚未注册；Settings 只能为所有应用开启（选定应用只能通过 `OCTOSENSE_DEV_MODE`）；手机上没有开启手势；进程内模块仍会显示自己的确认面板。
 
 ## 源码位置

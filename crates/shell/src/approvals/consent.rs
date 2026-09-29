@@ -8,6 +8,7 @@
 //! app) and the Rinx/native offer path ask before handing an app its peer.
 
 use super::rules::ApprovalGesture;
+use crate::app_storage::{AgentWorkspace, AppKind, StorageSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -36,13 +37,15 @@ impl AgentSummary {
     /// with the grants the person gave at install and the model's place.
     pub fn from_manifest(app: &str, name: &str, manifest: &Value, granted: &[String], model: &str) -> AgentSummary {
         let mut reads = Vec::new();
-        let storage = manifest.get("storage");
-        let workspace = storage.and_then(|s| s.get("agent_workspace")).and_then(|v| v.as_str()).unwrap_or("account");
-        if workspace == "none" {
-            reads.push("No files: only what its tools return".to_string());
-        } else {
-            let per_account = storage.and_then(|s| s.get("accounts")).and_then(|v| v.as_bool()).unwrap_or(true);
-            reads.push(if per_account { format!("{name}'s files for the signed-in account") } else { format!("{name}'s files on this device") });
+        // The storage block as app storage reads it, so the sheet and the
+        // folders agree (a block the store refuses is shown as no block;
+        // the install check reports it). `external` is native-only and is
+        // never an agent's workspace, so parse as native.
+        let storage = StorageSpec::from_manifest(manifest, AppKind::Native).unwrap_or_default();
+        match storage.agent_workspace {
+            AgentWorkspace::None => reads.push("No files: only what its tools return".to_string()),
+            AgentWorkspace::Account if storage.accounts => reads.push(format!("{name}'s files for the signed-in account")),
+            AgentWorkspace::Account => reads.push(format!("{name}'s files on this device")),
         }
         reads.push("Its own memory".to_string());
         let mut declared: Vec<String> = Vec::new();
