@@ -176,8 +176,11 @@ this crate (`system_tools::set_grants`); each kernel start takes them
 (`grants_at_start`, `system_agent_tools_in_effect()`), so a change applies
 after a restart, which Settings offers. Each command goes through the shell's
 approval router as `auto_approvable: false` with a live sheet showing the exact
-command (developer mode still answers it). Registering the host tool on the
-system session waits for octos's per-session tool registration (octos#2567).
+command (developer mode still answers it). While the switch is on, the
+shell's system chat registers the host tool on the system session over its own
+connection (octos#2567's host session target, `peer/tools/register` without
+`peer`) and withdraws it when the switch goes off; the shell types each approved
+call into the Terminal the person sees.
 
 **What the kernel enforces today.** octos has no tool list the host can set
 for one session, so every start writes the `_main` profile's `tool_policy`
@@ -189,9 +192,11 @@ continuations included. So:
 
 - **§12's "exactly its grants" is not yet enforced for the system agent**:
   it gets no octos shell, but otherwise is bounded by the grantable ceiling,
-  not its list, until octos#2567 adds session-targeted registration and tool
-  lists (reviewer item M1; our item 5). The exact-list real-kernel test is
-  ignored until then;
+  not its list. octos#2567's host session set could narrow it with
+  `generic_tools`, but that list narrows every client's turns on the session,
+  so the shell registers without it; the exact list waits for a durable
+  host-only list (octos#2605). The exact-list real-kernel test is ignored
+  until then;
 - app peers are narrowed to their grants by their turns' `generic_tools`
   (plan step 6);
 - Talk to Octos external turns keep octos's own allowlist.

@@ -29,10 +29,12 @@
 //! account through its assistant service (`OctosAppService::set_account`,
 //! whose broker revokes the account's contexts and never calls
 //! `peer_close`). [`Storage::sign_out`] / [`Storage::sign_in`] are the seam
-//! the shell's account events will call (plan step 6: answering
-//! `peer/tool/call` with `signed_out`, starting no turn); today they make
+//! the shell's account events will call: they make
 //! [`AppStorage::agent_workspace`] answer [`StorageError::SignedOut`] while
-//! the account's folder and data stay. [`Storage::remove_account`] and
+//! the account's folder and data stay, and the host-tool relay
+//! (`crate::host_tools`) honours them: the account's `peer/tool/call`s are
+//! answered `signed_out`, no `peer/input` turn starts, and its peer is not
+//! prepared. [`Storage::remove_account`] and
 //! [`Storage::uninstall`] delete the folders and suspend the same way.
 
 pub mod check;
