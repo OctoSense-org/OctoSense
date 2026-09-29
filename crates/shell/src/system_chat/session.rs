@@ -392,6 +392,7 @@ impl Driver {
                 }
                 self.model.clear();
                 let turn = new_turn_id();
+                self.model.own_turn(&turn);
                 let params = json!({"session_id": SYSTEM_SESSION, "turn_id": turn, "input": [{"kind": "text", "text": "/new"}]});
                 self.request("turn/start", params, Pending::NewConversation);
             }
@@ -402,6 +403,10 @@ impl Driver {
                 self.request("user_question/respond", json!({"session_id": SYSTEM_SESSION, "question_id": question, "answers": answers}), Pending::Other("user_question/respond"));
             }
             Command::Approval { approval_id, approve } => {
+                if self.model.is_external_approval(&approval_id) {
+                    // Another client's turn: never the shell's to answer.
+                    return;
+                }
                 self.model.approval_decided(&approval_id, approve);
                 let decision = if approve { "approve" } else { "deny" };
                 self.request(

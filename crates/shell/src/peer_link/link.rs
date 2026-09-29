@@ -189,6 +189,7 @@ fn caller_wire(caller: &Caller) -> String {
         Caller::OwnAgent { .. } => "own_agent".into(),
         Caller::AppAgent { app } => format!("app:{app}"),
         Caller::SystemAgent => "system_agent".into(),
+        Caller::External { .. } => "external".into(),
     }
 }
 
@@ -453,7 +454,7 @@ impl PeerLinks {
                     record.down = down.clone();
                 }
                 Route::Sheet(_) | Route::WaitingForApp { .. } => record.state = CallState::Held,
-                Route::Refused(why) => {
+                Route::Refused(why) | Route::LeftToClient(why) => {
                     self.relay.finished(app, &call.call_id, ToolCallResult::Error(format!("declined: {why}")));
                     return Err(Refused::Declined(why));
                 }

@@ -107,6 +107,8 @@ pub fn caller_label(owning_app: &str, caller: &Caller) -> String {
         Caller::OwnAgent { client: Some(c) } => format!("{}'s agent for {c}", app_label(owning_app)),
         Caller::AppAgent { app } => format!("{}'s agent", app_label(app)),
         Caller::SystemAgent => "The system agent".into(),
+        Caller::External { client: None } => "An outside client".into(),
+        Caller::External { client: Some(c) } => format!("An outside client ({c})"),
     }
 }
 

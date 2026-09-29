@@ -3,6 +3,9 @@
 //!
 //! For each request, in this order:
 //!
+//! 0. **External clients' turns** ([`Caller::External`]) are not the
+//!    shell's: the router holds nothing and answers nothing
+//!    ([`Route::LeftToClient`]); the client that started the turn does.
 //! 1. **Developer mode** ([`DevModeHooks`], the shell's `dev_mode`): it
 //!    approves everything of the apps it covers, `auto_approvable: false`
 //!    and `confirm: app` included, never for an external client.
@@ -49,6 +52,9 @@ pub enum Route {
     /// The owning app is not running; refused at `until` unless it comes.
     WaitingForApp { until: u64 },
     Refused(String),
+    /// An external client's turn ([`Caller::External`]): nothing was held
+    /// or answered; that client answers it. No relay decision is sent.
+    LeftToClient(String),
 }
 
 /// A `confirm: app` request, as the owning app's own sheet gets it.
@@ -177,16 +183,29 @@ impl Router {
 
     /// Route one request. The decision may be given before this returns.
     pub fn request(&mut self, req: Request, now: u64) -> Route {
+        if req.caller.is_external() {
+            // Not the shell's to answer, by any path: no developer mode, no
+            // rule, no sheet, and no decision on the relay.
+            self.notice(
+                format!("Outside request: {} \u{00b7} {}", app_label(&req.app), req.tool.name),
+                "An outside client's turn asked for this; that client answers it.",
+            );
+            self.changed();
+            return Route::LeftToClient("an external client's approval is answered by that client".into());
+        }
         if self.pending.contains_key(&req.id) {
             // octos approvals are once-only; a repeat is not a second ask.
             return Route::Refused(format!("request {} is already pending", req.id));
         }
         self.pending.insert(req.id.clone(), req.clone());
-        let host = req.context.connection == Connection::Host;
+        let host = req.context.connection == Connection::Host && !req.caller.is_external();
         let app = req.app.as_str();
 
         // 1. Developer mode, before anything else.
-        let dev = if req.tool.command {
+        let dev = if !host {
+            // Developer mode never answers for an external client.
+            false
+        } else if req.tool.command {
             self.hooks.approves_command(app, req.context.connection)
         } else if req.tool.confirm == Confirm::App {
             host && self.hooks.overrides_app_confirm(app)

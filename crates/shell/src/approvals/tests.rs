@@ -685,3 +685,41 @@ fn the_module_gate_asks_once_then_follows_consent() {
     assert!(!super::module_gate(&mut a, "rinx", "Rinx", &["octos.session.open"]));
     assert!(a.consent.prompt().is_none(), "a person's no is not asked again");
 }
+
+// ---------------------------------------------------------------- external clients (G1)
+
+fn external(id: &str, tool: ToolSpec) -> Request {
+    let context = RequestContext { call_id: id.into(), connection: Connection::External, ..RequestContext::default() };
+    make_request(MAIL, tool, json!({"to": "ana@example.org"}), Caller::External { client: None }, context, T0, 0)
+}
+
+#[test]
+fn an_external_callers_approval_is_never_answered_by_the_shell() {
+    // Developer mode on for everything, and a rule that would match.
+    let (mut r, relay) = router_with(FixedDevMode::all());
+    let mut everything = RuleDraft::everything(MAIL, 30);
+    everything.include_incoming = true;
+    rule(&mut r, everything);
+    for tool in [ToolSpec::host("mail.send"), ToolSpec::app("mail.send"), ToolSpec::host("terminal.run").command()] {
+        let route = r.request(external("x", tool), T0);
+        assert!(matches!(route, Route::LeftToClient(_)), "{route:?}");
+    }
+    assert!(relay.take().is_empty(), "no decision reaches the kernel");
+    assert_eq!(r.pending(), 0, "nothing is held");
+    assert!(r.sheets().is_empty(), "no sheet to answer");
+    assert!(r.audit.all().is_empty(), "nothing was decided, so nothing is audited as a decision");
+}
+
+#[test]
+fn no_rule_matches_an_external_client_even_if_the_caller_is_mislabelled() {
+    let (mut r, relay) = router();
+    let mut everything = RuleDraft::everything(MAIL, 30);
+    everything.include_incoming = true;
+    rule(&mut r, everything);
+    let mut req = send("e1", json!({"to": "ana@example.org"}));
+    req.context.connection = Connection::External;
+    let route = r.request(req, T0);
+    assert!(matches!(route, Route::Sheet(_)), "an external connection always goes to the person: {route:?}");
+    assert_eq!(r.front_sheet().unwrap().lines[0].surfaced, Surfaced::External);
+    assert!(relay.take().is_empty());
+}

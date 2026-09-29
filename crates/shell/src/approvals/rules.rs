@@ -20,7 +20,7 @@
 
 use super::contacts::ContactsSource;
 use super::facts;
-use super::types::{Request, RuleId, Trigger};
+use super::types::{Connection, Request, RuleId, Trigger};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -188,6 +188,8 @@ pub enum Miss {
     Amount,
     Count,
     CapReached,
+    /// An external client's call: no rule ever answers it.
+    External,
 }
 
 pub fn day_of(now: u64) -> u64 {
@@ -216,6 +218,9 @@ impl Rule {
     /// Whether this rule answers `req`, on its exact arguments. The router
     /// has already excluded `auto_approvable: false` and unknown outcomes.
     pub fn check(&self, req: &Request, contacts: &dyn ContactsSource, now: u64) -> Result<(), Miss> {
+        if req.caller.is_external() || req.context.connection == Connection::External {
+            return Err(Miss::External);
+        }
         if self.app != req.app {
             return Err(Miss::OtherApp);
         }
