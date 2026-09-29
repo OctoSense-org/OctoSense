@@ -11,4 +11,4 @@ __pycache__/
 *.gguf.part
 
 # Framework checkouts prepared by tools/setup.py.
-/.sources/
+/.sources
