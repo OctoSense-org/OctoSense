@@ -160,8 +160,9 @@ pub enum MpRunViewAction {
     Clicked {
         client: ClientId,
     },
-    /// The person asked a module tile whose app stopped after a panic to
-    /// start it again (`module_view.rs`).
+    /// The person asked a tile whose app stopped (a module after a panic,
+    /// `module_view.rs`; a process that died, [`MpRunView::show_stopped`])
+    /// to start it again.
     Restart {
         client: ClientId,
     },
@@ -203,6 +204,10 @@ pub struct MpRunView {
     /// Newest stdout/stderr line from the child, shown while it starts.
     #[rust]
     status_line: String,
+    /// The child died unexpectedly: the tile shows it closed, and a press
+    /// asks for a Restart (ADR 0004 §2).
+    #[rust]
+    stopped: Option<(ClientId, String)>,
     #[rust]
     startup_initialized: bool,
     #[rust] startup_glass: bool,
@@ -765,8 +770,25 @@ impl MpRunView {
         }
     }
 
+    /// The child died unexpectedly: show the tile closed ("<app> stopped",
+    /// "Click to restart") and stop talking to it.
+    pub fn show_stopped(&mut self, cx: &mut Cx, client: ClientId, label: &str) {
+        self.stopped = Some((client, format!("{label} stopped")));
+        self.status_line = "Click to restart".into();
+        self.current_target = None;
+        self.present_ok_count = 0;
+        self.first_present_at = None;
+        self.pending_draw = None;
+        self.redraw(cx);
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.is_some()
+    }
+
     pub fn set_status_line(&mut self, cx: &mut Cx, line: &str) {
-        if self.status_line == line {
+        // A stopped tile keeps saying how to restart it.
+        if self.stopped.is_some() || self.status_line == line {
             return;
         }
         self.status_line = line.to_string();
@@ -907,7 +929,9 @@ impl Widget for MpRunView {
                 self.startup_initialized = true;
                 self.no_fb_view.set_text(cx, include_str!("../resources/startup.splash"));
             }
-            let headline = if self.status_line.starts_with("compiling ") {
+            let headline = if let Some((_, line)) = &self.stopped {
+                line.as_str()
+            } else if self.status_line.starts_with("compiling ") {
                 "Compiling…"
             } else if self.status_line.starts_with("waiting for another build") {
                 "Waiting to compile…"
@@ -937,6 +961,11 @@ impl Widget for MpRunView {
                 };
             }
         }
+        if self.stopped.is_some() {
+            // Closed: the panel, never the last frame; presses land on it.
+            self.area = self.draw_bg.area();
+            return DrawStep::done();
+        }
         self.draw_app.draw_abs(cx, rect);
         self.area = self.draw_app.area();
         if target.is_some() && cx.has_key_focus(self.area) {
@@ -953,6 +982,13 @@ impl Widget for MpRunView {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        if let Some((client, _)) = &self.stopped {
+            let client = *client;
+            if let Hit::FingerDown(_) = event.hits(cx, self.area) {
+                cx.widget_action(self.uid, MpRunViewAction::Restart { client });
+            }
+            return;
+        }
         let target = self.current_target;
 
         if let Event::Timer(timer_event) = event {

@@ -116,7 +116,14 @@ mod tests {
 
     #[test]
     fn the_desk_knows_where_it_runs() {
-        assert_eq!(processes_available(), cfg!(not(target_arch = "wasm32")));
+        // No processes on the web or on a phone (ADR 0004 §2): Android,
+        // iOS and OpenHarmony host their native apps in-process.
+        let mobile = cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos"));
+        assert_eq!(cfg!(native_mobile), mobile, "native_mobile is exactly the phone targets");
+        assert_eq!(processes_available(), !cfg!(target_arch = "wasm32") && !mobile);
+        if cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux")) && !mobile {
+            assert!(processes_available(), "a desktop hosts process apps");
+        }
         assert!(now() >= 0.0);
     }
 }

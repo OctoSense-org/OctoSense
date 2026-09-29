@@ -38,6 +38,14 @@ pub struct ToolPolicy {
     pub auto_approvable: bool,
 }
 
+/// What a process-hosted instance may reach on the network (ADR 0004 §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Network {
+    /// Nothing but the shell's hub on loopback.
+    None,
+    Any,
+}
+
 /// One `native-apps.json` entry, as far as the shell reads it.
 #[derive(Debug)]
 pub struct NativeApp {
@@ -57,6 +65,14 @@ pub struct NativeApp {
     pub octos: &'static [&'static str],
     /// Its assistant tools' confirmation rules (`agent.tool_policy`).
     pub tools: &'static [ToolPolicy],
+    /// `sandbox.network`: what its OS sandbox lets it reach.
+    pub network: Network,
+    /// `sandbox.processes`: whether it may start child processes.
+    pub processes: bool,
+    /// `storage.accounts`: one folder (and agent) per account.
+    pub accounts: bool,
+    /// `storage.external`: `<root>[/<path>]:ro|rw` outside its jail.
+    pub external: &'static [&'static str],
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -73,6 +89,10 @@ pub const APPS: &[NativeApp] = &[
         wasm: Hosting::Module,
         octos: &["octos.session.open", "octos.session.history", "octos.turn.start", "octos.turn.interrupt"],
         tools: &[],
+        network: Network::Any,
+        processes: false,
+        accounts: true,
+        external: &[],
     },
     NativeApp {
         id: "reference",
@@ -87,6 +107,10 @@ pub const APPS: &[NativeApp] = &[
         wasm: Hosting::Module,
         octos: &[],
         tools: &[],
+        network: Network::None,
+        processes: false,
+        accounts: false,
+        external: &[],
     },
     NativeApp {
         id: "sheets",
@@ -101,6 +125,10 @@ pub const APPS: &[NativeApp] = &[
         wasm: Hosting::Module,
         octos: &[],
         tools: &[],
+        network: Network::None,
+        processes: false,
+        accounts: false,
+        external: &[],
     },
     NativeApp {
         id: "terminal",
@@ -117,6 +145,10 @@ pub const APPS: &[NativeApp] = &[
         tools: &[
             ToolPolicy { tool: "run", confirm: Confirm::Host, auto_approvable: false },
         ],
+        network: Network::Any,
+        processes: true,
+        accounts: false,
+        external: &["home:rw"],
     },
     NativeApp {
         id: "appcard",
@@ -131,6 +163,10 @@ pub const APPS: &[NativeApp] = &[
         wasm: Hosting::Module,
         octos: &[],
         tools: &[],
+        network: Network::Any,
+        processes: false,
+        accounts: false,
+        external: &[],
     },
     NativeApp {
         id: "apphub",
@@ -145,6 +181,10 @@ pub const APPS: &[NativeApp] = &[
         wasm: Hosting::Module,
         octos: &[],
         tools: &[],
+        network: Network::Any,
+        processes: false,
+        accounts: false,
+        external: &[],
     },
 ];
 

@@ -550,6 +550,9 @@ pub struct ClientSlot {
     /// viewport (a map that pans from the edge): the shell's back gesture
     /// is not recognised over it. Off by default; an app opts in.
     pub owns_edges: bool,
+    /// Its process died unexpectedly: the tile stays, closed, with a
+    /// Restart (ADR 0004 §2); nothing runs behind it any more.
+    pub stopped: bool,
 }
 
 impl ClientSlot {
@@ -582,6 +585,7 @@ impl ClientSlot {
             linked_at: None,
             closing: None,
             pane: false,
+            stopped: false,
         }
     }
 }
@@ -764,6 +768,14 @@ impl ClientSlot {
         Some(message)
     }
 
+    /// Whether an exit leaves this client's tile in place, closed with a
+    /// Restart: an unexpected death (`failure`) of a window the person
+    /// has. A warm instance, the AI pane, a Quick-Look preview and a
+    /// client being closed go away as before.
+    pub fn stops_in_place(&self, failure: bool) -> bool {
+        failure && self.ready && !self.warm && !self.pane && !self.is_preview && self.closing.is_none() && self.child.is_some()
+    }
+
     pub fn display_title(&self) -> &str {
         if self.title.is_empty() {
             &self.app
@@ -921,6 +933,60 @@ pub fn launch_argv(
     Ok((program, args))
 }
 
+/// The sandbox of a native app's process launch (`None` for a catalog app
+/// that is not in `native-apps.json`). Its jail and secrets folders are
+/// created first; its program and resources are the checkout, the target
+/// dir and cargo's source cache (crate resources) or, installed, the
+/// binary's own directory.
+pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_port: u16) -> Option<crate::sandbox::Policy> {
+    let native = crate::native_apps::find(&app.id)?;
+    let layout = match crate::app_storage::host() {
+        Some(host) => host.layout().clone(),
+        None => crate::app_storage::Layout::platform(None).ok()?,
+    };
+    let paths = layout.app(native.id).ok()?;
+    for (base, dir) in [(layout.apps_root(), &paths.jail), (layout.secrets_root(), &paths.secrets)] {
+        if let Err(e) = crate::app_storage::ensure_private_dir(base, dir) {
+            makepad_widgets::log!("sandbox: {}: cannot prepare {}: {e}", native.id, dir.display());
+        }
+    }
+    let home = crate::sandbox::person_home().unwrap_or_else(|| PathBuf::from("/nonexistent"));
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf));
+    if let Some(checkout) = manifest_root.or_else(|| root.map(Path::to_path_buf)) {
+        roots.push(checkout.clone());
+        roots.push(app.target_dir.as_ref().map(PathBuf::from).or_else(|| std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from)).unwrap_or_else(|| checkout.join("target")));
+        let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".cargo"));
+        roots.push(cargo_home.join("git"));
+        roots.push(cargo_home.join("registry"));
+    }
+    if let Some(dir) = program.parent() {
+        roots.push(dir.to_path_buf());
+    }
+    // The shell's own directory: an installed launch's sibling binary.
+    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+        roots.push(dir);
+    }
+    roots.sort();
+    roots.dedup();
+    let mut policy = crate::sandbox::Policy::for_app(native, paths.jail, paths.secrets, &home, roots, hub_port);
+    // Cargo reads `.cargo/config.toml` from its working directory up (the
+    // manifest's directory, else the checkout): every `[env]` host variable
+    // it would hand the app is taken back out.
+    let cargo_cwd = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf)).or_else(|| root.map(Path::to_path_buf));
+    if let Some(cwd) = cargo_cwd {
+        for dir in cwd.ancestors() {
+            let config = std::fs::read_to_string(dir.join(".cargo/config.toml")).unwrap_or_default();
+            for name in crate::sandbox::cargo_env_host_vars(&config) {
+                if !policy.cargo_env_unset.contains(&name) {
+                    policy.cargo_env_unset.push(name);
+                }
+            }
+        }
+    }
+    Some(if crate::sandbox::narrowed_by_env(native.id) { policy.narrowed() } else { policy })
+}
+
 /// Spawn an app as a hub client.
 pub fn spawn_client(
     pool: &TaskPool,
@@ -944,8 +1010,16 @@ pub fn spawn_client(
     let root = repo_root();
     let via_cargo = !app.package.is_empty() && (app.manifest.is_some() || root.is_some());
     let (program, args) = launch_argv(app, root.as_deref(), extra_args)?;
-    let mut cmd = Command::new(program);
-    cmd.args(&args);
+    // A native app runs under the OS sandbox its manifest entry builds
+    // (ADR 0004 §3, sandbox/); through cargo only the app is sandboxed
+    // where the platform lets the build stay outside.
+    let policy = sandbox_policy(app, root.as_deref(), &program, hub_port);
+    let (mut cmd, applied) = crate::sandbox::command(&program, &args, policy.as_ref(), via_cargo);
+    match &applied {
+        Some(crate::sandbox::Applied::Sandboxed(how)) => makepad_widgets::log!("sandbox: {how}"),
+        Some(crate::sandbox::Applied::Unavailable(why)) => makepad_widgets::log!("sandbox: UNSANDBOXED {why}"),
+        None => {}
+    }
     // Give the process its own group (unix): `cargo run` does not
     // exec-replace itself, so the compiled app (and, mid-build, rustc) are
     // further children of the process we hold, not exec'd into it. Sharing
@@ -993,6 +1067,9 @@ pub fn spawn_client(
     if warm {
         cmd.env(WARM_ENV.0, WARM_ENV.1);
     }
+    // No child inherits the kernel's descriptors or the host token: a
+    // process app reaches its agent only over the peer link (ADR 0004 §3).
+    crate::sandbox::scrub_env(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("spawn {}: {}", app.package, e))?;
@@ -1035,6 +1112,7 @@ pub fn spawn_client(
         linked_at: None,
         closing: None,
         pane: false,
+        stopped: false,
     })
 }
 
@@ -1616,6 +1694,28 @@ mod tests {
         assert!(message.contains("/tmp/octosense-123-client-7.log"));
         assert!(slot.exit_failure(std::process::ExitStatus::from_raw(0), "Reference App").is_some(),
             "exiting successfully before creating a window is also a startup failure");
+    }
+
+    /// ADR 0004 §2: a process app that dies takes only itself down. Its
+    /// tile stays, closed with a Restart; a warm instance, the AI pane, a
+    /// preview and a client being closed are removed as before.
+    #[cfg(unix)]
+    #[test]
+    fn an_unexpected_death_keeps_the_tile_closed_with_restart() {
+        let mut slot = ClientSlot::module(9, "terminal", "Terminal");
+        slot.child = Some(std::process::Command::new("/usr/bin/true").spawn().unwrap());
+        assert!(slot.stops_in_place(true));
+        assert!(!slot.stops_in_place(false), "a clean exit closes the window");
+        slot.closing = Some(0.0);
+        assert!(!slot.stops_in_place(true), "the person closed it");
+        slot.closing = None;
+        for (warm, pane, preview, ready) in [(true, false, false, true), (false, true, false, true), (false, false, true, true), (false, false, false, false)] {
+            (slot.warm, slot.pane, slot.is_preview, slot.ready) = (warm, pane, preview, ready);
+            assert!(!slot.stops_in_place(true), "warm {warm} pane {pane} preview {preview} ready {ready}");
+        }
+        let _ = slot.child.take().map(|mut c| c.wait());
+        slot.ready = true;
+        assert!(!slot.stops_in_place(true), "a module slot has no process to stop");
     }
 
     #[cfg(unix)]

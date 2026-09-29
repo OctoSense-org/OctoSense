@@ -103,6 +103,17 @@ class Validation(Fixture):
         self.app("terminal")["agent"]["tool_policy"] = {"run": {"confirm": "host"}}
         self.assertRefused(r"tool_policy\.run: needs exactly confirm and auto_approvable")
 
+    def test_sandbox_and_storage_are_checked(self):
+        self.app("terminal")["sandbox"] = {"network": "some", "processes": "yes"}
+        self.assertRefused(r"sandbox\.network must be one of none, any")
+        self.app("terminal")["sandbox"] = {"network": "any", "processes": True, "gpu": True}
+        self.assertRefused(r"sandbox needs exactly network and processes")
+        self.app("terminal")["sandbox"] = {"network": "any", "processes": True}
+        self.app("terminal")["storage"]["external"] = ["home:rw", "/etc:ro"]
+        self.assertRefused(r"storage\.external: '/etc:ro'")
+        self.app("terminal")["storage"]["external"] = ["home/../x:rw"]
+        self.assertRefused(r"storage\.external")
+
     def test_the_terminals_commands_are_host_confirmed_and_never_auto_approved(self):
         self.assertEqual(self.app("terminal")["agent"]["tool_policy"],
                          {"run": {"confirm": "host", "auto_approvable": False}})
