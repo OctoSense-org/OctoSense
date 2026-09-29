@@ -25,19 +25,29 @@
 //! - [`secrets`] is the host secrets API behind [`AppStorage::secrets`].
 //!
 //! **Signing out** (ADR §11) suspends the account's agent and never closes
-//! it. The shell has no account system of its own yet: a module binds its
+//! it. The shell has no account system of its own: a module binds its
 //! account through its assistant service (`OctosAppService::set_account`,
 //! whose broker revokes the account's contexts and never calls
-//! `peer_close`). [`Storage::sign_out`] / [`Storage::sign_in`] are the seam
-//! the shell's account events will call: they make
+//! `peer_close`), and the broker tells [`lifecycle`] (through
+//! `app_peers::storage::account_changed`), which calls
+//! [`Storage::sign_out`] / [`Storage::sign_in`]: they make
 //! [`AppStorage::agent_workspace`] answer [`StorageError::SignedOut`] while
 //! the account's folder and data stay, and the host-tool relay
 //! (`crate::host_tools`) honours them: the account's `peer/tool/call`s are
 //! answered `signed_out`, no `peer/input` turn starts, and its peer is not
-//! prepared. [`Storage::remove_account`] and
-//! [`Storage::uninstall`] delete the folders and suspend the same way.
+//! prepared. [`Storage::remove_account`] (Mail's `mail.remove_account`) and
+//! [`Storage::uninstall`] (App Hub's uninstall) delete the folders and
+//! suspend the same way. Suspensions are kept in the host's own
+//! `secrets/.host/suspended.json`, so a removed account's agent stays
+//! suspended across restarts until the account signs in again.
+//!
+//! [`lifecycle`] is where the manifests reach the host: every native app's
+//! `native-apps.json` block at startup, a script app's `manifest.json` block
+//! at install and launch ([`StorageSpec`] → [`Storage::set_spec`] →
+//! [`Storage::open`]), and the quota the shell measures and warns about.
 
 pub mod check;
+pub mod lifecycle;
 pub mod secrets;
 pub mod spec;
 
@@ -296,9 +306,17 @@ struct State {
     specs: HashMap<String, StorageSpec>,
     /// (app id, account folder name) whose agent is suspended.
     signed_out: HashSet<(String, String)>,
+    /// Apps uninstalled: every account of theirs is suspended, including
+    /// those whose folders were already gone (App Hub deletes the jail),
+    /// except the account folders that signed in since (the value).
+    uninstalled: HashMap<String, HashSet<String>>,
     /// (app id, account folder name) the startup check refused, and why.
     refused: HashMap<(String, String), String>,
 }
+
+/// The host's own record of suspensions, beside (never inside) the apps'
+/// secrets: `.host` is no app id ([`validate_app_id`]).
+const SUSPENDED_FILE: &str = ".host/suspended.json";
 
 /// The host's app storage: the layout plus what it enforces.
 pub struct Storage {
@@ -310,13 +328,73 @@ pub struct Storage {
 
 impl Storage {
     pub fn new(layout: Layout) -> Arc<Self> {
-        Arc::new(Self { layout, state: Mutex::default(), file_secrets: false })
+        Self::build(layout, false)
     }
 
     /// Secrets in owner-only files even where a vault exists (tests,
     /// headless runs).
     pub fn with_file_secrets(layout: Layout) -> Arc<Self> {
-        Arc::new(Self { layout, state: Mutex::default(), file_secrets: true })
+        Self::build(layout, true)
+    }
+
+    fn build(layout: Layout, file_secrets: bool) -> Arc<Self> {
+        let storage = Self { layout, state: Mutex::default(), file_secrets };
+        storage.load_suspended();
+        Arc::new(storage)
+    }
+
+    fn suspended_file(&self) -> PathBuf {
+        self.layout.secrets_root().join(SUSPENDED_FILE)
+    }
+
+    fn load_suspended(&self) {
+        let Ok(bytes) = std::fs::read(self.suspended_file()) else { return };
+        let Ok(saved) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            makepad_widgets::log!("app storage: {} is unreadable; no account starts suspended", self.suspended_file().display());
+            return;
+        };
+        let mut state = self.state();
+        for pair in saved["signed_out"].as_array().into_iter().flatten() {
+            if let (Some(app), Some(folder)) = (pair[0].as_str(), pair[1].as_str()) {
+                state.signed_out.insert((app.to_owned(), folder.to_owned()));
+            }
+        }
+        for (app, resumed) in saved["uninstalled"].as_object().into_iter().flatten() {
+            let resumed = resumed.as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(str::to_owned).collect();
+            state.uninstalled.insert(app.clone(), resumed);
+        }
+    }
+
+    /// Write the suspensions (owner-only, atomically). A failure is logged:
+    /// the in-memory state still holds for this run.
+    fn save_suspended(&self, state: &State) {
+        let mut signed_out: Vec<_> = state.signed_out.iter().map(|(a, f)| serde_json::json!([a, f])).collect();
+        signed_out.sort_by_key(|v| v.to_string());
+        let uninstalled: serde_json::Map<String, serde_json::Value> = state
+            .uninstalled
+            .iter()
+            .map(|(app, resumed)| {
+                let mut resumed: Vec<_> = resumed.iter().cloned().collect();
+                resumed.sort();
+                (app.clone(), serde_json::json!(resumed))
+            })
+            .collect();
+        let body = serde_json::json!({ "signed_out": signed_out, "uninstalled": uninstalled });
+        let path = self.suspended_file();
+        let write = || -> io::Result<()> {
+            let dir = path.parent().expect("a file under .host");
+            ensure_private_dir(self.layout.secrets_root(), dir)?;
+            let tmp = path.with_extension("json.tmp");
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+            std::io::Write::write_all(&mut options.open(&tmp)?, body.to_string().as_bytes())?;
+            std::fs::rename(&tmp, &path)
+        };
+        if let Err(e) = write() {
+            makepad_widgets::log!("app storage: cannot record suspended accounts in {}: {e}", path.display());
+        }
     }
 
     pub fn layout(&self) -> &Layout {
@@ -361,16 +439,48 @@ impl Storage {
     /// The account signed out: its agent is suspended (no workspace, see
     /// the module docs); its data stays.
     pub fn sign_out(&self, app_id: &str, account: Option<&str>) {
-        self.state().signed_out.insert(Self::key(app_id, account));
+        let mut state = self.state();
+        if state.signed_out.insert(Self::key(app_id, account)) {
+            self.save_suspended(&state);
+        }
     }
 
     /// The account signed in again: the same agent resumes.
     pub fn sign_in(&self, app_id: &str, account: Option<&str>) {
-        self.state().signed_out.remove(&Self::key(app_id, account));
+        let mut state = self.state();
+        let key = Self::key(app_id, account);
+        let mut changed = state.signed_out.remove(&key);
+        if let Some(resumed) = state.uninstalled.get_mut(app_id) {
+            changed |= resumed.insert(key.1);
+        }
+        if changed {
+            self.save_suspended(&state);
+        }
     }
 
+    /// Signed out, removed, or its app uninstalled.
     pub fn is_signed_out(&self, app_id: &str, account: Option<&str>) -> bool {
-        self.state().signed_out.contains(&Self::key(app_id, account))
+        let state = self.state();
+        let key = Self::key(app_id, account);
+        state.uninstalled.get(app_id).is_some_and(|resumed| !resumed.contains(&key.1)) || state.signed_out.contains(&key)
+    }
+
+    /// How many of the app's accounts are suspended (signed out or
+    /// removed; every one of an uninstalled app's counts as at least one).
+    pub fn suspended_accounts(&self, app_id: &str) -> usize {
+        let state = self.state();
+        let count = state.signed_out.iter().filter(|(app, _)| app == app_id).count();
+        if state.uninstalled.contains_key(app_id) { count.max(1) } else { count }
+    }
+
+    /// The app is installed (again, after [`Storage::uninstall`]): an app
+    /// without accounts resumes its device agent; an app with accounts
+    /// resumes each account's agent as that account signs in, and the rest
+    /// stay suspended. Record its [`StorageSpec`] first.
+    pub fn installed(&self, app_id: &str) {
+        if !self.spec(app_id).accounts {
+            self.sign_in(app_id, None);
+        }
     }
 
     /// Removing an account: its folder goes and its agent is suspended
@@ -385,11 +495,15 @@ impl Storage {
     /// items too) and every account of the app stays suspended.
     pub fn uninstall(&self, app_id: &str) -> Result<(), StorageError> {
         let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
-        if let Ok(entries) = std::fs::read_dir(&paths.accounts) {
+        {
             let mut state = self.state();
-            for entry in entries.flatten() {
-                state.signed_out.insert((app_id.to_owned(), entry.file_name().to_string_lossy().into_owned()));
+            if let Ok(entries) = std::fs::read_dir(&paths.accounts) {
+                for entry in entries.flatten() {
+                    state.signed_out.insert((app_id.to_owned(), entry.file_name().to_string_lossy().into_owned()));
+                }
             }
+            state.uninstalled.insert(app_id.to_owned(), HashSet::new());
+            self.save_suspended(&state);
         }
         secrets::purge(self.layout.secrets_root(), app_id);
         remove_tree(&paths.jail)?;
@@ -417,6 +531,65 @@ impl Storage {
             .or_else(|| state.refused.get(&(app_id.to_owned(), check::EVERY_ACCOUNT.to_owned())))
             .cloned()
     }
+}
+
+/// What an app keeps on disk, measured by the shell (ADR 0004 §11: the
+/// sandbox cannot count bytes, so the host measures and warns).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// Everything under the jail, `cache/` included.
+    pub jail_bytes: u64,
+    pub cache_bytes: u64,
+}
+
+/// At most this many entries are visited per measurement, so a huge jail
+/// cannot stall the measuring thread for long; the result is then a floor.
+const MEASURE_BUDGET: usize = 200_000;
+
+/// The bytes of the regular files under `dir`, never following a symlink.
+fn tree_bytes(dir: &Path, budget: &mut usize) -> u64 {
+    let mut total = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            if *budget == 0 {
+                return total;
+            }
+            *budget -= 1;
+            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else { continue };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else if meta.is_file() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+impl Storage {
+    /// Measure `app_id`'s jail and cache.
+    pub fn usage(&self, app_id: &str) -> Result<Usage, StorageError> {
+        let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
+        let mut budget = MEASURE_BUDGET;
+        let cache_bytes = tree_bytes(&paths.cache, &mut budget);
+        let mut budget = MEASURE_BUDGET;
+        Ok(Usage { jail_bytes: tree_bytes(&paths.jail, &mut budget), cache_bytes })
+    }
+}
+
+/// What to warn about for `usage` against the app's declared ceilings
+/// (`storage.max_bytes`, `storage.cache_max_bytes`); empty when within them.
+pub fn quota_warnings(app_id: &str, spec: &StorageSpec, usage: Usage) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(max) = spec.max_bytes.filter(|max| usage.jail_bytes > *max) {
+        out.push(format!("{app_id} keeps {} bytes, over its storage.max_bytes of {max}", usage.jail_bytes));
+    }
+    if let Some(max) = spec.cache_max_bytes.filter(|max| usage.cache_bytes > *max) {
+        out.push(format!("{app_id}'s cache holds {} bytes, over its storage.cache_max_bytes of {max}", usage.cache_bytes));
+    }
+    out
 }
 
 /// Remove a directory tree without following a symlink at its top.
@@ -504,7 +677,11 @@ pub fn init(data_dir: Option<PathBuf>) -> Option<&'static Arc<Storage>> {
     let storage = Storage::new(layout);
     let report = storage.startup_check();
     report.log();
-    Some(HOST.get_or_init(|| storage))
+    let host = HOST.get_or_init(|| storage);
+    // The manifests' storage blocks and the account sources (lifecycle.rs),
+    // before any module is created or any account binds.
+    lifecycle::install(host);
+    Some(host)
 }
 
 /// The host's storage, once [`init`] ran (never in unit tests that do not
@@ -524,6 +701,7 @@ pub fn offer(module_id: &str, capabilities: &[&str], scope: &str) -> bool {
     match host.open(module_id) {
         Ok(storage) => {
             crate::ai_host::app_peers::storage::offer(module_id, scope, storage);
+            lifecycle::check_quota_later(host, module_id);
             true
         }
         Err(e) => {

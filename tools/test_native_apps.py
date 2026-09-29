@@ -114,6 +114,28 @@ class Validation(Fixture):
         self.app("terminal")["storage"]["external"] = ["home/../x:rw"]
         self.assertRefused(r"storage\.external")
 
+    def test_the_whole_storage_block_is_checked_as_the_shell_parses_it(self):
+        storage = self.app("rinx")["storage"]
+        storage["quota"] = 1
+        self.assertRefused(r"storage\.quota is not a storage field")
+        del storage["quota"]
+        storage["agent_workspace"] = "home"
+        self.assertRefused(r"storage\.agent_workspace must be 'account' or 'none'")
+        storage["agent_workspace"] = "account"
+        for bad in (0, -1, True, "1G", 1.5):
+            storage["max_bytes"] = bad
+            self.assertRefused(r"storage\.max_bytes must be a positive whole number")
+        storage["max_bytes"] = 1 << 29
+        storage["cache_max_bytes"] = 0
+        self.assertRefused(r"storage\.cache_max_bytes must be a positive whole number")
+
+    def test_the_storage_block_reaches_the_shell_whole(self):
+        self.app("rinx")["storage"]["max_bytes"] = 536870912
+        self.save()
+        self.assertEqual(self.run_main("--no-lock"), 0)
+        rust = (self.root / native_apps.RUST_FILE).read_text()
+        self.assertIn('storage: r#"{"accounts": true, "agent_workspace": "account", "external": [], "max_bytes": 536870912}"#', rust)
+
     def test_the_terminals_commands_are_host_confirmed_and_never_auto_approved(self):
         self.assertEqual(self.app("terminal")["agent"]["tool_policy"],
                          {"run": {"confirm": "host", "auto_approvable": False}})

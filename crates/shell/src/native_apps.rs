@@ -73,6 +73,9 @@ pub struct NativeApp {
     pub accounts: bool,
     /// `storage.external`: `<root>[/<path>]:ro|rw` outside its jail.
     pub external: &'static [&'static str],
+    /// The whole `storage` block as JSON, which the shell parses with
+    /// `app_storage::StorageSpec` at startup (ADR 0004 §11).
+    pub storage: &'static str,
 }
 
 pub const APPS: &[NativeApp] = &[
@@ -93,6 +96,7 @@ pub const APPS: &[NativeApp] = &[
         processes: false,
         accounts: true,
         external: &[],
+        storage: r#"{"accounts": true, "agent_workspace": "account", "external": []}"#,
     },
     NativeApp {
         id: "reference",
@@ -111,6 +115,7 @@ pub const APPS: &[NativeApp] = &[
         processes: false,
         accounts: false,
         external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
     },
     NativeApp {
         id: "sheets",
@@ -129,6 +134,7 @@ pub const APPS: &[NativeApp] = &[
         processes: false,
         accounts: false,
         external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
     },
     NativeApp {
         id: "terminal",
@@ -149,6 +155,7 @@ pub const APPS: &[NativeApp] = &[
         processes: true,
         accounts: false,
         external: &["home:rw"],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
     },
     NativeApp {
         id: "appcard",
@@ -167,6 +174,7 @@ pub const APPS: &[NativeApp] = &[
         processes: false,
         accounts: false,
         external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
     },
     NativeApp {
         id: "apphub",
@@ -185,6 +193,7 @@ pub const APPS: &[NativeApp] = &[
         processes: false,
         accounts: false,
         external: &[],
+        storage: r#"{"accounts": false, "agent_workspace": "none", "external": []}"#,
     },
 ];
 

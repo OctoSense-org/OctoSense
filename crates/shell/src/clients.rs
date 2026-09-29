@@ -950,6 +950,14 @@ pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_por
             makepad_widgets::log!("sandbox: {}: cannot prepare {}: {e}", native.id, dir.display());
         }
     }
+    // Its declared layout (accounts, common, cache) and its quota, measured
+    // by the shell: the sandbox cannot count bytes (ADR 0004 §11).
+    if let Some(host) = crate::app_storage::host() {
+        match host.open(native.id) {
+            Ok(_) => crate::app_storage::lifecycle::check_quota_later(host, native.id),
+            Err(e) => makepad_widgets::log!("sandbox: {}: {e}", native.id),
+        }
+    }
     let home = crate::sandbox::person_home().unwrap_or_else(|| PathBuf::from("/nonexistent"));
     let mut roots: Vec<PathBuf> = Vec::new();
     let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf));

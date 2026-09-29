@@ -83,6 +83,20 @@ fn frame() -> Frame {
 }
 
 /// "3 min ago".
+/// An app agent's row: its consent state, and (ADR 0004 §11) that the
+/// memory of a signed-out or removed account's agent remains in octos.
+pub fn agent_state_text(state: &State, memory_notice: Option<String>) -> String {
+    let state = match state {
+        State::Allowed => "Allowed",
+        State::Denied => "Off",
+        State::Undecided => "Not asked yet",
+    };
+    match memory_notice {
+        Some(notice) => format!("{state} \u{00b7} {notice}"),
+        None => state.to_owned(),
+    }
+}
+
 pub fn ago(now: u64, ts: u64) -> String {
     let s = now.saturating_sub(ts);
     match s {
@@ -303,11 +317,7 @@ impl ShellApprovalsSettings {
                 if y + ROW_H > bottom {
                     break;
                 }
-                let state_text = match state {
-                    State::Allowed => "Allowed",
-                    State::Denied => "Off",
-                    State::Undecided => "Not asked yet",
-                };
+                let state_text = agent_state_text(state, crate::app_storage::host().and_then(|s| crate::app_storage::lifecycle::memory_notice(s, app)));
                 let (switch, hit) = match state {
                     State::Allowed => ("Turn off", Hit::AgentOff(app.clone())),
                     _ => ("Allow", Hit::AgentAllow(app.clone())),
@@ -321,7 +331,7 @@ impl ShellApprovalsSettings {
                 hits.push((e, Hit::Everything(app.clone())));
                 let tw = e.pos.x - x - 12.0;
                 b.d.label_elided(cx, rect(x, y, tw, 20.0), true, tok.font.body, ink, HAlign::Left, &format!("{name}'s agent"));
-                b.d.label_elided(cx, rect(x, y + 20.0, tw, 16.0), false, tok.font.body_small, dim, HAlign::Left, state_text);
+                b.d.label_elided(cx, rect(x, y + 20.0, tw, 16.0), false, tok.font.body_small, dim, HAlign::Left, &state_text);
                 shown.push(format!("{name}'s agent | {state_text}"));
                 y += ROW_H + 4.0;
             }
