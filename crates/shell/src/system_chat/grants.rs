@@ -19,10 +19,14 @@
 //!   offers the restart.
 //! - **Persisted** per OctoSense home in [`GRANTS_FILE`], owner-only.
 //!
-//! Registering `terminal.run` on the system session needs octos's
-//! session-targeted host tools (octos#2567 item 6). Until then the grant is
-//! the tool set the shell hands the kernel, and [`request_command`] is the
-//! path each call will take.
+//! **Registered on the system session** (octos#2567's host session target):
+//! while the switch is on, the system chat registers `terminal.run` on its
+//! own connection (`peer/tools/register` without `peer`, `generic_tools`
+//! omitted), and withdraws it (an empty set) the moment the switch goes off
+//! ([`host_tools`], `session.rs`). The kernel gates each call (destructive):
+//! its `host_tool` approval reaches the router as a command; the approved
+//! call reaches the shell's relay (`crate::host_tools`), which types it into
+//! the Terminal the person sees.
 
 use crate::approvals::{self, Caller, RequestContext, Route, ToolSpec, Trigger};
 use serde::{Deserialize, Serialize};
@@ -156,13 +160,23 @@ pub fn command_execution() -> bool {
     with(|s| s.grants.command_execution)
 }
 
+/// The host tools the system agent may call now: what the system chat
+/// registers on its session (`peer/tools/register` without `peer`,
+/// UPCR-2026-035) and the relay checks every call against.
+pub fn host_tools() -> std::collections::BTreeSet<String> {
+    command_execution().then(|| COMMAND_TOOL.to_string()).into_iter().collect()
+}
+
 /// Settings' switch. On needs the person's gesture; off never does.
 pub fn set_command_execution(on: bool, gesture: Option<CommandGesture>) -> Result<(), String> {
-    with(|s| {
+    with(|s| -> Result<(), String> {
         s.set_command_execution(on, gesture)?;
         publish(s);
         Ok(())
-    })
+    })?;
+    // Registered (or withdrawn) on the system session now.
+    super::sync_host_tools();
+    Ok(())
 }
 
 /// Where the switch stands against the running kernel.

@@ -17,10 +17,14 @@
 //!
 //! The kernel side of the contract is octos UPCR-2026-034 (`peer/prepare`
 //! host binding with an app/account memory namespace and resume,
-//! `peer/context/open|close`, `peer/model/set`).
+//! `peer/context/open|close`, `peer/model/set`), and UPCR-2026-035 (host
+//! tools per app peer: `peer/tools/register`, `peer/tool/call|result|cancel`,
+//! `peer/input`; [`host_tools`]).
 
 pub mod contract;
 pub mod host_approvals;
+/// UPCR-2026-035: the host's tool relay seam (registration, calls, `peer/input`).
+pub mod host_tools;
 pub mod injection;
 /// The app storage contract (ADR 0004 §11), handed off like the service.
 pub mod storage;

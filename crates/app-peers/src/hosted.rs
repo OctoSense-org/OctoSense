@@ -96,6 +96,36 @@ pub fn host_state_dir(core_dir: &std::path::Path) -> std::path::PathBuf {
     core_dir.parent().unwrap_or(core_dir).join("app-peers")
 }
 
+/// The host token of an app peer the shell's system agent prepared: octos's
+/// credential for a tool set registered on the system session itself
+/// (UPCR-2026-035's host session target). The newest one the shell keeps;
+/// `None` until an app's agent has been prepared.
+pub fn system_host_token() -> Option<String> {
+    let dir = host_state_dir(&octosense_kernel::core_dir()?);
+    newest_token(&dir)
+}
+
+/// The newest `*.token` under `dir`.
+pub fn newest_token(dir: &std::path::Path) -> Option<String> {
+    let mut best: Option<(std::time::SystemTime, String)> = None;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("token") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let token = text.trim().to_owned();
+        if token.is_empty() {
+            continue;
+        }
+        let modified = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+        if best.as_ref().is_none_or(|(t, _)| modified > *t) {
+            best = Some((modified, token));
+        }
+    }
+    best.map(|(_, token)| token)
+}
+
 /// Offer `broker` to the instance being created, as a trait object.
 pub fn offer(module: &str, scope: &str, broker: &Broker) {
     crate::injection::offer(
@@ -147,6 +177,21 @@ mod tests {
             effective_services("maps", ["octos.turn.start"], &policy).is_empty(),
             "not granted"
         );
+    }
+
+    #[test]
+    fn the_newest_kept_token_is_the_system_sessions_credential() {
+        let dir = std::env::temp_dir().join(format!("app-peers-tokens-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(newest_token(&dir), None);
+        std::fs::write(dir.join("app_rinx_acct-1.token"), "old\n").unwrap();
+        std::fs::write(dir.join("app_rinx_acct-1.cwd"), "/not/a/token").unwrap();
+        assert_eq!(newest_token(&dir).as_deref(), Some("old"));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("app_card.news_acct-2.token"), "new").unwrap();
+        assert_eq!(newest_token(&dir).as_deref(), Some("new"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

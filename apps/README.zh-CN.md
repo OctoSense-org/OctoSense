@@ -315,7 +315,7 @@ octos UI Protocol v1 与 octos 通信。
   `octos-app-render`（流式 markdown 渲染）。
 - **octos**：所有 octos crate 都来自 git `octos-org/octos`，版本为根目录
   `Cargo.toml` 的 `[workspace.dependencies]` 中唯一的 rev（目前是 octos `main` 上的
-  `5e7577f0`），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
+  `665209e5`），与 `crates/kernel` 和 Shell 共用。AppCard 不再自己启动内核，而是连接 Shell 的内核
   （见 [octos 内核](#octos-内核)）。
 - **Makepad**：不内置。Makepad、Octoscript 和 Octoscript-Makepad 是仓库根目录下
   `.sources/` 中由 `tools/setup.py` 准备的检出，版本由 `native-runtime.lock.json`
@@ -388,7 +388,7 @@ Shell 的 `system-apps.json` 中加入它。
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | 如何设计、构建、检查和发布应用 |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript)、[OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad)、[makepad](https://github.com/OctoSense-org/makepad) | 语言与运行时 |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix 聊天与小程序，原生模块；通过 `crates/app-peers` 访问助手 |
-| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `5e7577f0`） |
+| [octos](https://github.com/octos-org/octos) | Agent 内核：由 `crates/kernel` 作为 Shell 服务运行，由 AI providers 配置，供 AppCard 等使用方使用（只用一个版本 `665209e5`） |
 
 ## 参与贡献
 

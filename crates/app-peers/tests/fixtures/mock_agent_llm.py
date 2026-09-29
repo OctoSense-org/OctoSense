@@ -12,6 +12,11 @@ Rules, looking at the request's messages and offered tools:
     a shell command when it is offered octos's `shell` (the kernel profile's
     policy denies it: ADR 0004 §12), else says "NO SHELL OFFERED";
   - "APPROVE_PEER:<slug>": try to approve a peer's tool with peer_respond;
+  - "TELL_PEER_TOOL:<slug>": send the peer "CALL_APP_TOOL", on which the
+    peer calls the host-registered app tool `rinx_echo` when it is offered
+    (UPCR-2026-035), else says "NO APP TOOL OFFERED";
+  - "RUN_TERMINAL": the system agent calls the host tool `terminal_run`
+    registered on its session, else says "NO TERMINAL OFFERED";
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
@@ -65,6 +70,17 @@ def decide(body):
         return {"tool": "shell", "args": {"command": "rm -rf ./approval-probe && echo APPROVED_RAN"}}
     if "RUN_SUDO" in last_user:
         return {"text": "NO SHELL OFFERED"}
+    tool = re.search(r"TELL_PEER_TOOL:([a-z0-9-]+)", last_user)
+    if tool and "peer_send_input" in tools:
+        return {"tool": "peer_send_input", "args": {"slug": tool.group(1), "message": "CALL_APP_TOOL"}}
+    if "CALL_APP_TOOL" in last_user and "rinx_echo" in tools:
+        return {"tool": "rinx_echo", "args": {"text": "ping"}}
+    if "CALL_APP_TOOL" in last_user:
+        return {"text": "NO APP TOOL OFFERED"}
+    if "RUN_TERMINAL" in last_user and "terminal_run" in tools:
+        return {"tool": "terminal_run", "args": {"command": "ls"}}
+    if "RUN_TERMINAL" in last_user:
+        return {"text": "NO TERMINAL OFFERED"}
     approve = re.search(r"APPROVE_PEER:([a-z0-9-]+)", last_user)
     if approve and "peer_respond" in tools:
         return {"tool": "peer_respond", "args": {"slug": approve.group(1), "decision": "approve"}}

@@ -27,10 +27,11 @@
 //!
 //! - **§12's "exactly its grants" is NOT yet enforced for the system
 //!   agent.** It is bounded by the grantable ceiling: no octos shell, but
-//!   every other tool octos registers for it. Its exact list needs
-//!   session-targeted registration and tool lists in octos (octos#2567,
-//!   reviewer item M1; our item 5). The real-kernel exact-list test is kept,
-//!   ignored until then.
+//!   every other tool octos registers for it. octos#2567's host session set
+//!   could narrow it with `generic_tools`, but that list narrows every
+//!   client's turns on the session, so the shell registers without it; the
+//!   exact list waits for a durable host-only list (octos#2605). The
+//!   real-kernel exact-list test is kept, ignored until then.
 //! - **App peers are not capped below what they can be granted**: each is
 //!   narrowed to its grants by its turns' `generic_tools` (octos#2567, plan
 //!   step 6). Host-routed tools (app, toolbox, cross-app tools, command
@@ -67,8 +68,8 @@ use serde_json::{json, Value};
 ///   agent `toolbox.search` / `toolbox.web_read`.
 ///
 /// Anything else it may have is by grant ([`SystemAgentTools`]); command
-/// execution only as a host tool the person turns on (planned: no Settings
-/// switch yet, and it needs octos#2567's per-session tool registration).
+/// execution only as a host tool the person turns on (Setup › Assistant ›
+/// Command execution; the shell's system chat registers it on the session).
 pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     // Supervision.
     "peer_send_input",
@@ -145,10 +146,10 @@ pub const EXTERNAL_TURN_TOOLS: &[&str] = &[
 ];
 
 /// The system agent's tool set: [`SYSTEM_AGENT_TOOLS`] plus what it is
-/// granted. Granted tools are host-routed; registering them on the system
-/// session, like narrowing it to this set, needs octos's session-targeted
-/// registration (octos#2567 items 5 and 6), so today nothing grants any and
-/// [`SystemAgentTools::host_tools`] is what the shell will register then.
+/// granted. Granted tools are host-routed: the shell's system chat registers
+/// the ones it is granted on the system session (octos#2567's host session
+/// target; today command execution's [`COMMAND_EXECUTION_TOOL`]). Narrowing
+/// the session to this set waits for a durable host-only list (octos#2605).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemAgentTools {
     toolbox: BTreeSet<String>,
@@ -174,17 +175,16 @@ impl SystemAgentTools {
         self
     }
 
-    /// The seam for the person's planned Settings switch for the system
-    /// agent's command execution (ADR 0004 §12; off by default). Nothing
-    /// calls it outside tests yet. On, the system agent gets
+    /// The person's Settings switch for the system agent's command
+    /// execution (ADR 0004 §12; off by default). On, the system agent gets
     /// the host tool [`COMMAND_EXECUTION_TOOL`], each command approved live
     /// (section 8); never octos's shell.
     ///
     /// The shell persists the switch (Setup → Assistant → Command
     /// execution, `crates/shell/src/system_chat/grants.rs`) and hands the
     /// set to [`set_grants`]; a kernel start takes it ([`grants_at_start`]).
-    /// TODO(ADR 0004 plan step 6): register the host tool on the system
-    /// session once octos can (octos#2567 item 6).
+    /// While it is on, the shell's system chat registers the host tool on
+    /// the system session (`crates/shell/src/system_chat/session.rs`).
     pub fn grant_command_execution(&mut self, on: bool) -> &mut Self {
         self.command_execution = on;
         self

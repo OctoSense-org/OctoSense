@@ -176,6 +176,15 @@ pub trait OctosAppService: Send + Sync {
     fn release(&self);
     /// Stop the runtime, only when this service owns it (standalone local).
     fn shutdown(&self);
+    /// Install (or with `None` remove) the app's executor for its own tools
+    /// (UPCR-2026-035): the host hands it every call of the app's tools,
+    /// whoever makes it, once authorized. A service without a tool host
+    /// ignores it.
+    fn set_tool_executor(&self, _executor: Option<Arc<dyn crate::host_tools::ToolExecutor>>) {}
+    /// Install (or remove) the app's own confirmation sheet for its
+    /// `confirm: app` tools (ADR 0004 §8: Rinx's send sheet), shown for
+    /// callers of every kind with who is calling.
+    fn set_confirm_sheet(&self, _sheet: Option<Arc<dyn crate::host_tools::ConfirmSheet>>) {}
 }
 
 #[cfg(test)]

@@ -118,6 +118,12 @@ pub struct ApprovalAsk {
     pub args: Value,
     /// The person's words that started the turn: the batch's plan.
     pub plan: String,
+    /// A host-routed tool's approval (`approval_kind: "host_tool"`,
+    /// UPCR-2026-035): the app that owns the tool. `tool` and `args` are
+    /// then the declared name and the exact arguments.
+    pub app: Option<String>,
+    /// The same call ran before and its outcome is unknown.
+    pub outcome_unknown: bool,
 }
 
 /// What the driver must do after a frame.
@@ -127,6 +133,12 @@ pub enum Effect {
     /// The approval's outcome is known; the router's pending request, if
     /// any, is moot.
     ApprovalGone(String),
+    /// A `peer/tool/call` of the system agent's (a host tool registered on
+    /// this session, UPCR-2026-035): for the shell's relay, answered once
+    /// through `reply` on this link.
+    ToolCall { call: crate::ai_host::app_peers::host_tools::HostToolCall, reply: crate::ai_host::app_peers::host_tools::ToolReply },
+    /// The kernel cancelled a call, or the link that carried it ended.
+    ToolCancel(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -298,17 +310,30 @@ impl ChatModel {
             }
             "approval/requested" => {
                 let id = s("approval_id");
-                let tool = s("tool_name");
+                let mut tool = s("tool_name");
                 let title = s("title");
                 let body = s("body");
-                let args = match params.get("typed_details") {
+                let mut args = match params.get("typed_details") {
                     Some(details) if !details.is_null() => details.clone(),
                     _ => serde_json::json!({ "title": title, "body": body }),
                 };
+                // A host-routed tool's approval names its owning app, the
+                // declared tool and the exact arguments.
+                let mut app = None;
+                let mut outcome_unknown = false;
+                if s("approval_kind") == "host_tool" {
+                    let host = &params["typed_details"]["host_tool"];
+                    if let (Some(owner), Some(name)) = (host["app"].as_str(), host["tool"].as_str()) {
+                        app = Some(owner.to_string());
+                        tool = name.to_string();
+                        args = host["args"].clone();
+                        outcome_unknown = host["outcome_unknown_before"] == true;
+                    }
+                }
                 let plan = self.prompt_of(&turn).unwrap_or("The system agent's request").to_string();
                 self.items.push(Item::Approval { id: id.clone(), tool: tool.clone(), title: title.clone(), state: ApprovalState::Waiting });
                 self.changed();
-                effects.push(Effect::Approval(ApprovalAsk { approval_id: id, turn, tool, title, body, args, plan }));
+                effects.push(Effect::Approval(ApprovalAsk { approval_id: id, turn, tool, title, body, args, plan, app, outcome_unknown }));
             }
             "approval/decided" => {
                 let approved = params.get("decision").and_then(Value::as_str) == Some("approve");

@@ -21,10 +21,23 @@
 //!   crash): the link ends, the driver reconnects with a back-off and
 //!   reopens the same session, so the conversation resumes; a turn that
 //!   was running is reported as stopped.
+//! - **Host tools** (octos UPCR-2026-035, host session target): once the
+//!   session is open, and after every reconnect, the driver registers the
+//!   system agent's granted host tools on THIS link (`peer/tools/register`
+//!   without `peer`, `generic_tools` omitted; `terminal.run` while Setup's
+//!   command-execution switch is on, an empty set to withdraw it), with the
+//!   host token of an app peer the system session prepared. The kernel then
+//!   sends their calls here (`peer/tool/call`, `caller.kind: "system"`):
+//!   each becomes an [`Effect::ToolCall`] for the shell's relay, answered
+//!   once on this link (`peer/tool/result` without `peer`); a cancel, an
+//!   interrupt or the link's end closes it, and a call of a turn the person
+//!   stopped is refused (octos follow-up N1).
 
 use super::model::{ChatModel, Effect, Phase};
+use crate::ai_host::app_peers::host_tools::{self, HostToolCall, ToolOutcome, ToolReply};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The system agent's conversation (octosense-kernel `SYSTEM_SESSION`).
@@ -71,6 +84,38 @@ pub trait Connector: Send {
     fn connect(&mut self) -> Result<Box<dyn Link>, Unavailable>;
 }
 
+/// What the system session is granted, and the credential to register it.
+pub trait SystemHost: Send {
+    /// The host tools to register on the system session now (empty: none
+    /// granted, or the grant was withdrawn).
+    fn declarations(&self) -> Vec<Value>;
+    /// The host token of an app peer the system session prepared (octos
+    /// takes it as the credential of a host session set). `None` until an
+    /// app's agent has been prepared.
+    fn host_token(&self) -> Option<String>;
+}
+
+/// The shell's: Setup's grants and the app peers' host state.
+pub struct ShellSystemHost;
+
+impl SystemHost for ShellSystemHost {
+    fn declarations(&self) -> Vec<Value> {
+        super::grants::host_tools()
+            .into_iter()
+            .filter_map(|tool| {
+                let owner = tool.split('.').next().unwrap_or(&tool).to_string();
+                crate::host_tools::declaration(&owner, &tool)
+            })
+            .collect()
+    }
+    fn host_token(&self) -> Option<String> {
+        #[cfg(kernel)]
+        return crate::ai_host::app_peers::hosted::system_host_token();
+        #[cfg(not(kernel))]
+        None
+    }
+}
+
 /// What the UI asks of the driver.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
@@ -85,6 +130,8 @@ pub enum Command {
     Answer { question: String, count: usize, text: String, option: bool },
     /// The approval router's decision for one approval (never the pane's).
     Approval { approval_id: String, approve: bool },
+    /// The system agent's granted host tools changed: register them again.
+    SyncTools,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +140,7 @@ enum Pending {
     History { fallback: bool },
     Turn { turn: String },
     NewConversation,
+    Register { tools: Vec<String> },
     Other(&'static str),
 }
 
@@ -113,7 +161,24 @@ pub struct Driver {
     /// Commands that wait for the session to open.
     queued: Vec<Command>,
     opened: bool,
+    system_host: Box<dyn SystemHost>,
+    /// The host tools registered on the system session over this link.
+    registered: Option<Vec<String>>,
+    /// A registration is on its way.
+    registering: bool,
+    /// The credential the registration used (results carry it).
+    token: Option<String>,
+    /// `peer/tool/result` fields from the relay's answers, for this link.
+    outbox: Arc<Mutex<Vec<Value>>>,
+    waker: Option<std::thread::Thread>,
+    /// The system agent's calls not answered yet.
+    calls: HashMap<String, ToolReply>,
+    /// Turns the person stopped: their late calls are refused.
+    interrupted: VecDeque<String>,
 }
+
+/// Said when a grant cannot be registered yet.
+const NO_CREDENTIAL: &str = "Command execution is on, but the assistant cannot offer it yet: it needs an app's agent (Rinx's, for one) to have started first. It is offered as soon as one has.";
 
 impl Driver {
     pub fn new(connector: Box<dyn Connector>) -> Self {
@@ -129,6 +194,117 @@ impl Driver {
             backoff: Duration::from_millis(500),
             queued: Vec::new(),
             opened: false,
+            system_host: Box::new(ShellSystemHost),
+            registered: None,
+            registering: false,
+            token: None,
+            outbox: Arc::new(Mutex::new(Vec::new())),
+            waker: None,
+            calls: HashMap::new(),
+            interrupted: VecDeque::new(),
+        }
+    }
+
+    /// A driver whose grants and credential come from `host` (tests).
+    pub fn with_system_host(connector: Box<dyn Connector>, host: Box<dyn SystemHost>) -> Self {
+        let mut driver = Driver::new(connector);
+        driver.system_host = host;
+        driver
+    }
+
+    /// The thread to wake when the relay answers a call.
+    pub fn set_waker(&mut self, thread: std::thread::Thread) {
+        self.waker = Some(thread);
+    }
+
+    /// The host tools registered on the system session now.
+    pub fn registered_tools(&self) -> Option<&[String]> {
+        self.registered.as_deref()
+    }
+
+    /// Register the granted host tools on this link when they differ from
+    /// what it holds. Needs the session open and a host credential.
+    fn sync_tools(&mut self) {
+        if !self.opened || self.registering || self.link.is_none() {
+            return;
+        }
+        let decls = self.system_host.declarations();
+        let names: Vec<String> = decls.iter().filter_map(|d| d["name"].as_str().map(str::to_string)).collect();
+        match &self.registered {
+            Some(held) if *held == names => return,
+            // Nothing registered and nothing to register.
+            None if names.is_empty() => return,
+            _ => {}
+        }
+        let Some(token) = self.system_host.host_token() else {
+            let told = self.model.items.iter().any(|i| matches!(i, super::model::Item::Notice(n) if n == NO_CREDENTIAL));
+            if !names.is_empty() && !told {
+                self.model.notice(NO_CREDENTIAL);
+            }
+            return;
+        };
+        self.token = Some(token.clone());
+        self.registering = true;
+        // `generic_tools` omitted: the system agent keeps its kernel tools.
+        let params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE, "host_token": token, "tools": decls});
+        if !self.request(host_tools::REGISTER, params, Pending::Register { tools: names }) {
+            self.registering = false;
+        }
+    }
+
+    /// Send the relay's answers on this link.
+    fn flush_results(&mut self) {
+        let results = std::mem::take(&mut *self.outbox.lock().unwrap_or_else(|e| e.into_inner()));
+        for fields in results {
+            let mut params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE, "host_token": self.token});
+            for (k, v) in fields.as_object().into_iter().flatten() {
+                params[k] = v.clone();
+            }
+            self.request(host_tools::TOOL_RESULT, params, Pending::Other("peer/tool/result"));
+        }
+        self.calls.retain(|_, r| r.is_open());
+    }
+
+    /// A `peer/tool/call` for the system session.
+    fn tool_call(&mut self, params: &Value) {
+        let call = match HostToolCall::parse(params) {
+            Ok(call) => call,
+            Err(_) => return,
+        };
+        // Only the system session's own set reaches this link.
+        if call.peer.is_some() || call.session_id != SYSTEM_SESSION {
+            return;
+        }
+        let outbox = self.outbox.clone();
+        let waker = self.waker.clone();
+        let reply = ToolReply::new(call.call_id.clone(), move |fields| {
+            outbox.lock().unwrap_or_else(|e| e.into_inner()).push(fields);
+            if let Some(thread) = &waker {
+                thread.unpark();
+            }
+        });
+        if self.interrupted.contains(&call.turn_id) {
+            reply.finish(ToolOutcome::error("turn_interrupted", "the person stopped that answer"));
+            return;
+        }
+        self.calls.insert(call.call_id.clone(), reply.clone());
+        self.effects.push(Effect::ToolCall { call, reply });
+    }
+
+    fn tool_cancel(&mut self, call_id: &str) {
+        if let Some(reply) = self.calls.remove(call_id) {
+            if reply.cancel() {
+                self.effects.push(Effect::ToolCancel(call_id.to_string()));
+            }
+        }
+    }
+
+    /// Every call still open ends (the link that carried it is gone, or the
+    /// person stopped the turn; one turn runs at a time).
+    fn end_calls(&mut self) {
+        let ids: Vec<String> = self.calls.keys().cloned().collect();
+        for id in ids {
+            self.tool_cancel(&id);
         }
     }
 
@@ -188,6 +364,9 @@ impl Driver {
                     self.model.notice("Wait for the current answer, or stop it first.");
                     return;
                 }
+                // A grant that could not be registered yet (no credential
+                // at open) is tried again before the turn.
+                self.sync_tools();
                 let turn = new_turn_id();
                 self.model.start_turn(&turn, &text);
                 let params = json!({"session_id": SYSTEM_SESSION, "turn_id": turn, "input": [{"kind": "text", "text": text}]});
@@ -195,6 +374,13 @@ impl Driver {
             }
             Command::Interrupt => {
                 if let Some(turn) = self.model.phase().running_turn().map(str::to_string) {
+                    if !self.interrupted.contains(&turn) {
+                        self.interrupted.push_back(turn.clone());
+                        if self.interrupted.len() > 64 {
+                            self.interrupted.pop_front();
+                        }
+                    }
+                    self.end_calls();
                     self.request("turn/interrupt", json!({"session_id": SYSTEM_SESSION, "turn_id": turn}), Pending::Other("turn/interrupt"));
                     self.model.end_turn(&turn, Some("Stopped."));
                 }
@@ -224,6 +410,7 @@ impl Driver {
                     Pending::Other("approval/respond"),
                 );
             }
+            Command::SyncTools => self.sync_tools(),
         }
     }
 
@@ -231,6 +418,11 @@ impl Driver {
         self.link = None;
         self.pending.clear();
         self.opened = false;
+        // A host session set lives as long as its connection.
+        self.registered = None;
+        self.registering = false;
+        self.outbox.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.end_calls();
     }
 
     fn try_connect(&mut self) {
@@ -297,13 +489,17 @@ impl Driver {
                 return;
             }
         }
+        self.flush_results();
         let deadline = Instant::now() + wait;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             let Some(link) = self.link.as_mut() else { return };
             match link.recv(left) {
                 Recv::Frame(frame) => self.frame(&frame),
-                Recv::Idle => return,
+                Recv::Idle => {
+                    self.flush_results();
+                    return;
+                }
                 Recv::Closed(closed) => {
                     self.lost(closed);
                     return;
@@ -326,6 +522,16 @@ impl Driver {
         }
         let Some(method) = frame.get("method").and_then(Value::as_str) else { return };
         let params = frame.get("params").cloned().unwrap_or(Value::Null);
+        match method {
+            host_tools::TOOL_CALL => return self.tool_call(&params),
+            host_tools::TOOL_CANCEL => {
+                if let Some(id) = params.get("call_id").and_then(Value::as_str) {
+                    self.tool_cancel(id);
+                }
+                return;
+            }
+            _ => {}
+        }
         // Only the system conversation (the router sends only the sessions
         // this connection opened; be strict anyway).
         let session = match (params.get("session_id").and_then(Value::as_str), params.get("topic").and_then(Value::as_str)) {
@@ -358,6 +564,7 @@ impl Driver {
                 None => {
                     self.opened = true;
                     self.model.set_phase(Phase::Ready);
+                    self.sync_tools();
                     self.load_history();
                     for cmd in std::mem::take(&mut self.queued) {
                         self.command(cmd);
@@ -368,6 +575,8 @@ impl Driver {
                 (None, Some(result)) => {
                     let rows = if fallback { &result["messages"] } else { &result["messages"] };
                     self.model.load_history(rows);
+                    // What history replaced: say again what waits.
+                    self.sync_tools();
                 }
                 (Some(_), _) if !fallback => {
                     self.request("session/messages_page", json!({"session_id": SYSTEM_SESSION, "limit": 200}), Pending::History { fallback: true });
@@ -385,6 +594,23 @@ impl Driver {
                     self.model.notice(format!("Could not start a new conversation: {why}"));
                 }
                 self.load_history();
+            }
+            Pending::Register { tools } => {
+                self.registering = false;
+                match error_text {
+                    None => self.registered = Some(tools),
+                    Some(why) => {
+                        self.registered = None;
+                        self.model.notice(format!("The assistant could not be offered its granted tools ({}): {why}", tools.join(", ")));
+                    }
+                }
+                // The grant may have changed meanwhile.
+                self.sync_tools();
+            }
+            Pending::Other("peer/tool/result") => {
+                if let Some(why) = error_text {
+                    makepad_widgets::log!("system chat: a tool result was refused: {why}");
+                }
             }
             Pending::Other(what) => {
                 if let Some(why) = error_text {

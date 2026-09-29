@@ -13,7 +13,8 @@
 //! - **Requests** (`octos.session.open|history`, `octos.turn.start|interrupt`,
 //!   `octos.context.close`) run on the app's one peer through the same
 //!   service in-process modules get (`crates/app-peers`' broker), by an
-//!   adapter ([`ShellHost::service`]), until octos#2567's relay replaces it.
+//!   adapter ([`ShellHost::service`]); that broker registers the app's tools
+//!   and hands its `peer/tool/call`s to the relay (`crate::host_tools`).
 //! - **Tool calls** (kernel → app) enter at [`tool_call`] and their outcome
 //!   leaves through the installed [`ToolRelay`]; confirmations go through
 //!   the #120 router. The host obligations are kept here: once per call,
@@ -23,9 +24,11 @@
 //! - **A process that dies** fails its outstanding calls (`outcome_unknown`
 //!   unless they only read), closes its request contexts and keeps the peer.
 //!
-//! The seams for octos#2567's relay (home-96): [`set_tool_relay`],
-//! [`tool_call`], [`tool_cancel`], [`context_owner`], [`has_link`],
-//! [`close_account`].
+//! The relay (`crate::host_tools`, octos#2567) uses [`set_tool_relay`],
+//! [`tool_call`], [`tool_cancel`] and [`has_link`]; a call the kernel already
+//! approved comes with `approved` (the link asks nobody again), a `confirm:
+//! app` one with `confirm_required`. [`context_owner`] and
+//! [`close_account`] are the sign-out seams.
 
 pub mod link;
 pub mod wire;

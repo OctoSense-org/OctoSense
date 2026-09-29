@@ -108,6 +108,12 @@ pub struct KernelToolCall {
     pub caller: Caller,
     pub trigger: Trigger,
     pub outcome_unknown: bool,
+    /// The kernel already holds the person's approval (a gated `confirm:
+    /// host` call it asked for, UPCR-2026-035): the link asks nobody again.
+    pub approved: bool,
+    /// `confirm: app` (the kernel's `confirm_required`): the app's own sheet
+    /// asks the person, for callers of every kind.
+    pub confirm_required: bool,
 }
 
 /// Why a call was not taken.
@@ -396,8 +402,16 @@ impl PeerLinks {
             Caller::OwnAgent { .. } => Caller::OwnAgent { client: client.clone() },
             other => other.clone(),
         };
-        let rule = self.host.tool_rule(app, &call.name);
-        let needs_approval = rule.is_some() || call.risk == Risk::Destructive || call.outcome_unknown;
+        // The kernel's own say comes first (UPCR-2026-035): `confirm_required`
+        // is the app's sheet, `approved` means the person already answered.
+        let rule = if call.confirm_required {
+            Some((Confirm::App, self.host.tool_rule(app, &call.name).map(|(_, auto)| auto).unwrap_or(true)))
+        } else if call.approved {
+            None
+        } else {
+            self.host.tool_rule(app, &call.name)
+        };
+        let needs_approval = call.confirm_required || (!call.approved && (rule.is_some() || call.risk == Risk::Destructive || call.outcome_unknown));
         let mut down = ToolCallDown {
             call_id: call.call_id.clone(),
             name: call.name.clone(),
