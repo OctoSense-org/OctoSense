@@ -20,6 +20,10 @@ One shell process per device, one octos kernel per shell, and every agent is a s
 
 ### Processes and connections
 
+![OctoSense processes and connections](docs/images/agents-processes.png)
+
+<details><summary>Text version (Mermaid)</summary>
+
 ```mermaid
 flowchart LR
   person(["Person"])
@@ -51,6 +55,8 @@ flowchart LR
   ext -.->|"external token:<br/>system conversation only"| sys
 ```
 
+</details>
+
 - **The shell** (`crates/shell`, one process) hosts the window manager, the native modules (App Hub, Rinx), App Hub's Card runner (every script app in its own isolate), the system chat, the approval router, the host-tool relay and [`crates/ai-host`](crates/ai-host/README.md), whose [app-peers broker](crates/app-peers/README.md) is the kernel's host connection.
 - **The octos kernel** ([`crates/kernel`](crates/kernel/README.md)) starts on first use: a child process speaking OUP over stdio on the desktop (`OCTOS_APP_CORE_BIN`) and Android (`liboctos.so`), an in-process task on OpenHarmony, none on iOS. It exits with the shell.
 - **Process apps**: on the desktop the Terminal runs as its own process, attached over the shell's hub (frames and the AI bus), in an OS sandbox built from its `native-apps.json` entry (Seatbelt on macOS, Landlock and seccomp on Linux, not yet on Windows). A process app reaches its own agent over the **peer link**; the shell side is on `main`, but the Terminal is not granted an agent, so no process app uses it yet.
@@ -69,6 +75,10 @@ flowchart LR
 ### One app agent, two lanes
 
 An app agent is one host-owned octos **peer** per (app, account), owned by the system agent, with its own workspace, memory namespace, model and tool list. The system agent and the person each talk to it in their own lane:
+
+![One app agent, two lanes](docs/images/agents-two-lanes.png)
+
+<details><summary>Text version (Mermaid)</summary>
 
 ```mermaid
 flowchart TB
@@ -92,12 +102,18 @@ flowchart TB
   mini -->|"open_context"| ctx
 ```
 
+</details>
+
 - **The system agent's lane** is the peer's own session, `…#peer-<app>`. The system agent sends `peer_send_input`; octos delivers it to the shell's host connection as `peer/input`, and the shell starts the turn itself, so it runs with the app's tools, memory and approvals (or refuses it with `peer/input/reject` for a signed-out account or an app the person has not allowed). The peer's results go to the peers' blackboard, which the system agent reads.
 - **The person's lane** (**in progress**: octos `feat/peer-context-share-history`, OctoSense `feat/parallel-person-session`, not merged) is a request context, `…#peerctx-<app>.<id>`, opened with `share_history` from the app's UI or its interactive cards. The two lanes run in parallel, with one turn at a time per session; each turn sees the other lane's recent messages as a read-only block, and every turn is labelled by its speaker (`[from the person: <app>]`, `[from the system agent]`).
 - **On `main` today** both speak in one shared conversation on the peer's session (`open_conversation`, [#166](https://github.com/OctoSense-org/OctoSense/pull/166), octos#2626): one queue per peer, one turn at a time, each turn tagged with its origin.
 - **Rinx mini apps** keep their own request contexts (`open_context`), each with its own transcript and folder, not shared with either lane.
 
 ### A tool call with an approval
+
+![A tool call with an approval](docs/images/agents-tool-call.png)
+
+<details><summary>Text version (Mermaid)</summary>
 
 ```mermaid
 sequenceDiagram
@@ -129,6 +145,8 @@ sequenceDiagram
   Re->>K: result, answered once
   Note over Ro,P: No answer in 10 min, denied, never approved.<br/>Turn still running 30 s later, interrupted.
 ```
+
+</details>
 
 - **Tool calls**: octos sends `peer/tool/call` to the shell's relay (`crates/shell/src/host_tools/`), which checks the grant by (owning app, tool) and caller, the arguments against the tool's schema and the caller's budget, and routes the call to the owning app's executor: an in-process module's, a script app's host service, a process app's peer link, or the Terminal's `run` on the AI bus.
 - **Approvals** go to the approval router (`crates/shell/src/approvals/`): developer mode, then standing rules on (owning app, tool), then a shell-drawn sheet. A `confirm: app` tool is confirmed on the owning app's own sheet, which shows the caller. Only the person approves; the system agent never does.

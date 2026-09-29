@@ -20,6 +20,10 @@
 
 ### 进程与连接
 
+![OctoSense processes and connections](docs/images/agents-processes.png)
+
+<details><summary>文字版（Mermaid）</summary>
+
 ```mermaid
 flowchart LR
   person(["用户"])
@@ -51,6 +55,8 @@ flowchart LR
   ext -.->|"外部 token：<br/>只能用系统对话"| sys
 ```
 
+</details>
+
 - **Shell**（`crates/shell`，一个进程）承载窗口管理器、原生模块（App Hub、Rinx）、App Hub 的 Card runner（每个脚本应用都在自己的隔离环境中）、系统对话、审批路由、宿主工具中转，以及 [`crates/ai-host`](crates/ai-host/README.md)；其中的 [app-peers 代理](crates/app-peers/README.md)就是内核的宿主连接。
 - **octos 内核**（[`crates/kernel`](crates/kernel/README.zh-CN.md)）首次使用时启动：桌面端（`OCTOS_APP_CORE_BIN`）和 Android（`liboctos.so`）上是通过 stdio 讲 OUP 的子进程，OpenHarmony 上是进程内的任务，iOS 上没有。它随 Shell 一起退出。
 - **进程应用**：桌面端的 Terminal 作为独立进程运行，通过 Shell 的 hub 连接（画面和 AI bus），运行在按其 `native-apps.json` 条目构建的系统沙箱中（macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp，Windows 上尚未实现）。进程应用通过 **peer link** 使用自己的 Agent；Shell 一侧已在 `main` 上，但 Terminal 没有被授予 Agent，所以目前还没有进程应用使用它。
@@ -69,6 +75,10 @@ flowchart LR
 ### 一个应用 Agent，两条通道
 
 一个应用 Agent 就是每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有，有自己的工作区、记忆命名空间、模型和工具列表。系统 Agent 和用户各自在自己的通道里与它对话：
+
+![One app agent, two lanes](docs/images/agents-two-lanes.png)
+
+<details><summary>文字版（Mermaid）</summary>
 
 ```mermaid
 flowchart TB
@@ -92,12 +102,18 @@ flowchart TB
   mini -->|"open_context"| ctx
 ```
 
+</details>
+
 - **系统 Agent 的通道**是 peer 自己的会话 `…#peer-<app>`。系统 Agent 发送 `peer_send_input`；octos 把它作为 `peer/input` 交给 Shell 的宿主连接，由 Shell 自己启动这一轮，所以这一轮带着应用的工具、记忆和审批运行（对已退出登录的账号或用户未允许的应用，Shell 以 `peer/input/reject` 拒绝）。peer 的结果写到 peer 黑板上，由系统 Agent 读取。
 - **用户的通道**（**进行中**：octos `feat/peer-context-share-history`、OctoSense `feat/parallel-person-session`，尚未合入）是一个请求上下文 `…#peerctx-<app>.<id>`，由应用界面或其交互式卡片以 `share_history` 打开。两条通道并行运行，每个会话同一时间只有一轮；每一轮都会以只读块的形式看到另一条通道的最近消息，每一轮都标明说话者（`[from the person: <app>]`、`[from the system agent]`）。
 - **目前 `main` 上**两者在 peer 会话上的同一个共享对话中说话（`open_conversation`，[#166](https://github.com/OctoSense-org/OctoSense/pull/166)，octos#2626）：每个 peer 一个队列，一次一轮，每一轮都标有来源。
 - **Rinx 小程序**保留各自的请求上下文（`open_context`），各有自己的对话记录和文件夹，不与任一通道共享。
 
 ### 一次带审批的工具调用
+
+![A tool call with an approval](docs/images/agents-tool-call.png)
+
+<details><summary>文字版（Mermaid）</summary>
 
 ```mermaid
 sequenceDiagram
@@ -129,6 +145,8 @@ sequenceDiagram
   Re->>K: 结果，只回答一次
   Note over Ro,P: 10 分钟无人回答，拒绝，绝不批准。<br/>30 秒后这一轮仍在运行，中断。
 ```
+
+</details>
 
 - **工具调用**：octos 把 `peer/tool/call` 发给 Shell 的中转（`crates/shell/src/host_tools/`）。中转按（拥有工具的应用，工具）和调用方检查授权，按工具的 schema 检查参数，检查调用方的预算，再把调用路由到拥有工具的应用的执行器：进程内模块的执行器、脚本应用的宿主服务、进程应用的 peer link，或 AI bus 上 Terminal 的 `run`。
 - **审批**交给审批路由（`crates/shell/src/approvals/`）：先看开发者模式，再看针对（拥有工具的应用，工具）的常设规则，否则弹出 Shell 绘制的面板。`confirm: app` 的工具在拥有它的应用自己的面板上确认，面板显示调用方。只有用户能批准；系统 Agent 永远不能。
