@@ -672,6 +672,14 @@ impl App {
                 return;
             }
         }
+        // Its manifest's storage block (ADR 0004 §11) lays out its folders
+        // before the Card runner opens it, system apps included.
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        if let (Some(manifest_id), Some(storage)) = (apps::card_manifest_id(app), app_storage::host()) {
+            if let Err(e) = app_storage::lifecycle::prepare_script_app(storage, storage.layout().apps_root(), manifest_id) {
+                log!("app storage: {e}");
+            }
+        }
         let hub_port = self.state_mut().hub_port;
 
         // launch-or-focus for non-terminal apps: `omarchy-launch-or-focus`
@@ -1543,6 +1551,17 @@ impl App {
     /// permissions: end its instances so the next open takes the new one.
     #[cfg(any(feature = "app-hub", native_mobile))]
     fn installed_app_changed(&mut self, cx: &mut Cx, id: &str) {
+        // Its storage (ADR 0004 §11): an install records the manifest's
+        // block and lays out the folders; a removal (the jail is gone)
+        // deletes what the host keeps for it and keeps its agents suspended.
+        if let Some(storage) = app_storage::host() {
+            let root = storage.layout().apps_root();
+            if !app_storage::lifecycle::app_uninstalled(storage, root, id) {
+                if let Err(e) = app_storage::lifecycle::prepare_script_app(storage, root, id) {
+                    log!("app storage: {e}");
+                }
+            }
+        }
         let launch_id = apps::installed_launch_id(id);
         let clients: Vec<_> = self.state_mut().clients.iter()
             .filter_map(|(&client, slot)| (slot.app == launch_id).then_some(client))
