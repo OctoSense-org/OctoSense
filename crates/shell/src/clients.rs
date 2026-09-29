@@ -970,6 +970,11 @@ pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_por
     roots.sort();
     roots.dedup();
     let mut policy = crate::sandbox::Policy::for_app(native, paths.jail, paths.secrets, &home, roots, hub_port);
+    // The host's private directories stay closed whatever the manifest
+    // grants (G6): the OctoSense home (peer host tokens, every app's jail
+    // and secrets), the storage roots and the kernel's core dir.
+    let core = crate::ai_host::core_dir(None);
+    policy.private = crate::sandbox::host_private_dirs(&crate::octosense::paths::home(), layout.apps_root(), layout.secrets_root(), core.as_deref());
     // Cargo reads `.cargo/config.toml` from its working directory up (the
     // manifest's directory, else the checkout): every `[env]` host variable
     // it would hand the app is taken back out.

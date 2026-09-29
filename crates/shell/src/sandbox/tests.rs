@@ -196,3 +196,121 @@ fn no_child_inherits_a_host_token_or_a_kernel_path() {
         assert!(!is_host_secret_var(name), "the child sees {line}");
     }
 }
+
+// ---------------------------------------------------------------- the OctoSense home (G6)
+
+/// A broad app (the Terminal's `home:rw`) whose scratch "home" also holds
+/// the OctoSense home and the kernel's core dir, as on a real machine.
+fn home_rw_with_octosense_home(root: &Path) -> Policy {
+    let octo = root.join(".octosense");
+    let jail = octo.join("apps/probe");
+    let secrets = octo.join("secrets/probe");
+    let mut p = jail_only(root, 1);
+    p.jail = jail;
+    p.secrets = secrets;
+    p.external = vec![(root.to_path_buf(), Access::ReadWrite)];
+    p.network = Network::Any;
+    p.processes = true;
+    p.private = host_private_dirs(&octo, &octo.join("apps"), &octo.join("secrets"), Some(&root.join("octos-home/.octos")));
+    p
+}
+
+#[cfg(unix)]
+#[test]
+fn home_rw_never_reaches_the_octosense_home_or_the_kernel() {
+    if !sandbox_works_here() {
+        eprintln!("no process sandbox on this machine; skipped");
+        return;
+    }
+    let scratch = Scratch::new("octohome");
+    let root = &scratch.0;
+    let octo = root.join(".octosense");
+    for dir in ["apps/probe", "apps/other", "secrets/probe", "secrets/other", "app-peers"] {
+        std::fs::create_dir_all(octo.join(dir)).unwrap();
+    }
+    std::fs::create_dir_all(root.join("octos-home/.octos")).unwrap();
+    std::fs::create_dir_all(root.join("Documents")).unwrap();
+    std::fs::write(root.join("Documents/note.txt"), "the person's note").unwrap();
+    std::fs::write(octo.join("apps/probe/mine.txt"), "mine").unwrap();
+    std::fs::write(octo.join("secrets/probe/key"), "its own secret").unwrap();
+    std::fs::write(octo.join("apps/other/theirs.txt"), "another app's").unwrap();
+    std::fs::write(octo.join("secrets/other/key"), "another app's secret").unwrap();
+    std::fs::write(octo.join("app-peers/rinx.token"), "peer-host-token").unwrap();
+    std::fs::write(octo.join("settings.json"), "{}").unwrap();
+    std::fs::write(root.join("octos-home/.octos/profile.json"), "kernel data").unwrap();
+    std::fs::write(root.join("octos-home/notes.md"), "kernel home").unwrap();
+    let policy = home_rw_with_octosense_home(root);
+
+    let cat = |p: PathBuf| run("/bin/cat", &[p.to_str().unwrap()], &policy);
+    let (ok, out) = cat(root.join("Documents/note.txt"));
+    assert!(ok && out.contains("the person's note"), "home:rw still reaches the person's files: {out}");
+    let (ok, out) = cat(octo.join("apps/probe/mine.txt"));
+    assert!(ok && out.contains("mine"), "its own jail: {out}");
+    let (ok, out) = cat(octo.join("secrets/probe/key"));
+    assert!(ok && out.contains("its own secret"), "its own secrets: {out}");
+    for (path, what) in [
+        (octo.join("app-peers/rinx.token"), "peer-host-token"),
+        (octo.join("apps/other/theirs.txt"), "another app's"),
+        (octo.join("secrets/other/key"), "another app's secret"),
+        (octo.join("settings.json"), "{}"),
+        (root.join("octos-home/.octos/profile.json"), "kernel data"),
+        (root.join("octos-home/notes.md"), "kernel home"),
+    ] {
+        let (ok, out) = cat(path.clone());
+        assert!(!ok && !out.contains(what), "{} must be refused: {out}", path.display());
+    }
+    let sh = |script: String| run("/bin/sh", &["-c", &script], &policy);
+    let (ok, out) = sh(format!("echo x > {}/app-peers/planted.token", octo.display()));
+    assert!(!ok, "nothing is written into the OctoSense home: {out}");
+    let (ok, out) = sh(format!("ls {}/apps", octo.display()));
+    assert!(!ok || !out.contains("other"), "other apps' jails are not even listed: {out}");
+    let (ok, out) = sh(format!("echo x > {}/apps/probe/written", octo.display()));
+    assert!(ok, "it writes in its own jail: {out}");
+}
+
+#[test]
+fn the_macos_profile_closes_the_octosense_home_after_every_grant() {
+    let root = Path::new("/nonexistent/home");
+    let p = home_rw_with_octosense_home(root);
+    let text = macos::profile(&p);
+    let grant = text.find("(allow file-read* file-write* (subpath \"/nonexistent/home/.octosense/apps/probe\") (subpath \"/nonexistent/home/.octosense/secrets/probe\") (subpath \"/nonexistent/home\"))").expect(&text);
+    let deny = text.find("(deny file-read* file-write* (subpath \"/nonexistent/home/.octosense\")").expect(&text);
+    let own = text.rfind("(allow file-read* file-write* (subpath \"/nonexistent/home/.octosense/apps/probe\") (subpath \"/nonexistent/home/.octosense/secrets/probe\"))").expect(&text);
+    assert!(grant < deny && deny < own, "home:rw, then the private deny, then only its own jail and secrets\n{text}");
+    for dir in ["/nonexistent/home/octos-home/.octos", "/nonexistent/home/octos-home"] {
+        assert!(text[deny..].contains(&format!("(subpath \"{dir}\")")), "{dir} is closed\n{text}");
+    }
+    // Nothing private: no extra rules.
+    let mut plain = p.clone();
+    plain.private.clear();
+    assert!(!macos::profile(&plain).contains("private directories"));
+}
+
+#[test]
+fn the_private_dirs_are_the_homes_roots_and_the_kernels() {
+    let octo = Path::new("/h/.octosense");
+    let dirs = host_private_dirs(octo, &octo.join("apps"), Path::new("/elsewhere/secrets"), Some(Path::new("/h/octos-home/.octos")));
+    assert_eq!(
+        dirs,
+        vec![octo.to_path_buf(), octo.join("apps"), PathBuf::from("/elsewhere/secrets"), PathBuf::from("/h/octos-home/.octos"), PathBuf::from("/h/octos-home")]
+    );
+    assert!(host_private_dirs(Path::new("/"), Path::new("/a"), Path::new("/b"), Some(Path::new("/core"))).iter().all(|p| p != Path::new("/")), "never the root");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn landlock_splits_a_grant_around_the_private_dirs() {
+    let scratch = Scratch::new("split");
+    let root = &scratch.0;
+    let octo = root.join(".octosense");
+    std::fs::create_dir_all(octo.join("apps/probe")).unwrap();
+    std::fs::create_dir_all(root.join("Documents")).unwrap();
+    std::fs::write(root.join("top.txt"), "t").unwrap();
+    std::os::unix::fs::symlink(&octo, root.join("sneaky")).unwrap();
+    let mut out = Vec::new();
+    linux::around_private(linux::Rule { path: root.clone(), access: 0xfff }, &[octo.clone()], &mut out);
+    let paths: Vec<PathBuf> = out.iter().map(|r| r.path.clone()).collect();
+    assert!(paths.contains(&root.join("Documents")) && paths.contains(&root.join("top.txt")), "{paths:?}");
+    assert!(!paths.iter().any(|p| p.starts_with(&octo) || p == root), "{paths:?}");
+    assert!(!paths.contains(&root.join("sneaky")), "a link into a private dir gets nothing: {paths:?}");
+}
