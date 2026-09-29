@@ -462,3 +462,32 @@ fn the_linux_rules_keep_a_program_inside_the_home_read_and_execute_only() {
     p.program = vec![octo.clone()];
     assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != octo), "the OctoSense home is never granted");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_linked_checkout_into_the_octosense_home_is_not_reopened() {
+    // A checkout or target dir reached through a link must be judged by the
+    // path it resolves to: a link to the OctoSense home reopens nothing.
+    let scratch = Scratch::new("octolink");
+    let root = &scratch.0;
+    let octo = root.join(".octosense");
+    std::fs::create_dir_all(octo.join("apps/probe")).unwrap();
+    std::fs::create_dir_all(octo.join("build/makepad")).unwrap();
+    let link = root.join("checkout");
+    std::os::unix::fs::symlink(&octo, &link).unwrap();
+    let mut p = home_rw_with_octosense_home(root);
+    p.program = vec![link.clone()];
+    let text = macos::profile(&p);
+    assert!(!text.contains("even inside them"), "a link to the home reopens nothing\n{text}");
+    // A link to the build dir itself is fine: it resolves strictly inside.
+    let build_link = root.join("build-link");
+    std::os::unix::fs::symlink(octo.join("build/makepad"), &build_link).unwrap();
+    p.program = vec![build_link];
+    assert!(macos::profile(&p).contains("even inside them"));
+    #[cfg(target_os = "linux")]
+    {
+        p.program = vec![link];
+        let real = crate::sandbox::resolved(&octo);
+        assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != real), "Landlock never grants the home through a link");
+    }
+}
