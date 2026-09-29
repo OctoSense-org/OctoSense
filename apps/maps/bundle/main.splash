@@ -252,7 +252,7 @@ let HitRow = GestureView{width: Fill height: Fit flow: Down padding: Inset{top: 
 View{width: Fill height: Fill flow: Overlay show_bg: true draw_bg.color: #xe8eaed
     plan_box := View{width: Fill height: Fill
         plan_map := MapView{width: Fill height: Fill nav_mode: "plan" nav_route_width: 36.0 zoom: 13.0 min_zoom: 3.0 max_zoom: 18.0
-            center_lat: 37.3350 center_lon: -121.8850 use_network: true use_local_mbtiles: false debug_cam: false}
+            center_lat: 37.3350 center_lon: -121.8850 archive_url: "https://makepad.nl/maps/world-20260926.mkmap" debug_cam: false}
     }
     drive_box := View{visible: false width: Fill height: Fill flow: Overlay
         drive_3d := View{width: Fill height: Fill
