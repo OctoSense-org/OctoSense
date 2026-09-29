@@ -1072,6 +1072,8 @@ impl Agent for OctosUiAgent {
             // way to answer with something other than one.
             tool_context: None,
             live_video: false,
+            // Only the host sets who is speaking; this is an external client.
+            origin: None,
         }));
         prompt_id
     }
