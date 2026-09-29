@@ -100,15 +100,16 @@ octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub
 octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
-# merge of octos#2621, `peer/input/reject`; after #2616, the #2567 follow-ups).
+# merge of octos#2626, the shared peer conversation with turn origin; after
+# #2621, `peer/input/reject`, and #2616, the #2567 follow-ups).
 # Move octos-core, octos-cli and octos-research together; the Android kernel
 # artifact (liboctos.so) is built from this same revision.
-octos-core = { git = "https://github.com/octos-org/octos.git", rev = "c608384ddd217c0d857656488b3d93ba3df0dc5a" }
-octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "c608384ddd217c0d857656488b3d93ba3df0dc5a", default-features = false }
+octos-core = { git = "https://github.com/octos-org/octos.git", rev = "0e6db72d8c8d5f8101535690975b30a3f2cf7249" }
+octos-cli = { git = "https://github.com/octos-org/octos.git", rev = "0e6db72d8c8d5f8101535690975b30a3f2cf7249", default-features = false }
 # The research engine (the metasearch, the SSRF-safe polite reader and the
 # toolbox scope) for the toolbox's `octos-engine` feature. Same source and
 # revision as above.
-octos-research = { git = "https://github.com/octos-org/octos.git", rev = "c608384ddd217c0d857656488b3d93ba3df0dc5a", default-features = false }
+octos-research = { git = "https://github.com/octos-org/octos.git", rev = "0e6db72d8c8d5f8101535690975b30a3f2cf7249", default-features = false }
 # --- AppCard's inline renderers.
 streaming-markdown-kit = { git = "https://github.com/Project-Robius-China/streaming-markdown-kit.git", branch = "main" }
 makepad-diagram-kit = { git = "https://github.com/Project-Robius-China/makepad-diagram-kit.git", branch = "main" }

@@ -219,10 +219,10 @@ manifest 的 `agent` 字段（权限档位、通用工具、迭代和 token 上�
 
 ### 桌面端：使用临时的内核与配置
 
-1. 在 [octos-org/octos](https://github.com/octos-org/octos) 的检出中，构建根 `Cargo.toml` 锁定的版本（`c608384d`；参数与 `tools/kernel-artifact.py` 相同；本次更新未在此版本上运行，**unverified**）：
+1. 在 [octos-org/octos](https://github.com/octos-org/octos) 的检出中，构建根 `Cargo.toml` 锁定的版本（`0e6db72d`；参数与 `tools/kernel-artifact.py` 相同；本次更新未在此版本上运行，**unverified**）：
 
    ```sh
-   git checkout c608384ddd217c0d857656488b3d93ba3df0dc5a
+   git checkout 0e6db72d8c8d5f8101535690975b30a3f2cf7249
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 
