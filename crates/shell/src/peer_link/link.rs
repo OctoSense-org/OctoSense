@@ -340,8 +340,9 @@ impl PeerLinks {
         let spec = ContextSpec { account: account.clone(), instance: handle.clone(), services };
         // A `client` (one of the app's own clients, like a Rinx mini app)
         // gets a request context: its own transcript. Without one, the app
-        // talks in its peer's ONE shared conversation (ADR 0004 §6), which
-        // the system agent drives too; the process follows all of it.
+        // talks in its conversation (ADR 0004 §6): the person's lane, a
+        // context that shares history with the system agent's lane (the
+        // peer's session); the process follows both lanes.
         let opened = match &client {
             Some(_) => service.open_context(spec),
             None => service.open_conversation(spec),

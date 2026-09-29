@@ -79,9 +79,10 @@ pub enum Down {
     ToolCall(ToolCallDown),
     ToolCancel { call_id: String },
     ContextClosed { context: String, reason: String },
-    /// An event of the app peer's shared conversation, for a context opened
-    /// without a `client` (the app's conversation): every turn, whoever
-    /// speaks (`event.speaker`), after the request that opened it answered.
+    /// An event of either lane of the app's conversation (`event.lane`:
+    /// `person` or `system_agent`), for a context opened without a
+    /// `client` (the app's conversation): every turn, whoever speaks
+    /// (`event.speaker`), after the request that opened it answered.
     /// A client that does not know the frame ignores it.
     Conversation { context: String, event: Value },
 }
