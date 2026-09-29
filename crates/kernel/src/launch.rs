@@ -221,6 +221,9 @@ pub(crate) fn prepare(launch: &Launch, core_dir: &Path) {
     // Every start: the system agent's tool set (ADR 0004 §12) as the
     // profile's tool policy, which octos reads at start.
     crate::system_tools::enforce(core_dir);
+    // ... and the grants it starts with (a Settings change applies from the
+    // next start: the shell offers a restart).
+    crate::system_tools::take_grants_for_start();
 }
 
 /// Floor for `memory.max_inject_tokens` in the phone kernel's config.

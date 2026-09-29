@@ -792,6 +792,16 @@ pub fn status() -> Status {
     global().status()
 }
 
+/// The system agent's grants the running kernel started with, or `None`
+/// when no kernel runs (then the next start takes
+/// [`system_tools::grants`]).
+pub fn system_agent_tools_in_effect() -> Option<system_tools::SystemAgentTools> {
+    if !status().running {
+        return None;
+    }
+    system_tools::grants_at_start()
+}
+
 /// `<core_dir>/profiles/_main.json` of the process's kernel.
 pub fn profile() -> Option<PathBuf> {
     core_dir().map(|d| profile_path(&d))

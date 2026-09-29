@@ -30,6 +30,14 @@ fn main() {
     if feature || target_os == "android" || target_env == "ohos" {
         println!("cargo:rustc-cfg=mobile_only");
     }
+    // `kernel`: this build hosts the octos kernel, exactly as
+    // octosense-ai-host's build.rs decides it (feature `octos-core`, or a
+    // native mobile target): `octosense_ai_host::kernel` exists. The system
+    // chat (src/system_chat/) reads it.
+    println!("cargo:rustc-check-cfg=cfg(kernel)");
+    if native_mobile || std::env::var_os("CARGO_FEATURE_OCTOS_CORE").is_some() {
+        println!("cargo:rustc-cfg=kernel");
+    }
     // `makepad_vulkan`: Makepad renders with Vulkan (`MAKEPAD=vulkan`, the
     // same switch makepad-platform's build reads), so a Linux desktop can
     // share a process app's frames zero-copy (native-apps.json's
