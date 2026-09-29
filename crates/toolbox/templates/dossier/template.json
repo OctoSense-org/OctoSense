@@ -1,0 +1,72 @@
+{
+  "id": "dossier",
+  "version": "1.1.0",
+  "title": "Background dossier on a few questions",
+  "description": "Background research, not news: for each question, run its sub-queries (the caller writes them, in each language it wants, typically English and Chinese) in each requested metasearch category (general, it, news, social, science) over a long window (max_age_days, up to 1500), all searches started together; pool each question's readable results in rank order round-robin across its searches, skipping results the backend cannot read and preferring publishers with no failed read in this run; read up to read_top articles per question in rounds, replacing a failed or off-topic read with the next candidate, within read_budget attempts for the whole run (an article another question already read is reused, not read again); then one digest per question, in the reader's language, citing only articles read in this run, with the articles the model finds off the question left out. Ready when every question has a digest that kept every point; partial otherwise, with the reasons; failed when no question has anything read.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["questions", "language"],
+    "properties": {
+      "questions": {"type": "array", "minItems": 1, "maxItems": 6, "description": "The questions, each with its own search sub-queries.", "items": {
+        "type": "object", "additionalProperties": false, "required": ["question", "queries"],
+        "properties": {
+          "question": {"type": "string", "minLength": 1, "maxLength": 280, "description": "The question, in the reader's words; the digest's focus."},
+          "queries": {"type": "array", "minItems": 1, "maxItems": 6, "description": "Search terms for this question, each in one language (write the Chinese terms in Chinese).", "items": {
+            "type": "object", "additionalProperties": false, "required": ["terms", "language"],
+            "properties": {
+              "terms": {"type": "string", "minLength": 1, "maxLength": 160},
+              "language": {"type": "string", "minLength": 2, "maxLength": 16}
+            }}}
+        }}},
+      "language": {"type": "string", "minLength": 2, "maxLength": 16, "description": "BCP 47 tag of the digests' language."},
+      "categories": {"type": "array", "minItems": 1, "maxItems": 5, "default": ["general", "it", "news", "social"], "description": "Metasearch categories each sub-query is searched in (each must be in the app's grant). `social` finds posts, which are never evidence; it helps only when a post links an article.", "items": {"type": "string", "enum": ["general", "it", "news", "social", "science"]}},
+      "per_search": {"type": "integer", "minimum": 1, "maximum": 10, "default": 6, "description": "Results asked of each search."},
+      "read_top": {"type": "integer", "minimum": 1, "maximum": 8, "default": 4, "description": "Articles to read (and digest) per question."},
+      "read_budget": {"type": "integer", "minimum": 1, "maximum": 24, "default": 12, "description": "Read attempts for the whole run, failed ones included (the app's own budget may be lower)."},
+      "max_age_days": {"type": "integer", "minimum": 1, "maximum": 1500, "default": 1500, "description": "Oldest material, in days (clamped to the app's grant)."}
+    }
+  },
+  "modules": [{"module": "research", "methods": ["search", "article", "digest"]}],
+  "budget": {"max_calls": 64, "max_model_calls": 6, "max_reads": 24, "max_ms": 240000, "max_concurrency": 6},
+  "output": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["language", "questions", "searches_skipped", "missing"],
+    "properties": {
+      "language": {"type": "string"},
+      "questions": {"type": "array", "maxItems": 6, "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["question", "searches", "found", "unreadable", "read", "off_topic", "failed", "left", "digest", "sources"],
+        "properties": {
+          "question": {"type": "string"},
+          "searches": {"type": "array", "maxItems": 30, "items": {
+            "type": "object", "additionalProperties": false, "required": ["terms", "language", "category", "found", "answered"],
+            "properties": {
+              "terms": {"type": "string"}, "language": {"type": "string"}, "category": {"type": "string"},
+              "found": {"type": "integer", "minimum": 0}, "answered": {"type": "boolean", "description": "false when the search failed"}
+            }}},
+          "found": {"type": "integer", "minimum": 0, "description": "Distinct results across this question's searches."},
+          "unreadable": {"type": "integer", "minimum": 0},
+          "read": {"type": "integer", "minimum": 0, "description": "Articles kept for this question."},
+          "off_topic": {"type": "integer", "minimum": 0},
+          "failed": {"type": "integer", "minimum": 0},
+          "left": {"type": "integer", "minimum": 0, "description": "Readable candidates not tried."},
+          "digest": {"description": "research.digest's result for this question, or null when nothing was read or the model failed."},
+          "sources": {"type": "array", "maxItems": 8, "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "title", "url", "source", "language", "published_at", "evidence_sha256"],
+            "properties": {
+              "id": {"type": "string"}, "title": {"type": "string"}, "url": {"type": "string"},
+              "source": {"type": "string"}, "language": {"type": "string"}, "published_at": {"type": "string"},
+              "evidence_sha256": {"type": "string", "minLength": 64, "maxLength": 64},
+          "resolved_url": {"description": "Where the read ended after redirects (a Google News link's publisher page); null while unresolved. Cite this, not url, when present."},
+          "publisher_host": {"description": "The publisher's host, or null when unknown."}
+            }}}
+        }}},
+      "searches_skipped": {"type": "integer", "minimum": 0, "description": "Planned searches not run because of the run's search cap (30)."},
+      "missing": {"type": "integer", "minimum": 0, "description": "Reads that failed."}
+    }
+  },
+  "provenance": true
+}

@@ -53,6 +53,7 @@ impl ResearchBackend for Site {
                 page: PageText {
                     text: format!("The page at {url}."),
                     title: Some(url.to_owned()),
+                    final_url: None,
                 },
                 links: links.iter().map(|l| l.to_string()).collect(),
             })

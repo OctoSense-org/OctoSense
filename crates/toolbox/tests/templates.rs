@@ -83,7 +83,10 @@ async fn every_template_matches_its_fixtures() {
                 .filter(|s| s.starts_with("http"))
             {
                 assert!(
-                    result.provenance.iter().any(|p| p.url == url),
+                    result
+                        .provenance
+                        .iter()
+                        .any(|p| p.url == url || p.resolved_url.as_deref() == Some(url)),
                     "{name}: {url} has no provenance"
                 );
             }

@@ -1,0 +1,182 @@
+{
+  "name": "failed-read-and-empty-question",
+  "params": {
+    "categories": [
+      "general"
+    ],
+    "language": "zh",
+    "questions": [
+      {
+        "queries": [
+          {
+            "language": "en",
+            "terms": "Lumen desktop maintainers"
+          }
+        ],
+        "question": "Who maintains the Lumen desktop?"
+      },
+      {
+        "queries": [
+          {
+            "language": "en",
+            "terms": "Lumen desktop BSD"
+          }
+        ],
+        "question": "Does Lumen desktop run on BSD?"
+      }
+    ],
+    "read_top": 1
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Lumen desktop maintainers",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "wikipedia",
+          "google_news"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/blocked/lumen-team",
+            "title": "Lumen desktop maintainers named",
+            "source": "Walled Times",
+            "language": "en",
+            "published_at": "2025-01-05T00:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/news/lumen-team",
+            "title": "Lumen desktop maintainers list grows",
+            "source": "Harbor Daily",
+            "language": "en",
+            "published_at": "2025-02-01T00:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Lumen desktop BSD",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "wikipedia",
+          "google_news"
+        ],
+        "items": [],
+        "error": "no search engine answered: wikipedia (en) timed out"
+      }
+    ],
+    "pages": {
+      "https://example.invalid/blocked/lumen-team": {
+        "text": "",
+        "title": null,
+        "delay_ms": 40,
+        "error": "paywall: subscribe to read"
+      },
+      "https://example.invalid/news/lumen-team": {
+        "text": "The Lumen desktop maintainers now number five, led by Ada Park. The maintainers review every change to the Lumen desktop.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "partial",
+    "reasons": [
+      "question 2: 1 of 1 searches failed",
+      "question 2: nothing readable was found"
+    ],
+    "data": {
+      "language": "zh",
+      "missing": 1,
+      "questions": [
+        {
+          "digest": {
+            "dropped_points": 0,
+            "language": "zh",
+            "off_topic": [],
+            "points": [
+              {
+                "citations": [
+                  "s65803035137e"
+                ],
+                "text": "The Lumen desktop maintainers now number five, led by Ada Park."
+              }
+            ],
+            "summary": "Sources: Lumen desktop maintainers list grows",
+            "summary_check": {
+              "dropped": 0,
+              "flagged": 0,
+              "sentences": 1
+            },
+            "task": "digest"
+          },
+          "failed": 1,
+          "found": 2,
+          "left": 0,
+          "off_topic": 0,
+          "question": "Who maintains the Lumen desktop?",
+          "read": 1,
+          "searches": [
+            {
+              "answered": true,
+              "category": "general",
+              "found": 2,
+              "language": "en",
+              "terms": "Lumen desktop maintainers"
+            }
+          ],
+          "sources": [
+            {
+              "evidence_sha256": "0ac6622e1217cb71c23ed901c2462d584e3d54673ef16f81d546f794110167a1",
+              "id": "s65803035137e",
+              "language": "en",
+              "published_at": "2025-02-01T00:00:00Z",
+              "publisher_host": "example.invalid",
+              "resolved_url": null,
+              "source": "Harbor Daily",
+              "title": "Lumen desktop maintainers list grows",
+              "url": "https://example.invalid/news/lumen-team"
+            }
+          ],
+          "unreadable": 0
+        },
+        {
+          "digest": null,
+          "failed": 0,
+          "found": 0,
+          "left": 0,
+          "off_topic": 0,
+          "question": "Does Lumen desktop run on BSD?",
+          "read": 0,
+          "searches": [
+            {
+              "answered": false,
+              "category": "general",
+              "found": 0,
+              "language": "en",
+              "terms": "Lumen desktop BSD"
+            }
+          ],
+          "sources": [],
+          "unreadable": 0
+        }
+      ],
+      "searches_skipped": 0
+    }
+  }
+}

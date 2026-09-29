@@ -146,6 +146,7 @@ pub static BUILTIN: &[(&str, &str, &str)] = builtin!(
     "market-brief",
     "briefing",
     "compare",
+    "dossier",
 );
 
 const BUILTIN_LOCK: &str = include_str!("../templates/library.lock.json");

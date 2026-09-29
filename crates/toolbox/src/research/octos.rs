@@ -433,7 +433,13 @@ impl ResearchBackend for OctosResearch {
             let now = chrono::Utc::now();
             let scope = &ctx.app.scope;
             let scoped = scope
-                .search_args(&search_args(&query, &self.config.category), now)
+                .search_args(
+                    &search_args(
+                        &query,
+                        query.category.as_deref().unwrap_or(&self.config.category),
+                    ),
+                    now,
+                )
                 .map_err(HostError::Denied)?;
             let request = search_request(&scoped, &self.config, now);
             let response = self.metasearch.search(&request).await;
@@ -527,6 +533,7 @@ impl ResearchBackend for OctosResearch {
             Ok(PageText {
                 text: page.text,
                 title: page.meta.title.filter(|t| !t.trim().is_empty()),
+                final_url: Some(page.final_url),
             })
         })
     }
@@ -545,11 +552,12 @@ impl ResearchBackend for OctosResearch {
                 .map_err(HostError::Denied)?;
             let links = extract_links(&page.html, &page.final_url);
             Ok(LinkedPage {
-                final_url: page.final_url,
                 page: PageText {
                     text: page.text,
                     title: page.meta.title.filter(|t| !t.trim().is_empty()),
+                    final_url: Some(page.final_url.clone()),
                 },
+                final_url: page.final_url,
                 links,
             })
         })
@@ -702,6 +710,7 @@ mod tests {
             limit: 5,
             max_age_hours: Some(72),
             max_fetches: 8,
+            category: None,
         };
         let now = chrono::Utc::now();
         let scoped = scope
@@ -842,6 +851,7 @@ mod tests {
             limit: 5,
             max_age_hours: None,
             max_fetches: 8,
+            category: None,
         };
         let now = chrono::Utc::now();
         let scoped = grant

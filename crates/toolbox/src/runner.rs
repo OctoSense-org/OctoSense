@@ -533,7 +533,13 @@ pub async fn run<H: ToolboxHost + ?Sized>(
         provenance_order
             .iter()
             .filter_map(|id| provenance.get(id))
-            .filter(|p| referenced.contains(p.id.as_str()) || referenced.contains(p.url.as_str()))
+            .filter(|p| {
+                referenced.contains(p.id.as_str())
+                    || referenced.contains(p.url.as_str())
+                    || p.resolved_url
+                        .as_deref()
+                        .is_some_and(|u| referenced.contains(u))
+            })
             .cloned()
             .collect()
     } else {
@@ -642,7 +648,10 @@ fn finish_output(
     schema
         .validate(&data)
         .map_err(|e| format!("output schema: {e}"))?;
-    let urls: BTreeSet<&str> = provenance.values().map(|p| p.url.as_str()).collect();
+    let urls: BTreeSet<&str> = provenance
+        .values()
+        .flat_map(|p| std::iter::once(p.url.as_str()).chain(p.resolved_url.as_deref()))
+        .collect();
     if let Some(bad) = json::strings(&data)
         .into_iter()
         .find(|s| json::contains_url(s) && !urls.contains(s))

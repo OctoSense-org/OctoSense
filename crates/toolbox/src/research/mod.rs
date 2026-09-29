@@ -72,6 +72,10 @@ pub struct SearchQuery {
     /// Feeds and API responses the backend may fetch for this search, at
     /// most [`MAX_SEARCH_FETCHES`].
     pub max_fetches: u32,
+    /// The metasearch category, when not the backend's default (`news`):
+    /// `general`, `it`, `social`, `science`. Already within the grant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 /// One item a backend found. `via` names the provider.
@@ -136,6 +140,11 @@ pub struct PageText {
     pub text: String,
     #[serde(default)]
     pub title: Option<String>,
+    /// Where the read ended, after HTTP and browser (JavaScript) redirects:
+    /// for a Google News link, the publisher's page. `None` when the backend
+    /// cannot tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_url: Option<String>,
 }
 
 /// Finds and reads sources. The fixture backend, the interim live adapter,
@@ -315,11 +324,17 @@ impl ResearchHost {
         let region = input["region"].as_str().map(str::to_owned);
         let limit = input["limit"].as_u64().unwrap_or(5).clamp(1, 10) as u32;
         let requested_age = input["max_age_hours"].as_u64().map(|h| h as u32);
+        let category = input["category"]
+            .as_str()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
         // octos's `Scope::search_args` (or the thin parser's same rules):
         // a language, region or category outside the grant is refused,
         // recency and the result count are clamped.
-        let narrowed = scope::narrow_search(
+        let narrowed = scope::narrow_search_in(
             scope,
+            category.as_deref().unwrap_or(scope::SEARCH_CATEGORY),
             &topic,
             language.as_deref(),
             region.as_deref(),
@@ -335,6 +350,7 @@ impl ResearchHost {
             limit,
             max_age_hours: narrowed.max_age_hours,
             max_fetches: MAX_SEARCH_FETCHES,
+            category,
         };
         let topic = Topic::new(&query.topic);
         let mut results = self.backend.search(ctx, query.clone()).await?;
@@ -380,6 +396,8 @@ impl ResearchHost {
                 published_at: item.published_at.clone(),
                 retrieved_at: queried_at.clone(),
                 evidence_sha256: None,
+                resolved_url: None,
+                publisher_host: None,
                 via: format!("search:{}", item.via),
             });
             items.push(json!({
@@ -504,10 +522,13 @@ impl ResearchHost {
         } else {
             item.title.clone()
         };
+        let (resolved_url, publisher_host) = resolve(&item.url, page.final_url.as_deref());
         let output = json!({
             "id": id,
             "title": clip(&title, 400),
             "url": item.url,
+            "resolved_url": resolved_url,
+            "publisher_host": publisher_host,
             "source": clip(&item.source, 200),
             "language": clip(&item.language, 16),
             "published_at": clip(&item.published_at, 40),
@@ -526,6 +547,8 @@ impl ResearchHost {
             published_at: item.published_at.clone(),
             retrieved_at,
             evidence_sha256: Some(hash),
+            resolved_url,
+            publisher_host,
             via: "article".into(),
         }];
         self.state(&ctx.run_id, |s| {
@@ -1000,6 +1023,26 @@ fn host_of(url: &str) -> Option<String> {
     (!host.is_empty()).then_some(host)
 }
 
+/// Where an item's read ended (`resolved_url`) and its publisher's host.
+/// A read that ended on an aggregator (still a Google News link) is not
+/// resolved; the publisher host then comes from the item's own link unless
+/// that is an aggregator's too.
+fn resolve(url: &str, final_url: Option<&str>) -> (Option<String>, Option<String>) {
+    let not_aggregator =
+        |u: &&str| host_of(u).is_some_and(|h| !AGGREGATOR_HOSTS.contains(&h.as_str()));
+    let resolved = final_url
+        .map(str::trim)
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        .filter(not_aggregator)
+        .filter(|u| u.len() <= 2048)
+        .map(str::to_owned);
+    let host = resolved
+        .as_deref()
+        .or(Some(url).filter(not_aggregator))
+        .and_then(host_of);
+    (resolved, host)
+}
+
 /// What identifies an item's publisher before it is read: its source name,
 /// and its link's host unless that is an aggregator's.
 fn publisher_keys(item: &FoundItem) -> Vec<String> {
@@ -1017,6 +1060,24 @@ fn publisher_keys(item: &FoundItem) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn google_news_links_resolve_only_off_the_aggregator() {
+        let gn = "https://news.google.com/rss/articles/CBMi?oc=5";
+        assert_eq!(resolve(gn, None), (None, None));
+        assert_eq!(resolve(gn, Some(gn)), (None, None));
+        assert_eq!(
+            resolve(gn, Some("https://www.startupfortune.com/dhh/")),
+            (
+                Some("https://www.startupfortune.com/dhh/".into()),
+                Some("startupfortune.com".into())
+            )
+        );
+        assert_eq!(
+            resolve("https://bbc.co.uk/a", None),
+            (None, Some("bbc.co.uk".into()))
+        );
+    }
 
     #[test]
     fn refusals_mark_the_publisher_and_the_host_the_read_ended_on() {

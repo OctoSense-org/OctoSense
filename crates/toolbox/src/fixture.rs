@@ -88,6 +88,10 @@ pub struct RecordedPage {
     pub title: Option<String>,
     #[serde(default)]
     pub delay_ms: u64,
+    /// Where the read ended after redirects (a Google News link's publisher
+    /// page); absent means the backend did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_url: Option<String>,
     /// Replay a failed read (blocked, no main text, …).
     #[serde(default)]
     pub error: Option<String>,
@@ -195,6 +199,7 @@ impl ResearchBackend for FixtureBackend {
             Ok(PageText {
                 text: page.text.clone(),
                 title: page.title.clone(),
+                final_url: page.final_url.clone(),
             })
         })
     }

@@ -9,6 +9,10 @@
       "version": "1.1.0",
       "digest": "a62e9457387aa33a6165638c61381442f2a78bdf57b8ab30b49f28c841770cc6"
     },
+    "dossier": {
+      "version": "1.1.0",
+      "digest": "5bfbb70e5d5a91f6ca3eb53555c8e3879f0161d9d5394efeb081482eb24e1d34"
+    },
     "market-brief": {
       "version": "1.1.0",
       "digest": "b9886ab78bf69459bf7c56720ee33871f026175b0870b746d5cc42314e953754"
