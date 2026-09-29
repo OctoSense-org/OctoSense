@@ -346,6 +346,14 @@ pub struct HostToolApproval {
     /// What started the turn, stamped by the host (see
     /// [`HostToolCall::trigger`]); `Unknown` until then.
     pub trigger: crate::TurnTrigger,
+    /// octos's own tool approval (`write_file`, `shell`, ...) raised on the
+    /// peer's session or one of its contexts, not a `host_tool` one: `app`
+    /// is then the peer's app and `tool` octos's tool name (ADR 0004 §8:
+    /// the shell renders every approval).
+    pub octos: bool,
+    /// The client of the context it was raised in (a Rinx mini app), from
+    /// the host's own context table.
+    pub client: Option<String>,
 }
 
 impl HostToolApproval {
@@ -372,6 +380,41 @@ impl HostToolApproval {
             tool_call_id: s(d, "tool_call_id"),
             outcome_unknown_before: d.get("outcome_unknown_before").and_then(Value::as_bool).unwrap_or(false),
             trigger: crate::TurnTrigger::Unknown,
+            octos: false,
+            client: None,
+        })
+    }
+
+    /// Any other `approval/requested` raised on `app`'s peer session or one
+    /// of its contexts: octos's own tool approval, owned by the peer's app.
+    /// The arguments are the typed details when present, else the title and
+    /// body. `context_id` and `client` are the host's to stamp.
+    pub fn parse_octos(params: &Value, session: &str, app: &str) -> Option<HostToolApproval> {
+        if params.get("approval_kind").and_then(Value::as_str) == Some(HOST_TOOL_KIND) {
+            return None;
+        }
+        let s = |key: &str| params.get(key).and_then(Value::as_str).map(str::to_owned);
+        let args = match params.get("typed_details") {
+            Some(details) if !details.is_null() => details.clone(),
+            _ => json!({"title": s("title").unwrap_or_default(), "body": s("body").unwrap_or_default()}),
+        };
+        Some(HostToolApproval {
+            approval_id: s("approval_id").filter(|id| !id.is_empty())?,
+            session_id: session.to_owned(),
+            turn_id: s("turn_id").unwrap_or_default(),
+            app: app.to_owned(),
+            tool: s("tool_name").unwrap_or_else(|| "tool".into()),
+            args,
+            risk: s("risk_level").unwrap_or_default(),
+            outward: false,
+            calling_kind: CallerKind::AppPeer,
+            calling_peer: None,
+            context_id: None,
+            tool_call_id: s("tool_call_id"),
+            outcome_unknown_before: false,
+            trigger: crate::TurnTrigger::Unknown,
+            octos: true,
+            client: None,
         })
     }
 }
@@ -546,9 +589,11 @@ pub trait ToolHost: Send + Sync {
         Ok(())
     }
 
-    /// A `host_tool` approval raised on `app_id`'s peer or one of its
-    /// contexts. True when the host took it (it answers through `answer`);
-    /// false leaves it to the app's context, as before.
+    /// An approval raised on `app_id`'s peer or one of its contexts: a
+    /// `host_tool` one, or octos's own ([`HostToolApproval::octos`]). True
+    /// when the host took it (it answers through `answer`, and the app's
+    /// context only hears [`HANDLED_BY_HOST`]); false leaves it to the app's
+    /// context, as before.
     fn host_tool_approval(&self, _app_id: &str, _account: Option<&str>, _approval: HostToolApproval, _answer: ApprovalAnswer) -> bool {
         false
     }

@@ -44,6 +44,9 @@ pub const SYSTEM: &str = "system";
 pub const TERMINAL_RUN: &str = "terminal.run";
 /// Developer mode's command tool (§13).
 pub const DEV_RUN: &str = "dev.run";
+/// octos's own tools that run commands: always a live approval, never a
+/// standing rule (§8, §12).
+pub const OCTOS_COMMANDS: &[&str] = &["shell", "bash", "exec", "run_command"];
 
 /// A script app's peer is `card.<app id>`; its tools are `<app id>.*`.
 pub fn app_of_peer(app: &str) -> &str {
@@ -406,16 +409,20 @@ impl Relay {
     }
 
     fn approval(&mut self, app: &str, account: Option<String>, approval: HostToolApproval, answer: ApprovalAnswer, env: &mut dyn Env) {
-        let (auto, command) = env.tool_rule(&approval.app, &approval.tool);
+        let calling = app_of_peer(app).to_string();
+        // octos's own tool approval on an app's peer or context is the app
+        // agent's call on a tool the app owns; a `host_tool` one names its
+        // owning app.
+        let owner = if approval.octos { calling.clone() } else { approval.app.clone() };
+        let (auto, command) = env.tool_rule(&owner, &approval.tool);
         let mut spec = ToolSpec::host(&approval.tool);
         spec.auto_approvable = auto;
-        if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN {
+        if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN || (approval.octos && OCTOS_COMMANDS.contains(&approval.tool.as_str())) {
             spec = spec.command();
         }
-        let calling = app_of_peer(app).to_string();
         let caller = match approval.calling_kind {
             CallerKind::System => Caller::SystemAgent,
-            CallerKind::AppPeer if calling == approval.app => Caller::OwnAgent { client: None },
+            CallerKind::AppPeer if calling == owner => Caller::OwnAgent { client: approval.client.clone() },
             CallerKind::AppPeer => Caller::AppAgent { app: calling },
         };
         let id = format!("{APPROVAL_PREFIX}{}", approval.approval_id);
@@ -428,7 +435,7 @@ impl Relay {
             ..RequestContext::default()
         };
         self.approvals.insert(id.clone(), answer.clone());
-        if let Route::Refused(why) = env.request_approval(&approval.app, spec, approval.args.clone(), caller, context) {
+        if let Route::Refused(why) | Route::LeftToClient(why) = env.request_approval(&owner, spec, approval.args.clone(), caller, context) {
             self.approvals.remove(&id);
             answer.respond(false);
             env.log(format!("host tools: approval {} refused: {why}", approval.approval_id));
