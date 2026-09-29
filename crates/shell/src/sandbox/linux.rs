@@ -9,6 +9,16 @@
 //! allowed only from the program's roots (and the system's, when
 //! `processes` is true).
 //!
+//! **The host's private directories** ([`Policy::private`]: the OctoSense
+//! home, the kernel's core dir) stay closed whatever a grant opens. Landlock
+//! cannot deny beneath an allowed directory, so a grant that contains one
+//! (the Terminal's `home:rw`) is split: each entry of the granted directory
+//! is granted on its own, recursing only into directories on the way to a
+//! private one, which get no right at all. The app's own jail and secrets
+//! are granted by themselves. The limits of that split: entries created in
+//! a split directory after the app started (a new file directly in `~`) are
+//! not covered, and the directories on the way cannot be listed.
+//!
 //! seccomp refuses, with `EPERM`, what no process app needs: `ptrace`,
 //! `process_vm_readv/writev`, `perf_event_open`, `bpf`, `userfaultfd`,
 //! `kexec_load`, mounts, namespaces and the kernel keyring; with
@@ -158,7 +168,41 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
             add(program.clone(), all);
         }
     }
-    out
+    let own = [policy.jail.clone(), policy.secrets.clone()];
+    let mut split = Vec::new();
+    for rule in out {
+        if own.contains(&rule.path) {
+            split.push(rule);
+        } else {
+            around_private(rule, &policy.private, &mut split);
+        }
+    }
+    split
+}
+
+/// `rule`, minus the private directories: dropped when it lies inside one;
+/// when it contains one, replaced by a rule per entry of its directory,
+/// recursing toward the private ones (which get nothing).
+pub fn around_private(rule: Rule, private: &[PathBuf], out: &mut Vec<Rule>) {
+    if private.iter().any(|p| rule.path.starts_with(p)) {
+        return;
+    }
+    if !private.iter().any(|p| p.starts_with(&rule.path)) {
+        out.push(rule);
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&rule.path) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Landlock grants what a link resolves to: a link into (or above) a
+        // private directory gets nothing.
+        let real = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if real != path && private.iter().any(|p| real.starts_with(p) || p.starts_with(&real)) {
+            continue;
+        }
+        let access = if path.is_dir() { rule.access } else { rule.access & FILE_RIGHTS };
+        around_private(Rule { path, access }, private, out);
+    }
 }
 
 /// The seccomp program for `processes` on this architecture, `None` where

@@ -90,6 +90,12 @@ pub struct Policy {
     pub program: Vec<PathBuf>,
     /// The person's data roots: closed except for the grants above.
     pub protected: Vec<PathBuf>,
+    /// The host's own private directories (the OctoSense home, the apps
+    /// and secrets roots, the kernel's core dir): closed LAST, after every
+    /// grant, so even a broad grant (the Terminal's `home:rw`) never reaches
+    /// peer host tokens, other apps' jails and secrets, or kernel data. Only
+    /// the app's own jail and secrets are opened again inside them.
+    pub private: Vec<PathBuf>,
     pub network: Network,
     /// The shell's hub port, reachable on loopback whatever `network` is.
     pub hub_port: u16,
@@ -171,6 +177,7 @@ impl Policy {
             external,
             program,
             protected,
+            private: Vec::new(),
             network: app.network,
             hub_port,
             processes: app.processes,
@@ -208,6 +215,35 @@ impl Policy {
             if self.processes { "allowed" } else { "none" },
         )
     }
+}
+
+/// The host's private directories for a sandbox: the OctoSense home, the
+/// apps and secrets roots (they may live elsewhere), the kernel's core dir,
+/// and the kernel home around a `.octos` core dir. Each resolved, without
+/// duplicates.
+pub fn host_private_dirs(octosense_home: &Path, apps_root: &Path, secrets_root: &Path, core_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut push = |p: &Path| {
+        if p.as_os_str().is_empty() || p.parent().is_none() {
+            return; // never the file system root
+        }
+        let p = p.to_path_buf();
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    };
+    push(octosense_home);
+    push(apps_root);
+    push(secrets_root);
+    if let Some(core) = core_dir {
+        push(core);
+        if core.file_name().is_some_and(|n| n == ".octos") {
+            if let Some(kernel_home) = core.parent() {
+                push(kernel_home);
+            }
+        }
+    }
+    out
 }
 
 /// Whether `OCTOSENSE_SANDBOX_NARROW` names `app` (see [`Policy::narrowed`]).

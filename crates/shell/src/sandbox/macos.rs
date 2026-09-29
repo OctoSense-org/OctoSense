@@ -6,8 +6,11 @@
 //! (libraries, fonts, the window server, Metal's shader cache) and closes
 //! the person's data roots except the grants. In SBPL the last matching
 //! rule wins, so the order below is the policy: close the roots, reopen the
-//! ancestors' metadata (paths must resolve), the program read-only, then
-//! the jail, secrets and `external` grants.
+//! ancestors' metadata (paths must resolve), the program read-only, the
+//! jail, secrets and `external` grants; then close the host's private
+//! directories again ([`Policy::private`]: the OctoSense home, the kernel's
+//! core dir), whatever a grant opened, and reopen only the app's own jail
+//! and secrets inside them.
 
 use std::path::{Path, PathBuf};
 
@@ -73,6 +76,27 @@ pub fn profile(policy: &Policy) -> String {
         out.push_str(&format!("(allow file-read*{})\n", subpaths(&ro)));
     }
     out.push_str(&format!(";; its jail, its secrets and external grants\n(allow file-read* file-write*{})\n", subpaths(&rw)));
+    let private: Vec<PathBuf> = policy.private.iter().map(|p| resolved(p)).collect();
+    if !private.is_empty() {
+        let own = [resolved(&policy.jail), resolved(&policy.secrets)];
+        out.push_str(&format!(
+            ";; the host's private directories stay closed whatever a grant opened (peer tokens, other apps, the kernel)\n(deny file-read* file-write*{})\n",
+            subpaths(&private)
+        ));
+        let mut inside: Vec<PathBuf> = Vec::new();
+        for path in &own {
+            for a in ancestors(path) {
+                if private.iter().any(|root| a.starts_with(root)) && !inside.contains(&a) {
+                    inside.push(a);
+                }
+            }
+        }
+        if !inside.is_empty() {
+            let lits: String = inside.iter().map(|p| format!(" (literal {})", quote(p))).collect();
+            out.push_str(&format!("(allow file-read-metadata{lits})\n"));
+        }
+        out.push_str(&format!(";; only its own jail and secrets inside them\n(allow file-read* file-write*{})\n", subpaths(&own)));
+    }
     if policy.network == Network::None {
         out.push_str(&format!(
             ";; network: the shell's hub only\n(deny network*)\n(allow network-outbound (remote ip \"localhost:{}\"))\n",
