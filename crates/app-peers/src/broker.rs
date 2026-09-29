@@ -1904,16 +1904,20 @@ impl OctosAppService for Broker {
         let changed = {
             let mut st = self.0.lock();
             if st.account.as_deref() == account {
-                false
+                None
             } else {
-                st.account = account.map(str::to_owned);
+                let previous = std::mem::replace(&mut st.account, account.map(str::to_owned));
                 st.generation += 1;
                 st.peer = None;
                 st.model = None;
-                true
+                Some(previous)
             }
         };
-        if changed {
+        if let Some(previous) = changed {
+            // The host's account lifecycle (ADR 0004 §11) first: a sign-out
+            // suspends before the contexts go, a sign-in resumes before the
+            // peer is prepared below.
+            crate::storage::account_changed(&self.0.cfg.app_id, previous.as_deref(), account);
             self.0.revoke_contexts();
             // Create or resume the new account's peer now (no inference), so
             // the system agent can address it from launch on.

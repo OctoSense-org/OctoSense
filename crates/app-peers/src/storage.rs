@@ -134,6 +134,40 @@ pub fn withdraw(module: &str, scope: &str) -> bool {
         .is_some()
 }
 
+/// Told when an app's bound account changes: `(app id, previous, current)`,
+/// the app id as its assistant service knows it (a contained app's is its
+/// peer id, `card.<manifest id>`). The shell's account lifecycle (ADR 0004
+/// §11): `Some(a)` → `None` signs `a` out (its agent is suspended, never
+/// closed), `→ Some(b)` signs `b` in (its folder opened, its agent
+/// resumed). A switch `Some(a)` → `Some(b)` signs `b` in and leaves `a` as it
+/// was: an app that ends a session says so with `None` first.
+pub type AccountObserver = Arc<dyn Fn(&str, Option<&str>, Option<&str>) + Send + Sync>;
+
+fn account_observer() -> &'static Mutex<Option<AccountObserver>> {
+    static OBSERVER: OnceLock<Mutex<Option<AccountObserver>>> = OnceLock::new();
+    OBSERVER.get_or_init(Default::default)
+}
+
+/// Install (or with `None` remove) the process's account observer (the
+/// shell, once at startup). A standalone app installs none.
+pub fn observe_accounts(observer: Option<AccountObserver>) {
+    *account_observer().lock().unwrap_or_else(|e| e.into_inner()) = observer;
+}
+
+/// An app's assistant service bound a new account (`set_account`), before
+/// it revokes the previous account's contexts or prepares the new peer, so
+/// the host's suspension state is current when the broker asks for it.
+/// Called outside every lock; a no-op without an observer or a change.
+pub fn account_changed(app_id: &str, previous: Option<&str>, current: Option<&str>) {
+    if previous == current {
+        return;
+    }
+    let observer = account_observer().lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(observer) = observer {
+        observer(app_id, previous, current);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +222,23 @@ mod tests {
         offer("probe", "i2g1", Arc::new(Fixed("/y".into())));
         assert!(withdraw("probe", "i2g1"));
         assert!(!withdraw("probe", "i2g1"));
+    }
+
+    #[test]
+    fn account_changes_reach_the_observer_once_per_change() {
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        observe_accounts(Some(Arc::new(move |app: &str, from: Option<&str>, to: Option<&str>| {
+            if app == "observer-probe" {
+                log.lock().unwrap().push(format!("{from:?}->{to:?}"));
+            }
+        })));
+        account_changed("observer-probe", None, Some("a"));
+        account_changed("observer-probe", Some("a"), Some("a"));
+        account_changed("observer-probe", Some("a"), None);
+        observe_accounts(None);
+        account_changed("observer-probe", None, Some("b"));
+        assert_eq!(*seen.lock().unwrap(), vec!["None->Some(\"a\")", "Some(\"a\")->None"]);
     }
 
     #[test]
