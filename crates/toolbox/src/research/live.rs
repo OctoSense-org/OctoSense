@@ -1212,6 +1212,7 @@ impl ResearchBackend for InterimResearch {
             Ok(PageText {
                 text,
                 title: Some(article.title.to_string()).filter(|t| !t.is_empty()),
+                final_url: Some(final_url),
             })
         })
     }
@@ -1397,6 +1398,7 @@ mod tests {
             limit: 5,
             max_age_hours: Some(72),
             max_fetches: 8,
+            category: None,
         }
     }
 

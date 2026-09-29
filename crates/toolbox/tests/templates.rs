@@ -83,7 +83,10 @@ async fn every_template_matches_its_fixtures() {
                 .filter(|s| s.starts_with("http"))
             {
                 assert!(
-                    result.provenance.iter().any(|p| p.url == url),
+                    result
+                        .provenance
+                        .iter()
+                        .any(|p| p.url == url || p.resolved_url.as_deref() == Some(url)),
                     "{name}: {url} has no provenance"
                 );
             }
@@ -119,4 +122,44 @@ async fn every_template_matches_its_fixtures() {
         }
     }
     assert!(checked >= 12, "{checked} fixture cases");
+}
+
+fn template(id: &str) -> octosense_toolbox::library::Template {
+    let (_, manifest, source) = BUILTIN
+        .iter()
+        .find(|(i, _, _)| *i == id)
+        .expect("template in BUILTIN");
+    Template::from_parts(manifest, source, TemplateOrigin::Library).unwrap()
+}
+
+/// The dossier template's own fixtures: its two cases (a clean two-question
+/// run; a failed read and an empty question) replay green against the ported
+/// template.
+#[tokio::test]
+async fn the_dossier_fixtures_replay() {
+    let app = AppContext::new("os.news", std::env::temp_dir()).grant("research");
+    let template = template("dossier");
+    for (_, mut case) in fixture_cases("dossier") {
+        let name = format!("dossier/{}", case.name);
+        let result = run(
+            &template,
+            &app,
+            case.params.clone(),
+            &fixture::host(&case.fixture),
+            RunOptions::default(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+        let expected = case
+            .expected
+            .take()
+            .unwrap_or_else(|| panic!("{name} has no expected result"));
+        assert_eq!(
+            result.status, expected.status,
+            "{name}: {:?}",
+            expected.reasons
+        );
+        assert_eq!(result.status_reasons, expected.reasons, "{name}");
+        assert_eq!(result.data, expected.data, "{name}");
+    }
 }

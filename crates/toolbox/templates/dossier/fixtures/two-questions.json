@@ -1,0 +1,329 @@
+{
+  "name": "two-questions",
+  "params": {
+    "categories": [
+      "general",
+      "news"
+    ],
+    "language": "en",
+    "questions": [
+      {
+        "queries": [
+          {
+            "language": "en",
+            "terms": "Lumen desktop"
+          },
+          {
+            "language": "zh",
+            "terms": "Lumen 桌面"
+          }
+        ],
+        "question": "What is the Lumen desktop and who started it?"
+      },
+      {
+        "queries": [
+          {
+            "language": "en",
+            "terms": "Lumen desktop release"
+          }
+        ],
+        "question": "When was Lumen desktop first released?"
+      }
+    ],
+    "read_budget": 6,
+    "read_top": 2
+  },
+  "fixture": {
+    "now": "2026-09-20T08:00:00Z",
+    "searches": [
+      {
+        "topic": "Lumen desktop",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "wikipedia",
+          "google_news"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/wiki/lumen",
+            "title": "Lumen (desktop environment)",
+            "source": "Example Wiki",
+            "language": "en",
+            "published_at": "2024-03-01T00:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/news/lumen-launch",
+            "title": "Developer Ada Park launches Lumen desktop",
+            "source": "Harbor Daily",
+            "language": "en",
+            "published_at": "2024-06-10T09:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Lumen 桌面",
+        "language": "zh",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "wikipedia",
+          "google_news"
+        ],
+        "items": [
+          {
+            "url": "https://example.invalid/zh/lumen",
+            "title": "Lumen 桌面环境简介",
+            "source": "示例科技",
+            "language": "zh",
+            "published_at": "2024-07-02T00:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      },
+      {
+        "topic": "Lumen desktop release",
+        "language": "en",
+        "delay_ms": 30,
+        "partial": false,
+        "providers": [
+          "wikipedia",
+          "google_news"
+        ],
+        "items": [
+          {
+            "url": "https://news.google.com/rss/articles/CBMiLumen10?oc=5",
+            "title": "Lumen desktop 1.0 release arrives",
+            "source": "Tech Courier",
+            "language": "en",
+            "published_at": "2024-06-10T12:00:00Z",
+            "via": ""
+          },
+          {
+            "url": "https://example.invalid/wiki/lumen",
+            "title": "Lumen (desktop environment)",
+            "source": "Example Wiki",
+            "language": "en",
+            "published_at": "2024-03-01T00:00:00Z",
+            "via": ""
+          }
+        ],
+        "error": null
+      }
+    ],
+    "pages": {
+      "https://example.invalid/news/lumen-launch": {
+        "text": "Developer Ada Park launched the Lumen desktop on 10 June 2024. Park said the Lumen desktop grew out of personal configuration files shared since 2023.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/wiki/lumen": {
+        "text": "Lumen is a desktop environment for Linux started by developer Ada Park in 2024. The Lumen desktop focuses on keyboard-driven tiling windows. Its first public release was version 1.0 in June 2024.",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://example.invalid/zh/lumen": {
+        "text": "Lumen 桌面是一个面向 Linux 的桌面环境,由开发者 Ada Park 于 2024 年发起。Lumen 桌面以键盘操作为主。",
+        "title": null,
+        "delay_ms": 40,
+        "error": null
+      },
+      "https://news.google.com/rss/articles/CBMiLumen10?oc=5": {
+        "text": "The Lumen desktop 1.0 release arrived on 10 June 2024 with an installer for Arch Linux. The release of Lumen desktop drew 2,000 stars in its first week.",
+        "title": null,
+        "delay_ms": 40,
+        "final_url": "https://www.techcourier.example/2024/06/lumen-1-0",
+        "error": null
+      }
+    },
+    "translations": {},
+    "model": {
+      "delay_ms": 0,
+      "fail": false,
+      "inject_url": false,
+      "cite_unknown": false
+    }
+  },
+  "expected": {
+    "status": "ready",
+    "reasons": [],
+    "data": {
+      "language": "en",
+      "missing": 0,
+      "questions": [
+        {
+          "digest": {
+            "dropped_points": 0,
+            "language": "en",
+            "off_topic": [],
+            "points": [
+              {
+                "citations": [
+                  "s3564eaa47d5a"
+                ],
+                "text": "Lumen is a desktop environment for Linux started by developer Ada Park in 2024."
+              },
+              {
+                "citations": [
+                  "se80a28f6cf9d"
+                ],
+                "text": "Lumen 桌面是一个面向 Linux 的桌面环境,由开发者 Ada Park 于 2024 年发起。"
+              }
+            ],
+            "summary": "Sources: Lumen (desktop environment); Lumen 桌面环境简介",
+            "summary_check": {
+              "dropped": 0,
+              "flagged": 0,
+              "sentences": 1
+            },
+            "task": "digest"
+          },
+          "failed": 0,
+          "found": 3,
+          "left": 1,
+          "off_topic": 0,
+          "question": "What is the Lumen desktop and who started it?",
+          "read": 2,
+          "searches": [
+            {
+              "answered": true,
+              "category": "general",
+              "found": 2,
+              "language": "en",
+              "terms": "Lumen desktop"
+            },
+            {
+              "answered": true,
+              "category": "news",
+              "found": 2,
+              "language": "en",
+              "terms": "Lumen desktop"
+            },
+            {
+              "answered": true,
+              "category": "general",
+              "found": 1,
+              "language": "zh",
+              "terms": "Lumen 桌面"
+            },
+            {
+              "answered": true,
+              "category": "news",
+              "found": 1,
+              "language": "zh",
+              "terms": "Lumen 桌面"
+            }
+          ],
+          "sources": [
+            {
+              "evidence_sha256": "f58c6d6e0311ced6d366521fdc4304eea9eacb08c6598c92db9de087694f5bd3",
+              "id": "s3564eaa47d5a",
+              "language": "en",
+              "published_at": "2024-03-01T00:00:00Z",
+              "publisher_host": "example.invalid",
+              "resolved_url": null,
+              "source": "Example Wiki",
+              "title": "Lumen (desktop environment)",
+              "url": "https://example.invalid/wiki/lumen"
+            },
+            {
+              "evidence_sha256": "7c423a4489653cc9124ace5b07884fd80f4f334134a66eb902ca3e715c47cbfd",
+              "id": "se80a28f6cf9d",
+              "language": "zh",
+              "published_at": "2024-07-02T00:00:00Z",
+              "publisher_host": "example.invalid",
+              "resolved_url": null,
+              "source": "示例科技",
+              "title": "Lumen 桌面环境简介",
+              "url": "https://example.invalid/zh/lumen"
+            }
+          ],
+          "unreadable": 0
+        },
+        {
+          "digest": {
+            "dropped_points": 0,
+            "language": "en",
+            "off_topic": [],
+            "points": [
+              {
+                "citations": [
+                  "s590de35722df"
+                ],
+                "text": "The Lumen desktop 1.0 release arrived on 10 June 2024 with an installer for Arch Linux."
+              },
+              {
+                "citations": [
+                  "s3564eaa47d5a"
+                ],
+                "text": "Lumen is a desktop environment for Linux started by developer Ada Park in 2024."
+              }
+            ],
+            "summary": "Sources: Lumen desktop 1.0 release arrives; Lumen (desktop environment)",
+            "summary_check": {
+              "dropped": 0,
+              "flagged": 0,
+              "sentences": 1
+            },
+            "task": "digest"
+          },
+          "failed": 0,
+          "found": 2,
+          "left": 0,
+          "off_topic": 0,
+          "question": "When was Lumen desktop first released?",
+          "read": 2,
+          "searches": [
+            {
+              "answered": true,
+              "category": "general",
+              "found": 2,
+              "language": "en",
+              "terms": "Lumen desktop release"
+            },
+            {
+              "answered": true,
+              "category": "news",
+              "found": 2,
+              "language": "en",
+              "terms": "Lumen desktop release"
+            }
+          ],
+          "sources": [
+            {
+              "evidence_sha256": "4393f82c52ba4bdf2fc7483635526580b66423509b32214f3261add13aaa2fd5",
+              "id": "s590de35722df",
+              "language": "en",
+              "published_at": "2024-06-10T12:00:00Z",
+              "publisher_host": "techcourier.example",
+              "resolved_url": "https://www.techcourier.example/2024/06/lumen-1-0",
+              "source": "Tech Courier",
+              "title": "Lumen desktop 1.0 release arrives",
+              "url": "https://news.google.com/rss/articles/CBMiLumen10?oc=5"
+            },
+            {
+              "evidence_sha256": "f58c6d6e0311ced6d366521fdc4304eea9eacb08c6598c92db9de087694f5bd3",
+              "id": "s3564eaa47d5a",
+              "language": "en",
+              "published_at": "2024-03-01T00:00:00Z",
+              "publisher_host": "example.invalid",
+              "resolved_url": null,
+              "source": "Example Wiki",
+              "title": "Lumen (desktop environment)",
+              "url": "https://example.invalid/wiki/lumen"
+            }
+          ],
+          "unreadable": 0
+        }
+      ],
+      "searches_skipped": 0
+    }
+  }
+}

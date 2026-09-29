@@ -116,9 +116,32 @@ pub struct NarrowedSearch {
 /// Narrows one search to the grant, or refuses it with the reason: a
 /// language, region or category outside the grant is refused; recency and
 /// the result count are clamped. With the feature this is
-/// `Scope::search_args`.
+/// `Scope::search_args`. Searches [`SEARCH_CATEGORY`].
 pub fn narrow_search(
     scope: &Scope,
+    topic: &str,
+    language: Option<&str>,
+    region: Option<&str>,
+    max_age_hours: Option<u32>,
+    limit: u32,
+) -> Result<NarrowedSearch, String> {
+    narrow_search_in(
+        scope,
+        SEARCH_CATEGORY,
+        topic,
+        language,
+        region,
+        max_age_hours,
+        limit,
+    )
+}
+
+/// [`narrow_search`] in another metasearch category (`general`, `it`,
+/// `social`, `science`, `news`), which must be in the grant's `categories`
+/// (an empty list allows every category).
+pub fn narrow_search_in(
+    scope: &Scope,
+    category: &str,
     topic: &str,
     language: Option<&str>,
     region: Option<&str>,
@@ -128,7 +151,7 @@ pub fn narrow_search(
     #[cfg(feature = "octos-engine")]
     {
         let now = chrono::Utc::now();
-        let mut args = json!({"query": topic, "category": SEARCH_CATEGORY, "count": limit});
+        let mut args = json!({"query": topic, "category": category, "count": limit});
         if let Some(language) = language.filter(|l| !l.is_empty()) {
             args["lang"] = json!([language]);
         }
@@ -149,7 +172,15 @@ pub fn narrow_search(
         })
     }
     #[cfg(not(feature = "octos-engine"))]
-    compat::narrow_search(scope, topic, language, region, max_age_hours, limit)
+    compat::narrow_search_in(
+        scope,
+        category,
+        topic,
+        language,
+        region,
+        max_age_hours,
+        limit,
+    )
 }
 
 /// A `deep_crawl` narrowed to the grant (the `crawl` capability's limits).

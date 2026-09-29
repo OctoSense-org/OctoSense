@@ -297,6 +297,7 @@ async fn the_tool_surface_lists_runs_forks_and_evaluates() {
         [
             "briefing",
             "compare",
+            "dossier",
             "market-brief",
             "news-digest",
             "topic-brief",

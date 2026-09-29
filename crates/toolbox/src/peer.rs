@@ -174,11 +174,12 @@ pub fn catalog(library: &Library) -> Vec<Value> {
         decls.push(decl(
             SEARCH,
             "read",
-            "Search free news sources (Google News, GDELT, publisher feeds) within this app's granted languages, regions, domains and recency; returns dated items with their sources, saved in this app's toolbox folder.".into(),
+            "Search free sources through the octos metasearch within this app's granted languages, regions, domains, categories and recency: category `news` (default: Google News, GDELT, publisher feeds, Hacker News), `general` (general web search: DuckDuckGo, Bing, Brave, Google, Wikipedia), `it` (GitHub, Hacker News, Stack Exchange), `science` (arXiv, OpenAlex), `social` (Mastodon; posts are not returned as evidence). Returns dated items with their sources, saved in this app's toolbox folder.".into(),
             json!({
                 "type": "object", "required": ["query"], "additionalProperties": false,
                 "properties": {
                     "query": {"type": "string", "minLength": 1, "maxLength": 300},
+                    "category": {"type": "string", "enum": ["news", "general", "it", "science", "social"], "description": "metasearch category (default news; must be granted to the app)"},
                     "lang": {"type": "string", "description": "BCP-47 language to search in (must be granted to the app)"},
                     "region": {"type": "string", "description": "ISO 3166-1 alpha-2 region"},
                     "max_age_days": {"type": "integer", "minimum": 1, "description": "only material this recent"},
@@ -414,8 +415,21 @@ impl PeerToolbox {
         let count = args["count"]
             .as_u64()
             .map_or(DEFAULT_SEARCH_COUNT, |c| c.clamp(1, 30) as u32);
-        let narrowed = scope::narrow_search(&app.scope, query, lang, region, max_age_hours, count)
-            .map_err(|e| PeerError::new("denied", e))?;
+        let category = args["category"]
+            .as_str()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .map(str::to_owned);
+        let narrowed = scope::narrow_search_in(
+            &app.scope,
+            category.as_deref().unwrap_or(scope::SEARCH_CATEGORY),
+            query,
+            lang,
+            region,
+            max_age_hours,
+            count,
+        )
+        .map_err(|e| PeerError::new("denied", e))?;
         let ctx = self.context(app, SEARCH, 0);
         let found = self
             .backend
@@ -428,6 +442,7 @@ impl PeerToolbox {
                     limit: narrowed.limit,
                     max_age_hours: narrowed.max_age_hours,
                     max_fetches: MAX_SEARCH_FETCHES,
+                    category: category.clone(),
                 },
             )
             .await
@@ -448,7 +463,7 @@ impl PeerToolbox {
             .collect();
         let now = self.stamp();
         let doc = json!({
-            "kind": "search", "app_id": app.app_id, "query": query, "retrieved_at": now,
+            "kind": "search", "app_id": app.app_id, "query": query, "category": category.as_deref().unwrap_or(scope::SEARCH_CATEGORY), "retrieved_at": now,
             "items": items, "providers": found.providers, "partial": found.partial, "notes": notes,
         });
         let file = save(&app.folder, "search", query, &doc)?;

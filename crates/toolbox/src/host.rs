@@ -139,6 +139,15 @@ pub struct Provenance {
     /// SHA-256 of the evidence text the host kept, once read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_sha256: Option<String>,
+    /// Where the read of it ended, after redirects (a Google News link's
+    /// publisher page); absent when not read or still on the aggregator.
+    /// `url` stays the search result's link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_url: Option<String>,
+    /// The publisher's host (lowercase, no `www.`): `resolved_url`'s, else
+    /// `url`'s unless that is an aggregator's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher_host: Option<String>,
     /// The provider or method that produced it (`search:gdelt`, `article`).
     pub via: String,
 }

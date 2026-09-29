@@ -1,0 +1,311 @@
+use mod.research
+use mod.std.array
+
+// Dossier: background research on a few questions. Each question brings its
+// own sub-queries (in the languages the caller chose); each sub-query is
+// searched in each requested category over a long window, all searches
+// started together. Each question's readable results are pooled in rank
+// order, round-robin across its searches, read in rounds up to `read_top`,
+// and digested once with citations.
+
+// 1. Plan the searches: each question gets an equal share of the run's
+// search cap (30), filled query by query, category by category. Every
+// search starts before any is awaited.
+let max_searches = 30
+let nq = array.len(request.questions)
+let cap_each = 0
+while (cap_each + 1) * nq <= max_searches {
+    cap_each = cap_each + 1
+}
+let searches = []
+let meta = []
+let owners = []
+let skipped = 0
+let reasons = []
+let qi = 0
+for q in request.questions {
+    let planned = 0
+    for query in q.queries {
+        for category in request.categories {
+            if planned < cap_each {
+                array.push(meta, {terms: query.terms, language: query.language, category: category, found: 0, answered: true})
+                array.push(owners, qi)
+                array.push(searches, research.search({topic: query.terms, language: query.language, category: category, limit: request.per_search, max_age_hours: request.max_age_days * 24}))
+                planned = planned + 1
+            } else {
+                skipped = skipped + 1
+            }
+        }
+    }
+    qi = qi + 1
+}
+if skipped > 0 {
+    array.push(reasons, skipped + " planned search(es) not run: at most " + cap_each + " searches per question")
+}
+
+// 2. Await the searches. Each search's readable results, in the host's
+// order, with their publishers; results the backend cannot read are
+// counted and skipped.
+let lists = []
+let list_sources = []
+let found_ids = []
+let unreadable = []
+for i in array.range(0, nq) {
+    array.push(found_ids, [])
+    array.push(unreadable, 0)
+}
+let si = 0
+for pending in searches {
+    let found = try pending.await() catch nil
+    let ids = []
+    let sources = []
+    let owner = owners[si]
+    if found == nil {
+        meta[si].answered = false
+    } else {
+        meta[si].found = array.len(found.items)
+        for item in found.items {
+            if array.contains(found_ids[owner], item.id) == false {
+                array.push(found_ids[owner], item.id)
+                if item.readable {
+                    array.push(ids, item.id)
+                    array.push(sources, item.source)
+                } else {
+                    unreadable[owner] = unreadable[owner] + 1
+                }
+            }
+        }
+    }
+    array.push(lists, ids)
+    array.push(list_sources, sources)
+    si = si + 1
+}
+
+// 3. Each question's pool: rank 1 of each of its searches, then rank 2,
+// and so on, each article once.
+let pools = []
+let pool_sources = []
+for q in array.range(0, nq) {
+    let pool = []
+    let pool_source = []
+    let depth = 0
+    let more = true
+    while more {
+        more = false
+        si = 0
+        for ids in lists {
+            if owners[si] == q && depth < array.len(ids) {
+                more = true
+                if array.contains(pool, ids[depth]) == false {
+                    array.push(pool, ids[depth])
+                    array.push(pool_source, list_sources[si][depth])
+                }
+            }
+            si = si + 1
+        }
+        depth = depth + 1
+    }
+    array.push(pools, pool)
+    array.push(pool_sources, pool_source)
+}
+
+// 4. Read in rounds (at most four). Each round starts, for every question
+// still short of `read_top`, reads of its next untried candidates, the
+// first one from a publisher with no failed read in this run when there is
+// one. An article another question already read is reused without a read;
+// one that failed or was off topic is skipped. All read attempts together
+// stay within `read_budget`.
+let kept = []
+let kept_sources = []
+let tried = []
+let failed = []
+let off_topic = []
+for q in array.range(0, nq) {
+    array.push(kept, [])
+    array.push(kept_sources, [])
+    array.push(tried, [])
+    array.push(failed, 0)
+    array.push(off_topic, 0)
+}
+let read_ok = []
+let read_records = []
+let read_bad = []
+let failed_publishers = []
+let attempts = 0
+let missing = 0
+let round = 0
+while round < 4 {
+    let batch = []
+    let batch_q = []
+    let batch_ids = []
+    let batch_publishers = []
+    for q in array.range(0, nq) {
+        let want = request.read_top - array.len(kept[q])
+        let looking = true
+        while want > 0 && looking {
+            let pick = nil
+            let fallback = nil
+            let i = 0
+            for id in pools[q] {
+                if array.contains(tried[q], id) == false {
+                    if fallback == nil {
+                        fallback = i
+                    }
+                    if pick == nil && array.contains(failed_publishers, pool_sources[q][i]) == false {
+                        pick = i
+                    }
+                }
+                i = i + 1
+            }
+            if pick == nil {
+                pick = fallback
+            }
+            if pick == nil {
+                looking = false
+            } elif array.contains(batch_ids, pools[q][pick]) {
+                // Being read for another question this round: reuse it in
+                // the next round.
+                looking = false
+            } else {
+                let id = pools[q][pick]
+                array.push(tried[q], id)
+                let done = -1
+                let j = 0
+                for known in read_ok {
+                    if known == id {
+                        done = j
+                    }
+                    j = j + 1
+                }
+                if done >= 0 {
+                    array.push(kept[q], id)
+                    array.push(kept_sources[q], read_records[done])
+                    want = want - 1
+                } elif array.contains(read_bad, id) {
+                    // Failed or off topic for another question.
+                } elif attempts < request.read_budget {
+                    array.push(batch, research.article({id: id}))
+                    array.push(batch_q, q)
+                    array.push(batch_ids, id)
+                    array.push(batch_publishers, pool_sources[q][pick])
+                    attempts = attempts + 1
+                    want = want - 1
+                } else {
+                    looking = false
+                }
+            }
+        }
+    }
+    if array.len(batch) == 0 {
+        break
+    }
+    let b = 0
+    for pending in batch {
+        let q = batch_q[b]
+        let article = try pending.await() catch nil
+        if article == nil {
+            missing = missing + 1
+            failed[q] = failed[q] + 1
+            array.push(read_bad, batch_ids[b])
+            let publisher = batch_publishers[b]
+            if publisher != "" && array.contains(failed_publishers, publisher) == false {
+                array.push(failed_publishers, publisher)
+            }
+        } elif article.on_topic == false {
+            off_topic[q] = off_topic[q] + 1
+            array.push(read_bad, batch_ids[b])
+        } else {
+            let record = {id: article.id, title: article.title, url: article.url, resolved_url: article.resolved_url, publisher_host: article.publisher_host, source: article.source, language: article.language, published_at: article.published_at, evidence_sha256: article.evidence_sha256}
+            array.push(read_ok, article.id)
+            array.push(read_records, record)
+            array.push(kept[q], article.id)
+            array.push(kept_sources[q], record)
+        }
+        b = b + 1
+    }
+    round = round + 1
+}
+
+// 5. One digest per question, all started together, focused on the
+// question: the model also names the articles not about it, which leave
+// its sources.
+let digests = []
+for q in array.range(0, nq) {
+    if array.len(kept[q]) > 0 {
+        array.push(digests, research.digest({task: "digest", language: request.language, article_ids: kept[q], focus: request.questions[q].question}))
+    } else {
+        array.push(digests, nil)
+    }
+}
+let out = []
+let any_read = false
+for q in array.range(0, nq) {
+    let question = request.questions[q].question
+    let digest = nil
+    if digests[q] != nil {
+        let got = try digests[q].await() catch nil
+        digest = got
+    }
+    let sources = kept_sources[q]
+    if digest != nil {
+        let left_in = []
+        for source in sources {
+            if array.contains(digest.off_topic, source.id) {
+                off_topic[q] = off_topic[q] + 1
+            } else {
+                array.push(left_in, source)
+            }
+        }
+        sources = left_in
+    }
+    let q_searches = []
+    let failed_searches = 0
+    si = 0
+    for m in meta {
+        if owners[si] == q {
+            array.push(q_searches, m)
+            if m.answered == false {
+                failed_searches = failed_searches + 1
+            }
+        }
+        si = si + 1
+    }
+    let left = 0
+    for id in pools[q] {
+        if array.contains(tried[q], id) == false {
+            left = left + 1
+        }
+    }
+    let label = "question " + (q + 1)
+    if failed_searches > 0 {
+        array.push(reasons, label + ": " + failed_searches + " of " + array.len(q_searches) + " searches failed")
+    }
+    if array.len(kept[q]) == 0 {
+        if array.len(pools[q]) == 0 {
+            array.push(reasons, label + ": nothing readable was found")
+        } else {
+            array.push(reasons, label + ": no article read (" + failed[q] + " failed, " + off_topic[q] + " off topic, " + left + " left untried)")
+        }
+    } elif digest == nil {
+        array.push(reasons, label + ": the digest failed; the sources are listed without it")
+    } elif digest.dropped_points > 0 {
+        array.push(reasons, label + ": the digest dropped " + digest.dropped_points + " invalid point(s)")
+    }
+    if array.len(kept[q]) > 0 && array.len(kept[q]) < request.read_top && left > 0 {
+        array.push(reasons, label + ": read " + array.len(kept[q]) + " of " + request.read_top + " while " + left + " readable candidates remained (read budget)")
+    }
+    if array.len(sources) > 0 {
+        any_read = true
+    }
+    array.push(out, {question: question, searches: q_searches, found: array.len(found_ids[q]), unreadable: unreadable[q], read: array.len(sources), off_topic: off_topic[q], failed: failed[q], left: left, digest: digest, sources: sources})
+}
+
+let status = "ready"
+if array.len(reasons) > 0 {
+    status = "partial"
+}
+if any_read == false {
+    status = "failed"
+    array.push(reasons, "no question has an article read on it")
+}
+{status: status, reasons: reasons, data: {language: request.language, questions: out, searches_skipped: skipped, missing: missing}}

@@ -111,7 +111,7 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "search",
             kind: MethodKind::Search,
-            description: "One query through the provider chain; structured items with host-assigned ids, readable items first (`readable: false` marks one the backend cannot read)",
+            description: "One query through the provider chain (the metasearch `category`, `news` by default, must be in the app's grant; `max_age_hours` is clamped to its `max_age_days`); structured items with host-assigned ids, readable items first (`readable: false` marks one the backend cannot read)",
             input: || {
                 json!({"type": "object", "additionalProperties": false, "required": ["topic"],
                     "properties": {
@@ -119,7 +119,8 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
                         "language": string(2, 16),
                         "region": string(2, 8),
                         "limit": {"type": "integer", "minimum": 1, "maximum": 10},
-                        "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 720}
+                        "max_age_hours": {"type": "integer", "minimum": 1, "maximum": 36000},
+                        "category": {"type": "string", "enum": ["news", "general", "it", "social", "science"]}
                     }})
             },
             output: || {
@@ -141,19 +142,21 @@ pub const RESEARCH: ModuleSpec = ModuleSpec {
         MethodSpec {
             name: "article",
             kind: MethodKind::Read,
-            description: "Read one search result's page and keep its main text as evidence; `on_topic: false` when the page does not mention the terms of the search that found it (the host will not digest it)",
+            description: "Read one search result's page and keep its main text as evidence; `resolved_url` is where the read ended (a Google News link's publisher page, null while unresolved) and `publisher_host` its host; `on_topic: false` when the page does not mention the terms of the search that found it (the host will not digest it)",
             input: || {
                 json!({"type": "object", "additionalProperties": false, "required": ["id"],
                     "properties": {"id": string(1, 64)}})
             },
             output: || {
                 json!({"type": "object", "additionalProperties": false,
-                    "required": ["id", "title", "url", "source", "language", "published_at",
-                        "excerpt", "chars", "truncated", "evidence_sha256", "on_topic"],
+                    "required": ["id", "title", "url", "resolved_url", "publisher_host", "source", "language",
+                        "published_at", "excerpt", "chars", "truncated", "evidence_sha256", "on_topic"],
                     "properties": {
                         "id": string(1, 64),
                         "title": string(0, 400),
                         "url": string(1, 2048),
+                        "resolved_url": {"description": "Where the read ended after redirects (a Google News link's publisher page); null when unknown or still on the aggregator"},
+                        "publisher_host": {"description": "The publisher's host (resolved_url's, else url's unless an aggregator's), or null"},
                         "source": string(0, 200),
                         "language": string(0, 16),
                         "published_at": string(0, 40),

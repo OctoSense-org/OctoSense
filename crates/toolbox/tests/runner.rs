@@ -5,13 +5,18 @@
 mod common;
 
 use common::{app, case, probe, temp_dir, template};
-use octosense_toolbox::fixture::{self, FixtureData};
+use octosense_toolbox::fixture::{self, FakeModel, FakeModelConfig, FixtureData};
 use octosense_toolbox::host::{CallContext, HostError, HostFuture, HostReply, Usage};
+use octosense_toolbox::research::{
+    FoundItem, PageText, ResearchBackend, ResearchHost, SearchQuery, SearchResults,
+};
 use octosense_toolbox::{
     run, scope, AppContext, Budget, ErrorKind, RunOptions, RunStatus, ToolboxHost,
 };
 use serde_json::{json, Value};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 fn city() -> (
     octosense_toolbox::fixture::FixtureCase,
@@ -1312,4 +1317,148 @@ async fn a_template_states_its_status_and_reasons() {
     )
     .await;
     assert_eq!(result.status, RunStatus::Failed);
+}
+
+/// A backend that records the queries it was asked and serves one Google
+/// News item whose read ends on the publisher's page.
+struct Probe {
+    queries: Mutex<Vec<SearchQuery>>,
+}
+
+impl Probe {
+    fn host(self: &Arc<Self>) -> ResearchHost {
+        ResearchHost::new(
+            Arc::clone(self) as Arc<dyn ResearchBackend>,
+            Arc::new(FakeModel::new(BTreeMap::new(), FakeModelConfig::default())),
+        )
+    }
+}
+
+impl ResearchBackend for Probe {
+    fn search<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+        query: SearchQuery,
+    ) -> HostFuture<'a, Result<SearchResults, HostError>> {
+        Box::pin(async move {
+            self.queries.lock().unwrap().push(query);
+            Ok(SearchResults {
+                items: vec![FoundItem {
+                    url: "https://news.google.com/rss/articles/CBMiZmlzaW9u?oc=5".into(),
+                    title: "Fusion energy milestone".into(),
+                    source: "Example Post".into(),
+                    language: "en".into(),
+                    published_at: "2026-09-28T00:00:00Z".into(),
+                    via: "fixture".into(),
+                    readable: true,
+                    snippet: "Fusion energy progress".into(),
+                }],
+                ..SearchResults::default()
+            })
+        })
+    }
+    fn read<'a>(
+        &'a self,
+        _ctx: &'a CallContext,
+        _item: &'a FoundItem,
+    ) -> HostFuture<'a, Result<PageText, HostError>> {
+        Box::pin(async {
+            Ok(PageText {
+                text: "Fusion energy researchers report a milestone.".into(),
+                title: Some("Fusion energy milestone".into()),
+                final_url: Some("https://examplepost.com/fusion-energy".into()),
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_search_in_an_ungranted_category_is_denied() {
+    let template = probe(
+        &["search"],
+        "use mod.research\nlet found = try research.search({topic: \"fusion energy\", category: \"science\"}).await() catch nil\n{status: \"partial\", data: {searched: found != nil}}\n",
+    )
+    .unwrap();
+    let folder = temp_dir("category-denied");
+    let scoped = app(&folder).with_scope(scope::parse(&json!({"categories": ["news"]})).unwrap());
+    let backend = Arc::new(Probe {
+        queries: Mutex::new(Vec::new()),
+    });
+    let result = run(
+        &template,
+        &scoped,
+        json!({}),
+        &backend.host(),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Partial);
+    assert_eq!(result.data["searched"], false);
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("category science is not in this app's research grant")));
+    assert!(backend.queries.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_granted_category_reaches_the_backend() {
+    let template = probe(
+        &["search"],
+        "use mod.research\nlet found = research.search({topic: \"fusion energy\", category: \"science\"}).await()\n{status: \"ready\", data: {n: found.items}}\n",
+    )
+    .unwrap();
+    let folder = temp_dir("category-granted");
+    let scoped =
+        app(&folder).with_scope(scope::parse(&json!({"categories": ["science"]})).unwrap());
+    let backend = Arc::new(Probe {
+        queries: Mutex::new(Vec::new()),
+    });
+    let result = run(
+        &template,
+        &scoped,
+        json!({}),
+        &backend.host(),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Ready);
+    let queries = backend.queries.lock().unwrap();
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].category.as_deref(), Some("science"));
+}
+
+#[tokio::test]
+async fn a_redirected_read_reports_its_resolved_url_and_publisher() {
+    let template = probe(
+        &["search", "article"],
+        "use mod.research\nlet found = research.search({topic: \"fusion energy\", category: \"science\"}).await()\nlet a = research.article({id: found.items[0].id}).await()\n{status: \"ready\", data: {resolved: a.resolved_url, publisher: a.publisher_host}}\n",
+    )
+    .unwrap();
+    let folder = temp_dir("resolved-url");
+    let backend = Arc::new(Probe {
+        queries: Mutex::new(Vec::new()),
+    });
+    let result = run(
+        &template,
+        &app(&folder),
+        json!({}),
+        &backend.host(),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, RunStatus::Ready);
+    assert_eq!(
+        result.data["resolved"], "https://examplepost.com/fusion-energy",
+        "{:?}",
+        result.diagnostics
+    );
+    assert_eq!(result.data["publisher"], "examplepost.com");
+    assert!(result.provenance.iter().any(|p| {
+        p.resolved_url.as_deref() == Some("https://examplepost.com/fusion-energy")
+            && p.publisher_host.as_deref() == Some("examplepost.com")
+    }));
 }
