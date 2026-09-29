@@ -121,13 +121,28 @@ impl KernelSource {
     }
 }
 
+/// Whether contained apps (the Card runner's) get the `octos` service.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ContainedGate {
+    /// Nobody.
+    #[default]
+    Off,
+    /// Each app once the person allowed its agent (`consent::granted`,
+    /// ADR 0004 §4; the first call asks), with only the `octos.*` services
+    /// its manifest declares.
+    Consent,
+    /// Every app, without asking: `OCTOSENSE_CONTAINED_APPS=1`, a developer
+    /// override. Still only the declared services.
+    Everyone,
+}
+
 /// Which native modules may use the assistant, and with which `octos.*`
 /// services (exact names; others are ignored).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Policy {
     grants: Vec<(String, Vec<String>)>,
     /// Whether contained apps (the Card runner's) get the `octos` service.
-    contained_apps: bool,
+    contained: ContainedGate,
 }
 
 impl Policy {
@@ -140,24 +155,33 @@ impl Policy {
     /// host serves these to reviewed mini apps). The person's AI provider
     /// choice lives in AI providers; a per-app toggle is future work.
     ///
-    /// The `octos` service for contained apps is OFF in the shipped policy
-    /// until the person consents at first use (ADR 0004 section 4).
-    /// `OCTOSENSE_CONTAINED_APPS=1` turns it on for development and tests.
+    /// The `octos` service for contained apps follows consent in the
+    /// shipped policy: an app gets its agent once the person allowed it at
+    /// first use (ADR 0004 section 4), with the services its manifest
+    /// declares. `OCTOSENSE_CONTAINED_APPS` is the developer override: `1`
+    /// on for every app without asking, `0` off.
     pub fn shipped() -> Self {
-        let contained = std::env::var("OCTOSENSE_CONTAINED_APPS").is_ok_and(|v| v == "1");
-        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_apps(contained)
+        let gate = contained_gate_from(std::env::var("OCTOSENSE_CONTAINED_APPS").ok().as_deref());
+        Policy::none().allow("rinx", octosense_app_peers::OCTOS_SERVICES).with_contained_gate(gate)
     }
 
-    /// Turn the `octos` service for contained apps on or off (the shell's
-    /// switch; an app still gets only the services its manifest declares).
-    pub fn with_contained_apps(mut self, on: bool) -> Self {
-        self.contained_apps = on;
+    /// On (behind consent) or off.
+    pub fn with_contained_apps(self, on: bool) -> Self {
+        self.with_contained_gate(if on { ContainedGate::Consent } else { ContainedGate::Off })
+    }
+
+    pub fn with_contained_gate(mut self, gate: ContainedGate) -> Self {
+        self.contained = gate;
         self
     }
 
-    /// Whether contained apps get the `octos` service.
+    /// Whether contained apps can get the `octos` service at all.
     pub fn contained_apps(&self) -> bool {
-        self.contained_apps
+        self.contained != ContainedGate::Off
+    }
+
+    pub fn contained_gate(&self) -> ContainedGate {
+        self.contained
     }
 
     /// Also grant `module` these services.
@@ -168,6 +192,16 @@ impl Policy {
 
     pub fn grants(&self) -> impl Iterator<Item = (&str, &[String])> {
         self.grants.iter().map(|(m, s)| (m.as_str(), s.as_slice()))
+    }
+}
+
+/// `OCTOSENSE_CONTAINED_APPS`'s value as a gate: `1` every app (developer
+/// override), `0` none, anything else (unset) consent.
+pub fn contained_gate_from(var: Option<&str>) -> ContainedGate {
+    match var {
+        Some("1") => ContainedGate::Everyone,
+        Some("0") => ContainedGate::Off,
+        _ => ContainedGate::Consent,
     }
 }
 
@@ -296,12 +330,12 @@ pub fn core_dir(data_dir: Option<String>) -> Option<PathBuf> {
 fn register_contained(kernel: bool, policy: &Policy) {
     #[cfg(kernel)]
     if kernel {
-        let on = policy.contained_apps();
-        octosense_appstore::services::register_host_service(Box::new(contained::ContainedOctos::new(
-            on,
+        let gate = policy.contained_gate();
+        octosense_appstore::services::register_host_service(Box::new(contained::ContainedOctos::gated(
+            gate,
             std::sync::Arc::new(contained::KernelPeers),
         )));
-        log!("octos: contained apps' service registered ({})", if on { "on" } else { "off" });
+        log!("octos: contained apps' service registered ({gate:?})");
         return;
     }
     let _ = (kernel, policy);

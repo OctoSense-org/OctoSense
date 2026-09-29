@@ -3240,6 +3240,17 @@ impl App {
         self.system_chat_changed(cx);
     }
 
+    /// Agents the person turned off since the last tick: their live services
+    /// go now (ADR 0004 §4), whichever way the app is hosted.
+    fn revoke_agents(&mut self) {
+        for app in approvals::take_revoked() {
+            let modules = self.module_host.revoke_assistant(&app);
+            peer_link::revoke(&app);
+            let contained = crate::ai_host::contained::revoke(&app);
+            log!("approvals: {app}'s agent turned off; revoked {modules} module service(s){}", if contained { " and its contained peer" } else { "" });
+        }
+    }
+
     /// The system chat moved (a frame from the kernel, the router decided
     /// one of its approvals): hand approvals on, and redraw.
     fn system_chat_changed(&mut self, cx: &mut Cx) {
@@ -3340,6 +3351,7 @@ impl App {
     }
 
     fn approvals_changed(&mut self, cx: &mut Cx) {
+        self.revoke_agents();
         // The AI bus's held calls the router has answered go on (or are
         // refused to the pane).
         for (id, decision, reason) in approvals::take_bus_decisions() {

@@ -23,6 +23,7 @@ struct Shared {
     decisions: Vec<(RequestId, Decision, String)>,
     confirmed: Vec<(RequestId, bool)>,
     services_made: usize,
+    released: usize,
     contexts: Vec<Arc<FakeContext>>,
     specs: Vec<ContextSpec>,
 }
@@ -110,7 +111,9 @@ impl OctosAppService for FakeService {
         });
         Ok(ctx)
     }
-    fn release(&self) {}
+    fn release(&self) {
+        self.0.with(|s| s.released += 1);
+    }
     fn shutdown(&self) {}
 }
 
@@ -464,6 +467,25 @@ fn signing_out_closes_the_accounts_contexts_and_tells_the_app() {
     assert_eq!(links.tool_call("notes", call("c1", "lookup", wire::Risk::Read, Some(&ctx)), 0.0), Err(Refused::UnknownContext));
 }
 
+#[test]
+fn turning_the_agent_off_closes_its_contexts_and_releases_its_service() {
+    let (mut links, world, _) = setup();
+    let (o, frames) = out();
+    links.connected(1, "notes", o);
+    let ctx = open(&mut links, 1, &frames, None);
+    assert!(links.keeps_peer("notes"));
+    links.revoke("notes");
+    assert!(matches!(downs(&frames).as_slice(), [Down::ContextClosed { context, reason }] if *context == ctx && reason == "agent_turned_off"));
+    assert_eq!(links.open_contexts("notes"), 0);
+    assert!(!links.keeps_peer("notes"), "the service is forgotten");
+    assert_eq!(world.with(|s| s.released), 1, "and released now");
+    assert!(world.with(|s| s.contexts.iter().all(|c| c.closed.load(Ordering::SeqCst))), "the live context is closed");
+    assert_eq!(links.tool_call("notes", call("c1", "lookup", wire::Risk::Read, Some(&ctx)), 0.0), Err(Refused::UnknownContext));
+    // Consent withdrawn: a new request is refused.
+    world.with(|s| s.consent = false);
+    links.on_frame(1, "notes", &request(9, "octos.session.open", json!({})), None);
+    assert!(matches!(downs(&frames).as_slice(), [Down::Reply { req_id: 9, result: Err(e) }] if e.starts_with("consent_pending")));
+}
 
 #[test]
 fn a_call_the_kernel_already_approved_is_not_asked_again_and_confirm_app_goes_to_the_apps_sheet() {

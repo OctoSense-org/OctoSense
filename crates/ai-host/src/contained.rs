@@ -8,10 +8,17 @@
 //! host-owned peer contract Rinx uses (ADR 0007), named `card.<app id>` so a
 //! store app can never share a native module's peer or memory.
 //!
-//! What an app sends is input text only. It never names a session, profile,
-//! workspace or provider, and it cannot decide a tool approval: the Card
-//! runner has no approval sheet yet, so every approval the peer raises is
-//! declined here and listed in the reply's `denied_approvals`.
+//! What an app sends is input text (and what started the turn) only. It
+//! never names a session, profile, workspace or provider, and it cannot
+//! decide a tool approval: the shell's approval router draws every one
+//! (ADR 0004 §8).
+//!
+//! **Consent and grants** (ADR 0004 §4). The service follows
+//! [`crate::Policy::contained_gate`]: behind the person's consent at first
+//! use (the shipped default), off, or on for every app (the developer
+//! override `OCTOSENSE_CONTAINED_APPS=1`). An app's peer is granted only
+//! the `octos.*` services its manifest declares ([`declared`]), and turning
+//! its agent off in Settings releases the live peer at once ([`revoke`]).
 //!
 //! The logic does not need a kernel: peers come from a [`PeerFactory`]. The
 //! shell's factory (`cfg(kernel)`) launches them through
@@ -20,7 +27,7 @@
 use octosense_app_peers::{ContextEvent, ContextOp, ContextSpec, EventSink, OctosAppService, OctosContext, TurnTrigger};
 use octosense_appstore::services::{HostService, Replier, ServiceCall, ServiceHost};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 
 /// A contained app's peer is `card.<app id>`; no native module id starts so.
@@ -40,6 +47,7 @@ pub const UNSUPPORTED_ARGS: &str = "Unsupported Octos arguments";
 pub const BAD_TEXT: &str = "Provide text (at most 32 KiB)";
 pub const NO_SHEET: &str = "The assistant has no sheet; octos calls come from the app";
 pub const NO_CONSENT: &str = "Waiting for the person to allow this app's agent (OctoSense asks the first time)";
+pub const NOT_DECLARED: &str = "This app's manifest does not declare that assistant service";
 
 /// The shell's consent at first use (ADR 0004 §4): whether an app may have
 /// its agent now; asking the person the first time is the shell's part.
@@ -52,11 +60,57 @@ pub fn set_consent(check: fn(&str) -> bool) {
     let _ = CONSENT.set(check);
 }
 
+/// The `octos.*` services an app's manifest declares (`None`: the shell
+/// knows no such app). Unset (this crate's tests): all of them.
+static DECLARED: std::sync::OnceLock<fn(&str) -> Option<BTreeSet<String>>> = std::sync::OnceLock::new();
+
+/// The shell installs its manifest lookup once, at startup.
+pub fn set_declared(lookup: fn(&str) -> Option<BTreeSet<String>>) {
+    let _ = DECLARED.set(lookup);
+}
+
+/// What `app_id` may be granted: the `octos.*` services its manifest
+/// declares, and only those (ADR 0004 §4).
+pub fn declared(app_id: &str) -> Result<BTreeSet<String>, String> {
+    let all = || octosense_app_peers::OCTOS_SERVICES.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
+    let services = match DECLARED.get() {
+        None => all(),
+        Some(lookup) => lookup(app_id).ok_or(NOT_DECLARED)?.intersection(&all()).cloned().collect(),
+    };
+    if services.is_empty() {
+        return Err(NOT_DECLARED.into());
+    }
+    Ok(services)
+}
+
+/// Every contained app's live peer, by app id, so turning its agent off
+/// revokes it at once ([`revoke`]).
+static LIVE: Mutex<Option<HashMap<String, Arc<dyn OctosAppService>>>> = Mutex::new(None);
+
+fn live<R>(f: impl FnOnce(&mut HashMap<String, Arc<dyn OctosAppService>>) -> R) -> R {
+    f(LIVE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new))
+}
+
+/// The person turned `app_id`'s agent off (Settings): its peer is released
+/// now, closing its contexts and any running turn. A later call needs
+/// consent again and then gets a fresh peer. True when one was live.
+pub fn revoke(app_id: &str) -> bool {
+    let service = live(|l| l.remove(app_id));
+    match service {
+        Some(service) => {
+            service.release();
+            true
+        }
+        None => false,
+    }
+}
+
 /// Where contained apps' peers come from.
 pub trait PeerFactory: Send + Sync {
-    /// The scoped assistant service for `app_id`'s peer `peer_id`, or `None`
-    /// when this device cannot give one.
-    fn launch(&self, peer_id: &str, app_id: &str) -> Option<Arc<dyn OctosAppService>>;
+    /// The scoped assistant service for `app_id`'s peer `peer_id`, with
+    /// exactly `services` (its manifest's `octos.*`), or `None` when this
+    /// device cannot give one.
+    fn launch(&self, peer_id: &str, app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>>;
 }
 
 /// The peer id of `app_id`, or why it cannot name one.
@@ -117,24 +171,34 @@ struct AppPeer {
 
 /// The `octos` host service for the Card runner's apps.
 pub struct ContainedOctos {
-    enabled: bool,
+    gate: crate::ContainedGate,
     factory: Arc<dyn PeerFactory>,
     apps: HashMap<String, AppPeer>,
 }
 
 impl ContainedOctos {
-    /// `enabled` is the shell's switch ([`crate::Policy::contained_apps`]).
+    /// `enabled`: on behind consent, or off ([`crate::Policy::contained_apps`]).
     pub fn new(enabled: bool, factory: Arc<dyn PeerFactory>) -> Self {
-        ContainedOctos { enabled, factory, apps: HashMap::new() }
+        Self::gated(if enabled { crate::ContainedGate::Consent } else { crate::ContainedGate::Off }, factory)
+    }
+
+    /// With the policy's gate ([`crate::Policy::contained_gate`]).
+    pub fn gated(gate: crate::ContainedGate, factory: Arc<dyn PeerFactory>) -> Self {
+        ContainedOctos { gate, factory, apps: HashMap::new() }
     }
 
     /// The app's open request context, creating its peer and (re)opening
     /// the context as needed.
-    fn context_for(&mut self, app_id: &str) -> Result<Arc<dyn OctosContext>, String> {
+    fn context_for(&mut self, app_id: &str, services: &BTreeSet<String>) -> Result<Arc<dyn OctosContext>, String> {
+        // A peer revoked since (Settings turned the agent off) is gone.
+        if self.apps.contains_key(app_id) && !live(|l| l.contains_key(app_id)) {
+            self.apps.remove(app_id);
+        }
         if !self.apps.contains_key(app_id) {
             let peer = peer_id(app_id)?;
-            let service = self.factory.launch(&peer, app_id).ok_or(UNAVAILABLE)?;
+            let service = self.factory.launch(&peer, app_id, services).ok_or(UNAVAILABLE)?;
             service.set_account(Some(ACCOUNT));
+            live(|l| l.insert(app_id.to_owned(), service.clone()));
             self.apps.insert(app_id.to_owned(), AppPeer { peer, service, context: None, generation: 0 });
         }
         let app = self.apps.get_mut(app_id).expect("inserted above");
@@ -220,17 +284,27 @@ impl HostService for ContainedOctos {
         if call.from_sheet {
             return reply.send(Err(NO_SHEET.into()));
         }
-        if !self.enabled {
-            return reply.send(Err(TURNED_OFF.into()));
-        }
-        if CONSENT.get().is_some_and(|granted| !granted(&call.app_id)) {
-            return reply.send(Err(NO_CONSENT.into()));
+        match self.gate {
+            crate::ContainedGate::Off => return reply.send(Err(TURNED_OFF.into())),
+            // The developer override asks nobody.
+            crate::ContainedGate::Everyone => {}
+            crate::ContainedGate::Consent => {
+                if CONSENT.get().is_some_and(|granted| !granted(&call.app_id)) {
+                    return reply.send(Err(NO_CONSENT.into()));
+                }
+            }
         }
         let op = match parse(&call.service, &call.args) {
             Ok(op) => op,
             Err(e) => return reply.send(Err(e)),
         };
-        let context = match self.context_for(&call.app_id) {
+        // Only what the manifest declares, whatever the isolate let through.
+        let services = match declared(&call.app_id) {
+            Ok(s) if s.contains(&call.service) => s,
+            Ok(_) => return reply.send(Err(NOT_DECLARED.into())),
+            Err(e) => return reply.send(Err(e)),
+        };
+        let context = match self.context_for(&call.app_id, &services) {
             Ok(context) => context,
             Err(e) => return reply.send(Err(e)),
         };
@@ -247,10 +321,11 @@ pub(crate) struct KernelPeers;
 
 #[cfg(kernel)]
 impl PeerFactory for KernelPeers {
-    fn launch(&self, peer_id: &str, app_id: &str) -> Option<Arc<dyn OctosAppService>> {
-        let services = octosense_app_peers::OCTOS_SERVICES;
-        crate::host_policy().allow(peer_id, services);
-        let broker = octosense_app_peers::hosted::launch(peer_id, app_id, services, crate::host_policy())?;
+    fn launch(&self, peer_id: &str, app_id: &str, services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+        // Only the manifest's `octos.*` services, never all of them.
+        let services: Vec<&str> = services.iter().map(String::as_str).collect();
+        crate::host_policy().allow(peer_id, services.iter().copied());
+        let broker = octosense_app_peers::hosted::launch(peer_id, app_id, services.iter().copied(), crate::host_policy())?;
         Some(Arc::new(broker))
     }
 }

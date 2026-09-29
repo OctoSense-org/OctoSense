@@ -103,12 +103,15 @@ pub struct ConsentStore {
     known: BTreeMap<String, AgentSummary>,
     /// First-use prompts waiting for the person, oldest first.
     asking: Vec<String>,
+    /// Apps whose agent was just turned off: the shell revokes their live
+    /// services ([`ConsentStore::take_revoked`]).
+    revoked: Vec<String>,
     generation: u64,
 }
 
 impl ConsentStore {
     pub fn memory() -> ConsentStore {
-        ConsentStore { path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), generation: 0 }
+        ConsentStore { path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), revoked: Vec::new(), generation: 0 }
     }
     pub fn in_home(home: &Path) -> ConsentStore {
         let path = home.join(CONSENT_FILE);
@@ -157,6 +160,9 @@ impl ConsentStore {
     }
     /// The person chose, on the first-use sheet or Settings' switch.
     pub fn set(&mut self, _gesture: &ApprovalGesture, app: &str, allowed: bool, now: u64) {
+        if !allowed {
+            self.revoke(app);
+        }
         self.decided.insert(app.to_string(), Record { allowed, at: now });
         self.asking.retain(|a| a != app);
         self.generation += 1;
@@ -164,10 +170,22 @@ impl ConsentStore {
     }
     /// Turning an agent off needs no gesture (always allowed).
     pub fn turn_off(&mut self, app: &str, now: u64) {
+        self.revoke(app);
         self.decided.insert(app.to_string(), Record { allowed: false, at: now });
         self.asking.retain(|a| a != app);
         self.generation += 1;
         self.save();
+    }
+    fn revoke(&mut self, app: &str) {
+        if !self.revoked.iter().any(|a| a == app) {
+            self.revoked.push(app.to_string());
+        }
+    }
+    /// The apps whose agent was turned off since the last call: the shell
+    /// closes their live services (peer links and contexts, an in-process
+    /// module's service, a contained app's peer) and withdraws the offer.
+    pub fn take_revoked(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.revoked)
     }
     /// Settings: every app's agent the shell knows of or has an answer for.
     pub fn agents(&self) -> Vec<(String, String, State)> {

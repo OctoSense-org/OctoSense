@@ -178,6 +178,96 @@ fn register_news() {
     octosense_news_service::register_with(options);
 }
 
+/// One app that declares an agent, for Settings and consent (ADR 0004 §4).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentApp {
+    /// The consent key: a native app's id (`rinx`), a script app's manifest
+    /// id (`os.mail`, `org.example.timer`).
+    pub id: String,
+    pub name: String,
+    /// The `octos.*` services it declares.
+    pub octos: Vec<String>,
+    /// Its manifest, as the first-use sheet reads it.
+    pub manifest: serde_json::Value,
+}
+
+/// Every app that declares an agent: native apps whose `native-apps.json`
+/// entry grants `octos.*`, and script apps (system and installed) whose
+/// manifest declares `octos.*`, whether or not they have asked yet.
+pub fn agent_apps() -> Vec<AgentApp> {
+    let mut out: Vec<AgentApp> = crate::native_apps::APPS
+        .iter()
+        .filter(|a| !a.octos.is_empty())
+        .map(|a| AgentApp {
+            id: a.id.to_string(),
+            name: crate::approvals::sheet::app_label(a.id),
+            octos: a.octos.iter().map(|s| s.to_string()).collect(),
+            manifest: serde_json::json!({ "agent": { "octos": a.octos } }),
+        })
+        .collect();
+    out.extend(script_agent_apps());
+    out
+}
+
+/// The `octos.*` services script app `app_id`'s manifest declares (`None`:
+/// no such app here). The contained `octos` service grants only these.
+pub fn declared_octos(app_id: &str) -> Option<std::collections::BTreeSet<String>> {
+    script_agent_apps().into_iter().find(|a| a.id == app_id).map(|a| a.octos.into_iter().collect())
+}
+
+fn octos_of(capabilities: &serde_json::Value) -> Vec<String> {
+    capabilities.as_array().into_iter().flatten().filter_map(|c| c.as_str()).filter(|c| c.starts_with("octos.")).map(str::to_string).collect()
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn script_agent_apps() -> Vec<AgentApp> {
+    // Read once per data root and App Hub generation (an install or update
+    // bumps it): the contained service asks on every call.
+    type Cache = Option<((std::path::PathBuf, u64), Vec<AgentApp>)>;
+    static CACHE: std::sync::Mutex<Cache> = std::sync::Mutex::new(None);
+    let Some(root) = octosense_app_hub_app::data_root_if_set() else { return Vec::new() };
+    let key = (root.clone(), octosense_app_hub_app::icons::generation());
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((k, apps)) = cache.as_ref() {
+        if *k == key {
+            return apps.clone();
+        }
+    }
+    let apps = read_script_agent_apps(&root);
+    *cache = Some((key, apps.clone()));
+    apps
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn read_script_agent_apps(root: &Path) -> Vec<AgentApp> {
+    let root = root.to_path_buf();
+    let mut out = Vec::new();
+    for app in octosense_app_hub_app::system_apps() {
+        let Ok((dir, _)) = octosense_appstore::system::prepare(&root, &app) else { continue };
+        if let Some(a) = script_agent_app(&dir.join("manifest.json"), app.id, app.name) {
+            out.push(a);
+        }
+    }
+    for app in octosense_app_hub_app::installed_apps(&root) {
+        if let Some(a) = script_agent_app(&root.join(&app.id).join("bundle").join("manifest.json"), &app.id, &app.name) {
+            out.push(a);
+        }
+    }
+    out
+}
+
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+fn script_agent_apps() -> Vec<AgentApp> {
+    Vec::new()
+}
+
+/// One script app's agent, from its admitted manifest.
+pub fn script_agent_app(manifest: &Path, id: &str, name: &str) -> Option<AgentApp> {
+    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
+    let octos = octos_of(&manifest["capabilities"]);
+    (!octos.is_empty()).then(|| AgentApp { id: id.to_string(), name: name.to_string(), octos, manifest })
+}
+
 /// Card apps App Hub installed: each is an app of its own in the launcher,
 /// hosted by the linked `card` module under its `hub:<manifest-id>` identity.
 /// Listed once per data root and App Hub generation: an install or update

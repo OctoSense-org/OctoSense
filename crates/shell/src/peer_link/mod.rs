@@ -218,6 +218,12 @@ pub fn has_link(app: &str) -> bool {
     with(|l| l.has_link(app))
 }
 
+/// The person turned `app`'s agent off: its contexts close and its service
+/// is released.
+pub fn revoke(app: &str) {
+    with(|l| l.revoke(app));
+}
+
 /// Signing out (§11): close `account`'s contexts of `app`.
 pub fn close_account(app: &str, account: &str) {
     with(|l| l.close_account(app, account, "signed_out"));
