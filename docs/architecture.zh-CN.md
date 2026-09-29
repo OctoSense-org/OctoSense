@@ -270,7 +270,7 @@ Agent 的工具来源：
 | --- | --- | --- | --- |
 | 应用自己的工具（`tools.json`：名称 `<app>.<tool>`、schema、`risk`、`confirm: host` 或 `app`、`shareable`） | `mail.send`、`rinx.message.send` | 应用的宿主服务、模块或进程，由 Shell 调用 | 已在 main 上注册和路由（`crates/shell/src/host_tools/`）：按（所属应用，工具）和调用方授权，盖上账号、上下文和客户端，路由到进程应用的 peer link 或进程内模块的执行器（`OctosAppService::set_tool_executor`）。还没有应用声明 `tools.json`，所以尚未注册任何工具；Rinx 的工具经总线到达 AI 面板 |
 | 系统工具箱，按能力授予（`research`、`crawl`、`model`） | `toolbox.search`、`toolbox.web_read`、`toolbox.deep_crawl`、`workflow.run` | 宿主 | 进行中（[#108](https://github.com/OctoSense-org/OctoSense/pull/108)）；`model` 尚未注册 |
-| octos 的通用工具 | 限定在工作区内的文件读取、记忆、`web_search`、`deep_search` | octos | 作为 octos 对 peer 安全的默认工具已在 main；按应用设置的 `generic_tools` 列表规划中（步骤 6） |
+| octos 的通用工具 | 限定在工作区内的文件读取、记忆、`web_search`、`deep_search` | octos | 已在 main 上按应用设置：每个 peer 注册时带着它被授予的精确 `generic_tools`（Rinx：工作区文件、`ask_user_question`、记忆、网页）；没有授予的应用一个也没有；octos 的 `shell` 从不在其中（生成器、目录和脚本加载器都会去掉它），`_main` profile 的 `tool_policy` 也拒绝它 |
 | 其他应用可共享的工具，由 Shell 路由 | Calendar 的 Agent 调用 `mail.send` | 所属应用，经 Shell | 已在 main 上注册、逐次检查并路由（`relay::Catalog`）；还没有任何授权（App Hub 安装时授权和 `native-apps.json` 授权属于步骤 6） |
 | 命令执行 | `terminal.run`（Terminal 的可共享工具：`confirm: host`、`auto_approvable: false`） | 宿主工具，在用户可见的终端中 | 系统 Agent 已在 main：Setup › Assistant › Command execution 开启时注册在其会话上，每次调用经路由作为命令实时批准，输入到正在运行的 Terminal（macOS 和 Windows 上是进程应用；进程内 Terminal 只提供读取工具）。授予应用 Agent 属于步骤 11 |
 
@@ -384,7 +384,7 @@ flowchart TB
 | Agent ↔ 机密 | 机密位于所有 jail 和工作区之外；启动检查 | 已在 main |
 | 外部客户端 ↔ 内核 | 外部 token、方法和工具允许列表、`Host` 和 origin 检查、无法访问 peer | 已在 main（[ADR 0003](adr/0003-shared-octos-client-access.md)） |
 
-**Shell 在每次调用时检查什么**（ADR 0004 §3）：授权和同意；预算、速率限制和后台策略；每次工具调用的名称和参数是否符合声明的 `tools.json`；每个结果是否符合其 schema 和大小；自己的审计；崩溃清理。目前 main 上已有：同意；按精确名称授予 `octos.*` 服务（声明 ∩ 支持 ∩ 策略）；脚本应用的参数规则和大小上限（文字最多 32 KiB，回复最多 2 MiB）；总线调用的审批路由和审计。对应用工具调用（`crates/shell/src/host_tools/`）：按（所属应用，工具）和调用方的授权、同意、已登出的账号、确认、每次出现只执行一次、取消后不再执行。参数和结果的 schema 检查以及 octos 之外的预算尚未实现。用户在应用卡片中的操作不经过这个中继：它们走应用自己的路径（ADR 0004 §4），因此这些检查从不覆盖它们。
+**Shell 在每次调用时检查什么**（ADR 0004 §3）：授权和同意；预算、速率限制和后台策略；每次工具调用的名称和参数是否符合声明的 `tools.json`；每个结果是否符合其 schema 和大小；自己的审计；崩溃清理。目前 main 上已有：同意；应用工具调用的参数按声明的 `input_schema`（及 64 KiB）检查，结果按 `output_schema` 和 256 KiB 检查，每个调用方 Agent 有预算（每回合、每天的调用次数，来自 `native-apps.json` 的 `agent.budget`，默认 32 和 1000）；按精确名称授予 `octos.*` 服务（声明 ∩ 支持 ∩ 策略）；脚本应用的参数规则和大小上限（文字最多 32 KiB，回复最多 2 MiB）；总线调用的审批路由和审计。对应用工具调用（`crates/shell/src/host_tools/`）：按（所属应用，工具）和调用方的授权、同意、已登出的账号、确认、每次出现只执行一次、取消后不再执行。参数和结果的 schema 检查以及 octos 之外的预算尚未实现。用户在应用卡片中的操作不经过这个中继：它们走应用自己的路径（ADR 0004 §4），因此这些检查从不覆盖它们。
 
 **谁都无法检查的**：原生应用的代码在它自己的工具里做了什么，或它为什么发起一个回合。控制手段是评审，以及进程应用的沙箱。
 
