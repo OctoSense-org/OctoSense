@@ -47,7 +47,18 @@
 //!   `peer/input` turn's), answers them only as the host says
 //!   (`user_question/respond` on this link), tells the app's context only
 //!   that the host took it, closes them when their turn ends, and refuses
-//!   an app's attempt to answer an approval or question the host holds.
+//!   an app's attempt to answer an approval or question the host holds;
+//! - gives every approval and question on the peer's session and its
+//!   contexts a deadline ([`BrokerConfig::prompt_deadline`], 10 min,
+//!   `OCTOSENSE_PROMPT_DEADLINE_SECS`): what the host holds its router or
+//!   request model expires (denied or declined, never approved), what the
+//!   app holds the broker answers so; the app hears `prompt/expired`. If
+//!   the host has not answered after [`BrokerConfig::expiry_grace`] (30 s)
+//!   the broker denies or declines it itself, and a turn still running then
+//!   is interrupted (N1 applies) so the peer's next queued turn starts;
+//! - stops whatever turn runs on the shared conversation on the person's
+//!   Stop (`ContextOp::Interrupt` on a conversation, [`interrupt_where`]
+//!   for the shell's own surfaces), the system agent's included.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -112,6 +123,13 @@ pub struct BrokerConfig {
     pub settings_entry: SettingsEntry,
     /// How long one turn may run.
     pub turn_timeout: Duration,
+    /// How long an approval or question on the peer's session or a context
+    /// waits for its answer before it expires (denied or declined, never
+    /// approved): [`host_tools::prompt_deadline`], 10 min by default.
+    pub prompt_deadline: Duration,
+    /// After an expiry, how long the turn may still run before the broker
+    /// interrupts it and the peer's next queued turn starts.
+    pub expiry_grace: Duration,
     /// Where the host keeps each peer's host token (one file per app and
     /// account, mode 0600): the kernel's credential for controlling the peer
     /// it created. `None` keeps tokens in memory, so a peer created by this
@@ -162,6 +180,8 @@ impl BrokerConfig {
                 Deployment::StandaloneRemote => SettingsEntry::AppRemote,
             },
             turn_timeout: Duration::from_secs(180),
+            prompt_deadline: host_tools::prompt_deadline(),
+            expiry_grace: host_tools::EXPIRY_GRACE,
             state_dir: None,
             tool_host: None,
         }
@@ -314,6 +334,56 @@ enum Queued {
     Person { turn_id: String, go: oneshot::Sender<()> },
 }
 
+/// Who answers a pending approval or question.
+enum PromptAnswer {
+    /// The host took the approval: its answer (the router's decision).
+    HostApproval(ApprovalAnswer),
+    /// The host took the question: its answer, and how many it takes.
+    HostQuestion(QuestionAnswer, usize),
+    /// Left to the app's context (a host that takes none): the broker
+    /// answers it at the deadline.
+    AppApproval,
+    AppQuestion(usize),
+}
+
+impl PromptAnswer {
+    fn answered(&self) -> bool {
+        match self {
+            PromptAnswer::HostApproval(a) => a.is_sent(),
+            PromptAnswer::HostQuestion(a, _) => a.is_sent(),
+            PromptAnswer::AppApproval | PromptAnswer::AppQuestion(_) => false,
+        }
+    }
+}
+
+/// An approval or question waiting on the peer's session or one of its
+/// contexts, with its deadline running (ADR 0004 §8).
+struct Prompt {
+    session: String,
+    turn: String,
+    answer: PromptAnswer,
+    /// The context it was raised in (`None`: the peer's own session).
+    context: Option<Weak<ContextInner>>,
+    /// The link it came on: only there can it be answered.
+    link: mpsc::UnboundedSender<String>,
+}
+
+/// Every live broker, so the shell can stop an app agent's running turn
+/// from its own surfaces ([`interrupt_where`]).
+static BROKERS: Mutex<Vec<Weak<Inner>>> = Mutex::new(Vec::new());
+
+/// Stop the running turn on the shared conversation of every live broker
+/// whose app id `matches` (the Stop on a shell surface: the person owns the
+/// device, so the system agent's turns stop too). The turns interrupted.
+pub fn interrupt_where(matches: impl Fn(&str) -> bool) -> Vec<String> {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).filter_map(|b| Broker(b).interrupt_running()).collect()
+}
+
 /// The person's message is refused when this many turns already wait.
 pub const BUSY: &str = "The assistant is busy with other messages; try again in a moment";
 
@@ -431,6 +501,9 @@ struct State {
     host_held: VecDeque<String>,
     /// Questions the host holds, by id: the turn that asked.
     questions: HashMap<String, String>,
+    /// Approvals and questions waiting for an answer, by id, each with its
+    /// deadline running.
+    prompts: HashMap<String, Prompt>,
 }
 
 struct Inner {
@@ -456,7 +529,7 @@ impl Broker {
             .build()
             .expect("app-peers: tokio runtime");
         let nonce = uuid::Uuid::new_v4().simple().to_string()[..8].to_owned();
-        Broker(Arc::new(Inner {
+        let broker = Broker(Arc::new(Inner {
             cfg,
             connector,
             runtime: Some(runtime),
@@ -488,11 +561,18 @@ impl Broker {
                 cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
+                prompts: HashMap::new(),
             }),
             connecting: tokio::sync::Mutex::new(()),
             binding: tokio::sync::Mutex::new(()),
             nonce,
-        }))
+        }));
+        {
+            let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+            all.retain(|b| b.strong_count() > 0);
+            all.push(Arc::downgrade(&broker.0));
+        }
+        broker
     }
 
     /// The config this broker serves.
@@ -532,6 +612,30 @@ impl Broker {
         });
         rx.recv_timeout(Duration::from_secs(60))
             .map_err(|_| "binding the app peer timed out".to_owned())?
+    }
+
+    /// Stop the turn running on the peer's shared conversation, whoever
+    /// started it (the person, the app or the system agent): the Stop of a
+    /// shell surface. Its late calls are refused (N1) and the peer's next
+    /// queued turn starts. The turn, or `None` when nothing runs.
+    pub fn interrupt_running(&self) -> Option<String> {
+        let (turn, session) = {
+            let st = self.0.lock();
+            (st.peer_turn.clone()?, st.peer.as_ref()?.1.session.clone())
+        };
+        let inner = self.0.clone();
+        let stopped = turn.clone();
+        self.0.rt().spawn(async move {
+            if let Err(e) = inner.interrupt_turn(&session, &stopped).await {
+                eprintln!("app-peers: {}: stopping turn {stopped}: {e}", inner.cfg.app_id);
+            }
+        });
+        Some(turn)
+    }
+
+    /// Approvals and questions still waiting for an answer.
+    pub fn pending_prompts(&self) -> usize {
+        self.0.lock().prompts.len()
     }
 
     /// Tool calls the host has not answered yet.
@@ -770,6 +874,8 @@ impl Inner {
             // start signal is dropped); queued inputs are the kernel's to
             // fail with the connection.
             st.queue.clear();
+            // What waited on the link can no longer be answered there.
+            st.prompts.clear();
             let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
             (pending, contexts, calls, rebind)
         };
@@ -887,6 +993,8 @@ impl Inner {
             self.note_terminal(method, &params);
             if let Some(turn) = turn_ended(method, &params) {
                 self.close_questions(turn);
+                // Its approvals and questions end with it: no deadline.
+                self.lock().prompts.retain(|_, p| p.turn != turn);
             }
         }
         // An agent's question is the person's, asked by the shell in the
@@ -897,7 +1005,7 @@ impl Inner {
                 if route.is_some() && context.is_none() {
                     return;
                 }
-                if self.on_user_question(question, context.as_deref()) {
+                if self.on_user_question(question, context.as_ref()) {
                     if let Some(context) = context {
                         context.notification(host_tools::QUESTION_HANDLED_BY_HOST, &params);
                     } else if peer_session.as_deref() == Some(session) {
@@ -926,7 +1034,7 @@ impl Inner {
                 });
             if let Some(approval) = approval {
                 let id = approval.approval_id.clone();
-                if self.on_host_approval(approval) {
+                if self.on_host_approval(approval, context.as_ref()) {
                     remember(&mut self.lock().host_held, id);
                     if let Some(context) = context {
                         context.notification(host_tools::HANDLED_BY_HOST, &params);
@@ -944,10 +1052,8 @@ impl Inner {
                 .get("turn_id")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
-            let terminal =
-                method == "projection/envelope" && params["payload"]["type"] == "turn_terminal";
+            let ended = turn_ended(method, &params).is_some();
             let mut st = self.lock();
-            let ended = terminal || matches!(method, "turn/completed" | "turn/error");
             let mut next = false;
             if method == "turn/started" {
                 // A turn this host holds the peer for (one starting, or
@@ -963,6 +1069,8 @@ impl Inner {
             if next {
                 self.next_turn();
             }
+            // An approval or question left to the app still expires.
+            self.track_unheld(method, &params, session, None);
             // The whole shared conversation reaches the app's
             // conversations: the person's turns from every surface, the
             // app's and the system agent's.
@@ -978,6 +1086,7 @@ impl Inner {
             return;
         }
         if let Some(context) = context.upgrade() {
+            self.track_unheld(method, &params, session, Some(&context));
             context.notification(method, &params);
         }
     }
@@ -1608,7 +1717,7 @@ impl Inner {
     }
 
     /// A `host_tool` approval: the host draws it and answers on this link.
-    fn on_host_approval(self: &Arc<Self>, mut approval: HostToolApproval) -> bool {
+    fn on_host_approval(self: &Arc<Self>, mut approval: HostToolApproval, context: Option<&Arc<ContextInner>>) -> bool {
         let (link, account) = {
             let st = self.lock();
             approval.trigger = st.trigger_of(&approval.turn_id);
@@ -1618,26 +1727,25 @@ impl Inner {
         let weak = Arc::downgrade(self);
         let session = approval.session_id.clone();
         let approval_id = approval.approval_id.clone();
-        let answer = ApprovalAnswer::new(move |approve| {
+        let turn = approval.turn_id.clone();
+        let respond_link = link.clone();
+        let answer = ApprovalAnswer::with_note(move |approve, note| {
             if let Some(inner) = weak.upgrade() {
-                inner.fire(
-                    &link,
-                    "approval/respond",
-                    json!({
-                        "session_id": session,
-                        "approval_id": approval_id,
-                        "decision": if approve { "approve" } else { "deny" },
-                        "client_note": "decided by the host (UPCR-2026-035 host_tool)",
-                    }),
-                );
+                inner.fire(&respond_link, "approval/respond", approval_respond(&session, &approval_id, approve, note));
             }
         });
-        self.tool_host().host_tool_approval(&self.cfg.app_id, account.as_deref(), approval, answer)
+        let session = approval.session_id.clone();
+        let id = approval.approval_id.clone();
+        let taken = self.tool_host().host_tool_approval(&self.cfg.app_id, account.as_deref(), approval, answer.clone());
+        if taken {
+            self.track_prompt(id, Prompt { session, turn, answer: PromptAnswer::HostApproval(answer), context: context.map(Arc::downgrade), link });
+        }
+        taken
     }
 
     /// An agent's question: stamped with its origin and handed to the host,
     /// which answers on this link. False when the host did not take it.
-    fn on_user_question(self: &Arc<Self>, mut question: AgentQuestion, context: Option<&ContextInner>) -> bool {
+    fn on_user_question(self: &Arc<Self>, mut question: AgentQuestion, context: Option<&Arc<ContextInner>>) -> bool {
         let (link, account) = {
             let st = self.lock();
             question.origin = match context {
@@ -1673,24 +1781,148 @@ impl Inner {
         let session = question.session_id.clone();
         let question_id = question.question_id.clone();
         let turn = question.turn_id.clone();
-        let answer = QuestionAnswer::new(move |answers| {
+        let respond_link = link.clone();
+        let answer = QuestionAnswer::with_note(move |answers, note| {
             if let Some(inner) = weak.upgrade() {
                 inner.lock().questions.remove(&question_id);
-                inner.fire(
-                    &link,
-                    host_tools::USER_QUESTION_RESPOND,
-                    json!({"session_id": session, "question_id": question_id, "answers": answers}),
-                );
+                inner.fire(&respond_link, host_tools::USER_QUESTION_RESPOND, question_respond(&session, &question_id, answers, note));
             }
         });
         let id = question.question_id.clone();
-        let taken = self.tool_host().user_question(&self.cfg.app_id, account.as_deref(), question, answer);
+        let session = question.session_id.clone();
+        let count = question.answer_count();
+        let taken = self.tool_host().user_question(&self.cfg.app_id, account.as_deref(), question, answer.clone());
         if taken {
-            let mut st = self.lock();
-            remember(&mut st.host_held, id.clone());
-            st.questions.insert(id, turn);
+            {
+                let mut st = self.lock();
+                remember(&mut st.host_held, id.clone());
+                st.questions.insert(id.clone(), turn.clone());
+            }
+            self.track_prompt(id, Prompt { session, turn, answer: PromptAnswer::HostQuestion(answer, count), context: context.map(Arc::downgrade), link });
         }
         taken
+    }
+
+    /// An approval or question the host did not take, about to reach the
+    /// app's context or conversation: its deadline runs here.
+    fn track_unheld(self: &Arc<Self>, method: &str, params: &Value, session: &str, context: Option<&Arc<ContextInner>>) {
+        let (id, answer) = match method {
+            "approval/requested" => (params.get("approval_id").and_then(Value::as_str), PromptAnswer::AppApproval),
+            host_tools::USER_QUESTION_REQUESTED => {
+                let count = params.get("questions").and_then(Value::as_array).map_or(1, |q| q.len().max(1));
+                (params.get("question_id").and_then(Value::as_str), PromptAnswer::AppQuestion(count))
+            }
+            _ => return,
+        };
+        let Some(id) = id.filter(|id| !id.is_empty()) else { return };
+        let turn = params.get("turn_id").and_then(Value::as_str).unwrap_or("").to_owned();
+        let link = {
+            let st = self.lock();
+            if st.host_held.iter().any(|h| h == id) || st.prompts.contains_key(id) {
+                return;
+            }
+            st.link.clone()
+        };
+        let Some(link) = link else { return };
+        self.track_prompt(id.to_owned(), Prompt { session: session.to_owned(), turn, answer, context: context.map(Arc::downgrade), link });
+    }
+
+    /// Start `id`'s deadline: at it, an unanswered request expires; after
+    /// the grace, its turn is interrupted if it still runs.
+    fn track_prompt(self: &Arc<Self>, id: String, prompt: Prompt) {
+        self.lock().prompts.insert(id.clone(), prompt);
+        let (deadline, grace) = (self.cfg.prompt_deadline, self.cfg.expiry_grace);
+        let weak = Arc::downgrade(self);
+        self.rt().spawn(async move {
+            tokio::time::sleep(deadline).await;
+            let Some(inner) = weak.upgrade() else { return };
+            if !inner.prompt_expired(&id) {
+                return;
+            }
+            drop(inner);
+            tokio::time::sleep(grace).await;
+            if let Some(inner) = weak.upgrade() {
+                inner.expiry_grace_over(&id).await;
+            }
+        });
+    }
+
+    /// `id`'s deadline passed. Answered in time (or its turn ended): true
+    /// only when it is expiring now. What the host holds its own router or
+    /// request model expires at the same deadline (audit, the sheet);
+    /// what the app holds the broker denies or declines here. Never an
+    /// approval.
+    fn prompt_expired(self: &Arc<Self>, id: &str) -> bool {
+        let reason = host_tools::expiry_reason(self.cfg.prompt_deadline);
+        let (session, turn, context, app_answer) = {
+            let mut st = self.lock();
+            let Some(prompt) = st.prompts.get(id) else { return false };
+            if prompt.answer.answered() {
+                st.prompts.remove(id);
+                return false;
+            }
+            let app_answer = match &prompt.answer {
+                PromptAnswer::AppApproval => Some((prompt.link.clone(), approval_respond(&prompt.session, id, false, &format!("expired: {reason}")), "approval/respond")),
+                PromptAnswer::AppQuestion(count) => {
+                    let answers: Vec<Value> = (0..*count).map(|_| json!({"free_text": host_tools::expired_question_text(&reason)})).collect();
+                    Some((prompt.link.clone(), question_respond(&prompt.session, id, Value::Array(answers), &format!("expired: {reason}")), host_tools::USER_QUESTION_RESPOND))
+                }
+                _ => None,
+            };
+            (prompt.session.clone(), prompt.turn.clone(), prompt.context.clone(), app_answer)
+        };
+        eprintln!("app-peers: {}: {id} on turn {turn} expired ({reason})", self.cfg.app_id);
+        if let Some((link, params, method)) = app_answer {
+            self.fire(&link, method, params);
+        }
+        // The app hears it expired (its sheet or card says so).
+        let params = json!({"session_id": session, "turn_id": turn, "id": id, "reason": reason});
+        match context.and_then(|c| c.upgrade()) {
+            Some(context) => context.deliver(host_tools::PROMPT_EXPIRED, &params),
+            None => self.to_conversations(host_tools::PROMPT_EXPIRED, &params, &session),
+        }
+        true
+    }
+
+    /// The grace after `id` expired is over: a host that has not answered
+    /// is answered for (deny or decline), and a turn that still runs is
+    /// interrupted, so the peer's next queued turn starts.
+    async fn expiry_grace_over(self: &Arc<Self>, id: &str) {
+        let Some(prompt) = self.lock().prompts.remove(id) else { return };
+        let reason = host_tools::expiry_reason(self.cfg.prompt_deadline);
+        let late = match &prompt.answer {
+            PromptAnswer::HostApproval(answer) => answer.expire(&reason),
+            PromptAnswer::HostQuestion(answer, count) => {
+                let late = answer.expire(*count, &reason);
+                if late {
+                    // The host's request model withdraws it.
+                    self.tool_host().user_question_closed(&self.cfg.app_id, id);
+                }
+                late
+            }
+            _ => false,
+        };
+        if late {
+            eprintln!("app-peers: {}: the host did not answer the expired {id}; denied or declined here", self.cfg.app_id);
+        }
+        eprintln!("app-peers: {}: turn {} still runs {}s after {id} expired; interrupting it", self.cfg.app_id, prompt.turn, self.cfg.expiry_grace.as_secs());
+        if let Err(e) = self.interrupt_turn(&prompt.session, &prompt.turn).await {
+            eprintln!("app-peers: {}: interrupting turn {}: {e}", self.cfg.app_id, prompt.turn);
+        }
+    }
+
+    /// Interrupt `turn` on `session` (N1: its late calls are refused, its
+    /// calls in flight end). On the peer's session it no longer holds the
+    /// peer once the kernel took the interrupt: the next queued turn
+    /// starts (retried while the kernel still ends this one).
+    async fn interrupt_turn(self: &Arc<Self>, session: &str, turn: &str) -> Result<Value, String> {
+        self.note_interrupted(turn);
+        let result = self.request("turn/interrupt", json!({"session_id": session, "turn_id": turn})).await;
+        let peer_session = self.lock().peer.as_ref().map(|(_, p)| p.session.clone());
+        if result.is_ok() && peer_session.as_deref() == Some(session) {
+            self.peer_turn_ended(turn);
+        }
+        result
     }
 
     /// `turn` ended: its unanswered questions can no longer be answered.
@@ -1739,6 +1971,9 @@ impl Inner {
         }
         let mut method = method;
         if let Some(respond) = crate::host_approvals::auto_answer(&self.cfg.app_id, method, session, params) {
+            if let Some(id) = respond["approval_id"].as_str() {
+                self.lock().prompts.remove(id);
+            }
             let broker = self.clone();
             self.rt().spawn(async move {
                 if let Err(e) = broker.request("approval/respond", respond).await {
@@ -1855,6 +2090,26 @@ fn speakers_in_history(mut history: Value) -> Value {
     history
 }
 
+/// `approval/respond` params: the decision and why (`client_note`).
+fn approval_respond(session: &str, approval_id: &str, approve: bool, note: &str) -> Value {
+    let note = if note.is_empty() { "decided by the host (UPCR-2026-035 host_tool)" } else { note };
+    json!({
+        "session_id": session,
+        "approval_id": approval_id,
+        "decision": if approve { "approve" } else { "deny" },
+        "client_note": note,
+    })
+}
+
+/// `user_question/respond` params, with a note when the host gave one.
+fn question_respond(session: &str, question_id: &str, answers: Value, note: &str) -> Value {
+    let mut params = json!({"session_id": session, "question_id": question_id, "answers": answers});
+    if !note.is_empty() {
+        params["client_note"] = json!(note);
+    }
+    params
+}
+
 fn rpc_error_text(error: &Value) -> String {
     let message = error["message"].as_str().unwrap_or("request failed");
     match error["data"]["kind"].as_str() {
@@ -1949,6 +2204,9 @@ impl ContextInner {
         let mut method = method;
         if !self.conversation {
             if let Some(respond) = crate::host_approvals::auto_answer(&inner.cfg.app_id, method, &session, params) {
+                if let Some(id) = respond["approval_id"].as_str() {
+                    inner.lock().prompts.remove(id);
+                }
                 let broker = inner.clone();
                 inner.rt().spawn(async move {
                     if let Err(e) = broker.request("approval/respond", respond).await {
@@ -2274,22 +2532,25 @@ impl ContextInner {
                 }
             }
             ContextOp::Turn { text } if self.conversation => self.conversation_turn(inner, &session, text, trigger).await,
+            // Stop, on the shared conversation: this handle's own message
+            // still waiting is withdrawn; otherwise whatever turn runs on
+            // the peer stops, whoever started it (the person owns the
+            // device, so the system agent's turns too).
             ContextOp::Interrupt if self.conversation => {
-                let turn = self
-                    .turn
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .as_ref()
-                    .map(|w| w.turn_id.clone())
-                    .ok_or("No assistant turn of yours is running")?;
-                if inner.withdraw_person(&turn) {
+                let own = self.turn.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|w| w.turn_id.clone());
+                if let Some(own) = own.filter(|t| inner.withdraw_person(t)) {
                     if let Some(mut waiter) = self.turn.lock().unwrap_or_else(|e| e.into_inner()).take() {
                         waiter.finish(Err("The message was withdrawn before it started".into()));
                     }
-                    Ok(json!({"withdrawn": turn}))
+                    Ok(json!({"withdrawn": own}))
                 } else {
-                    inner.note_interrupted(&turn);
-                    inner.request("turn/interrupt", json!({"session_id": session, "turn_id": turn})).await
+                    let (running, speaker) = {
+                        let st = inner.lock();
+                        let running = st.peer_turn.clone().ok_or("Nothing is running in this conversation")?;
+                        let speaker = st.speaker_of(&running).map(|s| s.to_json());
+                        (running, speaker)
+                    };
+                    inner.interrupt_turn(&session, &running).await.map(|_| json!({"interrupted": running, "speaker": speaker}))
                 }
             }
             ContextOp::Turn { text } => {
@@ -2364,8 +2625,13 @@ impl ContextInner {
             ContextOp::Approval { id, approve } => {
                 // What the host holds (a `host_tool` approval, an agent's
                 // question) only the host answers, on the person's word.
-                if inner.lock().host_held.contains(&id) {
-                    return Err("The person answers this in OctoSense, not the app".into());
+                {
+                    let mut st = inner.lock();
+                    if st.host_held.contains(&id) {
+                        return Err("The person answers this in OctoSense, not the app".into());
+                    }
+                    // The app answered it: its deadline stops.
+                    st.prompts.remove(&id);
                 }
                 inner
                     .request(

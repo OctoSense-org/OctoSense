@@ -741,3 +741,29 @@ fn an_agents_calls_are_budgeted_per_turn_and_per_day() {
     assert_eq!(Catalog::default().budget("anyone"), super::relay::Budget::default());
     assert_eq!(super::relay::Budget::default().per_turn, super::relay::DEFAULT_CALLS_PER_TURN);
 }
+
+
+/// An expiry's reason reaches the kernel's record with the denial.
+#[test]
+fn an_expired_host_tool_approval_is_denied_with_its_reason() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let answers: Arc<Mutex<Vec<(bool, String)>>> = Arc::default();
+    let a = answers.clone();
+    let answer = ApprovalAnswer::with_note(move |ok, note| a.lock().unwrap().push((ok, note.to_string())));
+    let approval = HostToolApproval::parse(
+        &json!({"approval_id": "a9", "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "mail", "tool": "mail.send", "args": {"to": ["bo@example.org"]}, "risk": "act", "outward": true, "calling_kind": "app_peer", "calling_peer": "calendar-1"}}}),
+        "s#peer-calendar-1",
+    )
+    .unwrap();
+    relay.handle(Event::Approval { app: "calendar".into(), account: None, approval, answer }, &mut w);
+    w.router.sheet_expiry_s = 600;
+    w.router.tick(1 + 599);
+    assert!(w.decided().is_empty());
+    w.router.tick(1 + 600);
+    for event in w.decided() {
+        relay.handle(event, &mut w);
+    }
+    assert_eq!(answers.lock().unwrap().as_slice(), &[(false, "expired: no answer in 10 min".to_string())]);
+    assert_eq!(w.router.expired().len(), 1);
+}

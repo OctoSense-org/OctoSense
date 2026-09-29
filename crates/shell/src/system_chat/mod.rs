@@ -103,6 +103,7 @@ impl crate::questions::Consumer for RoutedQuestions {
             crate::questions::State::Open => None,
             crate::questions::State::Answered(text) => Some(text.clone()),
             crate::questions::State::Closed => Some("(no longer asked)".to_string()),
+            crate::questions::State::Expired(reason) => Some(format!("Expired: {reason}")),
         };
         let item = model::Item::Question {
             id: format!("{ROUTED_PREFIX}{}", request.id),

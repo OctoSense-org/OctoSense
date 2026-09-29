@@ -48,7 +48,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub use relay::{ApprovalIntake, ApprovalRelay, RecordingRelay};
-pub use router::{AppConfirm, AppConfirmRequest, Notice, Route, Router};
+pub use router::{AppConfirm, AppConfirmRequest, Expired, Notice, Route, Router};
 pub use types::{Batch, Caller, Confirm, Connection, Decision, Request, RequestContext, RequestId, RuleId, ToolSpec, Trigger};
 
 /// Everything the shell holds for approvals.
@@ -266,9 +266,26 @@ pub fn consent_for_contained(app: &str) -> bool {
 
 // ------------------------------------------------------------ the shell
 
-/// Once a second. True when something visible changed.
+/// Once a second. True when something visible changed. App agents'
+/// questions expire here too ([`crate::questions::tick`]).
 pub fn tick() -> bool {
-    with(|a| a.router.tick(now())).unwrap_or(false)
+    let questions = crate::questions::tick(now());
+    with(|a| a.router.tick(now())).unwrap_or(false) || questions
+}
+
+/// The Stop on an app agent's conversation (the shell's surface): what its
+/// agent asks and the shell holds is denied or declined, with why, and the
+/// turn running on its peer stops (the system agent's too: the person owns
+/// the device). The turns stopped.
+pub fn stop_agent(app: &str) -> Vec<String> {
+    with(|a| a.router.stop_agent(app, now()));
+    crate::questions::stop_agent(app);
+    crate::host_tools::interrupt_agent(app)
+}
+
+/// The person dismissed an expired approval's record.
+pub fn dismiss_expired(id: &RequestId) {
+    with(|a| a.router.dismiss_expired(id));
 }
 pub fn take_notices() -> Vec<Notice> {
     with(|a| a.router.take_notices()).unwrap_or_default()

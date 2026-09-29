@@ -7,6 +7,8 @@
 //! | a broker's `user_question/requested` on an app peer's session or context ([`crate::host_tools::ShellToolHost`]) | [`Questions::requested`]: one [`Request`] with its owning app, peer, account, context, turn, the questions and options, who started the turn ([`Origin`]) and so which [`Conversation`] it belongs to | every [`Consumer`] hears it ([`subscribe`]) |
 //! | the turn ended (the broker saw its terminal) | [`Questions::closed`] | the consumers hear it closed |
 //! | the person answered on a shell surface | [`answer`], with a [`PersonAnswer`] | `user_question/respond` on the broker's link, once |
+//! | nobody answered within the prompt deadline (10 min; `OCTOSENSE_PROMPT_DEADLINE_SECS`) | [`Questions::tick`] | declined (free text saying it expired, never an option), [`State::Expired`], kept visible |
+//! | the person pressed Stop on the app's conversation | [`Questions::stop_agent`] | declined, the consumers hear it answered |
 //!
 //! **Which conversation: the turn's origin, not the session.** An app
 //! agent has one shared conversation on its peer session (and its request
@@ -83,6 +85,9 @@ pub enum State {
     Answered(String),
     /// Its turn ended unanswered.
     Closed,
+    /// Nobody answered within the deadline: declined, with why ("no answer
+    /// in 10 min"). Shown as expired, not removed.
+    Expired(String),
 }
 
 /// One agent question, as every consumer sees it.
@@ -111,6 +116,8 @@ pub struct Request {
     pub origin_reported: bool,
     pub conversation: Conversation,
     pub state: State,
+    /// When it was asked (Unix seconds): its deadline counts from here.
+    pub asked: u64,
 }
 
 impl Request {
@@ -172,6 +179,8 @@ pub struct Questions {
     entries: Vec<Entry>,
     consumers: Vec<Box<dyn Consumer>>,
     generation: u64,
+    /// The prompt deadline in seconds (`None`: `host_tools::prompt_deadline`).
+    pub deadline_s: Option<u64>,
 }
 
 fn app_of_peer(peer_app: &str) -> &str {
@@ -197,6 +206,11 @@ impl Questions {
 
     /// A broker handed the host an agent's question: route it.
     pub fn requested(&mut self, peer_app: &str, account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer) -> u64 {
+        self.requested_at(peer_app, account, question, answer, crate::approvals::now())
+    }
+
+    /// [`Questions::requested`], asked at `now`.
+    pub fn requested_at(&mut self, peer_app: &str, account: Option<&str>, question: AgentQuestion, answer: QuestionAnswer, now: u64) -> u64 {
         let app = app_of_peer(peer_app).to_string();
         let origin = Origin::from(question.turn_origin);
         let conversation = match origin {
@@ -222,6 +236,7 @@ impl Questions {
             origin_reported: question.origin_reported,
             conversation,
             state: State::Open,
+            asked: now,
         };
         self.entries.push(Entry { request, answer });
         let index = self.entries.len() - 1;
@@ -258,6 +273,55 @@ impl Questions {
         self.entries[index].request.state = State::Answered(summary);
         self.changed(index);
         Ok(())
+    }
+
+    fn deadline(&self) -> std::time::Duration {
+        self.deadline_s.map(std::time::Duration::from_secs).unwrap_or_else(crate::ai_host::app_peers::host_tools::prompt_deadline)
+    }
+
+    /// Once a second: a question nobody answered within the deadline is
+    /// declined (free text saying so, never an option for the person) and
+    /// shown expired. True when any expired.
+    pub fn tick(&mut self, now: u64) -> bool {
+        let deadline = self.deadline();
+        let reason = crate::ai_host::app_peers::host_tools::expiry_reason(deadline);
+        let due: Vec<usize> = (0..self.entries.len())
+            .filter(|&i| self.entries[i].request.state == State::Open && now >= self.entries[i].request.asked.saturating_add(deadline.as_secs()))
+            .collect();
+        for &i in &due {
+            let count = self.entries[i].request.answer_count();
+            self.entries[i].answer.expire(count, &reason);
+            self.entries[i].request.state = State::Expired(reason.clone());
+            self.changed(i);
+        }
+        !due.is_empty()
+    }
+
+    /// The person pressed Stop on `app`'s conversation: its agent's open
+    /// questions are declined ("stopped"), and the consumers hear it.
+    pub fn stop_agent(&mut self, app: &str) -> usize {
+        let open: Vec<usize> = (0..self.entries.len()).filter(|&i| self.entries[i].request.state == State::Open && self.entries[i].request.app == app).collect();
+        for &i in &open {
+            let count = self.entries[i].request.answer_count();
+            let replies = vec![QuestionReply::text("The person stopped this turn; no answer."); count];
+            self.entries[i].answer.respond(&replies);
+            self.entries[i].request.state = State::Answered("(stopped)".into());
+            self.changed(i);
+        }
+        open.len()
+    }
+
+    /// Expired questions of every app's conversation, newest last.
+    pub fn expired_in_apps(&self) -> Vec<Request> {
+        self.entries.iter().filter(|e| matches!(e.request.state, State::Expired(_)) && matches!(e.request.conversation, Conversation::App(_))).map(|e| e.request.clone()).collect()
+    }
+
+    /// The person saw an expired question's record: it is let go.
+    pub fn dismiss(&mut self, id: u64) {
+        if let Some(i) = self.entries.iter().position(|e| e.request.id == id && matches!(e.request.state, State::Expired(_))) {
+            self.entries.remove(i);
+            self.generation += 1;
+        }
     }
 
     /// The open questions of one conversation, oldest first.
@@ -323,6 +387,31 @@ pub fn answer(id: u64, replies: &[QuestionReply], by: &PersonAnswer) -> Result<(
     let result = with(|q| q.answer(id, replies, by));
     wake();
     result
+}
+
+/// Once a second (with the approval router's tick). True when any expired.
+pub fn tick(now: u64) -> bool {
+    let any = with(|q| q.tick(now));
+    if any {
+        wake();
+    }
+    any
+}
+
+/// The Stop on `app`'s conversation: its open questions are declined.
+pub fn stop_agent(app: &str) -> usize {
+    let n = with(|q| q.stop_agent(app));
+    wake();
+    n
+}
+
+pub fn expired_in_apps() -> Vec<Request> {
+    with(|q| q.expired_in_apps())
+}
+
+pub fn dismiss(id: u64) {
+    with(|q| q.dismiss(id));
+    wake();
 }
 
 pub fn open(conversation: &Conversation) -> Vec<Request> {

@@ -206,7 +206,13 @@ pub enum ContextOp {
     /// host stamps it on every tool call and approval of the turn (ADR 0004
     /// §8: standing rules skip incoming content and unknown runs).
     TurnFrom { text: String, trigger: TurnTrigger },
-    /// `octos.turn.interrupt`: stop the context's running turn.
+    /// `octos.turn.interrupt`: stop the context's running turn. On the
+    /// peer's shared conversation ([`OctosAppService::open_conversation`])
+    /// it is the Stop: this handle's own message still waiting is
+    /// withdrawn, otherwise whatever turn runs on the peer stops, whoever
+    /// started it (the person, the app or the system agent: the person owns
+    /// the device). The reply names the turn (`interrupted`) and its
+    /// `speaker`; the peer's next queued turn then starts.
     Interrupt,
     /// A person's decision on a tool approval raised in this context,
     /// collected by the app's native UI (requires `octos.turn.start`).
