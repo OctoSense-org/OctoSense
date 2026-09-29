@@ -769,6 +769,9 @@ impl MenuModel {
                 // The typed confirmation travels with the row (lib.rs
                 // `developer_options_activate` checks it).
                 DEVELOPER_ON => format!("{DEVELOPER_ON}:{}", self.filter),
+                // So does the command-execution confirmation (lib.rs
+                // `assistant_commands_activate` checks it).
+                COMMANDS_ALLOW_ROW => format!("{COMMANDS_ALLOW_ROW}:{}", self.filter),
                 "workspace.files" => "apps.files".into(),
                 "workspace.tools.terminal" => "apps.terminal".into(),
                 "workspace.tools.task" => "apps.task".into(),
@@ -785,7 +788,18 @@ const DEVELOPER_ON: &str = "setup.developer.on";
 /// The Approvals page's row (lib.rs opens `approvals::open_settings`).
 pub const APPROVALS_ROW: &str = "setup.assistant.approvals";
 
-/// Settings (Setup) → Assistant → Approvals.
+/// The system chat's row (lib.rs opens `system_chat::open`).
+pub const SYSTEM_CHAT_ROW: &str = "setup.assistant.chat";
+/// Setup → Assistant → Command execution (system_chat/grants.rs).
+pub const COMMANDS_ROW: &str = "setup.assistant.commands";
+/// Its Allow row: carries what the person typed (the confirmation).
+pub const COMMANDS_ALLOW_ROW: &str = "setup.assistant.commands.allow";
+pub const COMMANDS_OFF_ROW: &str = "setup.assistant.commands.off";
+/// Restart the assistant so a changed grant applies.
+pub const ASSISTANT_RESTART_ROW: &str = "setup.assistant.restart";
+
+/// Settings (Setup) → Assistant: the system chat, Approvals, and Command
+/// execution.
 fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
     let mut items = Vec::new();
     if !existing.iter().any(|item| item.id == "setup") {
@@ -798,6 +812,46 @@ fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
             .aliases(&["approvals", "rules", "consent"])
             .describe("Standing rules, app agents and recent automatic approvals"),
     );
+    items.push(
+        MenuItem::new(SYSTEM_CHAT_ROW, "Assistant chat", MenuKind::Action)
+            .icon(Ico::Cpu)
+            .aliases(&["chat", "system agent", "assistant chat", "ask"])
+            .describe("Talk to the system agent (F8)"),
+    );
+    items.extend(command_items());
+    items
+}
+
+/// Setup → Assistant → Command execution: off by default; turning it on
+/// needs the confirmation typed into the menu's filter (the row carries it
+/// as an alias, so typing keeps it listed) and says what it risks.
+fn command_items() -> Vec<MenuItem> {
+    use crate::system_chat::grants;
+    let on = grants::command_execution();
+    let mut items = vec![MenuItem::new(COMMANDS_ROW, "Command execution", MenuKind::Menu)
+        .icon(Ico::Keyboard)
+        .aliases(&["commands", "terminal", "run commands"])
+        .describe(if on { "On: each command asks you first" } else { "Off: the assistant runs no commands" })];
+    items.push(MenuItem::new(&format!("{COMMANDS_ROW}.risk"), "What this allows", MenuKind::Inert).describe(grants::RISK));
+    if on {
+        items.push(MenuItem::new(COMMANDS_OFF_ROW, "Turn off command execution", MenuKind::Action).icon(Ico::Close).describe("The assistant runs no commands"));
+    } else {
+        items.push(
+            MenuItem::new(COMMANDS_ALLOW_ROW, "Allow the assistant to run commands", MenuKind::Action)
+                .icon(Ico::Check)
+                .aliases(&[grants::CONFIRM_PHRASE])
+                .describe(&format!("Type \u{201c}{}\u{201d}, then choose this. Each command asks you on a sheet", grants::CONFIRM_PHRASE)),
+        );
+    }
+    match grants::applied() {
+        grants::Applied::NeedsRestart => items.push(
+            MenuItem::new(ASSISTANT_RESTART_ROW, "Restart the assistant to apply", MenuKind::Action)
+                .icon(Ico::Refresh)
+                .describe("The running assistant started with the other setting"),
+        ),
+        grants::Applied::NextStart => items.push(MenuItem::new(&format!("{COMMANDS_ROW}.applies"), "Applies when the assistant starts", MenuKind::Inert)),
+        grants::Applied::Yes => items.push(MenuItem::new(&format!("{COMMANDS_ROW}.applies"), "In effect", MenuKind::Inert)),
+    }
     items
 }
 
@@ -1714,6 +1768,32 @@ mod tests {
         }
         model.sel = model.rows.iter().position(|r| r.target == DEVELOPER_ON).unwrap();
         assert_eq!(model.activate().as_deref(), Some("setup.developer.on:turn on developer mode"));
+    }
+
+    /// Setup → Assistant → Command execution: Allow carries the typed
+    /// confirmation to the shell (which checks it; lib.rs
+    /// `assistant_commands_activate`), and the chat row opens the chat.
+    #[test]
+    fn setup_assistant_offers_the_chat_and_the_command_switch() {
+        let mut model = MenuModel::default();
+        model.open_at("", MenuSkin::Menu);
+        model.sel = model.rows.iter().position(|r| r.target == "setup").expect("Setup is listed");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == "setup.assistant").expect("Assistant");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == SYSTEM_CHAT_ROW).expect("Assistant chat");
+        assert_eq!(model.activate().as_deref(), Some(SYSTEM_CHAT_ROW));
+        model.sel = model.rows.iter().position(|r| r.target == COMMANDS_ROW).expect("Command execution");
+        assert_eq!(model.activate(), None);
+        model.sel = model.rows.iter().position(|r| r.target == COMMANDS_ALLOW_ROW).expect("Allow");
+        assert_eq!(model.activate().as_deref(), Some("setup.assistant.commands.allow:"), "chosen without the phrase");
+        for ch in crate::system_chat::grants::CONFIRM_PHRASE.chars() {
+            model.filter.push(ch);
+            model.rebuild();
+            assert!(model.rows.iter().any(|r| r.target == COMMANDS_ALLOW_ROW));
+        }
+        model.sel = model.rows.iter().position(|r| r.target == COMMANDS_ALLOW_ROW).unwrap();
+        assert_eq!(model.activate().as_deref(), Some("setup.assistant.commands.allow:let the assistant run commands"));
     }
 
     /// Setup → Assistant → Approvals opens the Approvals page.

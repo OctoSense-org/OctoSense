@@ -167,11 +167,17 @@ file tools (octos fences them to the session's working directory), memory,
 `ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
 toolbox grants replace them, #108) and `tool_search`. Granted toolbox and
 cross-app tools join it as host tools through `SystemAgentTools`. Command
-execution is **planned, not available**: it is to be a host tool with a live
-approval (`terminal.run`), off by default and turned on by a Settings
-switch. `SystemAgentTools::grant_command_execution` is the seam, but no
-Settings switch sets it yet, and the host tool cannot be registered on the
-system session until octos can register tools per session (octos#2567).
+execution is **done** as a grant: the person's switch in Setup → Assistant →
+Command execution (off by default; turning it on needs the confirmation the
+person types, which says what it risks; `crates/shell/src/system_chat/grants.rs`)
+gives the system agent the host tool `terminal.run` through
+`SystemAgentTools::grant_command_execution`. The shell hands the grants to
+this crate (`system_tools::set_grants`); each kernel start takes them
+(`grants_at_start`, `system_agent_tools_in_effect()`), so a change applies
+after a restart, which Settings offers. Each command goes through the shell's
+approval router as `auto_approvable: false` with a live sheet showing the exact
+command (developer mode still answers it). Registering the host tool on the
+system session waits for octos's per-session tool registration (octos#2567).
 
 **What the kernel enforces today.** octos has no tool list the host can set
 for one session, so every start writes the `_main` profile's `tool_policy`

@@ -63,6 +63,7 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_panel;
+pub mod system_chat;
 pub use octosense_ai_host as ai_host;
 
 // A package's `main.rs` is `octosense_main!()` (below); what only it does
@@ -210,6 +211,10 @@ script_mod! {
                         // The approval surface (approvals/): the shell's
                         // approval and first-use sheets, the time-box
                         // indicator, and Settings > Assistant > Approvals.
+                        // The system chat (system_chat/): the person's
+                        // conversation with the system agent, F8. Under the
+                        // approval sheets, which answer its approvals.
+                        shell_system_chat := ShellSystemChat{}
                         shell_approvals := ShellApprovals{}
                         shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
@@ -368,6 +373,9 @@ pub struct App {
     /// The approvals' generation last drawn (approvals/).
     #[rust]
     pub approvals_generation: u64,
+    /// The system chat's generation the surfaces last drew (system_chat/).
+    #[rust]
+    pub system_chat_generation: u64,
     #[rust]
     pub hub: Option<WmHub>,
     #[rust]
@@ -3044,6 +3052,16 @@ impl App {
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
+        if target == shell::menu::SYSTEM_CHAT_ROW {
+            self.close_shell_menu(cx);
+            system_chat::open();
+            self.system_chat_changed(cx);
+            return;
+        }
+        if target.starts_with(shell::menu::COMMANDS_ROW) || target == shell::menu::ASSISTANT_RESTART_ROW {
+            self.assistant_commands_activate(cx, target);
+            return;
+        }
         if target == shell::menu::APPROVALS_ROW {
             self.close_shell_menu(cx);
             approvals::open_settings();
@@ -3174,6 +3192,73 @@ impl App {
         approvals::tick();
         peer_link::tick();
         self.approvals_changed(cx);
+        self.system_chat_changed(cx);
+    }
+
+    /// The system chat moved (a frame from the kernel, the router decided
+    /// one of its approvals): hand approvals on, and redraw.
+    fn system_chat_changed(&mut self, cx: &mut Cx) {
+        system_chat::pump();
+        let generation = system_chat::generation();
+        if generation != self.system_chat_generation {
+            self.system_chat_generation = generation;
+            self.redraw_all(cx);
+        }
+    }
+
+    /// The system chat's pane owns the pointer inside its rect while open.
+    fn system_chat_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !system_chat::is_open() {
+            return false;
+        }
+        let pane = self.ui.widget(cx, ids!(shell_system_chat));
+        let outcome = pane.borrow_mut::<system_chat::view::ShellSystemChat>().map(|mut p| p.pointer(cx, event)).unwrap_or(system_chat::view::Outcome::Ignored);
+        match outcome {
+            system_chat::view::Outcome::Ignored => false,
+            system_chat::view::Outcome::Taken => {
+                self.system_chat_changed(cx);
+                true
+            }
+            system_chat::view::Outcome::OpenProviders => {
+                system_chat::close();
+                self.launch_app(cx, "ai-providers");
+                self.system_chat_changed(cx);
+                true
+            }
+        }
+    }
+
+    /// Setup > Assistant > Command execution (`setup.assistant.commands.*`,
+    /// shell/menu.rs). The one place outside system_chat/ that turns the
+    /// system agent's command execution on: the person typed the
+    /// confirmation into the menu and chose Allow.
+    fn assistant_commands_activate(&mut self, cx: &mut Cx, target: &str) {
+        self.close_shell_menu(cx);
+        if let Some(typed) = target.strip_prefix(shell::menu::COMMANDS_ALLOW_ROW).and_then(|t| t.strip_prefix(':')) {
+            match system_chat::grants::CommandGesture::settings_phrase(typed) {
+                None => self.notify(
+                    cx,
+                    "The assistant may not run commands",
+                    &format!("{} To allow it, type \u{201c}{}\u{201d} in Command execution, then choose Allow.", system_chat::grants::RISK, system_chat::grants::CONFIRM_PHRASE),
+                ),
+                Some(gesture) => match system_chat::grants::set_command_execution(true, Some(gesture)) {
+                    Ok(()) => self.notify(cx, "Command execution is on", "Each command asks you on a sheet first. Restart the assistant to apply."),
+                    Err(why) => self.notify(cx, "Command execution is off", &why),
+                },
+            }
+        } else if target == shell::menu::COMMANDS_OFF_ROW {
+            match system_chat::grants::set_command_execution(false, None) {
+                Err(why) => self.notify(cx, "Command execution", &why),
+                Ok(()) => self.notify(cx, "Command execution is off", "Restart the assistant to apply."),
+            }
+        } else if target == shell::menu::ASSISTANT_RESTART_ROW {
+            if system_chat::grants::restart_assistant() {
+                self.notify(cx, "Assistant restarting", "Its conversation resumes when it is back.");
+            } else {
+                self.notify(cx, "Assistant", "It isn't running; the change applies when it starts.");
+            }
+        }
+        self.redraw_all(cx);
     }
 
     fn approvals_changed(&mut self, cx: &mut Cx) {
@@ -4298,6 +4383,13 @@ impl App {
                     }
                     // approval-sheet, approval-batch, approval-consent,
                     // approvals-settings (approvals/mod.rs).
+                    // system-chat, system-chat-send:<text> (system_chat/).
+                    if system_chat::test_action(name) {
+                        log!("wm: --test-action {}", name);
+                        self.system_chat_changed(cx);
+                        i += 2;
+                        continue;
+                    }
                     if approvals::test_action(name) {
                         log!("wm: --test-action {}", name);
                         self.redraw_all(cx);
@@ -4645,6 +4737,9 @@ impl MatchEvent for App {
         // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
         // and audit, before any app can ask for an approval.
         approvals::init(&octosense::paths::home());
+        // The system agent's grants (Setup > Assistant > Command execution),
+        // handed to the kernel before it first starts.
+        system_chat::init(std::path::Path::new(&octosense::paths::home()));
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -5107,6 +5202,7 @@ impl App {
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
         approvals::script_mod(vm);
+        system_chat::script_mod(vm);
         desktop::script_mod(vm);
         snap::script_mod(vm);
         mobile_surface::script_mod(vm);
@@ -5218,7 +5314,8 @@ impl App {
             && (self.dev_banner_pointer(cx, event)
                 || self.shell_menu_pointer(cx, event)
                 || self.shell_panel_pointer(cx, event)
-                || self.shell_glance_pointer(cx, event))
+                || self.shell_glance_pointer(cx, event)
+                || self.system_chat_pointer(cx, event))
         {
             return;
         }
@@ -5311,6 +5408,19 @@ impl App {
                     self.alt_armed = false;
                     return;
                 }
+                // The system chat's prompt, while its pane is open.
+                if system_chat::key(e) {
+                    self.alt_armed = false;
+                    self.system_chat_changed(cx);
+                    return;
+                }
+                // F8: the system chat, everywhere.
+                if e.key_code == KeyCode::F8 && bare_key(&e.modifiers) {
+                    self.alt_armed = false;
+                    system_chat::toggle();
+                    self.system_chat_changed(cx);
+                    return;
+                }
                 if self.phone_key(cx,e) {return;}
                 // F10 is the assistant, everywhere (aicontrol decision 8):
                 // under the WM the bare key opens the pane for whatever is
@@ -5382,7 +5492,17 @@ impl App {
                 self.pump_warm(cx);
             }
         }
+        // The phone's input method types into the system chat's prompt.
+        if let Event::TextInput(t) = event {
+            if cfg!(native_mobile) && self.state.is_some() && system_chat::text_input(&t.input) {
+                self.system_chat_changed(cx);
+                return;
+            }
+        }
         if let Event::Signal = event {
+            if self.state.is_some() {
+                self.system_chat_changed(cx);
+            }
             // A card was published, replaced or withdrawn (glance.rs).
             if glance::generation() != self.glance_generation && self.state.is_some() {
                 self.glance_generation = glance::generation();

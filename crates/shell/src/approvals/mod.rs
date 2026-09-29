@@ -66,6 +66,9 @@ pub struct Approvals {
     /// Decisions for the peer link's calls (`peerlink:` ids), drained by
     /// `peer_link` ([`take_peer_decisions`]).
     peer: RecordingRelay,
+    /// Decisions for the system chat's approvals (`syschat:` ids), drained
+    /// by the chat ([`take_system_chat_decisions`]).
+    system_chat: RecordingRelay,
     external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
 }
 
@@ -74,6 +77,7 @@ pub struct Approvals {
 struct Dispatch {
     bus: RecordingRelay,
     peer: RecordingRelay,
+    system_chat: RecordingRelay,
     queue: RecordingRelay,
     external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
 }
@@ -85,6 +89,9 @@ impl ApprovalRelay for Dispatch {
         }
         if id.0.starts_with(crate::peer_link::link::HELD_PREFIX) {
             return self.peer.approval_decided(id, decision, reason);
+        }
+        if id.0.starts_with(crate::system_chat::HELD_PREFIX) {
+            return self.system_chat.approval_decided(id, decision, reason);
         }
         match self.external.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             Some(relay) => relay.approval_decided(id, decision, reason),
@@ -105,10 +112,11 @@ impl Approvals {
         let queue = RecordingRelay::default();
         let bus = RecordingRelay::default();
         let peer = RecordingRelay::default();
+        let system_chat = RecordingRelay::default();
         let external = Arc::new(Mutex::new(None));
-        let dispatch = Dispatch { bus: bus.clone(), peer: peer.clone(), queue: queue.clone(), external: external.clone() };
+        let dispatch = Dispatch { bus: bus.clone(), peer: peer.clone(), system_chat: system_chat.clone(), queue: queue.clone(), external: external.clone() };
         let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), contacts, Box::new(dispatch));
-        Approvals { router, consent, settings_open: false, queue, bus, peer, external }
+        Approvals { router, consent, settings_open: false, queue, bus, peer, system_chat, external }
     }
     /// Sheets, rules, consent and the page: one number for "redraw".
     pub fn generation(&self) -> u64 {
@@ -185,6 +193,12 @@ pub fn take_bus_decisions() -> Vec<(RequestId, Decision, String)> {
 /// The peer link's decisions (`peer_link::link::HELD_PREFIX` ids).
 pub fn take_peer_decisions() -> Vec<(RequestId, Decision, String)> {
     with(|a| a.peer.take()).unwrap_or_default()
+}
+
+/// The system chat's approvals (`crate::system_chat`): the router's
+/// decisions, which the chat alone sends to the kernel.
+pub fn take_system_chat_decisions() -> Vec<(RequestId, Decision, String)> {
+    with(|a| a.system_chat.take()).unwrap_or_default()
 }
 
 /// An app module registers its own confirmation sheet (`confirm: app`).

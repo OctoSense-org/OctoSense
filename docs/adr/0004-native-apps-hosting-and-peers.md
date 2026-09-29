@@ -327,9 +327,9 @@ Gaps between this decision and `main` found after it was accepted (2026-09-28; s
 - **`dev.run` registration** (section 13) waits on octos#2567's host tool registration.
 - **Developer mode per app** (section 13): choosing which apps it covers in Settings (today only through `OCTOSENSE_DEV_MODE`), and the phone gesture that turns it on.
 - **The system agent's exact tool list** (section 12, step 4): the `_main` profile's `tool_policy` is a ceiling, not the list; the exact list needs octos#2567's session tool lists (its review item M1).
-- **The Settings switch for the system agent's command execution** (section 12): `SystemAgentTools::grant_command_execution` exists, but no Settings switch sets it, and its host tool needs octos#2567.
+- [x] **The Settings switch for the system agent's command execution** (section 12): done. Setup → Assistant → Command execution sets `SystemAgentTools::grant_command_execution` with the person's typed confirmation, applies from the next kernel start (with a restart offered), and routes each command through the approval router as `auto_approvable: false`. Registering its host tool on the system session still needs octos#2567.
 - **The agent workspace is the account folder** (section 11): `peer/prepare` is to get the account folder as its `cwd` (today the broker sends none and the peer uses the kernel-provisioned workspace). The account folder name (SHA-256, `app_storage`'s `account_hash`) and the memory namespace tag (FNV-1a, `account_tag` in the `crates/app-peers` broker) are two different hashes of one account; one should derive from the other. Changing the memory tag re-keys every app's memory, so it needs a migration (or the folder name follows the tag).
-- **A shell-native chat with the system agent**: today only a paired Talk to Octos client reaches it; the desktop's AI pane is Makepad's `aichat`, not the system agent.
+- [x] **A shell-native chat with the system agent**: done. `crates/shell/src/system_chat/` (Setup → Assistant → Assistant chat, F8; full screen on a phone) talks to `_main:api:octosense#system` over the shell's own kernel connection, and its approvals go through the approval router, batched per request.
 
 ## Open questions
 

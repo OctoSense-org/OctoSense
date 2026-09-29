@@ -610,7 +610,7 @@ fn only_settings_and_the_sheet_make_a_person_gesture() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     walk(&src, &mut files);
-    let allowed = ["approvals/view.rs", "approvals/settings_page.rs", "approvals/rules.rs", "approvals/tests.rs"];
+    let allowed = ["approvals/view.rs", "approvals/settings_page.rs", "approvals/rules.rs", "approvals/tests.rs", "system_chat/tests.rs"];
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap();
         let rel = f.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
