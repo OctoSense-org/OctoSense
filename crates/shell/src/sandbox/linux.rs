@@ -111,6 +111,11 @@ pub struct Rule {
     pub access: u64,
 }
 
+/// Read and execute: what a program path keeps inside the private dirs.
+pub fn read_exec() -> u64 {
+    read() | FS_EXECUTE
+}
+
 fn read() -> u64 {
     FS_READ_FILE | FS_READ_DIR
 }
@@ -171,11 +176,19 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
     let own = [policy.jail.clone(), policy.secrets.clone()];
     let mut split = Vec::new();
     for rule in out {
-        // Its own jail and secrets, and its program (desktop builds live in
-        // `<OctoSense home>/build`), keep their rights inside the private dirs.
-        if own.contains(&rule.path) || policy.program.contains(&rule.path) {
+        if own.contains(&rule.path) {
             split.push(rule);
+        } else if policy.program.contains(&rule.path)
+            && policy.private.iter().any(|root| rule.path.starts_with(root))
+            && super::program_reopenable(&rule.path, &policy.private)
+        {
+            // Its program inside the private dirs (desktop builds live in
+            // `<OctoSense home>/build`): read and execute only, never write.
+            split.push(Rule { path: rule.path, access: rule.access & rx });
         } else {
+            if policy.program.contains(&rule.path) && policy.private.iter().any(|root| rule.path.starts_with(root)) {
+                makepad_widgets::log!("sandbox {}: program path {} holds private data; not reopened", policy.app, rule.path.display());
+            }
             around_private(rule, &policy.private, &mut split);
         }
     }

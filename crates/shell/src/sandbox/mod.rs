@@ -221,6 +221,40 @@ impl Policy {
     }
 }
 
+/// Whether a process app's program path may be reopened (read and execute
+/// only) inside the host's private directories, where desktop builds put
+/// programs (`<OctoSense home>/build`). Only a path strictly inside a private
+/// directory that neither contains nor equals one, and that is not inside a
+/// sensitive one (another app's jail or secrets, the kernel's home or core
+/// dir, the peers' host tokens). A checkout or target dir that is the
+/// OctoSense home itself is never reopened.
+pub fn program_reopenable(program: &Path, private: &[PathBuf]) -> bool {
+    if !private.iter().any(|root| program != root && program.starts_with(root)) {
+        return false;
+    }
+    if private.iter().any(|dir| dir.starts_with(program)) {
+        return false; // it is, or contains, a private directory
+    }
+    // Sensitive: a private directory inside another one (apps, secrets, the
+    // kernel's core dir), and the kernel's home around its core dir.
+    let sensitive = |dir: &PathBuf| {
+        private.iter().any(|other| other != dir && dir.starts_with(other))
+            || dir.file_name().is_some_and(|n| n == ".octos")
+            || private.contains(&dir.join(".octos"))
+    };
+    if private.iter().any(|dir| sensitive(dir) && program.starts_with(dir)) {
+        return false;
+    }
+    // The peers' host tokens live directly in the OctoSense home.
+    !private.iter().any(|root| {
+        program
+            .strip_prefix(root)
+            .ok()
+            .and_then(|rel| rel.components().next())
+            .is_some_and(|c| c.as_os_str() == "app-peers")
+    })
+}
+
 /// The host's private directories for a sandbox: the OctoSense home, the
 /// apps and secrets roots (they may live elsewhere), the kernel's core dir,
 /// and the kernel home around a `.octos` core dir. Each resolved, without

@@ -405,3 +405,60 @@ fn a_program_inside_the_octosense_home_stays_readable() {
     outside.program = vec![PathBuf::from("/nonexistent/programs")];
     assert!(!macos::profile(&outside).contains("even inside them"));
 }
+
+#[test]
+fn a_program_path_that_is_or_holds_private_data_is_never_reopened() {
+    // A dev setup whose checkout or target dir is the OctoSense home itself
+    // (or holds it), or a program inside a sensitive directory, must not
+    // reopen the home: peer tokens, other apps' jails and secrets, the kernel.
+    let root = Path::new("/nonexistent/home");
+    let octo = root.join(".octosense");
+    let p = home_rw_with_octosense_home(root);
+    for (program, why) in [
+        (octo.clone(), "the OctoSense home itself"),
+        (root.to_path_buf(), "a directory holding the OctoSense home"),
+        (octo.join("apps/other/bin"), "another app's jail"),
+        (octo.join("secrets"), "the secrets root"),
+        (octo.join("app-peers"), "the peers' host tokens"),
+        (root.join("octos-home/.octos/bin"), "the kernel's core dir"),
+        (root.join("octos-home/tools"), "the kernel's home"),
+    ] {
+        assert!(!crate::sandbox::program_reopenable(&program, &p.private), "{why} must not be reopenable");
+        let mut q = p.clone();
+        q.program = vec![program.clone()];
+        let text = macos::profile(&q);
+        let deny = text.find("(deny file-read* file-write* (subpath \"/nonexistent/home/.octosense\")").expect(&text);
+        assert!(!text[deny..].contains("even inside them"), "{why}: nothing reopened\n{text}");
+        if program.starts_with(&octo) || program.starts_with(root.join("octos-home")) {
+            assert!(text[deny..].contains("not reopened (it holds private data)"), "{why}: the skip is recorded\n{text}");
+        }
+    }
+    assert!(crate::sandbox::program_reopenable(&octo.join("build/makepad"), &p.private));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn the_linux_rules_keep_a_program_inside_the_home_read_and_execute_only() {
+    let scratch = Scratch::new("octoprog");
+    let root = &scratch.0;
+    let octo = root.join(".octosense");
+    std::fs::create_dir_all(octo.join("build/makepad")).unwrap();
+    std::fs::create_dir_all(octo.join("apps/probe")).unwrap();
+    let mut p = home_rw_with_octosense_home(root);
+    let build = octo.join("build/makepad");
+    p.program = vec![build.clone()];
+    // Under cargo the program gets every right elsewhere; inside the home it
+    // keeps read and execute only.
+    for via_cargo in [false, true] {
+        let rules = linux::rules(&p, 3, via_cargo);
+        let kept: Vec<_> = rules.iter().filter(|r| r.path == build).collect();
+        assert!(!kept.is_empty(), "the program stays reachable (via_cargo={via_cargo})");
+        let rx = linux::read_exec();
+        for r in kept {
+            assert_eq!(r.access & !rx, 0, "read and execute only, never write (via_cargo={via_cargo}): {:#x}", r.access);
+        }
+    }
+    // The home itself as the program: dropped, nothing reopened.
+    p.program = vec![octo.clone()];
+    assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != octo), "the OctoSense home is never granted");
+}
