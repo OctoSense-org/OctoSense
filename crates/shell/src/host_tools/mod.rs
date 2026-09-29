@@ -49,7 +49,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use serde_json::Value;
 
-use crate::ai_host::app_peers::host_tools::{self, AgentQuestion, ApprovalAnswer, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
+use crate::ai_host::app_peers::host_tools::{self, AgentQuestion, ApprovalAnswer, InputRefusal, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
 use crate::approvals::{self, Caller, Decision, RequestContext, RequestId, Route, ToolSpec};
 use crate::peer_link::{self, KernelToolCall, Refused, ToolCallResult};
 pub use relay::{app_of_peer, Event, Relay, APPROVAL_PREFIX, BUS_PREFIX, CONFIRM_PREFIX, SYSTEM, TERMINAL_RUN, TOOLBOX};
@@ -223,13 +223,13 @@ impl ToolHost for ShellToolHost {
         submit(Event::Cancel { call_id: call_id.to_string(), reason: reason.to_string() });
     }
 
-    fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), String> {
+    fn admit_input(&self, app_id: &str, account: &str, input: &PeerInput) -> Result<(), InputRefusal> {
         let app = app_of_peer(app_id);
         if suspended(app_id, Some(account)) {
-            return Err("the account is signed out".into());
+            return Err(InputRefusal::SignedOut);
         }
         if !approvals::consent_granted(app) && !crate::dev_mode::grants_all(app) {
-            return Err("the person has not allowed this app's agent".into());
+            return Err(InputRefusal::NoConsent);
         }
         makepad_widgets::log!("host tools: the system agent's input {} starts {app}'s turn {}", input.input_id, input.turn_id);
         Ok(())

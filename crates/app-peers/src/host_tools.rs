@@ -16,7 +16,7 @@
 //! | --- | --- |
 //! | `peer/tool/call` | [`ToolHost::tool_call`] with a [`HostToolCall`] and its [`ToolReply`] |
 //! | `peer/tool/cancel` (timeout, interrupt), the link closing | [`ToolHost::tool_cancel`]; the reply is closed first |
-//! | `peer/input` (the system agent's input) | the broker starts the turn; [`ToolHost::admit_input`] may refuse it |
+//! | `peer/input` (the system agent's input) | the broker starts the turn; [`ToolHost::admit_input`] may refuse it, and the broker says why (`peer/input/reject`, [`InputRefusal`]) |
 //! | `approval/requested` with `approval_kind: "host_tool"` | [`ToolHost::host_tool_approval`] with an [`ApprovalAnswer`] |
 //! | `user_question/requested` on the peer's session or a context (octos's `ask_user_question`) | [`ToolHost::user_question`] with a [`QuestionAnswer`]; the turn's end closes it ([`ToolHost::user_question_closed`]) |
 //!
@@ -43,6 +43,65 @@ pub const TOOL_CALL: &str = "peer/tool/call";
 pub const TOOL_RESULT: &str = "peer/tool/result";
 pub const TOOL_CANCEL: &str = "peer/tool/cancel";
 pub const PEER_INPUT: &str = "peer/input";
+/// The host refuses a `peer/input` it will not act on (octos#2621).
+pub const PEER_INPUT_REJECT: &str = "peer/input/reject";
+/// How many of the system agent's inputs wait for a busy peer before the
+/// host refuses more (`busy`).
+pub const MAX_QUEUED_INPUTS: usize = 8;
+
+/// Why the host refuses a `peer/input` (`peer/input/reject`'s `reason`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InputRefusal {
+    /// The account is signed out or suspended (ADR 0004 §11).
+    SignedOut,
+    /// The person has not allowed the app's agent (ADR 0004 §4).
+    NoConsent,
+    /// The peer is busy past the host's queue limit.
+    Busy,
+    /// Anything else, said in one line.
+    Other(String),
+}
+
+impl InputRefusal {
+    pub fn reason(&self) -> &'static str {
+        match self {
+            InputRefusal::SignedOut => "signed_out",
+            InputRefusal::NoConsent => "no_consent",
+            InputRefusal::Busy => "busy",
+            InputRefusal::Other(_) => "other",
+        }
+    }
+    /// The message octos takes with `other` only: one line, 1–256 bytes,
+    /// no control characters.
+    pub fn message(&self) -> Option<String> {
+        let InputRefusal::Other(text) = self else { return None };
+        let mut line: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect::<String>().trim().to_owned();
+        if line.is_empty() {
+            line = "refused by the host".into();
+        }
+        while line.len() > 256 {
+            line.pop();
+        }
+        Some(line)
+    }
+    /// `peer/input/reject`'s `reason` and `message` fields.
+    pub fn fields(&self) -> Value {
+        let mut out = json!({"reason": self.reason()});
+        if let Some(message) = self.message() {
+            out["message"] = json!(message);
+        }
+        out
+    }
+}
+
+impl std::fmt::Display for InputRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputRefusal::Other(text) => write!(f, "other: {text}"),
+            other => f.write_str(other.reason()),
+        }
+    }
+}
 /// `approval/requested`'s `approval_kind` for a host-routed tool.
 pub const HOST_TOOL_KIND: &str = "host_tool";
 /// What an app's context sees instead of a `host_tool` approval: the host
@@ -794,8 +853,9 @@ pub trait ToolHost: Send + Sync {
     fn tool_cancel(&self, _app_id: &str, _call_id: &str, _reason: &str) {}
 
     /// A `peer/input` for `app_id`'s peer, before its turn starts: `Err`
-    /// refuses it (no turn runs).
-    fn admit_input(&self, _app_id: &str, _account: &str, _input: &PeerInput) -> Result<(), String> {
+    /// refuses it; no turn runs and the broker tells the kernel why
+    /// (`peer/input/reject`), so the system agent learns it.
+    fn admit_input(&self, _app_id: &str, _account: &str, _input: &PeerInput) -> Result<(), InputRefusal> {
         Ok(())
     }
 
@@ -906,6 +966,16 @@ mod tests {
         let cross = declaration(&entry, Some("mail")).unwrap();
         assert_eq!(cross["app"], "mail", "a cross-app grant is marked with its owning app");
         assert!(declaration(&json!({"description": "no name"}), None).is_none());
+    }
+
+    #[test]
+    fn an_input_refusal_carries_octos_reasons_and_a_message_only_for_other() {
+        assert_eq!(InputRefusal::SignedOut.fields(), json!({"reason": "signed_out"}));
+        assert_eq!(InputRefusal::NoConsent.fields(), json!({"reason": "no_consent"}));
+        assert_eq!(InputRefusal::Busy.fields(), json!({"reason": "busy"}));
+        assert_eq!(InputRefusal::Other("a\nb".into()).fields(), json!({"reason": "other", "message": "a b"}));
+        assert_eq!(InputRefusal::Other("x".repeat(400)).message().unwrap().len(), 256);
+        assert_eq!(InputRefusal::Other("  ".into()).message().unwrap(), "refused by the host");
     }
 
     #[test]

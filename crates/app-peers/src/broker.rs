@@ -52,7 +52,7 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::contract::*;
-use crate::host_tools::{self, AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, PeerInput, QuestionAnswer, ToolHost, ToolOutcome, ToolReply};
+use crate::host_tools::{self, AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, InputRefusal, PeerInput, QuestionAnswer, ToolHost, ToolOutcome, ToolReply};
 
 /// A boxed future, for the object-safe transport traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -1337,19 +1337,43 @@ impl Inner {
         let Some(peer) = peer.filter(|p| p.slug == input.peer && p.session == input.session_id) else {
             return eprintln!("app-peers: {}: input {} is not for this app's peer", self.cfg.app_id, input.input_id);
         };
-        let _ = peer;
+        // A refusal the host already knows is said to the kernel before any
+        // turn starts (octos#2621), so the system agent learns why.
         let host = self.tool_host();
         let Some(account) = account.filter(|a| !host.suspended(&self.cfg.app_id, a)) else {
-            return eprintln!("app-peers: {}: input {} refused: the account is signed out", self.cfg.app_id, input.input_id);
+            return self.reject_input(&peer, &input, InputRefusal::SignedOut);
         };
         if let Err(why) = host.admit_input(&self.cfg.app_id, &account, &input) {
-            return eprintln!("app-peers: {}: input {} refused: {why}", self.cfg.app_id, input.input_id);
+            return self.reject_input(&peer, &input, why);
         }
         if busy {
+            let full = self.lock().input_queue.len() >= host_tools::MAX_QUEUED_INPUTS;
+            if full {
+                return self.reject_input(&peer, &input, InputRefusal::Busy);
+            }
+            // Queued: it starts later, with its own turn id.
             self.lock().input_queue.push_back(input);
         } else {
             self.start_input(input);
         }
+    }
+
+    /// `peer/input/reject` on this link (the one the input came on), with
+    /// the peer's credential, before any `turn/start` with its turn id.
+    fn reject_input(self: &Arc<Self>, peer: &PeerInfo, input: &PeerInput, why: InputRefusal) {
+        eprintln!("app-peers: {}: input {} refused: {why}", self.cfg.app_id, input.input_id);
+        let Some(link) = self.lock().link.clone() else { return };
+        let mut params = json!({
+            "profile_id": self.cfg.profile_id,
+            "session_id": self.cfg.originator,
+            "peer": peer.slug,
+            "host_token": peer.token,
+            "input_id": input.input_id,
+        });
+        for (k, v) in why.fields().as_object().into_iter().flatten() {
+            params[k] = v.clone();
+        }
+        self.fire(&link, host_tools::PEER_INPUT_REJECT, params);
     }
 
     fn start_input(self: &Arc<Self>, input: PeerInput) {
