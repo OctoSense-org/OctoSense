@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+> 在整个系统中的位置：见 [OctoSense 架构](../../docs/architecture.zh-CN.md)（含架构图）。
+
 [octos](https://github.com/octos-org/octos) Agent 内核是一项 **Shell 服务**。
 Shell（`phone/` 中的 Home、`desktop/` 中的桌面）拥有它；**AI providers** 系统应用
 通过 `llm` 宿主服务配置它；**AppCard** 以及之后 Rinx 的原生小程序宿主连接它。

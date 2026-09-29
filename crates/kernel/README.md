@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+> Where this fits: see the [OctoSense architecture](../../docs/architecture.md) (with diagrams).
+
 The [octos](https://github.com/octos-org/octos) agent kernel is a **shell
 service**. The shell (Home in `phone/`, the desktop in `desktop/`) owns it; the
 **AI providers** system app configures it through the `llm` host service;

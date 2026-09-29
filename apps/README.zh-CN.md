@@ -3,6 +3,8 @@
 [English](README.md) | 简体中文
 
 [OctoSense](https://github.com/OctoSense-org/.github/blob/main/profile/README.zh-CN.md)
+
+> 在整个系统中的位置：见 [OctoSense 架构](../docs/architecture.zh-CN.md)（含架构图）。
 （运行在操作系统之上的 Agent 交互 Shell）自带的第一方应用，以及它们背后的宿主服务。
 它们位于 [OctoSense 仓库](../README.zh-CN.md)的 `apps/`；2026-09-27 之前它们是
 OctoSense-System-Apps 仓库（已归档）。

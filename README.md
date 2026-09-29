@@ -16,6 +16,8 @@ It was OctoSense-Desktop; OctoSense-ROM (retired; merged into this repository) a
 
 ## How it fits together
 
+![OctoSense AI services: processes and transports](docs/images/ai-services-processes.png)
+
 ```
  person ──> OctoSense shell (one process) ──── OUP (stdio) ────> octos kernel (one per shell)
             ├─ native modules: App Hub, Rinx          ├─ system agent session

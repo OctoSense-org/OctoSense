@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+> Where this fits: see the [OctoSense architecture](../docs/architecture.md) (with diagrams).
+
 The OctoSense phone shell: a Makepad app that is the device's Home screen.
 Home pages with live tiles and app pairs, a gesture layer, the shade
 (notifications left, controls right), Recents, a live island for ongoing
