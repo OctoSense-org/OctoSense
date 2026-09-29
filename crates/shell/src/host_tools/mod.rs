@@ -273,8 +273,7 @@ impl relay::Env for ShellEnv {
         suspended(app, account)
     }
     fn system_tools(&self) -> BTreeSet<String> {
-        let granted = crate::system_chat::grants::command_execution();
-        granted.then(|| TERMINAL_RUN.to_string()).into_iter().collect()
+        crate::system_chat::grants::host_tools()
     }
     fn tool_rule(&self, owner: &str, tool: &str) -> (bool, bool) {
         let short = tool.split_once('.').map(|(_, t)| t).unwrap_or(tool);

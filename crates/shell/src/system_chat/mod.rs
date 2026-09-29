@@ -110,6 +110,7 @@ fn spawn(shared: Arc<Mutex<Shared>>) -> Worker {
         .name("system-chat".into())
         .spawn(move || {
             let mut driver = Driver::new(connector());
+            driver.set_waker(std::thread::current());
             let mut seen = u64::MAX;
             loop {
                 loop {
@@ -212,6 +213,17 @@ pub fn interrupt() {
     command(Command::Interrupt);
 }
 
+/// The system agent's granted host tools changed (Setup's switch): the
+/// connected chat registers the new set on its session at once (the set
+/// lives with the connection; a chat that is not connected registers when
+/// it connects).
+pub fn sync_host_tools() {
+    let running = with(|c| c.worker.is_some());
+    if running {
+        command(Command::SyncTools);
+    }
+}
+
 pub fn new_conversation() {
     command(Command::NewConversation);
 }
@@ -254,6 +266,8 @@ pub fn pump() {
                 }
             }
             Effect::ApprovalGone(_) => {}
+            Effect::ToolCall { call, reply } => crate::host_tools::system_call(call, reply),
+            Effect::ToolCancel(call_id) => crate::host_tools::system_cancel(&call_id),
         }
     }
     for (id, decision, _reason) in crate::approvals::take_system_chat_decisions() {
@@ -267,12 +281,16 @@ pub fn pump() {
 /// call, batched per request (its turn; the prompt is the plan).
 pub fn route_approval(ask: &model::ApprovalAsk) -> crate::approvals::Route {
     use crate::approvals::{Batch, Caller, RequestContext, ToolSpec, Trigger};
+    // Command execution (`terminal.run`, the host tool Setup's switch grants
+    // the system agent) is a command: `auto_approvable: false`, no standing
+    // rule answers it, developer mode may (ADR 0004 §12, §13).
     let tool = if ask.tool == grants::COMMAND_TOOL { ToolSpec::host(&ask.tool).command() } else { ToolSpec::host(&ask.tool) };
-    let app = if ask.tool == grants::COMMAND_TOOL { grants::COMMAND_APP } else { APP };
+    let app = if ask.tool == grants::COMMAND_TOOL { grants::COMMAND_APP } else { ask.app.as_deref().unwrap_or(APP) };
     let context = RequestContext {
         call_id: format!("{HELD_PREFIX}{}", ask.approval_id),
         trigger: Trigger::Person,
         batch: Some(Batch { id: format!("{HELD_PREFIX}{}", ask.turn), plan: ask.plan.clone() }),
+        outcome_unknown: ask.outcome_unknown,
         ..RequestContext::default()
     };
     crate::approvals::approval_requested(app, tool, ask.args.clone(), Caller::SystemAgent, context)

@@ -5,7 +5,7 @@
 
 use super::grants::{self, CommandGesture, GrantStore};
 use super::model::{ApprovalState, ChatModel, Effect, Item, Phase, Role, ToolStatus};
-use super::session::{Closed, Command, Connector, Driver, Link, Recv, Unavailable, SYSTEM_SESSION};
+use super::session::{Closed, Command, Connector, Driver, Link, Recv, SystemHost, Unavailable, SYSTEM_SESSION};
 use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -90,9 +90,27 @@ impl Connector for FakeConnector {
     }
 }
 
+/// The system session's grants and credential, as a test sets them.
+#[derive(Clone, Default)]
+struct Grants(Arc<Mutex<(Vec<Value>, Option<String>)>>);
+
+impl SystemHost for Grants {
+    fn declarations(&self) -> Vec<Value> {
+        self.0.lock().unwrap().0.clone()
+    }
+    fn host_token(&self) -> Option<String> {
+        self.0.lock().unwrap().1.clone()
+    }
+}
+
 fn driver() -> (Driver, Fake) {
+    let (d, fake, _) = driver_with(Grants::default());
+    (d, fake)
+}
+
+fn driver_with(grants: Grants) -> (Driver, Fake, Grants) {
     let fake = Fake::default();
-    (Driver::new(Box::new(FakeConnector(fake.clone()))), fake)
+    (Driver::with_system_host(Box::new(FakeConnector(fake.clone())), Box::new(grants.clone())), fake, grants)
 }
 
 /// Step until nothing is left to read.
@@ -334,7 +352,7 @@ fn the_chats_approvals_reach_the_router_batched_per_request() {
     let mut a = Approvals::memory();
     let ask = |id: &str| super::model::ApprovalAsk {
         approval_id: id.into(), turn: "t1".into(), tool: "write_file".into(), title: "t".into(), body: "b".into(),
-        args: json!({"path": id}), plan: "Tidy my notes".into(),
+        args: json!({"path": id}), plan: "Tidy my notes".into(), app: None, outcome_unknown: false,
     };
     // What `route_approval` sends, on a router of our own.
     for id in ["a1", "a2"] {
@@ -511,4 +529,153 @@ fn a_system_agent_turn_from_the_pane_on_a_real_kernel() {
     let _ = model.kill();
     let _ = model.wait();
     let _ = std::fs::remove_dir_all(dir);
+}
+
+
+// ---------------------------------------------------------------- host tools (UPCR-2026-035)
+
+fn command_grant() -> Grants {
+    let g = Grants::default();
+    *g.0.lock().unwrap() = (vec![crate::host_tools::relay::terminal_run_declaration()], Some("peer-host-token".into()));
+    g
+}
+
+#[test]
+fn the_granted_command_tool_is_registered_on_the_system_session_and_withdrawn_when_the_switch_goes_off() {
+    let (mut d, fake, grants) = driver_with(command_grant());
+    d.command(Command::Open);
+    settle(&mut d);
+    let register = fake.sent("peer/tools/register");
+    assert_eq!(register.len(), 1, "registered once the session is open");
+    assert!(register[0].get("peer").is_none(), "the host session itself: no peer");
+    assert_eq!(register[0]["session_id"], SYSTEM_SESSION);
+    assert_eq!(register[0]["host_token"], "peer-host-token", "an app peer's credential");
+    assert!(register[0].get("generic_tools").is_none(), "the system agent keeps its kernel tools");
+    assert_eq!(register[0]["tools"][0]["name"], "terminal.run");
+    assert_eq!(d.registered_tools(), Some(&["terminal.run".to_string()][..]));
+    // Nothing changes, nothing is sent again.
+    d.command(Command::SyncTools);
+    settle(&mut d);
+    assert_eq!(fake.sent("peer/tools/register").len(), 1);
+    // The person turns it off: the set is withdrawn at once.
+    grants.0.lock().unwrap().0.clear();
+    d.command(Command::SyncTools);
+    settle(&mut d);
+    let register = fake.sent("peer/tools/register");
+    assert_eq!(register.len(), 2);
+    assert_eq!(register[1]["tools"], json!([]));
+    assert_eq!(d.registered_tools(), Some(&[][..]));
+}
+
+#[test]
+fn nothing_is_registered_without_a_grant_and_a_reconnect_registers_again() {
+    let (mut d, fake) = opened();
+    assert!(fake.sent("peer/tools/register").is_empty(), "no grant, no registration");
+    let (mut d2, fake2, _) = driver_with(command_grant());
+    d2.command(Command::Open);
+    settle(&mut d2);
+    fake2.s().close = Some(Closed { restarted: true, why: "restarted".into() });
+    settle(&mut d2);
+    std::thread::sleep(Duration::from_millis(250));
+    settle(&mut d2);
+    assert_eq!(fake2.sent("peer/tools/register").len(), 2, "the set lives with the connection: registered again");
+    d.command(Command::Close);
+}
+
+#[test]
+fn without_a_credential_the_grant_waits_and_says_why() {
+    let grants = command_grant();
+    grants.0.lock().unwrap().1 = None;
+    let (mut d, fake, grants) = driver_with(grants);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert!(fake.sent("peer/tools/register").is_empty());
+    assert!(d.model.items.iter().any(|i| matches!(i, Item::Notice(n) if n.contains("app's agent"))));
+    // Once an app's agent exists, the next request registers first.
+    grants.0.lock().unwrap().1 = Some("t".into());
+    d.command(Command::Send("list my files".into()));
+    settle(&mut d);
+    let s = fake.s();
+    let register = s.sent.iter().position(|(m, _)| m == "peer/tools/register").expect("registered");
+    let turn = s.sent.iter().position(|(m, _)| m == "turn/start").unwrap();
+    assert!(register < turn);
+}
+
+#[test]
+fn the_system_agents_calls_go_to_the_relay_and_are_answered_once_on_this_link() {
+    let (mut d, fake, _) = driver_with(command_grant());
+    d.command(Command::Open);
+    settle(&mut d);
+    d.command(Command::Send("list my files".into()));
+    let turn = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    let call = |id: &str, turn: &str| json!({"peer": null, "context_id": null, "turn_id": turn, "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "d",
+        "name": "terminal.run", "app": "terminal", "caller": {"kind": "system", "peer": null, "session_id": SYSTEM_SESSION, "turn_id": turn},
+        "args": {"command": "ls"}, "risk": "destructive", "confirm_required": false, "timeout_ms": 30000, "tools_version": 1});
+    fake.notify("peer/tool/call", call("c1", &turn));
+    settle(&mut d);
+    let (tool_call, reply) = match d.effects.as_slice() {
+        [Effect::ToolCall { call, reply }] => (call.clone(), reply.clone()),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(tool_call.caller_kind, crate::ai_host::app_peers::host_tools::CallerKind::System);
+    assert_eq!(tool_call.args["command"], "ls");
+    assert!(reply.finish(crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(json!({"text": "typed"}))));
+    settle(&mut d);
+    let results = fake.sent("peer/tool/result");
+    assert_eq!(results.len(), 1);
+    assert!(results[0].get("peer").is_none(), "a host session set's result names no peer");
+    assert_eq!(results[0]["host_token"], "peer-host-token");
+    assert_eq!((results[0]["call_id"].as_str(), results[0]["ok"].as_bool()), (Some("c1"), Some(true)));
+
+    // A cancel closes the call: its late answer is never sent.
+    d.effects.clear();
+    fake.notify("peer/tool/call", call("c2", &turn));
+    settle(&mut d);
+    let Some(Effect::ToolCall { reply, .. }) = d.effects.first().cloned() else { panic!() };
+    fake.s().inbox.push_back(json!({"jsonrpc": "2.0", "method": "peer/tool/cancel", "params": {"call_id": "c2", "reason": "timeout"}}).to_string());
+    settle(&mut d);
+    assert!(d.effects.contains(&Effect::ToolCancel("c2".into())));
+    assert!(!reply.finish(crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(json!({}))));
+    settle(&mut d);
+    assert_eq!(fake.sent("peer/tool/result").len(), 1);
+
+    // The person stops the turn: its in-flight call ends, and a late call of
+    // it is refused (octos follow-up N1).
+    d.effects.clear();
+    fake.notify("peer/tool/call", call("c3", &turn));
+    settle(&mut d);
+    d.command(Command::Interrupt);
+    assert!(d.effects.contains(&Effect::ToolCancel("c3".into())));
+    fake.notify("peer/tool/call", call("c4", &turn));
+    settle(&mut d);
+    let results = fake.sent("peer/tool/result");
+    assert_eq!(results.last().unwrap()["call_id"], "c4");
+    assert_eq!(results.last().unwrap()["error"]["kind"], "turn_interrupted");
+    assert!(!d.effects.iter().any(|e| matches!(e, Effect::ToolCall { call, .. } if call.call_id == "c4")));
+}
+
+#[test]
+fn a_host_tool_approval_names_the_owning_app_the_tool_and_the_exact_arguments() {
+    let (mut d, fake) = opened();
+    d.command(Command::Send("list my files".into()));
+    let turn = fake.sent("turn/start")[0]["turn_id"].clone();
+    fake.notify("approval/requested", json!({"turn_id": turn, "approval_id": "a9", "tool_name": "terminal_run", "title": "Run", "body": "",
+        "approval_kind": "host_tool", "typed_details": {"kind": "host_tool", "host_tool": {"app": "terminal", "tool": "terminal.run", "args": {"command": "ls -la"},
+        "risk": "destructive", "outward": false, "calling_kind": "system", "calling_session_id": SYSTEM_SESSION, "outcome_unknown_before": false}}}));
+    settle(&mut d);
+    let Some(Effect::Approval(ask)) = d.effects.first().cloned() else { panic!("{:?}", d.effects) };
+    assert_eq!((ask.tool.as_str(), ask.app.as_deref()), ("terminal.run", Some("terminal")));
+    assert_eq!(ask.args, json!({"command": "ls -la"}));
+    // The router takes it as a command: no rule answers it, the person sees it.
+    use crate::approvals::{dev_hooks::FixedDevMode, Approvals, Route};
+    let mut a = Approvals::memory();
+    let context = crate::approvals::RequestContext { call_id: format!("{}{}", super::HELD_PREFIX, ask.approval_id), trigger: crate::approvals::Trigger::Person, ..Default::default() };
+    let spec = crate::approvals::ToolSpec::host(&ask.tool).command();
+    let route = a.router.request(crate::approvals::router::make_request(super::grants::COMMAND_APP, spec.clone(), ask.args.clone(), crate::approvals::Caller::SystemAgent, context.clone(), 1, 0), 1);
+    assert!(matches!(route, Route::Sheet(_)), "{route:?}");
+    // Developer mode answers it (ADR 0004 §13).
+    a.router.set_hooks(Box::new(FixedDevMode::all()));
+    let context = crate::approvals::RequestContext { call_id: "syschat:a10".into(), ..context };
+    let route = a.router.request(crate::approvals::router::make_request(super::grants::COMMAND_APP, spec, ask.args.clone(), crate::approvals::Caller::SystemAgent, context, 1, 0), 1);
+    assert!(matches!(route, Route::Approved(_)), "{route:?}");
 }
