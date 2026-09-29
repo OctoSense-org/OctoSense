@@ -66,8 +66,10 @@ pub struct GlanceCardItem {
     /// The launcher id a tap opens, and the route inside it.
     pub open_app: String,
     pub route: Option<String>,
-    /// The lowered Splash body.
+    /// The Splash body the tile runs.
     pub body: std::sync::Arc<str>,
+    /// Published by a contained app: the tile runs under its policy.
+    pub contained: bool,
 }
 
 impl GlanceCardItem {
@@ -78,7 +80,7 @@ impl GlanceCardItem {
 
 impl From<crate::glance::GlanceCard> for GlanceCardItem {
     fn from(c: crate::glance::GlanceCard) -> Self {
-        GlanceCardItem { app: c.app, card_id: c.card_id, title: c.title, priority: c.priority, published_ms: c.published_ms, open_app: c.open_app, route: c.route, body: c.body }
+        GlanceCardItem { app: c.app, card_id: c.card_id, title: c.title, priority: c.priority, published_ms: c.published_ms, open_app: c.open_app, route: c.route, body: c.body, contained: c.contained }
     }
 }
 
@@ -506,15 +508,19 @@ impl PhoneSurface {
 
     fn draw_glance_card(&mut self, cx: &mut Cx2d, r: Rect, item: &GlanceItem, style: DesktopStyle, dark: bool, ink: Vec4f, opacity: f32) {
         if let GlanceItem::Card(card) = item {
-            // A published card draws itself (its own surface, lowered by the
-            // Card runner's pipeline) at the tile rect; the whole tile opens
-            // its app. Without App Hub's vocabulary a frosted title stands in.
+            // A published card draws itself (its own surface) at the tile
+            // rect and takes its own input (glance_card.rs); the open button
+            // at its corner opens its app. Without App Hub's vocabulary a
+            // frosted title stands in.
             if !crate::glance_card::CAN_RENDER {
                 self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
                 self.d.label_elided(cx, rect(r.pos.x + 16.0, r.pos.y + 16.0, r.size.x - 32.0, 22.0), true, 15.0, ink, HAlign::Left, &card.title);
             }
-            self.glance_tiles.draw(cx, &card.key(), &card.body, r);
-            self.hits.push((r, PhoneHit::Glance(card.open_app.clone())));
+            self.glance_tiles.draw(cx, &card.key(), &card.app, card.contained, &card.body, r);
+            let open = crate::glance_card::open_button(r);
+            self.rounded(cx, open, 14.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.22 } else { 0.8 } * opacity));
+            self.d.icon_centered(cx, Ico::ChevronRight, open, 14.0, ink);
+            self.hits.push((open, PhoneHit::Glance(card.open_app.clone())));
             return;
         }
         self.rounded(cx, r, 18.0, alpha(self.theme_face(rgb(255, 255, 255)), if dark { 0.10 } else { 0.55 } * opacity));
@@ -821,7 +827,7 @@ mod tests {
     fn card(app: &str, id: &str, priority: i64, published_ms: u64) -> GlanceItem {
         GlanceItem::Card(GlanceCardItem {
             app: app.into(), card_id: id.into(), title: format!("{app}/{id}"), priority, published_ms,
-            open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(),
+            open_app: app.trim_start_matches("os.").into(), route: None, body: "".into(), contained: true,
         })
     }
 

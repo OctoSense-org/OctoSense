@@ -583,6 +583,15 @@ impl App {
                 self.toggle_phone_appearance(cx);
                 self.android_system_bars(cx);
             }
+            // A card's notification opens the glance page, where it is live.
+            PhoneHit::Shade(ShadeHit::Note(id)) if self.glance_shade_notes.contains(&id)=>{
+                self.glance_shade_notes.retain(|n|*n!=id);
+                let phone=&mut self.state_mut().phone;
+                phone.shade.dismiss(id);
+                phone.shade.close();
+                phone.navigate(PhoneScreen::Home);
+                phone.pages.jump(-1);
+            }
             PhoneHit::Shade(hit)=>{
                 if matches!(hit,ShadeHit::Toggle(_)) {self.android_haptic(cx,"tick");}
                 if !self.android_shade_action(cx, &hit) { self.state_mut().phone.shade.tap(hit); }

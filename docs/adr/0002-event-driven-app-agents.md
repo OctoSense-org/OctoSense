@@ -156,6 +156,8 @@ Heavy evaluation runs where it is cheap: on the desktop or a server, or on the p
 
 App agents publish; the shell stores; the **system agent ranks and trims**. It sees published cards and shared facts, not app-private memory. It can merge related cards and defers low-value ones. Publishing is rate-limited and deduplicated per app.
 
+**Cards are interactive** *(amended 2026-09-28)*. A glance tile runs its card under the publishing app's own resolved policy, the one the app's Card runner applies, and takes input: the person types into it, taps its buttons and sends from it as inside the app. Besides an L0/L1 `source` card, an app may publish a `script` card (a Splash program, like a script app's `main.splash`), whose `host.request` calls go out through the Card runner's path: the app's manifest grants, then each host service's own checks. `notify: true` also posts a notification that opens the card. Security hardening of this surface is deferred while the project is early (`crates/shell/src/glance.rs`, `glance_card.rs`).
+
 ### 9. Memory: private by default, promoted by rule
 
 Each run records what it distilled into the **app's memory namespace** (octos Recall tier) through a memory ingestion call. Promotion into shared user memory (for example, an appointment other apps should know about) happens by an explicit rule in the app's `AGENT.md`, or with the person's approval.

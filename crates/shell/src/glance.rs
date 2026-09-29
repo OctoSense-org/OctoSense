@@ -4,7 +4,7 @@
 //!
 //! | method | args | answer |
 //! |---|---|---|
-//! | `glance.publish` | `{card_id, source, data?, title, priority?, expires?, open?: {app, route?}}` | `{card_id, replaced, expires_at}` |
+//! | `glance.publish` | `{card_id, source \| script, data?, title, priority?, expires?, open?: {app, route?}, notify?}` | `{card_id, replaced, expires_at}` |
 //! | `glance.withdraw` | `{card_id}` | `{withdrawn}` |
 //! | `glance.list` | – | `[{card_id, title, priority, published_at, expires_at}]`, the caller's own cards |
 //!
@@ -17,18 +17,36 @@
 //! id again replaces the card, and one app can neither see, replace nor
 //! withdraw another's.
 //!
-//! **Admission.** `source` is an L0 card (`octoscript_ui_l0::check_ui_l0`:
-//! valid at L0, or at L1 when the header declares it; L2 refused), realized
-//! against `data` (a map from the card's source names to their values —
-//! L0's no-facts rule: the card states nothing it did not get from `data`)
-//! and lowered through the Card runner's pipeline (glance_card.rs) before
-//! it is stored. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
-//! characters, `source` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route` ≤ 256.
-//! `priority` 0–100 (default 50). `expires` is seconds from now, 60 s to 7
-//! days (default 24 h); an expired card is dropped. Each app may publish
+//! **Admission.** A card is one of two kinds, the two kinds of bundle the
+//! Card runner runs:
+//!
+//! - `source`: an L0 card (`octoscript_ui_l0::check_ui_l0`: valid at L0, or
+//!   at L1 when the header declares it), realized against `data` (a map from
+//!   the card's source names to their values; L0's no-facts rule: the card
+//!   states nothing it did not get from `data`) and lowered through the Card
+//!   runner's pipeline (glance_card.rs) before it is stored: presentation,
+//!   no logic, as a card bundle is. An L2 `source` is refused: it cannot be
+//!   lowered, and a card that needs handlers and host requests is a
+//!   `script`.
+//! - `script`: a Splash program, the same thing a script app's `main.splash`
+//!   is: its own state, handlers, `host.request` calls and storage. It runs
+//!   as it is, with no `data` (it carries its own values). This is the
+//!   interactive card: an editable draft that sends, a reply box, a form.
+//!
+//! Every tile is interactive and runs under the publishing app's own policy
+//! (glance_card.rs), so a card does on the glance screen exactly what the
+//! app's UI does. Caps: `card_id` 1–64 of `[A-Za-z0-9._-]`, `title` ≤ 80
+//! characters, `source`/`script` ≤ 16 KiB, `data` ≤ 32 KiB as JSON, `route`
+//! ≤ 256. `priority` 0–100 (default 50). `expires` is seconds from now, 60 s
+//! to 7 days (default 24 h); an expired card is dropped. Each app may publish
 //! [`RATE_LIMIT`] times per [`RATE_WINDOW_MS`] (a replace counts, and so
-//! does a card the L0 check refuses) and keep [`PER_APP_CARDS`] cards; the
+//! does a card the check refuses) and keep [`PER_APP_CARDS`] cards; the
 //! store keeps at most [`STORE_CARDS`], dropping the least important.
+//!
+//! **Notifications.** `notify: true` also posts a notification for the card
+//! (the phone's shade, the desktop's toast); tapping it opens the glance
+//! page (phone) or panel (desktop), where the card is live. The shell drains
+//! them with [`take_notifications`].
 //!
 //! **Who may call.** A contained app publishes only when it holds the
 //! `glance` capability (App Hub's `KNOWN_CAPABILITIES`; the store tells the
@@ -117,8 +135,12 @@ pub struct GlanceCard {
     /// The launcher id the tile opens, and the route inside it.
     pub open_app: String,
     pub route: Option<String>,
-    /// The lowered Splash body the tile draws (glance_card.rs).
+    /// The Splash body the tile runs (glance_card.rs): a lowered `source`
+    /// card, or a `script` as it was published.
     pub body: Arc<str>,
+    /// The publisher is a contained app: its tile runs under that app's
+    /// resolved policy. A native module's tile runs with no grants.
+    pub contained: bool,
 }
 
 impl GlanceCard {
@@ -172,9 +194,16 @@ impl GlanceStore {
         if title.is_empty() || title.chars().count() > TITLE_MAX {
             return Err(format!("title must be 1-{TITLE_MAX} characters"));
         }
-        let source = text(args, "source").ok_or("source (an L0 card) is required")?;
+        let (kind, source) = match (text(args, "source"), text(args, "script")) {
+            (Some(source), None) => ("source", source),
+            (None, Some(script)) => ("script", script),
+            _ => return Err("give either source (an L0 card) or script (a Splash program)".into()),
+        };
         if source.len() > SOURCE_MAX {
-            return Err(format!("source is {} bytes, over the {SOURCE_MAX}-byte cap", source.len()));
+            return Err(format!("{kind} is {} bytes, over the {SOURCE_MAX}-byte cap", source.len()));
+        }
+        if kind == "script" && args.get("data").is_some_and(|d| !d.is_null()) {
+            return Err("data is for a source card; a script carries its own values".into());
         }
         let data = args.get("data").cloned().unwrap_or_else(|| json!({}));
         if !data.is_object() {
@@ -192,6 +221,9 @@ impl GlanceStore {
             None | Some(Value::Null) => EXPIRES_DEFAULT_S,
             Some(e) => e.as_u64().filter(|e| (EXPIRES_MIN_S..=EXPIRES_MAX_S).contains(e)).ok_or_else(|| format!("expires must be {EXPIRES_MIN_S}-{EXPIRES_MAX_S} seconds from now"))?,
         };
+        if args.get("notify").is_some_and(|n| !n.is_null() && !n.is_boolean()) {
+            return Err("notify must be true or false".into());
+        }
         let open = args.get("open").cloned().unwrap_or(Value::Null);
         if let Some(target) = open.get("app") {
             if target.as_str() != Some(app.as_str()) && target.as_str() != Some(caller.launch_id()) {
@@ -209,8 +241,12 @@ impl GlanceStore {
         // Charged before the costly part (check, realize, lower), so a
         // stream of refused cards is bounded too.
         self.charge(&app, now_ms)?;
-        check_level(source)?;
-        let body: Arc<str> = crate::glance_card::lower(source, &data)?.into();
+        let body: Arc<str> = if kind == "script" {
+            source.into()
+        } else {
+            check_level(source)?;
+            crate::glance_card::lower(source, &data)?.into()
+        };
         let card = GlanceCard {
             app: app.clone(),
             card_id: card_id.to_string(),
@@ -221,6 +257,7 @@ impl GlanceStore {
             open_app: caller.launch_id().to_string(),
             route,
             body,
+            contained: matches!(caller, Caller::Contained { .. }),
         };
         let expires_at = card.expires_ms;
         if let Some(i) = replacing {
@@ -311,6 +348,22 @@ pub fn order(cards: &mut [GlanceCard]) {
 // ------------------------------------------------------------- the service
 
 static STORE: Mutex<Option<GlanceStore>> = Mutex::new(None);
+/// Cards published with `notify: true`, waiting for the shell to post them.
+static NOTES: Mutex<Vec<GlanceNote>> = Mutex::new(Vec::new());
+
+/// A notification a published card asked for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlanceNote {
+    /// The card's key (`app/card_id`).
+    pub key: String,
+    pub app: String,
+    pub title: String,
+}
+
+/// The notifications cards asked for since the last call.
+pub fn take_notifications() -> Vec<GlanceNote> {
+    std::mem::take(&mut *NOTES.lock().unwrap())
+}
 /// Bumped whenever the published set changes, so a surface re-reads it only then.
 static GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -345,6 +398,11 @@ pub fn request(caller: &Caller, service: &str, args: &Value) -> Result<Value, St
         "list" => store.list(caller, now),
         other => Err(format!("glance has no method {other:?}")),
     });
+    if result.is_ok() && method == "publish" && args.get("notify").and_then(Value::as_bool) == Some(true) {
+        let card_id = args.get("card_id").and_then(Value::as_str).unwrap_or_default();
+        let title = args.get("title").and_then(Value::as_str).unwrap_or_default().trim();
+        NOTES.lock().unwrap().push(GlanceNote { key: format!("{}/{card_id}", caller.app()), app: caller.app().to_string(), title: title.to_string() });
+    }
     if result.is_ok() && method != "list" {
         changed();
     }
@@ -510,6 +568,49 @@ mod tests {
         assert!(store.publish(&news(), &a, 0).is_err());
         assert!(check_level(&demo_digest().0).is_ok());
         assert!(store.is_empty());
+    }
+
+    /// An interactive card is a Splash program, run as it was published
+    /// (no L0 check, no lowering), under the same caps and limits.
+    #[test]
+    fn a_script_card_is_admitted_as_it_is() {
+        let mut store = GlanceStore::default();
+        let script = "draft := TextInput{text: \"Hi\" on_return: |t| host.request(\"mail.send\", {body: t}, nil)}";
+        let a = json!({"card_id": "draft", "title": "Reply", "script": script});
+        store.publish(&news(), &a, 0).unwrap();
+        let card = &store.shown(0, 9)[0];
+        assert_eq!((card.body.as_ref(), card.contained), (script, true));
+        let mut both = a.clone();
+        both["source"] = json!(demo_digest().0);
+        assert!(store.publish(&news(), &both, 0).unwrap_err().contains("either source"));
+        assert!(store.publish(&news(), &json!({"card_id": "x", "title": "t"}), 0).unwrap_err().contains("either source"));
+        let mut with_data = a.clone();
+        with_data["data"] = json!({"x": 1});
+        assert!(store.publish(&news(), &with_data, 0).unwrap_err().contains("data is for a source card"));
+        let mut big = a.clone();
+        big["script"] = json!("x".repeat(SOURCE_MAX + 1));
+        assert!(store.publish(&news(), &big, 0).unwrap_err().contains("script is"));
+        // A native module's card runs with no grants.
+        store.publish(&Caller::Native("news".into()), &json!({"card_id": "n", "title": "t", "script": "View{}"}), 0).unwrap();
+        assert!(!store.shown(0, 9).iter().find(|c| c.card_id == "n").unwrap().contained);
+    }
+
+    /// `notify: true` queues a notification for the shell to post.
+    #[test]
+    fn notify_queues_a_notification() {
+        let mut a = args("notify-test");
+        a["notify"] = json!("yes");
+        assert!(GlanceStore::default().publish(&news(), &a, 0).unwrap_err().contains("notify"));
+        a["notify"] = json!(true);
+        request(&Caller::granted("os.notifytest"), "glance.publish", &{
+            a["open"] = Value::Null;
+            a
+        })
+        .unwrap();
+        let notes = take_notifications();
+        let note = notes.iter().find(|n| n.app == "os.notifytest").expect("queued");
+        assert_eq!((note.key.as_str(), note.title.as_str()), ("os.notifytest/notify-test", "News digest"));
+        request(&Caller::granted("os.notifytest"), "glance.withdraw", &json!({"card_id": "notify-test"})).unwrap();
     }
 
     #[test]

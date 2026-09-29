@@ -368,6 +368,12 @@ pub struct App {
     /// The glance cards' generation the surfaces last drew (glance.rs).
     #[rust]
     pub glance_generation: u64,
+    /// The notifications cards asked for (`glance.publish` with `notify`):
+    /// the desktop toasts' and the phone shade's ids, which open the card.
+    #[rust]
+    pub glance_toasts: Vec<u64>,
+    #[rust]
+    pub glance_shade_notes: Vec<u64>,
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
@@ -3160,17 +3166,24 @@ impl App {
     }
 
     /// As `shell_panel_pointer`, for the glance panel: while it is open a
-    /// press on it (or outside it, which closes it) is its own.
+    /// press anywhere (outside it, which closes it) and any pointer event
+    /// over its column is its own, so its live cards get whole gestures.
     fn shell_glance_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        if !matches!(event, Event::MouseDown(_)) {
-            return false;
-        }
+        let (p, press) = match event {
+            Event::MouseDown(e) => (e.abs, true),
+            Event::MouseMove(e) => (e.abs, false),
+            Event::MouseUp(e) => (e.abs, false),
+            Event::Scroll(e) => (e.abs, false),
+            _ => return false,
+        };
         let panel = self.ui.widget(cx, ids!(shell_glance));
-        if !panel.borrow::<glance_panel::ShellGlancePanel>().is_some_and(|p| p.open) {
+        if !panel.borrow::<glance_panel::ShellGlancePanel>().is_some_and(|g| g.owns_pointer(p, press)) {
             return false;
         }
         panel.handle_event(cx, event, &mut Scope::empty());
-        self.redraw_all(cx);
+        if press {
+            self.redraw_all(cx);
+        }
         true
     }
 
@@ -3336,6 +3349,24 @@ impl App {
         }
         let now = cx.seconds_since_app_start();
         if let Some(state) = self.state.as_mut() { state.phone.shade.post("wm", title, body, now, Vec::new()); }
+        self.redraw_all(cx);
+    }
+
+    /// Announce a card that asked for it (`glance.publish` with `notify`):
+    /// a toast on a desktop, a shade notification on the phone. Either opens
+    /// where the card is live (the glance panel, the glance page).
+    fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
+        let body = "Open the card at a glance";
+        let notes = self.ui.widget(cx, ids!(shell_notes));
+        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.notify(cx, &note.title, body)) {
+            self.glance_toasts.push(id);
+        }
+        let now = cx.seconds_since_app_start();
+        if let Some(state) = self.state.as_mut() {
+            let id = state.phone.shade.post(&note.app, &note.title, body, now, Vec::new());
+            self.glance_shade_notes.push(id);
+        }
+        log!("glance: {} notifies {}", note.app, note.key);
         self.redraw_all(cx);
     }
 
@@ -5010,6 +5041,15 @@ impl MatchEvent for App {
                 self.set_glance_open(cx, false);
                 self.launch_app(cx, &app);
             }
+            // A card's notification opens the glance panel, where it is live.
+            match wa.cast::<shell::notifications::ShellNotificationsAction>() {
+                shell::notifications::ShellNotificationsAction::Activated(id) if self.glance_toasts.contains(&id) => {
+                    self.glance_toasts.retain(|t| *t != id);
+                    self.set_glance_open(cx, true);
+                }
+                shell::notifications::ShellNotificationsAction::Dismissed(id) => self.glance_toasts.retain(|t| *t != id),
+                _ => {}
+            }
             #[cfg(any(feature = "app-hub", native_mobile))]
             match wa.cast::<octosense_app_hub_app::AppHubAction>() {
                 octosense_app_hub_app::AppHubAction::Launch(id) => self.launch_app(cx, &id),
@@ -5383,6 +5423,18 @@ impl App {
                 return;
             }
         }
+        // The glance page's live cards (glance_card.rs): every event, and
+        // the pointer while the page is what the person sees. The shell
+        // keeps only each card's open button for itself.
+        if self.state.is_some() && self.state_mut().style.target.mobile() {
+            let phone = &self.state_mut().phone;
+            let showing = phone.screen == mobile::PhoneScreen::Home && phone.pages.on_glance() && !phone.shade.is_open();
+            if showing || !event.requires_visibility() {
+                if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
+                    desk.phone_ui.glance_tiles.handle_event(cx, event);
+                }
+            }
+        }
         if self.phone_search_event(cx,event) {return;}
         if self.state.is_some() && self.phone_pointer(cx,event) {return;}
         if self.state.is_some() && self.snap_event(cx,event) {return;}
@@ -5557,6 +5609,11 @@ impl App {
             if glance::generation() != self.glance_generation && self.state.is_some() {
                 self.glance_generation = glance::generation();
                 self.redraw_all(cx);
+            }
+            if self.state.is_some() {
+                for note in glance::take_notifications() {
+                    self.glance_notify(cx, &note);
+                }
             }
             if SignalToUI::check_and_clear_ui_signal() && self.state.is_some() {
                 crate::run_view::trace_host("sig");

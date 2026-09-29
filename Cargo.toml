@@ -94,6 +94,11 @@ octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.g
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
 octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+# The app policy (resolution, isolate settings, the Splash adapter) and the
+# Hub client the Card runner resolves an app's policy with; the shell's
+# glance tiles run cards under it (crates/shell/src/glance_card.rs).
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
 # merge of octos#2616, the #2567 follow-ups).
 # Move octos-core, octos-cli and octos-research together; the Android kernel
