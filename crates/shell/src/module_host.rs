@@ -361,6 +361,10 @@ impl ModuleHost {
         // create only; the module takes it there or never gets it.
         // In developer mode a covered module gets every service it declares
         // (dev_mode.rs); the grant lives and dies with this instance.
+        // The system toolbox's tools it declares (the broker registers them
+        // once the person allowed its agent).
+        #[cfg(feature = "toolbox-peers")]
+        crate::host_tools::toolbox::grant_module(module.id(), module.capabilities());
         let offer = crate::ai_host::offer_with(module, &scope, crate::dev_mode::grants_all(module.id()));
         // Consent at first use (ADR 0004 §4, approvals/consent.rs): a module
         // the person has not allowed an agent is not offered one. The first

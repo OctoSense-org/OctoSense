@@ -11,6 +11,7 @@
 //! | any other `approval/requested` on an app's peer session or context (octos's own tools) | the same router, as the app agent's call on its own app (ADR 0004 §8); the app hears only `approval/handled_by_host` |
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
+//! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
 //! **Threads.** Brokers call in on their own threads and the system chat on
 //! its own; every call, cancel and approval is queued and handled on the UI
@@ -30,6 +31,8 @@
 //! router here ([`SheetBridge`]).
 
 pub mod relay;
+#[cfg(feature = "toolbox-peers")]
+pub mod toolbox;
 
 #[cfg(test)]
 mod tests;
@@ -43,7 +46,7 @@ use serde_json::Value;
 use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, ConfirmRequest, ConfirmSheet, HostToolApproval, HostToolCall, PeerInput, ToolExecutor, ToolHost, ToolOutcome, ToolReply};
 use crate::approvals::{self, Caller, Decision, RequestContext, RequestId, Route, ToolSpec};
 use crate::peer_link::{self, KernelToolCall, Refused, ToolCallResult};
-pub use relay::{app_of_peer, Event, Relay, APPROVAL_PREFIX, BUS_PREFIX, CONFIRM_PREFIX, SYSTEM, TERMINAL_RUN};
+pub use relay::{app_of_peer, Event, Relay, APPROVAL_PREFIX, BUS_PREFIX, CONFIRM_PREFIX, SYSTEM, TERMINAL_RUN, TOOLBOX};
 
 static RELAY: Mutex<Option<Relay>> = Mutex::new(None);
 static INBOX: Mutex<Vec<Event>> = Mutex::new(Vec::new());
@@ -83,6 +86,8 @@ pub fn init() {
         host_tools::set_host(Arc::new(ShellToolHost));
         approvals::set_relay(Box::new(DecisionRelay));
         peer_link::set_tool_relay(Box::new(LinkRelay));
+        #[cfg(feature = "toolbox-peers")]
+        toolbox::init();
     });
 }
 
@@ -145,7 +150,10 @@ impl ToolHost for ShellToolHost {
     fn declarations(&self, app_id: &str, _account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
         let dev = crate::dev_mode::grants_all(&app);
-        Ok(with_relay(|r| r.catalog.declarations(&app, dev)))
+        // The toolbox's tools only once the person allowed this app's agent
+        // (ADR 0004 §4); its calls are refused before that too (the relay).
+        let consented = approvals::consent_granted(&app) || dev;
+        Ok(with_relay(|r| r.catalog.offered(&app, dev, consented)))
     }
 
     fn agent_workspace(&self, app_id: &str, account: &str) -> Option<PathBuf> {

@@ -3,8 +3,12 @@
 peer for the question/answer test. No network, no keys; standard library.
 
 Rules, looking at the request's messages and offered tools:
-  - after a tool result: finish with text ("PEER GOT <answer>" when the
-    result carries the system agent's answer, else "OK");
+  - after a tool result: finish with text ("TOOL SAID <result>" after a
+    CALL_TOOL, "PEER GOT <answer>" when the result carries the system agent's
+    answer, else "OK");
+  - "CALL_TOOL:<model name> <json args>": call that tool when it is offered
+    (a host-registered peer tool, UPCR-2026-035), else say "NO TOOL <name>
+    AMONG <offered tools>";
   - a user text "TELL_PEER:<slug>" with peer_send_input offered: send the peer
     "QUESTION_ME" ("TELL_PEER_HOLD:<slug>": "QUESTION_HOLD", never answered);
   - "TELL_PEER_AGAIN:<slug>": send the peer "SECOND_INPUT";
@@ -52,6 +56,8 @@ def decide(body):
     everything = "\n".join(text_of(m) for m in messages)
     if last.get("role") == "tool":
         result = text_of(last)
+        if "CALL_TOOL:" in everything:
+            return {"text": "TOOL SAID " + result}
         if "42" in result and "QUESTION_ME" in everything:
             return {"text": "PEER GOT 42"}
         return {"text": "OK"}
@@ -60,6 +66,11 @@ def decide(body):
         if m.get("role") == "user":
             last_user = text_of(m)
             break
+    host_tool = re.search(r"CALL_TOOL:([a-z0-9_]+) (\{.*\})", last_user)
+    if host_tool:
+        if host_tool.group(1) in tools:
+            return {"tool": host_tool.group(1), "args": json.loads(host_tool.group(2))}
+        return {"text": "NO TOOL " + host_tool.group(1) + " AMONG " + ",".join(sorted(t for t in tools if t))}
     again = re.search(r"TELL_PEER_AGAIN:([a-z0-9-]+)", last_user)
     if again and "peer_send_input" in tools:
         return {"tool": "peer_send_input", "args": {"slug": again.group(1), "message": "SECOND_INPUT"}}

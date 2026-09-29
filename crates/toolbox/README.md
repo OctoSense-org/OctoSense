@@ -231,6 +231,8 @@ The tests show this rule deciding real cases:
 
 `handle_json(app, {"tool": "workflow.run", "arguments": {…}})` routes the same calls as JSON and returns errors as `{"error": {kind, message}}`. `api::tool_descriptors()` gives the four tools' names, risk and input schemas for registration with a peer. The risk levels are the ones octos#2567 and App Hub's `tools.json` accept: `workflow.list`, `workflow.run` and `workflow.evaluate` are `read`, and `workflow.fork` is `act` (it writes only into the calling app's folder). The descriptors carry no `confirm` field.
 
+`peer` is what an app's peer is offered (octos#2567, ADR 0004 §12). `peer::catalog(library)` gives every toolbox tool's `tools.json` entry, each marked with its owning app (`app: "toolbox"`), `shareable`, `background`, not `outward`, `confirm: host`: the shell's host-tool relay declares them and grants each app exactly what it declares and the person granted. `peer::tool_decls(app, library)` is that catalog narrowed to the app's grants (`research`: `workflow.run`, `workflow.fork`, `toolbox.search`, `toolbox.web_read`; `crawl` with crawl limits in the scope: `toolbox.deep_crawl`). Nothing else is held back: octos's own generic tools, `deep_research` among them, are the kernel's. `peer::PeerToolbox::call(app, name, args)` checks the name against the grants again (`not_granted` otherwise) and runs it: the two workflow tools through `handle_json` (the agent gets the data, sources and the result's path; the trace stays in the file), the single tools on the same `ResearchBackend` as `mod.research`, narrowed by the scope (`scope::narrow_search`, `check_domain`, `scope::narrow_crawl`), with their items saved under `research/` in the app's folder. `toolbox.deep_crawl` reads pages with `ResearchBackend::read_links` (the octos engine keeps each page's HTML for its links) and stays on the start's site, under `path_prefix`, inside the domains and within `max_depth` and `max_pages`.
+
 ## How an app agent will use it
 
 This flow needs the wiring in [What remains](#what-remains):
@@ -369,7 +371,7 @@ After the [status rules](#status) and the [summary check](#modresearch-v1): four
 
 ## What remains
 
-- **Peer tool wiring**, after octos#2567 (host-registered peer tools): register `tool_descriptors()` for granted peers in `crates/ai-host`, route each call to `Toolbox::handle_json` with the peer's `AppContext`, and supply the real `ModelClient` from the person's providers.
+- **Peer tool wiring** is in place behind the shell's `toolbox-peers` feature (`crates/ai-host`'s `toolbox_peers`, the shell's `host_tools::toolbox`, and the `peer` module here: the tools per grant, `PeerToolbox::call`, and `toolbox.deep_crawl` over `ResearchBackend::read_links`). Script apps' grants wait for the shells' App Hub pin to include App Hub #26 (`research`/`crawl`).
 - **Engine**: the octos research engine is behind `ResearchBackend` (`octos-engine`). Still to do:
   - drop the interim adapter once the shells use it;
   - add metasearch (octos#2582) and publisher feeds (octos#2585);

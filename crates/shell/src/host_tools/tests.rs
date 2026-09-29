@@ -378,6 +378,89 @@ fn the_shipped_catalog_offers_the_terminals_run_to_those_granted_it() {
     assert_eq!(catalog.declarations("rinx", true).len(), 1, "developer mode grants every shareable tool");
 }
 
+/// The system toolbox's tools as its catalog declares them (the real ones
+/// with the `toolbox-peers` feature): owned by `toolbox`, shareable, read
+/// except `workflow.fork`.
+fn toolbox_catalog() -> Vec<Value> {
+    #[cfg(feature = "toolbox-peers")]
+    return crate::ai_host::toolbox_peers::catalog();
+    #[cfg(not(feature = "toolbox-peers"))]
+    ["workflow.run", "workflow.fork", "toolbox.search", "toolbox.web_read", "toolbox.deep_crawl"]
+        .iter()
+        .map(|name| {
+            let risk = if *name == "workflow.fork" { "act" } else { "read" };
+            json!({"name": name, "app": super::TOOLBOX, "description": "d", "input_schema": {"type": "object"}, "risk": risk, "background": true, "outward": false, "confirm": "host", "shareable": true})
+        })
+        .collect()
+}
+
+fn offered_names(relay: &Relay, app: &str, dev: bool, consented: bool) -> Vec<String> {
+    let mut names: Vec<String> = relay.catalog.offered(app, dev, consented).iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_and_only_after_consent() {
+    let (mut relay, _) = relay_with(super::TOOLBOX, toolbox_catalog());
+    relay.catalog.declare("os.news", vec![decl("news.item.save", false, "host")]);
+    // `research` granted: its four tools; `crawl` not granted: no deep_crawl.
+    relay.catalog.set_grants("os.news", super::TOOLBOX, &["workflow.run", "workflow.fork", "toolbox.search", "toolbox.web_read"]);
+    // Before the person allowed News's agent: its own tools, no toolbox tool.
+    assert_eq!(offered_names(&relay, "os.news", false, false), ["news.item.save"]);
+    // After: exactly the granted ones, each marked with its owning app.
+    assert_eq!(offered_names(&relay, "os.news", false, true), ["news.item.save", "toolbox.search", "toolbox.web_read", "workflow.fork", "workflow.run"]);
+    for d in relay.catalog.offered("os.news", false, true).iter().filter(|d| d["name"] != "news.item.save") {
+        assert_eq!(d["app"], super::TOOLBOX, "{d}");
+        assert_eq!(d["risk"], if d["name"] == "workflow.fork" { "act" } else { "read" }, "{d}");
+    }
+    // A grant computed again (crawl now granted) replaces the old one.
+    relay.catalog.set_grants("os.news", super::TOOLBOX, &["toolbox.deep_crawl"]);
+    assert_eq!(offered_names(&relay, "os.news", false, true), ["news.item.save", "toolbox.deep_crawl"]);
+    // No grant, no toolbox tools; developer mode does not invent a grant
+    // (the toolbox needs its scope), though it grants other shareable tools.
+    assert!(offered_names(&relay, "calendar", false, true).is_empty());
+    assert_eq!(offered_names(&relay, "calendar", true, true), [TERMINAL_RUN]);
+}
+
+#[test]
+fn no_toolbox_call_runs_before_consent_or_without_a_grant() {
+    let (mut relay, exec) = relay_with(super::TOOLBOX, toolbox_catalog());
+    relay.catalog.set_grants("os.news", super::TOOLBOX, &["toolbox.search"]);
+    let mut w = World::new(FixedDevMode::off());
+    let toolbox_call = |id: &str, name: &str, calling: &str| {
+        let mut c = call(id, name, calling);
+        c.app = super::TOOLBOX.into();
+        c.risk = "read".into();
+        c
+    };
+    w.consent = false;
+    let (r, sent) = reply("c1");
+    relay.handle(Event::Call { call: toolbox_call("c1", "toolbox.search", "os.news"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "consent_pending");
+    assert!(exec.0.lock().unwrap().is_empty(), "nothing ran before consent");
+    w.consent = true;
+    // Not granted (a forged call): refused before the toolbox sees it.
+    let (r, sent) = reply("c2");
+    relay.handle(Event::Call { call: toolbox_call("c2", "toolbox.deep_crawl", "os.news"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    w.dev_all = true;
+    let (r, sent) = reply("c3");
+    relay.handle(Event::Call { call: toolbox_call("c3", "toolbox.search", "calendar"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "developer mode grants no toolbox scope");
+    w.dev_all = false;
+    assert!(exec.0.lock().unwrap().is_empty());
+    // Consented and granted: routed to the toolbox's executor, once.
+    let (r, _) = reply("c4");
+    relay.handle(Event::Call { call: toolbox_call("c4", "toolbox.search", "os.news"), reply: r }, &mut w);
+    let calls = exec.0.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert_eq!((calls[0].0.name.as_str(), calls[0].0.calling_app.as_str()), ("toolbox.search", "os.news"));
+    // A cancel reaches the toolbox.
+    relay.handle(Event::Cancel { call_id: "c4".into(), reason: "timeout".into() }, &mut w);
+    assert_eq!(*exec.1.lock().unwrap(), ["c4"]);
+}
+
 // ---------------------------------------------------------------- triggers (G2)
 
 use crate::ai_host::app_peers::TurnTrigger;

@@ -45,10 +45,17 @@
 //!   runner hosts that declare `octos.*` get their own peer (`card.<app id>`)
 //!   under the same contract, while [`Policy::contained_apps`] is on. Tool
 //!   approvals are declined until the Card runner has an approval sheet.
+//! - **The system toolbox for app agents** (feature `toolbox-peers`, off by
+//!   default): the toolbox's grants and the executor the shell's host-tool
+//!   relay runs its calls on ([`toolbox_peers`]). Its results live in each
+//!   app's host-owned toolbox folder ([`toolbox_folder`]), which exists with
+//!   or without the feature.
 
 mod bridge;
 pub mod contained;
 mod qr;
+#[cfg(feature = "toolbox-peers")]
+pub mod toolbox_peers;
 
 pub use bridge::{Bridge, Done};
 pub use qr::{ImageSource, PickError, QrImport, DROP_APP};
@@ -392,6 +399,32 @@ pub fn kernel_running() -> bool {
     return octosense_kernel::status().running;
     #[cfg(not(kernel))]
     false
+}
+
+// ---- the system toolbox's folders ------------------------------------------
+
+/// The host's folder for every app's toolbox, under the apps root:
+/// `<apps root>/.host/toolbox`. Outside every app's jail
+/// (`<apps root>/<app id>`), so an app cannot write a digest the glance
+/// screen would show as the host's.
+pub const TOOLBOX_HOST_DIR: [&str; 2] = [".host", "toolbox"];
+
+/// `<apps root>/.host/toolbox` ([`TOOLBOX_HOST_DIR`]). The glance screen's
+/// `sys.digest` resolver (OctoSense #87) reads run results under it.
+pub fn toolbox_root(apps_root: &std::path::Path) -> PathBuf {
+    TOOLBOX_HOST_DIR.iter().fold(apps_root.to_path_buf(), |dir, part| dir.join(part))
+}
+
+/// One app's toolbox folder, `<apps root>/.host/toolbox/<app id>`: run
+/// results in `toolbox/runs/<template>/<run>.json`, forks in
+/// `toolbox/templates/`, research items in `research/`. `None` for an id
+/// that is not one safe path segment.
+pub fn toolbox_folder(apps_root: &std::path::Path, app_id: &str) -> Option<PathBuf> {
+    let valid = !app_id.is_empty()
+        && app_id.len() <= 64
+        && !app_id.starts_with('.')
+        && app_id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    valid.then(|| toolbox_root(apps_root).join(app_id))
 }
 
 // ---- apps' assistant access -------------------------------------------------

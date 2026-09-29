@@ -90,3 +90,5 @@ app-hub = ["dep:octosense-app-hub-app", "octosense-shell/app-hub"]
 # END native-apps: features
 app-aichat = ["dep:makepad-aichat", "octosense-shell/app-aichat"]
 dev-mode = ["octosense-shell/dev-mode"]
+# The system toolbox offered to app agents (off by default; ADR 0002 §6).
+toolbox-peers = ["octosense-shell/toolbox-peers"]

@@ -44,6 +44,11 @@ pub const SYSTEM: &str = "system";
 pub const TERMINAL_RUN: &str = "terminal.run";
 /// Developer mode's command tool (§13).
 pub const DEV_RUN: &str = "dev.run";
+/// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
+/// (`workflow.run`, `toolbox.search`, …; [`super::toolbox`] with the
+/// `toolbox-peers` feature).
+pub const TOOLBOX: &str = "toolbox";
+
 /// octos's own tools that run commands: always a live approval, never a
 /// standing rule (§8, §12).
 pub const OCTOS_COMMANDS: &[&str] = &["shell", "bash", "exec", "run_command"];
@@ -117,18 +122,29 @@ impl Catalog {
     pub fn grant(&mut self, caller: &str, tool: &str) {
         self.grants.entry(caller.to_string()).or_default().insert(tool.to_string());
     }
+    /// `caller`'s grants of `owner`'s tools become exactly `tools` (a
+    /// toolbox grant computed again).
+    pub fn set_grants(&mut self, caller: &str, owner: &str, tools: &[&str]) {
+        let owned: BTreeSet<String> = self.tools.get(owner).into_iter().flatten().filter_map(|e| e["name"].as_str().map(str::to_string)).collect();
+        let grants = self.grants.entry(caller.to_string()).or_default();
+        grants.retain(|t| !owned.contains(t));
+        grants.extend(tools.iter().map(|t| t.to_string()));
+    }
     pub fn entry(&self, owner: &str, tool: &str) -> Option<&Value> {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
     fn shareable(entry: &Value) -> bool {
         entry["shareable"] == true
     }
-    /// Whether `caller`'s agent may call `owner`'s `tool`.
+    /// Whether `caller`'s agent may call `owner`'s `tool`. Developer mode
+    /// grants every shareable tool, except the toolbox's: those run under
+    /// the grant's scope, which developer mode cannot invent.
     pub fn may_call(&self, caller: &str, owner: &str, tool: &str, dev_all: bool) -> bool {
         let Some(entry) = self.entry(owner, tool) else { return false };
         if owner == caller {
             return true;
         }
+        let dev_all = dev_all && owner != TOOLBOX;
         Self::shareable(entry) && (dev_all || self.grants.get(caller).is_some_and(|g| g.contains(tool)))
     }
     /// What `app`'s peer registers: its own tools, and the shareable tools of
@@ -145,6 +161,16 @@ impl Catalog {
                     out.extend(host_tools::declaration(entry, Some(owner)));
                 }
             }
+        }
+        out
+    }
+    /// What `app`'s peer is offered now: [`Catalog::declarations`], without
+    /// the toolbox's tools until the person allowed `app`'s agent (the #120
+    /// first-use consent; `consented`).
+    pub fn offered(&self, app: &str, dev_all: bool, consented: bool) -> Vec<Value> {
+        let mut out = self.declarations(app, dev_all);
+        if !consented {
+            out.retain(|d| d["app"] != TOOLBOX);
         }
         out
     }

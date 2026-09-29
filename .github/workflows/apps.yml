@@ -144,6 +144,12 @@ jobs:
           cargo test --locked -p octosense-ai-host
           cargo test --locked -p octosense-ai-host --features octos-core,llm
           cargo clippy --locked -p octosense-ai-host --all-targets --features octos-core,llm --no-deps -- -D warnings
+          # The system toolbox for app agents (off by default): its grants and
+          # executor through main's broker, against the scripted kernel. The
+          # real-kernel test (tests/toolbox_real_kernel.rs) needs an octos
+          # binary and passes without.
+          cargo test --locked -p octosense-ai-host --features toolbox-peers
+          cargo clippy --locked -p octosense-ai-host --all-targets --features toolbox-peers --no-deps -- -D warnings
       - name: AppCard runtime setup safeguards
         working-directory: apps/appcard
         run: PYTHONPATH=tools python3 -m unittest core.test_native_runtime

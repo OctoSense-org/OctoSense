@@ -8,7 +8,7 @@
 use super::{NarrowedSearch, SEARCH_CATEGORY};
 use crate::host::url_host;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// octos's metasearch categories.
 const CATEGORIES: &[&str] = &["general", "news", "science", "it", "social"];
@@ -221,4 +221,31 @@ pub fn narrow_search(
         limit: count as u32,
         notes,
     })
+}
+
+/// `Scope::crawl_args`: a `deep_crawl` call narrowed to the crawl limits.
+pub fn crawl_args(scope: &Scope, args: &Value) -> Result<Value, String> {
+    if scope.max_pages == 0 || scope.max_depth == 0 {
+        return Err("crawling is not in this app's grant".into());
+    }
+    let url = args
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or("url is required")?;
+    scope.check_domain(url)?;
+    let depth = args
+        .get("max_depth")
+        .and_then(Value::as_u64)
+        .unwrap_or(1)
+        .clamp(1, scope.max_depth as u64);
+    let pages = args
+        .get("max_pages")
+        .and_then(Value::as_u64)
+        .unwrap_or(10)
+        .clamp(1, scope.max_pages as u64);
+    let mut out = json!({"url": url, "max_depth": depth, "max_pages": pages});
+    if let Some(p) = args.get("path_prefix").and_then(Value::as_str) {
+        out["path_prefix"] = json!(p);
+    }
+    Ok(out)
 }

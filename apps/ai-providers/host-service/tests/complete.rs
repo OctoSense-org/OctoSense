@@ -466,3 +466,25 @@ fn a_host_caller_shares_the_same_ledger() {
     assert_eq!(body["messages"][1]["content"], "{\"query\":\"x\"}");
     assert_eq!(Code::Budget.as_str(), "budget");
 }
+
+#[test]
+fn a_host_caller_may_send_a_larger_input_than_an_app() {
+    // A toolbox digest carries the articles' evidence (up to 6 KB each):
+    // over an app's 32 KiB, within the host's 256 KiB.
+    let rig = Rig::new("host-input", vec![deepseek("deepseek-v4-flash")]);
+    rig.fake.says(GOOD);
+    let big = "x".repeat(complete::INPUT_MAX + 1024);
+    let request = |system: Option<&str>| Request {
+        class: complete::Class::Fast,
+        task: if system.is_some() { String::new() } else { "t".into() },
+        input: json!(big),
+        schema: args()["schema"].clone(),
+        allow_urls: true,
+        system: system.map(str::to_owned),
+    };
+    let refused = rig.host.complete(APP, request(None)).unwrap_err();
+    assert_eq!(refused.code, Code::BadRequest);
+    rig.host.complete(APP, request(Some("You write a digest."))).unwrap();
+    let huge = Request { input: json!("x".repeat(complete::HOST_INPUT_MAX + 1)), ..request(Some("s")) };
+    assert_eq!(rig.host.complete(APP, huge).unwrap_err().code, Code::BadRequest);
+}
