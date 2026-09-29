@@ -42,6 +42,7 @@ pub mod android_accessibility;
 pub mod scene;
 pub mod dock_warp;
 pub mod host;
+pub mod host_tools;
 pub mod hub;
 pub mod layout;
 pub mod octosense;
@@ -2144,6 +2145,10 @@ impl App {
                 approvals::bus_requested(&held);
                 self.approvals_changed(cx);
             }
+            Route::ShellResult(result) => {
+                host_tools::bus_result(&result.call_id, host_tools::outcome_of(&result));
+                host_tools::pump();
+            }
             Route::Drop => {}
         }
     }
@@ -2276,6 +2281,11 @@ impl App {
                     Some(ExecOutcome::Pending) => return,
                     None => ToolResult::unavailable(&call.call_id, "that app is gone"),
                 };
+                if self.ai_bus.take_shell_result(client, &result.call_id) {
+                    host_tools::bus_result(&result.call_id, host_tools::outcome_of(&result));
+                    host_tools::pump();
+                    return;
+                }
                 let frame = self.ai_bus.local_reply(client, result);
                 self.send_to_pane(frame);
             }
@@ -2296,7 +2306,10 @@ impl App {
         for (client, upstream) in self.module_host.drain_upstream() {
             match upstream {
                 ModuleUpstream::Result(result) => {
-                    if self.pane_links.is_instance(client) {
+                    if self.ai_bus.take_shell_result(client, &result.call_id) {
+                        host_tools::bus_result(&result.call_id, host_tools::outcome_of(&result));
+                        host_tools::pump();
+                    } else if self.pane_links.is_instance(client) {
                         self.pane_links.reply(client, result);
                     } else {
                         let frame = self.ai_bus.local_reply(client, result);
@@ -3199,10 +3212,43 @@ impl App {
     /// one of its approvals): hand approvals on, and redraw.
     fn system_chat_changed(&mut self, cx: &mut Cx) {
         system_chat::pump();
+        self.host_tools_pump(cx);
         let generation = system_chat::generation();
         if generation != self.system_chat_generation {
             self.system_chat_generation = generation;
             self.redraw_all(cx);
+        }
+    }
+
+    /// The host-tool relay (`host_tools`, octos UPCR-2026-035): calls,
+    /// cancels, approvals and the router's decisions, on this thread; then
+    /// the relay's own calls on the AI bus (the Terminal's `run`).
+    fn host_tools_pump(&mut self, cx: &mut Cx) {
+        host_tools::pump();
+        let mut answered = false;
+        for request in host_tools::take_bus_requests() {
+            match request {
+                host_tools::BusRequest::Call { call_id, app, tool, args } => match self.ai_bus.shell_call(&app, &tool, &args, &call_id) {
+                    Some(route) => self.on_bus_route(cx, route),
+                    None => {
+                        let label = approvals::sheet::app_label(&app);
+                        host_tools::bus_result(&call_id, ai_host::app_peers::host_tools::ToolOutcome::error("app_not_running", format!("Open {label} first: no running {label} offers {tool}")));
+                        answered = true;
+                    }
+                },
+                host_tools::BusRequest::Cancel { call_id } => {
+                    if let Some(route) = self.ai_bus.shell_cancel(&call_id) {
+                        self.on_bus_route(cx, route);
+                    }
+                }
+            }
+        }
+        for call_id in self.ai_bus.take_failed_shell_calls() {
+            host_tools::bus_result(&call_id, ai_host::app_peers::host_tools::ToolOutcome::error("app_exited", "the app closed before it answered"));
+            answered = true;
+        }
+        if answered {
+            host_tools::pump();
         }
     }
 
@@ -4737,6 +4783,10 @@ impl MatchEvent for App {
         // Approvals (ADR 0004 §8, §4): this home's standing rules, consent
         // and audit, before any app can ask for an approval.
         approvals::init(&octosense::paths::home());
+        // The shell is every app agent's tool host (octos UPCR-2026-035):
+        // brokers register app tools and hand their calls, cancels,
+        // approvals and the system agent's inputs to `host_tools`.
+        host_tools::init();
         // The system agent's grants (Setup > Assistant > Command execution),
         // handed to the kernel before it first starts.
         system_chat::init(std::path::Path::new(&octosense::paths::home()));

@@ -56,19 +56,19 @@ pub const DECL_FIELDS: &[&str] = &[
     "shareable",
 ];
 
-/// A declaration as the kernel takes it: only [`DECL_FIELDS`] kept, `app`
-/// set to `owner` when the tool is another app's (a cross-app grant).
+/// A declaration as the kernel takes it: only [`DECL_FIELDS`] kept, and
+/// `app` set to `owner` when given (a cross-app grant names its owning app;
+/// without it the kernel takes the name's first segment).
 pub fn declaration(entry: &Value, owner: Option<&str>) -> Option<Value> {
     let object = entry.as_object()?;
-    let name = object.get("name")?.as_str()?;
+    object.get("name")?.as_str()?;
     let mut out = serde_json::Map::new();
     for (key, value) in object {
         if DECL_FIELDS.contains(&key.as_str()) {
             out.insert(key.clone(), value.clone());
         }
     }
-    let first = name.split('.').next().unwrap_or(name);
-    if let Some(owner) = owner.filter(|o| *o != first || object.contains_key("app")) {
+    if let Some(owner) = owner {
         out.insert("app".into(), json!(owner));
     }
     Some(Value::Object(out))
@@ -624,11 +624,11 @@ mod tests {
     #[test]
     fn declarations_keep_only_the_kernels_fields_and_name_a_foreign_owner() {
         let entry = json!({"name": "mail.send", "description": "Send", "input_schema": {"type": "object"}, "risk": "act", "outward": true, "confirm": "host", "shareable": true, "auto_approvable": false});
-        let own = declaration(&entry, Some("mail")).unwrap();
+        let own = declaration(&entry, None).unwrap();
         assert!(own.get("auto_approvable").is_none(), "unknown fields are refused by the kernel");
-        assert!(own.get("app").is_none(), "the name's first segment already names its owner");
-        let cross = declaration(&entry, Some("os.mail")).unwrap();
-        assert_eq!(cross["app"], "os.mail");
+        assert!(own.get("app").is_none(), "the name's first segment names its owner");
+        let cross = declaration(&entry, Some("mail")).unwrap();
+        assert_eq!(cross["app"], "mail", "a cross-app grant is marked with its owning app");
         assert!(declaration(&json!({"description": "no name"}), None).is_none());
     }
 

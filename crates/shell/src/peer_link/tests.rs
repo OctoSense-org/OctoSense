@@ -194,6 +194,8 @@ fn call(id: &str, name: &str, risk: wire::Risk, context: Option<&str>) -> Kernel
         caller: Caller::OwnAgent { client: None },
         trigger: Trigger::Person,
         outcome_unknown: false,
+        approved: false,
+        confirm_required: false,
     }
 }
 
@@ -451,4 +453,28 @@ fn signing_out_closes_the_accounts_contexts_and_tells_the_app() {
     links.close_account("notes", DEVICE, "signed_out");
     assert!(matches!(downs(&frames).as_slice(), [Down::ContextClosed { context, reason }] if *context == ctx && reason == "signed_out"));
     assert_eq!(links.tool_call("notes", call("c1", "lookup", wire::Risk::Read, Some(&ctx)), 0.0), Err(Refused::UnknownContext));
+}
+
+
+#[test]
+fn a_call_the_kernel_already_approved_is_not_asked_again_and_confirm_app_goes_to_the_apps_sheet() {
+    let (mut links, world, relay) = setup();
+    let (o, frames) = out();
+    links.connected(1, "notes", o);
+    // UPCR-2026-035: a gated confirm: host call reaches the host only after
+    // the kernel's approval; the link sends it at once.
+    let mut approved = call("c1", "run", wire::Risk::Destructive, None);
+    approved.approved = true;
+    links.tool_call("notes", approved, 0.0).unwrap();
+    assert!(matches!(downs(&frames).as_slice(), [Down::ToolCall(c)] if c.call_id == "c1" && !c.confirm_required));
+    assert!(!world.with(|s| s.order.iter().any(|l| l.starts_with("approval"))), "nobody is asked twice");
+    assert!(relay.take().is_empty(), "no acknowledgement: no sheet follows");
+    // `confirm_required` (confirm: app): acknowledged, then the app's own sheet.
+    world.with(|s| s.route = Some(Route::HandedToApp));
+    let mut confirm = call("c2", "add", wire::Risk::Act, None);
+    confirm.confirm_required = true;
+    links.tool_call("notes", confirm, 0.0).unwrap();
+    assert_eq!(relay.take(), vec![("notes".into(), "c2".into(), None)], "acknowledged before the sheet");
+    assert!(world.with(|s| s.order.iter().any(|l| l.starts_with("approval peerlink:notes:c2"))));
+    assert!(matches!(downs(&frames).as_slice(), [Down::ToolCall(c)] if c.call_id == "c2" && c.confirm_required));
 }

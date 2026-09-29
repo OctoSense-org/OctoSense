@@ -155,6 +155,9 @@ pub enum Route {
     /// A `confirm: host` call: ask the approval router, then
     /// [`AiBus::release`] it with the answer.
     Approval(HeldCall),
+    /// The answer to one of the shell's own calls ([`AiBus::shell_call`]):
+    /// for the host-tool relay (`host_tools`), never the pane.
+    ShellResult(ToolResult),
     Drop,
 }
 
@@ -173,6 +176,11 @@ pub struct AiBus {
     rules: HashMap<ClientId, &'static crate::native_apps::NativeApp>,
     /// `confirm: host` calls waiting for the approval router, by key.
     held: HashMap<String, (ClientId, ServiceDown)>,
+    /// The shell's own calls (a host tool such as `terminal.run`, already
+    /// approved through the router) by call id, and the client they went to.
+    shell_calls: HashMap<String, ClientId>,
+    /// Shell calls whose client died before answering.
+    failed_shell_calls: Vec<String>,
     /// Tests only: answers `auto_approve` instead of the process's
     /// developer mode.
     #[cfg(test)]
@@ -429,6 +437,15 @@ impl AiBus {
         let Some(mut up) = HostedUp::parse(json) else { return Route::Drop };
         // The sender's claim is never used: the link IS the identity.
         up.from = Some(Self::endpoint_of(client));
+        // The shell's own calls answer the shell, never the pane.
+        match &up.msg {
+            ServiceUp::Result(result) if self.shell_calls.get(&result.call_id) == Some(&client) => {
+                self.shell_calls.remove(&result.call_id);
+                return Route::ShellResult(result.clone());
+            }
+            ServiceUp::Progress { call_id, .. } if self.shell_calls.get(call_id) == Some(&client) => return Route::Drop,
+            _ => {}
+        }
         match &mut up.msg {
             ServiceUp::Register { manifest, .. } => {
                 // Another process cannot vouch for the person's consent: its
@@ -446,6 +463,58 @@ impl AiBus {
             _ => {}
         }
         Route::ToPane(up.to_json())
+    }
+
+    /// Call `tool` of the running app whose service is `app` for the shell
+    /// itself (the host-tool relay, UPCR-2026-035). The call was authorized
+    /// and approved already, so it is not held again; its answer comes back
+    /// as [`Route::ShellResult`], never to the pane. `None`: no running
+    /// instance of `app` offers `tool` (an in-process Terminal offers its
+    /// read tools only).
+    pub fn shell_call(&mut self, app: &str, tool: &str, args: &str, call_id: &str) -> Option<Route> {
+        let client = self
+            .manifests
+            .iter()
+            .filter(|(client, manifest)| manifest.id == app && !self.is_pane(**client) && manifest.tools.iter().any(|t| t.name == tool))
+            .map(|(client, _)| *client)
+            .max()?;
+        let call = ServiceCall { call_id: call_id.to_string(), tool: tool.to_string(), args: args.to_string() };
+        if let Some(manifest) = self.manifests.get(&client) {
+            self.audit_call(&manifest.id, Some(manifest), &call);
+        }
+        self.shell_calls.insert(call_id.to_string(), client);
+        let msg = ServiceDown::Call(call);
+        Some(if self.locals.contains(&client) {
+            Route::Local(client, msg)
+        } else {
+            Route::ToClient(client, HostedDown { to: Some(Self::endpoint_of(client)), msg }.to_json())
+        })
+    }
+
+    /// Stop one of the shell's own calls (the kernel cancelled it).
+    pub fn shell_cancel(&mut self, call_id: &str) -> Option<Route> {
+        let client = self.shell_calls.remove(call_id)?;
+        let msg = ServiceDown::Cancel { call_id: call_id.to_string() };
+        Some(if self.locals.contains(&client) {
+            Route::Local(client, msg)
+        } else {
+            Route::ToClient(client, HostedDown { to: Some(Self::endpoint_of(client)), msg }.to_json())
+        })
+    }
+
+    /// An in-process instance answered: true (and the call is done) when it
+    /// was one of the shell's own calls, which never reach the pane.
+    pub fn take_shell_result(&mut self, client: ClientId, call_id: &str) -> bool {
+        if self.shell_calls.get(call_id) == Some(&client) {
+            self.shell_calls.remove(call_id);
+            return true;
+        }
+        false
+    }
+
+    /// Shell calls whose client died before answering.
+    pub fn take_failed_shell_calls(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.failed_shell_calls)
     }
 
     /// The approval router answered a held call: on to the app, or refused
@@ -476,6 +545,11 @@ impl AiBus {
             return None;
         }
         self.held.retain(|_, (target, _)| *target != client);
+        let failed: Vec<String> = self.shell_calls.iter().filter(|(_, c)| **c == client).map(|(id, _)| id.clone()).collect();
+        for id in failed {
+            self.shell_calls.remove(&id);
+            self.failed_shell_calls.push(id);
+        }
         self.rules.remove(&client);
         self.manifests.remove(&client)?;
         let from = Some(self.endpoint_for(client));
@@ -590,6 +664,35 @@ mod tests {
         let Route::Approval(held) = bus.on_custom(9, &down.to_json()) else { panic!("expected a held call") };
         bus.client_died(4);
         assert!(matches!(bus.release(&held.key, true, ""), Route::Drop));
+    }
+
+    #[test]
+    fn the_shells_own_calls_reach_the_terminal_unheld_and_answer_the_shell_not_the_pane() {
+        let terminal = ServiceManifest::new("terminal", "Terminal", "The live terminal.")
+            .with_tool(ToolDef::new("read_screen", "Read the screen.", r#"{"type":"object"}"#, Risk::Read))
+            .with_tool(ToolDef::new("run", "Type a line.", r#"{"type":"object"}"#, Risk::Destructive));
+        let mut bus = AiBus { pane_client: Some(9), ..Default::default() };
+        assert!(bus.shell_call("terminal", "run", r#"{"command":"ls"}"#, "hosttool-c1").is_none(), "no Terminal running");
+        let up = HostedUp { from: None, msg: ServiceUp::Register { manifest: terminal, port_tag: 0 } };
+        assert!(matches!(bus.on_custom_from(4, Some("terminal"), &up.to_json()), Route::ToPane(_)));
+        // Approved by the router already (host_tool): not held a second time.
+        let Some(Route::ToClient(4, json)) = bus.shell_call("terminal", "run", r#"{"command":"ls"}"#, "hosttool-c1") else { panic!("expected the call to go to the Terminal") };
+        let down = HostedDown::parse(&json).unwrap();
+        assert!(matches!(down.msg, ServiceDown::Call(ServiceCall { ref tool, ref args, .. }) if tool == "run" && args == r#"{"command":"ls"}"#));
+        assert_eq!(bus.held(), 0);
+        // Its answer is the shell's, never the pane's.
+        let result = HostedUp { from: None, msg: ServiceUp::Result(ToolResult::ok("hosttool-c1", "typed", "typed")) };
+        assert!(matches!(bus.on_custom_from(4, Some("terminal"), &result.to_json()), Route::ShellResult(r) if r.call_id == "hosttool-c1"));
+        let again = HostedUp { from: None, msg: ServiceUp::Result(ToolResult::ok("hosttool-c1", "typed", "typed")) };
+        assert!(matches!(bus.on_custom_from(4, Some("terminal"), &again.to_json()), Route::ToPane(_)), "answered once");
+        // A Terminal that dies fails the shell's calls in flight.
+        assert!(bus.shell_call("terminal", "run", r#"{"command":"sleep 9"}"#, "hosttool-c2").is_some());
+        bus.client_died(4);
+        assert_eq!(bus.take_failed_shell_calls(), vec!["hosttool-c2".to_string()]);
+        // An in-process Terminal offering its reads only cannot take `run`.
+        let reads = ServiceManifest::new("terminal", "Terminal", "reads").with_tool(ToolDef::new("read_screen", "Read.", r#"{"type":"object"}"#, Risk::Read));
+        let _ = bus.register_local(6, reads);
+        assert!(bus.shell_call("terminal", "run", "{}", "hosttool-c3").is_none());
     }
 
     #[test]
