@@ -645,6 +645,19 @@ fn a_tool_call_is_stamped_run_once_answered_on_its_link_and_never_after_a_cancel
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(calls_of(&script, "peer/tool/result").len(), 3);
 
+    // Another peer's call (or the system session's) is not this broker's:
+    // it leaves it to its own host and answers nothing.
+    let mut foreign = tool_call_params("other-peer", "c-foreign", "t9", None);
+    foreign["peer"] = json!("other-peer");
+    notify(&script, "peer/tool/call", foreign);
+    let mut system = tool_call_params(&slug, "c-system", "t9", None);
+    system["peer"] = Value::Null;
+    system["caller"]["kind"] = json!("system");
+    notify(&script, "peer/tool/call", system);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls_of(&script, "peer/tool/result").len(), 3);
+    assert_eq!(host.calls.lock().unwrap().len(), 2);
+
     // A context this app never opened is refused.
     notify(&script, "peer/tool/call", tool_call_params(&slug, "c3", "t3", Some("forged")));
     wait_for("the refusal", || calls_of(&script, "peer/tool/result").len() == 4);

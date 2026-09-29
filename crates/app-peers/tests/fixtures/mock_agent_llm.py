@@ -15,6 +15,8 @@ Rules, looking at the request's messages and offered tools:
   - "TELL_PEER_TOOL:<slug>": send the peer "CALL_APP_TOOL", on which the
     peer calls the host-registered app tool `rinx_echo` when it is offered
     (UPCR-2026-035), else says "NO APP TOOL OFFERED";
+  - "RUN_TERMINAL": the system agent calls the host tool `terminal_run`
+    registered on its session, else says "NO TERMINAL OFFERED";
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
@@ -75,6 +77,10 @@ def decide(body):
         return {"tool": "rinx_echo", "args": {"text": "ping"}}
     if "CALL_APP_TOOL" in last_user:
         return {"text": "NO APP TOOL OFFERED"}
+    if "RUN_TERMINAL" in last_user and "terminal_run" in tools:
+        return {"tool": "terminal_run", "args": {"command": "ls"}}
+    if "RUN_TERMINAL" in last_user:
+        return {"text": "NO TERMINAL OFFERED"}
     approve = re.search(r"APPROVE_PEER:([a-z0-9-]+)", last_user)
     if approve and "peer_respond" in tools:
         return {"tool": "peer_respond", "args": {"slug": approve.group(1), "decision": "approve"}}

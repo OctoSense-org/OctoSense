@@ -1129,19 +1129,20 @@ impl Inner {
             let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
             (st.link.clone(), peer, st.account.clone())
         };
+        // The shell's consumers share one kernel connection, and a
+        // notification reaches every consumer that named its session (every
+        // broker names the system session): only this app's peer's calls are
+        // this broker's to answer. Any other is left to its own host.
+        let (Some(link), Some(peer)) = (link, peer) else { return };
+        if call.peer.as_deref() != Some(peer.slug.as_str()) {
+            return;
+        }
         // Answered on the connection the call came on (the kernel refuses a
         // result from any other).
-        let Some(link) = link else { return };
-        let reply = self.reply_for(&call, link, peer.as_ref().and_then(|p| p.token.clone()));
+        let reply = self.reply_for(&call, link, peer.token.clone());
         let refuse = |kind: &str, message: &str| {
             reply.finish(ToolOutcome::error(kind, message));
         };
-        let Some(peer) = peer else {
-            return refuse("app_not_ready", "the app's assistant is not bound on this connection");
-        };
-        if call.peer.as_deref() != Some(peer.slug.as_str()) {
-            return refuse("not_this_peer", "this connection hosts another app's peer");
-        }
         let Some(account) = account else {
             return refuse("signed_out", "the account is signed out");
         };
