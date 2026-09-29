@@ -161,6 +161,10 @@ def validate(data):
         for key in ("sandbox", "storage", "agent"):
             if not isinstance(app[key], dict):
                 problems.append(f"{where}: {key} must be an object")
+        if isinstance(app["sandbox"], dict):
+            problems += [f"{where}: {p}" for p in sandbox_problems(app["sandbox"])]
+        if isinstance(app["storage"], dict):
+            problems += [f"{where}: {p}" for p in storage_problems(app["storage"])]
         if isinstance(app["agent"], dict) and not isinstance(app["agent"].get("octos"), list):
             problems.append(f"{where}: agent.octos must be a list")
         if isinstance(app["agent"], dict):
@@ -168,6 +172,40 @@ def validate(data):
     if problems:
         raise ManifestError(f"{MANIFEST}:\n  " + "\n  ".join(problems))
     return data["apps"]
+
+
+NETWORKS = ("none", "any")
+EXTERNAL_ROOTS = ("home", "documents", "downloads", "desktop", "pictures", "music", "movies", "tmp")
+
+
+def sandbox_problems(sandbox):
+    """`sandbox`: {"network": "none"|"any", "processes": bool} (ADR 0004 §3):
+    what a process-hosted instance's OS sandbox allows beyond its files."""
+    problems = []
+    if set(sandbox) != {"network", "processes"}:
+        problems.append("sandbox needs exactly network and processes")
+    if sandbox.get("network") not in NETWORKS:
+        problems.append(f"sandbox.network must be one of {', '.join(NETWORKS)}")
+    if not isinstance(sandbox.get("processes"), bool):
+        problems.append("sandbox.processes must be true or false")
+    return problems
+
+
+def storage_problems(storage):
+    """`storage` (ADR 0004 §11): `accounts` a bool, `external` a list of
+    `<root>[/<path>]:ro|rw` grants outside the jail (part of the sandbox,
+    never of an agent's workspace)."""
+    problems = []
+    if not isinstance(storage.get("accounts"), bool):
+        problems.append("storage.accounts must be true or false")
+    external = storage.get("external")
+    if not isinstance(external, list):
+        return problems + ["storage.external must be a list"]
+    for grant in external:
+        match = isinstance(grant, str) and re.fullmatch(r"([a-z]+)(/[A-Za-z0-9._/-]+)?:(ro|rw)", grant)
+        if not match or match.group(1) not in EXTERNAL_ROOTS or ".." in grant:
+            problems.append(f"storage.external: {grant!r} is not <root>[/<path>]:ro|rw with root one of {', '.join(EXTERNAL_ROOTS)}")
+    return problems
 
 
 def tool_policy_problems(policy):
@@ -355,6 +393,14 @@ def render_rust(apps):
         "    pub auto_approvable: bool,",
         "}",
         "",
+        "/// What a process-hosted instance may reach on the network (ADR 0004 §3).",
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]",
+        "pub enum Network {",
+        "    /// Nothing but the shell's hub on loopback.",
+        "    None,",
+        "    Any,",
+        "}",
+        "",
         "/// One `native-apps.json` entry, as far as the shell reads it.",
         "#[derive(Debug)]",
         "pub struct NativeApp {",
@@ -374,6 +420,14 @@ def render_rust(apps):
         "    pub octos: &'static [&'static str],",
         "    /// Its assistant tools' confirmation rules (`agent.tool_policy`).",
         "    pub tools: &'static [ToolPolicy],",
+        "    /// `sandbox.network`: what its OS sandbox lets it reach.",
+        "    pub network: Network,",
+        "    /// `sandbox.processes`: whether it may start child processes.",
+        "    pub processes: bool,",
+        "    /// `storage.accounts`: one folder (and agent) per account.",
+        "    pub accounts: bool,",
+        "    /// `storage.external`: `<root>[/<path>]:ro|rw` outside its jail.",
+        "    pub external: &'static [&'static str],",
         "}",
         "",
         "pub const APPS: &[NativeApp] = &[",
@@ -400,6 +454,12 @@ def render_rust(apps):
             out.append("        ],")
         else:
             out.append("        tools: &[],")
+        network = "Network::Any" if app["sandbox"]["network"] == "any" else "Network::None"
+        out.append(f"        network: {network},")
+        out.append(f"        processes: {'true' if app['sandbox']['processes'] else 'false'},")
+        out.append(f"        accounts: {'true' if app['storage']['accounts'] else 'false'},")
+        external = ", ".join(s(x) for x in app["storage"]["external"])
+        out.append(f"        external: &[{external}],")
         out.append("    },")
     out += [
         "];",

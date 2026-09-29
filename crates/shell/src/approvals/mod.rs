@@ -63,6 +63,9 @@ pub struct Approvals {
     /// Decisions for the AI bus's held calls (`bus:` ids), drained by the
     /// shell ([`take_bus_decisions`]).
     bus: RecordingRelay,
+    /// Decisions for the peer link's calls (`peerlink:` ids), drained by
+    /// `peer_link` ([`take_peer_decisions`]).
+    peer: RecordingRelay,
     external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
 }
 
@@ -70,6 +73,7 @@ pub struct Approvals {
 /// shell, the rest to the octos#2567 relay (queued until it is installed).
 struct Dispatch {
     bus: RecordingRelay,
+    peer: RecordingRelay,
     queue: RecordingRelay,
     external: Arc<Mutex<Option<Box<dyn ApprovalRelay>>>>,
 }
@@ -78,6 +82,9 @@ impl ApprovalRelay for Dispatch {
     fn approval_decided(&mut self, id: &RequestId, decision: Decision, reason: &str) {
         if id.0.starts_with(crate::ai_bus::HELD_PREFIX) {
             return self.bus.approval_decided(id, decision, reason);
+        }
+        if id.0.starts_with(crate::peer_link::link::HELD_PREFIX) {
+            return self.peer.approval_decided(id, decision, reason);
         }
         match self.external.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             Some(relay) => relay.approval_decided(id, decision, reason),
@@ -97,10 +104,11 @@ impl Approvals {
     fn with_parts(rules: rules::RuleStore, audit: audit::AuditLog, consent: consent::ConsentStore, contacts: contacts::ContactsGate) -> Approvals {
         let queue = RecordingRelay::default();
         let bus = RecordingRelay::default();
+        let peer = RecordingRelay::default();
         let external = Arc::new(Mutex::new(None));
-        let dispatch = Dispatch { bus: bus.clone(), queue: queue.clone(), external: external.clone() };
+        let dispatch = Dispatch { bus: bus.clone(), peer: peer.clone(), queue: queue.clone(), external: external.clone() };
         let router = Router::new(rules, audit, Box::new(dev_hooks::ShellDevMode), contacts, Box::new(dispatch));
-        Approvals { router, consent, settings_open: false, queue, bus, external }
+        Approvals { router, consent, settings_open: false, queue, bus, peer, external }
     }
     /// Sheets, rules, consent and the page: one number for "redraw".
     pub fn generation(&self) -> u64 {
@@ -172,6 +180,11 @@ pub fn bus_requested(held: &crate::ai_bus::HeldCall) -> Route {
 
 pub fn take_bus_decisions() -> Vec<(RequestId, Decision, String)> {
     with(|a| a.bus.take()).unwrap_or_default()
+}
+
+/// The peer link's decisions (`peer_link::link::HELD_PREFIX` ids).
+pub fn take_peer_decisions() -> Vec<(RequestId, Decision, String)> {
+    with(|a| a.peer.take()).unwrap_or_default()
 }
 
 /// An app module registers its own confirmation sheet (`confirm: app`).
