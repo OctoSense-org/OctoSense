@@ -7284,7 +7284,9 @@ dependencies = [
  "octosense-kernel",
  "octosense-llm-config",
  "octosense-llm-service",
+ "octosense-toolbox",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

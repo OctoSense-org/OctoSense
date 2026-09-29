@@ -107,3 +107,7 @@ app-aichat = ["dep:makepad-aichat"]
 # development builds without it (build.rs); a release build without it
 # honours only the `--dev-grant-all` launch flag.
 dev-mode = []
+# The system toolbox offered to app agents as host-routed tools (ADR 0002
+# §6, ADR 0004 §12; src/host_tools/toolbox.rs): the `toolbox` owner in the
+# host-tool relay. Off by default.
+toolbox-peers = ["octosense-ai-host/toolbox-peers"]
