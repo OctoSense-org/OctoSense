@@ -16,23 +16,129 @@
 
 ## 整体如何运作
 
-![OctoSense AI 服务：进程与传输](docs/images/ai-services-processes.png)
+每台设备一个 Shell 进程，每个 Shell 一个 octos 内核，每个 Agent 都是这个内核中的一个会话。应用从不直接与内核通信：进入 octos 的每条路径都经过 Shell。Shell 持有宿主连接和宿主 token，把每个 Agent 工具调用转交给拥有该工具的应用，并把每个审批交给用户。完整说明，包括代码路径以及哪些已在 `main` 上、哪些还在规划中：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)；相关决策：[ADR 0004（英文）](docs/adr/0004-native-apps-hosting-and-peers.md)。
 
+### 进程与连接
+
+```mermaid
+flowchart LR
+  person(["用户"])
+  ext["Talk to Octos 客户端<br/>网页或终端，需手动开启"]
+  subgraph shellp["OctoSense Shell 进程"]
+    ui["窗口管理器、启动器、<br/>系统对话、面板"]
+    mods["原生模块<br/>App Hub、Rinx"]
+    runner["Card runner<br/>脚本应用、glance 卡片"]
+    aihost["ai-host + app-peers 代理<br/>宿主连接"]
+    relay["宿主工具中转"]
+    router["审批路由"]
+  end
+  term["Terminal<br/>在系统沙箱中的进程应用"]
+  subgraph kern["octos 内核：子进程，OpenHarmony 上在进程内"]
+    sys["系统 Agent<br/>系统会话"]
+    peers["应用 Agent<br/>每个应用、每个账号一个 peer"]
+  end
+  person --> ui
+  ui --- mods
+  ui --- runner
+  mods -->|"OctosAppService"| aihost
+  runner -->|"host.request octos.*"| aihost
+  term <-->|"hub：画面、AI bus"| ui
+  term -.->|"peer link"| aihost
+  aihost <-->|"OUP，宿主 token"| kern
+  sys -->|"peer_send_input"| peers
+  kern -->|"peer/tool/call、审批"| relay
+  relay --> router
+  ext -.->|"外部 token：<br/>只能用系统对话"| sys
 ```
- 用户 ──> OctoSense Shell（一个进程）──── OUP（stdio）────> octos 内核（每个 Shell 一个）
-          ├─ 原生模块：App Hub、Rinx                ├─ 系统 Agent 会话
-          ├─ Card runner：脚本应用各在隔离环境中    └─ 每个（应用，账号）一个应用 Agent（peer）
-          ├─ 审批路由、宿主面板、存储
-          └─ hub ──> 进程应用（桌面端：Terminal）
+
+- **Shell**（`crates/shell`，一个进程）承载窗口管理器、原生模块（App Hub、Rinx）、App Hub 的 Card runner（每个脚本应用都在自己的隔离环境中）、系统对话、审批路由、宿主工具中转，以及 [`crates/ai-host`](crates/ai-host/README.md)；其中的 [app-peers 代理](crates/app-peers/README.md)就是内核的宿主连接。
+- **octos 内核**（[`crates/kernel`](crates/kernel/README.zh-CN.md)）首次使用时启动：桌面端（`OCTOS_APP_CORE_BIN`）和 Android（`liboctos.so`）上是通过 stdio 讲 OUP 的子进程，OpenHarmony 上是进程内的任务，iOS 上没有。它随 Shell 一起退出。
+- **进程应用**：桌面端的 Terminal 作为独立进程运行，通过 Shell 的 hub 连接（画面和 AI bus），运行在按其 `native-apps.json` 条目构建的系统沙箱中（macOS 上是 Seatbelt，Linux 上是 Landlock 和 seccomp，Windows 上尚未实现）。进程应用通过 **peer link** 使用自己的 Agent；Shell 一侧已在 `main` 上，但 Terminal 没有被授予 Agent，所以目前还没有进程应用使用它。
+- **外部客户端**：Talk to Octos（需手动开启）让网页或终端客户端以受限的外部 token 使用系统对话：只有一份方法白名单，不能调用任何 `peer/*` 方法，不能进入任何应用 Agent 的会话，也拿不到宿主路由的工具。
+
+### 进入 octos 的每条路径都经过 Shell
+
+| 谁 | 路径 | 状态 |
+| --- | --- | --- |
+| 进程内原生模块（Rinx） | 注入的 `OctosAppService`：`open_conversation`（应用与自己 Agent 的对话）和 `open_context`（每个客户端一个请求上下文，例如 Rinx 小程序） | 已在 `main` 上 |
+| 脚本应用及其卡片 | 向 `octos` 宿主服务发送 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt")` | 已在 `main` 上，受 `Policy::contained_apps`（发布策略中关闭）和首次使用同意约束 |
+| 进程应用 | 其 hub 连接上的 peer link（`octos.session.open`、`octos.turn.start` 等），身份由 Shell 标注 | Shell 一侧已在 `main` 上；尚无进程应用被授予 Agent |
+| 系统 Agent | 内核自己的会话 `_main:api:octosense#system`，从 Shell 的系统对话进入 | 已在 `main` 上 |
+| Talk to Octos 客户端 | 只能用系统对话，使用外部 token | 已在 `main` 上 |
+
+### 一个应用 Agent，两条通道
+
+一个应用 Agent 就是每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有，有自己的工作区、记忆命名空间、模型和工具列表。系统 Agent 和用户各自在自己的通道里与它对话：
+
+```mermaid
+flowchart TB
+  sys["系统 Agent"]
+  person(["用户"])
+  mini["Rinx 小程序"]
+  subgraph peer["应用 Agent：每个应用、每个账号一个 peer"]
+    direction TB
+    lane1["系统 Agent 的通道<br/>peer 会话 #peer-app"]
+    lane2["用户的通道<br/>请求上下文 #peerctx-app.id<br/>以 share_history 打开"]
+    own[("应用的工作区、<br/>记忆和工具")]
+    ctx["其他请求上下文<br/>不共享"]
+  end
+  sys -->|"peer_send_input"| input["octos：peer/input<br/>发给 Shell"]
+  input -->|"Shell 启动这一轮"| lane1
+  person -->|"应用界面或其卡片"| lane2
+  lane1 -.->|"最近消息，只读"| lane2
+  lane2 -.->|"最近消息，只读"| lane1
+  lane1 --- own
+  lane2 --- own
+  mini -->|"open_context"| ctx
 ```
 
-- **一个 Shell 进程**承载窗口管理器、原生模块（App Hub、Rinx）和 App Hub 的 Card runner，每个脚本应用都在自己的隔离环境中运行。桌面端的 Terminal 作为独立进程运行，通过 Shell 的 hub 连接。
-- **每个 Shell 一个 octos 内核**，首次使用时启动：桌面端和 Android 上是子进程，OpenHarmony 上在进程内，iOS 上没有。Shell 是它的宿主连接并持有宿主 token；应用从不直接与内核通信。
-- **Agent 是这个内核中的会话**：系统 Agent，以及每个应用、每个账号一个应用 Agent（octos peer），各自有独立的工作区、记忆和对话记录。系统 Agent 向应用 Agent 下达任务，并在 peer 黑板上读取它们的结果。
-- **应用通过 Shell 使用自己的 Agent**：原生模块用注入的服务，脚本应用用 `host.request("octos.*")`。Talk to Octos（需手动开启）让网页或终端客户端以受限 token 使用系统对话，但永远接触不到应用 Agent。
-- **由用户批准**：对外和破坏性的工具调用都经过 Shell 的审批路由，在面板上实时批准，或由用户设定的常设规则批准。
+- **系统 Agent 的通道**是 peer 自己的会话 `…#peer-<app>`。系统 Agent 发送 `peer_send_input`；octos 把它作为 `peer/input` 交给 Shell 的宿主连接，由 Shell 自己启动这一轮，所以这一轮带着应用的工具、记忆和审批运行（对已退出登录的账号或用户未允许的应用，Shell 以 `peer/input/reject` 拒绝）。peer 的结果写到 peer 黑板上，由系统 Agent 读取。
+- **用户的通道**（**进行中**：octos `feat/peer-context-share-history`、OctoSense `feat/parallel-person-session`，尚未合入）是一个请求上下文 `…#peerctx-<app>.<id>`，由应用界面或其交互式卡片以 `share_history` 打开。两条通道并行运行，每个会话同一时间只有一轮；每一轮都会以只读块的形式看到另一条通道的最近消息，每一轮都标明说话者（`[from the person: <app>]`、`[from the system agent]`）。
+- **目前 `main` 上**两者在 peer 会话上的同一个共享对话中说话（`open_conversation`，[#166](https://github.com/OctoSense-org/OctoSense/pull/166)，octos#2626）：每个 peer 一个队列，一次一轮，每一轮都标有来源。
+- **Rinx 小程序**保留各自的请求上下文（`open_context`），各有自己的对话记录和文件夹，不与任一通道共享。
 
-进程、Agent、协议、工具、审批、存储和信任边界，以及哪些已在 `main` 上、哪些还在规划中：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)。
+### 一次带审批的工具调用
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ag as 应用 Agent 的一轮
+  participant K as octos 内核
+  participant Re as Shell 中转
+  participant Ro as 审批路由
+  participant P as 用户
+  participant Ex as 拥有工具的应用
+  Ag->>K: 调用 mail.send
+  alt confirm host
+    K->>Ro: approval/requested，host_tool
+    Ro->>Ro: 先看开发者模式，再看常设规则
+    Ro->>P: Shell 面板，显示确切参数
+    P->>Ro: 批准或拒绝
+    Ro->>K: approval/respond
+    K->>Re: peer/tool/call，已批准
+    Re->>Re: 授权、schema 和预算检查
+  else confirm app
+    K->>Re: peer/tool/call
+    Re->>Re: 授权、schema 和预算检查
+    Re->>Ro: 转交，并向内核确认收到
+    Ro->>Ex: 应用自己的面板，显示调用方
+    P->>Ex: 批准或拒绝
+  end
+  Re->>Ex: 在应用的执行器上运行
+  Ex->>Re: 结果，按其 schema 检查
+  Re->>K: 结果，只回答一次
+  Note over Ro,P: 10 分钟无人回答，拒绝，绝不批准。<br/>30 秒后这一轮仍在运行，中断。
+```
+
+- **工具调用**：octos 把 `peer/tool/call` 发给 Shell 的中转（`crates/shell/src/host_tools/`）。中转按（拥有工具的应用，工具）和调用方检查授权，按工具的 schema 检查参数，检查调用方的预算，再把调用路由到拥有工具的应用的执行器：进程内模块的执行器、脚本应用的宿主服务、进程应用的 peer link，或 AI bus 上 Terminal 的 `run`。
+- **审批**交给审批路由（`crates/shell/src/approvals/`）：先看开发者模式，再看针对（拥有工具的应用，工具）的常设规则，否则弹出 Shell 绘制的面板。`confirm: app` 的工具在拥有它的应用自己的面板上确认，面板显示调用方。只有用户能批准；系统 Agent 永远不能。
+- **时限与停止**（[#167](https://github.com/OctoSense-org/OctoSense/pull/167)）：Shell 为应用 peer 持有的审批或提问在 10 分钟后过期（`OCTOSENSE_PROMPT_DEADLINE_SECS`）：审批路由拒绝它，提问被婉拒，两者都保持显示为 "Expired: no answer in 10 min"。如果 30 秒后这一轮仍在运行，代理会中断它，好让下一轮开始。用户的“停止”会结束 Agent 正在运行的一轮。
+- **外部客户端的提示**留在客户端：Shell 不回答、也不让 Talk to Octos 客户端各轮的审批过期（octos#2624）。
+
+### 卡片与提问
+
+- **交互式卡片**（[#153](https://github.com/OctoSense-org/OctoSense/pull/153)）：应用的 glance 卡片在应用自己的策略下运行，与应用界面在 Card runner 中一样；以 `notify` 发布的卡片还会发出一条通知，点开后在 glance 页面或面板上打开这张实时卡片。用户在卡片上的操作是应用自己的操作，经过应用的能力闸门和宿主服务，而不是 Agent 的工具调用，因此不需要额外的 Shell 审批。
+- **提问**（octos 的 `ask_user_question`）按这一轮的触发方路由：来自用户通道（或应用）的一轮在应用的对话中提问，来自系统 Agent 通道的一轮在系统对话中提问。只有用户能回答，而且只能在 Shell 的界面上回答。
 
 ## 目录结构
 
@@ -71,7 +177,7 @@ Shell 只有一份，位于 `crates/shell`（[ADR 0001（英文）](docs/adr/000
 
 每个 Shell 运行一个 [octos](https://github.com/octos-org/octos) Agent 内核，首次使用时启动：Android 上是 APK 中的 `liboctos.so`，OpenHarmony 上在进程内运行，桌面端运行 `OCTOS_APP_CORE_BIN` 指定的二进制，iOS 上没有。用户在系统应用 **AI providers** 中、在宿主面板上选择模型并输入密钥；密钥保存在平台的密钥存储中，永远不会到达应用。[`crates/ai-host`](crates/ai-host/README.md) 是两个 Shell 的统一入口，[`crates/app-peers`](crates/app-peers/README.md) 为每个获授权的原生应用分配自己的 octos peer（私有的上下文、工作区和记忆 `app/<app>/acct-<hash>`），归 Shell 的系统 Agent 所有。peer 的工具审批只能由用户在该应用中回答，系统 Agent 无法代答。
 
-目前可用的：原生模块（Rinx）使用自己的 peer；AppCard（需主动开启）直接使用内核。隔离运行的脚本应用，无论系统应用还是商店应用，在托管了内核的 Shell 中通过 `octos` 宿主服务使用助手：每个应用有自己的、由宿主拥有的 peer（`card.<应用 id>`），在 Card runner 有审批面板之前工具审批一律被拒绝。`llm` 服务只为 `os.*` 应用管理提供方。应用自己的 Agent（`tools.json`、`AGENT.md`、skills、触发器、glance 卡片）见 [ADR 0002](docs/adr/0002-event-driven-app-agents.md)（Proposed），其中最早的几部分已合入或正在评审。
+目前可用的：原生模块（Rinx）使用自己的 peer；AppCard（需主动开启）直接使用内核。隔离运行的脚本应用，无论系统应用还是商店应用，在托管了内核的 Shell 中通过 `octos` 宿主服务使用助手：每个应用有自己的、由宿主拥有的 peer（`card.<应用 id>`），它的工具审批和其他应用 Agent 一样交给 Shell 的审批面板（[#155](https://github.com/OctoSense-org/OctoSense/pull/155)）。`llm` 服务只为 `os.*` 应用管理提供方。应用自己的 Agent（`tools.json`、`AGENT.md`、skills、触发器、glance 卡片）见 [ADR 0002](docs/adr/0002-event-driven-app-agents.md)；自 [#160](https://github.com/OctoSense-org/OctoSense/pull/160) 起，应用 `tools.json` 中的工具已端到端提供给它的 Agent。
 
 架构、信任模型、各类应用能用什么、规划及其状态，以及如何在本地运行和测试：[docs/ai-services.zh-CN.md](docs/ai-services.zh-CN.md)。它在整个系统中的位置：[docs/architecture.zh-CN.md](docs/architecture.zh-CN.md)。面向应用开发者：OctoScript-App-Design-Flow 的 [AI-SERVICES](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/blob/main/docs/AI-SERVICES.zh-CN.md)。
 

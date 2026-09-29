@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-> Where this fits: see the [OctoSense architecture](../docs/architecture.md) (with diagrams).
+> **Where this fits.** The system apps are script apps in App Hub's Card runner. They never talk to the octos kernel: an app reaches its own agent (one peer per app and account) only through the shell, with `host.request("octos.*")`, and the agent's calls to the app's tools come back through the shell's relay and approval router. An app's glance cards run under the app's own policy, and what the person does on them is the app's own action, not an agent tool call. Diagrams of the processes, an app agent's two lanes and a tool call with its approval: [How it fits together](../README.md#how-it-fits-together); the details: [docs/architecture.md](../docs/architecture.md) and [ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md).
 
 The first-party apps that ship with [OctoSense](https://github.com/OctoSense-org),
 the agent shell on top of your operating system, and the host services behind
