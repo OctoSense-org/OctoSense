@@ -174,7 +174,7 @@ pub fn catalog(library: &Library) -> Vec<Value> {
         decls.push(decl(
             SEARCH,
             "read",
-            "Search free sources through the octos metasearch within this app's granted languages, regions, domains, categories and recency: category `news` (default: Google News, GDELT, publisher feeds, Hacker News), `general` (Wikipedia, Wikidata), `it` (GitHub, Hacker News, Stack Exchange), `science` (arXiv, OpenAlex), `social` (Mastodon; posts are not returned as evidence). Returns dated items with their sources, saved in this app's toolbox folder.".into(),
+            "Search free sources through the octos metasearch within this app's granted languages, regions, domains, categories and recency: category `news` (default: Google News, GDELT, publisher feeds, Hacker News), `general` (general web search: DuckDuckGo, Bing, Brave, Google, Wikipedia), `it` (GitHub, Hacker News, Stack Exchange), `science` (arXiv, OpenAlex), `social` (Mastodon; posts are not returned as evidence). Returns dated items with their sources, saved in this app's toolbox folder.".into(),
             json!({
                 "type": "object", "required": ["query"], "additionalProperties": false,
                 "properties": {

@@ -125,7 +125,15 @@ pub fn narrow_search(
     max_age_hours: Option<u32>,
     limit: u32,
 ) -> Result<NarrowedSearch, String> {
-    narrow_search_in(scope, SEARCH_CATEGORY, topic, language, region, max_age_hours, limit)
+    narrow_search_in(
+        scope,
+        SEARCH_CATEGORY,
+        topic,
+        language,
+        region,
+        max_age_hours,
+        limit,
+    )
 }
 
 /// [`narrow_search`] in another metasearch category (`general`, `it`,
@@ -164,7 +172,15 @@ pub fn narrow_search_in(
         })
     }
     #[cfg(not(feature = "octos-engine"))]
-    compat::narrow_search_in(scope, category, topic, language, region, max_age_hours, limit)
+    compat::narrow_search_in(
+        scope,
+        category,
+        topic,
+        language,
+        region,
+        max_age_hours,
+        limit,
+    )
 }
 
 /// A `deep_crawl` narrowed to the grant (the `crawl` capability's limits).

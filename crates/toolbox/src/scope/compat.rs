@@ -178,7 +178,15 @@ pub fn narrow_search(
     max_age_hours: Option<u32>,
     limit: u32,
 ) -> Result<NarrowedSearch, String> {
-    narrow_search_in(scope, SEARCH_CATEGORY, topic, language, region, max_age_hours, limit)
+    narrow_search_in(
+        scope,
+        SEARCH_CATEGORY,
+        topic,
+        language,
+        region,
+        max_age_hours,
+        limit,
+    )
 }
 
 /// [`narrow_search`] in another metasearch category.
