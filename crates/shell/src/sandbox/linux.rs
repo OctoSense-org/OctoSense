@@ -171,7 +171,9 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
     let own = [policy.jail.clone(), policy.secrets.clone()];
     let mut split = Vec::new();
     for rule in out {
-        if own.contains(&rule.path) {
+        // Its own jail and secrets, and its program (desktop builds live in
+        // `<OctoSense home>/build`), keep their rights inside the private dirs.
+        if own.contains(&rule.path) || policy.program.contains(&rule.path) {
             split.push(rule);
         } else {
             around_private(rule, &policy.private, &mut split);

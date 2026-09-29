@@ -385,3 +385,23 @@ fn the_allow_list_never_admits_a_secret_shaped_name() {
         assert!(inherited_var(name), "{name}");
     }
 }
+
+#[test]
+fn a_program_inside_the_octosense_home_stays_readable() {
+    // The desktop builds process apps into `<OctoSense home>/build`: the
+    // private deny must not take the app's own program away (the Terminal
+    // crashed at start, unable to read its own bundle).
+    let root = Path::new("/nonexistent/home");
+    let mut p = home_rw_with_octosense_home(root);
+    let build = root.join(".octosense/build/makepad");
+    p.program = vec![build.clone()];
+    let text = macos::profile(&p);
+    let deny = text.find("(deny file-read* file-write* (subpath \"/nonexistent/home/.octosense\")").expect(&text);
+    let program = text.rfind(&format!("(allow file-read* (subpath \"{}\"))", build.display())).expect(&text);
+    assert!(deny < program, "its program is readable after the private deny\n{text}");
+    assert!(!text[deny..].contains(&format!("(allow file-read* file-write* (subpath \"{}\"))", build.display())), "read-only, never writable\n{text}");
+    // Nothing else inside the private dirs is reopened.
+    let mut outside = p.clone();
+    outside.program = vec![PathBuf::from("/nonexistent/programs")];
+    assert!(!macos::profile(&outside).contains("even inside them"));
+}

@@ -96,6 +96,14 @@ pub fn profile(policy: &Policy) -> String {
             out.push_str(&format!("(allow file-read-metadata{lits})\n"));
         }
         out.push_str(&format!(";; only its own jail and secrets inside them\n(allow file-read* file-write*{})\n", subpaths(&own)));
+        // Its program may live inside them too (desktop builds go to
+        // `<OctoSense home>/build`): without this, Metal cannot even read the
+        // program's own bundle and the app crashes at start.
+        let program_inside: Vec<PathBuf> =
+            program.iter().filter(|p| private.iter().any(|root| p.starts_with(root))).cloned().collect();
+        if !program_inside.is_empty() {
+            out.push_str(&format!(";; its program, read-only, even inside them\n(allow file-read*{})\n", subpaths(&program_inside)));
+        }
     }
     if policy.network == Network::None {
         out.push_str(&format!(
