@@ -5,8 +5,9 @@
 //! The kernel never talks to an app. The shell is every app peer's **tool
 //! host**: the broker registers the app's tools on the connection that
 //! drives the peer's turns (`peer/tools/register`, after every `peer/prepare`
-//! and every reconnect, `generic_tools` omitted so the peer keeps its kernel
-//! roster), receives each `peer/tool/call` on that connection and hands it
+//! and every reconnect, with the exact kernel tools the host grants the
+//! app's agent as `generic_tools`: [`ToolHost::generic_tools`]; octos's own
+//! shell is never among them), receives each `peer/tool/call` on that connection and hands it
 //! to the installed [`ToolHost`] with the identity the host stamps (account,
 //! client, calling app). The host authorizes it, routes it to the owning
 //! app's executor and answers once through the [`ToolReply`] it was given.
@@ -717,6 +718,16 @@ pub trait ToolHost: Send + Sync {
     /// happen (the peer then runs no turn).
     fn declarations(&self, _app_id: &str, _account: &str) -> Result<Vec<Value>, String> {
         Ok(Vec::new())
+    }
+
+    /// Exactly the octos kernel tools `app_id`'s agent keeps, sent as the
+    /// registration's `generic_tools` (octos keeps exactly those of the
+    /// peer's kernel roster; an empty list keeps none; ADR 0004 §12).
+    /// `None` omits the field, and the peer keeps its whole kernel roster:
+    /// only for a host that sets nothing (a standalone app, tests). The
+    /// shell always sets a list: the manifest's grants.
+    fn generic_tools(&self, _app_id: &str, _account: &str) -> Option<Vec<String>> {
+        None
     }
 
     /// The account's agent workspace (ADR 0004 §11), the `cwd` a NEW peer

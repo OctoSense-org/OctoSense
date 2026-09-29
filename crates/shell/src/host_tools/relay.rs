@@ -42,6 +42,8 @@ pub const BUS_PREFIX: &str = "hosttool-";
 pub const SYSTEM: &str = "system";
 /// The Terminal's shareable tool (ADR 0004 §10, §12).
 pub const TERMINAL_RUN: &str = "terminal.run";
+/// The Terminal, whose tools the relay runs on the AI bus.
+pub const TERMINAL_APP: &str = "terminal";
 /// Developer mode's command tool (§13).
 pub const DEV_RUN: &str = "dev.run";
 /// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
@@ -98,44 +100,133 @@ pub trait Env {
     fn log(&mut self, line: String);
 }
 
-/// Which apps declare which tools, and which are granted to whom.
+/// The octos kernel tools an app agent may be granted under developer
+/// mode ("everything granted", ADR 0004 §13): its workspace's files, the
+/// person, memory, the web, tool discovery. Never octos's shell (§12).
+pub const DEV_GENERIC_TOOLS: &[&str] = &[
+    "read_file",
+    "write_file",
+    "edit_file",
+    "diff_edit",
+    "apply_patch",
+    "glob",
+    "grep",
+    "list_dir",
+    "code_structure",
+    "check_workspace_contract",
+    "ask_user_question",
+    "view_image",
+    "view_video",
+    "recall",
+    "recall_memory",
+    "memory_search",
+    "memory_load",
+    "save_memory",
+    "memory_note",
+    "web_search",
+    "web_fetch",
+    "deep_search",
+    "tool_search",
+];
+
+/// octos's own shell and its aliases: never in an app agent's kernel tools
+/// (ADR 0004 §12; command execution is a host tool with a live approval).
+pub const OCTOS_SHELL: &[&str] = &["shell", "bash", "exec_command", "write_stdin", "group:runtime"];
+
+/// Which apps declare which tools, which are granted to whom, and which
+/// octos kernel tools each app's agent keeps.
+///
+/// **The seams** (ADR 0004 §7, §12; #108's toolbox tools use the same):
+/// [`Catalog::declare`] an owning app's `tools.json` entries,
+/// [`Catalog::grant`] a caller one of another app's shareable tools (marked
+/// with its owner), [`Catalog::set_generic`] the exact kernel tools an
+/// app's agent keeps; the relay then routes each call to the owning app's
+/// executor ([`Relay::set_executor`]).
 #[derive(Default)]
 pub struct Catalog {
     /// `tools.json` entries by owning app.
     tools: BTreeMap<String, Vec<Value>>,
-    /// Cross-app grants: calling app → declared tool names of other apps.
-    grants: BTreeMap<String, BTreeSet<String>>,
+    /// Cross-app grants: calling app → (owning app, tool).
+    grants: BTreeMap<String, BTreeSet<(String, String)>>,
+    /// Exactly the octos kernel tools each app's agent keeps.
+    generic: BTreeMap<String, Vec<String>>,
 }
 
 impl Catalog {
-    /// With the tools the shell itself knows: the Terminal's `run`.
+    /// With what the native apps' reviewed entries declare
+    /// (`native-apps.json` `agent`): the Terminal's tools, every native
+    /// app's grants and kernel tools.
     pub fn shipped() -> Catalog {
         let mut c = Catalog::default();
-        c.declare("terminal", vec![terminal_run_declaration()]);
+        for app in crate::native_apps::APPS {
+            c.load_native(app);
+        }
         c
     }
+
+    /// One native app's agent block.
+    pub fn load_native(&mut self, app: &crate::native_apps::NativeApp) {
+        let tools: Vec<Value> = serde_json::from_str(app.tools_json).unwrap_or_default();
+        if !tools.is_empty() {
+            self.declare(app.id, tools);
+        }
+        for (owner, tool) in app.grants {
+            self.grant(app.id, owner, tool);
+        }
+        self.set_generic(app.id, app.generic_tools.iter().map(|t| t.to_string()).collect());
+    }
+
     /// An app's `tools.json` (replaces what it declared before).
     pub fn declare(&mut self, app: &str, entries: Vec<Value>) {
         self.tools.insert(app.to_string(), entries);
     }
-    /// A grant of another app's shareable tool to `caller`.
-    pub fn grant(&mut self, caller: &str, tool: &str) {
-        self.grants.entry(caller.to_string()).or_default().insert(tool.to_string());
+
+    /// A grant of `owner`'s shareable `tool` to `caller`'s agent.
+    pub fn grant(&mut self, caller: &str, owner: &str, tool: &str) {
+        self.grants.entry(caller.to_string()).or_default().insert((owner.to_string(), tool.to_string()));
     }
     /// `caller`'s grants of `owner`'s tools become exactly `tools` (a
     /// toolbox grant computed again).
     pub fn set_grants(&mut self, caller: &str, owner: &str, tools: &[&str]) {
-        let owned: BTreeSet<String> = self.tools.get(owner).into_iter().flatten().filter_map(|e| e["name"].as_str().map(str::to_string)).collect();
         let grants = self.grants.entry(caller.to_string()).or_default();
-        grants.retain(|t| !owned.contains(t));
-        grants.extend(tools.iter().map(|t| t.to_string()));
+        grants.retain(|(o, _)| o != owner);
+        grants.extend(tools.iter().map(|t| (owner.to_string(), t.to_string())));
     }
+
+    /// Exactly the octos kernel tools `app`'s agent keeps; octos's shell is
+    /// dropped whatever the list says.
+    pub fn set_generic(&mut self, app: &str, tools: Vec<String>) {
+        let tools = tools.into_iter().filter(|t| !OCTOS_SHELL.contains(&t.as_str())).collect();
+        self.generic.insert(app.to_string(), tools);
+    }
+
+    /// The kernel tools `app`'s agent keeps (none unless granted);
+    /// developer mode's set when it covers the app.
+    pub fn generic(&self, app: &str, dev_all: bool) -> Vec<String> {
+        if dev_all {
+            return DEV_GENERIC_TOOLS.iter().map(|t| t.to_string()).collect();
+        }
+        self.generic.get(app).cloned().unwrap_or_default()
+    }
+
+    /// Whether anything was declared, granted or set for `app`.
+    pub fn knows(&self, app: &str) -> bool {
+        self.tools.contains_key(app) || self.grants.contains_key(app) || self.generic.contains_key(app)
+    }
+
     pub fn entry(&self, owner: &str, tool: &str) -> Option<&Value> {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
+
+    /// The owning app of a declared tool name.
+    pub fn owner_of(&self, tool: &str) -> Option<&str> {
+        self.tools.iter().find(|(_, entries)| entries.iter().any(|e| e["name"] == tool)).map(|(owner, _)| owner.as_str())
+    }
+
     fn shareable(entry: &Value) -> bool {
         entry["shareable"] == true
     }
+
     /// Whether `caller`'s agent may call `owner`'s `tool`. Developer mode
     /// grants every shareable tool, except the toolbox's: those run under
     /// the grant's scope, which developer mode cannot invent.
@@ -145,12 +236,13 @@ impl Catalog {
             return true;
         }
         let dev_all = dev_all && owner != TOOLBOX;
-        Self::shareable(entry) && (dev_all || self.grants.get(caller).is_some_and(|g| g.contains(tool)))
+        Self::shareable(entry) && (dev_all || self.grants.get(caller).is_some_and(|g| g.contains(&(owner.to_string(), tool.to_string()))))
     }
+
     /// What `app`'s peer registers: its own tools, and the shareable tools of
-    /// other apps granted to it, each naming its owner.
+    /// other apps granted to it; each names its owning app (`app`).
     pub fn declarations(&self, app: &str, dev_all: bool) -> Vec<Value> {
-        let mut out: Vec<Value> = self.tools.get(app).into_iter().flatten().filter_map(|e| host_tools::declaration(e, None)).collect();
+        let mut out: Vec<Value> = self.tools.get(app).into_iter().flatten().filter_map(|e| host_tools::declaration(e, Some(app))).collect();
         for (owner, entries) in &self.tools {
             if owner == app {
                 continue;
@@ -176,19 +268,11 @@ impl Catalog {
     }
 }
 
-/// `terminal.run` as the Terminal declares it for the host: destructive, the
-/// shell's sheet, shareable; `auto_approvable: false` is the shell's rule
-/// (`native-apps.json` `agent.tool_policy`), never a declaration field.
+/// `terminal.run` as the Terminal declares it (`native-apps.json`):
+/// destructive, the shell's sheet, shareable; `auto_approvable: false` is
+/// the shell's rule (`agent.tool_policy`), never a declaration field.
 pub fn terminal_run_declaration() -> Value {
-    serde_json::json!({
-        "name": TERMINAL_RUN,
-        "app": "terminal",
-        "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.",
-        "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false},
-        "risk": "destructive",
-        "confirm": "host",
-        "shareable": true,
-    })
+    Catalog::shipped().entry("terminal", TERMINAL_RUN).cloned().expect("native-apps.json declares terminal.run")
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -361,7 +445,9 @@ impl Relay {
         }
         let target = if self.executors.contains_key(&owner) {
             Target::Executor(owner.clone())
-        } else if tool == TERMINAL_RUN && owner == "terminal" {
+        } else if owner == TERMINAL_APP {
+            // The Terminal's tools run on its AI bus service, in the
+            // terminal the person sees.
             Target::Bus
         } else {
             return refuse(&reply, "app_not_running", format!("{} isn't running", crate::approvals::sheet::app_label(&owner)));

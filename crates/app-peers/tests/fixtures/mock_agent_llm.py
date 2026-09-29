@@ -21,6 +21,8 @@ Rules, looking at the request's messages and offered tools:
     (UPCR-2026-035), else says "NO APP TOOL OFFERED";
   - "RUN_TERMINAL": the system agent calls the host tool `terminal_run`
     registered on its session, else says "NO TERMINAL OFFERED";
+  - "CALL_TOOL:<function>:<json args>": the same, spelled with a colon (the
+    shell's relay test, G3), else say "NO TOOL <function>";
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
@@ -88,6 +90,11 @@ def decide(body):
         return {"tool": "rinx_echo", "args": {"text": "ping"}}
     if "CALL_APP_TOOL" in last_user:
         return {"text": "NO APP TOOL OFFERED"}
+    call = re.search(r"CALL_TOOL:([A-Za-z0-9_]+):(\{.*\})", last_user)
+    if call:
+        if call.group(1) in tools:
+            return {"tool": call.group(1), "args": json.loads(call.group(2))}
+        return {"text": "NO TOOL " + call.group(1)}
     if "RUN_TERMINAL" in last_user and "terminal_run" in tools:
         return {"tool": "terminal_run", "args": {"command": "ls"}}
     if "RUN_TERMINAL" in last_user:

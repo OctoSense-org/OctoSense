@@ -469,6 +469,7 @@ struct RecordingHost {
     approvals: Mutex<Vec<(HostToolApproval, ApprovalAnswer)>>,
     questions: Mutex<Vec<(AgentQuestion, QuestionAnswer)>>,
     closed_questions: Mutex<Vec<String>>,
+    generic: Mutex<Option<Vec<String>>>,
 }
 
 impl ToolHost for RecordingHost {
@@ -477,6 +478,9 @@ impl ToolHost for RecordingHost {
     }
     fn agent_workspace(&self, _app: &str, _account: &str) -> Option<std::path::PathBuf> {
         self.workspace.lock().unwrap().clone()
+    }
+    fn generic_tools(&self, _app: &str, _account: &str) -> Option<Vec<String>> {
+        self.generic.lock().unwrap().clone()
     }
     fn suspended(&self, _app: &str, _account: &str) -> bool {
         *self.suspended.lock().unwrap()
@@ -560,10 +564,24 @@ fn the_apps_tools_are_registered_on_the_driving_link_after_prepare_and_before_an
     let (conn, params) = &registrations[0];
     assert_eq!(params["session_id"], "_main:api:octosense#system", "the originator names the peer");
     assert_eq!(params["host_token"], "fixture-host-token");
-    assert!(params.get("generic_tools").is_none(), "omitted: the peer keeps its kernel roster");
+    assert!(params.get("generic_tools").is_none(), "a host that sets none: omitted");
     assert_eq!(params["tools"][0]["name"], "rinx.message.send");
     let (turn_conn, _) = &calls_of(&script, "turn/start")[0];
     assert_eq!(conn, turn_conn, "registered on the connection that drives the turns");
+}
+
+/// ADR 0004 §12: the peer keeps exactly the kernel tools the host grants
+/// its agent; an empty list keeps none.
+#[test]
+fn the_hosts_exact_kernel_tools_are_registered_with_the_apps_tools() {
+    for generic in [vec!["read_file".to_string(), "ask_user_question".to_string()], Vec::new()] {
+        let host = Arc::new(RecordingHost::default());
+        *host.generic.lock().unwrap() = Some(generic.clone());
+        let (broker, script) = new_broker_with(&ALL, Some(host), None);
+        broker.set_account(Some("@a:x"));
+        wait_for("registered", || calls_of(&script, "peer/tools/register").len() == 1);
+        assert_eq!(calls_of(&script, "peer/tools/register")[0].1["generic_tools"], json!(generic), "exact, never omitted");
+    }
 }
 
 #[test]

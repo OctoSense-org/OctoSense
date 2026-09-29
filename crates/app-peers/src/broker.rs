@@ -20,8 +20,8 @@
 //! - is the peer's **tool host** (octos UPCR-2026-035): right after every
 //!   `peer/prepare` (and so after every reconnect, which prepares again) it
 //!   registers the app's tools on its own link, the one that drives the
-//!   peer's turns (`peer/tools/register`, `generic_tools` omitted so the
-//!   peer keeps its kernel roster). A peer whose registration fails runs no
+//!   peer's turns (`peer/tools/register`, with the host's exact
+//!   `generic_tools` for the app's agent when it sets them). A peer whose registration fails runs no
 //!   turn. It takes every `peer/tool/call` on that link, stamps the account,
 //!   the calling context's client and the caller, executes each occurrence
 //!   at most once, refuses calls of turns it interrupted, and hands the call
@@ -1047,20 +1047,24 @@ impl Inner {
     }
 
     /// `peer/tools/register` on this link: the app's granted tools plus the
-    /// cross-app tools granted to it, `generic_tools` omitted (the peer
-    /// keeps its kernel roster).
+    /// cross-app tools granted to it, and exactly the kernel tools the host
+    /// grants its agent (`generic_tools`; omitted only when the host sets
+    /// none, and then the peer keeps its kernel roster).
     async fn register_tools(self: &Arc<Self>, slug: &str, token: &str, account: &str) -> Result<Value, String> {
-        let tools = self
-            .tool_host()
+        let host = self.tool_host();
+        let tools = host
             .declarations(&self.cfg.app_id, account)
             .map_err(|e| format!("The app's tools could not be declared ({e}); the assistant runs nothing for it"))?;
-        let params = json!({
+        let mut params = json!({
             "profile_id": self.cfg.profile_id,
             "session_id": self.cfg.originator,
             "peer": slug,
             "host_token": token,
             "tools": tools,
         });
+        if let Some(generic) = host.generic_tools(&self.cfg.app_id, account) {
+            params["generic_tools"] = json!(generic);
+        }
         self.request(host_tools::REGISTER, params)
             .await
             .map_err(|e| format!("The assistant did not take the app's tools ({e}); it runs no turn without them"))

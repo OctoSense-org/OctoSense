@@ -171,8 +171,12 @@ fn another_apps_agent_needs_a_grant_and_the_system_agent_its_own() {
     let (r, sent) = reply("c1");
     relay.handle(Event::Call { call: call("c1", "mail.send", "calendar"), reply: r }, &mut w);
     assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "no grant yet");
-    relay.catalog.grant("calendar", "mail.send");
-    relay.catalog.grant("calendar", "mail.purge");
+    relay.catalog.grant("calendar", "notes", "mail.send");
+    let (r, sent) = reply("c1b");
+    relay.handle(Event::Call { call: call("c1b", "mail.send", "calendar"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "a grant names its owning app");
+    relay.catalog.grant("calendar", "mail", "mail.send");
+    relay.catalog.grant("calendar", "mail", "mail.purge");
     let (r, _) = reply("c2");
     relay.handle(Event::Call { call: call("c2", "mail.send", "calendar"), reply: r }, &mut w);
     let (r, sent) = reply("c3");
@@ -230,7 +234,7 @@ impl ConfirmSheet for SendSheet {
 #[test]
 fn a_confirm_app_call_is_acknowledged_then_handed_to_the_owning_apps_sheet_and_runs_once_approved() {
     let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.message.send", true, "app")]);
-    relay.catalog.grant("calendar", "rinx.message.send");
+    relay.catalog.grant("calendar", "rinx", "rinx.message.send");
     let mut w = World::new(FixedDevMode::off());
     // Rinx's send sheet, registered as the router's confirm: app handler.
     let sheet = Arc::new(SendSheet::default());
@@ -375,7 +379,57 @@ fn the_shipped_catalog_offers_the_terminals_run_to_those_granted_it() {
     let run = catalog.entry("terminal", TERMINAL_RUN).unwrap();
     assert_eq!((run["risk"].as_str(), run["confirm"].as_str()), (Some("destructive"), Some("host")));
     assert!(catalog.declarations("rinx", false).is_empty(), "nobody gets it without a grant");
-    assert_eq!(catalog.declarations("rinx", true).len(), 1, "developer mode grants every shareable tool");
+    assert_eq!(catalog.declarations("rinx", true).len(), 3, "developer mode grants every shareable tool");
+}
+
+/// G3: the native apps' agent blocks (`native-apps.json`) are the shipped
+/// catalog: the Terminal's own tools, each app's exact kernel tools.
+#[test]
+fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
+    let catalog = Catalog::shipped();
+    for tool in ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"] {
+        assert!(catalog.entry("terminal", tool).is_some(), "{tool}");
+        assert_eq!(catalog.owner_of(tool), Some("terminal"));
+    }
+    let rinx = crate::native_apps::find("rinx").unwrap();
+    assert_eq!(catalog.generic("rinx", false), rinx.generic_tools.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+    assert!(catalog.generic("rinx", false).contains(&"ask_user_question".to_string()));
+    assert!(catalog.generic("sheets", false).is_empty(), "an app granted no kernel tools keeps none");
+    assert!(catalog.generic("nowhere", false).is_empty());
+    for dev in [false, true] {
+        for shell in super::relay::OCTOS_SHELL {
+            assert!(!catalog.generic("rinx", dev).iter().any(|t| t == shell), "never octos's shell");
+        }
+    }
+    // Every declaration names its owning app.
+    let own = Catalog::shipped().declarations("terminal", false);
+    assert_eq!(own.len(), 3);
+    assert!(own.iter().all(|d| d["app"] == "terminal" && d.get("auto_approvable").is_none()));
+}
+
+#[test]
+fn a_kernel_tool_list_never_keeps_octos_shell() {
+    let mut catalog = Catalog::default();
+    catalog.set_generic("notes", vec!["read_file".into(), "shell".into(), "bash".into(), "exec_command".into(), "web_search".into()]);
+    assert_eq!(catalog.generic("notes", false), vec!["read_file".to_string(), "web_search".to_string()]);
+}
+
+/// The Terminal's read tools run on its AI bus service, in every hosting.
+#[test]
+fn the_terminals_read_tools_are_granted_then_read_on_the_bus() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let (r, sent) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "terminal.read_screen", "rinx"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    relay.catalog.grant("rinx", "terminal", "terminal.read_screen");
+    let mut c = call("c2", "terminal.read_screen", "rinx");
+    c.args = json!({});
+    let (r, sent) = reply("c2");
+    relay.handle(Event::Call { call: c, reply: r }, &mut w);
+    assert_eq!(w.bus, vec![(format!("{BUS_PREFIX}c2"), "terminal".into(), "read_screen".into(), "{}".into())]);
+    relay.handle(Event::BusResult { call_id: "c2".into(), outcome: ToolOutcome::Ok(json!({"text": "$ ls"})) }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["data"]["text"], "$ ls");
 }
 
 /// The system toolbox's tools as its catalog declares them (the real ones
@@ -420,7 +474,7 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     // No grant, no toolbox tools; developer mode does not invent a grant
     // (the toolbox needs its scope), though it grants other shareable tools.
     assert!(offered_names(&relay, "calendar", false, true).is_empty());
-    assert_eq!(offered_names(&relay, "calendar", true, true), [TERMINAL_RUN]);
+    assert_eq!(offered_names(&relay, "calendar", true, true), ["terminal.read_screen", "terminal.read_scrollback", TERMINAL_RUN]);
 }
 
 #[test]

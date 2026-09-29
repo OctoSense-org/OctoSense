@@ -5236,6 +5236,8 @@ impl MatchEvent for App {
             #[cfg(any(feature = "app-hub", native_mobile))]
             for id in octosense_app_hub_app::take_completed_installs() {
                 self.installed_app_changed(cx, &id);
+                // Its tools, grants and kernel tools, as installed (ADR 0004 §7).
+                host_tools::script_app_installed(&id);
             }
             self.drain_hub(cx);
             self.drain_client_lines(cx);
