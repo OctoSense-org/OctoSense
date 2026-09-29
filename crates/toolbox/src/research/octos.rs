@@ -168,6 +168,8 @@ pub struct OctosResearch {
     metasearch: Metasearch,
     reader: Reader,
     chrome: Option<Arc<Chrome>>,
+    /// A renderer the host supplied instead of Chrome (the phone's WebView).
+    external_renderer: bool,
 }
 
 impl OctosResearch {
@@ -176,13 +178,31 @@ impl OctosResearch {
     /// ([`Chrome::shared`]), or none when rendering is off or no Chrome is
     /// installed.
     pub fn new(config: OctosConfig) -> Self {
+        Self::build(config, None)
+    }
+
+    /// With a renderer the host supplies (the phone shell's WebView, which
+    /// has no Chrome to launch) instead of Chrome. Pages the reader cannot
+    /// read over plain HTTP, including ones blocked there, are read in it.
+    pub fn with_renderer(config: OctosConfig, renderer: reader::Renderer) -> Self {
+        Self::build(config, Some(renderer))
+    }
+
+    fn build(config: OctosConfig, external: Option<reader::Renderer>) -> Self {
         let metasearch = Metasearch::from_env(Arc::new(ReqwestFetch::new()), &BTreeMap::new());
-        let chrome = config.render.clone().and_then(Chrome::shared);
-        let renderer: Option<reader::Renderer> = chrome.clone().map(|chrome| {
-            Arc::new(move |url: String| {
-                let chrome = chrome.clone();
-                Box::pin(async move { chrome.render(&url).await }) as reader::RenderFuture
-            }) as reader::Renderer
+        let external_renderer = external.is_some();
+        let chrome = if external_renderer {
+            None
+        } else {
+            config.render.clone().and_then(Chrome::shared)
+        };
+        let renderer: Option<reader::Renderer> = external.or_else(|| {
+            chrome.clone().map(|chrome| {
+                Arc::new(move |url: String| {
+                    let chrome = chrome.clone();
+                    Box::pin(async move { chrome.render(&url).await }) as reader::RenderFuture
+                }) as reader::Renderer
+            })
         });
         let reader = Reader::new(ReaderConfig {
             host_interval: config.host_interval,
@@ -199,12 +219,13 @@ impl OctosResearch {
             metasearch,
             reader,
             chrome,
+            external_renderer,
         }
     }
 
     /// Whether pages that need JavaScript can be read.
     pub fn renders(&self) -> bool {
-        self.chrome.is_some()
+        self.chrome.is_some() || self.external_renderer
     }
 
     /// The browser, if any (tests and diagnostics).

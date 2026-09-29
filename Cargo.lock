@@ -7502,6 +7502,7 @@ version = "0.1.0"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
+ "octos-research",
  "octosense-app-peers",
  "octosense-appstore",
  "octosense-kernel",
@@ -7510,6 +7511,7 @@ dependencies = [
  "octosense-toolbox",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]

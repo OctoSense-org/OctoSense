@@ -61,6 +61,8 @@ pub mod native_agents;
 mod qr;
 #[cfg(feature = "toolbox-peers")]
 pub mod toolbox_peers;
+#[cfg(feature = "toolbox-peers")]
+pub mod webview_render;
 
 pub use bridge::{Bridge, Done};
 pub use qr::{ImageSource, PickError, QrImport, DROP_APP};

@@ -313,6 +313,14 @@ impl ToolboxExecutor {
             apps_root,
             Arc::new(move || {
                 let library = Library::builtin().map_err(|e| e.to_string())?;
+                // No Chrome on a phone: its WebView renders instead (the
+                // shell runs a `webview_render::WebViewRenderHost`).
+                #[cfg(target_os = "android")]
+                let backend = Arc::new(OctosResearch::with_renderer(
+                    OctosConfig::from_env(),
+                    crate::webview_render::renderer(),
+                ));
+                #[cfg(not(target_os = "android"))]
                 let backend = Arc::new(OctosResearch::new(OctosConfig::from_env()));
                 Ok(PeerToolbox::new(library, backend, Arc::new(ModelHostClient::registered(&root))))
             }),
