@@ -285,9 +285,25 @@ impl Catalog {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
 
-    /// The owning app of a declared tool name.
-    pub fn owner_of(&self, tool: &str) -> Option<&str> {
-        self.tools.iter().find(|(_, entries)| entries.iter().any(|e| e["name"] == tool)).map(|(owner, _)| owner.as_str())
+    /// The owning app of a tool another app is granted, resolved
+    /// explicitly by its namespace (ADR 0004 §7): the toolbox for its own
+    /// (`toolbox.*`, `workflow.*`), the native app of that id (`terminal.run`
+    /// → `terminal`), else the system app of the namespace (`mail.send` →
+    /// `os.mail`). Never whichever app declared the name first: a store app
+    /// may declare `mail.send` for itself, and owns only its own. `None` for
+    /// a name without a namespace (a kernel tool).
+    pub fn owner_of(&self, tool: &str) -> Option<String> {
+        let (ns, _) = tool.split_once('.')?;
+        if ns.is_empty() {
+            return None;
+        }
+        if ns == TOOLBOX || ns == "workflow" {
+            return Some(TOOLBOX.to_string());
+        }
+        if crate::native_apps::find(ns).is_some() {
+            return Some(ns.to_string());
+        }
+        Some(format!("os.{ns}"))
     }
 
     fn shareable(entry: &Value) -> bool {
