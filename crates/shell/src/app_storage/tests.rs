@@ -325,6 +325,31 @@ fn every_system_app_manifest_storage_block_is_valid() {
     assert!(seen >= 5);
 }
 
+/// ADR 0004 §11: a script app's data is its account folder, the one its
+/// agent works in (a system app acts for the device: `accounts/device/`);
+/// what it can refetch is `cache/`. The Card runner's files are the jail,
+/// so a system app names those folders itself: every file it touches goes
+/// through `data_path` or `cache_path`, never a bare name at the jail's top.
+#[test]
+fn should_keep_every_system_apps_files_in_its_account_folder_or_cache() {
+    let apps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps");
+    for app in ["news", "youtube", "photos", "maps"] {
+        let source = std::fs::read_to_string(apps.join(app).join("bundle/main.splash")).unwrap();
+        assert!(source.contains(r#"let DATA = "accounts/device/""#), "{app}: names its account folder");
+        for (n, line) in source.lines().enumerate() {
+            for call in ["fs.write(", "fs.read(", "fs.read_bytes(", "fs.exists(", "fs.remove("] {
+                let mut rest = line;
+                while let Some(at) = rest.find(call) {
+                    let arg = rest[at + call.len()..].trim_start();
+                    let named = ["data_path(", "cache_path(", "name)", "name,"].iter().any(|ok| arg.starts_with(ok));
+                    assert!(named, "{app}/main.splash:{}: {call} must go through data_path or cache_path: {line}", n + 1);
+                    rest = &rest[at + call.len()..];
+                }
+            }
+        }
+    }
+}
+
 // ---- the startup check ----------------------------------------------------
 
 /// A home with two apps, one account each, and one secret.
