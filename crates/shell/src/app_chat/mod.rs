@@ -402,6 +402,19 @@ pub fn snapshot() -> ChatModel {
     model
 }
 
+/// Tests that drive the kernel themselves (the two-lane scenario): the
+/// panel is open for `app` without a conversation of its own, so it shows
+/// the app's questions and answers them as the person would here.
+#[cfg(test)]
+pub(crate) fn show_for_tests(app: AgentApp) {
+    with(|p| {
+        p.app = Some(app);
+        p.open = true;
+        p.focused = true;
+        p.ui_generation += 1;
+    });
+}
+
 pub fn status() -> Status {
     lock(&shared()).status.clone()
 }

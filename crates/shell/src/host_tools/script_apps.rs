@@ -8,10 +8,11 @@
 //! match its manifest, and every rule the store's gate applies holds), from
 //! the unpacked system app (`octosense_appstore::system::prepare`) or the
 //! installed bundle (`<apps root>/<id>/bundle`). The manifest's
-//! `agent.tools` names both kinds of grant: a plain name (`web_search`) is an
-//! octos kernel tool its agent keeps (`generic_tools`; never octos's
-//! shell), a dotted one (`mail.send`) another app's shareable tool, granted
-//! at install and marked with its owner.
+//! `agent.tools` names both kinds of grant: a plain name is an octos kernel
+//! tool its agent keeps (`generic_tools`: only App Hub's `KERNEL_TOOLS`,
+//! `ask_user_question`, which App Hub alone admits), a dotted one
+//! (`mail.send`) another app's shareable tool, granted at install and
+//! marked with its owner.
 //!
 //! **Where the calls go** ([`HostServiceExecutor`]). A tool the bundle says
 //! is `implemented_by: "host-service"` runs on the host service of its
@@ -83,13 +84,11 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
             loaded.host_service_tools.insert(tool.name.clone());
         }
     }
-    for name in &agent.generic_tools {
-        if name.contains('.') {
-            loaded.asks.push(name.clone());
-        } else if !super::relay::OCTOS_SHELL.contains(&name.as_str()) {
-            loaded.generic.push(name.clone());
-        }
-    }
+    // Dotted names are other apps' tools. Of the kernel's own, App Hub
+    // lets a contained agent keep only `KERNEL_TOOLS` (`ask_user_question`)
+    // and refuses the rest at admission; `kernel_tools` is exactly those.
+    loaded.asks = agent.generic_tools.iter().filter(|name| name.contains('.')).cloned().collect();
+    loaded.generic = agent.kernel_tools().into_iter().filter(|name| !super::relay::OCTOS_SHELL.contains(&name.as_str())).collect();
     Ok(loaded)
 }
 
@@ -245,27 +244,35 @@ pub(crate) mod tests {
         assert!(loaded.tools.iter().all(|t| t["risk"] == "read" && t["shareable"] == true && t.get("implemented_by").is_none()));
         assert_eq!(loaded.host_service_tools.len(), 2);
         assert!(loaded.families.contains("news"), "News is granted its service");
-        assert!(loaded.generic.is_empty(), "no agent block: no kernel tools");
+        assert_eq!(loaded.generic, ["ask_user_question"], "News's agent may ask the person");
         // A tampered bundle is refused (App Hub's digest check).
         std::fs::write(dir.join("tools.json"), "{}").unwrap();
         assert!(from_bundle(&dir).is_err());
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// The manifest's `agent.tools`: plain names are kernel tools (never
-    /// octos's shell), dotted ones other apps' tools, granted with their
-    /// owner.
+    /// The manifest's `agent.tools`: a plain name is a kernel tool, and App
+    /// Hub admits only `ask_user_question` (any other, `web_search` or
+    /// octos's shell, refuses the bundle); dotted ones are other apps'
+    /// tools, granted with their owner.
     #[test]
     fn a_script_apps_agent_block_splits_kernel_tools_from_other_apps_tools() {
         let dir = stamped_bundle("news", "agent", |_, m| {
-            m["agent"] = json!({"profile": "read-only", "tools": ["web_search", "ask_user_question", "shell", "mail.send"],
-                "model": {"needs": ["tool_calling"]}});
+            m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", "mail.send"], "model": {"needs": ["tool_calling"]}});
         });
         let loaded = from_bundle(&dir).unwrap();
-        assert_eq!(loaded.generic, ["web_search", "ask_user_question"]);
+        assert_eq!(loaded.generic, ["ask_user_question"]);
         assert_eq!(loaded.asks, ["mail.send"]);
         assert_eq!(owner_for("mail.send"), "os.mail", "the system app of its namespace until someone declares it");
         let _ = std::fs::remove_dir_all(dir);
+        for tool in ["web_search", "shell", "read_file"] {
+            let dir = stamped_bundle("news", tool, |_, m| {
+                m["agent"] = json!({"profile": "read-only", "tools": ["ask_user_question", tool], "model": {"needs": ["tool_calling"]}});
+            });
+            let refused = from_bundle(&dir).unwrap_err();
+            assert!(refused.contains("may keep only ask_user_question"), "{tool}: {refused}");
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 
     struct Probe;

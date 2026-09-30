@@ -66,7 +66,7 @@ octosense-reference = { path = "apps/reference" }
 makepad-sheets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "92a19b67218f8cd2361866c4554457b153766f48", default-features = false }
 makepad-terminal = { git = "https://github.com/OctoSense-org/makepad.git", rev = "92a19b67218f8cd2361866c4554457b153766f48" }
 octosense-appcard = { path = "apps/appcard/module" }
-octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
 # END native-apps: pins
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's
 # runtime.json pins (native-runtime.lock.json); resolved to .sources/makepad.
@@ -93,12 +93,12 @@ octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 octoscript-node = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "ecab2b985a6f60376683cf7317dc82579393558f" }
 # --- App Hub's host service registry the Mail and llm services register
 # into; the same revision as App Hub's app crate (a native app, above).
-octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+octosense-appstore = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
 # The app policy (resolution, isolate settings, the Splash adapter) and the
 # Hub client the Card runner resolves an app's policy with; the shell's
 # glance tiles run cards under it (crates/shell/src/glance_card.rs).
-octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
-octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "e8601b80ce104db2e48208094714bdcffdce6b5a" }
+octosense-app-policy = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
+octosense-app-hub = { git = "https://github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
 # --- octos: ONE source for every octos crate (octos-org/octos main at the
 # merge of octos#2645, Bing News's Chinese results with publisher links;
 # after #2644, the other lane's running turn in shared history, #2637, the
@@ -244,6 +244,17 @@ octoscript-node = { path = ".sources/octoscript-makepad/crates/octoscript-node" 
 octosense-app-peers = { path = "crates/app-peers" }
 octosense-kernel = { path = "crates/kernel" }
 octosense-llm-config = { path = "apps/ai-providers/config" }
+
+# One App Hub: Rinx v1.0.0 names App Hub at an older rev (e8601b80) than the
+# pin above (its mini-app catalog and system apps take app-policy and the
+# hub client). A patch cannot point a source at another rev of itself, so
+# every App Hub crate resolves through the www host alias of the same
+# repository, at the pin. Drop this once Rinx pins the same App Hub commit.
+[patch."https://github.com/OctoSense-org/OctoSense-App-Hub"]
+octosense-app-hub = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
+octosense-app-policy = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
+octosense-appstore = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
+octosense-app-hub-app = { git = "https://www.github.com/OctoSense-org/OctoSense-App-Hub", rev = "8512be70b89b366e6d6ebf93e807188c4313c3c0" }
 
 # Rinx's Matrix stack: the patched ruma its own workspace uses (Rinx's
 # [patch] sections do not reach a consumer workspace).
