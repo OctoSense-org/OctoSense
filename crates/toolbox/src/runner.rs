@@ -32,8 +32,9 @@ pub const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 pub const MAX_READ_MS: u64 = 25_000;
 /// The part of a run's time kept for its model calls when the template
 /// makes any: reads stop that long before the end so the digest still runs
-/// (a quarter of `max_ms`, at most this).
-pub const MODEL_RESERVE_MS: u64 = 30_000;
+/// (a third of `max_ms`, at most this). A digest of six articles took
+/// DeepSeek V4 Flash 20-30 s on the phone (29 Sep 2026).
+pub const MODEL_RESERVE_MS: u64 = 45_000;
 
 /// When reads must be done: the end of the run less the time kept for the
 /// model, or the end itself for a template without model calls.
@@ -41,7 +42,7 @@ pub fn read_window_ms(budget: &Budget) -> u64 {
     if budget.max_model_calls == 0 {
         return budget.max_ms;
     }
-    budget.max_ms - (budget.max_ms / 4).min(MODEL_RESERVE_MS)
+    budget.max_ms - (budget.max_ms / 3).min(MODEL_RESERVE_MS)
 }
 
 #[derive(Debug, Clone, Default)]

@@ -310,7 +310,7 @@ async fn a_slow_read_leaves_time_for_the_digest() {
         max_ms: 2_000,
         ..template.manifest.budget
     };
-    assert_eq!(octosense_toolbox::runner::read_window_ms(&budget), 1_500);
+    assert_eq!(octosense_toolbox::runner::read_window_ms(&budget), 1_334);
     let started = std::time::Instant::now();
     let result = run(
         &template,
