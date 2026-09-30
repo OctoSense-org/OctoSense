@@ -341,7 +341,7 @@ fn should_keep_every_system_apps_files_in_its_account_folder_or_cache() {
                 let mut rest = line;
                 while let Some(at) = rest.find(call) {
                     let arg = rest[at + call.len()..].trim_start();
-                    let named = ["data_path(", "cache_path(", "name)", "name,"].iter().any(|ok| arg.starts_with(ok));
+                    let named = ["data_path(", "cache_path(", "name)", "name,", "path)", "path,"].iter().any(|ok| arg.starts_with(ok));
                     assert!(named, "{app}/main.splash:{}: {call} must go through data_path or cache_path: {line}", n + 1);
                     rest = &rest[at + call.len()..];
                 }
