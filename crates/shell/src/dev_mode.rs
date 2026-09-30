@@ -57,9 +57,12 @@
 //!
 //! **Never for external clients** (ADR 0003): developer grants and `dev.run`
 //! go only to app peer sessions on the shell's host connection
-//! ([`dev_grants_allowed_on`]). `dev.run` itself is not registered yet: it
-//! needs octos#2567's host-routed tool registration; [`may_register_dev_run`]
-//! is the check that registration must pass.
+//! ([`dev_grants_allowed_on`]). `dev.run` is a host tool registered only on
+//! a covered app's peer, which the brokers open on the host connection
+//! (`host_tools::relay::Catalog::offered`), run by the shell
+//! (`host_tools::dev_run`), and withdrawn when the mode changes
+//! (`host_tools::developer_mode_changed`); [`may_register_dev_run`] states
+//! the rule that registration follows.
 
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -80,7 +83,7 @@ pub const STATE_FILE: &str = "dev-mode.json";
 pub const AUDIT_FILE: &str = "logs/dev-audit.jsonl";
 /// With real accounts, developer mode ends by itself after this long.
 pub const REAL_ACCOUNT_LIMIT_S: u64 = 8 * 3600;
-/// The host tool developer mode will add (octos#2567; not registered yet).
+/// The host tool developer mode adds (`host_tools::dev_run`).
 pub const DEV_RUN_TOOL: &str = "dev.run";
 
 /// Which kind of build this is, for what may turn developer mode on.
