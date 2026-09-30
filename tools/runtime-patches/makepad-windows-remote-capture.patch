@@ -1,0 +1,55 @@
+diff --git a/platform/src/os/windows/d3d11.rs b/platform/src/os/windows/d3d11.rs
+index ebe77a0..f060468 100644
+--- a/platform/src/os/windows/d3d11.rs
++++ b/platform/src/os/windows/d3d11.rs
+@@ -1187,6 +1187,23 @@ fn capture_window_screenshot(&mut self, d3d11_window: &D3d11Window, d3d11_cx: &D
+         if request_ids.is_empty() {
+             return;
+         }
++        // Remote grabs accept raw pixels on their bounded PNG worker. Encoding
++        // a full-size PNG here stalls the UI and delays the following Present;
++        // scaled grabs also paid for encoding and decoding the full-size image.
++        // Keep the synchronous PNG path only for Studio/file capture requests.
++        let rgba: std::sync::Arc<[u8]> = rgba.into();
++        let request_ids = crate::remote::deliver_grab_pixels(
++            request_ids,
++            width,
++            height,
++            rgba.clone(),
++            width as usize * 4,
++            crate::texture::ReadbackChannelOrder::Rgba,
++            crate::texture::ReadbackOrigin::TopLeft,
++        );
++        if request_ids.is_empty() {
++            return;
++        }
+         match Self::encode_rgba_as_png(width, height, &rgba) {
+             Ok(png) => Self::send_studio_screenshot_response(request_ids, width, height, png),
+             Err(err) => {
+diff --git a/platform/src/remote.rs b/platform/src/remote.rs
+index 678fc72..6b0d6a6 100644
+--- a/platform/src/remote.rs
++++ b/platform/src/remote.rs
+@@ -759,11 +759,11 @@ pub(crate) fn deliver_grabs(
+         rest
+     }
+ 
+-    /// Metal calls this as soon as the presenting buffer's pixels are ready,
++    /// Native backends call this as soon as the presenting buffer's pixels are ready,
+     /// before any PNG work. Return non-remote ids for probes/Studio/recording.
+     #[cfg(all(
+         not(gpusim),
+-        any(target_os = "macos", target_os = "ios", target_os = "tvos")
++        any(target_os = "macos", target_os = "ios", target_os = "tvos", target_os = "windows")
+     ))]
+     pub(crate) fn deliver_grab_pixels(
+         request_ids: Vec<u64>,
+@@ -778,7 +778,7 @@ pub(crate) fn deliver_grab_pixels(
+             return request_ids;
+         }
+         let captured = Instant::now();
+-        // Only the GPU callback takes this blocking lock. The UI uses try_lock.
++        // Remove reply sinks before queuing work; PNG encoding never holds this lock.
+         let Ok(mut sinks) = grab_sinks().lock() else {
+             return request_ids;
+         };
