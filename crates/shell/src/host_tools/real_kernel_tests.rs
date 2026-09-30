@@ -311,6 +311,155 @@ fn real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversat
     drop(model);
 }
 
+/// The shell's side of a process app's peer link, for the test: News's
+/// agent granted and allowed, its service the test's broker.
+struct ProcessHost(Broker);
+
+impl crate::peer_link::PeerHost for ProcessHost {
+    fn granted(&self, _app: &str) -> std::collections::BTreeSet<String> {
+        OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()
+    }
+    fn keeps_accounts(&self, _app: &str) -> bool {
+        false
+    }
+    fn consent(&mut self, _app: &str) -> bool {
+        true
+    }
+    fn service(&mut self, _app: &str, _services: &std::collections::BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+        Some(Arc::new(self.0.clone()))
+    }
+    fn tool_rule(&self, _app: &str, _tool: &str) -> Option<(crate::native_apps::Confirm, bool)> {
+        None
+    }
+    fn request_approval(&mut self, _app: &str, _tool: crate::approvals::ToolSpec, _args: Value, _caller: crate::approvals::Caller, _context: crate::approvals::RequestContext) -> crate::approvals::Route {
+        crate::approvals::Route::Refused("no approvals in this test".into())
+    }
+    fn take_decisions(&mut self) -> Vec<(crate::approvals::RequestId, crate::approvals::Decision, String)> {
+        Vec::new()
+    }
+    fn app_confirm_answered(&mut self, _id: &crate::approvals::RequestId, _approved: bool, _reason: &str) {}
+    fn link_opened(&mut self, _app: &str) {}
+    fn link_closed(&mut self, _app: &str) {}
+}
+
+/// ADR 0004 §6 on a REAL kernel, for a PROCESS app: the app opens its
+/// conversation over the peer link (`octos.session.open` without a
+/// `client`), and when the system agent sends the app's agent a message
+/// (`peer_send_input`), that turn (the system agent's lane) reaches the
+/// app's process live as `conversation` frames, each with its lane and
+/// speaker: `turn/started` with the request, streamed text, and the end,
+/// without the app asking for history. The frames are printed
+/// (`[peer-link frame]`) as the fixtures of Makepad's client.
+#[test]
+fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
+    let Some(program) = kernel() else { return };
+    let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = std::env::temp_dir().join(format!("octosense-shell-peer-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let offered_log = dir.join("offered.jsonl");
+    let model = start_model(&offered_log);
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    if crate::approvals::with(|_| ()).is_none() {
+        crate::approvals::init(&home);
+    }
+    // The person allowed News's agent (else its peer refuses `peer/input`).
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), "os.news", true, crate::approvals::now()));
+    // News's tools (so its peer has a host route for `peer/input`).
+    let host_dir = dir.join("apps/.host");
+    std::fs::create_dir_all(&host_dir).unwrap();
+    octosense_news_service::register_with(octosense_news_service::Options::default().host_dir(&host_dir).timer(false));
+    let bundle = super::script_apps::tests::stamped_bundle("news", "peer-link", |_, _| {});
+    super::script_apps::install("os.news", super::script_apps::from_bundle(&bundle).unwrap(), host_dir.clone());
+    let services = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "card.os.news", "News", services);
+    cfg.state_dir = Some(dir.join("host-state"));
+    cfg.tool_host = Some(ToolHostHandle(Arc::new(super::ShellToolHost) as Arc<dyn ToolHost>));
+    let broker = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+
+    // The app's process connects its hub socket; its frames are recorded.
+    let frames: Arc<Mutex<Vec<String>>> = Arc::default();
+    let f = frames.clone();
+    let out: crate::peer_link::FrameOut = Arc::new(move |json: String| f.lock().unwrap().push(json));
+    let mut links = crate::peer_link::PeerLinks::new(Box::new(ProcessHost(broker.clone())), Box::new(crate::peer_link::RecordingToolRelay::default()));
+    assert!(links.connected(7, "os.news", out));
+    let downs = |frames: &Arc<Mutex<Vec<String>>>| frames.lock().unwrap().iter().filter_map(|f| crate::peer_link::wire::Down::parse(f)).collect::<Vec<_>>();
+    // Its conversation, as Makepad's client opens it (no `client`).
+    assert!(links.on_frame(7, "os.news", r#"{"octos_peer":{"up":"request","req_id":1,"method":"octos.session.open","args":{"client":null}}}"#, None));
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let context = loop {
+        super::pump();
+        if let Some(reply) = downs(&frames).into_iter().find_map(|d| match d {
+            crate::peer_link::wire::Down::Reply { req_id: 1, result } => Some(result),
+            _ => None,
+        }) {
+            break reply.expect("the conversation opened")["context"].as_str().unwrap().to_string();
+        }
+        assert!(Instant::now() < deadline, "the conversation did not open: {:?}", frames.lock().unwrap());
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let (slug, _) = broker.peer().expect("the peer is bound");
+
+    // The system agent sends News's agent a message.
+    let mut chat = crate::system_chat::session::Driver::new(Box::new(SystemLink(core.clone())));
+    chat.command(crate::system_chat::session::Command::Open);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while chat.model.phase() != &crate::system_chat::model::Phase::Ready {
+        chat.step(Duration::from_millis(50));
+        assert!(Instant::now() < deadline, "the system session did not open: {:?}", chat.model.phase());
+    }
+    chat.command(crate::system_chat::session::Command::Send(format!("TELL_PEER_SHOW:{slug}")));
+    let deadline = Instant::now() + Duration::from_secs(120);
+    let lane = loop {
+        chat.step(Duration::from_millis(50));
+        super::pump();
+        let lane: Vec<Value> = downs(&frames)
+            .into_iter()
+            .filter_map(|d| match d {
+                crate::peer_link::wire::Down::Conversation { context: c, event } if c == context && event["lane"] == "system_agent" => Some(event),
+                _ => None,
+            })
+            .collect();
+        // The kernel's v2 envelopes: the turn's end (`turn_terminal`) and
+        // its answer (`assistant_delta`), in either order.
+        let envelope = |kind: &str| lane.iter().any(|e| e["params"]["payload"]["type"] == kind);
+        if envelope("turn_terminal") && envelope("assistant_delta") {
+            break lane;
+        }
+        assert!(Instant::now() < deadline, "the process never heard the system agent's lane: {:?}", frames.lock().unwrap());
+    };
+    for frame in frames.lock().unwrap().iter() {
+        eprintln!("[peer-link frame] {frame}");
+    }
+    links.process_gone(7);
+    drop(chat);
+    broker.release();
+    let _ = std::fs::remove_dir_all(&bundle);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+    drop(model);
+
+    // Live: the turn's start (with its request and speaker) came before its
+    // end, the system agent's words and the answer streamed, each event with
+    // its speaker; no history was asked for.
+    let started = lane.iter().position(|e| e["method"] == "turn/started").expect("turn/started reached the app");
+    let ended = lane.iter().position(|e| e["params"]["payload"]["type"] == "turn_terminal").unwrap();
+    assert!(started < ended, "{lane:?}");
+    assert_eq!(lane[started]["speaker"]["kind"], "system_agent", "{}", lane[started]);
+    assert_eq!(lane[started]["request"]["text"], "SHOW_SHARED", "the system agent's words: {}", lane[started]);
+    assert!(lane.iter().any(|e| e["params"]["payload"]["type"] == "user_message" && e["display_text"] == "SHOW_SHARED"), "{lane:?}");
+    assert!(
+        lane.iter().any(|e| e["params"]["payload"]["type"] == "assistant_delta" && e["params"]["payload"]["data"]["text"].as_str().is_some_and(|t| t.starts_with("SHARED"))),
+        "the answer streamed to the app: {lane:?}"
+    );
+    assert!(lane.iter().filter(|e| e["method"] != "session/orchestration" && e["method"] != "context/normalization_reported").all(|e| e["speaker"]["kind"] == "system_agent"), "{lane:?}");
+    assert!(!frames.lock().unwrap().iter().any(|f| f.contains("octos.session.history")), "no history request");
+}
+
 struct SystemLink(Core);
 impl crate::system_chat::session::Connector for SystemLink {
     fn connect(&mut self) -> Result<Box<dyn crate::system_chat::session::Link>, crate::system_chat::session::Unavailable> {

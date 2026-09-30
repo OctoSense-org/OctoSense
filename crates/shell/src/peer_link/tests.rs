@@ -245,6 +245,11 @@ fn the_shell_reads_the_makepad_clients_frames() {
     assert_eq!(Up::parse(r#"{"octos_peer":{"up":"request","req_id":1,"method":"octos.turn.start"},"from":"rinx"}"#), None);
     let big = request(1, "octos.turn.start", json!({"text": "a".repeat(wire::MAX_FRAME_BYTES)}));
     assert_eq!(Up::parse(&big), None);
+    // A conversation frame as Makepad's client writes it (its own key
+    // order) reads back here; the client reads the shell's (its fixtures
+    // are frames recorded from this link on a real kernel).
+    let makepad_conversation = r#"{"octos_peer":{"down":"conversation","context":"pl7-1","event":{"method":"turn/started"}}}"#;
+    assert_eq!(Down::parse(makepad_conversation), Some(Down::Conversation { context: "pl7-1".into(), event: json!({"method": "turn/started"}) }));
     let call = Down::ToolCall(wire::ToolCallDown {
         call_id: "k2".into(),
         name: "send".into(),
