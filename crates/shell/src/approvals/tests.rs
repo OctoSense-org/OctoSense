@@ -848,6 +848,38 @@ fn consent_at_first_use_is_asked_once_and_remembered() {
     assert_eq!(c.agents(), vec![("os.news".to_string(), "News".to_string(), State::Denied)]);
 }
 
+/// ADR 0004 §4, §7, §12: the first-use sheet names every other app's tool
+/// the manifest asks for, and command execution on its own line; command
+/// execution is its own grant, never part of "Allow".
+#[test]
+fn the_first_use_sheet_lists_every_cross_app_grant_and_command_execution_apart() {
+    let manifest = json!({"capabilities": ["news"], "agent": {"profile": "read-only", "tools": ["ask_user_question", "mail.send", "calendar.event.create", "terminal.run"]}});
+    let s = AgentSummary::from_manifest("com.example.news", "Helper", &manifest, &[], "m");
+    let uses = s.uses.join("\n");
+    assert!(uses.contains("mail.send") && uses.contains("Mail"), "{uses}");
+    assert!(uses.contains("calendar.event.create") && uses.contains("Calendar"), "{uses}");
+    assert!(uses.contains("terminal.run") && uses.to_lowercase().contains("commands"), "{uses}");
+    assert_eq!(s.commands, vec!["terminal.run".to_string()], "command execution asks apart");
+    // A native app's grants (`native-apps.json` `agent.grants`) too.
+    let native = AgentSummary::from_manifest("rinx", "Rinx", &json!({"agent": {"octos": ["octos.turn.start"], "grants": [["os.mail", "mail.send"]]}}), &[], "m");
+    assert!(native.uses.iter().any(|u| u.contains("mail.send")), "{:?}", native.uses);
+    assert!(native.commands.is_empty());
+    // "Allow" is not command execution; it is its own choice.
+    let mut c = ConsentStore::memory();
+    c.ask(s.clone(), false);
+    c.set(&ApprovalGesture::sheet_tap(), "com.example.news", true, T0);
+    assert!(c.granted("com.example.news", false));
+    assert!(!c.commands_granted("com.example.news", false));
+    c.set_commands(&ApprovalGesture::sheet_tap(), "com.example.news", true, T0);
+    assert!(c.commands_granted("com.example.news", false));
+    assert!(c.commands_granted("other", true), "developer mode grants everything");
+    // Turning the agent off takes command execution with it.
+    c.turn_off("com.example.news", T0);
+    assert!(!c.commands_granted("com.example.news", false));
+    c.set(&ApprovalGesture::settings_tap(), "com.example.news", true, T0);
+    assert!(!c.commands_granted("com.example.news", false), "on again: commands stay off until granted again");
+}
+
 #[test]
 fn developer_mode_skips_the_consent_prompt() {
     let mut c = ConsentStore::memory();
