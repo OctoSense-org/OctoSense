@@ -1330,6 +1330,10 @@ fn a_conversation_follows_both_lanes_and_merges_their_history() {
     assert!(sa.iter().all(|d| d["speaker"]["kind"] == "system_agent" && d["lane"] == "system_agent"), "{sa:?}");
     let user = sa.iter().find(|d| d["method"] == "projection/envelope").unwrap();
     assert_eq!(user["display_text"], "check the inbox");
+    // The kernel sends a turn's user message when the turn ends: its words
+    // come with its start, from what the broker sent.
+    let started = sa.iter().find(|d| d["method"] == "turn/started").unwrap();
+    assert_eq!(started["request"], json!({"text": "check the inbox", "speaker": {"kind": "system_agent"}}));
     // The person's own message: the follower sees it too, in the person's
     // lane, with its speaker.
     let (sink, rx) = collect();
@@ -1338,6 +1342,10 @@ fn a_conversation_follows_both_lanes_and_merges_their_history() {
     let seen = events(&follow_rx, Duration::from_millis(300));
     assert!(
         seen.iter().any(|d| d["method"] == "turn/completed" && d["speaker"]["kind"] == "person" && d["speaker"]["label"] == "Rinx" && d["lane"] == "person" && d["params"]["session_id"] == lane.as_str()),
+        "{seen:?}"
+    );
+    assert!(
+        seen.iter().any(|d| d["method"] == "turn/started" && d["lane"] == "person" && d["request"] == json!({"text": "thanks", "speaker": {"kind": "person", "label": "Rinx"}})),
         "{seen:?}"
     );
     // A caller's sink hears only its own turn: nothing of the system agent's.
@@ -1393,6 +1401,47 @@ fn a_conversation_follows_both_lanes_and_merges_their_history() {
     let opens = calls_of(&script, "peer/context/open");
     assert_eq!(opens.len(), 2);
     assert_ne!(opens[0].1["context_id"], opens[1].1["context_id"]);
+    drop(broker);
+}
+
+/// A stopped turn's user message is never recorded by the kernel (it
+/// writes a turn's rows when the turn ends): the conversation's history
+/// keeps its request from the broker, in its lane, at the time it started;
+/// a recorded one is not repeated.
+#[test]
+fn a_stopped_turns_request_stays_in_the_conversations_history() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host), None);
+    {
+        let mut s = script.lock().unwrap();
+        s.hold_turns = true;
+        s.interrupts_end = true;
+    }
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "a long digest please".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    wait_for("the person's turn", || calls_of(&script, "turn/start").len() == 1);
+    let (sink, stop_rx) = collect();
+    chat.call(ContextOp::Interrupt, sink).unwrap();
+    assert_eq!(complete(&stop_rx).unwrap()["turns"][0]["lane"], "person");
+    assert!(complete(&rx).is_err(), "the stopped turn ends with its error");
+    {
+        let mut s = script.lock().unwrap();
+        s.history = vec![json!({"role": "user", "content": "[from the person: Rinx] earlier", "persisted_at": "2020-01-01T00:00:00Z"})];
+        s.peer_history = vec![];
+    }
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].as_array().unwrap().clone();
+    let shown: Vec<(String, String)> = rows.iter().map(|r| (r["lane"].as_str().unwrap().to_owned(), r["display_text"].as_str().unwrap_or("").to_owned())).collect();
+    assert_eq!(shown, [("person".to_owned(), "earlier".to_owned()), ("person".to_owned(), "a long digest please".to_owned())]);
+    assert_eq!(rows[1]["speaker"], json!({"kind": "person", "label": "Rinx"}));
+    // Once the kernel has the row, it is not added twice.
+    script.lock().unwrap().history.push(json!({"role": "user", "content": "[from the person: Rinx] a long digest please", "persisted_at": "2020-01-01T00:00:01Z"}));
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    assert_eq!(complete(&rx).unwrap()["messages"].as_array().unwrap().len(), 2);
     drop(broker);
 }
 

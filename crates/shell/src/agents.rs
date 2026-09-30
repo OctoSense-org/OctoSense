@@ -250,9 +250,42 @@ pub fn ask(app: &AgentApp) -> Access {
 
 // ------------------------------------------------------------ the system agent
 
+/// The kernel's slug of `app`'s peer, once it is bound: what the system
+/// agent's `peer_list` shows and `peer_send_input` takes (`os-news-22a12f90`,
+/// never the app id `os.news`).
+pub fn peer_slug(app: &AgentApp) -> Option<String> {
+    if !app.native {
+        return crate::ai_host::contained::peer_slug(&app.id);
+    }
+    native_slug(&app.id)
+}
+
+#[cfg(kernel)]
+fn native_slug(app: &str) -> Option<String> {
+    crate::ai_host::app_peers::broker::live(app)?.peer().map(|(slug, _)| slug)
+}
+
+#[cfg(not(kernel))]
+fn native_slug(_app: &str) -> Option<String> {
+    None
+}
+
+/// How the system agent reaches an allowed app's agent: by its peer slug
+/// with `peer_send_input`, never by the app id.
+fn reach(app: &AgentApp, slug: Option<&str>) -> String {
+    match slug {
+        Some(slug) => format!("Reach it with peer_send_input and the peer slug \"{slug}\" (not the app id {})", app.id),
+        None => format!(
+            "Find its peer slug with peer_list (the peer named \"{} \u{2026}\"), then use that slug with peer_send_input (not the app id {})",
+            peer_label(app),
+            app.id
+        ),
+    }
+}
+
 /// One app's line for the system agent: its name, its peer and where it
 /// stands, and what to do.
-fn line(app: &AgentApp) -> Value {
+pub(crate) fn line(app: &AgentApp) -> Value {
     let access = access(&app.id);
     let peer = match (access, prepared(&app.id)) {
         (Access::Allowed, Some(Prepared::Ready)) => "ready: in peer_list".to_string(),
@@ -262,12 +295,13 @@ fn line(app: &AgentApp) -> Value {
         (Access::Allowed, None) => "not started yet".to_string(),
         _ => "none".to_string(),
     };
+    let slug = if access == Access::Allowed { peer_slug(app) } else { None };
     let what = match access {
-        Access::Allowed => format!("Reach it with peer_send_input (its peer is named \"{} …\" in peer_list).", peer_label(app)),
+        Access::Allowed => format!("{}.", reach(app, slug.as_deref())),
         Access::NotAsked => format!("{}'s assistant is not yet allowed. Call agents.ask to ask the person, or tell them to open {} and use Ask {}.", app.name, app.name, app.name),
         Access::Off => format!("{}'s assistant is off. Only the person can turn it on (Settings › Assistant › Approvals); tell them.", app.name),
     };
-    json!({"app": app.id, "name": app.name, "access": access.as_str(), "peer": peer, "what_to_do": what})
+    json!({"app": app.id, "name": app.name, "access": access.as_str(), "peer": peer, "peer_slug": slug, "what_to_do": what})
 }
 
 /// The name the kernel gives the app's peer (`<label> <account tag>`): the
@@ -286,6 +320,17 @@ pub fn list() -> Value {
     json!({"apps": all().iter().map(line).collect::<Vec<_>>()})
 }
 
+/// One app's part of [`system_note`]: its name, its id and where it
+/// stands, with its peer slug once allowed and bound.
+pub(crate) fn note_part(app: &AgentApp) -> String {
+    let state = match access(&app.id) {
+        Access::Allowed => format!("allowed (in peer_list; {})", reach(app, peer_slug(app).as_deref())),
+        Access::NotAsked => "not yet allowed (not in peer_list; say so, and call agents.ask or ask the person to allow it)".to_string(),
+        Access::Off => "off (not in peer_list; only the person can turn it on in Settings)".to_string(),
+    };
+    format!("{} [{}]: {state}", app.name, app.id)
+}
+
 /// The note the system chat sends with a turn when the apps' agents
 /// changed since it last told the system agent (`None`: nothing to say).
 /// One line per app: its name and where it stands.
@@ -294,16 +339,8 @@ pub fn system_note() -> Option<String> {
     if apps.is_empty() {
         return None;
     }
-    let mut parts = Vec::new();
-    for app in &apps {
-        let state = match access(&app.id) {
-            Access::Allowed => "allowed (its agent is in peer_list; reach it with peer_send_input)".to_string(),
-            Access::NotAsked => "not yet allowed (not in peer_list; say so, and call agents.ask or ask the person to allow it)".to_string(),
-            Access::Off => "off (not in peer_list; only the person can turn it on in Settings)".to_string(),
-        };
-        parts.push(format!("{} [{}]: {state}", app.name, app.id));
-    }
-    Some(format!("[OctoSense: apps with an agent: {}. Never guess a peer that peer_list does not show.]", parts.join("; ")))
+    let parts: Vec<String> = apps.iter().map(note_part).collect();
+    Some(format!("[OctoSense: apps with an agent: {}. peer_send_input takes a peer slug from peer_list, never an app id; never guess a peer that peer_list does not show.]", parts.join("; ")))
 }
 
 /// Strip [`system_note`] from a message's text (the transcript keeps it; the
@@ -324,7 +361,7 @@ pub fn declarations() -> Vec<Value> {
         json!({
             "name": LIST_TOOL,
             "app": OWNER,
-            "description": "List every app on this device that has an agent, whether the person allowed it, and whether its peer is ready (in peer_list). Use it before delegating to an app's agent, and when peer_list does not show the app you need.",
+            "description": "List every app on this device that has an agent, whether the person allowed it, whether its peer is ready (in peer_list), and its peer slug (`peer_slug`: pass it to peer_send_input; the app id is not a peer). Use it before delegating to an app's agent, and when peer_list does not show the app you need.",
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": false},
             "risk": "read",
         }),
@@ -356,14 +393,14 @@ pub fn call(tool: &str, args: &Value) -> ToolOutcome {
             };
             let now = ask(&app);
             let text = match now {
-                Access::Allowed => format!("{}'s assistant is allowed. Its peer is being prepared; it shows in peer_list shortly.", app.name),
+                Access::Allowed => format!("{}'s assistant is allowed. Its peer is being prepared; it shows in peer_list shortly (use its peer slug from peer_list or agents.list with peer_send_input, not the app id).", app.name),
                 Access::NotAsked => format!("{}'s assistant is not yet allowed: the person was asked on the first-use sheet. Wait for them; its peer shows in peer_list once they allow it.", app.name),
                 Access::Off => format!("{}'s assistant is off. Only the person can turn it on (Settings › Assistant › Approvals).", app.name),
             };
             if now == Access::Allowed {
                 prepare(&app);
             }
-            ToolOutcome::Ok(json!({"app": app.id, "name": app.name, "access": now.as_str(), "text": text}))
+            ToolOutcome::Ok(json!({"app": app.id, "name": app.name, "access": now.as_str(), "peer_slug": peer_slug(&app), "text": text}))
         }
         other => ToolOutcome::error("unknown_tool", format!("{other} is not an agents tool")),
     }

@@ -325,14 +325,21 @@ pub fn send(text: &str) {
         return;
     };
     let failed = shared.clone();
-    let sink: EventSink = Arc::new(move |event| {
-        if let ContextEvent::Complete(Err(e)) = event {
+    // Once the turn started, its own end says how it ended (the follower's
+    // `turn_terminal`: "turn interrupted by client" after a Stop); the
+    // send's error is the same news. Only an error before any event of the
+    // turn (it never started) is the send's to tell.
+    let started = std::sync::atomic::AtomicBool::new(false);
+    let sink: EventSink = Arc::new(move |event| match event {
+        ContextEvent::Data(_) => started.store(true, std::sync::atomic::Ordering::Relaxed),
+        ContextEvent::Complete(Err(e)) if !started.load(std::sync::atomic::Ordering::Relaxed) => {
             let mut s = lock(&failed);
             if s.epoch == epoch {
                 s.conversation.notice(e);
                 changed(&mut s);
             }
         }
+        ContextEvent::Complete(_) => {}
     });
     if let Err(e) = context.call(ContextOp::TurnFrom { text, trigger: TurnTrigger::Person }, sink) {
         let mut s = lock(&shared);

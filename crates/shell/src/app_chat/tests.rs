@@ -149,12 +149,73 @@ fn the_merged_history_names_its_speakers() {
     );
 }
 
+/// The live run's order (#184 follow-up): each lane counts its own
+/// `cursor.seq` (the peer's session is long, the person's context new), and
+/// the kernel sends a turn's user message when the turn ENDS. Replayed as
+/// it arrived: the system agent asks, the person asks while its answer
+/// streams, the person asks again and stops. Each request stands where its
+/// turn started, within a lane in ledger order (an envelope that arrives
+/// after a later one of its lane goes before it), and the stopped turn's
+/// request, which the kernel never records, stays.
+#[test]
+fn two_lanes_interleave_by_arrival_and_a_stopped_request_stays() {
+    let mut c = Conversation::new("News");
+    let sys = LANE_SYSTEM_AGENT;
+    let started = |lane: &str, turn: &str, text: &str, kind: &str| {
+        json!({"method": "turn/started", "lane": lane, "speaker": {"kind": kind},
+            "request": {"text": text, "speaker": {"kind": kind}}, "params": {"turn_id": turn}})
+    };
+    let user = |lane: &str, turn: &str, cursor: u64, text: &str, kind: &str| {
+        json!({"method": "projection/envelope", "lane": lane, "speaker": {"kind": kind}, "display_text": text,
+            "params": {"turn_id": turn, "cursor": {"seq": cursor}, "payload": {"type": "user_message", "data": {"text": text}}}})
+    };
+    // The system agent's digest (the peer's ledger is far along).
+    c.apply(&started(sys, "s1", "Please provide a digest", "system_agent"));
+    c.apply(&env(sys, "s1", 1001, "assistant_delta", json!({"assistant_segment_id": "s1:1", "text": "Gathering"})));
+    c.apply(&env(sys, "s1", 1003, "tool_start", json!({"tool_call_id": "t1", "name": "news_top"})));
+    // Arrives after its lane's later tool_start: goes before it.
+    c.apply(&env(sys, "s1", 1002, "assistant_delta", json!({"assistant_segment_id": "s1:2", "text": "Top stories"})));
+    // The person asks meanwhile (a new context: small seqs).
+    c.apply(&started(LANE_PERSON, "p1", "focus the digest on technology", "person"));
+    c.apply(&env(LANE_PERSON, "p1", 3, "assistant_persisted", json!({"assistant_segment_id": "p1:1", "text": "Tech only."})));
+    c.apply(&env(LANE_PERSON, "p1", 5, "turn_terminal", json!({"outcome": "completed"})));
+    // The kernel records the person's words at the end.
+    c.apply(&user(LANE_PERSON, "p1", 4, "focus the digest on technology", "person"));
+    c.apply(&env(sys, "s1", 1700, "assistant_persisted", json!({"assistant_segment_id": "s1:2", "text": "Top stories: three."})));
+    c.apply(&user(sys, "s1", 1706, "Please provide a digest", "system_agent"));
+    c.apply(&env(sys, "s1", 1707, "turn_terminal", json!({"outcome": "completed"})));
+    // A long request, stopped: no user message ever comes.
+    c.apply(&started(LANE_PERSON, "p2", "a long digest please", "person"));
+    c.apply(&env(LANE_PERSON, "p2", 7, "assistant_delta", json!({"assistant_segment_id": "p2:1", "text": "Working"})));
+    c.apply(&env(LANE_PERSON, "p2", 8, "turn_terminal", json!({"outcome": "interrupted", "error": {"message": "turn interrupted by client"}})));
+    assert!(!c.busy());
+    assert_eq!(
+        labels(&c),
+        [
+            ("System agent".to_string(), "Please provide a digest".to_string()),
+            ("News's agent, to the system agent".to_string(), "Gathering".to_string()),
+            ("News's agent, to the system agent".to_string(), "Top stories: three.".to_string()),
+            ("You".to_string(), "focus the digest on technology".to_string()),
+            ("News's agent".to_string(), "Tech only.".to_string()),
+            ("You".to_string(), "a long digest please".to_string()),
+            ("News's agent".to_string(), "Working".to_string()),
+        ]
+    );
+    let tool = c.chat.items.iter().position(|i| matches!(i, Item::Tool { call_id, .. } if call_id == "t1")).unwrap();
+    let second = c.chat.items.iter().position(|i| matches!(i, Item::Message { segment: Some(s), .. } if s == "s1:2")).unwrap();
+    assert!(second < tool, "ledger order within the lane: {:?}", c.chat.items);
+    assert!(matches!(c.chat.items.last(), Some(Item::Notice(n)) if n == "turn interrupted by client"));
+}
+
 // ---------------------------------------------------------------- the panel
 
 struct FakeContext {
     ops: Mutex<Vec<ContextOp>>,
     open: AtomicBool,
     follower: Mutex<Option<EventSink>>,
+    /// The next turn is stopped: it starts, ends interrupted, and the
+    /// send fails with the same words (as the broker does).
+    stop_next: AtomicBool,
 }
 
 impl OctosContext for FakeContext {
@@ -167,6 +228,22 @@ impl OctosContext for FakeContext {
             ContextOp::History => sink(ContextEvent::Complete(Ok(json!({"messages": [
                 {"role": "user", "content": "[from the system agent] earlier", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "earlier"},
             ]})))),
+            ContextOp::TurnFrom { text, .. } if self.stop_next.swap(false, Ordering::SeqCst) => {
+                let follower = self.follower.lock().unwrap().clone();
+                let events = [
+                    json!({"method": "turn/started", "lane": "person", "speaker": {"kind": "person"}, "request": {"text": text, "speaker": {"kind": "person"}},
+                        "params": {"turn_id": "p10"}}),
+                    env("person", "p10", 101, "turn_terminal", json!({"outcome": "interrupted", "error": {"message": "turn interrupted by client"}})),
+                ];
+                for event in events {
+                    // The caller's own turn reaches its sink too.
+                    sink(ContextEvent::Data(event.clone()));
+                    if let Some(follower) = &follower {
+                        follower(ContextEvent::Data(event));
+                    }
+                }
+                sink(ContextEvent::Complete(Err("turn interrupted by client".into())));
+            }
             ContextOp::TurnFrom { text, .. } => {
                 // The kernel's events reach the follower, then the answer.
                 if let Some(follower) = self.follower.lock().unwrap().clone() {
@@ -220,13 +297,17 @@ impl OctosAppService for FakePeer {
         Err("the panel opens the app's conversation, never a plain context".into())
     }
     fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
-        let context = Arc::new(FakeContext { ops: Mutex::default(), open: AtomicBool::new(true), follower: Mutex::default() });
+        let context = Arc::new(FakeContext { ops: Mutex::default(), open: AtomicBool::new(true), follower: Mutex::default(), stop_next: AtomicBool::new(false) });
         self.conversations.lock().unwrap().push((spec, context.clone()));
         Ok(context)
     }
     fn prepare(&self) -> Result<(), String> {
         *self.prepared.lock().unwrap() += 1;
         Ok(())
+    }
+    fn peer_slug(&self) -> Option<String> {
+        // The kernel's slug: the label with an account tag.
+        Some("org-example-asktest-22a12f90".into())
     }
     fn release(&self) {
         self.released.store(true, Ordering::SeqCst);
@@ -305,10 +386,28 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     assert!(said.contains(&(Role::User, "You".into(), "focus the digest on technology".into())), "{said:?}");
     assert!(said.contains(&(Role::Assistant, "Ask Test's agent".into(), "Noted.".into())), "{said:?}");
 
+    // A stopped turn: its request line stays, and "interrupted" is said
+    // once (the turn's end), not again for the send's error.
+    context.stop_next.store(true, Ordering::SeqCst);
+    super::send("a long digest please");
+    let model = super::snapshot();
+    let interrupted = model.items.iter().filter(|i| matches!(i, Item::Notice(n) if n == "turn interrupted by client")).count();
+    assert_eq!(interrupted, 1, "{:?}", model.items);
+    assert!(model.items.iter().any(|i| matches!(i, Item::Message { role: Role::User, text, .. } if text == "a long digest please")), "{:?}", model.items);
+
     // The shell prepares an allowed agent's peer: the panel's is the same
     // one (nothing more to do); another allowed app's is bound now.
     crate::agents::prepare(&app);
     assert_eq!(crate::agents::prepared(APP), Some(crate::agents::Prepared::Ready));
+    // The system agent is given the peer's SLUG for peer_send_input, never
+    // just the app id (it tried `os.news` first in the live run).
+    const SLUG: &str = "org-example-asktest-22a12f90";
+    assert_eq!(crate::agents::peer_slug(&app).as_deref(), Some(SLUG));
+    let listed = crate::agents::line(&app);
+    assert_eq!(listed["peer_slug"], SLUG);
+    assert!(listed["what_to_do"].as_str().unwrap().contains(&format!("peer_send_input and the peer slug \"{SLUG}\"")), "{listed}");
+    let note = crate::agents::note_part(&app);
+    assert!(note.contains(SLUG) && note.contains("peer_send_input") && note.contains("not the app id"), "{note}");
     assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
     const OTHER: &str = "org.example.asktest2";
     crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), OTHER, true, 2));
@@ -339,6 +438,7 @@ fn the_system_agent_is_told_about_agents_it_cannot_list() {
     let note = crate::agents::system_note().expect("Rinx has an agent in every build");
     assert!(note.starts_with("[OctoSense: apps with an agent:"), "{note}");
     assert!(note.contains("Rinx [rinx]"), "{note}");
+    assert!(note.contains("peer_send_input takes a peer slug from peer_list, never an app id"), "{note}");
     let sent = format!("{note}\nask News for a digest");
     assert_eq!(crate::agents::strip_note(&sent), "ask News for a digest");
     assert_eq!(crate::agents::strip_note("ask News"), "ask News");

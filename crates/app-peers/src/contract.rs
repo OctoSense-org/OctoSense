@@ -314,6 +314,13 @@ pub trait OctosAppService: Send + Sync {
     fn prepare(&self) -> Result<(), String> {
         Ok(())
     }
+    /// The kernel's slug of the app's peer once it is bound (what the
+    /// system agent's `peer_list` shows and `peer_send_input` takes, e.g.
+    /// `os-news-22a12f90`: never the app id). `None` before, or for a
+    /// service without a peer of its own.
+    fn peer_slug(&self) -> Option<String> {
+        None
+    }
     /// The app is closing: close every context and release subscriptions.
     /// Does not stop a shared kernel or other apps' work.
     fn release(&self);

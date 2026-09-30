@@ -984,14 +984,28 @@ fn the_person_and_the_system_agent_talk_in_parallel_lanes_that_share_history() {
     assert_eq!(answer["lane"], "person");
     assert!(answer["text"].as_str().unwrap().contains("hello from the app"), "{answer}");
 
-    // The system agent's input to the same peer, in its own lane.
+    // The system agent's input to the same peer, in its own lane. The
+    // system session may still be busy with the previous turn: after its
+    // `peer_send_input` it finishes its own answer, and the kernel may wake
+    // it with the peer's result. The test is the system chat here, so it
+    // waits for its session like the chat does (the kernel queues nothing:
+    // `turn_in_progress`).
     let system_turn = |text: String| {
-        rinx.host_request(
-            "turn/start",
-            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
-                   "input": [{"kind": "text", "text": text}]}),
-        )
-        .expect("system turn");
+        let params = json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                            "input": [{"kind": "text", "text": text}]});
+        for _ in 0..120 {
+            match rinx.host_request("turn/start", params.clone()) {
+                Err(e) if e.contains("turn_in_progress") => {
+                    eprintln!("the system session is still busy: {e}");
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+                other => {
+                    other.expect("system turn");
+                    return;
+                }
+            }
+        }
+        panic!("the system session stayed busy for a minute");
     };
     let history_until = |done: &dyn Fn(&[Value]) -> bool| -> Vec<Value> {
         let mut rows = Vec::new();

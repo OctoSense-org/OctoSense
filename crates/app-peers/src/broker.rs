@@ -441,6 +441,66 @@ impl State {
     }
 }
 
+/// The words that started one turn of the app's conversation, as this
+/// broker sent them: which session (lane), who spoke and when it started.
+#[derive(Clone, Debug)]
+struct Request {
+    turn: String,
+    session: String,
+    lane: &'static str,
+    text: String,
+    speaker: Speaker,
+    /// RFC 3339 (UTC), the host's clock at the start.
+    at: String,
+}
+
+impl Request {
+    fn to_json(&self) -> Value {
+        json!({"text": self.text, "speaker": self.speaker.to_json()})
+    }
+}
+
+impl State {
+    fn note_request(&mut self, request: Request) {
+        if request.text.trim().is_empty() || self.requests.iter().any(|r| r.turn == request.turn) {
+            return;
+        }
+        self.requests.push_back(request);
+        while self.requests.len() > REMEMBERED {
+            self.requests.pop_front();
+        }
+    }
+
+    fn request_of(&self, turn: &str) -> Option<&Request> {
+        self.requests.iter().find(|r| r.turn == turn)
+    }
+}
+
+/// Now as RFC 3339 in UTC with microseconds, like the kernel's
+/// `persisted_at` (so [`time_key`] orders both).
+fn rfc3339_now() -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = now.as_secs() as i64;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Days since 1970-01-01 to a civil date (H. Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:06}Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60,
+        now.subsec_micros()
+    )
+}
+
 fn remember(list: &mut VecDeque<String>, item: String) {
     if !list.contains(&item) {
         list.push_back(item);
@@ -501,6 +561,12 @@ struct State {
     /// Who speaks in each person-lane turn this broker started (the origin
     /// it sent), by turn id.
     speakers: HashMap<String, Speaker>,
+    /// The words that started each turn of the app's conversation this
+    /// broker started (a person's message, the system agent's input), in
+    /// start order. The kernel records a turn's user message only when the
+    /// turn ends (and never for an interrupted one), so a follower is told
+    /// them when the turn starts, and history keeps a stopped turn's.
+    requests: VecDeque<Request>,
     /// The system agent's inputs waiting for the peer's running turn, in
     /// order (one queue per peer; the person's lane has its own session).
     queue: VecDeque<PeerInput>,
@@ -568,6 +634,7 @@ impl Broker {
                 turn_triggers: HashMap::new(),
                 trigger_order: VecDeque::new(),
                 speakers: HashMap::new(),
+                requests: VecDeque::new(),
                 queue: VecDeque::new(),
                 conversations: 0,
                 cwds: HashMap::new(),
@@ -1626,6 +1693,14 @@ impl Inner {
             let mut st = self.lock();
             st.peer_turn = Some(input.turn_id.clone());
             remember(&mut st.input_turns, input.turn_id.clone());
+            st.note_request(Request {
+                turn: input.turn_id.clone(),
+                session: input.session_id.clone(),
+                lane: LANE_SYSTEM_AGENT,
+                text: input.text.clone(),
+                speaker: Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None },
+                at: rfc3339_now(),
+            });
         }
         let inner = self.clone();
         self.rt().spawn(async move {
@@ -2135,8 +2210,11 @@ fn time_key(row: &Value) -> Option<String> {
 /// (its sharing context's transcript) and the system agent's lane (the
 /// peer's), each row with its `lane` and, for a marked user message, its
 /// `speaker` and `display_text`, merged by `persisted_at` (a row without one
-/// keeps its place in its own lane's order).
-fn merged_history(person: Value, system_agent: Value) -> Value {
+/// keeps its place in its own lane's order). A turn this broker started
+/// whose user message the kernel never recorded (it was stopped) gets its
+/// request as a user row (`requests`: this conversation's lanes), at the
+/// time it started.
+fn merged_history(person: Value, system_agent: Value, requests: &[Request]) -> Value {
     let mut out = speakers_in_history(person);
     let lane_rows = |history: Value, lane: &str| -> Vec<Value> {
         let mut rows = match speakers_in_history(history)["messages"].take() {
@@ -2150,6 +2228,22 @@ fn merged_history(person: Value, system_agent: Value) -> Value {
     };
     let mut rows = lane_rows(json!({"messages": out["messages"].take()}), LANE_PERSON);
     rows.extend(lane_rows(system_agent, LANE_SYSTEM_AGENT));
+    for request in requests {
+        let recorded = rows.iter().any(|row| {
+            row["role"] == "user"
+                && row["lane"] == request.lane
+                && (row["turn_id"] == request.turn.as_str()
+                    || row["thread_id"] == request.turn.as_str()
+                    || row["display_text"].as_str().or_else(|| row["content"].as_str()).is_some_and(|t| t.trim() == request.text.trim()))
+        });
+        if !recorded {
+            rows.push(json!({
+                "role": "user", "content": request.text, "display_text": request.text,
+                "speaker": request.speaker.to_json(), "lane": request.lane,
+                "turn_id": request.turn, "persisted_at": request.at, "unrecorded": true,
+            }));
+        }
+    }
     // A stable sort: equal or missing times keep their lane order.
     let mut last = String::new();
     let mut keyed: Vec<(String, Value)> = Vec::with_capacity(rows.len());
@@ -2373,6 +2467,13 @@ impl ContextInner {
             if let Some(speaker) = speaker {
                 data["speaker"] = speaker.to_json();
             }
+            // The turn's words, when it starts: the kernel sends its user
+            // message only when the turn ends (never for a stopped one).
+            if method == "turn/started" {
+                if let Some(request) = turn_id.and_then(|t| inner.lock().request_of(t).map(Request::to_json)) {
+                    data["request"] = request;
+                }
+            }
         }
         // A conversation's caller hears only its own turn; a request
         // context's session is its caller's alone.
@@ -2512,6 +2613,14 @@ impl ContextInner {
             let mut st = inner.lock();
             st.note_trigger(&turn_id, trigger);
             st.speakers.insert(turn_id.clone(), speaker.clone());
+            st.note_request(Request {
+                turn: turn_id.clone(),
+                session: session.to_owned(),
+                lane: LANE_PERSON,
+                text: text.clone(),
+                speaker: speaker.clone(),
+                at: rfc3339_now(),
+            });
         }
         let params = json!({
             "session_id": session,
@@ -2603,11 +2712,12 @@ impl ContextInner {
                 if self.conversation {
                     // Both lanes: the person's context and the peer's session.
                     let peer_session = inner.lock().peer.as_ref().map(|(_, p)| p.session.clone());
-                    let system_agent = match peer_session {
+                    let system_agent = match peer_session.clone() {
                         Some(peer) => inner.request("session/hydrate", json!({"session_id": peer, "include": ["messages"]})).await?,
                         None => json!({"messages": []}),
                     };
-                    history.map(|person| merged_history(person, system_agent))
+                    let requests: Vec<Request> = inner.lock().requests.iter().filter(|r| r.session == session || peer_session.as_deref() == Some(r.session.as_str())).cloned().collect();
+                    history.map(|person| merged_history(person, system_agent, &requests))
                 } else {
                     history
                 }
@@ -2805,6 +2915,10 @@ impl OctosAppService for Broker {
 
     fn prepare(&self) -> Result<(), String> {
         self.bind()
+    }
+
+    fn peer_slug(&self) -> Option<String> {
+        self.peer().map(|(slug, _)| slug)
     }
 
     fn model(&self) -> Option<ModelInfo> {

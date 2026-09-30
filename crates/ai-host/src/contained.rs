@@ -147,6 +147,12 @@ pub fn prepare(app_id: &str) -> Result<(), String> {
     service.prepare()
 }
 
+/// The kernel's slug of `app_id`'s peer, once one is live and bound (what
+/// `peer_list` shows and `peer_send_input` takes).
+pub fn peer_slug(app_id: &str) -> Option<String> {
+    live(|l| l.get(app_id).cloned())?.peer_slug()
+}
+
 /// Whether `app_id` has a live peer (prepared, or opened by the app).
 pub fn is_live(app_id: &str) -> bool {
     live(|l| l.contains_key(app_id))
