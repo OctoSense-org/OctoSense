@@ -453,9 +453,16 @@ impl approvals::AppConfirm for SheetBridge {
 
     fn confirm(&mut self, request: &approvals::AppConfirmRequest) {
         let id = request.id.clone();
+        use crate::ai_host::app_peers::host_tools::ConfirmCaller;
         let client = match &request.caller {
             Caller::OwnAgent { client } => client.clone(),
             _ => None,
+        };
+        let caller = match &request.caller {
+            Caller::OwnAgent { client } => ConfirmCaller::OwnAgent { client: client.clone() },
+            Caller::AppAgent { app } => ConfirmCaller::AppAgent { app: app.clone() },
+            Caller::SystemAgent => ConfirmCaller::SystemAgent,
+            Caller::External { client } => ConfirmCaller::External { client: client.clone() },
         };
         self.sheet.confirm(ConfirmRequest::new(
             request.id.0.clone(),
@@ -473,7 +480,8 @@ impl approvals::AppConfirm for SheetBridge {
                     }
                 });
             },
-        ));
+        )
+        .with_caller(caller));
     }
 }
 

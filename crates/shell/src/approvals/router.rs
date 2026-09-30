@@ -267,7 +267,14 @@ impl Router {
         if !self.pending.contains_key(id) {
             return false;
         }
+        let on_app = self.at_app.get(id).cloned();
         self.decide(id, Decision::Deny, "withdrawn", None, reason, now);
+        // On the owning app's own sheet: it stops asking too.
+        if let Some(app) = on_app {
+            if let Some(handler) = self.app_confirms.get_mut(&app) {
+                handler.withdrawn(id, reason);
+            }
+        }
         for sheet in &mut self.sheets {
             if let Some(line) = sheet.lines.iter_mut().find(|l| l.request == *id) {
                 line.answer = Some(super::sheet::Answer::Deny);

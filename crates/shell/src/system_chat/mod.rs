@@ -114,6 +114,18 @@ const ASK_WAIT: Duration = Duration::from_secs(600);
 
 /// The id prefix of a routed question in the conversation.
 pub const ROUTED_PREFIX: &str = "routed:";
+/// How many routed questions the chat keeps: the oldest settled ones go
+/// first, and an open one is never dropped (the person must still see it).
+pub const ROUTED_KEPT: usize = 32;
+
+/// Keep at most `max` routed questions, dropping the oldest settled ones;
+/// open questions stay whatever their number.
+pub(crate) fn trim_routed(routed: &mut Vec<(u64, model::Item)>, max: usize) {
+    while routed.len() > max {
+        let Some(i) = routed.iter().position(|(_, item)| !matches!(item, model::Item::Question { answered: None, .. })) else { break };
+        routed.remove(i);
+    }
+}
 
 /// The system chat as a consumer of [`crate::questions`]: the questions of
 /// `peer/input` turns (the system agent's requests to app agents).
@@ -144,9 +156,7 @@ impl crate::questions::Consumer for RoutedQuestions {
                 Some(slot) => slot.1 = item,
                 None => c.routed.push((request.id, item)),
             }
-            if c.routed.len() > 32 {
-                c.routed.remove(0);
-            }
+            trim_routed(&mut c.routed, ROUTED_KEPT);
             c.ui_generation += 1;
         });
     }

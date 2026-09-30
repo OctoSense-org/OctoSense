@@ -280,12 +280,15 @@ impl Driver {
             reply.finish(ToolOutcome::error("turn_interrupted", "the person stopped that answer"));
             return;
         }
-        // Only a turn this chat started is the person's (G1, G2): another
-        // client's turn on the session stays unknown.
-        let mut call = call;
-        if self.model.is_own_turn(&call.turn_id) {
-            call.trigger = crate::ai_host::app_peers::TurnTrigger::Person;
+        // Only a turn this chat started is relayed (ADR 0004 §8): the
+        // person's (G1, G2). Another client's turn on the session is not
+        // this host's to run tools for; the kernel hears so at once.
+        if !self.model.is_own_turn(&call.turn_id) {
+            reply.finish(ToolOutcome::error("not_this_hosts_turn", "the shell relays tool calls only from turns its system chat started"));
+            return;
         }
+        let mut call = call;
+        call.trigger = crate::ai_host::app_peers::TurnTrigger::Person;
         self.calls.insert(call.call_id.clone(), reply.clone());
         self.effects.push(Effect::ToolCall { call, reply });
     }
