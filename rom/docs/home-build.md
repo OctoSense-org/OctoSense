@@ -29,7 +29,7 @@ assistant (`octos-app`, `apps/appcard/app/app`) is built
 only with `--features app-appcard`: it is not shipped for now, so default,
 `mobile-apps` and native mobile builds leave its UI out.
 
-The runtime's Makepad (main `1f3b1ded`, OctoScript-Makepad `cb66de07`)
+The runtime's Makepad (main `a1c81312`, OctoScript-Makepad `96587629`)
 includes the contained-app and isolate controls from makepad#30, the camera
 QR scanner AI providers uses (makepad#31), Splash `reapply_text`
 (makepad#35) with stateful mini-app inputs (OctoScript-Makepad#46) for Rinx,
@@ -137,6 +137,21 @@ bundles a prebuilt aarch64-linux-android `octos` instead; `--no-octos-kernel`
 builds an APK without one (the phone then runs no kernel; the AI providers
 are still saved). The receipt records the kernel's source and SHA-256
 (`octos_kernel`). The kernel adds about 137 MB (unstripped) to the APK.
+
+**The kernel on a ROM.** A system app that has not been updated never gets its
+native libraries extracted: Android loads them from inside the APK, so a ROM
+Home would have no kernel file to exec. `stage-home.py` therefore stages Home
+without its `lib/` entries and puts `libmakepad.so` and `liboctos.so` in
+`vendor/octosense/prebuilt/lib/arm64/`; `vendor/octosense/Android.mk` installs
+them into `/system_ext/priv-app/OctoSenseHome/lib/arm64/`, which the package
+manager then uses as Home's native library dir (the AOSP layout for system apps
+with native code), and `vendor/octosense/config.fs` makes `liboctos.so`
+executable (0755). The build re-signs the APK with the platform certificate. A
+Home update installed over the system app (`adb install -r`) has its libraries
+extracted under `/data/app` as usual. The kernel runs in Home's `platform_app`
+domain; `sepolicy/private/octosense_kernel.te` lets it bind its goal
+operator-control socket in Home's data dir and keeps three harmless probes (the
+linker's config dirs, `/proc/stat`, `/postinstall`) out of the audit log.
 
 Options: `--dry-run` prints the plan; `--offline` uses cached dependencies;
 `--version-code` overrides the automatic code; `--output` selects an artifact
