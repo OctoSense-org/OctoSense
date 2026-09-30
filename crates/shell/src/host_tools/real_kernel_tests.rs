@@ -281,7 +281,9 @@ fn real_kernel_an_allowed_apps_agent_is_prepared_listed_and_shares_its_conversat
     loop {
         super::pump();
         let sys_lane = seen.lock().unwrap().iter().filter(|d| d["lane"] == "system_agent").map(|d| d.to_string()).collect::<Vec<_>>().join("\n");
-        if sys_lane.contains("SHARED") {
+        // The model's answer ("SHARED - <rows>" or "SHARED NONE"), not the
+        // turn's own request ("SHOW_SHARED"), which arrives first.
+        if sys_lane.contains("SHARED -") || sys_lane.contains("SHARED NONE") {
             assert!(sys_lane.contains("focus the digest on technology"), "News's agent, asked by the system agent, sees the person's turn: {sys_lane}");
             break;
         }
