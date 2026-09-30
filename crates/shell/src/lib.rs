@@ -3006,6 +3006,19 @@ impl App {
                     self.focus_client(cx, client);
                 }
             }
+            AppToStudio::TickDone => {
+                // Dormant warm clients are pumped by the warm heartbeat.
+                if self.is_warm(client) {
+                    return;
+                }
+                if self.ai_bus.is_pane(client) {
+                    self.with_pane_run_view(cx, |cx, v| v.tick_done(cx));
+                } else {
+                    self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+                        d.with_run_view(cx, client, |cx, v| v.tick_done(cx))
+                    });
+                }
+            }
             AppToStudio::SetCursor(cursor) => {
                 if self.ai_bus.is_pane(client) {
                     self.with_pane_run_view(cx, |cx, v| v.set_remote_cursor(cx, cursor.into()));
@@ -3313,6 +3326,8 @@ impl App {
             self.send_to_pane(frame);
         }
         self.pane_links.reannounce();
+        // App peers take `dev.run` and developer grants, or lose them.
+        crate::host_tools::developer_mode_changed();
         for notice in dev_mode::take_notices() {
             self.notify(cx, "Developer mode", &notice);
         }
