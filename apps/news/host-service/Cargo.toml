@@ -25,3 +25,7 @@ sha2 = "0.10"
 roxmltree = "0.21"
 # One blocking request at a time on the fetch thread, as the llm service does.
 ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[dev-dependencies]
+# Runs pieces of the bundle's main.splash (tests/script.rs).
+makepad-script = { workspace = true }

@@ -7532,6 +7532,7 @@ name = "octosense-news-service"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "makepad-script",
  "octosense-appstore",
  "roxmltree 0.21.1",
  "serde",
