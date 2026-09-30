@@ -138,6 +138,21 @@ builds an APK without one (the phone then runs no kernel; the AI providers
 are still saved). The receipt records the kernel's source and SHA-256
 (`octos_kernel`). The kernel adds about 137 MB (unstripped) to the APK.
 
+**The kernel on a ROM.** A system app that has not been updated never gets its
+native libraries extracted: Android loads them from inside the APK, so a ROM
+Home would have no kernel file to exec. `stage-home.py` therefore stages Home
+without its `lib/` entries and puts `libmakepad.so` and `liboctos.so` in
+`vendor/octosense/prebuilt/lib/arm64/`; `vendor/octosense/Android.mk` installs
+them into `/system_ext/priv-app/OctoSenseHome/lib/arm64/`, which the package
+manager then uses as Home's native library dir (the AOSP layout for system apps
+with native code), and `vendor/octosense/config.fs` makes `liboctos.so`
+executable (0755). The build re-signs the APK with the platform certificate. A
+Home update installed over the system app (`adb install -r`) has its libraries
+extracted under `/data/app` as usual. The kernel runs in Home's `platform_app`
+domain; `sepolicy/private/octosense_kernel.te` lets it bind its goal
+operator-control socket in Home's data dir and keeps three harmless probes (the
+linker's config dirs, `/proc/stat`, `/postinstall`) out of the audit log.
+
 Options: `--dry-run` prints the plan; `--offline` uses cached dependencies;
 `--version-code` overrides the automatic code; `--output` selects an artifact
 directory; `--packager` uses an already built compatible `cargo-makepad` instead
