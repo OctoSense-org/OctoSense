@@ -590,6 +590,7 @@ class Run:
         return EXPRESSION.sub(replace, str(text))
 
     def record(self, workflow, job, name, status, seconds=0.0, reason="", expected=True, command=None):
+        reason = reason.replace(str(Path.home()), "~")  # results get posted: no home paths
         self.steps.append({"workflow": workflow, "job": job, "name": name, "status": status,
                            "seconds": round(seconds, 1), "reason": reason,
                            "expected_skip": expected if status == SKIPPED else None,

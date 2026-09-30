@@ -73,15 +73,19 @@ def evidence_problems(last, head, changed_files):
     return problems, required
 
 
+RED = ("failure", "timed_out", "startup_failure")
+
+
 def red_main(repo_workflows):
     red = []
     for workflow in repo_workflows:
         result = run(["gh", "run", "list", "--branch", "main", "--event", "push", "--workflow", workflow,
-                      "--status", "completed", "--limit", "1", "--json", "conclusion,headSha,url"], check=False)
+                      "--status", "completed", "--limit", "20", "--json", "conclusion,headSha,url"], check=False)
         if result.returncode != 0:
             continue
-        runs = json.loads(result.stdout or "[]")
-        if runs and runs[0].get("conclusion") not in ("success", "skipped", "neutral"):
+        # The latest run that reached a verdict: cancelled runs were superseded.
+        runs = [r for r in json.loads(result.stdout or "[]") if r.get("conclusion") not in ("cancelled", "skipped")]
+        if runs and runs[0].get("conclusion") in RED:
             red.append(f"{workflow}: {runs[0].get('conclusion')} on {runs[0]['headSha'][:12]} ({runs[0]['url']})")
     return red
 
@@ -98,7 +102,7 @@ def comment_body(last, required):
     outside = [s for s in last.get("steps", []) if s["workflow"] not in set(required) | {"ci-local"}
                and s["status"] in (ci_local.FAIL, ci_local.NOT_RUN)]
     if outside:
-        lines[2:2] = [f"Outside those workflows {len(outside)} step(s) did not pass (in the table); "
+        lines[4:4] = [f"Outside those workflows {len(outside)} step(s) did not pass (in the table); "
                       f"GitHub would not run them for this PR.", ""]
     return "\n".join(lines) + "\n"
 
