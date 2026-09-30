@@ -149,16 +149,42 @@ pub fn platform(secrets_root: &Path, app_id: &str) -> Arc<dyn SecretStore> {
 
 /// Delete every secret of `app_id`: its keychain items (those the index
 /// names), only when this run uses the keychain. The caller removes
-/// `secrets/<app id>/` itself.
-pub fn purge(secrets_root: &Path, app_id: &str) {
+/// `secrets/<app id>/` itself. `false`: keychain items are indexed that this
+/// run could not delete (no keychain here, or a headless run); the caller
+/// keeps the index.
+pub fn purge(secrets_root: &Path, app_id: &str) -> bool {
     if validate_app_id(app_id).is_err() {
-        return;
+        return true;
     }
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     if backend() == Backend::Keychain {
         keychain::Keychain::new(secrets_root, app_id).purge();
+        return true;
     }
-    let _ = secrets_root;
+    !secrets_root.join(app_id).join(KEYCHAIN_INDEX).exists()
+}
+
+/// A run with the keychain deletes the items an earlier headless uninstall
+/// could not: `secrets/<app id>/` holding nothing but the index, of an app
+/// no longer installed (`uninstalled`: it has no jail; a reinstalled app's
+/// items are its own again).
+pub fn purge_leftovers(secrets_root: &Path, uninstalled: impl Fn(&str) -> bool) {
+    if backend() != Backend::Keychain {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(secrets_root) else { return };
+    for entry in entries.flatten() {
+        let app_id = entry.file_name().to_string_lossy().into_owned();
+        if validate_app_id(&app_id).is_err() || !uninstalled(&app_id) {
+            continue;
+        }
+        let only_index = std::fs::read_dir(entry.path())
+            .map(|files| files.flatten().all(|f| f.file_name() == KEYCHAIN_INDEX))
+            .unwrap_or(false);
+        if only_index && purge(secrets_root, &app_id) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -166,7 +192,7 @@ pub mod keychain {
     use super::*;
     use sha2::{Digest, Sha256};
 
-    const INDEX: &str = ".keychain-index";
+    const INDEX: &str = super::KEYCHAIN_INDEX;
 
     pub struct Keychain {
         files: FileSecrets,

@@ -1033,7 +1033,12 @@ pub fn spawn_client(
     // `<OctoSense home>/<app id>/` could no longer be written. Its old data
     // is copied into the jail once, by the host.
     if let Some(policy) = &policy {
-        adopt_legacy_app_home(&crate::octosense::paths::home().join(&app.id), &policy.jail.join(&app.id));
+        // Started at startup off the UI thread (`app_storage::init`); a
+        // launch waits only for a copy still running, and copies itself
+        // only when none was started.
+        let (legacy, into) = (crate::octosense::paths::home().join(&app.id), policy.jail.join(&app.id));
+        wait_adopted(&into);
+        adopt_legacy_app_home(&legacy, &into);
         cmd.env("MAKEPAD_HOME", &policy.jail);
     }
     match &applied {
@@ -1137,17 +1142,82 @@ pub fn spawn_client(
     })
 }
 
-/// Stub.
-pub(crate) fn adopt_legacy_app_home_later(legacy: PathBuf, into: PathBuf) {
-    adopt_legacy_app_home(&legacy, &into);
+type Adoption = std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>;
+
+/// Adoptions started, by target folder: done or still copying.
+fn adoptions() -> &'static std::sync::Mutex<HashMap<PathBuf, Adoption>> {
+    static ADOPTIONS: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, Adoption>>> = std::sync::OnceLock::new();
+    ADOPTIONS.get_or_init(Default::default)
 }
 
-/// Stub.
-pub(crate) fn wait_adopted(_into: &Path) {}
+/// [`adopt_legacy_app_home`] on its own thread (the shell starts it at
+/// startup for every app that runs as a process, so a launch rarely waits),
+/// once per target per run.
+pub(crate) fn adopt_legacy_app_home_later(legacy: PathBuf, into: PathBuf) {
+    if into.exists() || !legacy.is_dir() {
+        return;
+    }
+    let state: Adoption = std::sync::Arc::default();
+    {
+        let mut all = adoptions().lock().unwrap_or_else(|e| e.into_inner());
+        if all.contains_key(&into) {
+            return;
+        }
+        all.insert(into.clone(), state.clone());
+    }
+    let spawned = std::thread::Builder::new().name("adopt-app-home".into()).spawn({
+        let state = state.clone();
+        move || {
+            adopt_legacy_app_home(&legacy, &into);
+            *state.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+            state.1.notify_all();
+        }
+    });
+    if spawned.is_err() {
+        *state.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
+}
+
+/// At startup: adopt, in the background, the legacy home of every native
+/// app that runs as a process on this target (its launch sets
+/// `MAKEPAD_HOME` to its jail).
+pub fn adopt_legacy_homes_later(layout: &crate::app_storage::Layout) {
+    use crate::native_apps::Hosting;
+    for app in crate::native_apps::APPS {
+        let hosting = if cfg!(target_os = "macos") {
+            app.macos
+        } else if cfg!(target_os = "windows") {
+            app.windows
+        } else if cfg!(target_os = "linux") {
+            app.linux
+        } else {
+            Hosting::Module
+        };
+        if matches!(hosting, Hosting::Module) {
+            continue;
+        }
+        if let Ok(paths) = layout.app(app.id) {
+            adopt_legacy_app_home_later(crate::octosense::paths::home().join(app.id), paths.jail.join(app.id));
+        }
+    }
+}
+
+/// Wait for a background adoption into `into` still copying (a launch
+/// needs the data); returns at once when none was started or it is done.
+pub(crate) fn wait_adopted(into: &Path) {
+    let Some(state) = adoptions().lock().unwrap_or_else(|e| e.into_inner()).get(into).cloned() else { return };
+    let mut done = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    while !*done {
+        done = state.1.wait(done).unwrap_or_else(|e| e.into_inner());
+    }
+}
 
 /// Copies an app's data from where it lived before its jail (`legacy`) to
 /// `into`, once: only when `into` does not exist yet. Files and folders
-/// are copied, links skipped; the old copy stays where it was.
+/// are copied, links skipped; the old copy stays where it was. The copy
+/// goes to a staging folder beside `into` and is renamed into place only
+/// when complete, so a copy that fails part way (or a crash) leaves no
+/// `into`, and the next launch copies again.
 pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
     fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(to)?;
@@ -1166,9 +1236,17 @@ pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
     if into.exists() || !legacy.is_dir() {
         return;
     }
-    match copy(legacy, into) {
+    let Some(name) = into.file_name() else { return };
+    let mut staging_name = name.to_os_string();
+    staging_name.push(".adopting");
+    let staging = into.with_file_name(staging_name);
+    let _ = std::fs::remove_dir_all(&staging);
+    match copy(legacy, &staging).and_then(|()| std::fs::rename(&staging, into)) {
         Ok(()) => makepad_widgets::log!("storage: moved {} into its jail ({})", legacy.display(), into.display()),
-        Err(e) => makepad_widgets::log!("storage: could not copy {} into {}: {e}", legacy.display(), into.display()),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            makepad_widgets::log!("storage: could not copy {} into {} (retried at the next launch): {e}", legacy.display(), into.display());
+        }
     }
 }
 
