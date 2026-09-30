@@ -160,9 +160,37 @@ pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Opti
     }
 }
 
-/// Mail's host service gave an app an account, or took it away.
+/// The account a contained app's agent acts for (`contained::set_account_of`):
+/// the device for an app without accounts; for one that keeps accounts, the
+/// newest account Mail's host service granted it, or none yet.
+pub fn contained_account(app: &str) -> Option<String> {
+    let device = || Some(crate::ai_host::contained::ACCOUNT.to_owned());
+    let Some(storage) = super::host() else { return device() };
+    if !storage.spec(app).accounts {
+        return device();
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    {
+        octosense_mail_service::account_ids(&storage.layout().apps_root().join(".host"), app).pop()
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    None
+}
+
+/// Mail's host service gave an app an account, or took it away; its live
+/// agent is then bound to the account it acts for now.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
+    let change = mail_account_storage(storage, event);
+    let (octosense_mail_service::AccountEvent::Added { app_id, .. } | octosense_mail_service::AccountEvent::Removed { app_id, .. }) = event;
+    if storage.spec(app_id).accounts {
+        crate::ai_host::contained::account_changed(app_id);
+    }
+    change
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_account_storage(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
     use octosense_mail_service::AccountEvent;
     match event {
         AccountEvent::Added { app_id, account } => account_changed(storage, app_id, None, Some(account)),
@@ -211,6 +239,7 @@ pub fn memory_notice(storage: &Storage, app_id: &str) -> Option<String> {
 /// host storage is set up): the brokers' account changes and Mail's.
 pub fn install(storage: &'static Arc<Storage>) {
     register_native_specs(storage);
+    crate::ai_host::contained::set_account_of(Some(contained_account));
     crate::ai_host::app_peers::storage::observe_accounts(Some(Arc::new(move |app: &str, previous: Option<&str>, current: Option<&str>| {
         account_changed(storage, app, previous, current);
     })));

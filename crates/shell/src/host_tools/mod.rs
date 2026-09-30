@@ -374,17 +374,31 @@ impl approvals::AppConfirm for SheetBridge {
 /// under the app's jail, when the host's storage is set up, the app's agent
 /// has files, and the account is not suspended or refused.
 pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
-    let storage = crate::app_storage::host()?;
+    agent_workspace_in(crate::app_storage::host()?, app_id, account)
+}
+
+/// Whether `app_id`'s agents are per account: a native app's entry says so,
+/// a script app's (`card.<id>`) manifest `storage.accounts` (Mail); else it
+/// acts for the device.
+fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
     let app = app_of_peer(app_id);
-    let (keeps_accounts, has_files) = match crate::native_apps::find(app) {
-        Some(entry) => (entry.accounts, !entry.octos.is_empty() || crate::dev_mode::grants_all(app)),
-        // A script app (`card.<id>`) acts for the device.
-        None => (false, app_id != app),
+    match crate::native_apps::find(app) {
+        Some(entry) => entry.accounts,
+        None => app_id != app && storage.spec(app).accounts,
+    }
+}
+
+/// [`agent_workspace`] on `storage`.
+pub fn agent_workspace_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<PathBuf> {
+    let app = app_of_peer(app_id);
+    let has_files = match crate::native_apps::find(app) {
+        Some(entry) => !entry.octos.is_empty() || crate::dev_mode::grants_all(app),
+        None => app_id != app && storage.spec(app).agent_workspace != crate::app_storage::AgentWorkspace::None,
     };
     if !has_files {
         return None;
     }
-    let account = keeps_accounts.then_some(account);
+    let account = keeps_accounts(storage, app_id).then_some(account);
     if storage.is_signed_out(app, account) || storage.refused(app, account).is_some() {
         return None;
     }
@@ -393,22 +407,16 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
-/// Stub.
-pub fn agent_workspace_in(_storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<PathBuf> {
-    agent_workspace(app_id, account)
-}
-
-/// Stub.
-pub fn suspended_in(_storage: &crate::app_storage::Storage, app_id: &str, account: Option<&str>) -> bool {
-    suspended(app_id, account)
+/// [`suspended`] on `storage`.
+pub fn suspended_in(storage: &crate::app_storage::Storage, app_id: &str, account: Option<&str>) -> bool {
+    let account = if keeps_accounts(storage, app_id) { account } else { None };
+    storage.is_signed_out(app_of_peer(app_id), account)
 }
 
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
 pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
     let Some(storage) = crate::app_storage::host() else { return false };
-    let app = app_of_peer(app_id);
-    let keeps_accounts = crate::native_apps::find(app).is_some_and(|e| e.accounts);
-    storage.is_signed_out(app, if keeps_accounts { account } else { None })
+    suspended_in(storage, app_id, account)
 }
 
 // ------------------------------------------------------------ the env

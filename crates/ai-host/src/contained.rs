@@ -50,18 +50,45 @@ use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 
-/// Stub.
-pub fn set_account_of(_lookup: Option<fn(&str) -> Option<String>>) {}
+/// The account an app's peer acts for, as the host knows it (ADR 0004
+/// §11): [`ACCOUNT`] for an app without accounts; for one that keeps
+/// accounts (Mail's, from its host service) the account it uses, or `None`
+/// while it has none (no peer then). Unset (this crate's tests, a host
+/// without accounts): every app acts for the device.
+pub type AccountLookup = fn(&str) -> Option<String>;
 
-/// Stub.
-pub fn account_changed(_app_id: &str) -> bool {
-    false
+static ACCOUNT_OF: Mutex<Option<AccountLookup>> = Mutex::new(None);
+
+/// The shell installs its account lookup at startup (`None` removes it).
+pub fn set_account_of(lookup: Option<AccountLookup>) {
+    *ACCOUNT_OF.lock().unwrap_or_else(|e| e.into_inner()) = lookup;
+}
+
+/// The account `app_id`'s peer acts for now.
+pub fn account_of(app_id: &str) -> Option<String> {
+    let lookup = *ACCOUNT_OF.lock().unwrap_or_else(|e| e.into_inner());
+    match lookup {
+        Some(lookup) => lookup(app_id),
+        None => Some(ACCOUNT.to_owned()),
+    }
+}
+
+/// The host's account for `app_id` changed (Mail added or removed one):
+/// its live peer is bound to the account it acts for now (the broker
+/// revokes the old account's contexts and the host's lifecycle signs in or
+/// out). True when a peer was live.
+pub fn account_changed(app_id: &str) -> bool {
+    let Some(service) = live(|l| l.get(app_id).cloned()) else { return false };
+    service.set_account(account_of(app_id).as_deref());
+    true
 }
 
 /// A contained app's peer is `card.<app id>`; no native module id starts so.
 pub const PEER_PREFIX: &str = "card.";
-/// The Card runner has no accounts: every app's peer acts for the device.
+/// The account of an app without accounts: its peer acts for the device.
 pub const ACCOUNT: &str = "device";
+/// An app that keeps accounts has none yet.
+pub const SIGN_IN: &str = "Add an account in the app before using its assistant";
 /// The longest turn text an app may send.
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
 /// The largest reply delivered to an app (serialized JSON).
@@ -141,7 +168,7 @@ fn obtain(app_id: &str, factory: &dyn PeerFactory) -> Result<Arc<dyn OctosAppSer
     }
     let peer = peer_id(app_id)?;
     let service = factory.launch(&peer, app_id, &peer_services()).ok_or(UNAVAILABLE)?;
-    service.set_account(Some(ACCOUNT));
+    service.set_account(account_of(app_id).as_deref());
     Ok(live(|l| l.entry(app_id.to_owned()).or_insert(service).clone()))
 }
 
@@ -172,7 +199,8 @@ pub fn is_live(app_id: &str) -> bool {
 pub fn conversation(app_id: &str, instance: &str) -> Result<Arc<dyn OctosContext>, String> {
     let factory = FACTORY.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or(UNAVAILABLE)?;
     let service = obtain(app_id, factory.as_ref())?;
-    service.open_conversation(ContextSpec { account: ACCOUNT.to_owned(), instance: instance.to_owned(), services: service.services() })
+    let account = account_of(app_id).ok_or(SIGN_IN)?;
+    service.open_conversation(ContextSpec { account, instance: instance.to_owned(), services: service.services() })
 }
 
 /// Every contained app's live peer, by app id, so turning its agent off
@@ -305,7 +333,7 @@ impl ContainedOctos {
         }
         app.generation += 1;
         let context = app.service.open_conversation(ContextSpec {
-            account: ACCOUNT.to_owned(),
+            account: account_of(app_id).ok_or(SIGN_IN)?,
             instance: format!("{}-g{}", app.peer, app.generation),
             // The app's own handle: only what its manifest declares, even
             // on a peer the shell launched with every service for its panel.

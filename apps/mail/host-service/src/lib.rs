@@ -157,6 +157,22 @@ impl Transport for Network {
     }
 }
 
+/// The accounts `app_id` was granted, oldest first (ids only), from the
+/// service's state under `host_dir` (the Card runner's `<apps root>/.host`):
+/// the shell binds the app's agent to the newest (ADR 0004 §11).
+pub fn account_ids(host_dir: &Path, app_id: &str) -> Vec<String> {
+    let accounts = std::fs::read(host_dir.join("mail").join("accounts.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<Value>>(&b).ok())
+        .unwrap_or_default();
+    accounts
+        .iter()
+        .filter(|a| a["apps"].as_array().is_some_and(|apps| apps.iter().any(|x| x == app_id)))
+        .map(|a| text(a, "id").to_owned())
+        .filter(|id| !id.is_empty())
+        .collect()
+}
+
 /// Offer the service to the Card runner, over the network, with passwords in
 /// the platform's secret store.
 pub fn register() {
@@ -810,6 +826,18 @@ mod tests {
     fn ask(dir: &Path, app: &str, service: &str, args: Value, from_sheet: bool, host: &mut Host) -> Result<Value, String> {
         let heap = send(dir, app, service, args, from_sheet, host);
         wait(heap)
+    }
+
+    #[test]
+    fn should_list_only_the_accounts_an_app_was_granted_when_the_shell_asks() {
+        let dir = std::env::temp_dir().join(format!("mail-ids-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("mail")).unwrap();
+        let accounts = json!([{"id": "a1", "apps": ["os.mail"]}, {"id": "b2", "apps": ["os.other"]}, {"id": "c3", "apps": ["os.mail", "os.other"]}]);
+        std::fs::write(dir.join("mail/accounts.json"), accounts.to_string()).unwrap();
+        assert_eq!(account_ids(&dir, "os.mail"), ["a1", "c3"]);
+        assert!(account_ids(&dir.join("nowhere"), "os.mail").is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
