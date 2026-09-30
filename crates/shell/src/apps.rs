@@ -189,11 +189,15 @@ pub struct AgentApp {
     pub octos: Vec<String>,
     /// Its manifest, as the first-use sheet reads it.
     pub manifest: serde_json::Value,
+    /// A native app (`native-apps.json`); else a script app (App Hub).
+    pub native: bool,
 }
 
-/// Every app that declares an agent: native apps whose `native-apps.json`
-/// entry grants `octos.*`, and script apps (system and installed) whose
-/// manifest declares `octos.*`, whether or not they have asked yet.
+/// Every app that declares an agent (ADR 0004 §4): native apps whose
+/// `native-apps.json` entry grants `octos.*`, and script apps (system and
+/// installed) whose manifest declares `octos.*` or an `agent` block, or
+/// whose admitted bundle ships `tools.json` ([`script_agent_app`]), whether
+/// or not they have asked yet.
 pub fn agent_apps() -> Vec<AgentApp> {
     let mut out: Vec<AgentApp> = crate::native_apps::APPS
         .iter()
@@ -203,6 +207,7 @@ pub fn agent_apps() -> Vec<AgentApp> {
             name: crate::approvals::sheet::app_label(a.id),
             octos: a.octos.iter().map(|s| s.to_string()).collect(),
             manifest: serde_json::json!({ "agent": { "octos": a.octos } }),
+            native: true,
         })
         .collect();
     out.extend(script_agent_apps());
@@ -261,11 +266,32 @@ fn script_agent_apps() -> Vec<AgentApp> {
     Vec::new()
 }
 
-/// One script app's agent, from its admitted manifest.
-pub fn script_agent_app(manifest: &Path, id: &str, name: &str) -> Option<AgentApp> {
-    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(manifest).ok()?).ok()?;
+/// One script app's agent, from its admitted manifest and bundle (the
+/// manifest's directory): it has one when the manifest declares `octos.*`
+/// or an `agent` block, or the bundle ships its own tools (`tools.json`,
+/// loaded as App Hub admits it: `AgentBundle::load`, digest and every gate
+/// rule checked). News ships tools and declares no `octos.*`: it has an
+/// agent all the same.
+pub fn script_agent_app(manifest_path: &Path, id: &str, name: &str) -> Option<AgentApp> {
+    let text = std::fs::read_to_string(manifest_path).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
     let octos = octos_of(&manifest["capabilities"]);
-    (!octos.is_empty()).then(|| AgentApp { id: id.to_string(), name: name.to_string(), octos, manifest })
+    let agent_block = manifest.get("agent").is_some_and(serde_json::Value::is_object);
+    let declares = !octos.is_empty() || agent_block || bundle_ships_agent(manifest_path.parent()?, &text);
+    declares.then(|| AgentApp { id: id.to_string(), name: name.to_string(), octos, manifest, native: false })
+}
+
+/// Whether the bundle beside a manifest ships an agent App Hub admits.
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn bundle_ships_agent(bundle: &Path, manifest: &str) -> bool {
+    let Ok(parsed) = octosense_app_policy::AppManifest::parse(manifest) else { return false };
+    matches!(octosense_app_policy::AgentBundle::load(bundle, &parsed), Ok(Some(_)))
+}
+
+/// Without App Hub nothing admits a bundle: its `tools.json` is enough.
+#[cfg(not(any(feature = "app-hub", native_mobile)))]
+fn bundle_ships_agent(bundle: &Path, _manifest: &str) -> bool {
+    bundle.join("tools.json").is_file()
 }
 
 /// Card apps App Hub installed: each is an app of its own in the launcher,

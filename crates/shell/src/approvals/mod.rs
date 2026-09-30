@@ -322,6 +322,11 @@ pub fn register_agents(a: &mut Approvals, apps: &[crate::apps::AgentApp]) {
 pub fn take_revoked() -> Vec<String> {
     with(|a| a.consent.take_revoked()).unwrap_or_default()
 }
+/// The apps whose agent the person just allowed: the shell prepares their
+/// peer (`crate::agents::pump`).
+pub fn take_allowed() -> Vec<String> {
+    with(|a| a.consent.take_allowed()).unwrap_or_default()
+}
 pub fn close_settings() {
     with(|a| a.settings_open = false);
 }

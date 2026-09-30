@@ -88,6 +88,8 @@ struct FakeService {
     /// How many handles were the app's conversation (not a request context).
     conversations: AtomicUsize,
     released: AtomicBool,
+    /// How many times the shell prepared it.
+    prepared: AtomicUsize,
 }
 
 impl OctosAppService for FakeService {
@@ -123,6 +125,10 @@ impl OctosAppService for FakeService {
     fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
         self.conversations.fetch_add(1, Ordering::SeqCst);
         self.open_context(spec)
+    }
+    fn prepare(&self) -> Result<(), String> {
+        self.prepared.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
     fn release(&self) {
         self.released.store(true, Ordering::SeqCst);
@@ -172,6 +178,7 @@ impl PeerFactory for Peers {
             contexts: Mutex::default(),
             conversations: AtomicUsize::new(0),
             released: AtomicBool::new(false),
+            prepared: AtomicUsize::new(0),
         });
         self.launched.lock().unwrap().push((peer_id.to_owned(), service.clone()));
         Some(service)
@@ -204,7 +211,9 @@ fn ask(app: &str, service: &str, args: Value, from_sheet: bool) -> Result<Value,
 }
 
 fn serial() -> std::sync::MutexGuard<'static, ()> {
-    SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+    let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_for_tests();
+    guard
 }
 
 #[test]
@@ -428,9 +437,12 @@ fn contained_apps_get_only_the_octos_services_their_manifest_declares() {
     let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
     register(true, &peers);
     ask("com.example.reader", "octos.session.open", json!({}), false).expect("declared");
-    let granted = peers.granted.lock().unwrap().clone();
-    assert_eq!(granted.len(), 1);
-    assert_eq!(granted[0].1, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>(), "never all four");
+    // The peer serves the shell's panel too; the app's own context holds
+    // only what its manifest declares, never all four.
+    assert_eq!(peers.granted.lock().unwrap().len(), 1);
+    let specs = peers.service("card.com.example.reader").specs.lock().unwrap().clone();
+    assert_eq!(specs.len(), 1);
+    assert_eq!(specs[0].services, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>(), "never all four");
     let err = ask("com.example.reader", "octos.turn.start", json!({"text": "hi"}), false).unwrap_err();
     assert_eq!(err, NOT_DECLARED);
     let err = ask("com.example.unknown", "octos.session.open", json!({}), false).unwrap_err();
@@ -452,4 +464,49 @@ fn turning_an_agent_off_releases_its_live_peer_at_once() {
     // Allowed again later: a fresh peer, never the revoked one.
     ask(APP, "octos.turn.start", json!({"text": "again"}), false).expect("a reply");
     assert_eq!(peers.ids().len(), 2);
+}
+
+/// ADR 0004 §4, an agent for every app that declares one: the shell
+/// prepares a consented app's peer without the app calling `octos` (News
+/// ships tools.json and declares no `octos.*`); the app's own calls, the
+/// shell's panel and the preparation share ONE peer; the panel's
+/// conversation holds every service while the app's own context holds only
+/// what it declares; revoking releases the peer and a later preparation
+/// gets a fresh one.
+#[test]
+fn the_shell_prepares_a_consented_apps_peer_and_its_panel_shares_it() {
+    let _g = serial();
+    set_declared(manifests);
+    let peers = Peers::new(Turn::Reply(json!({"turn_id": "t1", "text": "ok"})));
+    register(true, &peers);
+    assert_eq!(prepare("os.news"), Err(UNAVAILABLE.to_string()), "no factory: nothing to prepare with");
+    set_factory(peers.clone());
+    prepare("os.news").expect("prepared");
+    assert!(is_live("os.news"));
+    assert_eq!(peers.ids(), vec!["card.os.news".to_string()]);
+    let news = peers.service("card.os.news");
+    assert_eq!(news.prepared.load(Ordering::SeqCst), 1, "bound now, before any turn");
+    assert_eq!(news.accounts.lock().unwrap().as_slice(), [Some(ACCOUNT.to_string())]);
+    // Preparing again is the same peer.
+    prepare("os.news").unwrap();
+    assert_eq!(peers.ids().len(), 1);
+    // The shell's panel: a conversation on the same peer, every service.
+    let panel = conversation("os.news", "shell-ask-1").expect("the person's lane");
+    assert!(panel.is_open());
+    assert_eq!(news.conversations.load(Ordering::SeqCst), 1);
+    assert_eq!(news.specs.lock().unwrap()[0].services.len(), OCTOS_SERVICES.len());
+    // An app that also calls `octos` itself uses that peer, with only what
+    // it declares.
+    prepare("com.example.reader").unwrap();
+    ask("com.example.reader", "octos.session.open", json!({}), false).expect("declared");
+    assert_eq!(peers.ids(), vec!["card.os.news".to_string(), "card.com.example.reader".to_string()], "no second peer");
+    let reader = peers.service("card.com.example.reader").specs.lock().unwrap().clone();
+    assert_eq!(reader[0].services, ["octos.session.history", "octos.session.open"].iter().map(|s| s.to_string()).collect::<BTreeSet<_>>());
+    // Turned off: released at once; allowed again, a fresh peer.
+    assert!(revoke("os.news"));
+    assert!(news.released.load(Ordering::SeqCst));
+    assert!(!panel.is_open(), "the panel's conversation closed with it");
+    assert!(!is_live("os.news"));
+    prepare("os.news").unwrap();
+    assert_eq!(peers.ids().iter().filter(|id| *id == "card.os.news").count(), 2);
 }

@@ -305,6 +305,15 @@ pub trait OctosAppService: Send + Sync {
     fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
         self.open_context(spec)
     }
+    /// Create or resume the app's peer now, without a turn: `peer/prepare`,
+    /// its tools registered, its session open, so the system agent's
+    /// `peer_list` shows it and `peer_send_input` reaches it (ADR 0004 §4:
+    /// the shell prepares a consented app's agent). Blocks until done (at
+    /// most a minute); call it off the UI thread. A service without a peer
+    /// of its own has nothing to prepare.
+    fn prepare(&self) -> Result<(), String> {
+        Ok(())
+    }
     /// The app is closing: close every context and release subscriptions.
     /// Does not stop a shared kernel or other apps' work.
     fn release(&self);

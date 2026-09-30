@@ -10,6 +10,12 @@
 //!
 //! The shell gives it pointer events first while it is open
 //! ([`ShellSystemChat::pointer`]) and the keyboard (`super::key`).
+//!
+//! The same pane is the "Ask <app>" panel (`app_panel: true`,
+//! [`crate::app_chat`]): an app agent's conversation, both lanes with their
+//! speakers, its composer and Stop. On a desktop it stands left of the
+//! system chat when both are open, so the two lanes show side by side; on a
+//! phone it is a full-screen sheet.
 
 use makepad_widgets::*;
 
@@ -100,6 +106,9 @@ pub struct ShellSystemChat {
     d: ShellDraw,
     #[live]
     tokens: ShellTokens,
+    /// The "Ask <app>" panel ([`crate::app_chat`]) instead of the system chat.
+    #[live]
+    app_panel: bool,
     #[rust]
     area: Area,
     #[rust]
@@ -119,19 +128,108 @@ pub struct ShellSystemChat {
     pub shown: Vec<String>,
 }
 
+/// The conversation a pane shows: the system chat's or an app's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    System,
+    App,
+}
+
+impl Source {
+    fn is_open(self) -> bool {
+        match self {
+            Source::System => super::is_open(),
+            Source::App => crate::app_chat::is_open(),
+        }
+    }
+    fn snapshot(self) -> ChatModel {
+        match self {
+            Source::System => super::snapshot(),
+            Source::App => crate::app_chat::snapshot(),
+        }
+    }
+    fn draft(self) -> String {
+        match self {
+            Source::System => super::draft(),
+            Source::App => crate::app_chat::draft(),
+        }
+    }
+    fn scroll(self) -> f64 {
+        match self {
+            Source::System => super::scroll(),
+            Source::App => crate::app_chat::scroll(),
+        }
+    }
+    fn scroll_by(self, dy: f64, max: f64) {
+        match self {
+            Source::System => super::scroll_by(dy, max),
+            Source::App => crate::app_chat::scroll_by(dy, max),
+        }
+    }
+    fn title(self) -> String {
+        match self {
+            Source::System => "Assistant".into(),
+            Source::App => format!("Ask {}", crate::app_chat::app().map(|a| a.name).unwrap_or_default()),
+        }
+    }
+    fn status(self, model: &ChatModel) -> String {
+        match self {
+            Source::System => phase_text(model.phase()),
+            Source::App => crate::app_chat::status_text(),
+        }
+    }
+    fn placeholder(self, question: bool) -> String {
+        if question {
+            return "Answer the question\u{2026}".into();
+        }
+        match self {
+            Source::System => "Ask the system agent\u{2026}".into(),
+            Source::App => format!("Ask {}\u{2026}", crate::app_chat::app().map(|a| a.name).unwrap_or_default()),
+        }
+    }
+    fn hint(self) -> String {
+        match self {
+            Source::System => "Ask the system agent anything: it can read and write its own workspace, search the web and brief your apps' agents. It asks you before anything outward.".into(),
+            Source::App => {
+                let name = crate::app_chat::app().map(|a| a.name).unwrap_or_default();
+                format!("Talk to {name}'s agent. The system agent can ask it things too: both show here, each with who spoke, and each side sees the other's recent turns. Stop stops both.")
+            }
+        }
+    }
+    fn assistant_label(self) -> &'static str {
+        "Assistant"
+    }
+    /// The composer is usable.
+    fn usable(self, model: &ChatModel) -> bool {
+        match self {
+            Source::System => matches!(model.phase(), Phase::Ready | Phase::Running { .. }),
+            Source::App => crate::app_chat::status() == crate::app_chat::Status::Ready,
+        }
+    }
+}
+
 impl ShellSystemChat {
+    fn source(&self) -> Source {
+        if self.app_panel {
+            Source::App
+        } else {
+            Source::System
+        }
+    }
+
     fn hit_at(&self, p: Vec2d) -> Option<Hit> {
         self.hits.iter().find(|(r, h)| *h != Hit::Pane && contains(*r, p)).or_else(|| self.hits.iter().find(|(r, _)| contains(*r, p))).map(|(_, h)| h.clone())
     }
 
     /// The shell's pointer hook: the pane's own rect is its own while open.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> Outcome {
-        if !super::is_open() || self.pane.size.x <= 0.0 {
+        let source = self.source();
+        if !source.is_open() || self.pane.size.x <= 0.0 {
             return Outcome::Ignored;
         }
         match event {
             Event::Scroll(e) if contains(self.pane, e.abs) => {
-                super::scroll_by(e.scroll.y, self.max_scroll);
+                source.scroll_by(e.scroll.y, self.max_scroll);
                 self.redraw(cx);
                 return Outcome::Taken;
             }
@@ -159,6 +257,8 @@ impl ShellSystemChat {
                 return Outcome::Ignored;
             }
             self.down = self.hit_at(p);
+            // A press in a pane gives it the keyboard.
+            crate::app_chat::focus(source == Source::App);
             if self.down == Some(Hit::Field) {
                 cx.show_text_ime(self.area, dvec2(self.pane.pos.x + PAD, self.pane.pos.y + self.pane.size.y - PAD - FIELD_H));
             }
@@ -170,7 +270,7 @@ impl ShellSystemChat {
             if hit.is_none() || hit != pressed {
                 return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
             }
-            let outcome = act(hit.unwrap());
+            let outcome = act(source, hit.unwrap());
             self.redraw(cx);
             return outcome;
         }
@@ -196,10 +296,11 @@ impl ShellSystemChat {
         };
         for (i, item) in model.items.iter().enumerate() {
             match item {
-                Item::Message { role, text, .. } => {
-                    let who = match role {
-                        Role::User => "You",
-                        Role::Assistant => "Assistant",
+                Item::Message { role, text, speaker, .. } => {
+                    let who = match (speaker, role) {
+                        (Some(name), _) => name.as_str(),
+                        (None, Role::User) => "You",
+                        (None, Role::Assistant) => self.source().assistant_label(),
                     };
                     lines.push(Line { text: who.into(), bold: true, small: true, dim: *role == Role::User, accent: false, gap_before: 12.0 });
                     let mut text = text.clone();
@@ -247,7 +348,8 @@ impl ShellSystemChat {
     fn draw_pane(&mut self, cx: &mut Cx2d, screen: Rect) {
         self.hits.clear();
         self.shown.clear();
-        if !super::is_open() {
+        let source = self.source();
+        if !source.is_open() {
             self.pane = Rect::default();
             return;
         }
@@ -257,7 +359,9 @@ impl ShellSystemChat {
             screen
         } else {
             let gap = tok.spacing.gaps_out;
-            rect(screen.pos.x + screen.size.x - gap - PANE_W, screen.pos.y + gap, PANE_W, (screen.size.y - gap * 2.0).max(240.0))
+            // "Ask <app>" stands left of the system chat when both are open.
+            let beside = if source == Source::App && super::is_open() { PANE_W + gap } else { 0.0 };
+            rect(screen.pos.x + screen.size.x - gap - PANE_W - beside, screen.pos.y + gap, PANE_W, (screen.size.y - gap * 2.0).max(240.0))
         };
         self.pane = pane;
         self.d.card(cx, pane, &tok.popups);
@@ -269,8 +373,8 @@ impl ShellSystemChat {
         let cw = pane.size.x - PAD * 2.0;
         let mut hits = Vec::new();
         let mut shown = Vec::new();
-        let model = super::snapshot();
-        let draft = super::draft();
+        let model = source.snapshot();
+        let draft = source.draft();
         let hover = self.hover;
 
         // Header.
@@ -280,14 +384,18 @@ impl ShellSystemChat {
             let close_w = b.width(cx, "Close");
             let close = b.draw(cx, x + cw - close_w, y, close_w, "Close", false);
             hits.push((close, Hit::Close));
-            let new_w = b.width(cx, "New conversation");
-            let new = b.draw(cx, close.pos.x - 8.0 - new_w, y, new_w, "New conversation", false);
-            hits.push((new, Hit::New));
-            b.d.label_elided(cx, rect(x, y, new.pos.x - x - 8.0, 24.0), true, tok.font.heading, ink, HAlign::Left, "Assistant");
+            let mut left = close.pos.x;
+            if source == Source::System {
+                let new_w = b.width(cx, "New conversation");
+                let new = b.draw(cx, close.pos.x - 8.0 - new_w, y, new_w, "New conversation", false);
+                hits.push((new, Hit::New));
+                left = new.pos.x;
+            }
+            b.d.label_elided(cx, rect(x, y, left - x - 8.0, 24.0), true, tok.font.heading, ink, HAlign::Left, &source.title());
         }
-        shown.push("Assistant".to_string());
+        shown.push(source.title());
         y += 30.0;
-        let status = phase_text(model.phase());
+        let status = source.status(&model);
         self.d.label_elided(cx, rect(x, y, cw, 16.0), false, tok.font.body_small, dim, HAlign::Left, &status);
         shown.push(status);
         y += 22.0;
@@ -299,15 +407,15 @@ impl ShellSystemChat {
         let field_y = bottom - FIELD_H;
         let running = model.phase().running_turn().is_some();
         let (label, hit) = if running { ("Stop", Hit::Stop) } else { ("Send", Hit::Send) };
-        let usable = matches!(model.phase(), Phase::Ready | Phase::Running { .. });
+        let usable = source.usable(&model);
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
             let button = b.draw(cx, x + cw - bw, field_y + (FIELD_H - 28.0) * 0.5, bw, label, usable && (running || !draft.trim().is_empty()));
             hits.push((button, hit));
             let field = rect(x, field_y, cw - bw - 8.0, FIELD_H);
-            let placeholder = if model.open_question().is_some() { "Answer the question\u{2026}" } else { "Ask the system agent\u{2026}" };
-            b.d.text_field(cx, field, &tok, &draft, placeholder, true, hover == Some(field), ink);
+            let placeholder = source.placeholder(model.open_question().is_some());
+            b.d.text_field(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink);
             hits.push((field, Hit::Field));
         }
         shown.push(format!("prompt: {draft}"));
@@ -334,7 +442,7 @@ impl ShellSystemChat {
         }
 
         // No provider: say so, with the way to fix it.
-        if model.phase() == &Phase::NoProvider {
+        if source == Source::System && model.phase() == &Phase::NoProvider {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let w = b.width(cx, "Open AI providers");
             let r = b.draw(cx, x, top + 12.0, w, "Open AI providers", true);
@@ -348,7 +456,7 @@ impl ShellSystemChat {
         let total: f64 = heights.iter().sum();
         let room = (list_bottom - top).max(0.0);
         self.max_scroll = (total - room).max(0.0);
-        let scroll = super::scroll().min(self.max_scroll);
+        let scroll = source.scroll().min(self.max_scroll);
         let mut ly = list_bottom - total + scroll;
         for (line, h) in lines.iter().zip(&heights) {
             let line_top = ly + line.gap_before;
@@ -361,8 +469,8 @@ impl ShellSystemChat {
             self.d.label_elided(cx, rect(x, line_top, cw, h - line.gap_before), line.bold, px, color, HAlign::Left, &line.text);
         }
         if model.items.is_empty() && usable {
-            let hint = "Ask the system agent anything: it can read and write its own workspace, search the web and brief your apps' agents. It asks you before anything outward.";
-            let wrapped = self.d.wrap(cx, false, tok.font.body_small, hint, cw, 6);
+            let hint = source.hint();
+            let wrapped = self.d.wrap(cx, false, tok.font.body_small, &hint, cw, 6);
             let mut hy = top + 12.0;
             for l in wrapped {
                 self.d.label_elided(cx, rect(x, hy, cw, 18.0), false, tok.font.body_small, dim, HAlign::Left, &l);
@@ -376,7 +484,17 @@ impl ShellSystemChat {
 }
 
 /// What a press does.
-fn act(hit: Hit) -> Outcome {
+fn act(source: Source, hit: Hit) -> Outcome {
+    if source == Source::App {
+        match hit {
+            Hit::Close => crate::app_chat::close(),
+            Hit::Send => crate::app_chat::send_draft(),
+            Hit::Stop => crate::app_chat::stop(),
+            Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
+            Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane => {}
+        }
+        return Outcome::Taken;
+    }
     match hit {
         Hit::Close => super::close(),
         Hit::New => super::new_conversation(),

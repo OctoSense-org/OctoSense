@@ -1,0 +1,358 @@
+//! "Ask <app>" and an agent for every app (ADR 0004 §4, §6): which apps
+//! have an agent, the conversation's two lanes with their speakers, the
+//! panel on a fake peer (it opens a sharing context and sends the person's
+//! turns there; Stop; revocation), and what the system agent is told.
+
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+
+use super::model::{Conversation, LANE_PERSON, LANE_SYSTEM_AGENT};
+use crate::ai_host::app_peers::{Availability, ContextEvent, ContextOp, ContextSpec, Deployment, EventSink, ModelInfo, OctosAppService, OctosContext, SettingsEntry, TurnTrigger, OCTOS_SERVICES};
+use crate::apps::AgentApp;
+use crate::system_chat::model::{Item, Role};
+
+fn labels(c: &Conversation) -> Vec<(String, String)> {
+    c.chat
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Message { speaker, text, .. } => Some((speaker.clone().unwrap_or_default(), text.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn env(lane: &str, turn: &str, cursor: u64, kind: &str, data: Value) -> Value {
+    json!({"method": "projection/envelope", "lane": lane,
+        "params": {"turn_id": turn, "cursor": {"seq": cursor}, "payload": {"type": kind, "data": data}}})
+}
+
+// ---------------------------------------------------------------- which apps
+
+/// News ships `tools.json` (G3) and declares no `octos.*`: it has an agent.
+/// An app with neither tools nor an agent block has none; a manifest's
+/// `agent` block is enough.
+#[test]
+fn news_is_listed_as_having_an_agent() {
+    let dir = std::env::temp_dir().join(format!("octosense-ask-apps-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    let news = crate::host_tools::script_apps::tests::stamped_bundle("news", "ask", |_, _| {});
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    let news = {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/news/bundle");
+        let d = dir.join("news");
+        std::fs::create_dir_all(&d).unwrap();
+        for f in ["manifest.json", "tools.json"] {
+            std::fs::copy(src.join(f), d.join(f)).unwrap();
+        }
+        d
+    };
+    let app = crate::apps::script_agent_app(&news.join("manifest.json"), "os.news", "News").expect("News has an agent");
+    assert!(app.octos.is_empty(), "it declares no octos.* service");
+    assert!(!app.native);
+    assert_eq!(crate::agents::peer_of(&app), "card.os.news");
+    // No tools, no agent block, no octos.*: no agent.
+    let clock = dir.join("clock");
+    std::fs::create_dir_all(&clock).unwrap();
+    std::fs::write(clock.join("manifest.json"), r#"{"id":"org.example.clock","capabilities":["storage"]}"#).unwrap();
+    assert!(crate::apps::script_agent_app(&clock.join("manifest.json"), "org.example.clock", "Clock").is_none());
+    std::fs::write(clock.join("manifest.json"), r#"{"id":"org.example.clock","capabilities":["storage"],"agent":{"profile":"read-only"}}"#).unwrap();
+    assert!(crate::apps::script_agent_app(&clock.join("manifest.json"), "org.example.clock", "Clock").is_some(), "an agent block declares one");
+    // Found by what the shell knows of a window: its launcher id or name.
+    let apps = vec![app.clone()];
+    for name in ["os.news", "news", "News", "card.os.news", "hub:os.news"] {
+        assert_eq!(crate::agents::find_in(&apps, name).map(|a| a.id), Some("os.news".to_string()), "{name}");
+    }
+    // Native apps come from native-apps.json (Rinx's agent block).
+    assert!(crate::apps::agent_apps().iter().any(|a| a.id == "rinx" && a.native));
+    let _ = std::fs::remove_dir_all(&news);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The consent store tells the shell which agents were just allowed (it
+/// prepares their peers); turning one off takes it back.
+#[test]
+fn allowing_an_agent_queues_its_preparation() {
+    let mut store = crate::approvals::consent::ConsentStore::memory();
+    let tap = crate::approvals::rules::ApprovalGesture::sheet_tap();
+    store.set(&tap, "os.news", true, 1);
+    store.set(&tap, "org.example.trip", true, 1);
+    store.turn_off("org.example.trip", 2);
+    assert_eq!(store.take_allowed(), ["os.news".to_string()]);
+    assert!(store.take_allowed().is_empty(), "once");
+    assert_eq!(store.take_revoked(), ["org.example.trip".to_string()]);
+}
+
+// ---------------------------------------------------------------- the lanes
+
+/// Both lanes, merged, each message with who spoke: the person's turn in
+/// the panel, the system agent's `peer/input` turn, and the agent's
+/// answers in each lane. The panel is busy while either lane runs.
+#[test]
+fn both_lanes_show_with_their_speakers_and_run_in_parallel() {
+    let mut c = Conversation::new("News");
+    // The system agent asks for a digest (its lane).
+    c.apply(&json!({"method": "turn/started", "lane": LANE_SYSTEM_AGENT, "params": {"turn_id": "s1"}}));
+    c.apply(&json!({"method": "projection/envelope", "lane": LANE_SYSTEM_AGENT, "speaker": {"kind": "system_agent"}, "display_text": "Give me today's digest",
+        "params": {"turn_id": "s1", "cursor": {"seq": 10}, "payload": {"type": "user_message", "data": {"text": "[from the system agent] Give me today's digest"}}}}));
+    c.apply(&env(LANE_SYSTEM_AGENT, "s1", 11, "assistant_delta", json!({"assistant_segment_id": "s1:1", "text": "Working on the digest"})));
+    assert!(c.busy());
+    // Meanwhile the person asks in the panel (their lane).
+    c.apply(&json!({"method": "projection/envelope", "lane": LANE_PERSON, "speaker": {"kind": "person", "label": "News"},
+        "params": {"turn_id": "p1", "cursor": {"seq": 12}, "payload": {"type": "user_message", "data": {"text": "[from the person: News] what are you working on?"}}}}));
+    c.apply(&env(LANE_PERSON, "p1", 13, "assistant_persisted", json!({"assistant_segment_id": "p1:1", "text": "A digest for the system agent."})));
+    c.apply(&env(LANE_PERSON, "p1", 14, "turn_terminal", json!({"outcome": "completed"})));
+    assert!(c.busy(), "the system agent's lane still runs");
+    c.apply(&env(LANE_SYSTEM_AGENT, "s1", 15, "assistant_persisted", json!({"assistant_segment_id": "s1:1", "text": "Working on the digest: 3 stories."})));
+    c.apply(&env(LANE_SYSTEM_AGENT, "s1", 16, "turn_terminal", json!({"outcome": "completed"})));
+    assert!(!c.busy());
+    assert_eq!(
+        labels(&c),
+        [
+            ("System agent".to_string(), "Give me today's digest".to_string()),
+            ("News's agent, to the system agent".to_string(), "Working on the digest: 3 stories.".to_string()),
+            ("You".to_string(), "what are you working on?".to_string()),
+            ("News's agent".to_string(), "A digest for the system agent.".to_string()),
+        ]
+    );
+    // A late envelope of an ended turn does not make it run again.
+    c.apply(&json!({"method": "projection/envelope", "lane": LANE_PERSON, "speaker": {"kind": "person"},
+        "params": {"turn_id": "p1", "cursor": {"seq": 12}, "payload": {"type": "user_message", "data": {"text": "what are you working on?"}}}}));
+    assert!(!c.busy());
+}
+
+/// The merged history (both transcripts, by time) shows the same speakers.
+#[test]
+fn the_merged_history_names_its_speakers() {
+    let mut c = Conversation::new("News");
+    c.load_history(&json!([
+        {"role": "user", "content": "[from the system agent] digest please", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "digest please", "thread_id": "s1"},
+        {"role": "user", "content": "[from the person: News] focus on tech", "lane": "person", "speaker": {"kind": "person", "label": "News"}, "display_text": "focus on tech", "thread_id": "p1"},
+        {"role": "assistant", "content": "Tech it is.", "lane": "person", "thread_id": "p1"},
+        {"role": "assistant", "content": "Here is the tech digest.", "lane": "system_agent", "thread_id": "s1"},
+        {"role": "user", "content": "[from the app] refresh", "lane": "person", "thread_id": "a1"},
+    ]));
+    assert_eq!(
+        labels(&c),
+        [
+            ("System agent".to_string(), "digest please".to_string()),
+            ("You".to_string(), "focus on tech".to_string()),
+            ("News's agent".to_string(), "Tech it is.".to_string()),
+            ("News's agent, to the system agent".to_string(), "Here is the tech digest.".to_string()),
+            ("You".to_string(), "refresh".to_string()),
+        ]
+    );
+}
+
+// ---------------------------------------------------------------- the panel
+
+struct FakeContext {
+    ops: Mutex<Vec<ContextOp>>,
+    open: AtomicBool,
+    follower: Mutex<Option<EventSink>>,
+}
+
+impl OctosContext for FakeContext {
+    fn call(&self, op: ContextOp, sink: EventSink) -> Result<(), String> {
+        if !self.open.load(Ordering::SeqCst) {
+            return Err("closed".into());
+        }
+        self.ops.lock().unwrap().push(op.clone());
+        match op {
+            ContextOp::History => sink(ContextEvent::Complete(Ok(json!({"messages": [
+                {"role": "user", "content": "[from the system agent] earlier", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "earlier"},
+            ]})))),
+            ContextOp::TurnFrom { text, .. } => {
+                // The kernel's events reach the follower, then the answer.
+                if let Some(follower) = self.follower.lock().unwrap().clone() {
+                    follower(ContextEvent::Data(json!({"method": "projection/envelope", "lane": "person", "speaker": {"kind": "person"}, "display_text": text,
+                        "params": {"turn_id": "p9", "cursor": {"seq": 90}, "payload": {"type": "user_message", "data": {"text": text}}}})));
+                    follower(ContextEvent::Data(env("person", "p9", 91, "assistant_persisted", json!({"assistant_segment_id": "p9:1", "text": "Noted."}))));
+                    follower(ContextEvent::Data(env("person", "p9", 92, "turn_terminal", json!({"outcome": "completed"}))));
+                }
+                sink(ContextEvent::Complete(Ok(json!({"text": "Noted."}))));
+            }
+            _ => sink(ContextEvent::Complete(Ok(json!({})))),
+        }
+        Ok(())
+    }
+    fn close(&self) {
+        self.open.store(false, Ordering::SeqCst);
+    }
+    fn is_open(&self) -> bool {
+        self.open.load(Ordering::SeqCst)
+    }
+    fn subscribe(&self, sink: Option<EventSink>) {
+        *self.follower.lock().unwrap() = sink;
+    }
+}
+
+#[derive(Default)]
+struct FakePeer {
+    conversations: Mutex<Vec<(ContextSpec, Arc<FakeContext>)>>,
+    prepared: Mutex<usize>,
+    released: AtomicBool,
+}
+
+impl OctosAppService for FakePeer {
+    fn deployment(&self) -> Deployment {
+        Deployment::Hosted
+    }
+    fn availability(&self) -> Availability {
+        Availability::Ready
+    }
+    fn services(&self) -> BTreeSet<String> {
+        OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()
+    }
+    fn model(&self) -> Option<ModelInfo> {
+        None
+    }
+    fn settings_entry(&self) -> SettingsEntry {
+        SettingsEntry::Host
+    }
+    fn set_account(&self, _account: Option<&str>) {}
+    fn open_context(&self, _spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        Err("the panel opens the app's conversation, never a plain context".into())
+    }
+    fn open_conversation(&self, spec: ContextSpec) -> Result<Arc<dyn OctosContext>, String> {
+        let context = Arc::new(FakeContext { ops: Mutex::default(), open: AtomicBool::new(true), follower: Mutex::default() });
+        self.conversations.lock().unwrap().push((spec, context.clone()));
+        Ok(context)
+    }
+    fn prepare(&self) -> Result<(), String> {
+        *self.prepared.lock().unwrap() += 1;
+        Ok(())
+    }
+    fn release(&self) {
+        self.released.store(true, Ordering::SeqCst);
+        for (_, c) in self.conversations.lock().unwrap().iter() {
+            c.close();
+        }
+    }
+    fn shutdown(&self) {}
+}
+
+#[derive(Default)]
+struct FakePeers(Mutex<Vec<(String, Arc<FakePeer>)>>);
+
+impl crate::ai_host::contained::PeerFactory for FakePeers {
+    fn launch(&self, peer_id: &str, _app_id: &str, _services: &BTreeSet<String>) -> Option<Arc<dyn OctosAppService>> {
+        let peer = Arc::new(FakePeer::default());
+        self.0.lock().unwrap().push((peer_id.to_string(), peer.clone()));
+        Some(peer)
+    }
+}
+
+fn wait(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The panel, end to end on a fake peer: it asks consent first; once the
+/// person allowed the agent it opens a SHARING context on the app's peer
+/// (`open_conversation`, never a plain context), follows both lanes, loads
+/// the merged history, and sends the person's words as a person turn in
+/// that context. The shell prepares an allowed agent's peer. Turning the
+/// agent off releases the peer and closes the panel's context.
+#[test]
+fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
+    const APP: &str = "org.example.asktest";
+    let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    if crate::approvals::with(|_| ()).is_none() {
+        crate::approvals::init_memory();
+    }
+    crate::approvals::with(|a| a.consent.turn_off(APP, 1));
+    let peers = Arc::new(FakePeers::default());
+    crate::ai_host::contained::set_factory(peers.clone());
+    let app = AgentApp { id: APP.into(), name: "Ask Test".into(), octos: Vec::new(), manifest: json!({"capabilities": ["storage"]}), native: false };
+
+    // Off: the panel says so and opens nothing.
+    super::open_app(app.clone());
+    assert_eq!(super::status(), super::Status::Off);
+    assert!(peers.0.lock().unwrap().is_empty(), "no peer for an agent that is off");
+
+    // The person allows it (Settings, or the first-use sheet).
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), APP, true, 2));
+    assert_eq!(crate::agents::access(APP), crate::agents::Access::Allowed);
+    super::pump();
+    wait("the conversation", || super::status() == super::Status::Ready);
+    let (spec, context) = {
+        let convs = &peers.0.lock().unwrap()[0].1;
+        let c = convs.conversations.lock().unwrap();
+        (c[0].0.clone(), c[0].1.clone())
+    };
+    assert_eq!(peers.0.lock().unwrap()[0].0, format!("card.{APP}"));
+    assert_eq!(spec.services.len(), OCTOS_SERVICES.len(), "the panel reads history, starts and stops turns");
+    assert_eq!(context.ops.lock().unwrap().as_slice(), [ContextOp::History]);
+    assert!(super::snapshot().items.iter().any(|i| matches!(i, Item::Message { speaker: Some(s), text, .. } if s == "System agent" && text == "earlier")), "the merged history");
+
+    // The person's words: a person turn in that context.
+    super::send("focus the digest on technology");
+    assert_eq!(context.ops.lock().unwrap().last(), Some(&ContextOp::TurnFrom { text: "focus the digest on technology".into(), trigger: TurnTrigger::Person }));
+    let model = super::snapshot();
+    let said: Vec<(Role, String, String)> = model.items.iter().filter_map(|i| match i {
+        Item::Message { role, text, speaker, .. } => Some((*role, speaker.clone().unwrap_or_default(), text.clone())),
+        _ => None,
+    }).collect();
+    assert!(said.contains(&(Role::User, "You".into(), "focus the digest on technology".into())), "{said:?}");
+    assert!(said.contains(&(Role::Assistant, "Ask Test's agent".into(), "Noted.".into())), "{said:?}");
+
+    // The shell prepares an allowed agent's peer: the panel's is the same
+    // one (nothing more to do); another allowed app's is bound now.
+    crate::agents::prepare(&app);
+    assert_eq!(crate::agents::prepared(APP), Some(crate::agents::Prepared::Ready));
+    assert_eq!(peers.0.lock().unwrap().len(), 1, "one peer per app");
+    const OTHER: &str = "org.example.asktest2";
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), OTHER, true, 2));
+    let other = AgentApp { id: OTHER.into(), name: "Other".into(), ..app.clone() };
+    crate::agents::prepare(&other);
+    wait("the preparation", || crate::agents::prepared(OTHER) == Some(crate::agents::Prepared::Ready));
+    let prepared = peers.0.lock().unwrap().iter().find(|(id, _)| *id == format!("card.{OTHER}")).map(|(_, p)| *p.prepared.lock().unwrap());
+    assert_eq!(prepared, Some(1), "bound before any turn: the system agent's peer_list shows it");
+    crate::approvals::with(|a| a.consent.turn_off(OTHER, 3));
+    crate::ai_host::contained::revoke(OTHER);
+
+    // Turned off: the peer goes, the panel's context closes, and it says so.
+    crate::approvals::with(|a| a.consent.turn_off(APP, 3));
+    assert!(crate::ai_host::contained::revoke(APP));
+    assert!(peers.0.lock().unwrap().iter().find(|(id, _)| *id == format!("card.{APP}")).unwrap().1.released.load(Ordering::SeqCst));
+    super::pump();
+    assert_eq!(super::status(), super::Status::Off);
+    assert!(!context.is_open());
+    super::close();
+}
+
+// ---------------------------------------------------------------- the system agent
+
+/// The system agent hears which apps have an agent and where each stands,
+/// including the ones it cannot see in peer_list; the pane hides the note.
+#[test]
+fn the_system_agent_is_told_about_agents_it_cannot_list() {
+    let note = crate::agents::system_note().expect("Rinx has an agent in every build");
+    assert!(note.starts_with("[OctoSense: apps with an agent:"), "{note}");
+    assert!(note.contains("Rinx [rinx]"), "{note}");
+    let sent = format!("{note}\nask News for a digest");
+    assert_eq!(crate::agents::strip_note(&sent), "ask News for a digest");
+    assert_eq!(crate::agents::strip_note("ask News"), "ask News");
+    // The tools it can call, answered by the shell.
+    let names: Vec<String> = crate::agents::declarations().iter().map(|d| d["name"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, [crate::agents::LIST_TOOL, crate::agents::ASK_TOOL]);
+    match crate::agents::call(crate::agents::LIST_TOOL, &json!({})) {
+        crate::ai_host::app_peers::host_tools::ToolOutcome::Ok(v) => {
+            assert!(v["apps"].as_array().unwrap().iter().any(|a| a["app"] == "rinx" && a["what_to_do"].as_str().is_some()), "{v}");
+        }
+        other => panic!("{other:?}"),
+    }
+    match crate::agents::call(crate::agents::ASK_TOOL, &json!({"app": "no such app"})) {
+        crate::ai_host::app_peers::host_tools::ToolOutcome::Error { kind, .. } => assert_eq!(kind, "no_such_agent"),
+        other => panic!("{other:?}"),
+    }
+}

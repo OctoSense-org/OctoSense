@@ -30,6 +30,16 @@
 //! the `octos.*` services its manifest declares ([`declared`]), and turning
 //! its agent off in Settings releases the live peer at once ([`revoke`]).
 //!
+//! **An agent for every app that declares one** (ADR 0004 §4). A script
+//! app's peer does not wait for the app to call `octos`: once the person
+//! allowed its agent, the shell prepares it ([`prepare`]: `peer/prepare`,
+//! its tools registered), so the system agent's `peer_list` shows it and
+//! `peer_send_input` reaches it, and the shell's "Ask <app>" panel opens
+//! the app's conversation on it ([`conversation`]). The app's own `octos`
+//! calls use the same peer, still gated by the services its manifest
+//! declares; an app that declares none (News: it ships `tools.json` only)
+//! never calls it, and has its agent all the same.
+//!
 //! The logic does not need a kernel: peers come from a [`PeerFactory`]. The
 //! shell's factory (`cfg(kernel)`) launches them through
 //! `octosense_app_peers::hosted`; tests use a fake one.
@@ -96,12 +106,74 @@ pub fn declared(app_id: &str) -> Result<BTreeSet<String>, String> {
     Ok(services)
 }
 
+/// Where the shell's own preparations get peers ([`prepare`]): the factory
+/// the registered service uses (`register_contained`), or a test's.
+static FACTORY: Mutex<Option<Arc<dyn PeerFactory>>> = Mutex::new(None);
+
+/// The factory [`prepare`] launches peers with (the shell's, at startup).
+pub fn set_factory(factory: Arc<dyn PeerFactory>) {
+    *FACTORY.lock().unwrap_or_else(|e| e.into_inner()) = Some(factory);
+}
+
+/// The services a peer is launched with: all of them, for the shell's own
+/// surfaces (the "Ask <app>" panel reads history, starts turns and stops
+/// them). What the APP may call is still only what its manifest declares,
+/// twice over: [`ContainedOctos`] checks [`declared`] before any call
+/// reaches the peer, and the app's own context is opened with exactly
+/// those services (the broker checks every call against its context's).
+fn peer_services() -> BTreeSet<String> {
+    octosense_app_peers::OCTOS_SERVICES.iter().map(|s| s.to_string()).collect()
+}
+
+/// `app_id`'s live peer, or a new one from `factory` (kept live, so every
+/// caller shares ONE peer per app).
+fn obtain(app_id: &str, factory: &dyn PeerFactory) -> Result<Arc<dyn OctosAppService>, String> {
+    if let Some(service) = live(|l| l.get(app_id).cloned()) {
+        return Ok(service);
+    }
+    let peer = peer_id(app_id)?;
+    let service = factory.launch(&peer, app_id, &peer_services()).ok_or(UNAVAILABLE)?;
+    service.set_account(Some(ACCOUNT));
+    Ok(live(|l| l.entry(app_id.to_owned()).or_insert(service).clone()))
+}
+
+/// The shell prepares `app_id`'s agent (the person allowed it): its peer is
+/// created or resumed and its tools registered now, without a turn. Blocks
+/// (at most a minute): call it off the UI thread. Consent is the caller's
+/// check (the shell asks `approvals::consent_granted` first).
+pub fn prepare(app_id: &str) -> Result<(), String> {
+    let factory = FACTORY.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or(UNAVAILABLE)?;
+    let service = obtain(app_id, factory.as_ref())?;
+    service.prepare()
+}
+
+/// Whether `app_id` has a live peer (prepared, or opened by the app).
+pub fn is_live(app_id: &str) -> bool {
+    live(|l| l.contains_key(app_id))
+}
+
+/// The app's conversation for a shell surface (the "Ask <app>" panel, the
+/// person's lane): a new sharing context on the app's one peer, created if
+/// needed. Consent is the caller's check.
+pub fn conversation(app_id: &str, instance: &str) -> Result<Arc<dyn OctosContext>, String> {
+    let factory = FACTORY.lock().unwrap_or_else(|e| e.into_inner()).clone().ok_or(UNAVAILABLE)?;
+    let service = obtain(app_id, factory.as_ref())?;
+    service.open_conversation(ContextSpec { account: ACCOUNT.to_owned(), instance: instance.to_owned(), services: service.services() })
+}
+
 /// Every contained app's live peer, by app id, so turning its agent off
 /// revokes it at once ([`revoke`]).
 static LIVE: Mutex<Option<HashMap<String, Arc<dyn OctosAppService>>>> = Mutex::new(None);
 
 fn live<R>(f: impl FnOnce(&mut HashMap<String, Arc<dyn OctosAppService>>) -> R) -> R {
     f(LIVE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new))
+}
+
+/// Tests: forget every live peer and the factory (the maps are global).
+#[cfg(test)]
+pub(crate) fn reset_for_tests() {
+    live(|l| l.clear());
+    *FACTORY.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// The person turned `app_id`'s agent off (Settings): its peer is released
@@ -208,10 +280,9 @@ impl ContainedOctos {
             self.apps.remove(app_id);
         }
         if !self.apps.contains_key(app_id) {
+            // The peer the shell prepared, if it did: one peer per app.
             let peer = peer_id(app_id)?;
-            let service = self.factory.launch(&peer, app_id, services).ok_or(UNAVAILABLE)?;
-            service.set_account(Some(ACCOUNT));
-            live(|l| l.insert(app_id.to_owned(), service.clone()));
+            let service = obtain(app_id, self.factory.as_ref())?;
             self.apps.insert(app_id.to_owned(), AppPeer { peer, service, context: None, generation: 0 });
         }
         let app = self.apps.get_mut(app_id).expect("inserted above");
@@ -222,7 +293,9 @@ impl ContainedOctos {
         let context = app.service.open_conversation(ContextSpec {
             account: ACCOUNT.to_owned(),
             instance: format!("{}-g{}", app.peer, app.generation),
-            services: app.service.services(),
+            // The app's own handle: only what its manifest declares, even
+            // on a peer the shell launched with every service for its panel.
+            services: services.clone(),
         })?;
         app.context = Some(context.clone());
         Ok(context)

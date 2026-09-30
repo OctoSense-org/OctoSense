@@ -43,8 +43,11 @@
 //!   interrupts its peer's running work; the kernel and other apps go on.
 //! - **The `octos` host service** ([`contained`]): contained apps the Card
 //!   runner hosts that declare `octos.*` get their own peer (`card.<app id>`)
-//!   under the same contract, while [`Policy::contained_apps`] is on. Tool
-//!   approvals are declined until the Card runner has an approval sheet.
+//!   under the same contract, while [`Policy::contained_apps`] is on. The
+//!   shell also prepares that peer for every app whose agent the person
+//!   allowed, whether or not the app calls `octos` (`contained::prepare`),
+//!   and opens the app's conversation on it for its "Ask <app>" panel
+//!   (`contained::conversation`). Approvals go to the shell's router.
 //! - **The system toolbox for app agents** (feature `toolbox-peers`, off by
 //!   default): the toolbox's grants and the executor the shell's host-tool
 //!   relay runs its calls on ([`toolbox_peers`]). Its results live in each
@@ -343,6 +346,11 @@ fn register_contained(kernel: bool, policy: &Policy) {
             gate,
             std::sync::Arc::new(contained::KernelPeers),
         )));
+        // The shell prepares consented apps' agents on the same peers
+        // (`contained::prepare`), unless contained apps are off.
+        if gate != ContainedGate::Off {
+            contained::set_factory(std::sync::Arc::new(contained::KernelPeers));
+        }
         log!("octos: contained apps' service registered ({gate:?})");
         return;
     }

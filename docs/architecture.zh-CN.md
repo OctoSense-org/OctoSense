@@ -165,7 +165,7 @@ flowchart TB
 | Agent | 是什么 | 状态 |
 | --- | --- | --- |
 | **系统 Agent** | `_main` profile 上的会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs` 中的 `SYSTEM_SESSION`）。它拥有并监督所有应用 peer。目前用户通过 Talk to Octos 客户端与它对话；Shell 还没有为它绘制对话界面 | 已在 main |
-| **应用 Agent** | 每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有（octos UPCR-2026-034，Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)） | Rinx（原生）已在 main；脚本应用在开关后可用；见下文 |
+| **应用 Agent** | 每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有（octos UPCR-2026-034，Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)） 用户可在应用自己的界面中，或在 Shell 的 **"Ask <app>" 面板**（`crates/shell/src/app_chat/`：状态栏的 "Ask <app>"、Shift+F8；桌面上位于系统聊天旁，手机上为全屏面板）与它对话，面板显示两条通道及发言者、输入框和停止按钮 | Rinx（原生）和每个带 Agent 的脚本应用已在 main，需首次使用同意；见下文 |
 
 每个应用 peer 都独立拥有：
 
@@ -178,7 +178,7 @@ flowchart TB
 目前谁有 peer（`crates/ai-host/src/lib.rs`，`Policy::shipped()`；`crates/app-peers/src/hosted.rs`，`effective_services` = 声明 ∩ 支持 ∩ 策略）：
 
 - **Rinx**，唯一获授权使用助手的原生应用（四个 `octos.*` 服务），需首次使用时的同意。
-- 声明了 `octos.*` 的**脚本应用**：每个应用一个 peer `card.<app id>`，账号为 `device`（`crates/ai-host/src/contained.rs`，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)），前提是 `Policy::contained_apps` 开启（发布策略中默认关闭；`OCTOSENSE_CONTAINED_APPS=1` 可开启）且用户在首次使用时同意。
+- **带 Agent 的脚本应用**：清单声明了 `octos.*` 或 `agent` 块，或应用包带有 `tools.json`（如 News）。每个应用一个 peer `card.<app id>`，账号为 `device`（`crates/ai-host/src/contained.rs`，[#106](https://github.com/OctoSense-org/OctoSense/pull/106)），在用户首次使用同意后可用（发布策略；`OCTOSENSE_CONTAINED_APPS=1` 不再询问，`0` 关闭）。用户一旦同意（以及启动时对已同意的应用），Shell 就会准备其 peer（`crates/shell/src/agents.rs`），因此即使应用从不调用 `octos`，系统 Agent 的 `peer_list` 也能看到它；对尚未同意或已关闭的应用，Shell 通过系统聊天中的提示以及 `agents.list` / `agents.ask` 宿主工具告知系统 Agent。
 - **AppCard**（可选）使用自己的内核连接和会话，而不是 peer。
 - 进程应用目前没有 Agent：只有 `ModuleHost::create` 中才会提供服务（peer link 规划中，步骤 8）。
 

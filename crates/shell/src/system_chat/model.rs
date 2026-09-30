@@ -58,6 +58,10 @@ pub enum Item {
         /// The ledger position (`cursor.seq`) of the envelope that made it:
         /// envelopes may arrive out of order, items stay in ledger order.
         seq: Option<u64>,
+        /// Who spoke, when the surface names speakers (an app's
+        /// conversation: "You", "System agent", "News's agent"); `None`:
+        /// the role's own label.
+        speaker: Option<String>,
     },
     Tool {
         call_id: String,
@@ -206,7 +210,7 @@ impl ChatModel {
 
     /// The person sent `text` as turn `turn`.
     pub fn start_turn(&mut self, turn: &str, text: &str) {
-        self.items.push(Item::Message { role: Role::User, text: text.to_string(), turn: Some(turn.to_string()), segment: None, seq: None });
+        self.items.push(Item::Message { role: Role::User, text: text.to_string(), turn: Some(turn.to_string()), segment: None, seq: None, speaker: None });
         self.prompts.push((turn.to_string(), text.to_string()));
         self.own_turns.insert(turn.to_string());
         self.phase = Phase::Running { turn: turn.to_string() };
@@ -261,7 +265,7 @@ impl ChatModel {
                 return;
             }
         }
-        self.items.push(Item::Message { role: Role::Assistant, text: delta.to_string(), turn: Some(turn.to_string()), segment: None, seq: None });
+        self.items.push(Item::Message { role: Role::Assistant, text: delta.to_string(), turn: Some(turn.to_string()), segment: None, seq: None, speaker: None });
         self.changed();
     }
 
@@ -446,7 +450,7 @@ impl ChatModel {
                     None if text.trim().is_empty() => return,
                     None => {
                         placed_by_delta(self);
-                        let item = Item::Message { role: Role::Assistant, text: text.to_string(), turn: Some(turn.to_string()), segment: Some(segment), seq };
+                        let item = Item::Message { role: Role::Assistant, text: text.to_string(), turn: Some(turn.to_string()), segment: Some(segment), seq, speaker: None };
                         self.insert_ordered(item, seq);
                     }
                 }
@@ -502,7 +506,7 @@ impl ChatModel {
     /// Add an item made from the envelope at ledger position `seq`: before
     /// the trailing items that came from later envelopes, never before
     /// anything the shell added itself (the person's prompt, a notice).
-    fn insert_ordered(&mut self, item: Item, seq: Option<u64>) {
+    pub fn insert_ordered(&mut self, item: Item, seq: Option<u64>) {
         let mut at = self.items.len();
         if let Some(seq) = seq {
             while at > 0 {
@@ -565,11 +569,12 @@ impl ChatModel {
     pub fn load_history(&mut self, messages: &Value) {
         let mut items = Vec::new();
         for row in messages.as_array().into_iter().flatten() {
-            let text = row.get("content").and_then(Value::as_str).unwrap_or("").to_string();
+            // The shell's note to the system agent is not the person's words.
+            let text = crate::agents::strip_note(row.get("content").and_then(Value::as_str).unwrap_or("")).to_string();
             let turn = row.get("turn_id").and_then(Value::as_str).map(str::to_string);
             match row.get("role").and_then(Value::as_str).unwrap_or("") {
-                "user" => items.push(Item::Message { role: Role::User, text, turn, segment: None, seq: None }),
-                "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn, segment: None, seq: None }),
+                "user" => items.push(Item::Message { role: Role::User, text, turn, segment: None, seq: None, speaker: None }),
+                "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn, segment: None, seq: None, speaker: None }),
                 "tool" => items.push(Item::Tool {
                     call_id: row.get("tool_call_id").and_then(Value::as_str).unwrap_or("").to_string(),
                     name: row.get("name").or_else(|| row.get("tool_name")).and_then(Value::as_str).unwrap_or("tool").to_string(),

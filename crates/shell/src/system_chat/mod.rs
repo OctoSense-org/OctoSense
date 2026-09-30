@@ -85,6 +85,11 @@ struct Chat {
     pub scroll: f64,
     /// App agents' questions routed here ([`crate::questions`]), by id.
     routed: Vec<(u64, model::Item)>,
+    /// What the shell told the system agent about the apps' agents last
+    /// ([`crate::agents::system_note`]): said again only when it changed.
+    told: Option<String>,
+    /// The shell's own lines in the conversation (an agents.ask sheet).
+    notes: Vec<model::Item>,
 }
 
 /// The id prefix of a routed question in the conversation.
@@ -139,6 +144,8 @@ fn with<R>(f: impl FnOnce(&mut Chat) -> R) -> R {
         worker: None,
         scroll: 0.0,
         routed: Vec::new(),
+        told: None,
+        notes: Vec::new(),
     });
     f(chat)
 }
@@ -267,7 +274,22 @@ pub fn send(text: &str) {
     let question = snapshot().open_question().map(|(id, n)| (id.to_string(), n));
     match question {
         Some((question, count)) => answer(&question, count, text, false),
-        None => command(Command::Send(text.to_string())),
+        None => {
+            // The apps' agents, when they changed since the system agent
+            // was last told (it cannot see an agent that is not allowed).
+            let note = crate::agents::system_note();
+            let fresh = with(|c| {
+                let fresh = note.is_some() && c.told != note;
+                if fresh {
+                    c.told = note.clone();
+                }
+                fresh
+            });
+            let note = if fresh { note.unwrap_or_default() } else { String::new() };
+            // Allowed agents get their peer before the system agent looks.
+            crate::agents::prepare_allowed();
+            command(Command::SendNoted { text: text.to_string(), note });
+        }
     }
 }
 
@@ -305,6 +327,10 @@ pub fn sync_host_tools() {
 }
 
 pub fn new_conversation() {
+    with(|c| {
+        c.told = None;
+        c.notes.clear();
+    });
     command(Command::NewConversation);
 }
 
@@ -314,6 +340,7 @@ pub fn snapshot() -> ChatModel {
     with(|c| {
         let mut model = c.shared.lock().unwrap_or_else(|e| e.into_inner()).model.clone();
         model.items.extend(c.routed.iter().map(|(_, item)| item.clone()));
+        model.items.extend(c.notes.iter().cloned());
         model
     })
 }
@@ -353,6 +380,19 @@ pub fn pump() {
                 }
             }
             Effect::ApprovalGone(_) => {}
+            // `agents.list` / `agents.ask`: the shell's own answer (the
+            // sheet `agents.ask` shows is the person's to answer).
+            Effect::ToolCall { call, reply } if crate::agents::is_agents_tool(&call.name) => {
+                let outcome = crate::agents::call(&call.name, &call.args);
+                if call.name == crate::agents::ASK_TOOL {
+                    let app = call.args["app"].as_str().unwrap_or("an app").to_string();
+                    with(|c| {
+                        c.notes.push(model::Item::Notice(format!("The system agent asks to use {app}'s assistant: allow or deny it on the sheet.")));
+                        c.ui_generation += 1;
+                    });
+                }
+                reply.finish(outcome);
+            }
             Effect::ToolCall { call, reply } => crate::host_tools::system_call(call, reply),
             Effect::ToolCancel(call_id) => crate::host_tools::system_cancel(&call_id),
         }
