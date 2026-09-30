@@ -109,6 +109,9 @@ pub fn icon_assets(style: UpstreamStyle) -> Vec<app_icon::IconAsset> {
     // Without App Hub linked: the same store icon, kept beside the other app art.
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
     wear(&mut assets, "apphub", include_str!("../../resources/icons/apps/apphub.svg").into());
+    // The system chat's dock entry and home chip (#143): its own art, so it
+    // never reads as the AI pane's app.
+    wear(&mut assets, "assistant", include_str!("../../resources/icons/apps/assistant.svg").into());
     assets.sort_by(|a, b| a.name.cmp(&b.name));
     assets
 }

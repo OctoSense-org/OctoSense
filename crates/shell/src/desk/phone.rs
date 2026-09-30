@@ -221,7 +221,7 @@ impl WmDesk {
             (*slot,client,status,connected)
         }).collect();
         for (slot,client,status,connected) in slots {
-            if matches!(slot.kind,crate::mobile_tiles::TileKind::Group(_)) {continue;}
+            if slot.kind.shell_drawn() {continue;}
             let shown_rect=Rect{pos:slot.rect.pos+dvec2(dx,0.0),size:slot.rect.size};
             let gave_up=phone.tiles.gave_up(slot.app);
             let entry=client.and_then(|c|phone.tiles.get(c));

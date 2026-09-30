@@ -164,7 +164,7 @@ flowchart TB
 
 | Agent | 是什么 | 状态 |
 | --- | --- | --- |
-| **系统 Agent** | `_main` profile 上的会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs` 中的 `SYSTEM_SESSION`）。它拥有并监督所有应用 peer。目前用户通过 Talk to Octos 客户端与它对话；Shell 还没有为它绘制对话界面 | 已在 main |
+| **系统 Agent** | `_main` profile 上的会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs` 中的 `SYSTEM_SESSION`）。它拥有并监督所有应用 peer。用户在 Shell 的**系统聊天**中与它对话（`crates/shell/src/system_chat/`，[#132](https://github.com/OctoSense-org/OctoSense/pull/132)：设置 → Assistant → Assistant chat、F8、桌面 Dock 上的 Assistant 图标或手机主屏的 Assistant 磁贴；桌面上为侧边面板，手机上为全屏），或通过已配对的 Talk to Octos 客户端 | 已在 main |
 | **应用 Agent** | 每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有（octos UPCR-2026-034，Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)） 用户可在应用自己的界面中，或在 Shell 的 **"Ask <app>" 面板**（`crates/shell/src/app_chat/`：状态栏的 "Ask <app>"、Shift+F8；桌面上位于系统聊天旁，手机上为全屏面板）与它对话，面板显示两条通道及发言者、输入框和停止按钮 | Rinx（原生）和每个带 Agent 的脚本应用已在 main，需首次使用同意；见下文 |
 
 每个应用 peer 都独立拥有：

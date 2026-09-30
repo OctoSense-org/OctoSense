@@ -521,6 +521,24 @@ mod tests {
         assert_eq!(dock_backdrop_level(&t, &glass), FROSTED_SHELF_BLUR_LEVEL);
         assert_eq!(dock_backdrop_level(&t, &flat), FROSTED_SHELF_BLUR_LEVEL);
     }
+
+    #[test]
+    fn the_dock_has_an_assistant_entry_when_the_build_has_an_assistant() {
+        // #143: the system chat's dock icon, only where there is a kernel.
+        assert_eq!(dock_assistant().is_some(), cfg!(kernel));
+        if let Some(entry) = dock_assistant() {
+            assert_eq!(entry.id, ASSISTANT_ENTRY);
+            assert!(!entry.id.starts_with("apps."), "not an app id: no client can claim it");
+        }
+    }
+
+    #[test]
+    fn the_assistant_entry_toggles_the_chat_and_an_app_entry_launches_the_app() {
+        let clients = vec![(7 as ClientId, "photos".to_string(), "Photos".to_string())];
+        assert!(matches!(dock_hit(ASSISTANT_ENTRY, &clients).0, ShelfHit::Assistant));
+        assert_eq!(dock_hit("photos", &clients), (ShelfHit::App("photos".into()), true));
+        assert_eq!(dock_hit("news", &clients), (ShelfHit::App("news".into()), false));
+    }
 }
 
 use crate::desk::WmState;
@@ -675,6 +693,8 @@ pub struct DrawDesktopChrome {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShelfHit {
     Launcher,
+    /// The system chat (the assistant): not an app, a shell pane (#143).
+    Assistant,
     App(String),
     Window(ClientId),
     ShowDesktop,
@@ -809,6 +829,7 @@ impl DesktopShelf {
                 .map(String::as_str)
                 .unwrap_or("app"),
             ShelfHit::Launcher => "applications",
+            ShelfHit::Assistant => ASSISTANT_ICON,
             _ => "app",
         };
         let size = if style == DesktopStyle::NextStep { r.size.x.min(r.size.y) } else if mac {
@@ -948,6 +969,37 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
     )
 }
 
+/// The dock's entry for the system chat (#143), right after the launcher.
+/// Not an app: its id has no `apps.` prefix, so no client can claim it.
+pub const ASSISTANT_ENTRY: &str = "shell.assistant";
+/// The art the entry draws: the shell's own (`resources/icons/apps/assistant.svg`,
+/// worn over every style in `octosense::style::icon_assets`).
+pub const ASSISTANT_ICON: &str = "assistant";
+
+/// The system chat's dock entry, in a build that has an assistant (the
+/// kernel); None otherwise, so no dead icon.
+pub fn dock_assistant() -> Option<crate::shell::menu::MenuItem> {
+    cfg!(kernel).then(|| crate::shell::menu::MenuItem {
+        id: ASSISTANT_ENTRY.into(),
+        label: "Assistant".into(),
+        icon: Some(Ico::Cpu),
+        kind: crate::shell::menu::MenuKind::Action,
+        checked: false,
+        disabled: false,
+        description: "Talk to the system agent (F8)".into(),
+        aliases: vec!["assistant".into(), "chat".into()],
+    })
+}
+
+/// What a dock entry does, and whether it shows the running dot: the
+/// assistant's while its chat is open, an app's while it has a window.
+fn dock_hit(id: &str, clients: &[(ClientId, String, String)]) -> (ShelfHit, bool) {
+    if id == ASSISTANT_ENTRY {
+        return (ShelfHit::Assistant, crate::system_chat::is_open());
+    }
+    (ShelfHit::App(id.into()), clients.iter().any(|(_, a, _)| a == id))
+}
+
 /// Center the icon and its running indicator as one group inside each dock cell.
 fn mac_icon_box(cell: Rect, hover: f64) -> Rect {
     let size = 54.0 + 8.0 * hover;
@@ -958,8 +1010,8 @@ fn mac_icon_box(cell: Rect, hover: f64) -> Rect {
 /// The compositor samples exactly the shelf it will paint this frame, including
 /// an interrupted style tween. Glass outside the dock cannot add a blur stack.
 fn dock_app_ids(state: &WmState) -> Vec<String> {
-    let mut apps: Vec<_> = crate::shell::launcher::apps()
-        .into_iter().filter(|app| !app.disabled).map(|app| app.id).collect();
+    let mut apps: Vec<_> = dock_assistant().map(|a| a.id).into_iter().chain(crate::shell::launcher::apps()
+        .into_iter().filter(|app| !app.disabled).map(|app| app.id)).collect();
     for client in state.layout.clients_on(state.layout.active) {
         if let Some(client) = state.clients.get(&client) {
             let id=format!("apps.{}",client.app);
@@ -1042,9 +1094,9 @@ impl Widget for DesktopShelf {
             self.d.set_material(state.material);
             let opacity = (1.0 - t.share(|s| s.tiling)) as f32;
             if opacity > 0.001 && !style.mobile() {
-                let mut apps: Vec<_> = crate::shell::launcher::apps()
+                let mut apps: Vec<_> = dock_assistant()
                     .into_iter()
-                    .filter(|a| !a.disabled)
+                    .chain(crate::shell::launcher::apps().into_iter().filter(|a| !a.disabled))
                     .collect();
                 let clients: Vec<_> = state
                     .layout
@@ -1145,7 +1197,8 @@ impl Widget for DesktopShelf {
                         self.button(cx, rect(x,y,w,cell), ShelfHit::Launcher, Ico::Menu, "Workspace", false, style, opacity);
                         for (i, app) in apps.iter().enumerate() {
                             let id = app.id.trim_start_matches("apps.");
-                            self.button(cx, rect(x,y+(i+1) as f64*cell,w,cell), ShelfHit::App(id.into()), app_icon(id), &app.label, clients.iter().any(|(_,a,_)| a==id), style, opacity);
+                            let (hit, running) = dock_hit(id, &clients);
+                            self.button(cx, rect(x,y+(i+1) as f64*cell,w,cell), hit, app_icon(id), &app.label, running, style, opacity);
                         }
                     } else if style == DesktopStyle::Windows2000 {
                         self.button(
@@ -1204,6 +1257,7 @@ impl Widget for DesktopShelf {
                         );
                         for (i, app) in apps.iter().enumerate() {
                             let id = app.id.trim_start_matches("apps.");
+                            let (hit, running) = dock_hit(id, &clients);
                             self.button(
                                 cx,
                                 rect(
@@ -1212,10 +1266,10 @@ impl Widget for DesktopShelf {
                                     cell,
                                     (h - 12.0).max(1.0),
                                 ),
-                                ShelfHit::App(id.into()),
+                                hit,
                                 app_icon(id),
                                 &app.label,
-                                clients.iter().any(|(_, a, _)| a == id),
+                                running,
                                 style,
                                 opacity,
                             );
