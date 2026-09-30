@@ -28,9 +28,14 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// An account id as the host keys it (stub).
+/// An account id as the host keys it, everywhere: surrounding whitespace
+/// trimmed and lowercased (Unicode `to_lowercase`), so `Alice@Example.org `
+/// and `alice@example.org` are one account. The account folder's name
+/// (`octosense_shell::app_storage::account_hash`) and the agent's memory tag
+/// (`broker::account_tag`) both hash this. No other folding: ids reach the
+/// host from the app that signed them in.
 pub fn normalize_account(account: &str) -> String {
-    account.to_owned()
+    account.trim().to_lowercase()
 }
 
 /// Why a storage call was refused.

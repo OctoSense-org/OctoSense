@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! <state dir>/                      mode 0700
-//!     <namespace, '/' → '_'>.peer   mode 0600: {"token": "…", "cwd": "…"}
+//!     <namespace, '/' → '_'>.peer   mode 0600: {"token", "cwd", "namespace", "name"}
 //! ```
 //!
 //! Brokers before this kept `<ns>.token` and `<ns>.cwd` side by side (the
@@ -22,6 +22,13 @@ pub struct PeerRecord {
     /// The workspace the peer was created with; `None`: not known (a peer
     /// from before the record whose `.cwd` was never written).
     pub cwd: Option<String>,
+    /// The kernel memory namespace the peer was made under, when it is not
+    /// the one the record is kept under (a peer made before accounts were
+    /// normalized); `None` in records from before this field: the key.
+    pub namespace: Option<String>,
+    /// The name a resume finds the peer by; `None` in records from before
+    /// this field: the app label and 32 bits of the namespace's tag.
+    pub name: Option<String>,
     /// Read from the legacy `.token`/`.cwd` files: save it to migrate.
     pub legacy: bool,
 }
@@ -49,13 +56,13 @@ pub fn load(dir: &Path, namespace: &str) -> Option<PeerRecord> {
     if let Ok(text) = std::fs::read_to_string(record_path(dir, namespace)) {
         let value: Value = serde_json::from_str(&text).ok()?;
         let token = non_empty(value["token"].as_str().map(str::to_owned))?;
-        let cwd = non_empty(value["cwd"].as_str().map(str::to_owned));
-        return Some(PeerRecord { token, cwd, legacy: false });
+        let text = |field: &str| non_empty(value[field].as_str().map(str::to_owned));
+        return Some(PeerRecord { token, cwd: text("cwd"), namespace: text("namespace"), name: text("name"), legacy: false });
     }
     let (token, cwd) = legacy_paths(dir, namespace);
     let token = non_empty(std::fs::read_to_string(token).ok())?;
     let cwd = non_empty(std::fs::read_to_string(cwd).ok());
-    Some(PeerRecord { token, cwd, legacy: true })
+    Some(PeerRecord { token, cwd, namespace: None, name: None, legacy: true })
 }
 
 /// Write the record atomically (a temporary file, owner-only, renamed over
@@ -64,7 +71,7 @@ pub fn save(dir: &Path, namespace: &str, record: &PeerRecord) -> Result<(), Stri
     private_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = record_path(dir, namespace);
     let tmp = path.with_extension("peer.tmp");
-    let body = json!({ "token": record.token, "cwd": record.cwd }).to_string();
+    let body = json!({ "token": record.token, "cwd": record.cwd, "namespace": record.namespace, "name": record.name }).to_string();
     let write = || -> std::io::Result<()> {
         let _ = std::fs::remove_file(&tmp);
         let mut options = std::fs::OpenOptions::new();
@@ -95,4 +102,12 @@ pub fn private_dir(dir: &Path) -> std::io::Result<()> {
         std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
+}
+
+/// Forget `namespace`'s record and legacy files (moved under another key).
+pub fn remove(dir: &Path, namespace: &str) {
+    let (token, cwd) = legacy_paths(dir, namespace);
+    for path in [record_path(dir, namespace), token, cwd] {
+        let _ = std::fs::remove_file(path);
+    }
 }
