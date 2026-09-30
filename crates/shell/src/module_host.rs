@@ -371,6 +371,11 @@ impl CloseGate {
     pub fn quit_waiting(&self) -> bool {
         self.quit_waiting
     }
+
+    /// No instance is asking the person.
+    pub fn idle(&self) -> bool {
+        self.pending.is_empty()
+    }
 }
 
 /// The isolate removes mod.res after bootstrap. Trusted framework themes
@@ -681,6 +686,17 @@ impl ModuleHost {
     /// A waiting quit can go ahead now (every refusing instance confirmed).
     pub fn take_quit_ready(&mut self) -> bool {
         self.close_gate.take_quit_ready()
+    }
+
+    /// The closes instances refused, for a quit that also waits on
+    /// process apps (`process_close::take_quit_ready`).
+    pub fn close_gate_mut(&mut self) -> &mut CloseGate {
+        &mut self.close_gate
+    }
+
+    /// Drop a waiting quit (a close of one app, or the quit went).
+    pub fn abandon_quit(&mut self) {
+        self.close_gate.close_asked();
     }
 
     /// Whether `client` is an instance whose module panicked.
