@@ -28,6 +28,11 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// An account id as the host keys it (stub).
+pub fn normalize_account(account: &str) -> String {
+    account.to_owned()
+}
+
 /// Why a storage call was refused.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StorageError {
@@ -239,6 +244,11 @@ mod tests {
         observe_accounts(None);
         account_changed("observer-probe", None, Some("b"));
         assert_eq!(*seen.lock().unwrap(), vec!["None->Some(\"a\")", "Some(\"a\")->None"]);
+    }
+
+    #[test]
+    fn should_normalize_an_account_by_trimming_and_lowercasing_it() {
+        assert_eq!(normalize_account("  Alice@Example.ORG\n"), "alice@example.org");
     }
 
     #[test]

@@ -3114,4 +3114,14 @@ mod tests {
         assert!(!a.contains("alice"));
         assert_eq!(a, app_namespace("rinx", "@alice:example.org"));
     }
+
+    /// One account key (ADR 0004 §11): the memory tag normalizes an account
+    /// the way the host's folder name does (`storage::normalize_account`).
+    #[test]
+    fn should_tag_one_account_once_when_its_case_or_spaces_differ() {
+        assert_eq!(account_tag("  @Alice:Example.ORG\n"), account_tag("@alice:example.org"));
+        assert_ne!(account_tag("@bob:example.org"), account_tag("@alice:example.org"));
+        // An already-normal id keeps its tag: existing namespaces stay put.
+        assert_eq!(account_tag("@a:x"), "82c93996fd659248");
+    }
 }
