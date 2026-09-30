@@ -65,6 +65,9 @@ HOSTINGS = ("module", "process", "process-if-vulkan")
 SHELL_LINKS = ("default", "mobile-apps", "opt-in", "off")
 # Every standard shell build runs the octos kernel as a shell service.
 BASE_DEFAULT = ["octos-core"]
+# Features on by default in one shell only: the phone offers app agents the
+# system toolbox (ADR 0002 §6), reading pages in its own WebView.
+SHELL_BASE_DEFAULT = {"phone": ["toolbox-peers"]}
 APP_KEYS = {"id", "feature", "crate", "source", "module", "bin", "default_features", "crate_features",
             "implies", "hosting", "shells", "native_mobile", "sandbox", "storage", "agent"}
 REQUIRED_KEYS = APP_KEYS - {"feature"}
@@ -487,7 +490,7 @@ def package_block(apps, shell, cargo_toml):
     package also depends on itself (optionally) turns that dependency on."""
     own = optional_deps(cargo_toml)
     linked = [app for app in apps if app["shells"][shell] != "off"]
-    default = BASE_DEFAULT + [feature_of(app) for app in linked if app["shells"][shell] == "default"]
+    default = BASE_DEFAULT + SHELL_BASE_DEFAULT.get(shell, []) + [feature_of(app) for app in linked if app["shells"][shell] == "default"]
     mobile = [feature_of(app) for app in linked if in_mobile_apps(app) and app["crate"] in own]
     lines = [f"default = {toml_list(default)}",
              f"mobile-apps = {toml_list(mobile + ['octosense-shell/mobile-apps'])}"]
