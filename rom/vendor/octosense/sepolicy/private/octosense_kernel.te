@@ -1,0 +1,17 @@
+# Home (platform-signed, platform_app domain) runs its octos kernel as a child
+# process in the same domain. The kernel serves its goal operator-control RPC on
+# a Unix socket in its data dir, Home's app data:
+#   <files>/octos-home/.octos/.octos-goal-control.sock
+# It unlinks a stale socket, binds (create), restricts it to 0600 (setattr),
+# and local clients connect to it (write). untrusted_app_all has these on
+# app_data_file sockets already (create_file_perms); platform_app lacks them.
+allow platform_app app_data_file:sock_file { create getattr setattr unlink write };
+
+# Harmless probes of the kernel's that fail closed, kept out of the audit log
+# (AOSP does the same for priv_app and untrusted apps' /proc/stat reads):
+# - the dynamic linker resolves its ld.config dir sections, /data/local/tests
+#   among them, at every exec;
+# - CPU and disk statistics read /proc/stat and stat mount points (/postinstall).
+dontaudit platform_app shell_test_data_file:dir search;
+dontaudit platform_app proc_stat:file { getattr open read };
+dontaudit platform_app postinstall_mnt_dir:dir getattr;

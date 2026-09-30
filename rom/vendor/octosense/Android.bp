@@ -1,17 +1,8 @@
 // Prebuilt OctoSense apps, re-signed with this ROM's platform certificate at
 // build time (android_app_import with certificate: "platform"), so signature
-// permissions between them and the framework resolve.
-
-android_app_import {
-    name: "OctoSenseHome",
-    apk: "prebuilt/OctoSenseHome.apk",
-    certificate: "platform",
-    privileged: true,
-    system_ext_specific: true,
-    dex_preopt: {
-        enabled: false,
-    },
-}
+// permissions between them and the framework resolve. OctoSenseHome is imported
+// by Android.mk: it installs native libraries beside the APK, which
+// android_app_import cannot do.
 
 android_app_import {
     name: "OctoSenseBridge",
