@@ -105,16 +105,21 @@ pub fn system_host_token() -> Option<String> {
     newest_token(&dir)
 }
 
-/// The newest `*.token` under `dir`.
+/// The newest peer's token under `dir`: a peer record (`*.peer`,
+/// [`crate::peer_record`]) or an older `*.token` file.
 pub fn newest_token(dir: &std::path::Path) -> Option<String> {
     let mut best: Option<(std::time::SystemTime, String)> = None;
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("token") {
-            continue;
-        }
         let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let token = text.trim().to_owned();
+        let token = match path.extension().and_then(|e| e.to_str()) {
+            Some("token") => text.trim().to_owned(),
+            Some("peer") => serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["token"].as_str().map(|t| t.trim().to_owned()))
+                .unwrap_or_default(),
+            _ => continue,
+        };
         if token.is_empty() {
             continue;
         }
