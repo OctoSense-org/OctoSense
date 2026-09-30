@@ -22,6 +22,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// The file under `secrets/<app id>/` naming the app's keychain items.
+pub const KEYCHAIN_INDEX: &str = ".keychain-index";
+
 /// Keys are file names: `[A-Za-z0-9._-]{1,128}`, not starting with `.`.
 pub fn validate_key(key: &str) -> Result<(), StorageError> {
     let ok = !key.is_empty()

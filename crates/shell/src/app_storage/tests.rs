@@ -241,6 +241,23 @@ fn removing_an_account_or_the_app_deletes_its_folders() {
     assert!(host.is_signed_out("mail", Some("b@x")));
 }
 
+/// A run that cannot reach the keychain (headless, tests) cannot delete
+/// the app's keychain items: it keeps the index that names them, so a
+/// later run with the keychain can, and deletes everything else.
+#[test]
+fn should_keep_the_keychain_index_when_an_uninstall_cannot_purge_it() {
+    let home = Scratch::new("keep-index");
+    let host = storage(&home.0);
+    let mail = host.open("mail").unwrap();
+    mail.secrets().put("a", b"pw").unwrap();
+    let index = home.0.join("secrets/mail").join(secrets::KEYCHAIN_INDEX);
+    std::fs::write(&index, "matrix.token\n").unwrap();
+    host.uninstall("mail").unwrap();
+    assert!(!home.0.join("apps/mail").exists());
+    assert!(index.is_file(), "the index of items this run could not delete stays");
+    assert!(!home.0.join("secrets/mail/a").exists(), "every other secret goes");
+}
+
 // ---- the manifest block ---------------------------------------------------
 
 #[test]

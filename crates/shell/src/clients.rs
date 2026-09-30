@@ -1137,6 +1137,14 @@ pub fn spawn_client(
     })
 }
 
+/// Stub.
+pub(crate) fn adopt_legacy_app_home_later(legacy: PathBuf, into: PathBuf) {
+    adopt_legacy_app_home(&legacy, &into);
+}
+
+/// Stub.
+pub(crate) fn wait_adopted(_into: &Path) {}
+
 /// Copies an app's data from where it lived before its jail (`legacy`) to
 /// `into`, once: only when `into` does not exist yet. Files and folders
 /// are copied, links skipped; the old copy stays where it was.
@@ -1166,6 +1174,52 @@ pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
 
 #[cfg(test)]
 mod tests {
+
+    /// A copy that failed part way leaves nothing in the jail, so the next
+    /// launch copies again (it used to leave a partial folder, and "once"
+    /// then meant never).
+    #[cfg(unix)]
+    #[test]
+    fn should_retry_the_copy_when_an_earlier_one_failed_part_way() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("octosense-adopt-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("home/terminal");
+        let jail = root.join("home/apps/terminal/terminal");
+        std::fs::create_dir_all(legacy.join("a")).unwrap();
+        std::fs::write(legacy.join("a/first.conf"), "1").unwrap();
+        std::fs::write(legacy.join("locked.conf"), "2").unwrap();
+        std::fs::set_permissions(legacy.join("locked.conf"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = std::fs::read(legacy.join("locked.conf")).is_ok(); // root reads anything
+        super::adopt_legacy_app_home(&legacy, &jail);
+        if !readable {
+            assert!(!jail.exists(), "a failed copy leaves no jail folder behind");
+        }
+        std::fs::set_permissions(legacy.join("locked.conf"), std::fs::Permissions::from_mode(0o600)).unwrap();
+        super::adopt_legacy_app_home(&legacy, &jail);
+        assert_eq!(std::fs::read_to_string(jail.join("locked.conf")).unwrap(), "2", "retried");
+        assert!(jail.join("a/first.conf").is_file());
+        let leftovers: Vec<_> = std::fs::read_dir(jail.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(leftovers, vec![std::ffi::OsString::from("terminal")], "no staging folder left");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The copy runs off the UI thread; a launch waits only for a copy
+    /// still running.
+    #[test]
+    fn should_adopt_in_the_background_and_let_a_launch_wait_for_it() {
+        let root = std::env::temp_dir().join(format!("octosense-adopt-bg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("home/terminal");
+        let jail = root.join("home/apps/terminal/terminal");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("settings.conf"), "x").unwrap();
+        super::adopt_legacy_app_home_later(legacy.clone(), jail.clone());
+        super::wait_adopted(&jail);
+        assert!(jail.join("settings.conf").is_file());
+        super::wait_adopted(&root.join("never-started"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn an_apps_legacy_home_is_copied_into_its_jail_once() {
