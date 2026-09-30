@@ -359,8 +359,9 @@ pub fn research_test(apps_root: &Path, topic: String) {
                     }
                     // Why steps failed (model errors among them), from the
                     // result file the agent would not see.
+                    // The path is relative to the app's folder.
                     if let Some(path) = r["result"].as_str() {
-                        let text = std::fs::read_to_string(path).unwrap_or_default();
+                        let text = std::fs::read_to_string(app.folder.join(path)).unwrap_or_default();
                         let full: Value = serde_json::from_str(&text).unwrap_or_default();
                         for d in full["diagnostics"].as_array().into_iter().flatten().take(12) {
                             makepad_widgets::log!("[toolbox-research] diagnostic {}", d);
