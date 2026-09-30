@@ -63,7 +63,8 @@ const INDICATOR_H: f64 = 30.0;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Hit {
     Answer { sheet: u64, request: RequestId, answer: Answer },
-    Consent { app: String, allow: bool },
+    /// The first-use sheet: allow (with command execution, `commands`) or not.
+    Consent { app: String, allow: bool, commands: bool },
     StopRule(RuleId),
     /// An option of an app agent's question (`None`: "Don't answer").
     QuestionOption { id: u64, label: Option<String> },
@@ -565,7 +566,8 @@ impl ShellApprovals {
     fn draw_consent(&mut self, cx: &mut Cx2d, screen: Rect, s: &AgentSummary, tok: ShellTokens) {
         self.scrim(cx, screen);
         let rows = 2 + s.reads.len() + 1 + s.uses.len() + 1 + 1;
-        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + rows as f64 * 20.0 + 12.0 + BUTTON_H);
+        let with_commands = !s.commands.is_empty();
+        let card = Self::card_rect(screen, PAD * 2.0 + 26.0 + 20.0 + 12.0 + rows as f64 * 20.0 + 12.0 + BUTTON_H + if with_commands { BUTTON_H + 8.0 } else { 0.0 });
         self.d.card(cx, card, &tok.popups);
         self.hits.push((card, Hit::Card));
         let ink = tok.popups.text;
@@ -594,10 +596,16 @@ impl ShellApprovals {
         row(&mut self.d, cx, &mut y, false, &s.model);
         y += 12.0;
         let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
-        let allow = buttons.draw(cx, x, y, w, "Allow", true);
+        let allow = buttons.draw(cx, x, y, w, if with_commands { "Allow, no commands" } else { "Allow" }, true);
         let deny = buttons.draw(cx, x + allow.size.x + 8.0, y, w, "Don't allow", false);
-        self.hits.push((allow, Hit::Consent { app: s.app.clone(), allow: true }));
-        self.hits.push((deny, Hit::Consent { app: s.app.clone(), allow: false }));
+        self.hits.push((allow, Hit::Consent { app: s.app.clone(), allow: true, commands: false }));
+        self.hits.push((deny, Hit::Consent { app: s.app.clone(), allow: false, commands: false }));
+        if with_commands {
+            // Command execution is its own choice, never the primary one.
+            let with = buttons.draw(cx, x, y + BUTTON_H + 8.0, w, "Allow with commands", false);
+            self.hits.push((with, Hit::Consent { app: s.app.clone(), allow: true, commands: true }));
+            self.shown.push("Allow with commands".into());
+        }
         self.shown.push(title);
         self.shown.extend(s.reads.iter().cloned());
         self.shown.extend(s.uses.iter().cloned());
@@ -634,8 +642,13 @@ fn act(hit: Hit) {
                 log!("approvals: {e}");
             }
         }
-        Hit::Consent { app, allow } => {
-            super::with(|a| a.consent.set(&ApprovalGesture::sheet_tap(), &app, allow, now));
+        Hit::Consent { app, allow, commands } => {
+            super::with(|a| {
+                a.consent.set(&ApprovalGesture::sheet_tap(), &app, allow, now);
+                if allow && commands {
+                    a.consent.set_commands(&ApprovalGesture::sheet_tap(), &app, true, now);
+                }
+            });
         }
         Hit::StopRule(id) => {
             super::with(|a| a.router.delete_rule(&id));

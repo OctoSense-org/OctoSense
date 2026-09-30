@@ -236,7 +236,9 @@ impl ToolHost for ShellToolHost {
         // The toolbox's tools only once the person allowed this app's agent
         // (ADR 0004 §4); its calls are refused before that too (the relay).
         let consented = approvals::consent_granted(&app) || dev;
-        let mut tools = with_relay(|r| r.catalog.offered(&app, dev, consented));
+        // Another app's command tool only with the person's command grant.
+        let commands = approvals::commands_granted(&app) || dev;
+        let mut tools = relay::command_tools_offered(with_relay(|r| r.catalog.offered(&app, dev, consented)), commands);
         // The host read tools (ADR 0004 §11) on every consented peer whose
         // agent has a workspace: how its request contexts read the
         // account's data (Unix only, files.rs).
@@ -577,6 +579,9 @@ impl relay::Env for ShellEnv {
     }
     fn system_tools(&self) -> BTreeSet<String> {
         crate::system_chat::grants::host_tools()
+    }
+    fn commands_granted(&self, app: &str) -> bool {
+        approvals::commands_granted(app) || crate::dev_mode::grants_all(app)
     }
     fn tool_rule(&self, owner: &str, tool: &str) -> (bool, bool) {
         let short = tool.split_once('.').map(|(_, t)| t).unwrap_or(tool);

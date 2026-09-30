@@ -59,6 +59,19 @@ pub const TERMINAL_RUN: &str = "terminal.run";
 pub const TERMINAL_APP: &str = "terminal";
 /// Developer mode's command tool (§13), run by the shell ([`super::dev_run`]).
 pub const DEV_RUN: &str = "dev.run";
+/// The shareable tools that run commands: an app's agent gets one only with
+/// the person's own command grant, apart from "Allow" and from its
+/// manifest's grant (ADR 0004 §12).
+pub const COMMAND_TOOLS: &[&str] = &[TERMINAL_RUN];
+
+/// `offered`, without another app's command tools unless the person gave
+/// this app command execution (`granted`).
+pub fn command_tools_offered(mut offered: Vec<Value>, granted: bool) -> Vec<Value> {
+    if !granted {
+        offered.retain(|d| !d["name"].as_str().is_some_and(|n| COMMAND_TOOLS.contains(&n)));
+    }
+    offered
+}
 /// The executor key of the tools the shell itself runs for an app's own
 /// agent (`dev.run`): never an app id.
 pub const HOST_EXECUTOR: &str = "@shell";
@@ -120,6 +133,9 @@ pub trait Env {
     fn suspended(&self, app: &str, account: Option<&str>) -> bool;
     /// The host tools the system agent is granted now.
     fn system_tools(&self) -> BTreeSet<String>;
+    /// The person gave `app`'s agent command execution (or developer mode
+    /// covers it): its own grant, apart from consent (ADR 0004 §12).
+    fn commands_granted(&self, app: &str) -> bool;
     /// (auto_approvable, command) for an owning app's tool.
     fn tool_rule(&self, owner: &str, tool: &str) -> (bool, bool);
     fn request_approval(&mut self, app: &str, tool: ToolSpec, args: Value, caller: Caller, context: RequestContext) -> Route;
@@ -672,6 +688,10 @@ impl Relay {
         if !granted {
             env.log(format!("host tools: {} refused {tool} for {} (not granted)", owner, caller.as_audit()));
             return refuse(&reply, "not_granted", format!("{tool} is not granted to {}", crate::approvals::sheet::caller_label(&owner, &caller)));
+        }
+        if call.caller_kind == CallerKind::AppPeer && calling != owner && COMMAND_TOOLS.contains(&tool.as_str()) && !env.commands_granted(&calling) {
+            env.log(format!("host tools: {tool} refused for {} (no command grant)", caller.as_audit()));
+            return refuse(&reply, "not_granted", format!("{tool} needs the person's own command grant for {}", crate::approvals::sheet::caller_label(&owner, &caller)));
         }
         if call.caller_kind == CallerKind::AppPeer {
             if !env.consent(&calling) {

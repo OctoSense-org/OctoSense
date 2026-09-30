@@ -227,6 +227,16 @@ pub fn consent_granted(app: &str) -> bool {
 
 /// An app asks for its agent: shows the first-use sheet if the person has
 /// not decided yet.
+/// Whether the person gave `app`'s agent command execution (ADR 0004 §12),
+/// or developer mode covers it.
+pub fn commands_granted(app: &str) -> bool {
+    with(|a| {
+        let all = a.router.hooks().grants_all(app);
+        a.consent.commands_granted(app, all)
+    })
+    .unwrap_or(false)
+}
+
 pub fn consent_ask(summary: consent::AgentSummary) -> consent::State {
     with(|a| {
         let all = a.router.hooks().grants_all(&summary.app);
@@ -405,7 +415,14 @@ pub fn test_action(name: &str) -> bool {
                 reads: vec!["News's files for the signed-in account".into(), "Its own memory".into()],
                 uses: vec!["Web search and page reading (the system toolbox)".into(), "News's own tools".into()],
                 model: "The model set in AI providers".into(),
+                commands: Vec::new(),
             });
+        }
+        // A store app whose manifest asks for another app's tool and for
+        // command execution: listed, and commands asked apart.
+        "approval-consent-commands" => {
+            let manifest = json!({"capabilities": ["news"], "agent": {"profile": "read-only", "tools": ["ask_user_question", "mail.send", "terminal.run"]}});
+            consent_ask(consent::AgentSummary::from_manifest("com.example.helper", "Helper", &manifest, &[], "The model set in AI providers"));
         }
         "approvals-settings" => open_settings(),
         _ => return false,

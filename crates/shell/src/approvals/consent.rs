@@ -29,6 +29,9 @@ pub struct AgentSummary {
     pub uses: Vec<String>,
     /// Where the model runs ("OpenAI (api.openai.com), set in AI providers").
     pub model: String,
+    /// The command-execution tools it asks for (`terminal.run`): its own
+    /// grant, on its own button, never part of "Allow" (ADR 0004 §12).
+    pub commands: Vec<String>,
 }
 
 impl AgentSummary {
@@ -65,7 +68,31 @@ impl AgentSummary {
         if manifest["agent"]["tools"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask_user_question")) {
             uses.push("Ask you questions".to_string());
         }
-        AgentSummary { app: app.into(), name: name.into(), reads, uses, model: model.into() }
+        // Every other app's tool it asks for: a script app's dotted names
+        // in `agent.tools` (owner: the app of the namespace), a native
+        // app's `agent.grants` pairs. Command execution on its own line.
+        let mut asked: Vec<(String, String)> = manifest["agent"]["tools"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t.as_str())
+            .filter(|t| t.contains('.'))
+            .map(|t| (format!("os.{}", t.split('.').next().unwrap_or(t)), t.to_string()))
+            .collect();
+        asked.extend(manifest["agent"]["grants"].as_array().into_iter().flatten().filter_map(|g| Some((g.get(0)?.as_str()?.to_string(), g.get(1)?.as_str()?.to_string()))));
+        let mut commands = Vec::new();
+        for (owner, tool) in asked {
+            if crate::host_tools::relay::COMMAND_TOOLS.contains(&tool.as_str()) {
+                uses.push(format!("Run commands in the Terminal ({tool}): only with \u{201c}Allow with commands\u{201d}"));
+                if !commands.contains(&tool) {
+                    commands.push(tool);
+                }
+            } else {
+                uses.push(format!("{}'s {tool} (another app's tool)", super::sheet::app_label(&owner)));
+            }
+        }
+        uses.dedup();
+        AgentSummary { app: app.into(), name: name.into(), reads, uses, model: model.into(), commands }
     }
 }
 
@@ -92,6 +119,11 @@ pub enum State {
 struct Record {
     allowed: bool,
     at: u64,
+    /// Command execution (`terminal.run`), the person's own grant apart
+    /// from "Allow" (ADR 0004 §12). Off unless given; lost when the agent
+    /// is turned off.
+    #[serde(default)]
+    commands: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -140,6 +172,20 @@ impl ConsentStore {
     pub fn granted(&self, app: &str, grants_all: bool) -> bool {
         grants_all || self.state(app) == State::Allowed
     }
+    /// Whether the person gave the app's agent command execution (on top of
+    /// allowing it). `grants_all`: developer mode.
+    pub fn commands_granted(&self, app: &str, grants_all: bool) -> bool {
+        grants_all || self.decided.get(app).is_some_and(|r| r.allowed && r.commands)
+    }
+    /// The person gave (or took back) command execution: only for an agent
+    /// they allowed.
+    pub fn set_commands(&mut self, _gesture: &ApprovalGesture, app: &str, on: bool, now: u64) {
+        let Some(r) = self.decided.get_mut(app).filter(|r| r.allowed) else { return };
+        r.commands = on;
+        r.at = now;
+        self.generation += 1;
+        self.save();
+    }
     /// The shell learns of an app with an agent (Settings lists it).
     pub fn register(&mut self, summary: AgentSummary) {
         if self.known.get(&summary.app) != Some(&summary) {
@@ -173,7 +219,9 @@ impl ConsentStore {
         } else if !self.allowed.iter().any(|a| a == app) {
             self.allowed.push(app.to_string());
         }
-        self.decided.insert(app.to_string(), Record { allowed, at: now });
+        // Command execution survives only a choice that keeps the agent on.
+        let commands = allowed && self.decided.get(app).is_some_and(|r| r.allowed && r.commands);
+        self.decided.insert(app.to_string(), Record { allowed, at: now, commands });
         self.asking.retain(|a| a != app);
         self.generation += 1;
         self.save();
@@ -181,7 +229,7 @@ impl ConsentStore {
     /// Turning an agent off needs no gesture (always allowed).
     pub fn turn_off(&mut self, app: &str, now: u64) {
         self.revoke(app);
-        self.decided.insert(app.to_string(), Record { allowed: false, at: now });
+        self.decided.insert(app.to_string(), Record { allowed: false, at: now, commands: false });
         self.asking.retain(|a| a != app);
         self.generation += 1;
         self.save();

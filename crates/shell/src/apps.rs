@@ -228,7 +228,8 @@ pub fn agent_apps() -> Vec<AgentApp> {
             id: a.id.to_string(),
             name: crate::approvals::sheet::app_label(a.id),
             octos: a.octos.iter().map(|s| s.to_string()).collect(),
-            manifest: serde_json::json!({ "agent": { "octos": a.octos } }),
+            // Its reviewed grants too: the first-use sheet lists them.
+            manifest: serde_json::json!({ "agent": { "octos": a.octos, "grants": a.grants.iter().map(|(owner, tool)| [*owner, *tool]).collect::<Vec<_>>() } }),
             native: true,
         })
         .collect();
