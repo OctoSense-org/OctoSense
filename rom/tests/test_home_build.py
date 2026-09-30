@@ -1,11 +1,14 @@
+import configparser
 import contextlib
 import hashlib
 import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -151,6 +154,90 @@ class StagingTests(unittest.TestCase):
         self.write_receipt()
         with self.assertRaises(ValueError):
             stage.verify(self.directory)
+
+
+class NativeLibraryStagingTests(unittest.TestCase):
+    """Home is staged without its lib/ entries: its libraries (the octos
+    kernel among them) are installed as files in the app's lib/arm64 dir."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.apk = self.directory / "built.apk"
+        self.out = self.directory / "prebuilt"
+        self.out.mkdir()
+
+    def write_apk(self, libraries):
+        with zipfile.ZipFile(self.apk, "w") as archive:
+            archive.writestr("AndroidManifest.xml", b"manifest")
+            archive.writestr(zipfile.ZipInfo("resources.arsc"), b"table")
+            archive.writestr("classes.dex", b"dex", compress_type=zipfile.ZIP_DEFLATED)
+            for name, data in libraries.items():
+                archive.writestr(name, data, compress_type=zipfile.ZIP_DEFLATED)
+
+    def test_libraries_leave_the_apk_for_the_lib_dir(self):
+        self.write_apk({"lib/arm64-v8a/libmakepad.so": b"home", "lib/arm64-v8a/liboctos.so": b"kernel"})
+        stale = self.out / "lib/arm64/libold.so"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"old")
+        self.assertEqual(stage.split_native_libraries(self.apk, self.out), ["libmakepad.so", "liboctos.so"])
+        self.assertEqual((self.out / "lib/arm64/libmakepad.so").read_bytes(), b"home")
+        self.assertEqual((self.out / "lib/arm64/liboctos.so").read_bytes(), b"kernel")
+        self.assertFalse(stale.exists())
+        with zipfile.ZipFile(self.out / "OctoSenseHome.apk") as staged:
+            self.assertEqual(staged.namelist(), ["AndroidManifest.xml", "resources.arsc", "classes.dex"])
+            self.assertEqual(staged.getinfo("resources.arsc").compress_type, zipfile.ZIP_STORED)
+            self.assertEqual(staged.read("classes.dex"), b"dex")
+
+    def test_a_home_without_its_kernel_is_refused(self):
+        self.write_apk({"lib/arm64-v8a/libmakepad.so": b"home"})
+        with self.assertRaises(ValueError):
+            stage.split_native_libraries(self.apk, self.out)
+        self.assertFalse((self.out / "OctoSenseHome.apk").exists())
+
+    def test_other_abis_are_refused(self):
+        self.write_apk({"lib/arm64-v8a/libmakepad.so": b"home", "lib/arm64-v8a/liboctos.so": b"kernel",
+                        "lib/x86_64/libmakepad.so": b"x86"})
+        with self.assertRaises(ValueError):
+            stage.split_native_libraries(self.apk, self.out)
+
+
+class VendorLayerTests(unittest.TestCase):
+    """The product layer installs what stage-home.py stages, and the kernel
+    can run under SELinux enforcing."""
+
+    vendor = ROOT / "vendor/octosense"
+
+    def test_android_mk_installs_each_staged_library_into_homes_lib_dir(self):
+        mk = (self.vendor / "Android.mk").read_text()
+        self.assertIn("LOCAL_MODULE := OctoSenseHome\n", mk)
+        for line in ("LOCAL_MODULE_CLASS := APPS", "LOCAL_SRC_FILES := prebuilt/OctoSenseHome.apk",
+                     "LOCAL_CERTIFICATE := platform", "LOCAL_PRIVILEGED_MODULE := true",
+                     "LOCAL_SYSTEM_EXT_MODULE := true", "include $(BUILD_PREBUILT)"):
+            self.assertIn(line + "\n", mk)
+        libraries = re.search(r"LOCAL_PREBUILT_JNI_LIBS := \\\n((?:\s+\S+(?: \\)?\n)+)", mk).group(1).split()
+        self.assertEqual([lib for lib in libraries if lib != "\\"],
+                         [f"prebuilt/{stage.STAGED_LIB_DIR}/{name}" for name in stage.HOME_LIBRARIES])
+        # One definition only: Android.bp keeps the other imports.
+        self.assertNotIn('name: "OctoSenseHome"', (self.vendor / "Android.bp").read_text())
+
+    def test_the_kernel_is_executable_on_the_image(self):
+        config = configparser.ConfigParser()
+        config.read(self.vendor / "config.fs")
+        entry = config["system_ext/priv-app/OctoSenseHome/lib/arm64/liboctos.so"]
+        self.assertEqual(entry["mode"], "0755")
+        self.assertIn("TARGET_FS_CONFIG_GEN += vendor/octosense/config.fs",
+                      (self.vendor / "BoardConfigOctoSense.mk").read_text())
+
+    def test_the_kernel_may_serve_its_goal_socket(self):
+        policy = (self.vendor / "sepolicy/private/octosense_kernel.te").read_text()
+        self.assertIn("allow platform_app app_data_file:sock_file { create getattr setattr unlink write };", policy)
+        # Nothing else is granted: the other kernel denials are benign probes.
+        rules = [line for line in policy.splitlines() if line and not line.startswith("#")]
+        self.assertEqual([rule for rule in rules if rule.startswith("allow")],
+                         ["allow platform_app app_data_file:sock_file { create getattr setattr unlink write };"])
+        self.assertTrue(all(rule.startswith(("allow ", "dontaudit ")) for rule in rules))
 
 
 if __name__ == "__main__":

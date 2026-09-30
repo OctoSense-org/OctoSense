@@ -238,6 +238,58 @@ fn a_runner_plan_reads_back_what_was_written() {
     assert_eq!(linux::Plan::from_text("abi 3\n"), None, "not a plan");
 }
 
+/// The seccomp program run on one system call, as the kernel would (the
+/// four classic-BPF instructions it uses).
+#[cfg(target_os = "linux")]
+fn seccomp_verdict(filter: &[libc::sock_filter], arch: u32, nr: u32, arg0: u64) -> u32 {
+    let word = |offset: u32| -> u32 {
+        match offset {
+            0 => nr,
+            4 => arch,
+            16 => arg0 as u32,
+            20 => (arg0 >> 32) as u32,
+            _ => 0,
+        }
+    };
+    let (mut pc, mut acc) = (0usize, 0u32);
+    loop {
+        let i = filter[pc];
+        match i.code {
+            0x20 => acc = word(i.k),
+            0x15 => pc += if acc == i.k { i.jt } else { i.jf } as usize,
+            0x45 => pc += if acc & i.k != 0 { i.jt } else { i.jf } as usize,
+            0x06 => return i.k,
+            other => panic!("instruction {other:#x} not modelled"),
+        }
+        pc += 1;
+    }
+}
+
+/// Another ABI's system calls never get past the filter (found in review
+/// and on a real kernel: an x86_64 app forked through i386's `int 0x80`
+/// fork, number 2, under `processes: false`).
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn seccomp_refuses_the_other_abis_of_the_kernel() {
+    const X86_64: u32 = 0xC000_003E;
+    const I386: u32 = 0x4000_0003;
+    const EPERM: u32 = 0x0005_0000 | libc::EPERM as u32;
+    const ALLOW: u32 = 0x7fff_0000;
+    let filter = linux::seccomp_filter(false).unwrap();
+    assert_eq!(seccomp_verdict(&filter, X86_64, 57, 0), EPERM, "fork");
+    assert_eq!(seccomp_verdict(&filter, X86_64, 0, 0), ALLOW, "read");
+    assert_eq!(seccomp_verdict(&filter, X86_64, 56, 0x0001_0000), ALLOW, "a thread's clone");
+    assert_eq!(seccomp_verdict(&filter, X86_64, 56, 0), EPERM, "a process's clone");
+    assert_eq!(seccomp_verdict(&filter, I386, 2, 0), EPERM, "i386 fork");
+    assert_eq!(seccomp_verdict(&filter, I386, 3, 0), EPERM, "any i386 call");
+    assert_eq!(seccomp_verdict(&filter, X86_64, 0x4000_0000 | 57, 0), EPERM, "x32 fork");
+    assert_eq!(seccomp_verdict(&filter, X86_64, 0x4000_0000, 0), EPERM, "any x32 call");
+    let broad = linux::seccomp_filter(true).unwrap();
+    assert_eq!(seccomp_verdict(&broad, X86_64, 57, 0), ALLOW, "fork with processes: true");
+    assert_eq!(seccomp_verdict(&broad, I386, 2, 0), EPERM, "never another ABI");
+    assert_eq!(seccomp_verdict(&broad, X86_64, 101, 0), EPERM, "ptrace, always");
+}
+
 #[test]
 fn the_terminals_manifest_gives_a_broad_sandbox_and_narrowing_only_takes_away() {
     let terminal = crate::native_apps::find("terminal").unwrap();

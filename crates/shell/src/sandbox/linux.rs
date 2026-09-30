@@ -23,7 +23,10 @@
 //! `process_vm_readv/writev`, `perf_event_open`, `bpf`, `userfaultfd`,
 //! `kexec_load`, mounts, namespaces and the kernel keyring; with
 //! `processes: false` also `fork`, `vfork` and a `clone` that is not a
-//! thread (and `clone3`, which libc then retries as `clone`).
+//! thread (and `clone3`, which libc then retries as `clone`). Every system
+//! call of another ABI of the kernel (i386 through `int 0x80` and x32 on
+//! x86_64, AArch32 on arm64) is refused whole, or its own numbers would get
+//! past these rules.
 //!
 //! **Best-effort.** The parent probes the kernel's Landlock ABI before the
 //! spawn and says in [`Applied`] which layers took (a kernel before 5.13, or
@@ -250,15 +253,25 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         const ALLOW: u32 = 0x7fff_0000;
         const ERRNO: u32 = 0x0005_0000;
         const CLONE_THREAD: u32 = 0x0001_0000;
+        const X32_SYSCALL_BIT: u32 = 0x4000_0000;
         let st = |code: u16, jt: u8, jf: u8, k: u32| libc::sock_filter { code, jt, jf, k };
         let eperm = ERRNO | libc::EPERM as u32;
         let enosys = ERRNO | libc::ENOSYS as u32;
         let mut f = vec![
             st(LD_W_ABS, 0, 0, 4), // arch
             st(JEQ_K, 1, 0, arch),
-            st(RET_K, 0, 0, ALLOW), // an unexpected arch: not ours to judge
-            st(LD_W_ABS, 0, 0, 0),  // nr
+            // Another ABI of the same kernel (i386 through `int 0x80` on
+            // x86_64, AArch32 compat on arm64): refused whole, or its own
+            // syscall numbers (i386 fork is 2) would pass every rule below.
+            st(RET_K, 0, 0, eperm),
+            st(LD_W_ABS, 0, 0, 0), // nr
         ];
+        // x32 shares x86_64's arch value and marks its numbers with bit 30:
+        // refused whole for the same reason.
+        if cfg!(target_arch = "x86_64") {
+            f.push(st(JSET_K, 0, 1, X32_SYSCALL_BIT));
+            f.push(st(RET_K, 0, 0, eperm));
+        }
         let deny = |f: &mut Vec<libc::sock_filter>, nr: u32, ret: u32| {
             f.push(st(JEQ_K, 0, 1, nr));
             f.push(st(RET_K, 0, 0, ret));
