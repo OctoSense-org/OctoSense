@@ -1050,14 +1050,23 @@ impl ServiceExecutor for TerminalExecutor {
         makepad_terminal::ai::manifest()
     }
 
-    fn execute(&mut self, _cx: &mut Cx, call: &ServiceCall) -> ExecOutcome {
-        let result = self
-            .root
-            .borrow_mut::<makepad_terminal::widget::MpTerm>()
-            .map(|mut term| makepad_terminal::ai::answer(call, &mut *term))
+    fn execute(&mut self, cx: &mut Cx, call: &ServiceCall) -> ExecOutcome {
+        let result = active_terminal(cx, &self.root)
+            .and_then(|term| term.borrow_mut::<makepad_terminal::widget::MpTerm>().map(|mut term| makepad_terminal::ai::answer(call, &mut *term)))
             .unwrap_or_else(|| makepad_ai_services::wire::ToolResult::unavailable(&call.call_id, "the terminal is not open"));
         ExecOutcome::Done(result)
     }
+}
+
+/// The emulator the Terminal's tools act on: the selected tab's focused
+/// pane. The module's root is a `TermTabs`, not an `MpTerm`, and
+/// `WidgetRef::borrow_mut` downcasts only the root itself, so this walks to
+/// the active terminal the way the module's own executor does. `None` when
+/// the root is not a `TermTabs` or it has no terminal to give.
+#[cfg(feature = "app-terminal")]
+fn active_terminal(cx: &mut Cx, root: &WidgetRef) -> Option<WidgetRef> {
+    let term = root.borrow_mut::<makepad_terminal::tabs::TermTabs>().map(|mut tabs| tabs.active_term(cx))?;
+    (!term.is_empty()).then_some(term)
 }
 
 #[cfg(all(test, feature = "app-terminal"))]
@@ -1085,5 +1094,41 @@ mod terminal_tests {
         let mut bus = crate::ai_bus::AiBus::default();
         let frame = bus.register_local(1, terminal.manifest());
         assert!(frame.contains("\"run\""));
+    }
+
+    /// Every tool call reaches the live emulator through the real module's
+    /// root. The root is a `TermTabs`, so a lookup that downcasts the root
+    /// to `MpTerm` answers "the terminal is not open" for every call; this
+    /// runs real calls through `ModuleHost::execute` against the created
+    /// module to keep that from coming back.
+    #[test]
+    fn the_terminals_tools_reach_the_active_terminal() {
+        use makepad_ai_services::wire::{ServiceCall, ToolOutcome};
+        use makepad_app_module::{AppModule, ExecOutcome};
+        use makepad_widgets::{dvec2, Cx};
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        cx.with_vm(makepad_widgets::script_mod);
+        let mut host = crate::module_host::ModuleHost::default();
+        let module = &makepad_terminal::TERMINAL_MODULE;
+        host.create(&mut cx, 9, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+        for (tool, args) in [("read_screen", "{}"), ("read_scrollback", r#"{"lines":10}"#), ("run", r#"{"command":"true"}"#)] {
+            let call = ServiceCall { call_id: format!("c-{tool}"), tool: tool.into(), args: args.into() };
+            let Some(ExecOutcome::Done(result)) = host.execute(&mut cx, 9, &call) else {
+                panic!("{tool}: the Terminal answers at once");
+            };
+            assert_ne!(result.text, "the terminal is not open", "{tool} found no terminal behind the TermTabs root");
+            // With no frame drawn the session may not have started yet;
+            // either way the call reached the emulator.
+            assert!(
+                result.outcome == ToolOutcome::Ok || result.text == "the terminal session is not ready",
+                "{tool}: {:?} {}",
+                result.outcome,
+                result.text
+            );
+        }
+        // A root that is not a `TermTabs` still answers plainly.
+        let bare = makepad_widgets::WidgetRef::empty();
+        assert!(super::active_terminal(&mut cx, &bare).is_none());
+        assert!(host.teardown(&mut cx, 9));
     }
 }
