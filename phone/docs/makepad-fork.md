@@ -20,9 +20,9 @@ Makepad and that no fork is required do not.
 The revision is pinned as a chain, not in one place:
 
 1. `native-runtime.lock.json` here names one revision of
-   `OctoSense-org/Octoscript-Makepad` (`cb66de07`, its main).
+   `OctoSense-org/Octoscript-Makepad` (`96587629`, its main).
 2. That repo's `runtime.json` names the Makepad fork revision
-   (`1f3b1ded`, Makepad main: the enforced isolate policy of PR #22, module
+   (`a1c81312`, Makepad main: the enforced isolate policy of PR #22, module
    windows, the ROM's Splash fixes, the contained script apps and host
    services of PR #30, the QR scanner of PR #31, Splash `reapply_text` of
    PR #35, the self-confirmed assistant tools of PR #36, the one-call-site
@@ -36,7 +36,9 @@ The revision is pinned as a chain, not in one place:
    OpenHarmony of PR #56, the keyboard's hide after a cancelled search of
    PRs #57 and #59 and the terminal fixes and close veto of PRs #61–#65 and the
    terminal's grapheme clusters, Kitty keyboard, close handshake and rendering
-   polish of PRs #66–#69) and the Octoscript revision
+   polish of PRs #66–#69, its text shaping and drag-select of PRs #70–#72, and
+   its clickable links and scrollback search of PRs #73 and #74) and the
+   Octoscript revision
    (`dbd48cf`). OctoSense, AppCard, Rinx and the ROM lock the same release.
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and `apps/*/Cargo.toml`. Octoscript-Makepad's unmodified
