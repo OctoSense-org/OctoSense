@@ -4,12 +4,14 @@
     "base_revision": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "1bf3c9d5367bb35a0e2ab0eb92b614507817066d31d8030404cbb0655c758268",
-    "tree": "6bf10be46b22d5da23a3052330f65ad9f3f576fb",
+    "tree": "8f5a0fadcf0133e93e9324da3490e64a93c70ab6",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
       "System Back callback owners suppress compatibility Back keys to avoid duplicate navigation on Android 13+.",
-      "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11)."
+      "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
+      "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
+      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire."
     ],
     "stacked": [
       {
@@ -19,6 +21,14 @@
       {
         "patch": "tools/runtime-patches/makepad-ime-inactive-no-restart.patch",
         "sha256": "8ae6a6aceb93a013234c724ffdc6efc614cc8b9dddd7cae6ed8b1c569b94fdf1"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-windows-remote-capture.patch",
+        "sha256": "2c0fabb6f5c0733d9d3356cde4cc7c8d40aabebf9a4752740c94f332b7e1317a"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-windows-frame-completion.patch",
+        "sha256": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595"
       }
     ]
   }
