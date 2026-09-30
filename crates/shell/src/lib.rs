@@ -48,6 +48,8 @@ pub mod layout;
 pub mod octosense;
 pub mod module_host;
 #[cfg(test)]
+mod module_close_tests;
+#[cfg(test)]
 mod module_panic_tests;
 pub mod module_view;
 pub mod native_apps;
@@ -104,7 +106,7 @@ use ai_bus::{AiBus, Route};
 use apps::{AppRegistry, Hosting};
 use android_integration::AndroidRuntime;
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
-use makepad_app_module::{AppModule, ExecOutcome, ModuleUpstream, WindowRequest};
+use makepad_app_module::{AppModule, CloseDecision, ExecOutcome, ModuleCloseAction, ModuleUpstream, WindowRequest};
 use module_host::ModuleHost;
 use pane_links::{PaneCall, PaneLinks};
 use makepad_widgets::ai_slot::AiSlotRequests;
@@ -1576,10 +1578,23 @@ impl App {
     }
 
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
+        let stopped = self.state.as_ref().and_then(|s| s.clients.get(&client)).is_some_and(|s| s.stopped);
+        // A live module instance is asked first (makepad#65): one holding
+        // something a close would destroy (the terminal's running jobs)
+        // refuses and asks the person in its own root. Its tile stays, in
+        // front so the question is seen; a yes arrives as the root's
+        // `ModuleCloseAction::Confirmed` (handle_actions), a no as nothing.
+        if !stopped && self.module_host.is_module(client) && self.module_host.ask_close(cx, client) == CloseDecision::Veto {
+            let app = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|s| s.app.clone()).unwrap_or_default();
+            log!("wm: {app} (client {client}) asks before closing; its tile stays until the person confirms");
+            self.activate_client(cx, client);
+            self.update_bar(cx);
+            self.redraw_all(cx);
+            return;
+        }
         // A module instance has no process to ask politely and nothing to
         // reap later: it ends now, through the same removal as a death.
         // So does one of its extra windows, and a stopped process's tile.
-        let stopped = self.state.as_ref().and_then(|s| s.clients.get(&client)).is_some_and(|s| s.stopped);
         if stopped || self.module_host.is_module(client) || self.module_windows.contains_key(&client) {
             self.remove_client(cx, client);
             self.update_bar(cx);
@@ -1622,6 +1637,38 @@ impl App {
         self.focus_after_layout(cx);
         self.update_bar(cx);
         self.redraw_all(cx);
+    }
+
+    /// A module instance's root confirmed the close it refused earlier
+    /// (`ModuleCloseAction::Confirmed` from the root's uid): it closes now,
+    /// through the same removal as any close. A confirmation from a root
+    /// whose close is not pending is ignored.
+    fn module_close_confirmed(&mut self, cx: &mut Cx, uid: WidgetUid) {
+        let Some(client) = self.module_host.close_confirmed(uid) else {
+            return;
+        };
+        log!("wm: client {client} confirmed its close");
+        self.remove_client(cx, client);
+        self.update_bar(cx);
+        self.redraw_all(cx);
+    }
+
+    /// The shell is asked to quit (the menu's Quit, Cmd+Q, the window's
+    /// close button): every hosted instance is asked first. True when
+    /// nobody refused and the quit may go ahead now; otherwise the first
+    /// refusing instance comes to the front with its question, and the
+    /// quit happens when the last of them confirms (`take_quit_ready`). A
+    /// forced end (a termination signal, a kill) never asks.
+    fn ask_before_quit(&mut self, cx: &mut Cx) -> bool {
+        let refused = self.module_host.ask_quit(cx);
+        let Some(&first) = refused.first() else {
+            return true;
+        };
+        log!("wm: quit waits: clients {refused:?} ask before closing");
+        self.activate_client(cx, first);
+        self.update_bar(cx);
+        self.redraw_all(cx);
+        false
     }
 
     /// A client the pool is holding: no tile, no focus, invisible.
@@ -2567,7 +2614,11 @@ impl App {
                     }
                     Some(client) => {
                         self.request_close(cx, client);
-                        ToolResult::ok(id, format!("{app} is closing"), "closing")
+                        if self.module_host.close_pending(client) {
+                            ToolResult::ok(id, format!("{app} asks the person before closing"), "asking")
+                        } else {
+                            ToolResult::ok(id, format!("{app} is closing"), "closing")
+                        }
                     }
                 },
             },
@@ -3144,7 +3195,11 @@ impl App {
             return;
         }
         match target {
-            "system.quit" => cx.quit(),
+            "system.quit" => {
+                if self.ask_before_quit(cx) {
+                    cx.quit();
+                }
+            }
             "style.background" => {
                 self.close_shell_menu(cx);
                 self.next_background(cx);
@@ -5068,6 +5123,9 @@ impl MatchEvent for App {
             let Some(wa) = action.as_widget_action() else {
                 continue;
             };
+            if let ModuleCloseAction::Confirmed = wa.cast::<ModuleCloseAction>() {
+                self.module_close_confirmed(cx, wa.widget_uid);
+            }
             if let glance_panel::ShellGlancePanelAction::Open { app, route } = wa.cast::<glance_panel::ShellGlancePanelAction>() {
                 log!("wm: glance card opens {} (route {:?})", app, route);
                 self.set_glance_open(cx, false);
@@ -5343,9 +5401,28 @@ impl App {
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
         self.contain_module_faults(cx);
+        // A quit that waited on instances asking the person goes ahead once
+        // the last of them confirmed (or failed and has nothing left to ask).
+        if self.module_host.take_quit_ready() {
+            log!("wm: every instance confirmed; quitting");
+            cx.quit();
+        }
     }
 
     fn shell_handle_event_inner(&mut self, cx: &mut Cx, event: &Event) {
+        // Quitting, or closing the shell's window, asks the hosted instances
+        // first (makepad#65). A termination signal is never refused.
+        match event {
+            Event::QuitRequested(request)
+                if request.reason != QuitReason::Signal && !request.handled.get() && !self.ask_before_quit(cx) =>
+            {
+                request.handle();
+            }
+            Event::WindowCloseRequested(request) if request.accept_close.get() && !self.ask_before_quit(cx) => {
+                request.accept_close.set(false);
+            }
+            _ => {}
+        }
         // Recording belongs to the WM, including on Home and in an OS menu.
         // Forwarding this chord also starts a recorder in the focused child.
         if let Event::KeyDown(e) | Event::KeyUp(e) = event {
