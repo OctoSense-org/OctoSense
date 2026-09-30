@@ -9,6 +9,28 @@
 //! store the first time it is read.
 use std::path::{Path, PathBuf};
 
+/// Stub.
+pub struct Place {
+    pub mail_dir: PathBuf,
+    pub secrets_dir: PathBuf,
+}
+
+impl Place {
+    pub fn legacy(mail_dir: &Path) -> Self {
+        Place { mail_dir: mail_dir.to_path_buf(), secrets_dir: mail_dir.join("secrets") }
+    }
+    pub fn resolve(mail_dir: &Path, _secrets: Option<&Path>) -> Self {
+        Self::legacy(mail_dir)
+    }
+}
+
+impl std::ops::Deref for Place {
+    type Target = Path;
+    fn deref(&self) -> &Path {
+        &self.mail_dir
+    }
+}
+
 pub trait Vault: Send + Sync {
     /// `dir` is the service's own directory; `id` the account.
     fn put(&self, dir: &Path, id: &str, secret: &str) -> Result<(), String>;
@@ -331,6 +353,64 @@ mod android {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("mail-vault-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// ADR 0004 §11: passwords live in the host's secrets folder
+    /// (`secrets/os.mail/`), not beside the service's state under `apps/`.
+    #[test]
+    fn should_keep_passwords_in_the_host_secrets_folder_owner_only_when_the_host_names_one() {
+        let dir = scratch("place");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        FileVault.put(&place, "a1", "pw").unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "pw");
+        assert!(!dir.join("apps/.host/mail/secrets").exists(), "nothing under apps/");
+        #[cfg(unix)]
+        {
+            assert_eq!(mode(&dir.join("secrets/os.mail")), 0o700);
+            assert_eq!(mode(&dir.join("secrets/os.mail/a1")), 0o600);
+        }
+        assert_eq!(FileVault.get(&place, "a1").unwrap(), "pw");
+        FileVault.remove(&place, "a1");
+        assert!(FileVault.get(&place, "a1").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn should_move_a_password_from_the_old_mail_folder_when_it_is_first_read() {
+        let dir = scratch("migrate");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        let old = Place::legacy(&place.mail_dir);
+        FileVault.put(&old, "a1", "from before").unwrap();
+        assert!(dir.join("apps/.host/mail/secrets/a1").is_file());
+        assert_eq!(FileVault.get(&place, "a1").unwrap(), "from before");
+        assert!(!dir.join("apps/.host/mail/secrets/a1").exists(), "moved out of apps/");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "from before");
+        #[cfg(unix)]
+        assert_eq!(mode(&dir.join("secrets/os.mail/a1")), 0o600);
+        // Removing an account removes a password wherever it is.
+        FileVault.put(&old, "a2", "x").unwrap();
+        FileVault.remove(&place, "a2");
+        assert!(!dir.join("apps/.host/mail/secrets/a2").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn should_use_the_old_mail_folder_when_no_host_secrets_folder_is_set() {
+        let mail = Path::new("/h/apps/.host/mail");
+        assert_eq!(Place::resolve(mail, None).secrets_dir, mail.join("secrets"));
+        assert_eq!(Place::resolve(mail, Some(Path::new("/h/secrets/os.mail"))).secrets_dir, Path::new("/h/secrets/os.mail"));
+    }
 
     #[test]
     fn a_file_vault_keeps_secrets_owner_only() {
