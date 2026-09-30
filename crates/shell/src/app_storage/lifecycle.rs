@@ -208,9 +208,23 @@ pub fn install(storage: &'static Arc<Storage>) {
         account_changed(storage, app, previous, current);
     })));
     #[cfg(any(feature = "app-hub", native_mobile))]
-    octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
-        mail_account(storage, &event);
-    })));
+    {
+        octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
+            mail_account(storage, &event);
+        })));
+        // Mail's passwords in the host's secrets (ADR 0004 §11), not under
+        // `apps/.host/mail/`; the service moves older files on first read.
+        let dir = mail_secrets_dir(storage.layout());
+        match super::ensure_private_dir(storage.layout().secrets_root(), &dir) {
+            Ok(()) => octosense_mail_service::set_secrets_dir(Some(dir)),
+            Err(e) => makepad_widgets::log!("app storage: Mail's secrets stay in its service folder: {}: {e}", dir.display()),
+        }
+    }
+}
+
+/// Where Mail's host service keeps passwords: `secrets/os.mail/`.
+pub fn mail_secrets_dir(layout: &super::Layout) -> std::path::PathBuf {
+    layout.secrets_root().join("os.mail")
 }
 
 #[cfg(test)]

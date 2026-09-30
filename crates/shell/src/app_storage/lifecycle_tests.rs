@@ -299,3 +299,13 @@ fn settings_says_a_suspended_agents_memory_remains() {
     let text = agent_state_text(&State::Allowed, memory_notice(&host, "rinx"));
     assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until octos can erase it");
 }
+
+/// Mail's passwords live in the host's secrets, never under `apps/`.
+#[test]
+fn should_keep_mails_passwords_in_the_host_secrets_when_the_shell_starts() {
+    let home = Scratch::new("mail-secrets");
+    let layout = Layout::new(&home.0).unwrap();
+    let dir = mail_secrets_dir(&layout);
+    assert_eq!(dir, home.0.join("secrets/os.mail"));
+    assert!(!dir.starts_with(layout.apps_root()));
+}
