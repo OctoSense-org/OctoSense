@@ -50,6 +50,14 @@ use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 
+/// Stub.
+pub fn set_account_of(_lookup: Option<fn(&str) -> Option<String>>) {}
+
+/// Stub.
+pub fn account_changed(_app_id: &str) -> bool {
+    false
+}
+
 /// A contained app's peer is `card.<app id>`; no native module id starts so.
 pub const PEER_PREFIX: &str = "card.";
 /// The Card runner has no accounts: every app's peer acts for the device.

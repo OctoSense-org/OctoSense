@@ -393,6 +393,16 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Stub.
+pub fn agent_workspace_in(_storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<PathBuf> {
+    agent_workspace(app_id, account)
+}
+
+/// Stub.
+pub fn suspended_in(_storage: &crate::app_storage::Storage, app_id: &str, account: Option<&str>) -> bool {
+    suspended(app_id, account)
+}
+
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
 pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
     let Some(storage) = crate::app_storage::host() else { return false };

@@ -510,3 +510,31 @@ fn the_shell_prepares_a_consented_apps_peer_and_its_panel_shares_it() {
     prepare("os.news").unwrap();
     assert_eq!(peers.ids().iter().filter(|id| *id == "card.os.news").count(), 2);
 }
+
+/// ADR 0004 §11: a contained app that keeps accounts (Mail) gets a peer for
+/// its real account, the host's answer, not the fixed `device`; the host
+/// rebinds it when the account changes.
+#[test]
+fn should_bind_a_contained_peer_to_the_apps_account_when_it_keeps_accounts() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_for_tests();
+    fn first(app: &str) -> Option<String> {
+        (app == "os.mail").then(|| "acct-1".to_owned()).or_else(|| Some(ACCOUNT.to_owned()))
+    }
+    fn second(app: &str) -> Option<String> {
+        (app == "os.mail").then(|| "acct-2".to_owned()).or_else(|| Some(ACCOUNT.to_owned()))
+    }
+    let peers = Peers::new(Turn::Reply(json!({"text": "ok"})));
+    set_factory(peers.clone());
+    set_account_of(Some(first));
+    prepare("os.mail").unwrap();
+    prepare(APP).unwrap();
+    let mail = peers.service("card.os.mail");
+    assert_eq!(*mail.accounts.lock().unwrap(), [Some("acct-1".to_owned())]);
+    assert_eq!(*peers.service(&format!("card.{APP}")).accounts.lock().unwrap(), [Some(ACCOUNT.to_owned())], "an app without accounts acts for the device");
+    set_account_of(Some(second));
+    assert!(account_changed("os.mail"));
+    assert_eq!(mail.accounts.lock().unwrap().last().cloned().flatten().as_deref(), Some("acct-2"));
+    set_account_of(None);
+    reset_for_tests();
+}

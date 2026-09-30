@@ -160,6 +160,35 @@ fn mails_accounts_open_and_remove_their_folders() {
     assert_eq!(memory_notice(&host, "os.mail"), None);
 }
 
+/// ADR 0004 §11 end to end with the Mail bundle this repository ships: its
+/// manifest declares accounts, so each Mail account is its own agent, with
+/// its own folder as its workspace; removing the account suspends that
+/// agent (its calls `signed_out`, no turn) and deletes the folder.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_suspend_mails_agent_and_delete_its_folder_when_its_account_is_removed() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("mail-e2e");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/mail/bundle/manifest.json")).unwrap()).unwrap();
+    write_json(&root.join(".system/os.mail/0001/manifest.json"), &manifest);
+    assert!(prepare_script_app(&host, &root, "os.mail").unwrap().accounts, "Mail's manifest declares accounts");
+
+    let added = AccountEvent::Added { app_id: "os.mail".into(), account: "acct-1".into() };
+    let Change::SignedIn { folder, .. } = mail_account(&host, &added) else { panic!("signed in") };
+    // Mail's agent is the contained peer `card.os.mail`, keyed by the account.
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "acct-1"), Some(folder.clone()));
+    assert!(!crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-1")));
+
+    let removed = AccountEvent::Removed { app_id: "os.mail".into(), account: "acct-1".into() };
+    mail_account(&host, &removed);
+    assert!(!folder.exists(), "the account's folder is deleted");
+    assert!(crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-1")), "its agent is suspended");
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "acct-1"), None);
+    assert!(!crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-2")), "another account is not");
+}
+
 // ---- script manifests, install and uninstall -----------------------------
 
 #[test]
