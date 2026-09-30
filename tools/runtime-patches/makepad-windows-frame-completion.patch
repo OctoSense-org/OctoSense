@@ -1,0 +1,32 @@
+diff --git a/platform/src/os/windows/windows.rs b/platform/src/os/windows/windows.rs
+index 4abb93472..c0404864b 100644
+--- a/platform/src/os/windows/windows.rs
++++ b/platform/src/os/windows/windows.rs
+@@ -581,7 +581,11 @@ fn paint_tick(
+         }
+         // ok here we send out to all our childprocesses
+ 
++        // Poll before collection, then issue this frame's completion query.
++        // Backported from Makepad work c508ab0c8.
++        self.poll_texture_lifetimes();
+         let presented = self.handle_repaint(d3d11_windows, d3d11_cx);
++        self.poll_texture_lifetimes();
+         // A presenting pass blocks in the frame-latency wait or Present, pacing
+         // the Poll loop to the display. A pass that presents nothing has no
+         // blocking call at all, so a NextFrame listener that re-arms without
+diff --git a/platform/src/os/windows/windows_stdin.rs b/platform/src/os/windows/windows_stdin.rs
+index e9467b02f..ac3a85683 100644
+--- a/platform/src/os/windows/windows_stdin.rs
++++ b/platform/src/os/windows/windows_stdin.rs
+@@ -340,7 +340,11 @@ fn stdin_handle_host_to_stdin(
+                     self.hlsl_compile_shaders(d3d11_cx);
+                 }
+ 
++                // Complete submitted serials even when the hosted app is idle,
++                // so the upload collector can release its previous buffers.
++                self.poll_texture_lifetimes();
+                 self.stdin_handle_repaint(d3d11_cx, stdin_windows, time);
++                self.poll_texture_lifetimes();
+                 self.run_live_edit_if_needed("windows-stdin");
+ 
+                 let gc_start = self.seconds_since_app_start();
