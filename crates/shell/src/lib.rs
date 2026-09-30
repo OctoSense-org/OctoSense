@@ -261,6 +261,8 @@ script_mod! {
 /// Bar height when the platform reports no window-button rect (Linux,
 /// Windows, and macOS before the first geometry event).
 const BAR_HEIGHT_FALLBACK: f64 = 26.0;
+/// `developer_options_activate`'s target for the phone's finished gesture.
+const DEVELOPER_TAPS: &str = "setup.developer.phone-taps";
 
 /// The bar's height and the left padding its content starts at. macOS puts
 /// its traffic lights on the left; Linux and Windows put caption buttons on
@@ -404,6 +406,10 @@ pub struct App {
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
+    /// The phone's developer-options gesture, finished and not yet acted on
+    /// (`developer_build_tap`).
+    #[rust]
+    developer_taps_reached: Option<dev_mode::TapsReached>,
     /// The approvals' generation last drawn (approvals/).
     #[rust]
     pub approvals_generation: u64,
@@ -3198,6 +3204,15 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// Rebuild the open menu's rows in place (a Settings row changed them).
+    fn refresh_shell_menu(&mut self, cx: &mut Cx) {
+        let menu = self.ui.widget(cx, ids!(shell_menu));
+        if let Some(mut m) = menu.borrow_mut::<ShellMenu>() {
+            m.refresh(cx);
+        }
+        self.redraw_all(cx);
+    }
+
     fn close_shell_menu(&mut self, cx: &mut Cx) {
         let menu = self.ui.widget(cx, ids!(shell_menu));
         {
@@ -3321,10 +3336,34 @@ impl App {
         self.redraw_all(cx);
     }
 
-    /// Settings → Developer options (`setup.developer.*`, shell/menu.rs).
-    /// The one place outside dev_mode.rs that turns developer mode on: the
-    /// person typed the confirmation phrase into the menu and chose the row.
+    /// Settings → Developer options (`setup.developer.*`, shell/menu.rs), and
+    /// the phone's gesture (Settings › About phone › Build number, seven
+    /// taps: [`App::developer_build_tap`]). The one place outside
+    /// dev_mode.rs that turns developer mode on: the person typed the
+    /// confirmation phrase into the menu and chose the row, or finished the
+    /// gesture. It turns on for the apps chosen under Apps it covers.
     fn developer_options_activate(&mut self, cx: &mut Cx, target: &str) {
+        // Choosing apps keeps the menu open on the list.
+        if let Some(choice) = target.strip_prefix(shell::menu::DEVELOPER_APPS_ROW).and_then(|t| t.strip_prefix('.')) {
+            let scope = if choice == "all" {
+                Some(dev_mode::Scope::AllApps)
+            } else {
+                let app = shell::menu::developer_app_of(choice);
+                let every: Vec<String> = agents::all().into_iter().map(|a| a.id).collect();
+                dev_mode::chosen_scope().toggled(&app, &every)
+            };
+            match scope {
+                None => self.notify(cx, "Developer mode", "Choose at least one app, or All apps."),
+                Some(scope) => {
+                    if let Err(why) = dev_mode::choose_apps(scope) {
+                        self.notify(cx, "Developer mode", &why);
+                    }
+                }
+            }
+            self.refresh_shell_menu(cx);
+            self.dev_mode_changed(cx);
+            return;
+        }
         self.close_shell_menu(cx);
         if let Some(typed) = target.strip_prefix("setup.developer.on:") {
             match dev_mode::PersonGesture::settings_phrase(typed) {
@@ -3334,15 +3373,59 @@ impl App {
                     &format!("To turn it on, type \u{201c}{}\u{201d} in Developer options, then choose Turn on.", dev_mode::CONFIRM_PHRASE),
                 ),
                 Some(gesture) => {
-                    if let Err(why) = dev_mode::turn_on(gesture, dev_mode::Scope::AllApps) {
+                    if let Err(why) = dev_mode::turn_on(gesture, dev_mode::chosen_scope()) {
                         self.notify(cx, "Developer mode is off", &why);
                     }
                 }
+            }
+        } else if let Some(reached) = self.developer_taps_reached.take().filter(|_| target == DEVELOPER_TAPS) {
+            if let Err(why) = dev_mode::turn_on(dev_mode::PersonGesture::phone_build_taps(reached), dev_mode::chosen_scope()) {
+                self.notify(cx, "Developer mode is off", &why);
             }
         } else if target == "setup.developer.off" {
             dev_mode::turn_off("settings");
         }
         self.dev_mode_changed(cx);
+    }
+
+    /// Home's Settings › About phone › Developer options: toggle `app` in the
+    /// apps developer mode covers (`None`: all apps).
+    pub fn developer_choose(&mut self, cx: &mut Cx, app: Option<&str>) {
+        let row = match app {
+            Some(app) => shell::menu::developer_app_row(app),
+            None => format!("{}.all", shell::menu::DEVELOPER_APPS_ROW),
+        };
+        self.developer_options_activate(cx, &row);
+    }
+
+    /// Home's Settings › About phone › Turn off developer mode.
+    pub fn developer_turn_off(&mut self, cx: &mut Cx) {
+        self.developer_options_activate(cx, "setup.developer.off");
+    }
+
+    /// One tap on Settings › About phone › Build number (Home's Settings,
+    /// `phone/`): the phone's developer-options gesture, as on Android. What
+    /// Settings shows the person.
+    pub fn developer_build_tap(&mut self, cx: &mut Cx) -> String {
+        if dev_mode::is_on() {
+            return "Developer mode is already on.".into();
+        }
+        if !dev_mode::settings_available() {
+            return "Developer mode needs a development build of OctoSense.".into();
+        }
+        match dev_mode::build_number_tap() {
+            dev_mode::Tap::Remaining(left) if left > 4 => String::new(),
+            dev_mode::Tap::Remaining(1) => "You are now 1 step away from turning on developer mode.".into(),
+            dev_mode::Tap::Remaining(left) => format!("You are now {left} steps away from turning on developer mode."),
+            dev_mode::Tap::Reached(reached) => {
+                self.developer_taps_reached = Some(reached);
+                self.developer_options_activate(cx, DEVELOPER_TAPS);
+                match dev_mode::status() {
+                    Some((active, _)) => format!("{}.", dev_mode::banner_text(&active)),
+                    None => "Developer mode is off.".into(),
+                }
+            }
+        }
     }
 
     /// What a menu row does. The ids are the jsonc's dotted paths, with

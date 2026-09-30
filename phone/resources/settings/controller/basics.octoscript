@@ -116,6 +116,21 @@ fn settings_basics_event(s,e,o,out) {
     }
     if e.kind=="release" { s.pressed["basic"]=nil; return false }
     if e.kind!="click" { return false }
+    // Build number: each tap goes to the shell, which counts seven in a row
+    // and turns developer mode on (Home's own, not Android's; no Android
+    // requirement).
+    if s.page=="About" && e.id=="build_number" { settings_request(out,{kind:"developer_tap"}); return true }
+    // Developer options (shown where this build offers them): which apps it
+    // covers, and Turn off.
+    if s.page=="About" && o.developer!=nil {
+        if e.id=="developer_all" { settings_request(out,{kind:"developer_choose",app:"all"}); return true }
+        if e.id=="developer_off" && o.developer.on { settings_request(out,{kind:"developer_off"}); return true }
+        let i=0
+        while i<8 {
+            if e.id=="developer_app_"+i && i<o.developer.apps.len() { settings_request(out,{kind:"developer_choose",app:o.developer.apps[i].id}); return true }
+            i=i+1
+        }
+    }
     if s.page=="Appearance" && !s.pending {
         if settings_has(["octosense","minimal","paper","vivid"],e.id) { s.theme_draft.preset=e.id; return true }
         for pair in [["mode_system","system"],["mode_light","light"],["mode_dark","dark"]] {
@@ -192,6 +207,26 @@ fn settings_basics_refresh(s,o,out) {
         settings_enabled(out,id,enabled)
     }
     settings_device_labels(s,o,out)
+    settings_developer_labels(o,out)
+}
+// About phone › Developer options: hidden unless the host offers them.
+fn settings_developer_labels(o,out) {
+    let dev=o.developer
+    settings_visible(out,"developer_section",dev!=nil)
+    if dev==nil { return }
+    settings_text(out,"developer_status",dev.summary)
+    let all="All apps"; if dev.all { all="✓ All apps" }
+    settings_text(out,"developer_all",all)
+    let i=0
+    while i<8 {
+        let id="developer_app_"+i
+        if i<dev.apps.len() {
+            let label=dev.apps[i].name; if dev.apps[i].covered { label="✓ "+label }
+            settings_visible(out,id,true); settings_text(out,id,label)
+        } else { settings_visible(out,id,false) }
+        i=i+1
+    }
+    settings_visible(out,"developer_off",dev.on)
 }
 fn settings_device_labels(s,o,out) {
     let d=settings_or(o["device"],{})

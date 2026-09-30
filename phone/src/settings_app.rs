@@ -81,6 +81,13 @@ pub enum SettingsRequest {
     AppNotifications(AppNotificationsRequest), Roles(RolesRequest), Permissions(PermissionsRequest),
     Device(DeviceSetting), DeviceAccess, DateTime(TimeRequest), NotificationHistory(HistoryRead), Sounds(SoundsRequest),
     AppsCatalog { query: String, include_system: bool, offset: u32, generation: Option<String> },
+    /// One tap on About phone › Build number: the shell's developer-options
+    /// gesture (seven in a row turn developer mode on, ADR 0004 §13).
+    DeveloperTap,
+    /// Developer options › an app it covers, toggled (`None`: all apps).
+    DeveloperChoose(Option<String>),
+    /// Developer options › Turn off developer mode.
+    DeveloperOff,
     AppDetails { target: AppTarget, permission_offset: u32 },
     AppEntryDetails { entry_id:i64, package:String },
     AppAction { target: AppTarget, action: AppAction }, AppsUsageAccess,
@@ -220,6 +227,26 @@ impl DeviceSnapshot {
     }
 }
 
+/// Developer options on About phone (ADR 0004 §13), from the shell's
+/// developer mode: present only where Settings may turn it on (a development
+/// build) or while it is on.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+pub struct DeveloperOptions {
+    pub on: bool,
+    /// One line: whether it is on, and what it covers.
+    pub summary: String,
+    /// It covers all apps (the choice).
+    pub all: bool,
+    /// Every app with an agent, and whether the choice covers it.
+    pub apps: Vec<DeveloperApp>,
+}
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+pub struct DeveloperApp {
+    pub id: String,
+    pub name: String,
+    pub covered: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SettingsSnapshot {
     pub android: bool,
@@ -260,6 +287,8 @@ pub struct SettingsSnapshot {
     /// The AI providers system app ships in this build and the Card runner
     /// that hosts it is linked. Availability only: no provider data.
     pub ai_providers:bool,
+    /// Developer options (About phone), where this build offers them.
+    pub developer:Option<DeveloperOptions>,
 }
 impl SettingsSnapshot {
     pub fn permits(&self, operation: &str) -> bool {

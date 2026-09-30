@@ -93,3 +93,50 @@ fn script_device_steps_use_observed_bounds_and_do_not_require_optional_bridge(){
     assert!(!enabled(&step(&mut c,&o,"observe","",Value::Null),"volume_more"));
     assert!(click(&mut c,&o,"volume_more").requests.is_empty());
 }
+
+/// About phone › Build number: each tap asks the shell (which counts seven in
+/// a row and turns developer mode on), on any device, Android or not.
+#[test]
+fn script_build_number_taps_reach_the_shell_as_developer_taps(){
+    use crate::settings_app::SettingsRequest;
+    let mut c=new();let o=SettingsSnapshot::default();
+    click(&mut c,&o,"about");assert_eq!(page(&c),"About");
+    let frame=click(&mut c,&o,"build_number");
+    assert_eq!(frame.requests.len(),1);
+    assert!(matches!(crate::settings_script_bridge::basic_request(&frame.requests[0],&o),Some(SettingsRequest::DeveloperTap)));
+    // Anywhere else the row is not there to tap: nothing is sent.
+    step(&mut c,&o,"back","",Value::Null);
+    assert!(click(&mut c,&o,"build_number").requests.is_empty());
+}
+
+/// About phone › Developer options: hidden unless the host offers them; the
+/// apps it covers are listed and toggled one by one, or all at once, and
+/// Turn off shows only while it is on.
+#[test]
+fn script_developer_options_choose_the_apps_it_covers(){
+    use crate::settings_app::{DeveloperApp,DeveloperOptions,SettingsRequest};
+    fn visible(f:&Frame,id:&str)->Option<bool>{f.patches.iter().rev().find_map(|p|match p{Patch::Visible(k,v)if k==id=>Some(*v),_=>None})}
+    let mut c=new();let mut o=SettingsSnapshot::default();
+    let f=click(&mut c,&o,"about");
+    assert_eq!(visible(&f,"developer_section"),Some(false),"not offered: hidden");
+    assert!(click(&mut c,&o,"developer_all").requests.is_empty());
+    o.developer=Some(DeveloperOptions{on:false,summary:"Developer mode is off.".into(),all:false,apps:vec![
+        DeveloperApp{id:"os.news".into(),name:"News".into(),covered:true},
+        DeveloperApp{id:"rinx".into(),name:"Rinx".into(),covered:false}]});
+    let f=step(&mut c,&o,"observe","",Value::Null);
+    assert_eq!(visible(&f,"developer_section"),Some(true));
+    assert_eq!(text(&f,"developer_status"),"Developer mode is off.");
+    assert_eq!((text(&f,"developer_app_0"),text(&f,"developer_app_1")),("✓ News","Rinx"));
+    assert_eq!(visible(&f,"developer_app_2"),Some(false));
+    assert_eq!(visible(&f,"developer_off"),Some(false),"off: nothing to turn off");
+    let f=click(&mut c,&o,"developer_app_1");
+    assert!(matches!(crate::settings_script_bridge::basic_request(&f.requests[0],&o),Some(SettingsRequest::DeveloperChoose(Some(ref id))) if id=="rinx"));
+    let f=click(&mut c,&o,"developer_all");
+    assert!(matches!(crate::settings_script_bridge::basic_request(&f.requests[0],&o),Some(SettingsRequest::DeveloperChoose(None))));
+    assert!(click(&mut c,&o,"developer_off").requests.is_empty(),"off: no request");
+    o.developer.as_mut().unwrap().on=true;
+    let f=step(&mut c,&o,"observe","",Value::Null);
+    assert_eq!(visible(&f,"developer_off"),Some(true));
+    let f=click(&mut c,&o,"developer_off");
+    assert!(matches!(crate::settings_script_bridge::basic_request(&f.requests[0],&o),Some(SettingsRequest::DeveloperOff)));
+}
