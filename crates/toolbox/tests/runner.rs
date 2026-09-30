@@ -332,7 +332,14 @@ async fn a_slow_read_leaves_time_for_the_digest() {
         .status_reasons
         .iter()
         .any(|r| r.contains("time budget")));
-    assert_eq!(result.trace.iter().filter(|e| e.event == "timed_out").count(), 0);
+    assert_eq!(
+        result
+            .trace
+            .iter()
+            .filter(|e| e.event == "timed_out")
+            .count(),
+        0
+    );
 
     // One slow page among readable ones: it is given up at the window's
     // close and the digest runs on the others.

@@ -361,7 +361,11 @@ impl ResearchHost {
         // worth a read.
         results.items.sort_by_key(|item| {
             let named = topic.coverage(&format!("{} {}", item.title, item.snippet));
-            (!item.readable, is_listing(&item.url), std::cmp::Reverse(named))
+            (
+                !item.readable,
+                is_listing(&item.url),
+                std::cmp::Reverse(named),
+            )
         });
         let queried_at = (self.clock)();
         let mut seen_urls = BTreeSet::new();
@@ -1062,14 +1066,27 @@ fn publisher_keys(item: &FoundItem) -> Vec<String> {
 /// A site's topic, tag, category or section page, or its home page: a
 /// list of reports rather than one.
 fn is_listing(url: &str) -> bool {
-    const LISTING: &[&str] = &["topic", "topics", "tag", "tags", "category", "categories", "section", "sections", "hub"];
+    const LISTING: &[&str] = &[
+        "topic",
+        "topics",
+        "tag",
+        "tags",
+        "category",
+        "categories",
+        "section",
+        "sections",
+        "hub",
+    ];
     let Some((_, rest)) = url.split_once("://") else {
         return false;
     };
     let path = rest.find('/').map_or("", |at| &rest[at..]);
     let path = path.split(['?', '#']).next().unwrap_or("");
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    segments.is_empty() || segments.iter().any(|s| LISTING.contains(&s.to_ascii_lowercase().as_str()))
+    segments.is_empty()
+        || segments
+            .iter()
+            .any(|s| LISTING.contains(&s.to_ascii_lowercase().as_str()))
 }
 
 #[cfg(test)]
