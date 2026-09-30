@@ -168,6 +168,93 @@ fn v2_envelopes_stream_and_the_saved_text_wins() {
     assert_eq!(m.phase(), &Phase::Ready);
 }
 
+/// The frames a real kernel (octos e045c727, stdio) sent for one turn that
+/// streamed, called `peer_list`, then answered, in the order it sent them:
+/// `turn_terminal` first, a segment's saved text before its last deltas,
+/// the second segment saved before the tool ran. The live run showed the
+/// same text twice, a partial row ("There's no peer available for") left
+/// behind, and an empty "Assistant" row between them.
+#[test]
+fn out_of_order_envelopes_make_one_message_per_segment_in_ledger_order() {
+    let mut m = ChatModel::new();
+    m.start_turn("t1", "list peers");
+    let a = "t1:iteration:1";
+    let b = "t1:iteration:2";
+    let env = |cursor: u64, kind: &str, data: Value| json!({"turn_id": "t1", "cursor": {"seq": cursor}, "payload": {"type": kind, "data": data}});
+    let text = |segment: &str, text: &str| json!({"assistant_segment_id": segment, "text": text});
+    let frames = [
+        env(30, "turn_terminal", json!({"outcome": "completed"})),
+        env(7, "user_message", json!({"text": "list peers"})),
+        env(8, "assistant_delta", text(a, "There's no peer ")),
+        env(9, "assistant_persisted", text(a, "There's no peer available for that yet. Let me check.")),
+        env(10, "assistant_delta", text(a, "available for ")),
+        env(11, "assistant_delta", text(a, "that yet. Let me check.")),
+        env(12, "assistant_persisted", text(b, "Here are both results: done.")),
+        env(16, "tool_start", json!({"tool_call_id": "call_1", "name": "peer_list"})),
+        env(18, "tool_end", json!({"tool_call_id": "call_1", "status": "complete", "output_preview": "(no peers staged)"})),
+        env(24, "assistant_delta", text(b, "Here are ")),
+        env(25, "assistant_delta", text(b, "both results: ")),
+        env(26, "assistant_delta", text(b, "done.")),
+    ];
+    for frame in &frames {
+        m.apply("projection/envelope", frame);
+    }
+    assert_eq!(text_of(&m, Role::Assistant), ["There's no peer available for that yet. Let me check.", "Here are both results: done."]);
+    assert_eq!(m.phase(), &Phase::Ready);
+    // You, the first answer, the tool, the second answer: nothing else.
+    let shape: Vec<String> = m.items.iter().map(|i| match i {
+        Item::Message { role: Role::User, .. } => "you".to_string(),
+        Item::Message { text, .. } => format!("assistant:{}", &text[..9]),
+        Item::Tool { name, status, .. } => format!("tool:{name}:{status:?}"),
+        other => format!("{other:?}"),
+    }).collect();
+    assert_eq!(shape, ["you", "assistant:There's n", "tool:peer_list:Done", "assistant:Here are "]);
+}
+
+/// An iteration that only called tools saves an empty segment: no empty
+/// "Assistant" row; and text that only streamed is shown until it is saved.
+#[test]
+fn an_empty_segment_shows_nothing_and_streamed_text_shows_before_it_is_saved() {
+    let mut m = ChatModel::new();
+    m.start_turn("t1", "hi");
+    let env = |cursor: u64, kind: &str, segment: &str, text: &str| json!({"turn_id": "t1", "cursor": {"seq": cursor}, "payload": {"type": kind, "data": {"assistant_segment_id": segment, "text": text}}});
+    m.apply("projection/envelope", &env(3, "assistant_persisted", "s1", ""));
+    assert!(text_of(&m, Role::Assistant).is_empty());
+    m.apply("projection/envelope", &env(5, "assistant_delta", "s2", "Work"));
+    m.apply("projection/envelope", &env(6, "assistant_delta", "s2", "ing"));
+    assert_eq!(text_of(&m, Role::Assistant), ["Working"]);
+    // Saved empty after all (the text was withdrawn): the row goes.
+    m.apply("projection/envelope", &env(7, "assistant_persisted", "s2", " "));
+    assert!(text_of(&m, Role::Assistant).is_empty());
+}
+
+/// A provider's 401 as the kernel passes it on (the live run's, with its
+/// masked key tail): the person never sees a piece of the key.
+#[test]
+fn provider_errors_are_shown_without_key_fragments() {
+    use super::model::redact_secrets;
+    let raw = r#"Authentication failed for deepseek@api/deepseek-v4-flash - check your API key (HTTP 401 - {"error":{"message":"Authentication Fails, Your api key: ****fcb0 is invalid (request_id: 0a94e4b1-824d-456b-942a-d4a7f2f84553)","type":"authentication_error"}})"#;
+    let shown = redact_secrets(raw);
+    assert!(!shown.contains("fcb0"), "{shown}");
+    assert!(shown.contains("Your api key: [key] is invalid"), "{shown}");
+    assert!(shown.contains("deepseek@api/deepseek-v4-flash") && shown.contains("0a94e4b1-824d-456b-942a-d4a7f2f84553"), "the rest stays: {shown}");
+    for (input, gone) in [
+        ("Incorrect API key provided: sk-proj-****abcd.", "abcd"),
+        ("Authorization: Bearer abcDEF123ghiJKL456", "abcDEF"),
+        ("key sk-ant-api03-Zx9Qw8Er7Ty6 rejected", "Zx9Qw8"),
+        ("token 9f8e7d6c5b4a39281706f5e4d3c2b1a0ffeeddcc", "9f8e7d6c5b4a"),
+    ] {
+        let shown = redact_secrets(input);
+        assert!(!shown.contains(gone) && shown.contains("[key]"), "{input} -> {shown}");
+    }
+    assert_eq!(redact_secrets("The model gpt-4o-mini timed out after 30 s."), "The model gpt-4o-mini timed out after 30 s.");
+    // The model's own notices go through it.
+    let mut m = ChatModel::new();
+    m.start_turn("t1", "hi");
+    m.apply("turn/error", &json!({"turn_id": "t1", "message": raw}));
+    assert!(m.items.iter().any(|i| matches!(i, Item::Notice(n) if n.contains("[key]") && !n.contains("fcb0"))));
+}
+
 #[test]
 fn tool_calls_carry_their_status() {
     let mut m = ChatModel::new();
