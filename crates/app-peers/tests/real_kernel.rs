@@ -1064,17 +1064,14 @@ fn the_person_and_the_system_agent_talk_in_parallel_lanes_that_share_history() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// octos at the pin (e045c727) writes a turn's rows to its transcript only
-/// when the turn ENDS, and the other lane's `<shared_history>` block is read
-/// from that transcript. So while the system agent's turn on the peer is
-/// running (here parked on a question nobody answers; in the two-lane
-/// scenario, on an approval), the person's lane is shown nothing of it: not
-/// even the system agent's request. Found by the shell's two-lane scenario
-/// (`crates/shell/src/host_tools/scenario_tests.rs`); reported to octos.
-/// Ignored until octos shows a running turn's prompt; run it with
-/// `--ignored` to reproduce.
+/// A turn still running in one lane is shown to the other (octos#2644, in
+/// the pin; on top of octos#2636's shared history): its request, with its origin
+/// marker, and a `[turn status]` line saying what it waits on, after the
+/// finished rows. Here the system agent's turn on the peer is parked on a
+/// question nobody answers (in the two-lane scenario, on an approval), and
+/// the person's lane sees it while it runs. Found by the shell's two-lane
+/// scenario (`crates/shell/src/host_tools/scenario_tests.rs`).
 #[test]
-#[ignore = "octos e045c727 shares a lane's rows only after its turn ends"]
 fn a_running_turns_request_is_shown_to_the_other_lane() {
     let Some(program) = kernel() else { return };
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
@@ -1123,5 +1120,13 @@ fn a_running_turns_request_is_shown_to_the_other_lane() {
     drop(rinx);
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
-    assert!(shown.contains("[from the system agent] QUESTION_HOLD"), "the running turn's request is not shown to the person's lane: {shown}");
+    assert!(shown.starts_with("SHARED - "), "the person's lane is shown the system agent's: {shown}");
+    let rows: Vec<&str> = shown["SHARED ".len()..].split(" | ").map(|row| row.splitn(3, ' ').nth(2).unwrap_or(row)).collect();
+    // The running turn comes last: its request, then its status (the
+    // question it asked is a tool call, so it streamed no text).
+    assert_eq!(
+        rows[rows.len().saturating_sub(2)..],
+        ["[from the system agent] QUESTION_HOLD", "[turn status] still running, waiting for an answer"],
+        "the running turn's request and status are shown to the person's lane: {shown}"
+    );
 }

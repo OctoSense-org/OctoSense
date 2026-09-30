@@ -39,10 +39,11 @@
 //! whole seconds, could deny an approval as expired just before the
 //! broker's own deadline, which then took it for an answer and never freed
 //! the stuck turn (an expiry deny is now marked as one,
-//! `ApprovalAnswer::expired`). Not fixed here, octos's: a lane's rows are
-//! shared with the other lane only once its turn ends
+//! `ApprovalAnswer::expired`). Fixed in octos (octos#2644): a lane's rows
+//! were shared with the other lane only once its turn ended; a running
+//! turn's request and status are now shown too
 //! (`crates/app-peers/tests/real_kernel.rs`,
-//! `a_running_turns_request_is_shown_to_the_other_lane`, ignored).
+//! `a_running_turns_request_is_shown_to_the_other_lane`, and 3c below).
 //!
 //! What is not the real thing, and why:
 //! - the person's taps go through the approval surface's press handler, not
@@ -552,13 +553,17 @@ fn the_system_agent_and_the_person_work_with_one_app_agent_at_once() {
     assert_eq!(question.options(), ["Team", "Everyone"]);
     assert!(crate::questions::open(&Conversation::SystemChat).iter().all(|q| q.app != APP), "not in the system chat");
 
-    // The system agent's turn is still running, so octos (e045c727) has
-    // not written its rows yet: the person's lane is shown nothing of it.
-    // octos shares a lane's rows once its turn ends (reported with the PR);
-    // 3b below checks the sharing both ways on ended turns.
+    // The system agent's turn is still running (parked on the approval), so
+    // its rows are not in its transcript yet; octos shows the person's lane
+    // the running turn instead (octos#2644): its request and what it waits
+    // on (the tool's name only). 3b below checks the sharing both ways on
+    // ended turns.
     let requests = s.requests();
     let asked = requests.iter().find(|r| r["own"].as_str().is_some_and(|u| u.contains("SCN_ASK"))).expect("the person's model request");
-    eprintln!("[main] the person's lane was shown, while the system agent's turn ran: {}", asked["shared"]);
+    let running = asked["shared"].to_string();
+    assert!(running.contains("lane=\\\"system_agent\\\"") && running.contains("[from the system agent] SCN_TASK"), "{running}");
+    assert!(running.contains("[turn status] still running, waiting for approval: news_share"), "{running}");
+    assert!(!running.contains("Quarterly numbers"), "no tool arguments: {running}");
 
     // 4. The person answers in the shell's "Ask News" panel (G11: the
     // question of the app's conversation is shown there, not in the system
