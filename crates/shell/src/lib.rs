@@ -57,6 +57,7 @@ pub mod sandbox;
 pub mod pane_links;
 pub mod peer_link;
 pub mod preview;
+pub mod process_close;
 pub mod questions;
 pub mod run_view;
 pub mod shell;
@@ -108,6 +109,7 @@ use android_integration::AndroidRuntime;
 use makepad_ai_services::wire::{ServiceCall, ServiceDown, ToolResult};
 use makepad_app_module::{AppModule, CloseDecision, ExecOutcome, ModuleCloseAction, ModuleUpstream, WindowRequest};
 use module_host::ModuleHost;
+use process_close::ProcessCloseGate;
 use pane_links::{PaneCall, PaneLinks};
 use makepad_widgets::ai_slot::AiSlotRequests;
 use shell::ai_pane::ShellAiPane;
@@ -477,6 +479,10 @@ pub struct App {
     /// isolate each, seated in a `ModuleTile`.
     #[rust]
     pub module_host: ModuleHost,
+    /// Process apps that answer a close themselves, and the closes they
+    /// are answering (process_close.rs, OctoSense#179).
+    #[rust]
+    pub process_close: ProcessCloseGate,
     /// Extra windows module instances opened (`ModuleWindows`): window
     /// client -> (owner instance's client, the instance's key for it).
     #[rust]
@@ -1239,7 +1245,9 @@ impl App {
                 let (app, now) = (self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default(), cx.seconds_since_app_start());
                 self.state_mut().phone.shade.post(&app, title, body, now, vec!["Open".into()]);
             }
-            WmRequest::Close => self.request_close(cx, client),
+            // The app itself is done (or its person just confirmed): no
+            // question goes back to it.
+            WmRequest::Close => self.close_client(cx, client, false),
             WmRequest::SetFloating { floating } => {
                 let area = self.desk_area(cx);
                 let gap = self.state_mut().gap;
@@ -1256,6 +1264,10 @@ impl App {
                     self.do_action(cx, WmAction::Fullscreen(FullscreenMode::Fullscreen));
                 }
             }
+            // Words a newer makepad adds (the close answers are read before
+            // this parse, by `process_close::parse_close_word`).
+            #[allow(unreachable_patterns)]
+            _ => {}
         }
     }
 
@@ -1578,6 +1590,22 @@ impl App {
     }
 
     fn request_close(&mut self, cx: &mut Cx, client: ClientId) {
+        self.close_client(cx, client, true);
+    }
+
+    /// Close `client`. `ask`: a close the person (or the shell) asked for,
+    /// which a process app that answers closes itself is asked about
+    /// first. Not `ask`: the app's own `WmRequest::Close` — it decided, so
+    /// it closes as any app always did (a hosted app cannot end its own
+    /// process: `cx.quit()` does nothing under the Studio runtime).
+    fn close_client(&mut self, cx: &mut Cx, client: ClientId, ask: bool) {
+        // A close of one app drops a quit that was waiting on others (the
+        // person turned to something else; module_host::CloseGate). An
+        // app's own close is its answer, which a waiting quit counts on.
+        if ask {
+            self.module_host.abandon_quit();
+            self.process_close.abandon_quit();
+        }
         let stopped = self.state.as_ref().and_then(|s| s.clients.get(&client)).is_some_and(|s| s.stopped);
         // A live module instance is asked first (makepad#65): one holding
         // something a close would destroy (the terminal's running jobs)
@@ -1599,6 +1627,38 @@ impl App {
             self.remove_client(cx, client);
             self.update_bar(cx);
             return;
+        }
+        // A process app that answers closes itself (it said
+        // `AsksBeforeClose`): ask, and wait for its answer — an exit, or a
+        // refusal while it asks the person. Its tile stays meanwhile.
+        // Anything else closes as before, below (process_close.rs).
+        let answerable = self
+            .state
+            .as_ref()
+            .and_then(|s| s.clients.get(&client))
+            .is_some_and(|s| s.sender.is_some() && s.closing.is_none() && !s.warm && !s.pane);
+        if !ask {
+            // Its answer came as the close itself: nothing left to wait on.
+            self.process_close.gone(client);
+        } else if answerable {
+            match self.process_close.close(client, host::now()) {
+                process_close::CloseStep::Legacy => {}
+                process_close::CloseStep::Ask => {
+                    let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
+                    log!("wm: asking {app} (client {client}) to close; it answers before anything ends");
+                    self.send_wm_event(client, WmEvent::CloseRequested);
+                    self.activate_client(cx, client);
+                    self.update_bar(cx);
+                    self.redraw_all(cx);
+                    return;
+                }
+                process_close::CloseStep::Wait => return,
+                process_close::CloseStep::Force => {
+                    log!("wm: client {client} was closed again before it answered; ending it");
+                    self.end_process_client(cx, client);
+                    return;
+                }
+            }
         }
         let mut polite = false;
         if let Some(slot) = self.state_mut().clients.get_mut(&client) {
@@ -1628,8 +1688,13 @@ impl App {
                 }
             }
         }
-        // Out of the layout now: the tiles reflow and the desk plays the
-        // popin-out with the frame the tile already has.
+        self.leave_layout(cx, client);
+    }
+
+    /// Out of the layout now: the tiles reflow and the desk plays the
+    /// popin-out with the frame the tile already has. The slot stays until
+    /// the reaper sees the process gone.
+    fn leave_layout(&mut self, cx: &mut Cx, client: ClientId) {
         self.state_mut().layout.remove(client);
         if let Some(mut desk) = self.desk(cx).borrow_mut::<WmDesk>() {
             desk.remove_client(client);
@@ -1637,6 +1702,67 @@ impl App {
         self.focus_after_layout(cx);
         self.update_bar(cx);
         self.redraw_all(cx);
+    }
+
+    /// End a process app that was asked to close and did not answer (the
+    /// person closed it again, or `process_close::ANSWER_TIMEOUT` passed):
+    /// the protocol's Kill and the process group's SIGTERM, SIGKILL after
+    /// `GROUP_KILL_GRACE`. A SIGTERM is a termination signal, which the
+    /// terminal never refuses. Counted as asked for, not as a crash.
+    fn end_process_client(&mut self, cx: &mut Cx, client: ClientId) {
+        let pool = cx.task_pool();
+        let Some(slot) = self.state_mut().clients.get_mut(&client) else {
+            return;
+        };
+        slot.closing = Some(host::now());
+        if let Some(sender) = &slot.sender {
+            send_to_app(sender, vec![StudioToApp::Kill]);
+        }
+        if let Some(child) = slot.child.as_mut() {
+            if matches!(child.try_wait(), Ok(None)) {
+                clients::kill_child_group(child, clients::GROUP_KILL_GRACE, &pool);
+            }
+        }
+        self.leave_layout(cx, client);
+    }
+
+    /// An app's word about closes (makepad `WmRequest::AsksBeforeClose`
+    /// / `CloseRefused`).
+    fn on_close_word(&mut self, cx: &mut Cx, client: ClientId, word: process_close::CloseWord) {
+        match word {
+            process_close::CloseWord::AsksBeforeClose => {
+                log!("wm: client {client} answers its closes itself");
+                self.process_close.declare(client);
+            }
+            process_close::CloseWord::CloseRefused => {
+                // Only an answer to a close the shell is waiting on counts.
+                let first = self.process_close.asking() == 0;
+                if !self.process_close.refused(client) {
+                    return;
+                }
+                let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
+                log!("wm: {app} (client {client}) asks before closing; its tile stays until the person answers");
+                // In front so the question is seen; while a quit waits on
+                // several, the first to ask keeps the front.
+                if first || !self.process_close.quit_waiting() {
+                    self.activate_client(cx, client);
+                }
+                self.update_bar(cx);
+                self.redraw_all(cx);
+            }
+        }
+    }
+
+    /// Whether `client` is answering a close or asking the person about
+    /// one (a hosted module or a process app).
+    fn close_pending(&self, client: ClientId) -> bool {
+        self.module_host.close_pending(client) || self.process_close.is_pending(client)
+    }
+
+    /// A quit that waited on instances and apps asking the person may go
+    /// ahead: every one of them confirmed (or went).
+    fn take_quit_ready(&mut self) -> bool {
+        process_close::take_quit_ready(self.module_host.close_gate_mut(), &mut self.process_close)
     }
 
     /// A module instance's root confirmed the close it refused earlier
@@ -1661,11 +1787,38 @@ impl App {
     /// forced end (a termination signal, a kill) never asks.
     fn ask_before_quit(&mut self, cx: &mut Cx) -> bool {
         let refused = self.module_host.ask_quit(cx);
-        let Some(&first) = refused.first() else {
+        // Process apps that answer closes themselves are asked the same way
+        // (process_close.rs); the rest end with the shell, as always.
+        let windows: Vec<ClientId> = self
+            .state
+            .as_ref()
+            .map(|s| {
+                s.clients
+                    .iter()
+                    .filter(|(_, s)| s.sender.is_some() && s.closing.is_none() && !s.warm && !s.pane && !s.stopped)
+                    .map(|(client, _)| *client)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let ask = self.process_close.quit(windows, host::now());
+        for client in &ask.asked {
+            self.send_wm_event(*client, WmEvent::CloseRequested);
+        }
+        for client in &ask.forced {
+            log!("wm: client {client} was asked to close again before it answered; ending it");
+            self.end_process_client(cx, *client);
+        }
+        if refused.is_empty() && self.process_close.idle() {
+            self.process_close.abandon_quit();
             return true;
-        };
-        log!("wm: quit waits: clients {refused:?} ask before closing");
-        self.activate_client(cx, first);
+        }
+        log!(
+            "wm: quit waits: instances {refused:?} ask, apps {:?} are answering",
+            ask.asked
+        );
+        if let Some(&first) = refused.first() {
+            self.activate_client(cx, first);
+        }
         self.update_bar(cx);
         self.redraw_all(cx);
         false
@@ -1707,6 +1860,7 @@ impl App {
     fn remove_client(&mut self, cx: &mut Cx, client: ClientId) {
         log!("wm: removing client {}", client);
         peer_link::process_gone(client);
+        self.process_close.gone(client);
         // An instance's extra window: the tile lets go of the root (the
         // instance keeps the widget), and the instance hears it was closed.
         if let Some((owner, key)) = self.module_windows.remove(&client) {
@@ -1907,6 +2061,16 @@ impl App {
         // Capture diagnostics queued by the output pumps before removing a
         // failed Cargo launch and its temporary progress tile.
         self.drain_client_lines(cx);
+        // A process app that promised to answer a close and did not: the
+        // fallback ends it (process_close.rs). One asking the person is
+        // never among these.
+        for client in self.process_close.overdue(host::now()) {
+            log!(
+                "wm: client {client} did not answer its close in {}s; ending it",
+                process_close::ANSWER_TIMEOUT
+            );
+            self.end_process_client(cx, client);
+        }
         // A client that ignored the polite close gets the fallback.
         let pool = cx.task_pool();
         for slot in self.state_mut().clients.values_mut() {
@@ -1920,12 +2084,20 @@ impl App {
                 }
             }
         }
+        // An app that quits while a close of it is pending gave its answer
+        // (yes): a close, not a crash.
+        let mut answering: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
+        answering.retain(|client| self.process_close.is_pending(*client));
+        let now = host::now();
         let dead: Vec<(ClientId, Option<String>)> = self
             .state_mut()
             .clients
             .iter_mut()
             .filter_map(|(id, slot)| {
                 let status = slot.child.as_mut()?.try_wait().ok()??;
+                if answering.contains(id) && slot.closing.is_none() {
+                    slot.closing = Some(now);
+                }
                 let label = clients::find_app(&slot.app)
                     .map(|app| app.label).unwrap_or_else(|| slot.app.clone());
                 Some((*id, slot.exit_failure(status, &label)))
@@ -2614,8 +2786,8 @@ impl App {
                     }
                     Some(client) => {
                         self.request_close(cx, client);
-                        if self.module_host.close_pending(client) {
-                            ToolResult::ok(id, format!("{app} asks the person before closing"), "asking")
+                        if self.close_pending(client) {
+                            ToolResult::ok(id, format!("{app} was asked to close and may ask the person first"), "asking")
                         } else {
                             ToolResult::ok(id, format!("{app} is closing"), "closing")
                         }
@@ -2841,6 +3013,12 @@ impl App {
                         None => return,
                     };
                     peer_link::on_frame(client, &app, &json, sender);
+                    return;
+                }
+                // An app's answer about closes, read by its wire text so it
+                // works with any makepad pin (process_close.rs).
+                if let Some(word) = process_close::parse_close_word(&json) {
+                    self.on_close_word(cx, client, word);
                     return;
                 }
                 // The typed app<->WM vocabulary (libs/wm_api) first; what
@@ -5403,8 +5581,8 @@ impl App {
         self.contain_module_faults(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
-        if self.module_host.take_quit_ready() {
-            log!("wm: every instance confirmed; quitting");
+        if self.take_quit_ready() {
+            log!("wm: every instance and app confirmed; quitting");
             cx.quit();
         }
     }
