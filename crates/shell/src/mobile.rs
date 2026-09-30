@@ -105,6 +105,14 @@ pub struct PhoneState {
     pub touch: Option<u64>,
     pub keyboard: f64,
     pub native_keyboard: f64,
+    /// The native keyboard's height when it last showed: where the next one
+    /// will stop, before it reports anything.
+    pub native_keyboard_seen: f64,
+    /// How much the native keyboard has shortened the body right now (the
+    /// window's height minus the body's).
+    pub body_reflow: f64,
+    /// When app search last took focus (`crate::host::now`).
+    pub search_focus_at: f64,
     pub keyboard_target: f64,
     pub keyboard_sent_height: f64,
     pub keyboard_client: Option<ClientId>,
@@ -161,7 +169,7 @@ impl Default for PhoneState {
             navigation: Default::default(), theme: None,
             openness: 0.0, overview: 0.0, page: 0.0, dismiss_y: 0.0, gesture: None, touch: None,
             animation_active: false, draw_active: false,
-            keyboard: 0.0, native_keyboard: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
+            keyboard: 0.0, native_keyboard: 0.0, native_keyboard_seen: 0.0, body_reflow: 0.0, search_focus_at: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
             search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(),
             ime: HashMap::new(), shift: false, symbols: false,
@@ -195,15 +203,40 @@ const SEARCH_FRICTION: f64 = 4.0;
 impl PhoneState {
     pub fn navigation_rect(&self) -> Rect {
         // The native KeyboardView already resizes this viewport above the
-        // IME. Only the shell's simulated keyboard overlays the viewport.
+        // IME. Only the shell's simulated keyboard overlays the viewport,
+        // and a search's keyboard is made room for before that resize, so
+        // the bubble clears the lifted search bar (`search_keyboard_lift`).
+        let lift = self.search_keyboard_lift(crate::host::now());
         Rect { pos: self.viewport.pos, size: dvec2(self.viewport.size.x,
-            (self.viewport.size.y - self.keyboard).max(1.0)) }
+            (self.viewport.size.y - self.keyboard - lift).max(1.0)) }
     }
     pub fn native_keyboard_event(&mut self, event: &VirtualKeyboardEvent) {
         self.native_keyboard=match event {
             VirtualKeyboardEvent::WillShow{height,..}|VirtualKeyboardEvent::DidShow{height,..}=>height.max(0.0),
             VirtualKeyboardEvent::WillHide{..}|VirtualKeyboardEvent::DidHide{..}=>0.0,
         };
+        // WillShow carries the height the keyboard will reach; a rising
+        // keyboard's DidShow heights only grow toward it.
+        match event {
+            VirtualKeyboardEvent::WillShow{height,..} if *height>0.0 => self.native_keyboard_seen=*height,
+            VirtualKeyboardEvent::DidShow{height,..} if *height>self.native_keyboard_seen => self.native_keyboard_seen=*height,
+            _ => {}
+        }
+    }
+    /// How far app search's field is lifted above the body's bottom while
+    /// the native keyboard is still rising: it waits where the keyboard will
+    /// stop (the height it last showed at) instead of starting at the bottom
+    /// and being overtaken. Zero once the body has shrunk that far, with no
+    /// native keyboard (the desktop preview), and half a second after focus
+    /// if none came (a hardware keyboard).
+    pub fn search_keyboard_lift(&self, now: f64) -> f64 {
+        if !self.search_focused || self.native_keyboard_seen <= 0.0 {
+            return 0.0;
+        }
+        if self.native_keyboard <= 0.0 && now - self.search_focus_at > 0.5 {
+            return 0.0;
+        }
+        (self.native_keyboard_seen - self.body_reflow).max(0.0)
     }
     /// The home page (or the app library) is fully shown and nothing is
     /// animating or being dragged: safe to reconfigure a window down to
