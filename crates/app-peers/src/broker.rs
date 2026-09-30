@@ -387,6 +387,15 @@ pub fn interrupt_where(matches: impl Fn(&str) -> bool) -> Vec<String> {
     brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_running()).collect()
 }
 
+/// The live (not released) broker of the app whose id is `app_id`, if one
+/// runs: a shell surface opens the app's conversation on the same peer the
+/// app uses (the shell's "Ask <app>" panel).
+pub fn live(app_id: &str) -> Option<Broker> {
+    let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+    all.retain(|b| b.strong_count() > 0);
+    all.iter().rev().filter_map(Weak::upgrade).find(|b| b.cfg.app_id == app_id && !b.lock().released).map(Broker)
+}
+
 /// Whether a kernel refusal is `turn_in_progress` (the session runs another
 /// turn: the kernel queues nothing).
 fn turn_in_progress(error: &str) -> bool {
@@ -586,6 +595,11 @@ impl Broker {
     /// The current account generation (bumped by every account change).
     pub fn generation(&self) -> u64 {
         self.0.lock().generation
+    }
+
+    /// The account the broker acts for now (`None`: signed out).
+    pub fn account(&self) -> Option<String> {
+        self.0.lock().account.clone()
     }
 
     /// The bound peer's slug and session, once bound.
@@ -2787,6 +2801,10 @@ impl OctosAppService for Broker {
 
     fn services(&self) -> BTreeSet<String> {
         self.0.cfg.services.clone()
+    }
+
+    fn prepare(&self) -> Result<(), String> {
+        self.bind()
     }
 
     fn model(&self) -> Option<ModelInfo> {

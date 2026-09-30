@@ -9,7 +9,9 @@
 
 #![allow(dead_code)] // shell surface (icons, OSD, panels) built ahead of the flows that use it
 
+pub mod agents;
 pub mod ai_bus;
+pub mod app_chat;
 pub mod app_storage;
 pub mod dev_mode;
 pub mod approvals;
@@ -217,6 +219,9 @@ script_mod! {
                         // conversation with the system agent, F8. Under the
                         // approval sheets, which answer its approvals.
                         shell_system_chat := ShellSystemChat{}
+                        // "Ask <app>" (app_chat/): an app agent's
+                        // conversation, both lanes, beside the system chat.
+                        shell_app_chat := ShellSystemChat{ app_panel: true }
                         shell_approvals := ShellApprovals{}
                         shell_approvals_settings := ShellApprovalsSettings{}
                         // Developer mode's banner (dev_mode.rs): over
@@ -3091,6 +3096,11 @@ impl App {
     /// What a menu row does. The ids are the jsonc's dotted paths, with
     /// `apps.<id>` and `style.theme[.import].<name>` from the providers.
     fn shell_menu_activate(&mut self, cx: &mut Cx, target: &str) {
+        if target == shell::menu::ASK_APP_ROW {
+            self.close_shell_menu(cx);
+            self.ask_focused_app(cx);
+            return;
+        }
         if target == shell::menu::SYSTEM_CHAT_ROW {
             self.close_shell_menu(cx);
             system_chat::open();
@@ -3244,7 +3254,11 @@ impl App {
     /// Agents the person turned off since the last tick: their live services
     /// go now (ADR 0004 §4), whichever way the app is hosted.
     fn revoke_agents(&mut self) {
-        for app in approvals::take_revoked() {
+        let revoked = approvals::take_revoked();
+        // Agents just allowed get their peer; revoked ones are forgotten.
+        agents::pump(&revoked);
+        app_chat::pump();
+        for app in revoked {
             let modules = self.module_host.revoke_assistant(&app);
             peer_link::revoke(&app);
             let contained = crate::ai_host::contained::revoke(&app);
@@ -3256,8 +3270,9 @@ impl App {
     /// one of its approvals): hand approvals on, and redraw.
     fn system_chat_changed(&mut self, cx: &mut Cx) {
         system_chat::pump();
+        app_chat::pump();
         self.host_tools_pump(cx);
-        let generation = system_chat::generation();
+        let generation = system_chat::generation().wrapping_add(app_chat::generation());
         if generation != self.system_chat_generation {
             self.system_chat_generation = generation;
             self.redraw_all(cx);
@@ -3293,6 +3308,44 @@ impl App {
         }
         if answered {
             host_tools::pump();
+        }
+    }
+
+    /// "Ask <app>" for the focused window's app, when it has an agent
+    /// (the bar's button, Shift+F8, Setup › Assistant).
+    fn ask_focused_app(&mut self, cx: &mut Cx) {
+        let app = self.focused_agent_app();
+        match app {
+            Some(app) => {
+                log!("ask: {}'s agent", app.id);
+                app_chat::open_app(app);
+            }
+            None => self.notify(cx, "No app agent here", "The focused app has no agent to ask. The system agent (F8) can help instead."),
+        }
+        self.system_chat_changed(cx);
+    }
+
+    /// The focused window's app, when it has an agent.
+    fn focused_agent_app(&mut self) -> Option<apps::AgentApp> {
+        let state = self.state.as_ref()?;
+        let client = state.layout.focused_client()?;
+        let app = state.clients.get(&client)?.app.clone();
+        agents::find(&app)
+    }
+
+    /// "Ask <app>"'s pane owns the pointer inside its rect while open.
+    fn app_chat_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !app_chat::is_open() {
+            return false;
+        }
+        let pane = self.ui.widget(cx, ids!(shell_app_chat));
+        let outcome = pane.borrow_mut::<system_chat::view::ShellSystemChat>().map(|mut p| p.pointer(cx, event)).unwrap_or(system_chat::view::Outcome::Ignored);
+        match outcome {
+            system_chat::view::Outcome::Ignored => false,
+            _ => {
+                self.system_chat_changed(cx);
+                true
+            }
         }
     }
 
@@ -3474,6 +3527,7 @@ impl App {
         data.style = self.state_mut().style.target;
         data.dark = self.state_mut().style.dark;
         data.active_window = (!title.is_empty()).then_some(title);
+        data.ask_agent = self.focused_agent_app().map(|a| a.name);
         data.open_panel = self.shell_panel_open;
         // The middle window control reads "restore" while maximized.
         data.maximized = self.ui.window(cx, ids!(main_window)).is_fullscreen(cx);
@@ -4493,7 +4547,8 @@ impl App {
                     // approval-sheet, approval-batch, approval-consent,
                     // approvals-settings (approvals/mod.rs).
                     // system-chat, system-chat-send:<text> (system_chat/).
-                    if system_chat::test_action(name) {
+                    // ask:<app>, ask-send:<text> (app_chat/).
+                    if system_chat::test_action(name) || app_chat::test_action(name) {
                         log!("wm: --test-action {}", name);
                         self.system_chat_changed(cx);
                         i += 2;
@@ -4853,6 +4908,10 @@ impl MatchEvent for App {
         // The system agent's grants (Setup > Assistant > Command execution),
         // handed to the kernel before it first starts.
         system_chat::init(std::path::Path::new(&octosense::paths::home()));
+        // An agent for every app that declares one (ADR 0004 §4): the ones
+        // the person already allowed get their peer now, so the system
+        // agent's peer_list shows them.
+        agents::start();
         // CLI: --import-theme <name> pulls an omarchy theme and converts
         // it to splash before the desktop appears.
         let mut args = std::env::args();
@@ -5106,6 +5165,7 @@ impl MatchEvent for App {
                             self.focus_client(cx, focus);
                         }
                     }
+                    BarModule::AskAgent => self.ask_focused_app(cx),
                     control @ (BarModule::WindowMin | BarModule::WindowMax | BarModule::WindowClose) => {
                         // The gallery's bar is a picture of one: its
                         // controls log (shell/gallery.rs), never close or
@@ -5439,6 +5499,7 @@ impl App {
                 || self.shell_menu_pointer(cx, event)
                 || self.shell_panel_pointer(cx, event)
                 || self.shell_glance_pointer(cx, event)
+                || self.app_chat_pointer(cx, event)
                 || self.system_chat_pointer(cx, event))
         {
             return;
@@ -5544,6 +5605,18 @@ impl App {
                     self.alt_armed = false;
                     return;
                 }
+                // "Ask <app>"'s prompt, while its pane has the keyboard.
+                if app_chat::key(e) {
+                    self.alt_armed = false;
+                    self.system_chat_changed(cx);
+                    return;
+                }
+                // Shift+F8: ask the focused app's agent.
+                if e.key_code == KeyCode::F8 && e.modifiers.shift && !e.modifiers.logo && !e.modifiers.control && !e.modifiers.alt {
+                    self.alt_armed = false;
+                    self.ask_focused_app(cx);
+                    return;
+                }
                 // The system chat's prompt, while its pane is open.
                 if system_chat::key(e) {
                     self.alt_armed = false;
@@ -5554,6 +5627,8 @@ impl App {
                 if e.key_code == KeyCode::F8 && bare_key(&e.modifiers) {
                     self.alt_armed = false;
                     system_chat::toggle();
+                    // The system chat takes the keyboard when it opens.
+                    app_chat::focus(!system_chat::is_open());
                     self.system_chat_changed(cx);
                     return;
                 }
@@ -5630,7 +5705,7 @@ impl App {
         }
         // The phone's input method types into the system chat's prompt.
         if let Event::TextInput(t) = event {
-            if cfg!(native_mobile) && self.state.is_some() && system_chat::text_input(&t.input) {
+            if cfg!(native_mobile) && self.state.is_some() && (app_chat::text_input(&t.input) || system_chat::text_input(&t.input)) {
                 self.system_chat_changed(cx);
                 return;
             }

@@ -106,12 +106,15 @@ pub struct ConsentStore {
     /// Apps whose agent was just turned off: the shell revokes their live
     /// services ([`ConsentStore::take_revoked`]).
     revoked: Vec<String>,
+    /// Apps whose agent was just allowed: the shell prepares their peer
+    /// ([`ConsentStore::take_allowed`], `crate::agents`).
+    allowed: Vec<String>,
     generation: u64,
 }
 
 impl ConsentStore {
     pub fn memory() -> ConsentStore {
-        ConsentStore { path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), revoked: Vec::new(), generation: 0 }
+        ConsentStore { path: None, decided: BTreeMap::new(), known: BTreeMap::new(), asking: Vec::new(), revoked: Vec::new(), allowed: Vec::new(), generation: 0 }
     }
     pub fn in_home(home: &Path) -> ConsentStore {
         let path = home.join(CONSENT_FILE);
@@ -162,6 +165,8 @@ impl ConsentStore {
     pub fn set(&mut self, _gesture: &ApprovalGesture, app: &str, allowed: bool, now: u64) {
         if !allowed {
             self.revoke(app);
+        } else if !self.allowed.iter().any(|a| a == app) {
+            self.allowed.push(app.to_string());
         }
         self.decided.insert(app.to_string(), Record { allowed, at: now });
         self.asking.retain(|a| a != app);
@@ -176,7 +181,13 @@ impl ConsentStore {
         self.generation += 1;
         self.save();
     }
+    /// The apps whose agent was allowed since the last call: the shell
+    /// prepares their peer now (ADR 0004 §4).
+    pub fn take_allowed(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.allowed)
+    }
     fn revoke(&mut self, app: &str) {
+        self.allowed.retain(|a| a != app);
         if !self.revoked.iter().any(|a| a == app) {
             self.revoked.push(app.to_string());
         }

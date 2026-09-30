@@ -140,7 +140,7 @@ fn the_system_chat_shows_the_system_agents_questions_and_answers_them_through_th
 #[test]
 fn only_the_shells_surfaces_answer_questions() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let allowed = ["questions/mod.rs", "questions/tests.rs", "system_chat/mod.rs", "approvals/view.rs"];
+    let allowed = ["questions/mod.rs", "questions/tests.rs", "system_chat/mod.rs", "approvals/view.rs", "app_chat/mod.rs"];
     let mut found = Vec::new();
     let mut stack = vec![root.clone()];
     while let Some(dir) = stack.pop() {

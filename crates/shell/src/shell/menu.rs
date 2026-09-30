@@ -788,6 +788,9 @@ const DEVELOPER_ON: &str = "setup.developer.on";
 /// The Approvals page's row (lib.rs opens `approvals::open_settings`).
 pub const APPROVALS_ROW: &str = "setup.assistant.approvals";
 
+/// "Ask <app>" for the focused app (lib.rs `ask_focused_app`).
+pub const ASK_APP_ROW: &str = "setup.assistant.ask";
+
 /// The system chat's row (lib.rs opens `system_chat::open`).
 pub const SYSTEM_CHAT_ROW: &str = "setup.assistant.chat";
 /// Setup → Assistant → Command execution (system_chat/grants.rs).
@@ -817,6 +820,12 @@ fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
             .icon(Ico::Cpu)
             .aliases(&["chat", "system agent", "assistant chat", "ask"])
             .describe("Talk to the system agent (F8)"),
+    );
+    items.push(
+        MenuItem::new(ASK_APP_ROW, "Ask this app's agent", MenuKind::Action)
+            .icon(Ico::Cpu)
+            .aliases(&["ask", "app agent", "ask app"])
+            .describe("Talk to the focused app's agent (Shift+F8)"),
     );
     items.extend(command_items());
     items

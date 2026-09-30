@@ -37,6 +37,9 @@ pub enum BarModule {
     /// `widgets/ActiveWindow.qml` — not in the stock `shell.json` center
     /// list, but our bar carries it right after the workspaces.
     ActiveWindow,
+    /// "Ask <app>" beside the active window's title, when the focused app
+    /// has an agent (ADR 0004 §4): opens the shell's panel for it.
+    AskAgent,
     Indicator(usize),
     Clock,
     KeyboardLayout,
@@ -86,6 +89,9 @@ pub struct BarData {
     pub indicators: Vec<Indicator>,
     /// The focused window's title (`ActiveWindow.qml`).
     pub active_window: Option<String>,
+    /// The focused app's name, when it has an agent: the bar offers
+    /// "Ask <name>".
+    pub ask_agent: Option<String>,
     /// Already formatted — `dddd HH:mm`, or the alt `d MMMM 'W'ww yyyy`.
     pub clock: String,
     pub keyboard_layout: Option<String>,
@@ -148,6 +154,7 @@ impl BarData {
             ],
             indicators: default_indicators(),
             active_window: Some("terminal — ~/makepad".into()),
+            ask_agent: None,
             clock: "Thursday 21:34".into(),
             keyboard_layout: Some("en".into()),
             weather: None,
@@ -712,6 +719,15 @@ impl ShellBar {
                 &title,
             );
             self.hits.push((BarModule::ActiveWindow, cell));
+            x += w;
+        }
+        // "Ask <app>": the focused app's agent, in the shell's panel.
+        if let Some(name) = self.data.ask_agent.clone() {
+            let label = format!("Ask {name}");
+            let w = self.d.measure(cx, false, tok.font.body, &label) + tok.spacing.control_padding_x * 2.0;
+            let cell = rect(x, r.pos.y, w, r.size.y);
+            self.d.label(cx, cell, false, tok.font.body, accent, super::ui::HAlign::Center, &label);
+            self.hits.push((BarModule::AskAgent, cell));
         }
 
         // ---- center: the clock is the anchor, centered on the bar itself
@@ -879,6 +895,7 @@ impl ShellBar {
                 .active_window
                 .clone()
                 .unwrap_or_default(),
+            BarModule::AskAgent => format!("Talk to {}'s agent (Shift+F8)", self.data.ask_agent.clone().unwrap_or_default()),
             BarModule::Clock => "Calendar".into(),
             BarModule::KeyboardLayout => "Keyboard layout".into(),
             BarModule::Weather => "Weather".into(),

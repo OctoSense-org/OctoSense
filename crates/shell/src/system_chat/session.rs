@@ -100,13 +100,17 @@ pub struct ShellSystemHost;
 
 impl SystemHost for ShellSystemHost {
     fn declarations(&self) -> Vec<Value> {
-        super::grants::host_tools()
+        let mut decls: Vec<Value> = super::grants::host_tools()
             .into_iter()
             .filter_map(|tool| {
                 let owner = tool.split('.').next().unwrap_or(&tool).to_string();
                 crate::host_tools::declaration(&owner, &tool)
             })
-            .collect()
+            .collect();
+        // Which apps have an agent, and asking the person to allow one
+        // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
+        decls.extend(crate::agents::declarations());
+        decls
     }
     fn host_token(&self) -> Option<String> {
         #[cfg(kernel)]
@@ -124,6 +128,10 @@ pub enum Command {
     /// Let the connection go when nothing runs (the pane closed).
     Close,
     Send(String),
+    /// The person's message, with the shell's note for the system agent
+    /// in front of it (`crate::agents::system_note`): the kernel gets both,
+    /// the pane shows the person's words.
+    SendNoted { text: String, note: String },
     Interrupt,
     NewConversation,
     /// Answer the open question with one option or free text.
@@ -166,6 +174,9 @@ pub struct Driver {
     registered: Option<Vec<String>>,
     /// A registration is on its way.
     registering: bool,
+    /// The set the kernel refused on this link: not asked again until the
+    /// set changes or the link does.
+    refused: Option<Vec<String>>,
     /// The credential the registration used (results carry it).
     token: Option<String>,
     /// `peer/tool/result` fields from the relay's answers, for this link.
@@ -197,6 +208,7 @@ impl Driver {
             system_host: Box::new(ShellSystemHost),
             registered: None,
             registering: false,
+            refused: None,
             token: None,
             outbox: Arc::new(Mutex::new(Vec::new())),
             waker: None,
@@ -230,6 +242,9 @@ impl Driver {
         }
         let decls = self.system_host.declarations();
         let names: Vec<String> = decls.iter().filter_map(|d| d["name"].as_str().map(str::to_string)).collect();
+        if self.refused.as_ref() == Some(&names) {
+            return;
+        }
         match &self.registered {
             Some(held) if *held == names => return,
             // Nothing registered and nothing to register.
@@ -238,7 +253,9 @@ impl Driver {
         }
         let Some(token) = self.system_host.host_token() else {
             let told = self.model.items.iter().any(|i| matches!(i, super::model::Item::Notice(n) if n == NO_CREDENTIAL));
-            if !names.is_empty() && !told {
+            // Only command execution needs saying: the agents tools wait
+            // quietly for the first app agent (the note says the same).
+            if names.iter().any(|n| n == super::grants::COMMAND_TOOL) && !told {
                 self.model.notice(NO_CREDENTIAL);
             }
             return;
@@ -360,7 +377,8 @@ impl Driver {
                     self.try_connect();
                 }
             }
-            Command::Send(text) => {
+            Command::Send(text) => self.command(Command::SendNoted { text, note: String::new() }),
+            Command::SendNoted { text, note } => {
                 let text = text.trim().to_string();
                 if text.is_empty() {
                     return;
@@ -375,7 +393,8 @@ impl Driver {
                 self.sync_tools();
                 let turn = new_turn_id();
                 self.model.start_turn(&turn, &text);
-                let params = json!({"session_id": SYSTEM_SESSION, "turn_id": turn, "input": [{"kind": "text", "text": text}]});
+                let input = if note.is_empty() { text } else { format!("{note}\n{text}") };
+                let params = json!({"session_id": SYSTEM_SESSION, "turn_id": turn, "input": [{"kind": "text", "text": input}]});
                 self.request("turn/start", params, Pending::Turn { turn });
             }
             Command::Interrupt => {
@@ -432,6 +451,7 @@ impl Driver {
         // A host session set lives as long as its connection.
         self.registered = None;
         self.registering = false;
+        self.refused = None;
         self.outbox.lock().unwrap_or_else(|e| e.into_inner()).clear();
         self.end_calls();
     }
@@ -612,6 +632,7 @@ impl Driver {
                     None => self.registered = Some(tools),
                     Some(why) => {
                         self.registered = None;
+                        self.refused = Some(tools.clone());
                         self.model.notice(format!("The assistant could not be offered its granted tools ({}): {why}", tools.join(", ")));
                     }
                 }
