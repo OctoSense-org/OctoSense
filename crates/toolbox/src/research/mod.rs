@@ -354,12 +354,14 @@ impl ResearchHost {
         };
         let topic = Topic::new(&query.topic);
         let mut results = self.backend.search(ctx, query.clone()).await?;
-        // Readable items first, and within each group items whose headline
-        // or snippet mentions the topic (a stable sort keeps the backend's
-        // order otherwise), so `limit` fills with items worth a read.
+        // Readable items first; then articles before listing pages (a
+        // site's topic or tag page is not a report); then by how many of
+        // the topic's terms the headline or snippet names (a stable sort
+        // keeps the backend's order otherwise), so `limit` fills with items
+        // worth a read.
         results.items.sort_by_key(|item| {
-            let relevant = topic.matches(&format!("{} {}", item.title, item.snippet));
-            (!item.readable, !relevant)
+            let named = topic.coverage(&format!("{} {}", item.title, item.snippet));
+            (!item.readable, is_listing(&item.url), std::cmp::Reverse(named))
         });
         let queried_at = (self.clock)();
         let mut seen_urls = BTreeSet::new();
@@ -1057,8 +1059,40 @@ fn publisher_keys(item: &FoundItem) -> Vec<String> {
     keys
 }
 
+/// A site's topic, tag, category or section page, or its home page: a
+/// list of reports rather than one.
+fn is_listing(url: &str) -> bool {
+    const LISTING: &[&str] = &["topic", "topics", "tag", "tags", "category", "categories", "section", "sections", "hub"];
+    let Some((_, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let path = rest.find('/').map_or("", |at| &rest[at..]);
+    let path = path.split(['?', '#']).next().unwrap_or("");
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    segments.is_empty() || segments.iter().any(|s| LISTING.contains(&s.to_ascii_lowercase().as_str()))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn listing_pages_are_told_from_reports() {
+        for listing in [
+            "https://hbr.org/topic/subject/ai-and-machine-learning",
+            "https://www.example.com/",
+            "https://news.example.org/Tags/phones",
+            "https://www.example.com/category/tech/",
+        ] {
+            assert!(is_listing(listing), "{listing}");
+        }
+        for report in [
+            "https://www.upi.com/Top_News/World-News/2026/09/29/kakao-ai-safety-institute/4251790722100",
+            "https://example.com/2026/09/29/topical-review",
+            "https://github.com/TencentCloudBase/skills",
+        ] {
+            assert!(!is_listing(report), "{report}");
+        }
+    }
+
     use super::*;
 
     #[test]

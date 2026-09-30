@@ -334,10 +334,11 @@ async fn a_slow_read_leaves_time_for_the_digest() {
         .any(|r| r.contains("time budget")));
     assert_eq!(result.trace.iter().filter(|e| e.event == "timed_out").count(), 0);
 
-    // One slow page: it is given up and the digest runs on the others.
+    // One slow page among readable ones: it is given up at the window's
+    // close and the digest runs on the others.
     let mut case = common::case("topic-brief", "failed-read-fallback");
-    let slow = case.fixture.pages.keys().next().unwrap().clone();
-    case.fixture.pages.get_mut(&slow).unwrap().delay_ms = 60_000;
+    let slow = "https://example.invalid/zh/river-plan";
+    case.fixture.pages.get_mut(slow).unwrap().delay_ms = 60_000;
     let result = run(
         &template,
         &app(&folder).with_budget(budget),
