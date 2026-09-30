@@ -944,7 +944,11 @@ fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
     fake.notify("peer/tool/call", call("c2", "talk-to-octos-1"));
     settle(&mut d);
     let triggers: Vec<(String, TurnTrigger)> = d.effects.iter().filter_map(|e| match e { Effect::ToolCall { call, .. } => Some((call.call_id.clone(), call.trigger.clone())), _ => None }).collect();
-    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person), ("c2".to_string(), TurnTrigger::Unknown)]);
+    // Another client's turn's call is not relayed at all: refused to the
+    // kernel (ADR 0004 §8: the system session relays only its own turns).
+    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person)]);
+    let refused = fake.sent("peer/tool/result");
+    assert!(refused.iter().any(|r| r["call_id"] == "c2" && r["error"]["kind"] == "not_this_hosts_turn"), "{refused:?}");
 }
 
 
@@ -974,4 +978,22 @@ fn terminal_run_needs_a_launch_that_reported_its_sandbox() {
     let run = crate::native_apps::find("terminal").unwrap().tools_json;
     assert!(!run.contains("unsandboxed"), "{run}");
     assert!(run.contains("inside the Terminal's own sandbox"), "{run}");
+}
+
+/// An app agent's question routed to the system chat is never dropped while
+/// it is open, however many others came after it; settled ones go first.
+#[test]
+fn an_open_routed_question_is_never_dropped() {
+    use super::model::Item;
+    let q = |n: u64, open: bool| {
+        (n, Item::Question { id: format!("routed:{n}"), turn: "t".into(), title: "?".into(), body: String::new(), options: Vec::new(), count: 1, answered: (!open).then(|| "yes".to_string()) })
+    };
+    let mut routed: Vec<(u64, Item)> = vec![q(1, true)];
+    routed.extend((2..=40).map(|n| q(n, false)));
+    super::trim_routed(&mut routed, super::ROUTED_KEPT);
+    assert_eq!(routed.len(), super::ROUTED_KEPT);
+    assert_eq!(routed[0].0, 1, "the oldest, still open, stays");
+    let mut all_open: Vec<(u64, Item)> = (1..=40).map(|n| q(n, true)).collect();
+    super::trim_routed(&mut all_open, super::ROUTED_KEPT);
+    assert_eq!(all_open.len(), 40, "open questions are never dropped");
 }

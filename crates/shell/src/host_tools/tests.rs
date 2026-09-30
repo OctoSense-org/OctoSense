@@ -1092,3 +1092,41 @@ fn should_send_a_modules_tools_down_its_link_when_it_has_no_executor() {
     assert_eq!(w.link_calls.len(), 1);
     assert_eq!(w.link_calls[0].0, "probe");
 }
+
+/// ADR 0004 §8: the owning app's sheet gets who is calling as data, not
+/// only a label, so it can check its own grants against it (section 9).
+#[test]
+fn the_apps_sheet_gets_the_structured_caller() {
+    use crate::ai_host::app_peers::host_tools::ConfirmCaller;
+    let (mut relay, _) = relay_with("rinx", vec![decl("rinx.message.send", true, "app")]);
+    relay.catalog.grant("calendar", "rinx", "rinx.message.send");
+    let mut w = World::new(FixedDevMode::off());
+    let sheet = Arc::new(SendSheet::default());
+    w.router.register_app_confirm("rinx", Box::new(super::SheetBridge { app: "rinx".into(), sheet: sheet.clone() }));
+    for (id, calling) in [("s1", "calendar"), ("s2", "rinx")] {
+        let mut c = call(id, "rinx.message.send", calling);
+        c.confirm_required = true;
+        let (r, _) = reply(id);
+        relay.handle(Event::Call { call: c, reply: r }, &mut w);
+    }
+    let shown = sheet.0.lock().unwrap().clone();
+    assert_eq!(shown[0].caller, ConfirmCaller::AppAgent { app: "calendar".into() });
+    assert_eq!(shown[1].caller, ConfirmCaller::OwnAgent { client: Some("mini.news".into()) });
+}
+
+/// A cancelled `confirm: app` call is withdrawn from the owning app's sheet
+/// (the router and the app hear it), not left for the person to answer.
+#[test]
+fn a_cancelled_confirm_app_call_is_withdrawn_from_the_apps_sheet() {
+    let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.message.send", true, "app")]);
+    let mut w = World::new(FixedDevMode::off());
+    let mut c = call("w1", "rinx.message.send", "rinx");
+    c.confirm_required = true;
+    let (r, _) = reply("w1");
+    relay.handle(Event::Call { call: c, reply: r }, &mut w);
+    let id = RequestId(format!("{CONFIRM_PREFIX}w1"));
+    assert!(w.router.is_pending(&id), "on the app's sheet");
+    relay.handle(Event::Cancel { call_id: "w1".into(), reason: "interrupted".into() }, &mut w);
+    assert!(!w.router.is_pending(&id), "withdrawn with the call");
+    assert!(exec.0.lock().unwrap().is_empty());
+}
