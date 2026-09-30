@@ -16,8 +16,16 @@
 //!   and in the system agent's lane "<App>'s agent, to the system agent".
 //! - **Approvals** are the shell's: the router draws the sheet (the broker
 //!   hands every approval of the peer to it). Nothing here answers one.
+//! - **Order.** Each lane has its own ledger (`cursor.seq` counts per
+//!   session), so seqs of two lanes do not compare. Within a lane items
+//!   keep ledger order; across lanes they go by one clock, the order
+//!   events reached the panel (a stream event carries no time of its own;
+//!   history rows come merged by `persisted_at`). A turn's request line
+//!   stands where the turn STARTED: the kernel sends a turn's user message
+//!   only when the turn ends (never for a stopped one), so the broker hands
+//!   its words over with `turn/started` (`request`).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde_json::Value;
 
@@ -39,7 +47,18 @@ pub struct Conversation {
     lanes: HashMap<String, String>,
     /// Turns that ended (their late envelopes do not make them run again).
     finished: Vec<String>,
+    /// Each lane's ledger positions (`cursor.seq`) and the place on the
+    /// panel's clock each was given.
+    places: HashMap<String, BTreeMap<u64, u64>>,
+    /// Where each turn started on the panel's clock.
+    starts: HashMap<String, u64>,
+    /// The panel's clock: one tick per event, [`SPACING`] apart.
+    clock: u64,
 }
+
+/// Room between two ticks of the clock, for envelopes that arrive after a
+/// later one of their own lane.
+const SPACING: u64 = 1 << 20;
 
 impl Conversation {
     pub fn new(app: &str) -> Self {
@@ -70,37 +89,93 @@ impl Conversation {
         }
     }
 
+    fn tick(&mut self) -> u64 {
+        self.clock += SPACING;
+        self.clock
+    }
+
+    /// The place of `lane`'s ledger position `seq` on the panel's clock:
+    /// now, unless a later position of the same lane already came (then
+    /// just before it, after the one before it).
+    fn place(&mut self, lane: &str, seq: u64) -> u64 {
+        if let Some(at) = self.places.get(lane).and_then(|p| p.get(&seq)) {
+            return *at;
+        }
+        let now = self.tick();
+        let placed = self.places.entry(lane.to_string()).or_default();
+        let at = match placed.range(seq + 1..).next().map(|(_, at)| *at) {
+            None => now,
+            Some(next) => {
+                let before = placed.range(..seq).next_back().map(|(_, at)| *at).unwrap_or(next.saturating_sub(SPACING));
+                before + (next - before) / 2
+            }
+        };
+        placed.insert(seq, at);
+        at
+    }
+
+    /// Where `turn` started on the panel's clock (its first event, if its
+    /// start was not seen).
+    fn start_of(&mut self, turn: &str) -> u64 {
+        if let Some(at) = self.starts.get(turn) {
+            return *at;
+        }
+        let at = self.tick();
+        self.starts.insert(turn.to_string(), at);
+        at
+    }
+
+    /// The turn's request line (who asked, and what), where the turn
+    /// started; once.
+    fn request_line(&mut self, turn: &str, text: String, speaker: &Value) {
+        let known = self.chat.items.iter().any(|i| matches!(i, Item::Message { role: Role::User, turn: Some(t), .. } if t == turn));
+        if known || text.trim().is_empty() {
+            return;
+        }
+        let at = self.start_of(turn);
+        let speaker = self.speaker_label(speaker);
+        let item = Item::Message { role: Role::User, text, turn: Some(turn.to_string()), segment: None, seq: Some(at), speaker: Some(speaker) };
+        self.chat.insert_ordered(item, Some(at));
+    }
+
     /// One event of the conversation's follower: `{method, params, lane,
-    /// speaker?, display_text?}`.
+    /// speaker?, display_text?, request?}`.
     pub fn apply(&mut self, data: &Value) {
         let method = data["method"].as_str().unwrap_or("");
-        let params = &data["params"];
         let lane = data["lane"].as_str().unwrap_or(LANE_PERSON).to_string();
+        let mut params = data["params"].clone();
         let turn = params["turn_id"].as_str().unwrap_or("").to_string();
         if !turn.is_empty() {
             self.lanes.entry(turn.clone()).or_insert_with(|| lane.clone());
+            self.start_of(&turn);
         }
-        let kind = params["payload"]["type"].as_str().unwrap_or("");
-        match (method, kind) {
+        // One clock for both lanes: the model below orders by this place.
+        if method == "projection/envelope" {
+            if let Some(seq) = params["cursor"]["seq"].as_u64().or_else(|| params["seq"].as_u64()) {
+                let at = self.place(&lane, seq);
+                params["cursor"] = serde_json::json!({"seq": at});
+            }
+        }
+        let kind = params["payload"]["type"].as_str().unwrap_or("").to_string();
+        match (method, kind.as_str()) {
             ("projection/envelope", "user_message") => {
-                // Who asked: the turn starts here, in its lane.
+                // Who asked: shown where the turn started, not where the
+                // kernel recorded it (at its end).
                 let text = data["display_text"]
                     .as_str()
                     .map(str::to_string)
                     .or_else(|| params["payload"]["data"]["text"].as_str().map(|t| strip_marker(t).to_string()))
                     .unwrap_or_default();
-                let speaker = self.speaker_label(&data["speaker"]);
-                let seq = params["cursor"]["seq"].as_u64().or_else(|| params["seq"].as_u64());
-                let known = self.chat.items.iter().any(|i| matches!(i, Item::Message { role: Role::User, turn: Some(t), .. } if *t == turn));
-                if !known && !text.trim().is_empty() {
-                    let item = Item::Message { role: Role::User, text, turn: Some(turn.clone()), segment: None, seq, speaker: Some(speaker) };
-                    self.chat.insert_ordered(item, seq);
-                }
+                self.request_line(&turn, text, &data["speaker"]);
                 if !self.ended(&turn) {
                     self.running.insert(turn.clone());
                 }
             }
             ("turn/started", _) => {
+                if let Some(text) = data["request"]["text"].as_str() {
+                    let speaker = if data["request"]["speaker"].is_object() { &data["request"]["speaker"] } else { &data["speaker"] };
+                    self.request_line(&turn, text.to_string(), speaker);
+                }
                 if !self.ended(&turn) {
                     self.running.insert(turn.clone());
                 }
@@ -110,7 +185,7 @@ impl Conversation {
         let terminal = matches!(method, "turn/completed" | "turn/error") || kind == "turn_terminal";
         // The approvals the model notes are the router's; its effects are
         // never acted on here.
-        let _ = self.chat.apply(method, params);
+        let _ = self.chat.apply(method, &params);
         if terminal && !turn.is_empty() {
             self.running.remove(&turn);
             self.finished.push(turn.clone());
