@@ -32,7 +32,7 @@ The desktop shell of [OctoSense](https://github.com/OctoSense-org), the agent sh
 | `scripts/` | `upstream.py` (WM provenance and catalog regeneration), `smoke.py` (native smoke test), their Python tests, `system_apps_remote.sh`, `ai_providers_remote.sh` and `glance_remote.sh` (hidden `--remote` end-to-end runs of the system apps and of AI providers), and `provision-appcard-llm.sh` (Android). |
 | `upstream/makepad.json` | Provenance of every file imported from Makepad's `apps/wm`. |
 | `resources/android/` | The Android manifest template. Themes, wallpapers, icons and the startup script are the shell's, in [`../crates/shell/resources`](../crates/shell/resources). |
-| `docs/` | [Validation record](docs/validation.md), [upstream sync](docs/upstream.md), [local AI](docs/local-ai.md), [Android AppCard build](docs/android-appcard-build.md), dated plans. |
+| `docs/` | [Validation record](docs/validation.md), [upstream sync](docs/upstream.md), [local AI](docs/local-ai.md), [Android AppCard build](docs/android-appcard-build.md), [open apps in tiles](docs/open-apps.md), [add all Makepad apps](docs/add-all-makepad-apps.md), dated plans. |
 | `KEYBINDINGS.md`, `BACKLOG.md` | Keymap notes; open follow-ups. |
 
 The modules the desktop links live elsewhere in the repository: Reference in `../apps/reference`, the AppCard module in `../apps/appcard/module` (with `octos-app` in `../apps/appcard/app/app`).
