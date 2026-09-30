@@ -11,9 +11,10 @@
 //! How it runs: [`renderer`] is the reader's `Renderer`. Called on the
 //! toolbox's async side, it posts a [`WebRenderRequest`] action and waits.
 //! [`WebViewRenderHost`], driven by the shell's event loop, serves requests
-//! one at a time: it loads the URL in a hidden, navigable system browser,
-//! polls the document every second (the Android WebView reports no "page
-//! finished"), and once the page is complete and has settled returns its
+//! in a small pool of hidden, navigable system browsers (one page each at a
+//! time): it loads the URL, polls the document twice a second (the Android
+//! WebView reports no "page finished"), and once the page is complete and
+//! has settled returns its
 //! HTML, final URL and title through the `octos_native` bridge. A check that
 //! clears itself in a real browser ("Just a moment…", "正在进行安全检测…") is
 //! waited out; nothing is clicked or solved. Each load has a deadline.
@@ -28,19 +29,22 @@ use makepad_widgets::makepad_platform::event::{
 use makepad_widgets::*;
 use octos_research::reader::{RenderFuture, Rendered, Renderer};
 
-/// The hidden browser's id.
-fn browser_id() -> LiveId {
-    live_id!(octos_page_renderer)
+/// The hidden browsers' ids: renders run side by side, one per browser.
+/// Two keep a toolbox run's parallel reads from queueing behind each other
+/// without loading the phone with WebViews.
+fn browser_ids() -> [LiveId; 2] {
+    [live_id!(octos_page_renderer), live_id!(octos_page_renderer_2)]
 }
 
 /// The bridge tool the extraction script calls.
 const TOOL: &str = "octos.render";
 /// Seconds between document polls.
-const POLL: f64 = 1.0;
+const POLL: f64 = 0.5;
 /// Seconds a complete document must stay complete before it is read.
-const SETTLE: f64 = 1.5;
-/// Polls a self-clearing check may take before it counts as the page.
-const MAX_CHECK_POLLS: u32 = 12;
+const SETTLE: f64 = 1.0;
+/// Polls a self-clearing check may take before it counts as the page
+/// (about 12 s).
+const MAX_CHECK_POLLS: u32 = 24;
 /// Seconds one render may take. Under a toolbox run's per-read share
 /// (`octosense_toolbox::runner::MAX_READ_MS`), so a render that never
 /// completes is closed here rather than abandoned by the run.
@@ -63,6 +67,17 @@ type Reply = tokio::sync::oneshot::Sender<Result<Rendered, String>>;
 fn replies() -> &'static Mutex<HashMap<u64, Reply>> {
     static R: OnceLock<Mutex<HashMap<u64, Reply>>> = OnceLock::new();
     R.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The reader gave up on this job (its read hit the run's time share):
+/// nobody waits for the page, so it is not rendered or no longer.
+fn abandoned(job: u64) -> bool {
+    let mut replies = replies().lock().unwrap_or_else(|p| p.into_inner());
+    let gone = replies.get(&job).is_none_or(|tx| tx.is_closed());
+    if gone {
+        replies.remove(&job);
+    }
+    gone
 }
 
 fn reply(job: u64, result: Result<Rendered, String>) {
@@ -115,20 +130,46 @@ struct Active {
     /// When the document was first seen complete (seconds since start).
     complete_since: Option<f64>,
     started: f64,
+    /// Seconds it waited in the queue.
+    waited: f64,
     check_polls: u32,
     reading: bool,
     navigations: Vec<String>,
 }
 
-/// Serves [`WebRenderRequest`]s with the hidden WebView, one at a time.
-#[derive(Default)]
-pub struct WebViewRenderHost {
-    queue: VecDeque<WebRenderRequest>,
+/// One hidden browser and the page it is rendering.
+struct Slot {
+    id: LiveId,
     active: Option<Active>,
     spawned: bool,
     /// The page the last render read: until the next load commits, polls
     /// still see it.
     last_page: Option<String>,
+}
+
+/// Serves [`WebRenderRequest`]s with the hidden WebViews, one page per
+/// browser at a time.
+pub struct WebViewRenderHost {
+    /// Waiting requests and when each arrived (seconds since app start).
+    queue: VecDeque<(WebRenderRequest, f64)>,
+    slots: Vec<Slot>,
+}
+
+impl Default for WebViewRenderHost {
+    fn default() -> Self {
+        let slots = browser_ids()
+            .into_iter()
+            .map(|id| Slot { id, active: None, spawned: false, last_page: None })
+            .collect();
+        Self { queue: VecDeque::new(), slots }
+    }
+}
+
+/// A Google News article link: the page only forwards to the publisher by
+/// script, so it is not the page until it has left news.google.com.
+fn forwarding(url: &str) -> bool {
+    url.starts_with("https://news.google.com/rss/articles/")
+        || url.starts_with("https://news.google.com/articles/")
 }
 
 impl WebViewRenderHost {
@@ -137,45 +178,48 @@ impl WebViewRenderHost {
             Event::Actions(actions) => {
                 for action in actions {
                     if let Some(req) = action.downcast_ref::<WebRenderRequest>() {
-                        self.queue.push_back(req.clone());
+                        self.queue.push_back((req.clone(), cx.seconds_since_app_start()));
                     } else if let Some(inv) = action.downcast_ref::<NativeSystemBrowserInvoke>() {
-                        if inv.browser_id == browser_id().get_value() && inv.tool == TOOL {
-                            self.on_poll(cx, inv.call_id as u64, &inv.args);
+                        if inv.tool == TOOL {
+                            if let Some(i) = self.slot_of(inv.browser_id) {
+                                self.on_poll(cx, i, inv.call_id as u64, &inv.args);
+                            }
                         }
                     } else if let Some(err) = action.downcast_ref::<NativeSystemBrowserPageError>()
                     {
-                        if err.browser_id == browser_id().get_value() {
+                        if let Some(i) = self.slot_of(err.browser_id) {
                             // The WebView's renderer process died: the
                             // platform dropped that WebView; spawn a new one.
                             if err.code == RENDER_PROCESS_GONE {
-                                self.spawned = false;
-                                self.last_page = None;
+                                self.slots[i].spawned = false;
+                                self.slots[i].last_page = None;
                             }
-                            if let Some(a) = self.active.as_ref() {
-                                let job = a.job;
+                            if self.slots[i].active.is_some() {
                                 let msg = format!(
                                     "render_failed: the page did not load ({} {})",
                                     err.code, err.description
                                 );
-                                self.finish(cx, job, Err(msg));
+                                self.finish(cx, i, Err(msg));
                             }
                         }
                     }
                 }
             }
             Event::Timer(_) => {
-                if let Some(a) = self.active.as_ref() {
+                for i in 0..self.slots.len() {
+                    let Some(a) = self.slots[i].active.as_ref() else {
+                        continue;
+                    };
                     if a.deadline.is_event(event).is_some() {
-                        let job = a.job;
-                        self.finish(
-                            cx,
-                            job,
-                            Err(format!("render_timeout: no page after {DEADLINE}s")),
-                        );
+                        self.finish(cx, i, Err(format!("render_timeout: no page after {DEADLINE}s")));
                     } else if a.poll.is_event(event).is_some() {
-                        let (job, want) = (a.job, a.reading);
-                        cx.system_browser(browser_id()).eval_js(&poll_js(job, want));
-                        if let Some(a) = self.active.as_mut() {
+                        if abandoned(a.job) {
+                            self.finish(cx, i, Err("abandoned: the read gave up".into()));
+                            continue;
+                        }
+                        let (job, want, id) = (a.job, a.reading, self.slots[i].id);
+                        cx.system_browser(id).eval_js(&poll_js(job, want));
+                        if let Some(a) = self.slots[i].active.as_mut() {
                             a.poll = cx.start_timeout(POLL);
                         }
                     }
@@ -183,41 +227,55 @@ impl WebViewRenderHost {
             }
             _ => {}
         }
-        if self.active.is_none() {
-            self.start_next(cx);
+        self.start_waiting(cx);
+    }
+
+    fn slot_of(&self, browser_id: u64) -> Option<usize> {
+        self.slots.iter().position(|s| s.id.get_value() == browser_id)
+    }
+
+    /// Give each idle browser the next request someone still waits for.
+    fn start_waiting(&mut self, cx: &mut Cx) {
+        let now = cx.seconds_since_app_start();
+        while let Some(i) = self.slots.iter().position(|s| s.active.is_none()) {
+            let (req, queued) = loop {
+                let Some((req, queued)) = self.queue.pop_front() else {
+                    return;
+                };
+                if !abandoned(req.job) {
+                    break (req, queued);
+                }
+                log!("webview render: {} skipped: its read gave up after {:.1}s in the queue", req.url, now - queued);
+            };
+            let slot = &mut self.slots[i];
+            let mut browser = cx.system_browser(slot.id);
+            if slot.spawned {
+                browser.set_url(&req.url, false);
+            } else {
+                browser.spawn_navigable(&req.url);
+                slot.spawned = true;
+            }
+            // Hidden: the person never sees the pages read for them.
+            browser.update(Area::Empty, false);
+            slot.active = Some(Active {
+                job: req.job,
+                url: req.url,
+                poll: cx.start_timeout(POLL),
+                deadline: cx.start_timeout(DEADLINE),
+                complete_since: None,
+                started: now,
+                waited: now - queued,
+                check_polls: 0,
+                reading: false,
+                navigations: Vec::new(),
+            });
         }
     }
 
-    fn start_next(&mut self, cx: &mut Cx) {
-        let Some(req) = self.queue.pop_front() else {
-            return;
-        };
-        let mut browser = cx.system_browser(browser_id());
-        if self.spawned {
-            browser.set_url(&req.url, false);
-        } else {
-            browser.spawn_navigable(&req.url);
-            self.spawned = true;
-        }
-        // Hidden: the person never sees the pages read for them.
-        browser.update(Area::Empty, false);
+    fn on_poll(&mut self, cx: &mut Cx, i: usize, job: u64, args: &str) {
         let now = cx.seconds_since_app_start();
-        self.active = Some(Active {
-            job: req.job,
-            url: req.url,
-            poll: cx.start_timeout(POLL),
-            deadline: cx.start_timeout(DEADLINE),
-            complete_since: None,
-            started: now,
-            check_polls: 0,
-            reading: false,
-            navigations: Vec::new(),
-        });
-    }
-
-    fn on_poll(&mut self, cx: &mut Cx, job: u64, args: &str) {
-        let now = cx.seconds_since_app_start();
-        let Some(a) = self.active.as_mut() else {
+        let slot = &mut self.slots[i];
+        let Some(a) = slot.active.as_mut() else {
             return;
         };
         if a.job != job {
@@ -225,13 +283,16 @@ impl WebViewRenderHost {
         }
         let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
         let url = v["url"].as_str().unwrap_or("").to_string();
-        // Still on the previous page: the load has not committed yet.
+        // Still on the previous page: the load has not committed yet. A
+        // Google News link has not reached the publisher yet.
         let committed = !url.is_empty()
             && url != "about:blank"
-            && now - a.started > 0.5
-            && (self.last_page.as_deref() != Some(url.as_str()) || url == a.url);
+            && now - a.started > 0.3
+            && (slot.last_page.as_deref() != Some(url.as_str()) || url == a.url)
+            && !forwarding(&url);
         if !committed || v["ready"].as_str() != Some("complete") {
             a.complete_since = None;
+            a.reading = false;
             return;
         }
         if a.navigations.last() != Some(&url) {
@@ -246,14 +307,14 @@ impl WebViewRenderHost {
                 a.complete_since = None;
                 return;
             }
-            self.last_page = Some(url.clone());
+            slot.last_page = Some(url.clone());
             let rendered = Rendered {
                 final_url: url,
                 html: html.to_string(),
                 navigations: a.navigations.clone(),
                 status: None,
             };
-            self.finish(cx, job, Ok(rendered));
+            self.finish(cx, i, Ok(rendered));
             return;
         }
         let since = *a.complete_since.get_or_insert(now);
@@ -263,16 +324,19 @@ impl WebViewRenderHost {
         }
     }
 
-    fn finish(&mut self, cx: &mut Cx, job: u64, result: Result<Rendered, String>) {
-        if let Some(a) = self.active.take() {
-            cx.stop_timer(a.poll);
-            cx.stop_timer(a.deadline);
-            if let Err(e) = &result {
-                log!("webview render: {} failed: {}", a.url, e);
-            }
+    fn finish(&mut self, cx: &mut Cx, i: usize, result: Result<Rendered, String>) {
+        let Some(a) = self.slots[i].active.take() else {
+            return;
+        };
+        cx.stop_timer(a.poll);
+        cx.stop_timer(a.deadline);
+        let took = cx.seconds_since_app_start() - a.started;
+        match &result {
+            Ok(_) => log!("webview render: {} ok in {:.1}s after {:.1}s queued", a.url, took, a.waited),
+            Err(e) => log!("webview render: {} failed in {:.1}s after {:.1}s queued: {}", a.url, took, a.waited, e),
         }
-        reply(job, result);
-        self.start_next(cx);
+        reply(a.job, result);
+        self.start_waiting(cx);
     }
 }
 
