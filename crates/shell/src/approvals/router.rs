@@ -217,6 +217,11 @@ impl Router {
     pub fn is_pending(&self, id: &RequestId) -> bool {
         self.pending.contains_key(id)
     }
+    /// A request not decided yet: its app, tool, exact arguments, caller
+    /// and context (trigger, connection).
+    pub fn pending_request(&self, id: &RequestId) -> Option<&Request> {
+        self.pending.get(id)
+    }
     /// What expired unanswered and is not dismissed yet, oldest first.
     pub fn expired(&self) -> &[Expired] {
         &self.expired
@@ -248,6 +253,24 @@ impl Router {
         self.sheets.retain(|s| !s.done());
         self.changed();
         ids
+    }
+    /// `id`'s turn ended before anyone answered it (the app's own Stop,
+    /// an interrupt, a failed turn): the kernel dropped the request, so it
+    /// is withdrawn from its sheet, never approved, audited `by: withdrawn`
+    /// with `reason`. False when it was not pending.
+    pub fn withdraw(&mut self, id: &RequestId, reason: &str, now: u64) -> bool {
+        if !self.pending.contains_key(id) {
+            return false;
+        }
+        self.decide(id, Decision::Deny, "withdrawn", None, reason, now);
+        for sheet in &mut self.sheets {
+            if let Some(line) = sheet.lines.iter_mut().find(|l| l.request == *id) {
+                line.answer = Some(super::sheet::Answer::Deny);
+            }
+        }
+        self.sheets.retain(|s| !s.done());
+        self.changed();
+        true
     }
     pub fn take_notices(&mut self) -> Vec<Notice> {
         std::mem::take(&mut self.notices)
@@ -526,10 +549,13 @@ impl Router {
         let Some(req) = self.pending.get(id).cloned() else { return };
         let reason = crate::ai_host::app_peers::host_tools::expiry_reason(std::time::Duration::from_secs(self.sheet_expiry_s));
         let on_app = self.at_app.get(id).cloned();
-        self.decide(id, Decision::Deny, "expired", None, &format!("expired: {reason}"), now);
+        // The expiry note: the broker reads a deny carrying it as an expiry,
+        // not an answer in time, so its grace still frees a stuck turn.
+        let note = crate::ai_host::app_peers::host_tools::expired_note(&reason);
+        self.decide(id, Decision::Deny, "expired", None, &note, now);
         if let Some(app) = on_app {
             if let Some(handler) = self.app_confirms.get_mut(&app) {
-                handler.withdrawn(id, &format!("expired: {reason}"));
+                handler.withdrawn(id, &note);
             }
         }
         for sheet in &mut self.sheets {

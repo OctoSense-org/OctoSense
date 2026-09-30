@@ -46,7 +46,8 @@
 //!   closed link end calls before they run. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
 //!   id, once per input, queued while the peer is busy; `host_tool`
-//!   approvals go to the host, never to the app;
+//!   approvals go to the host, never to the app, and are withdrawn there
+//!   when their turn ends before an answer;
 //! - routes the agent's questions (`user_question/requested`, octos's
 //!   `ask_user_question`) on the peer's session and its contexts to the
 //!   host with the turn's origin (a context's, the peer's own, or a
@@ -344,10 +345,13 @@ enum PromptAnswer {
 }
 
 impl PromptAnswer {
+    /// Answered in time. An expiry the host sent (its router's deadline
+    /// can land a moment before this broker's) is not an answer: the grace
+    /// still runs and a turn still stuck after it is interrupted.
     fn answered(&self) -> bool {
         match self {
-            PromptAnswer::HostApproval(a) => a.is_sent(),
-            PromptAnswer::HostQuestion(a, _) => a.is_sent(),
+            PromptAnswer::HostApproval(a) => a.is_sent() && !a.expired(),
+            PromptAnswer::HostQuestion(a, _) => a.is_sent() && !a.expired(),
             PromptAnswer::AppApproval | PromptAnswer::AppQuestion(_) => false,
         }
     }
@@ -992,6 +996,7 @@ impl Inner {
             self.note_terminal(method, &params);
             if let Some(turn) = turn_ended(method, &params) {
                 self.close_questions(turn);
+                self.close_approvals(turn);
                 // Its approvals and questions end with it: no deadline.
                 self.lock().prompts.retain(|_, p| p.turn != turn);
             }
@@ -1847,10 +1852,10 @@ impl Inner {
                 return false;
             }
             let app_answer = match &prompt.answer {
-                PromptAnswer::AppApproval => Some((prompt.link.clone(), approval_respond(&prompt.session, id, false, &format!("expired: {reason}")), "approval/respond")),
+                PromptAnswer::AppApproval => Some((prompt.link.clone(), approval_respond(&prompt.session, id, false, &host_tools::expired_note(&reason)), "approval/respond")),
                 PromptAnswer::AppQuestion(count) => {
                     let answers: Vec<Value> = (0..*count).map(|_| json!({"free_text": host_tools::expired_question_text(&reason)})).collect();
-                    Some((prompt.link.clone(), question_respond(&prompt.session, id, Value::Array(answers), &format!("expired: {reason}")), host_tools::USER_QUESTION_RESPOND))
+                    Some((prompt.link.clone(), question_respond(&prompt.session, id, Value::Array(answers), &host_tools::expired_note(&reason)), host_tools::USER_QUESTION_RESPOND))
                 }
                 _ => None,
             };
@@ -1908,6 +1913,27 @@ impl Inner {
             self.peer_turn_ended(turn);
         }
         result
+    }
+
+    /// `turn` ended: the `host_tool` approvals of it the host holds and has
+    /// not answered are withdrawn there (the kernel dropped them with the
+    /// turn), so no sheet waits on a request nothing will run.
+    fn close_approvals(&self, turn: &str) {
+        let closed: Vec<String> = {
+            let st = self.lock();
+            st.prompts
+                .iter()
+                .filter(|(_, p)| p.turn == turn && matches!(&p.answer, PromptAnswer::HostApproval(answer) if !answer.is_sent()))
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        if closed.is_empty() {
+            return;
+        }
+        let host = self.tool_host();
+        for id in closed {
+            host.host_tool_approval_closed(&self.cfg.app_id, &id);
+        }
     }
 
     /// `turn` ended: its unanswered questions can no longer be answered.

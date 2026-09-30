@@ -17,7 +17,7 @@
 //! | `peer/tool/call` | [`ToolHost::tool_call`] with a [`HostToolCall`] and its [`ToolReply`] |
 //! | `peer/tool/cancel` (timeout, interrupt), the link closing | [`ToolHost::tool_cancel`]; the reply is closed first |
 //! | `peer/input` (the system agent's input) | the broker starts the turn; [`ToolHost::admit_input`] may refuse it, and the broker says why (`peer/input/reject`, [`InputRefusal`]) |
-//! | `approval/requested` with `approval_kind: "host_tool"` | [`ToolHost::host_tool_approval`] with an [`ApprovalAnswer`] |
+//! | `approval/requested` with `approval_kind: "host_tool"` | [`ToolHost::host_tool_approval`] with an [`ApprovalAnswer`]; the turn's end before an answer withdraws it ([`ToolHost::host_tool_approval_closed`]) |
 //! | `user_question/requested` on the peer's session or a context (octos's `ask_user_question`) | [`ToolHost::user_question`] with a [`QuestionAnswer`]; the turn's end closes it ([`ToolHost::user_question_closed`]) |
 //!
 //! **Only the host answers.** An [`ApprovalAnswer`] or a [`QuestionAnswer`]
@@ -141,6 +141,14 @@ pub fn expiry_reason(deadline: Duration) -> String {
         format!("no answer in {secs} s")
     }
 }
+
+/// The note an expiry carries, the kernel's record of it: `expired: <reason>`
+/// ("expired: no answer in 10 min"). The broker's own expiry and the host's
+/// (its approval router's deny at the same deadline) both send it.
+pub fn expired_note(reason: &str) -> String {
+    format!("{EXPIRED_NOTE_PREFIX}{reason}")
+}
+const EXPIRED_NOTE_PREFIX: &str = "expired: ";
 
 /// What an expired question answers for each of its questions: free text
 /// (octos always allows it), so the agent knows nobody chose anything.
@@ -555,6 +563,8 @@ type AnswersFn = Arc<dyn Fn(Value, &str) + Send + Sync>;
 #[derive(Clone)]
 pub struct ApprovalAnswer {
     sent: Arc<Mutex<bool>>,
+    /// It was sent as an expiry (a deny with the expiry note).
+    expired: Arc<Mutex<bool>>,
     send: DecisionFn,
 }
 
@@ -570,7 +580,7 @@ impl ApprovalAnswer {
     }
     /// `send` also gets the note the decision carries (`""`: none).
     pub fn with_note(send: impl Fn(bool, &str) + Send + Sync + 'static) -> ApprovalAnswer {
-        ApprovalAnswer { sent: Arc::new(Mutex::new(false)), send: Arc::new(send) }
+        ApprovalAnswer { sent: Arc::new(Mutex::new(false)), expired: Arc::new(Mutex::new(false)), send: Arc::new(send) }
     }
     /// The person's (or the host's rule's) decision. False when already sent.
     pub fn respond(&self, approve: bool) -> bool {
@@ -585,15 +595,24 @@ impl ApprovalAnswer {
             }
             *sent = true;
         }
+        if !approve && note.starts_with(EXPIRED_NOTE_PREFIX) {
+            *self.expired.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        }
         (self.send)(approve, note);
         true
     }
     /// Nobody answered in time: denied, with why. Never an approval.
     pub fn expire(&self, reason: &str) -> bool {
-        self.respond_with(false, &format!("expired: {reason}"))
+        self.respond_with(false, &expired_note(reason))
     }
     pub fn is_sent(&self) -> bool {
         *self.sent.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    /// It was sent as an expiry: by [`ApprovalAnswer::expire`], or by the
+    /// host's deny carrying the expiry note (its router's deadline), which
+    /// may come a moment before the broker's own.
+    pub fn expired(&self) -> bool {
+        *self.expired.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -761,6 +780,8 @@ impl QuestionReply {
 #[derive(Clone)]
 pub struct QuestionAnswer {
     sent: Arc<Mutex<bool>>,
+    /// It was sent as an expiry ([`QuestionAnswer::expire`]).
+    expired: Arc<Mutex<bool>>,
     send: AnswersFn,
 }
 
@@ -777,7 +798,7 @@ impl QuestionAnswer {
     }
     /// `send` also gets the note the answer carries (`""`: none).
     pub fn with_note(send: impl Fn(Value, &str) + Send + Sync + 'static) -> QuestionAnswer {
-        QuestionAnswer { sent: Arc::new(Mutex::new(false)), send: Arc::new(send) }
+        QuestionAnswer { sent: Arc::new(Mutex::new(false)), expired: Arc::new(Mutex::new(false)), send: Arc::new(send) }
     }
     /// The person's answers, one per question. False when already sent.
     pub fn respond(&self, answers: &[QuestionReply]) -> bool {
@@ -800,10 +821,19 @@ impl QuestionAnswer {
     pub fn expire(&self, count: usize, reason: &str) -> bool {
         let text = expired_question_text(reason);
         let answers: Vec<QuestionReply> = (0..count.max(1)).map(|_| QuestionReply::text(text.clone())).collect();
-        self.respond_with(&answers, &format!("expired: {reason}"))
+        let sent = self.respond_with(&answers, &expired_note(reason));
+        if sent {
+            *self.expired.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        }
+        sent
     }
     pub fn is_sent(&self) -> bool {
         *self.sent.lock().unwrap_or_else(|e| e.into_inner())
+    }
+    /// It was sent as an expiry ([`QuestionAnswer::expire`]: the host's
+    /// request model at its deadline, or the broker's).
+    pub fn expired(&self) -> bool {
+        *self.expired.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -980,6 +1010,12 @@ pub trait ToolHost: Send + Sync {
     /// The turn that asked `question_id` ended (answered or not): the
     /// question can no longer be answered.
     fn user_question_closed(&self, _app_id: &str, _question_id: &str) {}
+
+    /// The turn that raised the `host_tool` approval `approval_id` ended
+    /// before the host answered it (stopped from the app's conversation,
+    /// interrupted, failed): the kernel dropped the request, so the host
+    /// withdraws what it shows. An answer after this reaches nothing.
+    fn host_tool_approval_closed(&self, _app_id: &str, _approval_id: &str) {}
 
     /// An in-process app installs its executor (through its service).
     fn set_executor(&self, _app_id: &str, _executor: Option<Arc<dyn ToolExecutor>>) {}

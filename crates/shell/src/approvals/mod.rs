@@ -283,6 +283,12 @@ pub fn stop_agent(app: &str) -> Vec<String> {
     crate::host_tools::interrupt_agent(app)
 }
 
+/// The turn that raised `id` ended before anyone answered it: withdrawn
+/// from its sheet ([`Router::withdraw`]).
+pub fn withdraw(id: &RequestId, reason: &str) -> bool {
+    with(|a| a.router.withdraw(id, reason, now())).unwrap_or(false)
+}
+
 /// The person dismissed an expired approval's record.
 pub fn dismiss_expired(id: &RequestId) {
     with(|a| a.router.dismiss_expired(id));

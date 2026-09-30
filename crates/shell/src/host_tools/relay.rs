@@ -74,6 +74,9 @@ pub enum Event {
     Cancel { call_id: String, reason: String },
     /// A `host_tool` approval raised on `app`'s peer (or a context of it).
     Approval { app: String, account: Option<String>, approval: HostToolApproval, answer: ApprovalAnswer },
+    /// The turn that raised a `host_tool` approval ended before it was
+    /// answered (the broker's `host_tool_approval_closed`).
+    ApprovalClosed { approval_id: String },
     /// The approval router decided one of the relay's requests.
     Decision { id: RequestId, decision: Decision, reason: String },
     /// A process app's peer link answered (`None`: it acknowledged).
@@ -95,6 +98,8 @@ pub trait Env {
     /// (auto_approvable, command) for an owning app's tool.
     fn tool_rule(&self, owner: &str, tool: &str) -> (bool, bool);
     fn request_approval(&mut self, app: &str, tool: ToolSpec, args: Value, caller: Caller, context: RequestContext) -> Route;
+    /// Withdraw a request the router holds (its turn ended unanswered).
+    fn withdraw_approval(&mut self, _id: &RequestId, _reason: &str) {}
     /// A process of `app` holds a peer link.
     fn has_link(&self, app: &str) -> bool;
     fn link_call(&mut self, app: &str, call: KernelToolCall) -> Result<(), Refused>;
@@ -456,6 +461,14 @@ impl Relay {
             Event::Call { call, reply } => self.call(call, reply, env),
             Event::Cancel { call_id, reason } => self.cancel(&call_id, &reason, env),
             Event::Approval { app, account, approval, answer } => self.approval(&app, account, approval, answer, env),
+            Event::ApprovalClosed { approval_id } => {
+                // The kernel dropped it: nothing is answered, and the sheet
+                // stops asking.
+                let id = format!("{APPROVAL_PREFIX}{approval_id}");
+                if self.approvals.remove(&id).is_some() {
+                    env.withdraw_approval(&RequestId(id), "its turn ended before anyone answered");
+                }
+            }
             Event::Decision { id, decision, reason } => self.decided(&id, decision, &reason, env),
             Event::LinkOutcome { call_id, result, .. } => self.link_outcome(&call_id, result),
             Event::BusResult { call_id, outcome } => {

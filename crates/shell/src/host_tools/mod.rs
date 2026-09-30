@@ -7,7 +7,7 @@
 //! | `peer/prepare`'s `cwd` for a new peer | [`ShellToolHost::agent_workspace`]: the account's folder (`app_storage`) |
 //! | `peer/tool/call` | [`relay::Relay`]: authorize, route to the owning app, confirm, answer once |
 //! | `peer/tool/cancel`, an interrupt, a closed connection | the call ends; whoever holds it is told |
-//! | `approval/requested` `host_tool` | the approval router ([`crate::approvals::approval_requested`]); its decision answers the kernel |
+//! | `approval/requested` `host_tool` | the approval router ([`crate::approvals::approval_requested`]); its decision answers the kernel; its turn ending first withdraws it ([`crate::approvals::withdraw`]) |
 //! | any other `approval/requested` on an app's peer session or context (octos's own tools) | the same router, as the app agent's call on its own app (ADR 0004 §8); the app hears only `approval/handled_by_host` |
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
@@ -249,6 +249,10 @@ impl ToolHost for ShellToolHost {
         crate::questions::closed(app_id, question_id);
     }
 
+    fn host_tool_approval_closed(&self, _app_id: &str, approval_id: &str) {
+        submit(Event::ApprovalClosed { approval_id: approval_id.to_string() });
+    }
+
     fn set_executor(&self, app_id: &str, executor: Option<Arc<dyn ToolExecutor>>) {
         with_relay(|r| r.set_executor(app_of_peer(app_id), executor));
     }
@@ -401,6 +405,9 @@ impl relay::Env for ShellEnv {
     }
     fn request_approval(&mut self, app: &str, tool: ToolSpec, args: Value, caller: Caller, context: RequestContext) -> Route {
         approvals::approval_requested(app, tool, args, caller, context)
+    }
+    fn withdraw_approval(&mut self, id: &RequestId, reason: &str) {
+        approvals::withdraw(id, reason);
     }
     fn has_link(&self, app: &str) -> bool {
         peer_link::has_link(app)
