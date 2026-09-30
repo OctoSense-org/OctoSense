@@ -28,6 +28,19 @@
 //! x86_64, AArch32 on arm64) is refused whole, or its own numbers would get
 //! past these rules.
 //!
+//! **`network: none`** is Landlock's TCP port rules (ABI 4: connect to the
+//! hub port only, no bind) and, in seccomp, an IP socket must be a plain
+//! TCP stream (no UDP, raw, SCTP or MPTCP; no io_uring, which creates
+//! sockets out of seccomp's sight). From ABI 6 abstract Unix sockets outside
+//! the sandbox are closed too. Unix sockets reached by path are not: the
+//! display server needs them, and neither Landlock nor seccomp can tell the
+//! session bus (`/run/user/<uid>/bus`) from it.
+//!
+//! **Signals.** From ABI 6 an app with `processes: false` cannot signal any
+//! process outside its sandbox (the shell, the kernel, the person's other
+//! programs). One that may start processes (the Terminal) still can, so
+//! `kill` in it works as in any terminal; ptrace stays refused to both.
+//!
 //! **Best-effort.** The parent probes the kernel's Landlock ABI before the
 //! spawn and says in [`Applied`] which layers took (a kernel before 5.13, or
 //! one without Landlock enabled, gets seccomp only; before ABI 4, no port
@@ -75,7 +88,13 @@ const FILE_RIGHTS: u64 = FS_EXECUTE | FS_WRITE_FILE | FS_READ_FILE | FS_TRUNCATE
 struct RulesetAttr {
     handled_access_fs: u64,
     handled_access_net: u64,
+    /// ABI 6: what the domain may not reach outside itself.
+    scoped: u64,
 }
+
+/// ABI 6 scopes: abstract Unix sockets and signals outside the domain.
+const SCOPE_ABSTRACT_UNIX_SOCKET: u64 = 1 << 0;
+const SCOPE_SIGNAL: u64 = 1 << 1;
 
 #[repr(C, packed)]
 struct PathBeneathAttr {
@@ -220,28 +239,34 @@ pub fn around_private(rule: Rule, private: &[PathBuf], out: &mut Vec<Rule>) {
     }
 }
 
-/// The seccomp program for `processes` on this architecture, `None` where
-/// the table below has no numbers for it.
-pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
+/// The seccomp program for `processes` and `no_network` (`network: none`)
+/// on this architecture, `None` where the table below has no numbers for it.
+pub fn seccomp_filter(processes: bool, no_network: bool) -> Option<Vec<libc::sock_filter>> {
+    // socket(2) and io_uring_setup(2) (io_uring creates sockets without
+    // socket(2), out of seccomp's sight).
     #[cfg(target_arch = "x86_64")]
-    let (arch, denied, forks, clone, clone3): (u32, &[u32], &[u32], u32, u32) = (
+    let (arch, denied, forks, clone, clone3, socket, io_uring): (u32, &[u32], &[u32], u32, u32, u32, u32) = (
         0xC000_003E,
         &[101, 310, 311, 298, 246, 321, 323, 165, 166, 155, 250, 248, 249, 272, 308],
         &[57, 58],
         56,
         435,
+        41,
+        425,
     );
     #[cfg(target_arch = "aarch64")]
-    let (arch, denied, forks, clone, clone3): (u32, &[u32], &[u32], u32, u32) = (
+    let (arch, denied, forks, clone, clone3, socket, io_uring): (u32, &[u32], &[u32], u32, u32, u32, u32) = (
         0xC000_00B7,
         &[117, 270, 271, 241, 104, 280, 282, 40, 39, 41, 219, 217, 218, 97, 268],
         &[],
         220,
         435,
+        198,
+        425,
     );
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        let _ = processes;
+        let _ = (processes, no_network);
         return None;
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -249,6 +274,7 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         const LD_W_ABS: u16 = 0x20;
         const JEQ_K: u16 = 0x15;
         const JSET_K: u16 = 0x45;
+        const AND_K: u16 = 0x54;
         const RET_K: u16 = 0x06;
         const ALLOW: u32 = 0x7fff_0000;
         const ERRNO: u32 = 0x0005_0000;
@@ -278,6 +304,27 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         };
         for &nr in denied {
             deny(&mut f, nr, eperm);
+        }
+        if no_network {
+            // `network: none`: an IP socket must be a plain TCP stream, the
+            // only kind Landlock's port rules govern (UDP, raw, SCTP and
+            // MPTCP would pass them). Unix and netlink sockets stay.
+            deny(&mut f, io_uring, eperm);
+            let (inet, inet6) = (libc::AF_INET as u32, libc::AF_INET6 as u32);
+            let (stream, tcp) = (libc::SOCK_STREAM as u32, libc::IPPROTO_TCP as u32);
+            f.push(st(JEQ_K, 0, 12, socket)); // past the 12 below
+            f.push(st(LD_W_ABS, 0, 0, 16)); // args[0]: the family
+            f.push(st(JEQ_K, 2, 0, inet));
+            f.push(st(JEQ_K, 1, 0, inet6));
+            f.push(st(RET_K, 0, 0, ALLOW));
+            f.push(st(LD_W_ABS, 0, 0, 24)); // args[1]: the type, with flags
+            f.push(st(AND_K, 0, 0, 0xf));
+            f.push(st(JEQ_K, 0, 3, stream));
+            f.push(st(LD_W_ABS, 0, 0, 32)); // args[2]: the protocol
+            f.push(st(JEQ_K, 2, 0, 0));
+            f.push(st(JEQ_K, 1, 0, tcp));
+            f.push(st(RET_K, 0, 0, eperm));
+            f.push(st(RET_K, 0, 0, ALLOW));
         }
         if !processes {
             for &nr in forks {
@@ -309,6 +356,9 @@ pub struct Plan {
     pub net: bool,
     pub hub_port: u16,
     pub processes: bool,
+    /// `network: none`: also no UDP, raw or non-TCP stream sockets
+    /// (seccomp) and no abstract Unix sockets outside the domain (ABI 6).
+    pub no_network: bool,
     /// Variables to remove before the app starts (the runner's; cargo hands
     /// the checkout's `[env]` back).
     pub unset: Vec<String>,
@@ -333,6 +383,7 @@ impl Plan {
             net: abi >= 4 && policy.network == Network::None,
             hub_port: policy.hub_port,
             processes: policy.processes,
+            no_network: policy.network == Network::None,
             unset: policy.cargo_env_unset.clone(),
         }
     }
@@ -340,7 +391,7 @@ impl Plan {
     /// One line per field; paths hex-encoded (they may hold any byte).
     pub fn to_text(&self) -> String {
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let mut out = format!("octosense-sandbox-plan 1\nabi {}\nnet {}\nport {}\nprocesses {}\n", self.abi, self.net as u8, self.hub_port, self.processes as u8);
+        let mut out = format!("octosense-sandbox-plan 1\nabi {}\nnet {}\nport {}\nprocesses {}\nno-network {}\n", self.abi, self.net as u8, self.hub_port, self.processes as u8, self.no_network as u8);
         for name in &self.unset {
             out.push_str(&format!("unset {}\n", hex(name.as_bytes())));
         }
@@ -359,7 +410,7 @@ impl Plan {
         if lines.next()? != "octosense-sandbox-plan 1" {
             return None;
         }
-        let mut plan = Plan { abi: 0, rules: Vec::new(), net: false, hub_port: 0, processes: false, unset: Vec::new() };
+        let mut plan = Plan { abi: 0, rules: Vec::new(), net: false, hub_port: 0, processes: false, no_network: false, unset: Vec::new() };
         for line in lines {
             let (key, rest) = line.split_once(' ')?;
             match key {
@@ -367,6 +418,7 @@ impl Plan {
                 "net" => plan.net = rest == "1",
                 "port" => plan.hub_port = rest.parse().ok()?,
                 "processes" => plan.processes = rest == "1",
+                "no-network" => plan.no_network = rest == "1",
                 "unset" => plan.unset.push(String::from_utf8(unhex(rest)?).ok()?),
                 "rule" => {
                     let (access, path) = rest.split_once(' ')?;
@@ -378,11 +430,27 @@ impl Plan {
         Some(plan)
     }
 
+    /// The ABI 6 scopes: an app without processes signals nothing outside
+    /// its sandbox (the shell, the kernel and the person's other programs
+    /// stay out of reach), and with `network: none` reaches no abstract Unix
+    /// socket outside it.
+    fn scoped(&self) -> u64 {
+        if self.abi < 6 {
+            return 0;
+        }
+        (if self.processes { 0 } else { SCOPE_SIGNAL }) | if self.no_network { SCOPE_ABSTRACT_UNIX_SOCKET } else { 0 }
+    }
+
     /// What [`Applied`] says about the layers.
     fn layers(&self, network: Network, filter: bool) -> Vec<String> {
         let mut layers = Vec::new();
         if self.abi > 0 {
-            layers.push(format!("landlock abi {}{}", self.abi, if self.net { " + ports" } else { "" }));
+            layers.push(format!(
+                "landlock abi {}{}{}",
+                self.abi,
+                if self.net { " + ports" } else { "" },
+                if self.abi >= 6 { " + scopes" } else { "" }
+            ));
         } else {
             layers.push("no landlock (kernel lacks it): paths are not restricted".to_string());
         }
@@ -407,8 +475,13 @@ impl Plan {
                 let attr = RulesetAttr {
                     handled_access_fs: handled_fs(self.abi),
                     handled_access_net: if self.net { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 },
+                    scoped: self.scoped(),
                 };
-                let size = if self.abi >= 4 { std::mem::size_of::<RulesetAttr>() } else { 8 };
+                let size = match self.abi {
+                    0..=3 => 8,
+                    4 | 5 => 16,
+                    _ => std::mem::size_of::<RulesetAttr>(),
+                };
                 let ruleset = libc::syscall(SYS_LANDLOCK_CREATE_RULESET, &attr as *const RulesetAttr, size, 0u32) as i32;
                 if ruleset >= 0 {
                     for (path, access) in &self.rules {
@@ -489,7 +562,7 @@ pub fn run_as_runner(plan: &std::path::Path, argv: &[&[u8]]) -> String {
         // Single-threaded, before main: nothing else reads the environment.
         std::env::remove_var(name);
     }
-    let filter = seccomp_filter(plan.processes);
+    let filter = seccomp_filter(plan.processes, plan.no_network);
     let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
     ptrs.push(std::ptr::null());
     unsafe {
@@ -520,7 +593,7 @@ fn write_plan(policy: &Policy, plan: &Plan) -> Result<PathBuf, String> {
 /// or, `via_cargo`, on the app alone through the shell as cargo's runner.
 pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
     let plan = Plan::new(policy);
-    let filter = seccomp_filter(plan.processes);
+    let filter = seccomp_filter(plan.processes, plan.no_network);
     let mut layers = plan.layers(policy.network, filter.is_some());
     if via_cargo {
         if !RUNNER_READY.load(std::sync::atomic::Ordering::Relaxed) {

@@ -232,6 +232,7 @@ fn a_runner_plan_reads_back_what_was_written() {
         net: true,
         hub_port: 8765,
         processes: false,
+        no_network: true,
         unset: vec!["OCTOSENSE_WORKSPACE".into()],
     };
     assert_eq!(linux::Plan::from_text(&plan.to_text()), Some(plan));
@@ -239,15 +240,19 @@ fn a_runner_plan_reads_back_what_was_written() {
 }
 
 /// The seccomp program run on one system call, as the kernel would (the
-/// four classic-BPF instructions it uses).
+/// five classic-BPF instructions it uses).
 #[cfg(target_os = "linux")]
 fn seccomp_verdict(filter: &[libc::sock_filter], arch: u32, nr: u32, arg0: u64) -> u32 {
+    seccomp_verdict_args(filter, arch, nr, [arg0, 0, 0])
+}
+
+#[cfg(target_os = "linux")]
+fn seccomp_verdict_args(filter: &[libc::sock_filter], arch: u32, nr: u32, args: [u64; 3]) -> u32 {
     let word = |offset: u32| -> u32 {
         match offset {
             0 => nr,
             4 => arch,
-            16 => arg0 as u32,
-            20 => (arg0 >> 32) as u32,
+            16 | 24 | 32 => args[(offset as usize - 16) / 8] as u32,
             _ => 0,
         }
     };
@@ -258,6 +263,7 @@ fn seccomp_verdict(filter: &[libc::sock_filter], arch: u32, nr: u32, arg0: u64) 
             0x20 => acc = word(i.k),
             0x15 => pc += if acc == i.k { i.jt } else { i.jf } as usize,
             0x45 => pc += if acc & i.k != 0 { i.jt } else { i.jf } as usize,
+            0x54 => acc &= i.k,
             0x06 => return i.k,
             other => panic!("instruction {other:#x} not modelled"),
         }
@@ -275,7 +281,7 @@ fn seccomp_refuses_the_other_abis_of_the_kernel() {
     const I386: u32 = 0x4000_0003;
     const EPERM: u32 = 0x0005_0000 | libc::EPERM as u32;
     const ALLOW: u32 = 0x7fff_0000;
-    let filter = linux::seccomp_filter(false).unwrap();
+    let filter = linux::seccomp_filter(false, false).unwrap();
     assert_eq!(seccomp_verdict(&filter, X86_64, 57, 0), EPERM, "fork");
     assert_eq!(seccomp_verdict(&filter, X86_64, 0, 0), ALLOW, "read");
     assert_eq!(seccomp_verdict(&filter, X86_64, 56, 0x0001_0000), ALLOW, "a thread's clone");
@@ -284,10 +290,40 @@ fn seccomp_refuses_the_other_abis_of_the_kernel() {
     assert_eq!(seccomp_verdict(&filter, I386, 3, 0), EPERM, "any i386 call");
     assert_eq!(seccomp_verdict(&filter, X86_64, 0x4000_0000 | 57, 0), EPERM, "x32 fork");
     assert_eq!(seccomp_verdict(&filter, X86_64, 0x4000_0000, 0), EPERM, "any x32 call");
-    let broad = linux::seccomp_filter(true).unwrap();
+    let broad = linux::seccomp_filter(true, false).unwrap();
     assert_eq!(seccomp_verdict(&broad, X86_64, 57, 0), ALLOW, "fork with processes: true");
     assert_eq!(seccomp_verdict(&broad, I386, 2, 0), EPERM, "never another ABI");
     assert_eq!(seccomp_verdict(&broad, X86_64, 101, 0), EPERM, "ptrace, always");
+}
+
+/// `network: none` leaves plain TCP (Landlock's port rules govern it) and
+/// local sockets, nothing else (found on a real kernel: a jail-only app sent
+/// UDP to 1.1.1.1:53).
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn seccomp_keeps_network_none_to_tcp_and_local_sockets() {
+    const X86_64: u32 = 0xC000_003E;
+    const SOCKET: u32 = 41;
+    const EPERM: u32 = 0x0005_0000 | libc::EPERM as u32;
+    const ALLOW: u32 = 0x7fff_0000;
+    let (inet, inet6, unix, netlink) = (libc::AF_INET as u64, libc::AF_INET6 as u64, libc::AF_UNIX as u64, libc::AF_NETLINK as u64);
+    let (stream, dgram, raw) = (libc::SOCK_STREAM as u64, libc::SOCK_DGRAM as u64, libc::SOCK_RAW as u64);
+    let flags = (libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK) as u64;
+    let none = linux::seccomp_filter(true, true).unwrap();
+    let verdict = |family, kind, protocol| seccomp_verdict_args(&none, X86_64, SOCKET, [family, kind, protocol]);
+    assert_eq!(verdict(inet, stream, 0), ALLOW, "TCP");
+    assert_eq!(verdict(inet6, stream | flags, libc::IPPROTO_TCP as u64), ALLOW, "TCP over IPv6 with flags");
+    assert_eq!(verdict(inet, dgram, 0), EPERM, "UDP");
+    assert_eq!(verdict(inet6, dgram | flags, 0), EPERM, "UDP over IPv6");
+    assert_eq!(verdict(inet, raw, 1), EPERM, "raw");
+    assert_eq!(verdict(inet, stream, libc::IPPROTO_SCTP as u64), EPERM, "SCTP stream");
+    assert_eq!(verdict(inet, stream, 262), EPERM, "MPTCP");
+    assert_eq!(verdict(unix, dgram, 0), ALLOW, "Unix");
+    assert_eq!(verdict(netlink, raw, 0), ALLOW, "netlink");
+    assert_eq!(seccomp_verdict(&none, X86_64, 425, 0), EPERM, "io_uring");
+    assert_eq!(seccomp_verdict(&none, X86_64, 57, 0), ALLOW, "fork, processes: true");
+    let any = linux::seccomp_filter(true, false).unwrap();
+    assert_eq!(seccomp_verdict_args(&any, X86_64, SOCKET, [inet, dgram, 0]), ALLOW, "UDP with network: any");
 }
 
 #[test]

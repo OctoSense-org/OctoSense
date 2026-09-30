@@ -23,8 +23,12 @@
 //! checkout it was built from, cargo's source cache for crate resources)
 //! are readable, never writable.
 //!
-//! **Network.** `none`: nothing but the shell's hub on loopback (the socket
-//! the app is hosted over). `any`: unrestricted.
+//! **Network.** `none`: no IP network but the shell's hub on loopback (the
+//! socket the app is hosted over). Local Unix-domain sockets reached by path
+//! stay open on every platform (the display server, and on Linux the
+//! session bus), so a `network: none` app can still ask a local service to
+//! act for it; Linux closes abstract Unix sockets outside the sandbox from
+//! Landlock ABI 6. `any`: unrestricted.
 //!
 //! **Child processes.** `processes: false`: no fork and no exec after the
 //! app's own start.
