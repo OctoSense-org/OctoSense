@@ -41,8 +41,10 @@ const POLL: f64 = 1.0;
 const SETTLE: f64 = 1.5;
 /// Polls a self-clearing check may take before it counts as the page.
 const MAX_CHECK_POLLS: u32 = 12;
-/// Seconds one render may take.
-const DEADLINE: f64 = 45.0;
+/// Seconds one render may take. Under a toolbox run's per-read share
+/// (`octosense_toolbox::runner::MAX_READ_MS`), so a render that never
+/// completes is closed here rather than abandoned by the run.
+const DEADLINE: f64 = 20.0;
 /// Page-error code the platform reports when the WebView's renderer process
 /// is gone (Makepad's Android `onRenderProcessGone`).
 const RENDER_PROCESS_GONE: i32 = -1000;

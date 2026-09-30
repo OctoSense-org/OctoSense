@@ -27,6 +27,22 @@ use std::time::{Duration, Instant};
 pub const MAX_PARAMS_BYTES: usize = 16 * 1024;
 /// Largest `{status, data, reasons}` value a template may return.
 pub const MAX_OUTPUT_BYTES: usize = 256 * 1024;
+/// The longest one read may take: a plain fetch and one browser render.
+/// A slower page is given up so the next candidate gets a turn.
+pub const MAX_READ_MS: u64 = 25_000;
+/// The part of a run's time kept for its model calls when the template
+/// makes any: reads stop that long before the end so the digest still runs
+/// (a quarter of `max_ms`, at most this).
+pub const MODEL_RESERVE_MS: u64 = 30_000;
+
+/// When reads must be done: the end of the run less the time kept for the
+/// model, or the end itself for a template without model calls.
+pub fn read_window_ms(budget: &Budget) -> u64 {
+    if budget.max_model_calls == 0 {
+        return budget.max_ms;
+    }
+    budget.max_ms - (budget.max_ms / 4).min(MODEL_RESERVE_MS)
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
@@ -251,6 +267,8 @@ pub async fn run<H: ToolboxHost + ?Sized>(
     let started_at = chrono::Utc::now().to_rfc3339();
     let started = Instant::now();
     let deadline = tokio::time::Instant::from_std(started + Duration::from_millis(budget.max_ms));
+    let read_window = read_window_ms(&budget);
+    let reads_close = tokio::time::Instant::from_std(started + Duration::from_millis(read_window));
     let ms = || started.elapsed().as_secs_f64() * 1000.0;
 
     let mut diagnostics = Vec::new();
@@ -303,6 +321,8 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                 .map(|m| m.kind);
             let denial = if expired {
                 Some("max_ms")
+            } else if kind == Some(MethodKind::Read) && tokio::time::Instant::now() >= reads_close {
+                Some("read time (the rest is kept for the model)")
             } else if used.calls >= budget.max_calls {
                 Some("max_calls")
             } else {
@@ -347,14 +367,24 @@ pub async fn run<H: ToolboxHost + ?Sized>(
                     break;
                 }
             };
+            let elapsed = started.elapsed().as_millis() as u64;
+            // A read ends by the read window's close and within MAX_READ_MS.
+            let read_ms = read_window.saturating_sub(elapsed).min(MAX_READ_MS);
             let remaining = Remaining {
                 calls: budget.max_calls.saturating_sub(used.calls),
                 model_calls: budget.max_model_calls.saturating_sub(used.model_calls),
                 reads: budget.max_reads.saturating_sub(used.reads),
-                ms: budget
-                    .max_ms
-                    .saturating_sub(started.elapsed().as_millis() as u64),
+                ms: if kind == Some(MethodKind::Read) {
+                    read_ms
+                } else {
+                    budget.max_ms.saturating_sub(elapsed)
+                },
             };
+            // Only a limit that ends before the run does: at the run's end
+            // the time budget cancels the call itself.
+            let limit = (kind == Some(MethodKind::Read)
+                && read_ms < budget.max_ms.saturating_sub(elapsed))
+            .then(|| tokio::time::Instant::now() + Duration::from_millis(read_ms));
             used.calls += 1;
             match kind {
                 Some(MethodKind::Model) => used.model_calls += 1,
@@ -380,7 +410,15 @@ pub async fn run<H: ToolboxHost + ?Sized>(
             inflight_ids.insert(invocation.id, (index, tool));
             let id = invocation.id;
             inflight.push(Box::pin(async move {
-                let result = host.call(ctx, &module, &method, input).await;
+                let call = host.call(ctx, &module, &method, input);
+                let result = match limit {
+                    Some(at) => tokio::time::timeout_at(at, call).await.unwrap_or_else(|_| {
+                        Err(HostError::TimedOut(format!(
+                            "read given up after {read_ms} ms (a read's share of the run)"
+                        )))
+                    }),
+                    None => call.await,
+                };
                 (id, index, result)
             }));
             stats.peak_concurrency = stats.peak_concurrency.max(inflight.len() as u32);
