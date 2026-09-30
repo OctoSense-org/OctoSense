@@ -5167,9 +5167,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-ai-cuda"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-loader",
+]
+
+[[package]]
+name = "makepad-ai-hub"
+version = "0.3.0"
+dependencies = [
+ "makepad-ai-llm",
+ "makepad-asset-client",
+ "makepad-audio-decode",
+ "makepad-base64",
+ "makepad-micro-serde",
+ "makepad-network",
+ "makepad-strict-json",
+ "makepad-video-flow",
+ "makepad-zip-file",
+ "makepad-zune-core",
+ "makepad-zune-jpeg",
+ "makepad-zune-png",
+]
+
+[[package]]
+name = "makepad-ai-llm"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-cuda",
+ "makepad-ai-loader",
+ "makepad-ai-metal",
+]
+
+[[package]]
+name = "makepad-ai-loader"
+version = "0.1.0"
+dependencies = [
+ "makepad-micro-serde",
+]
+
+[[package]]
+name = "makepad-ai-metal"
+version = "0.1.0"
+dependencies = [
+ "makepad-ai-cuda",
+ "makepad-ai-loader",
+ "makepad-objc-sys",
+ "smallvec 1.15.1",
+]
+
+[[package]]
 name = "makepad-ai-services"
 version = "0.1.0"
 dependencies = [
+ "makepad-ai-hub",
  "makepad-micro-serde",
  "makepad-platform",
  "makepad-strict-json",
@@ -5210,6 +5262,29 @@ version = "1.0.0"
 dependencies = [
  "makepad-objc-sys",
 ]
+
+[[package]]
+name = "makepad-asset-client"
+version = "0.1.0"
+dependencies = [
+ "makepad-asset-data",
+ "makepad-live-id",
+ "makepad-network",
+ "makepad-platform",
+ "makepad-strict-json",
+]
+
+[[package]]
+name = "makepad-asset-data"
+version = "0.1.0"
+
+[[package]]
+name = "makepad-audio-decode"
+version = "0.1.0"
+
+[[package]]
+name = "makepad-base64"
+version = "1.0.0"
 
 [[package]]
 name = "makepad-byteorder-lite"
@@ -5546,8 +5621,10 @@ name = "makepad-sheets"
 version = "0.1.0"
 dependencies = [
  "makepad-ai-services",
+ "makepad-aichat",
  "makepad-app-module",
  "makepad-widgets",
+ "makepad-wm-api",
  "makepad-wm-theme",
 ]
 
@@ -5605,6 +5682,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-video-flow"
+version = "0.1.0"
+
+[[package]]
 name = "makepad-wasm-bridge"
 version = "1.0.0"
 dependencies = [
@@ -5651,6 +5732,13 @@ name = "makepad-wm-theme"
 version = "0.1.0"
 dependencies = [
  "makepad-widgets",
+]
+
+[[package]]
+name = "makepad-zip-file"
+version = "1.0.0"
+dependencies = [
+ "makepad-fast-inflate",
 ]
 
 [[package]]
@@ -7539,6 +7627,15 @@ dependencies = [
  "sha2 0.10.9",
  "ureq 2.12.1",
  "url",
+]
+
+[[package]]
+name = "octosense-process-apps"
+version = "0.1.0"
+dependencies = [
+ "makepad-sheets",
+ "makepad-terminal",
+ "octosense-reference",
 ]
 
 [[package]]
