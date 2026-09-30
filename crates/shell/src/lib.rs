@@ -325,6 +325,23 @@ mod bar_chrome_tests {
     }
 }
 
+/// The octos reader's WebView renderer host (feature `toolbox-peers`;
+/// nothing without it). A plain field type: the `Script` derive takes no
+/// `#[cfg]` on fields.
+#[derive(Default)]
+pub struct WebViewRender {
+    #[cfg(feature = "toolbox-peers")]
+    host: octosense_ai_host::webview_render::WebViewRenderHost,
+}
+
+impl WebViewRender {
+    #[allow(unused_variables)]
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        #[cfg(feature = "toolbox-peers")]
+        self.host.handle_event(cx, event);
+    }
+}
+
 #[derive(Script, ScriptHook)]
 pub struct App {
     #[live]
@@ -457,6 +474,10 @@ pub struct App {
     /// home has laid its pages out at the phone's size (mobile_pages.rs).
     #[rust]
     pub test_page: Option<(Timer, i64)>,
+    /// The hidden WebView that renders pages for the octos reader where
+    /// there is no Chrome (the phone): serves `webview_render::renderer`.
+    #[rust]
+    pub webview_render: WebViewRender,
     /// `--test-action taps:<x>,<y>@<s>[;…]`: touch for a run that has none
     /// (the headless iOS simulator first of all). Each entry puts a finger
     /// down at window point (x, y) <s> seconds after startup and lifts it
@@ -4683,6 +4704,31 @@ impl App {
                     // launch-<app id>: spawn a registered app directly — the
                     // deterministic way to put one app on the desk in a test.
                     if self.groups_test_action(cx, name) { i += 2; continue; }
+                    // webview-crawl:<url>,<url>…: a small crawl through the
+                    // octos reader with the hidden WebView renderer, one
+                    // `[webview-crawl]` log line per page (on-device check).
+                    // toolbox-research:<topic>: a full toolbox research run
+                    // (topic-brief, then deep_crawl) as an app agent's call
+                    // would make it; `[toolbox-research]` log lines.
+                    #[cfg(feature = "toolbox-peers")]
+                    if let Some(topic) = name.strip_prefix("toolbox-research:") {
+                        log!("wm: --test-action toolbox-research {}", topic);
+                        crate::host_tools::toolbox::research_test(topic);
+                        i += 2;
+                        continue;
+                    }
+                    #[cfg(feature = "toolbox-peers")]
+                    if let Some(seeds) = name.strip_prefix("webview-crawl:") {
+                        let seeds: Vec<String> = seeds
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| s.starts_with("http"))
+                            .collect();
+                        log!("wm: --test-action webview-crawl {} seeds", seeds.len());
+                        octosense_ai_host::webview_render::crawl_test(seeds);
+                        i += 2;
+                        continue;
+                    }
                     if let Some(app) = name.strip_prefix("launch-") {
                         let app = app.to_string();
                         log!("wm: --test-action launch {}", app);
@@ -5634,6 +5680,7 @@ impl App {
     }
 
     pub fn shell_handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.webview_render.handle_event(cx, event);
         self.shell_handle_event_inner(cx, event);
         // Whatever module panicked during this event — in its tile's event
         // or draw, or in a call the shell made — is contained by now; show

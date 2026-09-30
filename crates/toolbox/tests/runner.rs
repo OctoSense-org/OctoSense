@@ -256,8 +256,11 @@ async fn the_time_budget_cancels_in_flight_calls() {
         page.delay_ms = 10_000;
     }
     let folder = temp_dir("time-budget");
+    // No model calls: no time is kept back from the reads (see
+    // `a_slow_read_leaves_time_for_the_digest`), so the run's end cuts them.
     let quick = app(&folder).with_budget(Budget {
         max_ms: 200,
+        max_model_calls: 0,
         ..template.manifest.budget
     });
     let started = std::time::Instant::now();
@@ -290,6 +293,70 @@ async fn the_time_budget_cancels_in_flight_calls() {
         3
     );
     assert!(result.diagnostics.iter().any(|d| d.contains("max_ms")));
+}
+
+#[tokio::test]
+async fn a_slow_read_leaves_time_for_the_digest() {
+    // The phone run of 29 Sep 2026: two reads waited 45-60 s on a WebView
+    // render, the 90 s run ran out and the digest never ran. Reads now stop
+    // when the time kept for the model begins.
+    let template = template("topic-brief");
+    let mut case = case("topic-brief", "failed-read-fallback");
+    for page in case.fixture.pages.values_mut() {
+        page.delay_ms = 60_000;
+    }
+    let folder = temp_dir("read-window");
+    let budget = Budget {
+        max_ms: 2_000,
+        ..template.manifest.budget
+    };
+    assert_eq!(octosense_toolbox::runner::read_window_ms(&budget), 1_334);
+    let started = std::time::Instant::now();
+    let result = run(
+        &template,
+        &app(&folder).with_budget(budget),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert!(started.elapsed().as_millis() < 2_000);
+    // Every read was given up at the window's close, then the run ended on
+    // its own (the template has nothing to digest), not by the time budget.
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|d| d.contains("read given up after")));
+    assert!(!result
+        .status_reasons
+        .iter()
+        .any(|r| r.contains("time budget")));
+    assert_eq!(
+        result
+            .trace
+            .iter()
+            .filter(|e| e.event == "timed_out")
+            .count(),
+        0
+    );
+
+    // One slow page among readable ones: it is given up at the window's
+    // close and the digest runs on the others.
+    let mut case = common::case("topic-brief", "failed-read-fallback");
+    let slow = "https://example.invalid/zh/river-plan";
+    case.fixture.pages.get_mut(slow).unwrap().delay_ms = 60_000;
+    let result = run(
+        &template,
+        &app(&folder).with_budget(budget),
+        case.params.clone(),
+        &fixture::host(&case.fixture),
+        RunOptions::default(),
+    )
+    .await
+    .unwrap();
+    assert!(result.data["brief"].is_object(), "{:?}", result.diagnostics);
+    assert_eq!(result.stats.model_calls, 2, "{:?}", result.diagnostics);
 }
 
 #[tokio::test]

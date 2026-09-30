@@ -168,6 +168,8 @@ pub struct OctosResearch {
     metasearch: Metasearch,
     reader: Reader,
     chrome: Option<Arc<Chrome>>,
+    /// A renderer the host supplied instead of Chrome (the phone's WebView).
+    external_renderer: bool,
 }
 
 impl OctosResearch {
@@ -176,13 +178,31 @@ impl OctosResearch {
     /// ([`Chrome::shared`]), or none when rendering is off or no Chrome is
     /// installed.
     pub fn new(config: OctosConfig) -> Self {
+        Self::build(config, None)
+    }
+
+    /// With a renderer the host supplies (the phone shell's WebView, which
+    /// has no Chrome to launch) instead of Chrome. Pages the reader cannot
+    /// read over plain HTTP, including ones blocked there, are read in it.
+    pub fn with_renderer(config: OctosConfig, renderer: reader::Renderer) -> Self {
+        Self::build(config, Some(renderer))
+    }
+
+    fn build(config: OctosConfig, external: Option<reader::Renderer>) -> Self {
         let metasearch = Metasearch::from_env(Arc::new(ReqwestFetch::new()), &BTreeMap::new());
-        let chrome = config.render.clone().and_then(Chrome::shared);
-        let renderer: Option<reader::Renderer> = chrome.clone().map(|chrome| {
-            Arc::new(move |url: String| {
-                let chrome = chrome.clone();
-                Box::pin(async move { chrome.render(&url).await }) as reader::RenderFuture
-            }) as reader::Renderer
+        let external_renderer = external.is_some();
+        let chrome = if external_renderer {
+            None
+        } else {
+            config.render.clone().and_then(Chrome::shared)
+        };
+        let renderer: Option<reader::Renderer> = external.or_else(|| {
+            chrome.clone().map(|chrome| {
+                Arc::new(move |url: String| {
+                    let chrome = chrome.clone();
+                    Box::pin(async move { chrome.render(&url).await }) as reader::RenderFuture
+                }) as reader::Renderer
+            })
         });
         let reader = Reader::new(ReaderConfig {
             host_interval: config.host_interval,
@@ -199,12 +219,13 @@ impl OctosResearch {
             metasearch,
             reader,
             chrome,
+            external_renderer,
         }
     }
 
     /// Whether pages that need JavaScript can be read.
     pub fn renders(&self) -> bool {
-        self.chrome.is_some()
+        self.chrome.is_some() || self.external_renderer
     }
 
     /// The browser, if any (tests and diagnostics).
@@ -583,7 +604,9 @@ impl ResearchBackend for OctosResearch {
 
 /// The absolute `http(s)` links of `<a href>`s in `html`, resolved against
 /// `base`, without fragments, deduplicated in page order. A plain scan, not
-/// a parser: it only has to find links, never to render.
+/// a parser: it only has to find links, never to render. Only anchors count;
+/// `<link href>` (stylesheets, icons, feeds, alternates) is not a page to
+/// follow.
 pub fn extract_links(html: &str, base: &str) -> Vec<String> {
     let Ok(base) = url::Url::parse(base) else {
         return Vec::new();
@@ -592,27 +615,14 @@ pub fn extract_links(html: &str, base: &str) -> Vec<String> {
     let mut links = Vec::new();
     let mut seen = BTreeSet::new();
     let mut from = 0;
-    while let Some(at) = lower[from..].find("href") {
-        let start = from + at + 4;
+    while let Some(at) = lower[from..].find("<a") {
+        let start = from + at + 2;
         from = start;
-        let rest = &html[start..];
-        let trimmed = rest.trim_start();
-        let Some(after_eq) = trimmed.strip_prefix('=') else {
+        if !lower[start..].starts_with(|c: char| c.is_ascii_whitespace()) {
             continue;
-        };
-        let after_eq = after_eq.trim_start();
-        let value = match after_eq.chars().next() {
-            Some(q @ ('"' | '\'')) => match after_eq[1..].find(q) {
-                Some(end) => &after_eq[1..1 + end],
-                None => continue,
-            },
-            Some(_) => {
-                let end = after_eq
-                    .find(|c: char| c.is_whitespace() || c == '>')
-                    .unwrap_or(after_eq.len());
-                &after_eq[..end]
-            }
-            None => continue,
+        }
+        let Some(value) = anchor_href(&html[start..], &lower[start..]) else {
+            continue;
         };
         let value = value.trim().replace("&amp;", "&");
         if value.is_empty() || value.starts_with('#') {
@@ -631,6 +641,51 @@ pub fn extract_links(html: &str, base: &str) -> Vec<String> {
         }
     }
     links
+}
+
+/// The `href` value among the attributes that open `tag` (the text after
+/// `<a`, with `lower` its lowercase copy), up to the tag's `>`.
+fn anchor_href<'a>(tag: &'a str, lower: &str) -> Option<&'a str> {
+    let mut at = 0;
+    loop {
+        // Skip whitespace, then read one attribute name.
+        at += lower[at..].len() - lower[at..].trim_start().len();
+        let rest = &lower[at..];
+        if rest.is_empty() || rest.starts_with('>') || rest.starts_with("/>") {
+            return None;
+        }
+        let name_len = rest
+            .find(|c: char| c.is_ascii_whitespace() || matches!(c, '=' | '>' | '/'))
+            .unwrap_or(rest.len())
+            .max(1);
+        let is_href = &rest[..name_len] == "href";
+        at += name_len;
+        let after = &lower[at..];
+        let eq = after.len() - after.trim_start().len();
+        if !after[eq..].starts_with('=') {
+            continue;
+        }
+        at += eq + 1;
+        at += lower[at..].len() - lower[at..].trim_start().len();
+        let value = &tag[at..];
+        let (found, used) = match value.chars().next() {
+            Some(q @ ('"' | '\'')) => {
+                let end = value[1..].find(q)?;
+                (&value[1..1 + end], end + 2)
+            }
+            Some(_) => {
+                let end = value
+                    .find(|c: char| c.is_whitespace() || c == '>')
+                    .unwrap_or(value.len());
+                (&value[..end], end)
+            }
+            None => return None,
+        };
+        if is_href {
+            return Some(found);
+        }
+        at += used;
+    }
 }
 
 #[cfg(test)]
@@ -667,6 +722,21 @@ mod tests {
             ]
         );
         assert!(extract_links(html, "not a url").is_empty());
+    }
+
+    #[test]
+    fn only_anchor_hrefs_are_links() {
+        let html = r##"<link rel="stylesheet" href="/style.css">
+            <link rel="alternate" hreflang="zh" href="/zh/">
+            <abbr href="/not-a"><area href="/area">
+            <a data-href="/data" title="href=/title" class=x href="/real">R</a>
+            <p>see href="/text"</p><a name=top>T</a>
+            <a
+              href='/multi'>M</a>"##;
+        assert_eq!(
+            extract_links(html, "https://example.org/"),
+            ["https://example.org/real", "https://example.org/multi"]
+        );
     }
 
     #[test]

@@ -272,6 +272,18 @@ impl WmDesk {
         // The wallpaper fills the desk; the shell lays out inside the
         // platform's safe area (the notch, the system bars): the status bar
         // under the notch, the navigation band above Android's gesture bar.
+        // How much the native keyboard has shortened the body (it reflows
+        // above the IME): app search's field waits for a rising keyboard.
+        let window=cx.cx.windows[CxWindowPool::id_zero()].window_geom.inner_size;
+        state.phone.body_reflow=(window.y-(full.pos.y+full.size.y)).max(0.0);
+        // A hiding keyboard grows the body back a few frames after it starts
+        // to go: lay out in the whole window at once, as the keyboard slides
+        // off over it, rather than squeezed above where it was.
+        let mut full=full;
+        if state.phone.native_keyboard<=0.0 && state.phone.body_reflow>0.0 {
+            full.size.y+=state.phone.body_reflow;
+            state.phone.body_reflow=0.0;
+        }
         let screen=state.phone.insets.inset(full);
         state.phone.viewport=screen;
         // The frame's exclusion zones are rebuilt from what is drawn: cleared

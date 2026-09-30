@@ -68,3 +68,9 @@ pub fn grant_module(app: &str, capabilities: &[&str]) {
 pub fn grant_manifest(app: &str, manifest: &Value) {
     set_grant(app, ToolboxGrant::for_manifest(app, manifest));
 }
+
+/// `--test-action toolbox-research:<topic>`: a full research run through
+/// the toolbox, on this host's apps root (on-device check).
+pub fn research_test(topic: &str) {
+    toolbox_peers::research_test(&apps_root(), topic.to_string());
+}

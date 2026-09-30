@@ -103,6 +103,22 @@ impl Topic {
             && self.runs.iter().all(|r| text.runs.contains(r.as_str()))
     }
 
+    /// How many of the topic's terms `text` (a headline and its summary)
+    /// contains, by the same rules as [`Topic::matches`]: a ranking signal
+    /// for results that mention part of a topic.
+    pub fn coverage(&self, text: &str) -> usize {
+        let text = Indexed::new(text);
+        self.words
+            .iter()
+            .filter(|w| text.words.contains(*w))
+            .count()
+            + self
+                .runs
+                .iter()
+                .filter(|r| text.runs.contains(r.as_str()))
+                .count()
+    }
+
     /// Whether `text` (an article) mentions the topic: every short name
     /// and one of the longer names; without names, a third of the terms.
     pub fn mentioned_in(&self, text: &str) -> bool {
@@ -540,5 +556,22 @@ mod tests {
         let mixed = Topic::new("OpenAI 训练");
         assert!(mixed.matches("OpenAI 暫停訓練"));
         assert!(!mixed.matches("OpenAI 发布新模型"));
+    }
+
+    #[test]
+    fn coverage_counts_the_terms_a_headline_names() {
+        let topic = Topic::new("AI agents on smartphones");
+        assert_eq!(
+            topic.coverage("Qualcomm: AI agents will change how we use smartphones"),
+            3
+        );
+        assert_eq!(
+            topic.coverage("Nvidia unveils a platform to stop AI agents going rogue"),
+            2
+        );
+        assert_eq!(topic.coverage("Stock markets close higher"), 0);
+        let zh = Topic::new("智能手机 AI 智能体");
+        assert_eq!(zh.coverage("阿里发布千问AI手机方案，智能体进入智能手机"), 3);
+        assert_eq!(zh.coverage("智能体平台上线"), 1);
     }
 }

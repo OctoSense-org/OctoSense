@@ -1,0 +1,18 @@
+diff --git a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+index 274f2bbad..adad3b647 100644
+--- a/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
++++ b/tools/cargo_makepad/src/android/java/dev/makepad/android/MakepadActivity.java
+@@ -876,7 +876,12 @@ class MakepadSurface
+             mEditorSession=session;
+             if (mInputConnection!=null) {
+                 if (initial) mInputConnection.bindInitialSession(session);
+-                else {
++                // Only a session that starts editing restarts input. An editor
++                // going inactive (focus left: a cancelled search) just retires
++                // its connection below; restarting here brought the keyboard
++                // back, empty, while it was being hidden (Android 11: gone,
++                // back, then a slow slide away).
++                else if (active) {
+                     InputMethodManager imm=(InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+                     if(imm!=null) imm.restartInput(this);
+                 }

@@ -149,9 +149,9 @@
         "points": [
           {
             "citations": [
-              "saf6238e4fb1f"
+              "sc347be1ec138"
             ],
-            "text": "Some 400 volunteers cleared 12 km of the Riverton's banks on Saturday."
+            "text": "Twenty sensors will report the river's pollution levels every ten minutes from November."
           },
           {
             "citations": [
@@ -161,9 +161,9 @@
           },
           {
             "citations": [
-              "sc347be1ec138"
+              "saf6238e4fb1f"
             ],
-            "text": "Twenty sensors will report the river's pollution levels every ten minutes from November."
+            "text": "Some 400 volunteers cleared 12 km of the Riverton's banks on Saturday."
           },
           {
             "citations": [
@@ -172,7 +172,7 @@
             "text": "河道清理完成后，监测人员记录到十二种本地鱼类回归。"
           }
         ],
-        "summary": "Sources: Riverton volunteers clear 12 km of riverbank; 清河市公布三年河道治理计划; Sensors will track river pollution in real time; 清理后河中鱼类回归",
+        "summary": "Sources: Sensors will track river pollution in real time; 清河市公布三年河道治理计划; Riverton volunteers clear 12 km of riverbank; 清理后河中鱼类回归",
         "summary_check": {
           "dropped": 0,
           "flagged": 0,
@@ -206,13 +206,13 @@
       ],
       "sources": [
         {
-          "evidence_sha256": "0889d4d7ce9d4fccae723a6983f008fcc68ee2cb4104225e9b5809e57d678ae8",
-          "id": "saf6238e4fb1f",
+          "evidence_sha256": "3cc5275bdc14818fdc14355f2b8b0278190eb7af2bc5e1306215ec7d69e10363",
+          "id": "sc347be1ec138",
           "language": "en",
-          "published_at": "2026-09-19T08:00:00Z",
-          "source": "Riverton Record",
-          "title": "Riverton volunteers clear 12 km of riverbank",
-          "url": "https://example.invalid/en/river-volunteers"
+          "published_at": "2026-09-18T15:00:00Z",
+          "source": "Metro Science",
+          "title": "Sensors will track river pollution in real time",
+          "url": "https://example.invalid/en/river-sensors"
         },
         {
           "evidence_sha256": "b8c5e521c1ccd6a74674598982333356183431c18733ac46682490c6575a7f52",
@@ -224,13 +224,13 @@
           "url": "https://example.invalid/zh/river-plan"
         },
         {
-          "evidence_sha256": "3cc5275bdc14818fdc14355f2b8b0278190eb7af2bc5e1306215ec7d69e10363",
-          "id": "sc347be1ec138",
+          "evidence_sha256": "0889d4d7ce9d4fccae723a6983f008fcc68ee2cb4104225e9b5809e57d678ae8",
+          "id": "saf6238e4fb1f",
           "language": "en",
-          "published_at": "2026-09-18T15:00:00Z",
-          "source": "Metro Science",
-          "title": "Sensors will track river pollution in real time",
-          "url": "https://example.invalid/en/river-sensors"
+          "published_at": "2026-09-19T08:00:00Z",
+          "source": "Riverton Record",
+          "title": "Riverton volunteers clear 12 km of riverbank",
+          "url": "https://example.invalid/en/river-volunteers"
         },
         {
           "evidence_sha256": "06baf68093714b5b7ebb543fb0b0ef35de595caf92882e97b1a7d9396e430ce5",

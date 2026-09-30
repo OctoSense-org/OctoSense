@@ -290,6 +290,111 @@ struct Inner {
 /// calling app's grant. The toolbox's futures are not `Send` (the template
 /// VM stays on its thread), so each app's toolbox lives on a worker thread
 /// of its own; calls reach it over a channel, and a cancel stops a call
+/// The octos research engine as the shell's toolbox backend. No Chrome on
+/// a phone: its WebView renders instead (the shell runs a
+/// `webview_render::WebViewRenderHost`).
+fn research_backend() -> Arc<OctosResearch> {
+    #[cfg(target_os = "android")]
+    return Arc::new(OctosResearch::with_renderer(
+        OctosConfig::from_env(),
+        crate::webview_render::renderer(),
+    ));
+    #[cfg(not(target_os = "android"))]
+    Arc::new(OctosResearch::new(OctosConfig::from_env()))
+}
+
+/// On-device check (the shell's `toolbox-research:<topic>` test action): a
+/// full research run as an app agent's call would make it, for a module
+/// granted `research` and `crawl`: `workflow.run` of `topic-brief` (English,
+/// and Chinese translated), then `toolbox.deep_crawl`, over the octos engine
+/// and the person's providers through the `model` service. Logs
+/// `[toolbox-research]` lines; the full results are in the app's toolbox
+/// folder.
+pub fn research_test(apps_root: &Path, topic: String) {
+    let root = apps_root.to_path_buf();
+    let _ = std::thread::Builder::new().name("toolbox-research".into()).spawn(move || {
+        // Let the shell bring the `model` service up first.
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => return makepad_widgets::log!("[toolbox-research] no runtime: {e}"),
+        };
+        runtime.block_on(async move {
+            let library = match Library::builtin() {
+                Ok(l) => l,
+                Err(e) => return makepad_widgets::log!("[toolbox-research] no library: {e}"),
+            };
+            let toolbox = PeerToolbox::new(library, research_backend(), Arc::new(ModelHostClient::registered(&root)));
+            let id = "os.research-check";
+            // Crawl limits in the scope: `toolbox.deep_crawl` is offered only
+            // with them.
+            let scope = json!({"max_depth": 1, "max_pages": 6});
+            let grant = ToolboxGrant::new(id, [RESEARCH, CRAWL], [RESEARCH, CRAWL], Some(&scope));
+            let Some(app) = grant.app_context(id, &root) else {
+                return makepad_widgets::log!("[toolbox-research] no app context");
+            };
+            let started = std::time::Instant::now();
+            let params = json!({
+                "topic": topic,
+                "language": "en",
+                "languages": [{"language": "en", "translate": false}, {"language": "zh", "translate": true}],
+                "per_language": 3,
+                "read_top": 6,
+                "max_age_hours": 168
+            });
+            makepad_widgets::log!("[toolbox-research] workflow.run topic-brief {}", params);
+            match toolbox.call(&app, peer::RUN, json!({"id": "topic-brief", "params": params})).await {
+                Ok(r) => {
+                    makepad_widgets::log!(
+                        "[toolbox-research] run {}s status={} reasons={} sources={} stats={} result={}",
+                        started.elapsed().as_secs(),
+                        r["status"],
+                        r["status_reasons"],
+                        r["sources"].as_array().map_or(0, |s| s.len()),
+                        r["stats"],
+                        r["result"]
+                    );
+                    for s in r["sources"].as_array().into_iter().flatten() {
+                        makepad_widgets::log!("[toolbox-research] source {} | {}", s["source"], s["url"]);
+                    }
+                    // Why steps failed (model errors among them), from the
+                    // result file the agent would not see.
+                    // The path is relative to the app's folder.
+                    if let Some(path) = r["result"].as_str() {
+                        let text = std::fs::read_to_string(app.folder.join(path)).unwrap_or_default();
+                        let full: Value = serde_json::from_str(&text).unwrap_or_default();
+                        for d in full["diagnostics"].as_array().into_iter().flatten().take(12) {
+                            makepad_widgets::log!("[toolbox-research] diagnostic {}", d);
+                        }
+                    }
+                    let brief = r["data"].to_string();
+                    let brief: String = brief.chars().take(1500).collect();
+                    makepad_widgets::log!("[toolbox-research] data {}", brief);
+                }
+                Err(e) => makepad_widgets::log!("[toolbox-research] run failed: {} {}", e.kind, e.message),
+            }
+            let started = std::time::Instant::now();
+            let crawl = json!({"url": "https://www.reuters.com/technology/", "max_depth": 1, "max_pages": 6});
+            match toolbox.call(&app, peer::DEEP_CRAWL, crawl).await {
+                Ok(r) => {
+                    let pages = r["pages"].as_array().map_or(0, |p| p.len());
+                    makepad_widgets::log!(
+                        "[toolbox-research] deep_crawl {}s pages={} failures={}",
+                        started.elapsed().as_secs(),
+                        pages,
+                        r["failures"]
+                    );
+                    for p in r["pages"].as_array().into_iter().flatten() {
+                        makepad_widgets::log!("[toolbox-research] page {} | {}", p["url"], p["title"]);
+                    }
+                }
+                Err(e) => makepad_widgets::log!("[toolbox-research] deep_crawl failed: {} {}", e.kind, e.message),
+            }
+            makepad_widgets::log!("[toolbox-research] done");
+        });
+    });
+}
+
 /// there. A cancelled call is never answered.
 #[derive(Clone)]
 pub struct ToolboxExecutor(Arc<Inner>);
@@ -313,7 +418,7 @@ impl ToolboxExecutor {
             apps_root,
             Arc::new(move || {
                 let library = Library::builtin().map_err(|e| e.to_string())?;
-                let backend = Arc::new(OctosResearch::new(OctosConfig::from_env()));
+                let backend = research_backend();
                 Ok(PeerToolbox::new(library, backend, Arc::new(ModelHostClient::registered(&root))))
             }),
         )

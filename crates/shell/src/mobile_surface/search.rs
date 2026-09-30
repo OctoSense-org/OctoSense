@@ -136,6 +136,7 @@ impl PhoneSurface {
         self.search_focus_pending = true;
         self.search.text_input(cx, ids!(input)).take_key_focus(cx);
         phone.search_focused = true;
+        phone.search_focus_at = crate::host::now();
     }
 
     /// Pointer capture stays with the editor for selection drags. Soft-key
@@ -233,6 +234,7 @@ impl PhoneSurface {
         // desktop preview) is drawn over it and taken off here.
         let bottom = screen.pos.y + screen.size.y
             - state.phone.keyboard.max(state.phone.keyboard_target)
+            - state.phone.search_keyboard_lift(crate::host::now())
             - if state.phone.search_focused { 10.0 } else { 34.0 };
         let pill = rect(
             screen.pos.x + 20.0,
