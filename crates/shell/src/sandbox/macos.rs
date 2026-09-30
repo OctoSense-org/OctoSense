@@ -96,6 +96,21 @@ pub fn profile(policy: &Policy) -> String {
             out.push_str(&format!("(allow file-read-metadata{lits})\n"));
         }
         out.push_str(&format!(";; only its own jail and secrets inside them\n(allow file-read* file-write*{})\n", subpaths(&own)));
+        // Its program may live inside them too (desktop builds go to
+        // `<OctoSense home>/build`): without this, Metal cannot even read the
+        // program's own bundle and the app crashes at start.
+        let (reopened, kept_closed): (Vec<PathBuf>, Vec<PathBuf>) = program
+            .iter()
+            .filter(|p| private.iter().any(|root| p.starts_with(root)))
+            .cloned()
+            .partition(|p| super::program_reopenable(p, &private));
+        for path in &kept_closed {
+            makepad_widgets::log!("sandbox {}: program path {} holds private data; not reopened", policy.app, path.display());
+            out.push_str(&format!(";; not reopened (it holds private data): {}\n", quote(path)));
+        }
+        if !reopened.is_empty() {
+            out.push_str(&format!(";; its program, read-only, even inside them\n(allow file-read*{})\n", subpaths(&reopened)));
+        }
     }
     if policy.network == Network::None {
         out.push_str(&format!(

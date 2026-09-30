@@ -111,6 +111,11 @@ pub struct Rule {
     pub access: u64,
 }
 
+/// Read and execute: what a program path keeps inside the private dirs.
+pub fn read_exec() -> u64 {
+    read() | FS_EXECUTE
+}
+
 fn read() -> u64 {
     FS_READ_FILE | FS_READ_DIR
 }
@@ -168,13 +173,29 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
             add(program.clone(), all);
         }
     }
-    let own = [policy.jail.clone(), policy.secrets.clone()];
+    // Compare real paths: Landlock follows links when it opens a rule's
+    // path, so a linked checkout or grant must not slip past the private
+    // directories by its spelling.
+    let private: Vec<PathBuf> = policy.private.iter().map(|p| super::resolved(p)).collect();
+    let program: Vec<PathBuf> = policy.program.iter().map(|p| super::resolved(p)).collect();
+    let own = [super::resolved(&policy.jail), super::resolved(&policy.secrets)];
     let mut split = Vec::new();
     for rule in out {
+        let rule = Rule { path: super::resolved(&rule.path), access: rule.access };
         if own.contains(&rule.path) {
             split.push(rule);
+        } else if program.contains(&rule.path)
+            && private.iter().any(|root| rule.path.starts_with(root))
+            && super::program_reopenable(&rule.path, &private)
+        {
+            // Its program inside the private dirs (desktop builds live in
+            // `<OctoSense home>/build`): read and execute only, never write.
+            split.push(Rule { path: rule.path, access: rule.access & rx });
         } else {
-            around_private(rule, &policy.private, &mut split);
+            if program.contains(&rule.path) && private.iter().any(|root| rule.path.starts_with(root)) {
+                makepad_widgets::log!("sandbox {}: program path {} holds private data; not reopened", policy.app, rule.path.display());
+            }
+            around_private(rule, &private, &mut split);
         }
     }
     split

@@ -1028,6 +1028,14 @@ pub fn spawn_client(
     // where the platform lets the build stay outside.
     let policy = sandbox_policy(app, root.as_deref(), &program, hub_port);
     let (mut cmd, applied) = crate::sandbox::command(&program, &args, policy.as_ref(), via_cargo);
+    // A sandboxed app's Makepad home is its own jail (ADR 0004 §11): the
+    // OctoSense home is closed to it (G6), so settings it kept under
+    // `<OctoSense home>/<app id>/` could no longer be written. Its old data
+    // is copied into the jail once, by the host.
+    if let Some(policy) = &policy {
+        adopt_legacy_app_home(&crate::octosense::paths::home().join(&app.id), &policy.jail.join(&app.id));
+        cmd.env("MAKEPAD_HOME", &policy.jail);
+    }
     match &applied {
         Some(crate::sandbox::Applied::Sandboxed(how)) => makepad_widgets::log!("sandbox: {how}"),
         Some(crate::sandbox::Applied::Unavailable(why)) => makepad_widgets::log!("sandbox: UNSANDBOXED {why}"),
@@ -1129,8 +1137,59 @@ pub fn spawn_client(
     })
 }
 
+/// Copies an app's data from where it lived before its jail (`legacy`) to
+/// `into`, once: only when `into` does not exist yet. Files and folders
+/// are copied, links skipped; the old copy stays where it was.
+pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
+    fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            let target = to.join(entry.file_name());
+            if kind.is_dir() {
+                copy(&entry.path(), &target)?;
+            } else if kind.is_file() {
+                std::fs::copy(entry.path(), &target)?;
+            }
+        }
+        Ok(())
+    }
+    if into.exists() || !legacy.is_dir() {
+        return;
+    }
+    match copy(legacy, into) {
+        Ok(()) => makepad_widgets::log!("storage: moved {} into its jail ({})", legacy.display(), into.display()),
+        Err(e) => makepad_widgets::log!("storage: could not copy {} into {}: {e}", legacy.display(), into.display()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_apps_legacy_home_is_copied_into_its_jail_once() {
+        let root = std::env::temp_dir().join(format!("octosense-adopt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("home/terminal");
+        let jail = root.join("home/apps/terminal/terminal");
+        std::fs::create_dir_all(legacy.join("profiles")).unwrap();
+        std::fs::write(legacy.join("settings.conf"), "font_size = 14").unwrap();
+        std::fs::write(legacy.join("profiles/dark.conf"), "x").unwrap();
+        super::adopt_legacy_app_home(&legacy, &jail);
+        assert_eq!(std::fs::read_to_string(jail.join("settings.conf")).unwrap(), "font_size = 14");
+        assert!(jail.join("profiles/dark.conf").is_file());
+        assert!(legacy.join("settings.conf").is_file(), "the old copy stays");
+        // Once: a later change in the jail is never overwritten.
+        std::fs::write(jail.join("settings.conf"), "font_size = 16").unwrap();
+        super::adopt_legacy_app_home(&legacy, &jail);
+        assert_eq!(std::fs::read_to_string(jail.join("settings.conf")).unwrap(), "font_size = 16");
+        // Nothing to adopt: nothing created.
+        let none = root.join("home/apps/other/other");
+        super::adopt_legacy_app_home(&root.join("home/other"), &none);
+        assert!(!none.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
     use super::*;
 
     #[test]
