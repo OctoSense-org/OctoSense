@@ -436,6 +436,16 @@ fn error_of(result: &str) -> ToolOutcome {
 }
 
 impl Relay {
+    /// (auto_approvable, command) for `owner`'s `tool`: the host's rule
+    /// (`native-apps.json` `tool_policy`, commands), and a script app's own
+    /// `tools.json` declaration (App Hub's `auto_approvable`), whichever is
+    /// stricter.
+    fn tool_rule(&self, env: &dyn Env, owner: &str, tool: &str) -> (bool, bool) {
+        let (auto, command) = env.tool_rule(owner, tool);
+        let declared = self.catalog.entry(owner, tool).and_then(|e| e.get("auto_approvable")).and_then(Value::as_bool).unwrap_or(true);
+        (auto && declared, command)
+    }
+
     pub fn set_executor(&mut self, app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
         match executor {
             Some(e) => {
@@ -610,7 +620,7 @@ impl Relay {
         // 3. `confirm: app`: acknowledge, then the owning app's own sheet.
         if call.confirm_required {
             reply.acknowledge();
-            let (auto, _) = env.tool_rule(&owner, &tool);
+            let (auto, _) = self.tool_rule(&*env, &owner, &tool);
             let mut spec = ToolSpec::app(&tool);
             spec.auto_approvable = auto;
             let id = format!("{CONFIRM_PREFIX}{}", call.call_id);
@@ -684,7 +694,7 @@ impl Relay {
         // agent's call on a tool the app owns; a `host_tool` one names its
         // owning app.
         let owner = if approval.octos { calling.clone() } else { approval.app.clone() };
-        let (auto, command) = env.tool_rule(&owner, &approval.tool);
+        let (auto, command) = self.tool_rule(&*env, &owner, &approval.tool);
         let mut spec = ToolSpec::host(&approval.tool);
         spec.auto_approvable = auto;
         if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN || (approval.octos && OCTOS_COMMANDS.contains(&approval.tool.as_str())) {

@@ -699,6 +699,11 @@ impl App {
         // An installed app opens only while the App Hub catalog still admits
         // it. A system app (`os.*`) ships with the build and answers to no
         // catalog.
+        // No script app runs under a native app's name (ADR 0004 §3).
+        if let Some(Err(error)) = apps::card_manifest_id(app).map(apps::check_script_app_id) {
+            self.notify(cx, "Could not open app", &error);
+            return;
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(

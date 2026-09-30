@@ -802,3 +802,25 @@ fn an_expired_host_tool_approval_is_denied_with_its_reason() {
     assert_eq!(answers.lock().unwrap().as_slice(), &[(false, "expired: no answer in 10 min".to_string())]);
     assert_eq!(w.router.expired().len(), 1);
 }
+
+/// A script app's `tools.json` may say `auto_approvable: false` (App Hub's
+/// `ToolSpec`): its approvals then never go to a standing rule, whatever
+/// the host's own rule says (ADR 0004 §8).
+#[test]
+fn a_script_apps_declared_auto_approvable_false_holds_on_its_approvals() {
+    let mut relay = Relay::default();
+    let mut pay = decl("pay.transfer", true, "host");
+    pay["auto_approvable"] = json!(false);
+    relay.catalog.declare("com.example.pay", vec![pay, decl("pay.quote", true, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    for (id, tool) in [("a1", "pay.transfer"), ("a2", "pay.quote")] {
+        let approval = HostToolApproval::parse(
+            &json!({"approval_id": id, "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "com.example.pay", "tool": tool, "args": {}, "risk": "act", "outward": true, "calling_kind": "system"}}}),
+            "s#system",
+        )
+        .unwrap();
+        relay.handle(Event::Approval { app: "system".into(), account: None, approval, answer: ApprovalAnswer::new(|_| {}) }, &mut w);
+    }
+    assert!(!w.asked[0].1.auto_approvable, "declared false: no rule answers it");
+    assert!(w.asked[1].1.auto_approvable, "omitted: a rule may");
+}
