@@ -387,6 +387,38 @@ pub fn interrupt_where(matches: impl Fn(&str) -> bool) -> Vec<String> {
     brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_running()).collect()
 }
 
+/// Register the tools again on every live, prepared peer whose app id
+/// `matches` (what the host offers changed: developer mode's `dev.run` and
+/// grants came or went, ADR 0004 §13). Each registration replaces the peer's
+/// set on the link it was prepared on; a failure is logged. The brokers
+/// asked.
+pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    let mut asked = 0;
+    for inner in brokers.into_iter().filter(|b| matches(&b.cfg.app_id)) {
+        let target = {
+            let st = inner.lock();
+            match (&st.peer, &st.account, st.released) {
+                (Some((_, peer)), Some(account), false) => peer.token.clone().map(|t| (peer.slug.clone(), t, account.clone())),
+                _ => None,
+            }
+        };
+        let Some((slug, token, account)) = target else { continue };
+        asked += 1;
+        let task = inner.clone();
+        inner.rt().spawn(async move {
+            if let Err(e) = task.register_tools(&slug, &token, &account).await {
+                eprintln!("app-peers: {}: registering its tools again: {e}", task.cfg.app_id);
+            }
+        });
+    }
+    asked
+}
+
 /// The live (not released) broker of the app whose id is `app_id`, if one
 /// runs: a shell surface opens the app's conversation on the same peer the
 /// app uses (the shell's "Ask <app>" panel).
