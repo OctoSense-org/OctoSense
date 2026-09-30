@@ -647,6 +647,17 @@ fn news() -> AgentSummary {
     )
 }
 
+/// A script app's agent that keeps `ask_user_question` says so on the
+/// first-use sheet, in the store's words, beside its own tools.
+#[test]
+fn the_consent_sheet_says_a_script_agent_asks_questions() {
+    let manifest = json!({"capabilities": ["news"], "agent": {"profile": "read-only", "tools": ["ask_user_question"]}});
+    let summary = AgentSummary::from_manifest("os.news", "News", &manifest, &[], "m");
+    assert_eq!(summary.uses, ["News's own tools", "Ask you questions"]);
+    let quiet = AgentSummary::from_manifest("os.news", "News", &json!({"capabilities": ["news"]}), &[], "m");
+    assert_eq!(quiet.uses, ["News's own tools"]);
+}
+
 /// The consent sheet and app storage read one `storage` block the same
 /// way: `accounts` defaults to false (one `device` folder) in both.
 #[test]

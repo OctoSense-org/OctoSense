@@ -60,6 +60,11 @@ impl AgentSummary {
         if uses.is_empty() {
             uses.push(format!("{name}'s own tools"));
         }
+        // A script app's agent that keeps App Hub's one kernel tool for
+        // contained apps (`ask_user_question`), in the store's words.
+        if manifest["agent"]["tools"].as_array().is_some_and(|t| t.iter().any(|t| t == "ask_user_question")) {
+            uses.push("Ask you questions".to_string());
+        }
         AgentSummary { app: app.into(), name: name.into(), reads, uses, model: model.into() }
     }
 }

@@ -1,4 +1,15 @@
 {
+  "agent": {
+    "model": {
+      "needs": [
+        "tool_calling"
+      ]
+    },
+    "profile": "read-only",
+    "tools": [
+      "ask_user_question"
+    ]
+  },
   "capabilities": [
     "storage",
     "net",

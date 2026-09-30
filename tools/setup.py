@@ -57,7 +57,8 @@ RUNTIME_URLS = {
 # Crates whose sources must be unique in every graph, and where they come from.
 MAKEPAD_CRITICAL = {"makepad-script", "makepad-platform", "makepad-draw", "makepad-widgets", "makepad-live-id"}
 SINGLE_SOURCE = {"octos-core": "octos", "octos-cli": "octos", "octosense-appstore": "App Hub",
-                 "octosense-app-hub-app": "App Hub", "rinx": "Rinx"}
+                 "octosense-app-hub-app": "App Hub", "octosense-app-policy": "App Hub",
+                 "octosense-app-hub": "App Hub", "rinx": "Rinx"}
 
 
 def git(path, *args, check=True):

@@ -17,10 +17,10 @@
 //! destructive and outward tools alike); both run on a
 //! recording `news` host service through the real script-app executor
 //! (`script_apps::HostServiceExecutor`), wrapped to count the calls it
-//! runs. Its agent keeps octos's `ask_user_question`, granted through the
-//! relay's `set_generic` seam (native apps' `agent.generic_tools`): App Hub
-//! offers contained apps no octos kernel tool, so an admitted manifest
-//! cannot ask for it.
+//! runs. Its agent keeps octos's `ask_user_question`, from its manifest's
+//! `agent.tools` (App Hub's one kernel tool for a contained app), through the
+//! script-app path (G3) into the peer's `generic_tools`; its person-lane
+//! question is shown and answered in the shell's "Ask News" panel.
 //!
 //! **The lanes.** The system agent's lane is a real `peer/input`: a turn on
 //! the system session makes the model call `peer_send_input`, the kernel
@@ -172,7 +172,8 @@ fn register_app(dir: &Path) {
     let manifest = json!({
         "schema": 1, "id": APP, "version": "1", "name": LABEL,
         "integrity": {"bundle_blake3": digest},
-        "capabilities": ["storage", "glance", "news"]
+        "capabilities": ["storage", "glance", "news"],
+        "agent": {"profile": "read-only", "tools": ["ask_user_question"], "model": {"needs": ["tool_calling"]}}
     });
     std::fs::write(bundle.join("manifest.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
     let pack = serde_json::to_string(&octosense_app_hub::pack::pack_dir(&bundle).unwrap()).unwrap();
@@ -297,13 +298,11 @@ impl Scenario {
         let system = octosense_appstore::system::system_app(APP).unwrap();
         let bundle = octosense_appstore::system::prepare(&root, &system).expect("the fixture unpacks").0;
         let loaded = super::script_apps::from_bundle(&bundle).unwrap();
-        // App Hub offers a contained app's agent no octos kernel tool
-        // (`HostLimits::offered_tools`: ledger, net, storage, card), so an
-        // admitted manifest cannot ask for `ask_user_question`. The fixture's
-        // agent keeps it through the relay's seam native apps use
-        // (`agent.generic_tools`).
-        assert!(loaded.generic.is_empty());
-        super::set_generic(APP, vec!["ask_user_question".into()]);
+        // Its agent keeps `ask_user_question` from its manifest: App Hub
+        // admits that one kernel tool for a contained app, and the
+        // script-app path hands it to the peer's `generic_tools`.
+        assert_eq!(loaded.generic, ["ask_user_question"]);
+        assert_eq!(super::with_relay(|r| r.catalog.generic(APP, false)), ["ask_user_question"]);
         let executed: Arc<Mutex<Vec<HostToolCall>>> = Arc::default();
         let inner = super::script_apps::HostServiceExecutor { app: APP.into(), tools: loaded.host_service_tools, families: loaded.families, host_dir: root.join(".host") };
         super::set_executor(APP, Some(Arc::new(Counting { inner: Arc::new(inner), ran: executed.clone() })));
@@ -561,9 +560,23 @@ fn the_system_agent_and_the_person_work_with_one_app_agent_at_once() {
     let asked = requests.iter().find(|r| r["own"].as_str().is_some_and(|u| u.contains("SCN_ASK"))).expect("the person's model request");
     eprintln!("[main] the person's lane was shown, while the system agent's turn ran: {}", asked["shared"]);
 
-    // 4. The person answers on the shell's question card: their turn ends
-    // while the system agent's is still parked on its approval.
-    press(Hit::QuestionOption { id: question.id, label: Some("Team".into()) });
+    // 4. The person answers in the shell's "Ask News" panel (G11: the
+    // question of the app's conversation is shown there, not in the system
+    // chat): their turn ends while the system agent's is still parked on
+    // its approval.
+    crate::app_chat::show_for_tests(crate::apps::AgentApp { id: APP.into(), name: LABEL.into(), octos: Vec::new(), manifest: json!({}), native: false });
+    let panel = crate::app_chat::snapshot();
+    let routed = panel
+        .items
+        .iter()
+        .find_map(|i| match i {
+            crate::system_chat::model::Item::Question { id, body, options, answered: None, .. } if body == "Who should see the summary?" => Some((id.clone(), options.clone())),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the panel shows the question: {:?}", panel.items));
+    assert_eq!(routed, (format!("{}{}", crate::app_chat::ROUTED_PREFIX, question.id), vec!["Team".to_string(), "Everyone".to_string()]));
+    crate::app_chat::answer_option(&routed.0, 1, "Team");
+    crate::app_chat::close();
     let said = wait_complete(&s, &person, "the person's turn").expect("the person's turn completed");
     assert!(said["text"].as_str().unwrap_or("").starts_with("SCN AUDIENCE") && said["text"].to_string().contains("Team"), "{said}");
     assert_eq!(said["lane"], "person");
