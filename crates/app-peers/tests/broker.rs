@@ -139,7 +139,7 @@ impl Connector for FakeConnector {
                                 let mut s = script.lock().unwrap();
                                 let resume = params.get("host_token").is_some();
                                 match s.bindings.as_mut() {
-                                    Some(_) if params.get("cwd").is_some() && !std::path::Path::new(&cwd).is_dir() => Err("invalid_params"),
+                                    Some(_) if params.get("cwd").is_some() && cwd != "/kernel/ws" && !std::path::Path::new(&cwd).is_dir() => Err("invalid_params"),
                                     Some(b) if resume => match b.get(&name) {
                                         Some(bound) if *bound != cwd => Err("peer_binding_mismatch"),
                                         _ => Ok(()),
