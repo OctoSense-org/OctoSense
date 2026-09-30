@@ -91,6 +91,16 @@ class Drift(unittest.TestCase):
         self.assertIn("secrets.X", problems)
 
 
+class MainRuns(unittest.TestCase):
+    def test_main_runs_share_one_cancelling_group_and_merges_do_not_skip_ci(self):
+        for name in ("desktop.yml", "phone.yml", "apps.yml"):
+            workflow = name[:-len(".yml")]
+            concurrency = ci.load_workflow(name)["concurrency"]
+            self.assertIn(f"'{workflow}-main'", concurrency["group"], name)
+            self.assertIn("github.ref == 'refs/heads/main'", str(concurrency["cancel-in-progress"]), name)
+        self.assertNotIn("skip ci", (ROOT / "tools/ci_local_merge.py").read_text())
+
+
 class PathFilters(unittest.TestCase):
     def test_globs(self):
         self.assertTrue(ci.glob_match("crates/shell/src/lib.rs", "crates/**"))

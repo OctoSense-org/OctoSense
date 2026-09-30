@@ -15,7 +15,9 @@ Refuses unless target/ci-local/last.json (from tools/ci-local.sh) shows:
 It also refuses while the last completed push run of a workflow on main
 failed: a red main is fixed first (--fixes-main for the PR that fixes it).
 Then it posts the summary table as a PR comment ("Local CI passed on <sha>")
-and runs `gh pr merge <n> --admin --merge` with a `[skip ci]` subject.
+and runs `gh pr merge <n> --admin --merge`. The merge commit is an ordinary
+push to main: GitHub CI runs on it (the workflows' `<workflow>-main`
+concurrency group cancels older main runs, so the queue does not pile up).
 """
 import argparse
 import importlib.util
@@ -95,8 +97,8 @@ def comment_body(last, required):
     lines = [f"Local CI passed on {head} (`tools/ci-local.sh --only {last['only']}`, "
              f"{ci_local.fmt_seconds(last['seconds'])}, {last['host']['system']} {last['host']['machine']}).",
              "",
-             f"GitHub would run for this PR: {', '.join(required) or 'none'}. Merged with `[skip ci]` "
-             f"(macOS runner queue); GitHub CI still runs on main.",
+             f"GitHub would run for this PR: {', '.join(required) or 'none'}. Merged on this local "
+             f"pass (macOS runner queue); GitHub CI runs on the merge commit on main.",
              "",
              ci_local.format_table(last, markdown=True)]
     outside = [s for s in last.get("steps", []) if s["workflow"] not in set(required) | {"ci-local"}
@@ -147,7 +149,7 @@ def main(argv=None):
 
         body = comment_body(last, required)
         owner = (info.get("headRepositoryOwner") or {}).get("login", "")
-        subject = f"Merge pull request #{args.pr} from {owner}/{info['headRefName']} [skip ci]"
+        subject = f"Merge pull request #{args.pr} from {owner}/{info['headRefName']}"
         merge_body = f"Local CI (tools/ci-local.sh --only {last['only']}) passed on {head}."
         if args.dry_run:
             print(f"ci-local-merge: would comment on {info['url']}:\n\n{body}")
