@@ -236,7 +236,14 @@ impl GlanceTiles {
         let gone: Vec<String> = self.tiles.keys().filter(|k| !live.contains(k)).cloned().collect();
         for key in gone {
             if let Some(tile) = self.tiles.remove(&key) {
-                tile.frame.splash(cx, ids!(card)).set_text(cx, "");
+                let splash = tile.frame.splash(cx, ids!(card));
+                // Its waiting host requests end with it: a late answer goes
+                // nowhere, never to a tile that takes its place.
+                #[cfg(any(feature = "app-hub", native_mobile))]
+                if let Some(heap) = splash.borrow_mut().and_then(|mut s| s.isolate_heap_key(cx)) {
+                    octosense_appstore::services::cancel_heap(heap);
+                }
+                splash.set_text(cx, "");
             }
         }
     }
@@ -268,7 +275,8 @@ fn seat(cx: &mut Cx, splash: &SplashRef, app: &str, contained: bool) {
 
 /// The isolate settings of `app`'s policy, resolved as the Card runner
 /// resolves them when it opens the app: a system app's from its shipped
-/// pack, any other from the last verified catalog.
+/// pack, any other from the last verified catalog. A tile is a background
+/// surface, so a service its card calls may not raise a sheet over it.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSettings, String> {
     let root = octosense_appstore::data_root(cx);
@@ -282,7 +290,8 @@ pub fn app_isolate(cx: &Cx, app: &str) -> Result<octosense_app_policy::IsolateSe
             store.may_run(app)?
         }
     };
-    let settings = policy.isolate_settings(&root);
+    let mut settings = policy.isolate_settings(&root);
+    settings.host_prompts = false;
     std::fs::create_dir_all(&settings.jail_root).map_err(|e| format!("the app's storage: {e}"))?;
     Ok(settings)
 }
@@ -421,6 +430,54 @@ mod tests {
         // The request the card queued goes out on the next event.
         tiles.handle_event(&mut cx, &Event::Signal);
         assert!(crate::glance::shown().iter().any(|c| c.key() == "os.glanceinput/typed" && c.contained), "published as the tile's app");
+    }
+
+    /// A tile is a background surface: what its card asks of a host service
+    /// cannot raise a sheet over the home screen.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn a_tiles_isolate_cannot_raise_a_sheet() {
+        register_test_app("os.glancequiet");
+        let cx = tile_cx();
+        let settings = app_isolate(&cx, "os.glancequiet").unwrap();
+        assert!(!settings.host_prompts, "a tile's requests may not raise a sheet");
+        assert!(settings.capabilities.iter().any(|c| c == "glance"), "the app's own grants still apply");
+    }
+
+    /// A tile that goes away takes its waiting requests with it: an answer
+    /// that arrives later goes nowhere.
+    #[cfg(feature = "app-hub")]
+    #[test]
+    fn a_swept_tiles_requests_are_cancelled() {
+        use octosense_appstore::services::{dispatch, register_host_service, take_replies_for, HostService, Replier, ServiceCall, ServiceHost};
+        use std::sync::{Arc, Mutex};
+        struct Holds(Arc<Mutex<Option<Replier>>>);
+        impl HostService for Holds {
+            fn family(&self) -> &'static str {
+                "glancetilehold"
+            }
+            fn call(&mut self, _call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
+                *self.0.lock().unwrap() = Some(reply);
+            }
+        }
+        struct NoSheet;
+        impl ServiceHost for NoSheet {
+            fn open_sheet(&mut self, _: String) {}
+            fn close_sheet(&mut self) {}
+        }
+        register_test_app("os.glancesweep");
+        let held = Arc::new(Mutex::new(None));
+        register_host_service(Box::new(Holds(held.clone())));
+        let mut cx = tile_cx();
+        let mut tiles = GlanceTiles::default();
+        let splash = tiles.open(&mut cx, "os.glancesweep/c", "os.glancesweep", true, &"View{}".into());
+        let heap = heap_of(&mut cx, &splash);
+        let call = ServiceCall { app_id: "os.glancesweep".into(), service: "glancetilehold.wait".into(), args: serde_json::Value::Null,
+            from_sheet: false, may_prompt: false, host_dir: std::env::temp_dir() };
+        dispatch(call, heap, 1, &mut NoSheet);
+        tiles.sweep(&mut cx, &[]);
+        held.lock().unwrap().take().expect("the service holds the request").send(Ok(serde_json::Value::Null));
+        assert!(take_replies_for(&[heap]).is_empty(), "nothing is left queued for the tile that went away");
     }
 
     #[test]

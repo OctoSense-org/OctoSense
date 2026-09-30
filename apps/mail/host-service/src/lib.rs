@@ -436,6 +436,13 @@ impl HostService for MailService {
                 reply.send(Ok(json!(mine)));
             }
             "add_account" => {
+                // A sign-in needs the person on Mail's sheet. From a surface
+                // that cannot show one (a home-screen tile, an agent's tool
+                // call), refuse before touching a sign-in already under way.
+                if !call.may_prompt {
+                    reply.send(Err("Signing in needs Mail open: open Mail to add an account.".into()));
+                    return;
+                }
                 if let Some((_, earlier)) = self.pending.lock().unwrap().take() {
                     earlier.send(Err("Another sign-in replaced this one.".into()));
                 }
@@ -792,7 +799,7 @@ mod tests {
     /// isolate of its own, so answers cannot cross.
     fn send(dir: &Path, app: &str, service: &str, args: Value, from_sheet: bool, host: &mut Host) -> usize {
         let heap = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, host_dir: dir.into() };
+        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, may_prompt: true, host_dir: dir.into() };
         octosense_appstore::services::dispatch(call, heap, 1, host);
         heap
     }
@@ -835,6 +842,17 @@ mod tests {
         // add_account raises the sheet and waits; a wrong password keeps it waiting.
         let add = send(&dir, "os.mail", "mail.add_account", Value::Null, false, &mut host);
         assert!(matches!(host.sheet, Some(Some(_))), "the host's sheet is up");
+
+        // Mail's tile on the home screen cannot start a sign-in, and does
+        // not take over the one the person is filling in.
+        let tile = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut tile_host = Host::default();
+        let background = ServiceCall { app_id: "os.mail".into(), service: "mail.add_account".into(), args: Value::Null,
+            from_sheet: false, may_prompt: false, host_dir: dir.clone() };
+        octosense_appstore::services::dispatch(background, tile, 1, &mut tile_host);
+        assert!(wait(tile).unwrap_err().contains("open Mail"), "refused, with what to do");
+        assert!(tile_host.sheet.is_none(), "no sheet over the tile");
+        assert!(octosense_appstore::services::take_replies_for(&[add]).is_empty(), "the foreground sign-in is still waiting");
         let form = json!({"address": "me@example.com", "password": "wrong", "host": "pop.example.com", "port": "995", "security": "tls",
             "smtp_host": "smtp.example.com", "smtp_port": "465", "smtp_security": "tls"});
         assert!(ask(&dir, "os.mail", "mail.sheet.submit", form.clone(), true, &mut host).unwrap_err().contains("Wrong password"));
