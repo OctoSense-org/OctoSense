@@ -22,17 +22,17 @@ pub struct Item {
     pub fetched: i64,
     /// Plain text, at most a few hundred characters; may be empty.
     pub summary: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub image: Option<String>,
     /// Topics it matched (a followed topic's query, or the feed's category).
     #[serde(default)]
     pub topics: Vec<String>,
     /// Where people discuss it (Hacker News's thread).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub discussion: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub points: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub comments: Option<u64>,
     /// Other feeds that carried the same story (by URL or a near-identical
     /// title), after the first.
