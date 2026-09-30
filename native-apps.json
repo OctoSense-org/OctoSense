@@ -4,7 +4,7 @@
     {
       "id": "rinx",
       "crate": "rinx",
-      "source": { "git": "https://github.com/hagency-org/Rinx.git", "rev": "68afcf796d303aaf646eeb832d65c450a56c92b5", "local": null },
+      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.0.0", "rev": "0879548ba826c786eb6ad3f60dfba7bd342bd750", "local": null },
       "module": "rinx::module::RINX_MODULE",
       "bin": null,
       "default_features": false,
