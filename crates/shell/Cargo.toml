@@ -26,6 +26,8 @@ libc = "0.2"
 # App storage (ADR 0004 §11): the account hash that names account folders;
 # the approvals audit's digest of each call's arguments.
 sha2 = "0.10"
+# The hub's per-launch connect secrets (hub.rs): v4 UUIDs from the OS CSPRNG.
+uuid = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # `appcard,maps`: the AppCard widget set (kit, text roles, weather,

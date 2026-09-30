@@ -1952,6 +1952,7 @@ impl App {
         }
         self.state_mut().layout.remove(client);
         self.state_mut().clients.remove(&client);
+        hub::revoke_launch_token(client);
         // A dying warm viewer (or its requester) clears the cache's
         // reference to it — "if a viewer process dies clear its slot, so
         // the next Space respawns" instead of talking to a dead socket.
@@ -2865,6 +2866,14 @@ impl App {
                     socket,
                     sender,
                 } => {
+                    // The hub admitted this socket with the launch's own
+                    // secret; the slot must still be that live process,
+                    // and not bound already (ADR 0004 §5).
+                    if !slot_accepts_socket(self.state_mut().clients.get(&client)) {
+                        log!("wm: refused a socket for client {client}: no unbound process slot");
+                        let _ = sender.send(Vec::new());
+                        continue;
+                    }
                     let theme_splash = theme::theme_splash_path(&self.state_mut().theme_name)
                         .to_string_lossy()
                         .to_string();
@@ -2910,7 +2919,13 @@ impl App {
                         }
                     }
                 }
-                HubEvent::FromApp { client, msgs } => {
+                HubEvent::FromApp { client, socket, msgs } => {
+                    // Only the socket bound to a live slot speaks for it: a
+                    // slot that is gone, or a socket that is not (or no
+                    // longer) the bound one, is not heard.
+                    if !frame_is_bound(self.state_mut().clients.get(&client), socket) {
+                        continue;
+                    }
                     for msg in msgs {
                         self.on_app_msg(cx, client, msg);
                     }
@@ -4952,6 +4967,20 @@ fn test_action(name: &str) -> Option<WmAction> {
 /// The SUPER chord for mouse binds — Ctrl+Alt nested, the Logo key on a
 /// Linux session (binds.rs carries the same law for keys).
 /// No modifier at all: the bare function keys the WM owns (F10).
+/// Whether an admitted hub socket may bind `slot` (ADR 0004 §5): only a
+/// live process client's slot that no socket holds yet. An in-process
+/// module has no process, so it is never bound to a socket; a bound slot is
+/// never rebound, not even after its socket drops.
+fn slot_accepts_socket(slot: Option<&clients::ClientSlot>) -> bool {
+    slot.is_some_and(|slot| slot.child.is_some() && !slot.stopped && slot.socket.is_none() && slot.sender.is_none())
+}
+
+/// Whether frames from hub socket `socket` speak for `slot`: only while it
+/// is the socket bound to that live slot.
+fn frame_is_bound(slot: Option<&clients::ClientSlot>, socket: u64) -> bool {
+    slot.is_some_and(|slot| slot.socket == Some(socket))
+}
+
 fn bare_key(m: &KeyModifiers) -> bool {
     !m.shift && !m.control && !m.alt && !m.logo
 }
@@ -5008,6 +5037,47 @@ fn os_list_result(call_id: &str, rows: &[OsAppRow]) -> ToolResult {
         format!("{} apps, {} running", rows.len(), running),
     )
     .with_data(rows.to_vec().serialize_json())
+}
+
+#[cfg(all(test, unix))]
+mod hub_binding_tests {
+    use super::*;
+
+    fn process_slot(id: ClientId) -> clients::ClientSlot {
+        let mut slot = clients::ClientSlot::module(id, "terminal", "Terminal");
+        slot.child = Some(std::process::Command::new("true").spawn().expect("spawn true"));
+        slot
+    }
+
+    #[test]
+    fn should_bind_a_socket_only_when_the_slot_is_an_unbound_live_process() {
+        let mut slot = process_slot(4);
+        assert!(slot_accepts_socket(Some(&slot)));
+        assert!(!slot_accepts_socket(None), "no slot: nothing to bind");
+        assert!(!slot_accepts_socket(Some(&clients::ClientSlot::module(5, "reference", "Reference"))), "a module slot never takes a socket");
+        // Bound: a second socket is refused, and so is a rebind after the
+        // first socket dropped.
+        let (tx, _rx) = std::sync::mpsc::channel();
+        slot.socket = Some(11);
+        slot.sender = Some(tx);
+        assert!(!slot_accepts_socket(Some(&slot)));
+        slot.stopped = true;
+        slot.socket = None;
+        slot.sender = None;
+        assert!(!slot_accepts_socket(Some(&slot)), "a stopped slot is not live");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
+
+    #[test]
+    fn should_ignore_frames_when_the_socket_is_not_bound_to_the_slot() {
+        let mut slot = process_slot(4);
+        assert!(!frame_is_bound(Some(&slot), 11), "not bound yet");
+        slot.socket = Some(11);
+        assert!(frame_is_bound(Some(&slot), 11));
+        assert!(!frame_is_bound(Some(&slot), 12), "another socket naming the same id");
+        assert!(!frame_is_bound(None, 11), "a slot that is gone");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
 }
 
 #[cfg(test)]
