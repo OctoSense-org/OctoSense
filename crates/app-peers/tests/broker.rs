@@ -507,6 +507,8 @@ struct RecordingHost {
     declared: Mutex<Vec<Value>>,
     workspace: Mutex<Option<std::path::PathBuf>>,
     suspended: Mutex<bool>,
+    /// The startup check refused the account's workspace, and why.
+    refused: Mutex<Option<String>>,
     /// Answer each call at once with this (else hold it).
     answer: Mutex<Option<ToolOutcome>>,
     calls: Mutex<Vec<(HostToolCall, ToolReply)>>,
@@ -533,6 +535,9 @@ impl ToolHost for RecordingHost {
     }
     fn suspended(&self, _app: &str, _account: &str) -> bool {
         *self.suspended.lock().unwrap()
+    }
+    fn workspace_refused(&self, _app: &str, _account: &str) -> Option<String> {
+        self.refused.lock().unwrap().clone()
     }
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         if let Some(outcome) = self.answer.lock().unwrap().clone() {
@@ -989,6 +994,61 @@ fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was
     assert!(calls_of(&script, "peer/prepare")[0].1.get("cwd").is_none());
     drop(broker);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ADR 0004 §11: a workspace the startup check refused stays refused for a
+/// resumed peer too, not only for a new one.
+#[test]
+fn should_prepare_no_peer_when_the_workspace_is_refused_new_or_resumed() {
+    let dir = std::env::temp_dir().join(format!("app-peers-refused-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some("/home/apps/rinx/accounts/abc".into());
+    *host.refused.lock().unwrap() = Some("a symlink into the secrets".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(calls_of(&script, "peer/prepare").is_empty(), "no new peer on a refused workspace");
+    assert_ne!(broker.availability(), Availability::Ready);
+    drop(broker);
+    // A peer made while the workspace was clean...
+    *host.refused.lock().unwrap() = None;
+    let (broker, _script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    drop(broker);
+    // ...is not resumed once a later start refuses it.
+    *host.refused.lock().unwrap() = Some("a symlink into the secrets".into());
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    broker.set_account(Some("@a:x"));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(calls_of(&script, "peer/prepare").is_empty(), "no resume on a refused workspace");
+    assert_ne!(broker.availability(), Availability::Ready);
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn should_refuse_input_and_tool_calls_when_the_workspace_is_refused() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    *host.refused.lock().unwrap() = Some("a hard link to a secret".into());
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": "r1", "turn_id": "turn-r1", "text": "hi"}));
+    wait_for("the rejection", || !calls_of(&script, "peer/input/reject").is_empty());
+    let reject = calls_of(&script, "peer/input/reject")[0].1.clone();
+    assert_eq!(reject["reason"], "other");
+    assert!(reject["message"].as_str().unwrap().contains("workspace"), "{reject}");
+    assert!(host.inputs.lock().unwrap().is_empty(), "refused before the host is asked");
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c1", "t1", None));
+    wait_for("the refusal", || !calls_of(&script, "peer/tool/result").is_empty());
+    assert_eq!(calls_of(&script, "peer/tool/result")[0].1["error"]["kind"], "workspace_refused");
+    assert!(host.calls.lock().unwrap().is_empty(), "nothing ran");
+    assert!(calls_of(&script, "turn/start").is_empty());
 }
 
 #[test]

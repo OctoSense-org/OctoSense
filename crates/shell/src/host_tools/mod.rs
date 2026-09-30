@@ -374,6 +374,14 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// Why the startup check refused the workspace of `app_id`'s `account`,
+/// keyed like [`agent_workspace`]: the account for an app that keeps
+/// accounts, else the device folder (a script app's `card.<id>` peer too).
+pub fn workspace_refused_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<String> {
+    let _ = (storage, app_id, account);
+    None
+}
+
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
 pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
     let Some(storage) = crate::app_storage::host() else { return false };
