@@ -823,6 +823,7 @@ fn a_script_apps_declared_auto_approvable_false_holds_on_its_approvals() {
     }
     assert!(!w.asked[0].1.auto_approvable, "declared false: no rule answers it");
     assert!(w.asked[1].1.auto_approvable, "omitted: a rule may");
+}
 
 // ------------------------------------------------------------ dev.run (ADR 0004 §13)
 
