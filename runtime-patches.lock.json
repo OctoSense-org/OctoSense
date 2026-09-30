@@ -1,25 +1,20 @@
 {
   "schema_version": 1,
   "makepad": {
-    "base_revision": "92a19b67218f8cd2361866c4554457b153766f48",
+    "base_revision": "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "1bf3c9d5367bb35a0e2ab0eb92b614507817066d31d8030404cbb0655c758268",
-    "tree": "e0ece11a3735a7eb7f4422167f3b61dd63c73339",
+    "tree": "b4493dba6f372c61188e50fc2a9f069c40f887d0",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
       "System Back callback owners suppress compatibility Back keys to avoid duplicate navigation on Android 13+.",
-      "A system browser's WebView renderer crash no longer takes the app down (OctoSense-org/makepad#58, onRenderProcessGone; merged, drops at the next makepad repin).",
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11)."
     ],
     "stacked": [
       {
         "patch": "tools/runtime-patches/makepad-system-back.patch",
         "sha256": "3268cb486bbd05db7bb6920c26007e437017b6234a4d9f045a99a7d1954b7427"
-      },
-      {
-        "patch": "tools/runtime-patches/makepad-webview-render-gone.patch",
-        "sha256": "49903a6e3d20489ed8a0cc6969f4fb90eba172b0677998f7a368077f67f0ff6c"
       },
       {
         "patch": "tools/runtime-patches/makepad-ime-inactive-no-restart.patch",

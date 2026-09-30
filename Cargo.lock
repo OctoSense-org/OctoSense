@@ -2894,7 +2894,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "windows-link 0.1.3",
  "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -7361,7 +7361,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=8512be70b89b366e6d6ebf93e807188c4313c3c0#8512be70b89b366e6d6ebf93e807188c4313c3c0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7377,7 +7377,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=8512be70b89b366e6d6ebf93e807188c4313c3c0#8512be70b89b366e6d6ebf93e807188c4313c3c0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7405,7 +7405,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=8512be70b89b366e6d6ebf93e807188c4313c3c0#8512be70b89b366e6d6ebf93e807188c4313c3c0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7426,7 +7426,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=8512be70b89b366e6d6ebf93e807188c4313c3c0#8512be70b89b366e6d6ebf93e807188c4313c3c0"
+source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -10484,7 +10484,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell 1.21.4",
  "rustix",
  "windows-sys 0.61.2",
