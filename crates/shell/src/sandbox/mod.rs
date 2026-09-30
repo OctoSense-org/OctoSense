@@ -11,7 +11,7 @@
 //! | OS | Mechanism | Status |
 //! | --- | --- | --- |
 //! | macOS | a Seatbelt profile ([`macos`]) run through `/usr/bin/sandbox-exec`; a `cargo run` launch gets it as cargo's `runner`, so only the app is sandboxed, never the build | built and tested |
-//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec; best-effort, logged per layer when the kernel lacks it | built and tested on Linux 7.0 (Landlock ABI 8) and with Landlock hidden (#138); not in CI, whose shell tests run on macOS |
+//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec (a `cargo run` launch: by the shell's binary as cargo's runner, so only the app is sandboxed); best-effort, logged per layer when the kernel lacks it | built and tested on Linux 7.0 (Landlock ABI 8) and with Landlock hidden (#138); not in CI, whose shell tests run on macOS |
 //! | Windows | AppContainer (design below) | **TODO**: not built; a process app runs unsandboxed and the shell says so in its log |
 //!
 //! **Files.** The person's data roots ([`Policy::protected`]: the home
@@ -70,6 +70,25 @@ use crate::native_apps::{NativeApp, Network};
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+
+/// The `.init_array` entry that lets a binary run sandboxed apps launched
+/// through cargo ([`linux::runner_hook`]). Every shell binary has it
+/// (`octosense_main!`); a Linux binary without it launches such apps
+/// unsandboxed and says so.
+#[macro_export]
+macro_rules! runner_entry {
+    () => {
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        #[used]
+        #[unsafe(link_section = ".init_array")]
+        static OCTOSENSE_SANDBOX_RUNNER: extern "C" fn() = {
+            extern "C" fn entry() {
+                $crate::sandbox::linux::runner_hook();
+            }
+            entry
+        };
+    };
+}
 #[cfg(any(target_os = "macos", test))]
 pub mod macos;
 
@@ -109,18 +128,6 @@ pub struct Policy {
     /// `OCTOSENSE_WORKSPACE`): removed again before the app starts where the
     /// platform runs it through a runner ([`cargo_env_host_vars`]).
     pub cargo_env_unset: Vec<String>,
-    /// What a `cargo run` build reads outside its checkout: the workspaces
-    /// its path dependencies live in ([`cargo_path_roots`]; `.sources/makepad`
-    /// depends on `.sources/octoscript-makepad`, which depends on
-    /// `.sources/octoscript`). Read-only, and only where the platform
-    /// sandboxes the build itself (Linux); never given to an installed app.
-    pub build_sources: Vec<PathBuf>,
-    /// Where a `cargo run` launch builds (its target dir, created before the
-    /// launch). Writable only where the platform sandboxes the build itself
-    /// (Linux), even inside the host's private dirs (desktop builds live in
-    /// `<OctoSense home>/build/<source>`) when [`program_reopenable`] allows
-    /// it there; an installed launch never gets it.
-    pub build_target: Option<PathBuf>,
 }
 
 /// What [`command`] did.
@@ -198,8 +205,6 @@ impl Policy {
             hub_port,
             processes: app.processes,
             cargo_env_unset: Vec::new(),
-            build_sources: Vec::new(),
-            build_target: None,
         }
     }
 
@@ -376,73 +381,6 @@ pub fn cargo_env_host_vars(config: &str) -> Vec<String> {
     out
 }
 
-/// The workspaces a cargo build of `checkout` reads through path
-/// dependencies outside it, transitively: each `path = "..."` in a manifest
-/// is resolved, widened to the workspace it belongs to (the nearest
-/// ancestor whose `Cargo.toml` has a `[workspace]` table), and that
-/// workspace's manifests are read in turn. Paths inside `checkout` or an
-/// already found root add nothing.
-pub fn cargo_path_roots(checkout: &Path) -> Vec<PathBuf> {
-    let checkout = resolved(checkout);
-    let mut roots: Vec<PathBuf> = Vec::new();
-    let mut queue = vec![checkout.join("Cargo.toml")];
-    let mut seen: Vec<PathBuf> = Vec::new();
-    while let Some(manifest) = queue.pop() {
-        if seen.contains(&manifest) || seen.len() >= 256 {
-            continue;
-        }
-        seen.push(manifest.clone());
-        let Ok(text) = std::fs::read_to_string(&manifest) else { continue };
-        let Some(dir) = manifest.parent() else { continue };
-        for dep in manifest_paths(&text) {
-            let dep = resolved(&dir.join(dep));
-            if !dep.is_dir() {
-                continue;
-            }
-            // A dependency's own manifest may name further paths.
-            queue.push(dep.join("Cargo.toml"));
-            if dep.starts_with(&checkout) || roots.iter().any(|r| dep.starts_with(r)) {
-                continue;
-            }
-            let root = dep
-                .ancestors()
-                .take(8)
-                .find(|a| std::fs::read_to_string(a.join("Cargo.toml")).is_ok_and(|t| t.lines().any(|l| l.trim() == "[workspace]")))
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| dep.clone());
-            if root.parent().is_none() || checkout.starts_with(&root) {
-                continue; // never the file system root, nor a dir around the checkout
-            }
-            roots.retain(|r| !r.starts_with(&root));
-            queue.push(root.join("Cargo.toml"));
-            roots.push(root);
-        }
-    }
-    roots
-}
-
-/// Every `path = "..."` value in a manifest (dependencies, patches).
-fn manifest_paths(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let line = line.split('#').next().unwrap_or("");
-        let mut rest = line;
-        while let Some(at) = rest.find("path") {
-            let after = &rest[at + 4..];
-            let before_ok = at == 0 || !rest.as_bytes()[at - 1].is_ascii_alphanumeric() && rest.as_bytes()[at - 1] != b'_' && rest.as_bytes()[at - 1] != b'-';
-            let value = after.trim_start().strip_prefix('=').map(str::trim_start).and_then(|v| v.strip_prefix('"')).and_then(|v| v.split_once('"'));
-            match value {
-                Some((path, tail)) if before_ok => {
-                    out.push(path.to_string());
-                    rest = tail;
-                }
-                _ => rest = after,
-            }
-        }
-    }
-    out
-}
-
 /// What `cmd` passes on, from an allow-list (ADR 0004 §3: a process app
 /// never connects to the kernel, never sees the host token, and never gets
 /// the shell's provider keys): the shell's own variables that
@@ -526,8 +464,9 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo:
     // `/usr/lib/cargo/bin/coreutils/cat` on Ubuntu 26.04, an installed
     // binary linked from `~/.local/bin`) would otherwise fail to start
     // with EACCES.
+    // Through cargo the program is cargo, which runs outside the sandbox.
     let mut policy = policy.clone();
-    if program.is_absolute() && !policy.program.iter().any(|p| p == program) {
+    if !via_cargo && program.is_absolute() && !policy.program.iter().any(|p| p == program) {
         policy.program.push(program.to_path_buf());
     }
     let applied = linux::apply(&mut cmd, &policy, via_cargo);

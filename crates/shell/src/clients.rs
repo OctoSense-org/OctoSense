@@ -960,20 +960,10 @@ pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_por
     }
     let home = crate::sandbox::person_home().unwrap_or_else(|| PathBuf::from("/nonexistent"));
     let mut roots: Vec<PathBuf> = Vec::new();
-    let mut build_sources: Vec<PathBuf> = Vec::new();
-    let mut build_target: Option<PathBuf> = None;
     let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf));
     if let Some(checkout) = manifest_root.or_else(|| root.map(Path::to_path_buf)) {
-        build_sources = crate::sandbox::cargo_path_roots(&checkout);
         roots.push(checkout.clone());
-        let target = app.target_dir.as_ref().map(PathBuf::from).or_else(|| std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from)).unwrap_or_else(|| checkout.join("target"));
-        // It must exist before the launch: a sandboxed build cannot create
-        // it inside the OctoSense home (`<home>/build/<source>`).
-        if let Err(e) = std::fs::create_dir_all(&target) {
-            makepad_widgets::log!("sandbox: {}: cannot prepare {}: {e}", native.id, target.display());
-        }
-        roots.push(target.clone());
-        build_target = Some(target);
+        roots.push(app.target_dir.as_ref().map(PathBuf::from).or_else(|| std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from)).unwrap_or_else(|| checkout.join("target")));
         let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".cargo"));
         roots.push(cargo_home.join("git"));
         roots.push(cargo_home.join("registry"));
@@ -988,8 +978,6 @@ pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_por
     roots.sort();
     roots.dedup();
     let mut policy = crate::sandbox::Policy::for_app(native, paths.jail, paths.secrets, &home, roots, hub_port);
-    policy.build_sources = build_sources;
-    policy.build_target = build_target;
     // The host's private directories stay closed whatever the manifest
     // grants (G6): the OctoSense home (peer host tokens, every app's jail
     // and secrets), the storage roots and the kernel's core dir.

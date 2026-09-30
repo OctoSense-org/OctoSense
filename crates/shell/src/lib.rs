@@ -6097,6 +6097,9 @@ impl AppMain for App {
 #[macro_export]
 macro_rules! octosense_main {
     ($($extra:literal),* $(,)?) => {
+// Linux: the shell's binary is also the runner that sandboxes an app a
+// `cargo run` launch starts (sandbox/linux.rs).
+$crate::runner_entry!();
 app_main!(
     App,
     font_set: International,
