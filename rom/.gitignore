@@ -1,4 +1,5 @@
 vendor/octosense/prebuilt/*.apk
+vendor/octosense/prebuilt/lib/
 vendor/octosense/adb_keys/*.pub
 
 # Signing keys never belong in this repository (the release, platform and APEX
