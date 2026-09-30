@@ -1,6 +1,6 @@
 # Local CI
 
-`tools/ci-local.sh` runs the checks of `.github/workflows/` (desktop, phone, apps, rom) on your machine, so a pull request can be merged on a local pass while the GitHub macOS runner queue is saturated. GitHub CI stays on: it still runs on pushes to `main`, and a red `main` is fixed before anything else is merged.
+`tools/ci-local.sh` runs the checks of `.github/workflows/` (desktop, phone, apps, rom) on your machine, so a pull request can be merged on a local pass while the GitHub macOS runner queue is saturated. GitHub CI stays on: it runs on every push to `main`, including these merges, and a red `main` is fixed before anything else is merged.
 
 ## Run it
 
@@ -34,6 +34,6 @@ tools/ci-local-merge.sh <PR number>          # --dry-run to preview
 - comes from a head that contains the current `origin/main`;
 - covers every workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, no NOT RUN and no unexpected SKIP in them. A workflow GitHub would not run for the PR does not block it, so `--only desktop,phone` is enough evidence for a PR that only triggers those two.
 
-It also refuses while the latest completed GitHub run of a workflow on `main` has failed. Pass `--fixes-main` only for the PR that fixes it. Once every check passes, it posts the summary table as a PR comment ("Local CI passed on `<sha>` …") and runs `gh pr merge <n> --admin --merge --match-head-commit <sha>`, with the subject `Merge pull request #<n> from <owner>/<branch> [skip ci]`.
+It also refuses while the latest completed GitHub run of a workflow on `main` has failed. Pass `--fixes-main` only for the PR that fixes it. Once every check passes, it posts the summary table as a PR comment ("Local CI passed on `<sha>` …") and runs `gh pr merge <n> --admin --merge --match-head-commit <sha>`, with the subject `Merge pull request #<n> from <owner>/<branch>`.
 
-`[skip ci]` keeps that merge commit out of the GitHub queue. GitHub CI on `main` stays enabled and runs on every other push. When it fails, fix it before merging anything else.
+The merge commit is an ordinary push to `main`, so GitHub CI runs on it. The runs don't pile up: pushes to `main` share one concurrency group per workflow (`desktop-main`, `phone-main`, `apps-main`; rom.yml runs only on rom changes and has no group) with `cancel-in-progress`. Only the newest `main` commit's run completes, and older queued or running `main` runs are cancelled. Pull-request runs keep their own per-PR groups, as before. A cancelled run doesn't count as red, but a failed one does: fix it before merging anything else.
