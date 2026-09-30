@@ -259,6 +259,77 @@ fn condition_amount_and_count_limits() {
     assert!(!matches(&mut r, "7", json!({"count": 3}), Trigger::Person, &[]));
 }
 
+/// A condition that cannot read the fact it needs does not match (ADR 0004
+/// §8): an attachment under another name, a count under another name or in
+/// another shape, a recipient the reader cannot make out, and amounts it
+/// cannot parse all fail the rule, and the person is asked.
+#[test]
+fn conditions_fail_closed_on_arguments_they_cannot_read() {
+    let (mut r, _) = router();
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.send", Conditions { no_attachments: true, ..Conditions::default() }));
+    assert!(matches(&mut r, "a0", json!({"to": "x@y", "subject": "hi"}), Trigger::Person, &[]));
+    for (i, args) in [
+        json!({"to": "x@y", "attachment": ["/home/me/.ssh/id_ed25519"]}),
+        json!({"to": "x@y", "file_path": "/etc/passwd"}),
+        json!({"to": "x@y", "message": {"attachments": ["a.pdf"]}}),
+        json!({"to": "x@y", "files": 0}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(!matches(&mut r, &format!("a{}", i + 1), args.clone(), Trigger::Person, &[]), "an attachment the reader does not name: {args}");
+    }
+    let (mut r, _) = router();
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.send", Conditions { max_count: Some(1), ..Conditions::default() }));
+    assert!(matches(&mut r, "c0", json!({"to": "x@y"}), Trigger::Person, &[]));
+    for (i, args) in [
+        json!({"to": "x@y", "quantity": 500}),
+        json!({"to": "x@y", "count": "500"}),
+        json!({"to": "x@y", "count": -1}),
+        json!({"to": "x@y", "items": "all"}),
+        json!({"to": "x@y", "options": {"repeat": 500}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(!matches(&mut r, &format!("c{}", i + 1), args.clone(), Trigger::Person, &[]), "a count the reader cannot trust: {args}");
+    }
+    let (mut r, _) = router();
+    rule(&mut r, contacts_rule());
+    assert!(matches(&mut r, "r0", json!({"to": "ana@example.org"}), Trigger::Person, &[]));
+    for (i, args) in [
+        json!({"to": "ana@example.org", "recipient": "eve@example.org"}),
+        json!({"to": [{"name": "Eve", "mail": "eve@example.org"}]}),
+        json!({"to": ["ana@example.org", 42]}),
+        json!({"to": "ana@example.org", "share_with": ["eve@example.org"]}),
+        json!({"to": "ana@example.org", "message": {"cc": "eve@example.org"}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(!matches(&mut r, &format!("r{}", i + 1), args.clone(), Trigger::Person, &[]), "a recipient the reader cannot make out: {args}");
+    }
+    let (mut r, _) = router();
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.send", Conditions { max_amount: Some(50.0), ..Conditions::default() }));
+    assert!(matches(&mut r, "m0", json!({"amount": 10}), Trigger::Person, &[]));
+    for (i, args) in [json!({"amount": 10, "total": 5000}), json!({"amount": 10, "cost": 5000}), json!({"amount": "ten"}), json!({"amount": 10, "order": {"price": 900}})].into_iter().enumerate() {
+        assert!(!matches(&mut r, &format!("m{}", i + 1), args.clone(), Trigger::Person, &[]), "an amount the reader cannot trust: {args}");
+    }
+}
+
+/// The reviewer's case: Mail's "when I start it, no attachments, one at a
+/// time" rule never answers another app's agent whose turn only the app
+/// called the person's, with an attachment and a count under other names.
+#[test]
+fn a_rule_never_answers_what_it_cannot_read_even_for_the_persons_turn() {
+    let (mut r, _) = router();
+    let c = Conditions { triggered_by_person: true, no_attachments: true, max_count: Some(1), ..Conditions::default() };
+    rule(&mut r, RuleDraft::tool(MAIL, "mail.send", c));
+    let args = json!({"to": "someone@example.org", "attachment": ["/home/me/.ssh/id_ed25519"], "quantity": 500});
+    assert!(!matches(&mut r, "x1", args, Trigger::Person, &[]));
+    assert!(!matches(&mut r, "x2", json!({"to": "someone@example.org"}), Trigger::App, &[]), "the app's own run is not the person's");
+}
+
 #[test]
 fn daily_cap_then_the_next_day() {
     let (mut r, _) = router();
