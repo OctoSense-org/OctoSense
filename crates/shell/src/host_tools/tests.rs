@@ -893,3 +893,49 @@ fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
         assert_eq!(answers.lock().unwrap().as_slice(), if answered { &[true][..] } else { &[][..] });
     }
 }
+
+// ------------------------------------------------------------ the host read tools (ADR 0004 §11)
+
+/// `files.list`, `files.read`, `files.search`: an app's own agent's calls
+/// run on the shell (never down the app's link, no developer mode needed),
+/// with their arguments checked; another app's agent and the system agent
+/// are refused.
+#[test]
+fn the_host_read_tools_run_on_the_shell_for_the_apps_own_agent_only() {
+    let mut relay = Relay::default();
+    let host = Arc::new(Exec::default());
+    relay.set_executor(super::relay::HOST_EXECUTOR, Some(host.clone()));
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("rinx".into());
+    let files_call = |id: &str, name: &str, calling: &str, args: Value| {
+        let mut c = call(id, name, calling);
+        c.app = "rinx".into();
+        c.risk = "read".into();
+        c.args = args;
+        c
+    };
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: files_call("c1", super::files::READ, "rinx", json!({"path": "exports/room.md"})), reply: r }, &mut w);
+    let (r, _) = reply("c2");
+    relay.handle(Event::Call { call: files_call("c2", super::files::SEARCH, "rinx", json!({"query": "budget"})), reply: r }, &mut w);
+    let ran: Vec<String> = host.0.lock().unwrap().iter().map(|(c, _)| c.name.clone()).collect();
+    assert_eq!(ran, [super::files::READ, super::files::SEARCH]);
+    assert_eq!(host.0.lock().unwrap()[0].0.context_id, None, "the call's own context is stamped by the host");
+    assert!(w.link_calls.is_empty(), "never down the app's link");
+    let (r, sent) = reply("c3");
+    relay.handle(Event::Call { call: files_call("c3", super::files::READ, "rinx", json!({"file": "x"})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args");
+    let (r, sent) = reply("c4");
+    relay.handle(Event::Call { call: files_call("c4", super::files::LIST, "calendar", json!({})), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "another app's folder: never");
+    let mut system = files_call("c5", super::files::LIST, super::SYSTEM, json!({}));
+    system.caller_kind = CallerKind::System;
+    let (r, sent) = reply("c5");
+    relay.handle(Event::Call { call: system, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    assert_eq!(host.0.lock().unwrap().len(), 2);
+    // Declared as the app's own read tools, no confirmation.
+    for d in super::files::declarations("rinx") {
+        assert_eq!((d["app"].as_str(), d["risk"].as_str(), d.get("confirm")), (Some("rinx"), Some("read"), None), "{d}");
+    }
+}

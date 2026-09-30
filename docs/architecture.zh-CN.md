@@ -173,7 +173,7 @@ flowchart TB
 - **记忆命名空间** `app/<app>/acct-<hash>`（`crates/app-peers/src/broker.rs` 中的 `app_namespace()`）；不返回它的内核会被拒绝；
 - 自己的**对话记录**和**模型**通道（宿主通过 `peer/prepare` / `peer/model/set` 设置模型）；
 - 自己的**工具列表**：内核对 peer 安全的默认工具，加上 Shell 注册的工具（octos [#2567](https://github.com/octos-org/octos/pull/2567)，UPCR-2026-035）：每次 `peer/prepare` 和重连之后，broker 在驱动该 peer 回合的连接上注册应用声明的工具，以及授予它的其他应用可共享工具，每个都标明所属应用（`crates/shell/src/host_tools/`），不传 `generic_tools`。`main` 上还没有应用声明 `tools.json`，因此每个 peer 注册一个空集合，这仍然让它的回合获得应用的记忆和上下文（注册失败的 peer 不运行任何回合）；
-- **请求上下文**（`peer/context/open`）：每个客户端实例一个（一个 Rinx 小程序），各有自己的对话记录、peer 工作区内的目录 `contexts/<id>/` 和子记忆命名空间。上下文读不到旁边的文件。ADR 0004 §6（2026-09-29 决定）只把它们留给按客户端划分的工作（`OctosAppService::open_context`：Rinx 小程序，以及带 `client` 的进程应用 `octos.session.open`）：用户与应用 Agent 的对话（来自应用界面或其卡片）在 peer 自己的会话上运行，与系统 Agent 共享（见下文）。
+- **请求上下文**（`peer/context/open`）：每个客户端实例一个（一个 Rinx 小程序），各有自己的对话记录、peer 工作区内的目录 `contexts/<id>/` 和子记忆命名空间。上下文不能直接读旁边的文件；它通过 Shell 的宿主读取工具 `files.list`、`files.read` 和 `files.search`（ADR 0004 §11，`crates/shell/src/host_tools/files.rs`）读取账户数据，这些工具从不显示其他上下文的目录。ADR 0004 §6（2026-09-29 决定）只把它们留给按客户端划分的工作（`OctosAppService::open_context`：Rinx 小程序，以及带 `client` 的进程应用 `octos.session.open`）：用户与应用 Agent 的对话（来自应用界面或其卡片）在 peer 自己的会话上运行，与系统 Agent 共享（见下文）。
 
 目前谁有 peer（`crates/ai-host/src/lib.rs`，`Policy::shipped()`；`crates/app-peers/src/hosted.rs`，`effective_services` = 声明 ∩ 支持 ∩ 策略）：
 
