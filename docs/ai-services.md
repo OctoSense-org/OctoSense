@@ -222,7 +222,7 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
 1. Build octos at the revision the root `Cargo.toml` pins (`e045c727`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
 
    ```sh
-   git checkout e045c727492f9d2112391ffdce4dcf635c77bec7
+   git checkout d73ce01f20dff364995d8981be4db1e95563179f
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 

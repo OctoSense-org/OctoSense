@@ -222,7 +222,7 @@ manifest 的 `agent` 字段（权限档位、通用工具、迭代和 token 上�
 1. 在 [octos-org/octos](https://github.com/octos-org/octos) 的检出中，构建根 `Cargo.toml` 锁定的版本（`e045c727`；参数与 `tools/kernel-artifact.py` 相同；本次更新未在此版本上运行，**unverified**）：
 
    ```sh
-   git checkout e045c727492f9d2112391ffdce4dcf635c77bec7
+   git checkout d73ce01f20dff364995d8981be4db1e95563179f
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 
