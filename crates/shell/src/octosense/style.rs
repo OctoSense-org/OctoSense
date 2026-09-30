@@ -234,8 +234,10 @@ mod tests {
             let framework = app_icon::load_assets(style);
             let assets = icon_assets(style);
             // Nothing the framework draws is lost, and the list stays sorted
-            // by name as the framework's is.
-            assert_eq!(assets.len(), framework.len() + 2, "{}", style.id());
+            // by name as the framework's is. Added: OctosMap, App Hub and the
+            // system chat's Assistant (#143).
+            assert_eq!(assets.len(), framework.len() + 3, "{}", style.id());
+            assert!(svg_of(&assets, "assistant").contains("OctoSense #143"), "{}", style.id());
             assert!(assets.windows(2).all(|pair| pair[0].name < pair[1].name), "{}", style.id());
             for asset in &framework {
                 if asset.name != "news" {
