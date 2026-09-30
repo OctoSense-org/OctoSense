@@ -53,6 +53,11 @@ pub enum Item {
         role: Role,
         text: String,
         turn: Option<String>,
+        /// A v2 envelope's `assistant_segment_id`: one message per segment.
+        segment: Option<String>,
+        /// The ledger position (`cursor.seq`) of the envelope that made it:
+        /// envelopes may arrive out of order, items stay in ledger order.
+        seq: Option<u64>,
     },
     Tool {
         call_id: String,
@@ -60,6 +65,8 @@ pub enum Item {
         status: ToolStatus,
         detail: String,
         turn: Option<String>,
+        /// As for a message: the ledger position of a v2 `tool_start`/`tool_end`.
+        seq: Option<u64>,
     },
     Question {
         id: String,
@@ -164,7 +171,10 @@ pub struct ChatModel {
     own_turns: std::collections::HashSet<String>,
     /// v2 envelope segments whose saved text arrived.
     persisted: Vec<String>,
-    segment: String,
+    /// v2 segments whose position comes from a delta (the first one): a
+    /// segment's saved text may be recorded at a ledger position before the
+    /// tool calls its deltas followed.
+    streamed: Vec<String>,
 }
 
 impl ChatModel {
@@ -187,14 +197,16 @@ impl ChatModel {
         self.generation += 1;
     }
 
+    /// Something to tell the person. Kernel and provider errors land here:
+    /// key-like fragments are redacted first ([`redact_secrets`]).
     pub fn notice(&mut self, text: impl Into<String>) {
-        self.items.push(Item::Notice(text.into()));
+        self.items.push(Item::Notice(redact_secrets(&text.into())));
         self.changed();
     }
 
     /// The person sent `text` as turn `turn`.
     pub fn start_turn(&mut self, turn: &str, text: &str) {
-        self.items.push(Item::Message { role: Role::User, text: text.to_string(), turn: Some(turn.to_string()) });
+        self.items.push(Item::Message { role: Role::User, text: text.to_string(), turn: Some(turn.to_string()), segment: None, seq: None });
         self.prompts.push((turn.to_string(), text.to_string()));
         self.own_turns.insert(turn.to_string());
         self.phase = Phase::Running { turn: turn.to_string() };
@@ -232,7 +244,7 @@ impl ChatModel {
             }
         }
         if let Some(error) = error {
-            self.items.push(Item::Notice(error.to_string()));
+            self.items.push(Item::Notice(redact_secrets(error)));
         }
         if self.phase.running_turn() == Some(turn) || matches!(self.phase, Phase::Running { .. }) {
             self.phase = Phase::Ready;
@@ -242,28 +254,15 @@ impl ChatModel {
 
     /// The assistant's text for `turn` grows by `delta`.
     fn append_assistant(&mut self, turn: &str, delta: &str) {
-        if let Some(Item::Message { role: Role::Assistant, text, turn: Some(t) }) = self.items.last_mut() {
+        if let Some(Item::Message { role: Role::Assistant, text, turn: Some(t), segment: None, .. }) = self.items.last_mut() {
             if t == turn {
                 text.push_str(delta);
                 self.changed();
                 return;
             }
         }
-        self.items.push(Item::Message { role: Role::Assistant, text: delta.to_string(), turn: Some(turn.to_string()) });
+        self.items.push(Item::Message { role: Role::Assistant, text: delta.to_string(), turn: Some(turn.to_string()), segment: None, seq: None });
         self.changed();
-    }
-
-    /// The saved text of the turn's last assistant message replaces what
-    /// streamed.
-    fn set_assistant(&mut self, turn: &str, full: &str) {
-        if let Some(Item::Message { role: Role::Assistant, text, turn: Some(t) }) = self.items.last_mut() {
-            if t == turn {
-                *text = full.to_string();
-                self.changed();
-                return;
-            }
-        }
-        self.append_assistant(turn, full);
     }
 
     fn tool_mut(&mut self, call_id: &str) -> Option<&mut Item> {
@@ -286,7 +285,7 @@ impl ChatModel {
             "message/delta" => self.append_assistant(&turn, &s("text")),
             "tool/started" => {
                 let detail = params.get("arguments").map(brief_args).unwrap_or_default();
-                self.items.push(Item::Tool { call_id: s("tool_call_id"), name: s("tool_name"), status: ToolStatus::Running, detail, turn: Some(turn) });
+                self.items.push(Item::Tool { call_id: s("tool_call_id"), name: s("tool_name"), status: ToolStatus::Running, detail, turn: Some(turn), seq: None });
                 self.changed();
             }
             "tool/progress" => {
@@ -316,6 +315,7 @@ impl ChatModel {
                         status: if ok { ToolStatus::Done } else { ToolStatus::Failed },
                         detail: String::new(),
                         turn: Some(turn),
+                        seq: None,
                     }),
                 }
                 self.changed();
@@ -382,33 +382,105 @@ impl ChatModel {
                 let message = if message.is_empty() { "The assistant's turn failed.".to_string() } else { message };
                 self.end_turn(&turn, Some(&message));
             }
-            "projection/envelope" => self.envelope(&turn, &params["payload"]),
+            "projection/envelope" => {
+                let seq = params["cursor"]["seq"].as_u64().or_else(|| params["seq"].as_u64());
+                self.envelope(&turn, seq, &params["payload"]);
+            }
             _ => {}
         }
         effects
     }
 
-    /// A v2 projection envelope (a connection that negotiated
-    /// `projection.envelope.v2`; the stdio default does not).
-    fn envelope(&mut self, turn: &str, payload: &Value) {
+    /// A v2 projection envelope (the kernel sends these on the shell's
+    /// link). They can arrive out of ledger order, even after the turn's
+    /// `turn_terminal`, and a segment's saved text can arrive before its
+    /// last deltas: each segment is ONE message found by its id (never "the
+    /// last one"), placed by its ledger position, the saved text wins and
+    /// later deltas of a saved segment are dropped; a segment with no text
+    /// (an iteration that only called tools) shows nothing.
+    fn envelope(&mut self, turn: &str, seq: Option<u64>, payload: &Value) {
         let data = &payload["data"];
         match payload["type"].as_str().unwrap_or("") {
             kind @ ("assistant_delta" | "assistant_persisted") => {
                 let segment = data["assistant_segment_id"].as_str().unwrap_or("").to_string();
-                if kind == "assistant_delta" && self.persisted.contains(&segment) {
-                    return;
-                }
+                let persisted = kind == "assistant_persisted";
                 let text = data["text"].as_str().unwrap_or("");
-                if self.segment != segment {
-                    self.segment = segment.clone();
-                    self.items.push(Item::Message { role: Role::Assistant, text: String::new(), turn: Some(turn.to_string()) });
+                if persisted {
+                    self.persisted.push(segment.clone());
                 }
-                if kind == "assistant_persisted" {
-                    self.persisted.push(segment);
-                    self.set_assistant(turn, text);
-                } else {
-                    self.append_assistant(turn, text);
+                // A saved segment's late delta only tells where it belongs.
+                let first_delta = !persisted && !self.streamed.contains(&segment);
+                let placed_by_delta = |model: &mut Self| {
+                    if first_delta {
+                        model.streamed.push(segment.clone());
+                    }
+                };
+                match self.segment_index(turn, &segment) {
+                    Some(i) => {
+                        let saved = self.persisted.contains(&segment);
+                        let mut move_to = None;
+                        if let Item::Message { text: shown, seq: at, .. } = &mut self.items[i] {
+                            if persisted {
+                                *shown = text.to_string();
+                            } else if !saved {
+                                shown.push_str(text);
+                            }
+                            // Placed by its saved text so far: its first
+                            // delta's position is where it streamed.
+                            if first_delta && seq.is_some() && *at != seq {
+                                *at = seq;
+                                move_to = seq;
+                            }
+                        }
+                        placed_by_delta(self);
+                        if move_to.is_some() {
+                            let item = self.items.remove(i);
+                            self.insert_ordered(item, move_to);
+                        }
+                        if persisted && text.trim().is_empty() {
+                            if let Some(i) = self.segment_index(turn, &segment) {
+                                self.items.remove(i);
+                            }
+                        }
+                    }
+                    None if text.trim().is_empty() => return,
+                    None => {
+                        placed_by_delta(self);
+                        let item = Item::Message { role: Role::Assistant, text: text.to_string(), turn: Some(turn.to_string()), segment: Some(segment), seq };
+                        self.insert_ordered(item, seq);
+                    }
                 }
+                self.changed();
+            }
+            "tool_start" => {
+                let call_id = data["tool_call_id"].as_str().unwrap_or("").to_string();
+                if self.tool_mut(&call_id).is_none() {
+                    let name = data["name"].as_str().or_else(|| data["tool_name"].as_str()).unwrap_or("tool").to_string();
+                    let item = Item::Tool { call_id, name, status: ToolStatus::Running, detail: String::new(), turn: Some(turn.to_string()), seq };
+                    self.insert_ordered(item, seq);
+                    self.changed();
+                }
+            }
+            "tool_end" => {
+                let call_id = data["tool_call_id"].as_str().unwrap_or("").to_string();
+                let ok = matches!(data["status"].as_str(), None | Some("complete" | "completed" | "success" | "ok"));
+                let preview = data["output_preview"].as_str().unwrap_or("").to_string();
+                let status_now = if ok { ToolStatus::Done } else { ToolStatus::Failed };
+                match self.tool_mut(&call_id) {
+                    Some(Item::Tool { status, detail, .. }) => {
+                        *status = status_now;
+                        if !ok && !preview.is_empty() {
+                            *detail = preview;
+                        }
+                    }
+                    _ => {
+                        let name = data["name"].as_str().or_else(|| data["tool_name"].as_str()).unwrap_or("tool").to_string();
+                        let detail = if ok { String::new() } else { preview };
+                        let item = Item::Tool { call_id, name, status: status_now, detail, turn: Some(turn.to_string()), seq };
+                        self.insert_ordered(item, seq);
+                    }
+                }
+                self.changed();
             }
             "turn_terminal" => {
                 if data["outcome"] == "completed" {
@@ -420,6 +492,31 @@ impl ChatModel {
             }
             _ => {}
         }
+    }
+
+    /// The message of `segment` in `turn`, if one is shown.
+    fn segment_index(&self, turn: &str, segment: &str) -> Option<usize> {
+        self.items.iter().position(|i| matches!(i, Item::Message { segment: Some(s), turn: Some(t), .. } if s == segment && t == turn))
+    }
+
+    /// Add an item made from the envelope at ledger position `seq`: before
+    /// the trailing items that came from later envelopes, never before
+    /// anything the shell added itself (the person's prompt, a notice).
+    fn insert_ordered(&mut self, item: Item, seq: Option<u64>) {
+        let mut at = self.items.len();
+        if let Some(seq) = seq {
+            while at > 0 {
+                let later = match &self.items[at - 1] {
+                    Item::Message { seq: Some(s), .. } | Item::Tool { seq: Some(s), .. } => *s > seq,
+                    _ => false,
+                };
+                if !later {
+                    break;
+                }
+                at -= 1;
+            }
+        }
+        self.items.insert(at, item);
     }
 
     fn set_approval(&mut self, id: &str, to: ApprovalState) {
@@ -471,14 +568,15 @@ impl ChatModel {
             let text = row.get("content").and_then(Value::as_str).unwrap_or("").to_string();
             let turn = row.get("turn_id").and_then(Value::as_str).map(str::to_string);
             match row.get("role").and_then(Value::as_str).unwrap_or("") {
-                "user" => items.push(Item::Message { role: Role::User, text, turn }),
-                "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn }),
+                "user" => items.push(Item::Message { role: Role::User, text, turn, segment: None, seq: None }),
+                "assistant" if !text.trim().is_empty() => items.push(Item::Message { role: Role::Assistant, text, turn, segment: None, seq: None }),
                 "tool" => items.push(Item::Tool {
                     call_id: row.get("tool_call_id").and_then(Value::as_str).unwrap_or("").to_string(),
                     name: row.get("name").or_else(|| row.get("tool_name")).and_then(Value::as_str).unwrap_or("tool").to_string(),
                     status: ToolStatus::Done,
                     detail: String::new(),
                     turn,
+                    seq: None,
                 }),
                 _ => {}
             }
@@ -505,6 +603,62 @@ impl ChatModel {
         self.prompts.clear();
         self.changed();
     }
+}
+
+/// A provider's error as the person may see it: every word that carries a
+/// key, or a visible piece of one, becomes `[key]`. Providers quote a masked
+/// key back ("Your api key: ****fcb0 is invalid", "sk-proj-****abcd"), and
+/// the kernel passes their error bodies on verbatim.
+///
+/// Redacted: a word with a run of two or more `*` (a masked key); a word
+/// that starts like a key (`sk-`, `sk_`, `pk-`, `rk-`, `gsk_`, `xai-`,
+/// `AIza`, `ghp_`, `github_pat_`); the word after `Bearer`; and a long
+/// opaque token (24+ letters and digits, both present, no other shape it
+/// could be: a UUID stays, request ids are useful).
+pub fn redact_secrets(text: &str) -> String {
+    const PREFIXES: &[&str] = &["sk-", "sk_", "pk-", "rk-", "gsk_", "xai-", "AIza", "ghp_", "github_pat_"];
+    fn token_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || matches!(c, '*' | '-' | '_' | '.' | '+' | '/' | '=')
+    }
+    fn uuid(t: &str) -> bool {
+        let parts: Vec<&str> = t.split('-').collect();
+        parts.iter().map(|p| p.len()).eq([8usize, 4, 4, 4, 12]) && parts.iter().all(|p| p.chars().all(|c| c.is_ascii_hexdigit()))
+    }
+    fn keyish(t: &str) -> bool {
+        let t = t.trim_matches(|c| c == '.' || c == '-' || c == '_' || c == '/' || c == '=');
+        if t.is_empty() || uuid(t) {
+            return false;
+        }
+        if t.contains("**") || PREFIXES.iter().any(|p| t.starts_with(p) && t.len() > p.len() + 3) {
+            return true;
+        }
+        let alnum = t.chars().filter(|c| c.is_ascii_alphanumeric()).count();
+        alnum >= 24 && t.chars().any(|c| c.is_ascii_digit()) && t.chars().any(|c| c.is_ascii_alphabetic()) && !t.contains('.') && !t.contains('/')
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut after_bearer = false;
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        if token_char(c) {
+            let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
+            let token = &rest[..end];
+            if after_bearer || keyish(token) {
+                out.push_str("[key]");
+            } else {
+                out.push_str(token);
+            }
+            after_bearer = token.eq_ignore_ascii_case("bearer");
+            rest = &rest[end..];
+        } else {
+            out.push(c);
+            // `Bearer <token>`: only a space in between.
+            if c != ' ' {
+                after_bearer = false;
+            }
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
 }
 
 /// One short line for a tool call's arguments ("path: notes.md").

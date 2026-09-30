@@ -282,7 +282,9 @@ pub enum Enforced {
 /// policy OctoSense wrote (owner [`POLICY_OWNER`]) or none, and never
 /// touches the person's own octos home (`$HOME/octos-home/.octos`).
 pub fn enforce(core_dir: &Path) -> Enforced {
-    let outcome = enforce_unless_shared(core_dir, octosense_llm_config::profile::default_core_dir().as_deref());
+    // `$HOME/octos-home/.octos`, never `$OCTOS_APP_CORE_DIR` (which names
+    // OctoSense's own core dir when set).
+    let outcome = enforce_unless_shared(core_dir, crate::dirs::persons_octos_home().as_deref());
     if let Enforced::Refused(why) = &outcome {
         log::warn!("octos-core: tool policy NOT written: {why}");
     }

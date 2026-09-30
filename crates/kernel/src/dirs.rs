@@ -51,6 +51,15 @@ pub(crate) fn shared_profile_source(explicit: Option<&Path>, app_data_dir: Optio
     (desktop && derived).then(octosense_llm_config::profile::default_core_dir).flatten()
 }
 
+/// The person's own octos home, `$HOME/octos-home/.octos`: the one core dir
+/// OctoSense never writes a tool policy into. Never `$OCTOS_APP_CORE_DIR`:
+/// that names the core dir OctoSense's kernel uses (docs/ai-services.md,
+/// "Run and test locally"), which is OctoSense's own by the caller's choice.
+pub(crate) fn persons_octos_home() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty())?;
+    Some(PathBuf::from(home).join("octos-home").join(".octos"))
+}
+
 /// The profile keys the migration carries: the provider and model settings
 /// (`llm`) and the key references beside them (`env_vars`: keychain markers
 /// or keys the person saved there).
@@ -152,6 +161,10 @@ mod tests {
                 "a desktop inherits from the shared home it used to use"
             );
         }
+        // `$OCTOS_APP_CORE_DIR` never makes a dir the person's own.
+        std::env::set_var("OCTOS_APP_CORE_DIR", "/env/core");
+        assert_eq!(persons_octos_home(), Some(PathBuf::from("/home/me/octos-home/.octos")));
+        std::env::set_var("OCTOS_APP_CORE_DIR", "");
         // Nothing named: the llm service's default.
         assert_eq!(resolve_core_dir(None, None), octosense_llm_config::profile::default_core_dir());
         assert_eq!(shared_profile_source(None, None), None);
@@ -215,6 +228,39 @@ mod tests {
         assert_eq!(migrate_shared_profile(&shared, &own), Ok(false));
         assert!(std::fs::read_to_string(profile_path(&own)).unwrap().contains("zai"));
         assert_eq!(snapshot(&shared), before, "the person's octos home is unchanged");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// docs/ai-services.md, "Run and test locally": a kernel whose core dir
+    /// is `$OCTOS_APP_CORE_DIR` gets OctoSense's tool policy (it is not the
+    /// person's own octos home), while `$HOME/octos-home/.octos` still never
+    /// does.
+    #[test]
+    fn an_explicit_core_dir_from_the_environment_is_octosenses_own() {
+        let _g = ENV.lock().unwrap();
+        let saved_dir = std::env::var_os("OCTOS_APP_CORE_DIR");
+        let saved_home = std::env::var_os("HOME");
+        let root = tmp("env-core");
+        let core = root.join("core");
+        std::fs::create_dir_all(core.join("profiles")).unwrap();
+        std::fs::write(profile_path(&core), r#"{"id":"_main","config":{"llm":{}}}"#).unwrap();
+        std::env::set_var("HOME", root.join("home"));
+        std::env::set_var("OCTOS_APP_CORE_DIR", &core);
+        assert_eq!(resolve_core_dir(None, None), Some(core.clone()));
+        assert_eq!(crate::system_tools::enforce(&core), crate::system_tools::Enforced::Written);
+        // The person's own octos home stays refused.
+        let own = root.join("home/octos-home/.octos");
+        std::fs::create_dir_all(own.join("profiles")).unwrap();
+        std::fs::write(profile_path(&own), r#"{"config":{"llm":{}}}"#).unwrap();
+        assert!(matches!(crate::system_tools::enforce(&own), crate::system_tools::Enforced::Refused(_)));
+        match saved_dir {
+            Some(v) => std::env::set_var("OCTOS_APP_CORE_DIR", v),
+            None => std::env::remove_var("OCTOS_APP_CORE_DIR"),
+        }
+        match saved_home {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
         let _ = std::fs::remove_dir_all(root);
     }
 
