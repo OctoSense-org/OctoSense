@@ -4707,6 +4707,16 @@ impl App {
                     // webview-crawl:<url>,<url>…: a small crawl through the
                     // octos reader with the hidden WebView renderer, one
                     // `[webview-crawl]` log line per page (on-device check).
+                    // toolbox-research:<topic>: a full toolbox research run
+                    // (topic-brief, then deep_crawl) as an app agent's call
+                    // would make it; `[toolbox-research]` log lines.
+                    #[cfg(feature = "toolbox-peers")]
+                    if let Some(topic) = name.strip_prefix("toolbox-research:") {
+                        log!("wm: --test-action toolbox-research {}", topic);
+                        crate::host_tools::toolbox::research_test(topic);
+                        i += 2;
+                        continue;
+                    }
                     #[cfg(feature = "toolbox-peers")]
                     if let Some(seeds) = name.strip_prefix("webview-crawl:") {
                         let seeds: Vec<String> = seeds
