@@ -285,6 +285,92 @@ pub struct ModuleHost {
     next_scope: u64,
     per_app: HashMap<String, u64>,
     style: Option<desktop_style::StyleSheet>,
+    /// Closes an instance refused while it asks the person (makepad#65).
+    close_gate: CloseGate,
+}
+
+/// The closes instances refused (`AppModule::close_requested` answered
+/// `Veto`) and a shell quit waiting on them.
+///
+/// A veto means the instance is showing its own question in its root (the
+/// terminal: "Closing the terminal ends 1 running job…"). The host keeps
+/// the instance and remembers its root's uid; the root emits
+/// `ModuleCloseAction::Confirmed` from that uid on a yes, and the shell
+/// tears the instance down then. A no emits nothing: the mark stays until
+/// the next close asks again or the instance goes another way.
+///
+/// A quit asks every instance: with no veto it quits at once; otherwise it
+/// waits, and quits when the last refusing instance confirms. The person
+/// can decline in any of them; the quit then just never completes, and a
+/// later close the person asks for (or a new quit, which asks again)
+/// drops the waiting quit, so confirming that close later ends only that
+/// instance, never the shell.
+#[derive(Debug, Default)]
+pub struct CloseGate {
+    pending: HashMap<ClientId, WidgetUid>,
+    quit_waiting: bool,
+}
+
+impl CloseGate {
+    /// An instance answered a close: `true` when the host should tear it
+    /// down now (`Allow`); on `Veto` it stays and `root_uid` is remembered.
+    pub fn answered(&mut self, client: ClientId, decision: CloseDecision, root_uid: WidgetUid) -> bool {
+        match decision {
+            CloseDecision::Allow => {
+                self.pending.remove(&client);
+                true
+            }
+            CloseDecision::Veto => {
+                self.pending.insert(client, root_uid);
+                false
+            }
+        }
+    }
+
+    /// A root emitted `ModuleCloseAction::Confirmed`: the instance to tear
+    /// down, when the uid is one whose close is pending. Any other uid (an
+    /// instance nobody asked to close, a stale root) is ignored.
+    pub fn confirmed(&mut self, uid: WidgetUid) -> Option<ClientId> {
+        let client = self.pending.iter().find(|(_, pending)| **pending == uid).map(|(client, _)| *client)?;
+        self.pending.remove(&client);
+        Some(client)
+    }
+
+    pub fn is_pending(&self, client: ClientId) -> bool {
+        self.pending.contains_key(&client)
+    }
+
+    /// The instance went (torn down, failed): nothing to wait for.
+    pub fn forget(&mut self, client: ClientId) {
+        self.pending.remove(&client);
+    }
+
+    /// A person-initiated close of one instance: a quit that was waiting
+    /// is abandoned (the person turned to something else).
+    pub fn close_asked(&mut self) {
+        self.quit_waiting = false;
+    }
+
+    /// A shell quit asked every live instance and these refused. `true`:
+    /// quit now (nobody refused). Otherwise the quit waits for them.
+    pub fn quit_asked(&mut self, refused: impl IntoIterator<Item = (ClientId, WidgetUid)>) -> bool {
+        self.pending.extend(refused);
+        self.quit_waiting = !self.pending.is_empty();
+        !self.quit_waiting
+    }
+
+    /// A waiting quit whose last refusing instance has now confirmed.
+    pub fn take_quit_ready(&mut self) -> bool {
+        let ready = self.quit_waiting && self.pending.is_empty();
+        if ready {
+            self.quit_waiting = false;
+        }
+        ready
+    }
+
+    pub fn quit_waiting(&self) -> bool {
+        self.quit_waiting
+    }
 }
 
 /// The isolate removes mod.res after bootstrap. Trusted framework themes
@@ -543,6 +629,60 @@ impl ModuleHost {
         contain(cx, vm_id, what, |cx| f(cx, &root))
     }
 
+    /// Ask the live instance `client` whether it may close
+    /// (`AppModule::close_requested`, outside its isolate, contained) and
+    /// remember a refusal. `Allow` for a failed instance, a non-module and
+    /// a module that panicked while answering: nothing is left to protect.
+    pub fn ask_close(&mut self, cx: &mut Cx, client: ClientId) -> CloseDecision {
+        self.close_gate.close_asked();
+        self.ask_one(cx, client)
+    }
+
+    fn ask_one(&mut self, cx: &mut Cx, client: ClientId) -> CloseDecision {
+        let Some(instance) = self.instances.get(&client).filter(|i| i.failed.is_none()) else {
+            self.close_gate.forget(client);
+            return CloseDecision::Allow;
+        };
+        let (module, root, vm_id) = (instance.module, instance.root.clone(), instance.vm_id);
+        let decision = contain_outside(cx, vm_id, "close_requested", |cx| module.close_requested(cx, &root))
+            .unwrap_or(CloseDecision::Allow);
+        self.close_gate.answered(client, decision, root.widget_uid());
+        decision
+    }
+
+    /// The shell is quitting: ask every live instance. The clients that
+    /// refused (each now asking the person); empty means quit now.
+    pub fn ask_quit(&mut self, cx: &mut Cx) -> Vec<ClientId> {
+        let mut clients: Vec<ClientId> = self.instances.keys().copied().collect();
+        clients.sort_unstable();
+        let mut refused = Vec::new();
+        for client in clients {
+            if self.ask_one(cx, client) == CloseDecision::Veto {
+                let uid = self.instances[&client].root.widget_uid();
+                refused.push((client, uid));
+            }
+        }
+        let vetoed = refused.iter().map(|(client, _)| *client).collect();
+        self.close_gate.quit_asked(refused);
+        vetoed
+    }
+
+    /// A root emitted `ModuleCloseAction::Confirmed`: the instance to tear
+    /// down now, when its close was pending.
+    pub fn close_confirmed(&mut self, uid: WidgetUid) -> Option<ClientId> {
+        self.close_gate.confirmed(uid)
+    }
+
+    /// Whether `client` refused a close and is asking the person.
+    pub fn close_pending(&self, client: ClientId) -> bool {
+        self.close_gate.is_pending(client)
+    }
+
+    /// A waiting quit can go ahead now (every refusing instance confirmed).
+    pub fn take_quit_ready(&mut self) -> bool {
+        self.close_gate.take_quit_ready()
+    }
+
     /// Whether `client` is an instance whose module panicked.
     pub fn is_failed(&self, client: ClientId) -> bool {
         self.instances.get(&client).is_some_and(|i| i.failed.is_some())
@@ -685,6 +825,7 @@ impl ModuleHost {
         let Some(mut instance) = self.instances.remove(&client) else {
             return false;
         };
+        self.close_gate.forget(client);
         let label = instance.label();
         if instance.failed.is_some() {
             if !instance.released {
@@ -762,6 +903,8 @@ impl ModuleHost {
     /// The entry stays, failed, until the shell closes or restarts it.
     pub fn release_failed(&mut self, cx: &mut Cx, client: ClientId) {
         let Some(mut instance) = self.instances.remove(&client) else { return };
+        // A failed instance will never confirm the close it was asking about.
+        self.close_gate.forget(client);
         if instance.failed.is_some() && !instance.released {
             self.release_instance(cx, &mut instance);
         }
