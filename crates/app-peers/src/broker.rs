@@ -1230,6 +1230,14 @@ impl Inner {
             self.fail(&err);
             return Err(err);
         }
+        // A workspace the startup check refused (ADR 0004 §11) is refused
+        // for a resume as much as for a new peer: the resumed peer would
+        // run in the same folder.
+        if let Some(why) = host.workspace_refused(&self.cfg.app_id, &account) {
+            let err = format!("This account's workspace was refused ({why}); its assistant is paused");
+            self.fail(&err);
+            return Err(err);
+        }
         let tag = account_tag(&account);
         let namespace = app_namespace(&self.cfg.app_id, &account);
         let name = format!("{} {}", self.cfg.app_label, &tag[..8]);
@@ -1537,6 +1545,9 @@ impl Inner {
         if host.suspended(&self.cfg.app_id, &account) {
             return refuse("signed_out", "the account is signed out");
         }
+        if let Some(why) = host.workspace_refused(&self.cfg.app_id, &account) {
+            return refuse("workspace_refused", &format!("the account's workspace was refused: {why}"));
+        }
         call.calling_app = self.cfg.app_id.clone();
         call.account = Some(account);
         let occurrence = call.occurrence();
@@ -1650,6 +1661,9 @@ impl Inner {
         let Some(account) = account.filter(|a| !host.suspended(&self.cfg.app_id, a)) else {
             return self.reject_input(&peer, &input, InputRefusal::SignedOut);
         };
+        if let Some(why) = host.workspace_refused(&self.cfg.app_id, &account) {
+            return self.reject_input(&peer, &input, InputRefusal::Other(format!("the app's workspace was refused: {why}")));
+        }
         if let Err(why) = host.admit_input(&self.cfg.app_id, &account, &input) {
             return self.reject_input(&peer, &input, why);
         }
