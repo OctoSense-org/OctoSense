@@ -515,6 +515,7 @@ struct RecordingHost {
     approvals: Mutex<Vec<(HostToolApproval, ApprovalAnswer)>>,
     questions: Mutex<Vec<(AgentQuestion, QuestionAnswer)>>,
     closed_questions: Mutex<Vec<String>>,
+    closed_approvals: Mutex<Vec<String>>,
     generic: Mutex<Option<Vec<String>>>,
     /// Refuse each `peer/input` with this.
     refuse_input: Mutex<Option<InputRefusal>>,
@@ -559,6 +560,9 @@ impl ToolHost for RecordingHost {
     }
     fn user_question_closed(&self, _app: &str, question_id: &str) {
         self.closed_questions.lock().unwrap().push(question_id.to_owned());
+    }
+    fn host_tool_approval_closed(&self, _app: &str, approval_id: &str) {
+        self.closed_approvals.lock().unwrap().push(approval_id.to_owned());
     }
 }
 
@@ -844,6 +848,32 @@ fn a_host_tool_approval_goes_to_the_host_and_is_answered_on_its_link() {
         seen.push(d["method"].as_str().unwrap_or("").to_owned());
     }
     assert!(!seen.iter().any(|m| m == "approval/requested"), "{seen:?}");
+    drop(broker);
+}
+
+/// A turn that ends before the host answered its `host_tool` approval (the
+/// app's own Stop, an interrupt) withdraws it from the host: the kernel
+/// dropped it with the turn, so no sheet may keep asking. An approval the
+/// host answered, or one of a turn still running, is left alone.
+#[test]
+fn a_turn_that_ends_withdraws_its_unanswered_host_tool_approval_from_the_host() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    let host_tool = |id: &str, turn: &str| {
+        json!({"session_id": session, "approval_id": id, "turn_id": turn, "tool_name": "mail_send", "title": "Send", "body": "",
+            "approval_kind": "host_tool", "typed_details": {"kind": "host_tool", "host_tool": {"app": "mail", "tool": "mail.send", "args": {}, "risk": "destructive", "outward": true, "calling_kind": "app_peer", "calling_session_id": session}}})
+    };
+    notify(&script, "approval/requested", host_tool("a-open", "turn-i1"));
+    notify(&script, "approval/requested", host_tool("a-answered", "turn-i1"));
+    notify(&script, "approval/requested", host_tool("a-other", "turn-other"));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 3);
+    assert!(host.approvals.lock().unwrap()[1].1.respond(true));
+    notify(&script, "turn/error", json!({"session_id": session, "turn_id": "turn-i1", "message": "interrupted"}));
+    wait_for("withdrawn", || !host.closed_approvals.lock().unwrap().is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(*host.closed_approvals.lock().unwrap(), ["a-open"], "only the unanswered one of the ended turn");
+    assert_eq!(broker.pending_prompts(), 1, "the other turn's approval still waits");
     drop(broker);
 }
 
@@ -1477,6 +1507,31 @@ fn an_approval_nobody_answers_expires_to_deny_and_the_stuck_turn_is_interrupted_
     let late = calls_of(&script, "peer/tool/result").into_iter().find(|(_, p)| p["call_id"] == "c-late").unwrap().1;
     assert_eq!(late["error"]["kind"], "turn_interrupted");
     assert!(host.calls.lock().unwrap().is_empty());
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+/// The host's own deadline (the shell's router counts whole seconds) can
+/// deny an approval as expired a moment BEFORE the broker's timer: that is
+/// still an expiry, not an answer in time, so the grace runs and the turn
+/// still stuck after it is interrupted; the next queued input starts. A
+/// deny that is the person's own (no expiry note) is an answer: no
+/// interrupt (`an_answered_approval_neither_expires_nor_interrupts`).
+#[test]
+fn a_host_expiry_just_before_the_brokers_deadline_still_frees_the_stuck_turn() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_timed(&ALL, Some(host.clone()), None, Some((400, 300)));
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", approval_on(&session, "a1", "turn-i1"));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    // The host expires it at once, ahead of the broker's 400 ms.
+    let answer = host.approvals.lock().unwrap()[0].1.clone();
+    assert!(answer.respond_with(false, &octosense_app_peers::host_tools::expired_note("no answer in 1 s")));
+    assert!(answer.expired());
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1["turn_id"], "turn-i1");
+    wait_for("the next queued turn", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "approval/respond").len(), 1, "answered once, by the host");
     assert_eq!(broker.pending_prompts(), 0);
     drop(broker);
 }

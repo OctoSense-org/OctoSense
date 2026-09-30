@@ -1049,3 +1049,65 @@ fn the_person_and_the_system_agent_talk_in_parallel_lanes_that_share_history() {
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// octos at the pin (e045c727) writes a turn's rows to its transcript only
+/// when the turn ENDS, and the other lane's `<shared_history>` block is read
+/// from that transcript. So while the system agent's turn on the peer is
+/// running (here parked on a question nobody answers; in the two-lane
+/// scenario, on an approval), the person's lane is shown nothing of it: not
+/// even the system agent's request. Found by the shell's two-lane scenario
+/// (`crates/shell/src/host_tools/scenario_tests.rs`); reported to octos.
+/// Ignored until octos shows a running turn's prompt; run it with
+/// `--ignored` to reproduce.
+#[test]
+#[ignore = "octos e045c727 shares a lane's rows only after its turn ends"]
+fn a_running_turns_request_is_shown_to_the_other_lane() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("running-lane");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound");
+    let (slug, _) = rinx.peer().unwrap();
+    // The system agent's input: the peer's turn asks a question nobody
+    // answers, so it keeps running.
+    rinx.host_request(
+        "turn/start",
+        json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+               "input": [{"kind": "text", "text": format!("TELL_PEER_HOLD:{slug}")}]}),
+    )
+    .expect("system turn");
+    let mut running = None;
+    for _ in 0..120 {
+        running = rinx.peer_active_turn();
+        if running.is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(running.is_some(), "the system agent's turn runs on the peer");
+    std::thread::sleep(Duration::from_secs(3));
+    // The person, in the app's conversation, meanwhile.
+    let chat = rinx.open_conversation(spec("@alice:example.org", "rinx-chat")).unwrap();
+    let shown = run(&chat, ContextOp::TurnFrom { text: "SHOW_SHARED".into(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the person's turn completed");
+    let shown = shown["text"].as_str().unwrap_or("").to_owned();
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(shown.contains("[from the system agent] QUESTION_HOLD"), "the running turn's request is not shown to the person's lane: {shown}");
+}

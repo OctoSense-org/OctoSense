@@ -112,3 +112,16 @@ jobs:
           cargo test --locked --features mobile-apps,toolbox-peers -p octosense-shell host_tools
           cargo test --locked -p makepad-widgets splash_policy
           cargo test --locked -p makepad-script-std gate::tests
+      # The two-lane scenario (crates/shell/src/host_tools/scenario_tests.rs):
+      # the system agent and the person with ONE app's agent at the same
+      # time, against the cached octos above and a scripted model, through
+      # the shell's broker, relay, approval router and question model. The
+      # tests share the shell's process-wide approval, relay and question
+      # state, so they run alone, one at a time. Same packages and features
+      # as the test step above: its build is reused.
+      - name: Two-lane scenario (real kernel, scripted model)
+        working-directory: phone
+        timeout-minutes: 15
+        env:
+          OCTOS_SCENARIO_TEST_KERNEL: ${{ runner.temp }}/octos-kernel/target/release/octos
+        run: cargo test --locked --features mobile-apps -p octosense-shell -p octosense-home -p octosense-app-policy -p octosense-app-hub -p octosense-appcard -p octosense-ai-host --lib host_tools::scenario_tests -- --test-threads=1 --nocapture

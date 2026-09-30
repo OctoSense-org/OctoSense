@@ -184,7 +184,7 @@ impl GlanceTiles {
     }
 
     /// The tile for `key`, made and seated on first use, running `body`.
-    fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
+    pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
         let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained });
         if tile.frame.is_empty() {
             tile.frame = cx.with_vm(|vm| {

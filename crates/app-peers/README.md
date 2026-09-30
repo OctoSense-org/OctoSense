@@ -80,10 +80,15 @@ service.release();                            // app closed
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with
   the reason, never approved; the app hears `prompt/expired`. A turn still
   running `expiry_grace` (30 s) later is interrupted, and the peer's next
-  queued turn starts.
+  queued turn starts, whether the broker or the host expired it first (a
+  deny with the expiry note, `host_tools::expired_note`, is an expiry, not
+  an answer).
 - **Stop**: `ContextOp::Interrupt` on a conversation stops whatever turn
   runs on the peer, the system agent's included (the person owns the
-  device); the shell's own surfaces use `broker::interrupt_where`.
+  device); the shell's own surfaces use `broker::interrupt_where`. A turn
+  that ends before the host answered its `host_tool` approval withdraws it
+  from the host (`ToolHost::host_tool_approval_closed`), as its questions
+  are closed (`ToolHost::user_question_closed`).
 
 ## Testing
 

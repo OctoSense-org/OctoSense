@@ -505,6 +505,15 @@ fn stop_label(app: &str) -> String {
     format!("Stop {}'s agent", app_label(app))
 }
 
+/// A press on one of the surface's buttons, exactly as
+/// [`ShellApprovals::pointer`] hands it over: the two-lane scenario tests
+/// (`host_tools/scenario_tests.rs`) press the drawn sheet's and question
+/// card's buttons without a window.
+#[cfg(test)]
+pub(crate) fn press(hit: Hit) {
+    act(hit)
+}
+
 /// What a press does. Each answer here is the person's.
 fn act(hit: Hit) {
     let now = super::now();

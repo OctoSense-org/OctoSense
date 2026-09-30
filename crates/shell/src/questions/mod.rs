@@ -366,6 +366,13 @@ fn wake() {
     makepad_widgets::makepad_platform::thread::SignalToUI::set_ui_signal();
 }
 
+/// The process's prompt deadline for questions, in seconds (`None`: the
+/// default), for the two-lane scenario tests' short deadlines.
+#[cfg(test)]
+pub(crate) fn set_deadline_for_tests(secs: Option<u64>) {
+    with(|q| q.deadline_s = secs);
+}
+
 /// Add a consumer (at startup).
 pub fn subscribe(consumer: Box<dyn Consumer>) {
     with(|q| q.subscribe(consumer));

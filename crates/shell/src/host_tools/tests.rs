@@ -81,6 +81,9 @@ impl Env for World {
         let request = crate::approvals::router::make_request(app, tool, args, caller, context, 1, 0);
         self.router.request(request, 1)
     }
+    fn withdraw_approval(&mut self, id: &RequestId, reason: &str) {
+        self.router.withdraw(id, reason, 2);
+    }
     fn has_link(&self, app: &str) -> bool {
         self.links.iter().any(|l| l == app)
     }
@@ -367,6 +370,38 @@ fn a_host_tool_approval_goes_to_the_router_and_its_decision_answers_the_kernel()
         relay.handle(event, &mut w);
     }
     assert_eq!(answers.lock().unwrap().as_slice(), &[true]);
+}
+
+/// The turn that raised a `host_tool` approval ended before anyone answered
+/// (the app's own Stop): the sheet stops asking, the audit says so, and the
+/// kernel, which dropped the request, is sent nothing.
+#[test]
+fn a_host_tool_approval_whose_turn_ended_is_withdrawn_from_the_sheet() {
+    let mut relay = Relay::default();
+    let mut w = World::new(FixedDevMode::off());
+    let answers: Arc<Mutex<Vec<bool>>> = Arc::default();
+    let a = answers.clone();
+    let approval = HostToolApproval::parse(
+        &json!({"approval_id": "a1", "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "news", "tool": "news.share", "args": {"to": "team@example.org"}, "risk": "destructive", "calling_kind": "app_peer", "calling_peer": "news-1"}}}),
+        "s#peer-news-1",
+    )
+    .unwrap();
+    relay.handle(Event::Approval { app: "news".into(), account: None, approval, answer: ApprovalAnswer::new(move |ok| a.lock().unwrap().push(ok)) }, &mut w);
+    let id = RequestId("hostappr:a1".into());
+    assert!(w.router.is_pending(&id) && w.router.front_sheet().is_some(), "on the shell's sheet");
+    relay.handle(Event::ApprovalClosed { approval_id: "a1".into() }, &mut w);
+    assert!(!w.router.is_pending(&id));
+    assert!(w.router.front_sheet().is_none(), "the sheet stops asking");
+    let entry = w.router.audit.all().last().unwrap().clone();
+    assert_eq!((entry.id.as_str(), entry.by.as_str(), entry.result.as_str()), ("hostappr:a1", "withdrawn", "denied"));
+    for event in w.decided() {
+        relay.handle(event, &mut w);
+    }
+    assert!(answers.lock().unwrap().is_empty(), "nothing is answered for a request the kernel dropped");
+    // Once more, or for an approval the relay never held: nothing happens.
+    relay.handle(Event::ApprovalClosed { approval_id: "a1".into() }, &mut w);
+    relay.handle(Event::ApprovalClosed { approval_id: "never".into() }, &mut w);
+    assert_eq!(w.router.audit.all().len(), 1);
 }
 
 #[test]

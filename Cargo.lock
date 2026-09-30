@@ -7705,6 +7705,7 @@ dependencies = [
 name = "octosense-shell"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "keyring",
  "libc",
  "makepad-ai-services",
@@ -7733,6 +7734,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
 ]
 
 [[package]]

@@ -117,3 +117,10 @@ dev-mode = []
 # §6, ADR 0004 §12; src/host_tools/toolbox.rs): the `toolbox` owner in the
 # host-tool relay. Off by default.
 toolbox-peers = ["octosense-ai-host/toolbox-peers"]
+
+[dev-dependencies]
+# The two-lane scenario's external client (src/host_tools/scenario_tests.rs):
+# a Talk to Octos connection over the kernel's WebSocket, as a browser makes.
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
