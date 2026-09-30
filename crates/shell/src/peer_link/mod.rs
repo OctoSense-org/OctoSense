@@ -1,6 +1,11 @@
-//! The peer link (ADR 0004 §5): a process-hosted native app's own channel
-//! to ITS octos app agent, over its hub socket, under the `"octos_peer"`
-//! envelope ([`wire`]); never registered with the AI services bus.
+//! The peer link (ADR 0004 §5): a native app's own channel to ITS octos
+//! app agent, under the `"octos_peer"` envelope ([`wire`]); never
+//! registered with the AI services bus. A process app's link rides its hub
+//! socket; an in-process module's is the channel Makepad's `OctosPeer::open`
+//! parks, which `module_host` claims for the instance that opened it and
+//! serves here as the same frames ([`module_connected`], [`on_module_frame`];
+//! `octosense_ai_host::module_peer`). One code path: an app does not know
+//! how it is hosted.
 //!
 //! - **Identity** is the socket's: the shell launched that process for one
 //!   app (its client slot), and every frame is that app's. A tool call's
@@ -165,7 +170,22 @@ pub fn on_frame(client: ClientId, app: &str, frame: &str, sender: Option<std::sy
     with(|l| l.on_frame(client, app, frame, sender.map(frame_out)))
 }
 
-/// The client's process died or its socket closed.
+/// An in-process module instance opened Makepad's peer client
+/// (`OctosPeer::open`; `module_host`, #142): the same link as a process's
+/// socket, with `out` writing to the instance's channel. `client` is the
+/// instance's own client id and `app` its module id, never a claim of the
+/// module.
+pub fn module_connected(client: ClientId, app: &str, out: FrameOut) {
+    with(|l| l.connected(client, app, out));
+}
+
+/// A frame an in-process instance sent on its link (see [`on_frame`]).
+pub fn on_module_frame(client: ClientId, app: &str, frame: &str, out: FrameOut) -> bool {
+    with(|l| l.on_frame(client, app, frame, Some(out)))
+}
+
+/// The client's process died or its socket closed; for an in-process
+/// instance, it closed or failed.
 pub fn process_gone(client: ClientId) {
     with(|l| l.process_gone(client));
 }

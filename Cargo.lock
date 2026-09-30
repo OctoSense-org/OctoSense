@@ -7344,6 +7344,7 @@ dependencies = [
 name = "octosense-ai-host"
 version = "0.1.0"
 dependencies = [
+ "makepad-ai-services",
  "makepad-app-module",
  "makepad-widgets",
  "octos-research",
