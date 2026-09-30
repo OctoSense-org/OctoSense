@@ -42,6 +42,8 @@ pub mod script_apps;
 mod tests;
 #[cfg(all(test, kernel, any(feature = "app-hub", native_mobile)))]
 mod real_kernel_tests;
+#[cfg(all(test, kernel, feature = "app-hub"))]
+mod scenario_tests;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

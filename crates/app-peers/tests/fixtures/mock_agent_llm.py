@@ -30,16 +30,34 @@ Rules, looking at the request's messages and offered tools:
   - a user text "QUESTION_ME" with ask_user_question offered: ask one question;
   - a message naming a waiting peer with peer_respond offered: answer "42";
   - otherwise echo.
+The two-lane scenario (crates/shell/src/host_tools/scenario_tests.rs) has
+its own words, read from the turn's own message (never from a
+<shared_history> block):
+  - "SCN_DELEGATE:<slug>" (system agent): send the peer "SCN_TASK";
+    "SCN_DELEGATE_STUCK:<slug>": send it "SCN_TASK_STUCK";
+  - "SCN_TASK" (the peer, for the system agent): call `news_share` with
+    fixed arguments; after its result say "SCN PUBLISHED <result>".
+    "SCN_TASK_STUCK": the same, but after a refused result wait
+    MOCK_SCN_STUCK_SECS (60) before answering, so the turn is still running;
+  - "SCN_ASK" (the person's lane): ask one question with ask_user_question;
+    after the answer say "SCN AUDIENCE <answer>";
+  - "SCN_GATHER:<slug>" (system agent): call `peer_gather` for that peer;
+    after it say "GATHERED <result>".
 Prints its port, then serves until killed. Logs each decision to stderr and,
 with MOCK_LLM_TOOLS_LOG set, appends {"user": <last user text>, "tools":
-[<offered tool names>]} per request to that file.
+[<offered tool names>], "own": <the turn's own message>, "shared":
+[<shared_history blocks>]} per request to that file.
 """
 import itertools
 import json
 import os
 import re
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# The scenario's fixed arguments for `news_share` (the test asserts them).
+SCN_SHARE_ARGS = {"story_id": "s-42", "to": "team@example.org", "note": "Quarterly numbers"}
 
 # MOCK_CALL_IDS=unique gives every tool call a distinct id, as most providers
 # do. The default, "fixed", reuses "call_1" on every response, as scripted and
@@ -55,11 +73,63 @@ def text_of(message):
     return content or ""
 
 
+def shared_blocks(messages):
+    return [text_of(m) for m in messages if text_of(m).startswith("<shared_history")]
+
+
+def own_user_text(messages):
+    """The turn's own message: the last user row that is not a
+    <shared_history> block."""
+    for m in reversed(messages):
+        if m.get("role") == "user" and not text_of(m).startswith("<shared_history"):
+            return text_of(m)
+    return ""
+
+
+def scenario(messages, tools, last):
+    """The two-lane scenario's rules; None when they do not apply."""
+    own = own_user_text(messages)
+    if last.get("role") == "tool":
+        result = text_of(last)
+        if "SCN_GATHER" in own:
+            return {"text": "GATHERED " + result}
+        if "SCN_TASK" in own:
+            refused = any(w in result for w in ("denied", "declined", "expired", "not run"))
+            if refused and "SCN_TASK_STUCK" in own:
+                time.sleep(float(os.environ.get("MOCK_SCN_STUCK_SECS", "60")))
+                return {"text": "SCN STUCK DONE"}
+            return {"text": "SCN PUBLISHED " + result}
+        if "SCN_ASK" in own:
+            return {"text": "SCN AUDIENCE " + result}
+        return None
+    delegate = re.search(r"SCN_DELEGATE(_STUCK)?:([a-z0-9-]+)", own)
+    if delegate and "peer_send_input" in tools:
+        task = "SCN_TASK_STUCK" if delegate.group(1) else "SCN_TASK"
+        return {"tool": "peer_send_input", "args": {"slug": delegate.group(2), "message": task}}
+    gather = re.search(r"SCN_GATHER:([a-z0-9-]+)", own)
+    if gather and "peer_gather" in tools:
+        return {"tool": "peer_gather", "args": {"slugs": [gather.group(1)]}}
+    if "SCN_TASK" in own:
+        if "news_share" in tools:
+            return {"tool": "news_share", "args": SCN_SHARE_ARGS}
+        return {"text": "NO TOOL news_share AMONG " + ",".join(sorted(t for t in tools if t))}
+    if "SCN_ASK" in own:
+        if "ask_user_question" in tools:
+            return {"tool": "ask_user_question", "args": {"questions": [{
+                "header": "Audience", "question": "Who should see the summary?",
+                "options": [{"label": "Team", "description": "the people on the story"}, {"label": "Everyone"}]}]}}
+        return {"text": "NO QUESTION TOOL AMONG " + ",".join(sorted(t for t in tools if t))}
+    return None
+
+
 def decide(body):
     messages = body.get("messages", [])
     tools = {t.get("function", {}).get("name") for t in body.get("tools", []) or []}
     last = messages[-1] if messages else {}
     everything = "\n".join(text_of(m) for m in messages)
+    scripted = scenario(messages, tools, last)
+    if scripted is not None:
+        return scripted
     if last.get("role") == "tool":
         result = text_of(last)
         if "CALL_TOOL:" in everything:
@@ -141,8 +211,10 @@ class Handler(BaseHTTPRequestHandler):
         if log:
             user = next((text_of(m) for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "")
             tools = [t.get("function", {}).get("name") for t in body.get("tools", []) or []]
+            shared = shared_blocks(body.get("messages", []))
             with open(log, "a") as f:
-                f.write(json.dumps({"user": user, "tools": tools}) + "\n")
+                own = own_user_text(body.get("messages", []))
+                f.write(json.dumps({"user": user, "own": own, "tools": tools, "shared": shared}) + "\n")
         last = (body.get("messages") or [{}])[-1]
         print("decision:", json.dumps(decision), "after:", text_of(last)[:300].replace("\n", " "), file=sys.stderr, flush=True)
         if "tool" in decision:
