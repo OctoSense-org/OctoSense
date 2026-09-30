@@ -73,9 +73,9 @@ move that touches `tools/cargo_makepad` is the usual trigger):
 cargo install --path .sources/makepad/tools/cargo_makepad --force
 ```
 
-The shared release selects Makepad main `a5a3cf5b`, which includes App Hub's
+The shared release selects Makepad main `bcb0583b`, which includes App Hub's
 isolate containment (#22), contained script apps (#30), the QR scanner
-(#31), Splash `reapply_text` (#35) self-confirmed assistant tools (#36) and the one-call-site Slug, cursor and glass shaders (#37, #39), the terminal's confirmed runs (#41), trackpad scrolling (#42), gestures (#46), Chinese text (#48), tabs and installed fonts (#47), and every app's system-font fallback (#49, #51), WebReader's close ending the page (#43), the OpenHarmony packager's workspace target dir (#52), the `sys.dataset` and `sys.news_digest` helpers (#53) the peer-link client (#54), the Linux Vulkan build (#45), the map's hosted-archive source (#55) HTTPS on OpenHarmony (#56) and the keyboard's hide after a cancelled search (#57, #59); the consumer lock
+(#31), Splash `reapply_text` (#35) self-confirmed assistant tools (#36) and the one-call-site Slug, cursor and glass shaders (#37, #39), the terminal's confirmed runs (#41), trackpad scrolling (#42), gestures (#46), Chinese text (#48), tabs and installed fonts (#47), and every app's system-font fallback (#49, #51), WebReader's close ending the page (#43), the OpenHarmony packager's workspace target dir (#52), the `sys.dataset` and `sys.news_digest` helpers (#53) the peer-link client (#54), the Linux Vulkan build (#45), the map's hosted-archive source (#55) HTTPS on OpenHarmony (#56) the keyboard's hide after a cancelled search (#57, #59) and the terminal's tab titles, wide-character reflow, non-blocking PTY writes, control-request timeout and running-job close confirmation (#61–#65); the consumer lock
 needs no `makepad_override`.
 
 To see which checkout an installed tool reads its Java from:
