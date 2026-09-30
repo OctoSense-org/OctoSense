@@ -86,6 +86,9 @@ impl Connector for FakeConnector {
     fn available(&self) -> Result<(), String> {
         Ok(())
     }
+    fn kernel_id(&self) -> Option<String> {
+        Some(format!("fake:{:p}", Arc::as_ptr(&self.0)))
+    }
     fn connect(&self) -> BoxFuture<'static, Result<Box<dyn Link>, String>> {
         let script = self.0.clone();
         Box::pin(async move {
@@ -1127,6 +1130,100 @@ fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
     assert!(!calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-full"));
 }
 
+
+/// A second instance of the app on the same kernel: its broker for the same
+/// peer, on a connection of its own.
+fn second_instance(script: &Arc<Mutex<Script>>, host: &Arc<RecordingHost>) -> Broker {
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", ALL.iter().map(|s| s.to_string()).collect());
+    cfg.tool_host = Some(ToolHostHandle(host.clone() as Arc<dyn ToolHost>));
+    Broker::new(cfg, Arc::new(FakeConnector(script.clone())))
+}
+
+/// Every connection the fake kernel has open (the shell's kernel router
+/// sends a peer session's frames to every consumer that named it).
+fn broadcast(script: &Arc<Mutex<Script>>, method: &str, params: Value) {
+    let conns = script.lock().unwrap().out.len();
+    for conn in 0..conns {
+        emit(script, conn, json!({"jsonrpc": "2.0", "method": method, "params": params}).to_string());
+    }
+}
+
+/// ADR 0004 §5 (the 2026-09-29 review): octos routes a peer's `peer/input`
+/// and tool calls to the connection that registered its tools LAST, and the
+/// shell's kernel router hands a peer session's frames to every consumer
+/// that named it. With two instances of one app (two windows of one
+/// module), exactly one broker drives the peer: the oldest live
+/// instance registers the tools and takes the peer's inputs, calls,
+/// approvals and questions, once; the other takes none. When the driving
+/// instance closes, the next one registers on its own connection and takes
+/// over (with the queue), and the peer's running turn is not stopped while
+/// an instance of the app is still open.
+#[test]
+fn two_instances_of_one_app_drive_the_peer_once_and_hand_over_on_close() {
+    let host = Arc::new(RecordingHost::default());
+    let (first, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    script.lock().unwrap().hold_turns = true;
+    first.set_account(Some("@a:x"));
+    wait_for("the first", || first.availability() == Availability::Ready);
+    let second = second_instance(&script, &host);
+    second.set_account(Some("@a:x"));
+    wait_for("the second", || second.availability() == Availability::Ready && second.peer().is_some());
+    std::thread::sleep(Duration::from_millis(200));
+    let registers = calls_of(&script, "peer/tools/register");
+    assert_eq!(registers.len(), 1, "only the driving instance registers: {registers:?}");
+    let first_conn = registers[0].0;
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    assert_eq!(second.peer().unwrap().0, slug, "the same peer");
+
+    // An input reaches both: one turn, on the driver's connection.
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    broadcast(&script, "peer/input", input("i1"));
+    wait_for("the turn", || !calls_of(&script, "turn/start").is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    let starts = calls_of(&script, "turn/start");
+    assert_eq!(starts.len(), 1, "one turn per input: {starts:?}");
+    assert_eq!(starts[0].0, first_conn);
+    assert_eq!(host.inputs.lock().unwrap().len(), 1, "admitted once");
+    // A call and an approval of the peer's session reach both: the host gets each once.
+    broadcast(&script, "peer/tool/call", tool_call_params(&slug, "c1", "turn-i1", None));
+    broadcast(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    wait_for("the call and the approval", || host.calls.lock().unwrap().len() == 1 && host.approvals.lock().unwrap().len() == 1);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(host.calls.lock().unwrap().len(), 1, "run once");
+    assert_eq!(host.calls.lock().unwrap()[0].0.origin, CallOrigin::PeerInput);
+    assert_eq!(host.approvals.lock().unwrap().len(), 1, "one sheet");
+    // A second input waits behind the running turn.
+    broadcast(&script, "peer/input", input("i2"));
+    wait_for("queued", || first.queued_inputs() == 1);
+    assert_eq!(second.queued_inputs(), 0);
+
+    // The driving instance closes: the running turn goes on, the other
+    // instance registers on its own connection and takes over.
+    first.release();
+    wait_for("the hand-over", || calls_of(&script, "peer/tools/register").len() == 2);
+    let registers = calls_of(&script, "peer/tools/register");
+    assert_ne!(registers[1].0, first_conn, "on the second instance's connection");
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(position(&script, "turn/interrupt").is_none(), "an instance is still open: the turn goes on");
+    assert_eq!(second.queued_inputs(), 1, "the queue moved over");
+    // The turn ends: the queued input starts on the new driver's connection.
+    broadcast(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(calls_of(&script, "turn/start")[1].1["turn_id"], "turn-i2");
+    assert_eq!(calls_of(&script, "turn/start")[1].0, registers[1].0);
+    // Its calls are the new driver's, still stamped as the system agent's.
+    broadcast(&script, "peer/tool/call", tool_call_params(&slug, "c2", "turn-i2", None));
+    wait_for("the second call", || host.calls.lock().unwrap().len() == 2);
+    assert_eq!(host.calls.lock().unwrap()[1].0.origin, CallOrigin::PeerInput);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(host.calls.lock().unwrap().len(), 2);
+    // The last instance closes: now its running turn is stopped.
+    second.release();
+    wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    drop(first);
+    drop(second);
+}
 
 // ---------------------------------------------------------------------------
 // The shared peer conversation (ADR 0004 §6, octos#2626): the person and the
