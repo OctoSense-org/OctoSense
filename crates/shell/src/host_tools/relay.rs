@@ -49,8 +49,17 @@ pub const SYSTEM: &str = "system";
 pub const TERMINAL_RUN: &str = "terminal.run";
 /// The Terminal, whose tools the relay runs on the AI bus.
 pub const TERMINAL_APP: &str = "terminal";
-/// Developer mode's command tool (§13).
+/// Developer mode's command tool (§13), run by the shell ([`super::dev_run`]).
 pub const DEV_RUN: &str = "dev.run";
+/// The executor key of the tools the shell itself runs for an app's own
+/// agent (`dev.run`): never an app id.
+pub const HOST_EXECUTOR: &str = "@shell";
+
+/// Whether `tool` is one the shell runs itself, as the calling app's own
+/// tool, whatever its declaration names (never routed to the app).
+pub fn is_host_run(tool: &str) -> bool {
+    tool == DEV_RUN
+}
 /// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
 /// (`workflow.run`, `toolbox.search`, …; [`super::toolbox`] with the
 /// `toolbox-peers` feature).
@@ -317,10 +326,19 @@ impl Catalog {
     /// What `app`'s peer is offered now: [`Catalog::declarations`], without
     /// the toolbox's tools until the person allowed `app`'s agent (the #120
     /// first-use consent; `consented`).
+    ///
+    /// Under developer mode, also `dev.run` as the app's own tool: only here,
+    /// where the brokers register app peers on the shell's host connection
+    /// (never the system agent's session, which a Talk to Octos client can
+    /// reach; ADR 0004 §13).
     pub fn offered(&self, app: &str, dev_all: bool, consented: bool) -> Vec<Value> {
         let mut out = self.declarations(app, dev_all);
         if !consented {
             out.retain(|d| d["app"] != TOOLBOX);
+        }
+        out.retain(|d| !d["name"].as_str().is_some_and(is_host_run));
+        if dev_all && app != SYSTEM {
+            out.push(super::dev_run::declaration(app));
         }
         out
     }
@@ -520,7 +538,13 @@ impl Relay {
         let tool = call.name.clone();
         let calling = app_of_peer(&call.calling_app).to_string();
         // 1. Authorize by (owning app, tool) and caller.
+        let host_run = is_host_run(&tool);
         let (caller, granted) = match call.caller_kind {
+            // `dev.run`: only the covered app's own agent, on its own peer.
+            _ if host_run => (
+                if call.caller_kind == CallerKind::System { Caller::SystemAgent } else { Caller::OwnAgent { client: call.client.clone() } },
+                call.caller_kind == CallerKind::AppPeer && calling == owner && env.grants_all(&calling),
+            ),
             CallerKind::System => (Caller::SystemAgent, env.system_tools().contains(&tool) || env.grants_all(SYSTEM)),
             CallerKind::AppPeer if calling == owner => (Caller::OwnAgent { client: call.client.clone() }, self.catalog.entry(&owner, &tool).is_some() || env.grants_all(&owner)),
             CallerKind::AppPeer => {
@@ -544,7 +568,7 @@ impl Relay {
             }
         }
         // 0. The arguments against the declared schema (G8).
-        let entry = self.catalog.entry(&owner, &tool).cloned();
+        let entry = if host_run { Some(super::dev_run::declaration(&owner)) } else { self.catalog.entry(&owner, &tool).cloned() };
         let size = call.args.to_string().len();
         if size > MAX_ARGS_BYTES {
             return refuse(&reply, "invalid_args", format!("{tool}'s arguments are {size} bytes, over the {MAX_ARGS_BYTES}-byte cap"));
@@ -565,7 +589,14 @@ impl Relay {
         let outer = reply.clone();
         let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
         self.outers.insert(call.call_id.clone(), outer);
-        // 2. Route to the owning app's executor.
+        // 2. Route to the owning app's executor (the shell's own for
+        // `dev.run`).
+        if host_run {
+            if !self.executors.contains_key(HOST_EXECUTOR) {
+                return refuse(&reply, "app_not_running", format!("nothing on this host runs {tool}"));
+            }
+            return self.run(call, reply, Target::Executor(HOST_EXECUTOR.to_string()), env);
+        }
         if env.has_link(&owner) {
             let kernel_call = KernelToolCall {
                 call_id: call.call_id.clone(),
