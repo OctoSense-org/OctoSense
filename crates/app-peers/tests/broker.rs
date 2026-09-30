@@ -28,6 +28,9 @@ struct Script {
     busy_starts: usize,
     /// turn/interrupt ends the turn (a v2 `turn_terminal`, `interrupted`).
     interrupts_end: bool,
+    /// Every turn/start is refused with this kind (a refusal other than
+    /// `turn_in_progress`).
+    refuse_starts: Option<String>,
     /// What session/hydrate answers (`messages`) for a request context.
     history: Vec<Value>,
     /// What session/hydrate answers for the peer's own session.
@@ -104,6 +107,7 @@ impl Connector for FakeConnector {
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
                     let interrupts_end = script.lock().unwrap().interrupts_end;
+                    let refuse_start = script.lock().unwrap().refuse_starts.clone().filter(|_| method == "turn/start");
                     let (legacy, hold, refuse_register, busy, history, no_share) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
@@ -170,6 +174,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "turn/start" if busy => send(refuse("turn_in_progress")),
+                        "turn/start" if refuse_start.is_some() => send(refuse(refuse_start.as_deref().unwrap())),
                         "turn/start" => {
                             let session = params["session_id"].clone();
                             let turn = params["turn_id"].clone();
@@ -229,6 +234,10 @@ fn new_broker_timed(services: &[&str], host: Option<Arc<RecordingHost>>, state_d
 }
 
 fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_cfg(app, services, host, state_dir, timing, None)
+}
+
+fn new_broker_cfg(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>, turn_timeout: Option<Duration>) -> (Broker, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));
     let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
@@ -243,6 +252,9 @@ fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>
     if let Some((deadline, grace)) = timing {
         cfg.prompt_deadline = Duration::from_millis(deadline);
         cfg.expiry_grace = Duration::from_millis(grace);
+    }
+    if let Some(timeout) = turn_timeout {
+        cfg.turn_timeout = timeout;
     }
     (
         Broker::new(cfg, Arc::new(FakeConnector(script.clone()))),
@@ -1127,6 +1139,55 @@ fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
     assert!(!calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-full"));
 }
 
+
+/// The 2026-09-29 review: a host `turn/start` for a `peer/input` that the
+/// kernel refuses (anything but `turn_in_progress`, which is retried) is
+/// said to the kernel with `peer/input/reject` and the reason, on the
+/// connection the input came on, so the system agent learns why the app
+/// did not act; the peer's queue moves on. Retrying `turn_in_progress`
+/// until the turn timeout ends as `busy`.
+#[test]
+fn a_refused_turn_start_for_an_input_is_rejected_with_its_reason() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_cfg("rinx", &ALL, Some(host.clone()), None, None, Some(Duration::from_millis(600)));
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    let rejects = || calls_of(&script, "peer/input/reject");
+
+    // A refusal other than turn_in_progress: `other`, with the kernel's words.
+    script.lock().unwrap().refuse_starts = Some("session_not_found".into());
+    notify(&script, "peer/input", input("r1"));
+    wait_for("the reject", || rejects().len() == 1);
+    let (conn, reject) = rejects()[0].clone();
+    assert_eq!(reject["input_id"], "r1");
+    assert_eq!(reject["reason"], "other");
+    let message = reject["message"].as_str().unwrap();
+    assert!(message.contains("session_not_found"), "{message}");
+    assert!(message.len() <= 256 && !message.chars().any(char::is_control));
+    assert_eq!((reject["peer"].as_str(), reject["host_token"].as_str()), (Some(slug.as_str()), Some("fixture-host-token")));
+    assert_eq!(conn, calls_of(&script, "peer/tools/register")[0].0, "on the connection the input came on");
+    assert!(broker.peer_active_turn().is_none(), "the peer is free again");
+
+    // Still busy after the turn timeout: `busy`.
+    script.lock().unwrap().refuse_starts = None;
+    script.lock().unwrap().busy_starts = 1000;
+    notify(&script, "peer/input", input("b1"));
+    wait_for("the busy reject", || rejects().len() == 2);
+    assert_eq!(rejects()[1].1["input_id"], "b1");
+    assert_eq!(rejects()[1].1["reason"], "busy");
+    assert!(rejects()[1].1.get("message").is_none());
+
+    // The next input starts as usual.
+    script.lock().unwrap().busy_starts = 0;
+    notify(&script, "peer/input", input("ok"));
+    wait_for("the next turn", || calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-ok"));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rejects().len(), 2, "a started input is never refused");
+    drop(broker);
+}
 
 // ---------------------------------------------------------------------------
 // The shared peer conversation (ADR 0004 §6, octos#2626): the person and the
