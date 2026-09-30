@@ -34,8 +34,13 @@
 //! **A launch through cargo** (a dev run from a checkout) sandboxes the
 //! build as well: the build's own paths (the checkout, the target dir,
 //! cargo's and rustup's homes) are added and child processes are allowed so
-//! cargo can run rustc. An installed launch gets exactly the manifest's
-//! sandbox.
+//! cargo can run rustc; the workspaces its path dependencies live in
+//! ([`Policy::build_sources`]: `.sources/makepad` builds against
+//! `.sources/octoscript-makepad` and `.sources/octoscript`) are readable, and
+//! its target dir ([`Policy::build_target`]) is writable, also where it lies
+//! in the OctoSense home (`<home>/build/<source>`), which otherwise keeps
+//! program paths read and execute only.
+//! An installed launch gets exactly the manifest's sandbox.
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -172,6 +177,13 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
         for program in &policy.program {
             add(program.clone(), all);
         }
+        // The workspaces its path dependencies live in: read only.
+        for source in &policy.build_sources {
+            add(source.clone(), read());
+        }
+        if let Some(target) = &policy.build_target {
+            add(target.clone(), all);
+        }
     }
     // Compare real paths: Landlock follows links when it opens a rule's
     // path, so a linked checkout or grant must not slip past the private
@@ -179,10 +191,18 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
     let private: Vec<PathBuf> = policy.private.iter().map(|p| super::resolved(p)).collect();
     let program: Vec<PathBuf> = policy.program.iter().map(|p| super::resolved(p)).collect();
     let own = [super::resolved(&policy.jail), super::resolved(&policy.secrets)];
+    let target = policy.build_target.as_deref().filter(|_| via_cargo).map(super::resolved);
     let mut split = Vec::new();
     for rule in out {
         let rule = Rule { path: super::resolved(&rule.path), access: rule.access };
         if own.contains(&rule.path) {
+            split.push(rule);
+        } else if target.as_ref() == Some(&rule.path)
+            && private.iter().any(|root| rule.path.starts_with(root))
+            && super::program_reopenable(&rule.path, &private)
+        {
+            // A cargo launch's target dir inside the private dirs
+            // (`<OctoSense home>/build/<source>`): the build writes it.
             split.push(rule);
         } else if program.contains(&rule.path)
             && private.iter().any(|root| rule.path.starts_with(root))

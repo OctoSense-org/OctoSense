@@ -122,6 +122,105 @@ fn a_jail_only_app_reads_its_jail_and_is_refused_everything_else() {
     drop((hub, other));
 }
 
+/// A program reached through a link that points outside its roots still
+/// starts (found on Ubuntu 26.04, where `/usr/bin/cat` links into
+/// `/usr/lib/cargo/bin/coreutils/`): the sandbox allows the file it really
+/// runs, and nothing else beside it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_program_reached_through_a_link_outside_its_roots_starts() {
+    if !sandbox_works_here() {
+        eprintln!("no process sandbox on this machine; skipped");
+        return;
+    }
+    let scratch = Scratch::new("linkedprog");
+    let root = &scratch.0;
+    std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
+    std::fs::create_dir_all(root.join("real")).unwrap();
+    std::fs::create_dir_all(root.join("links")).unwrap();
+    // Named `cat` wherever it is: a multicall coreutils picks by name.
+    std::fs::copy(resolved(Path::new("/bin/cat")), root.join("real/cat")).unwrap();
+    std::fs::write(root.join("real/beside.txt"), "not the program").unwrap();
+    std::os::unix::fs::symlink(root.join("real/cat"), root.join("links/cat")).unwrap();
+    let mut policy = jail_only(root, 1);
+    policy.program = vec![root.join("links")];
+    let tool = root.join("links/cat");
+    let (ok, out) = run(tool.to_str().unwrap(), &[root.join("apps/probe/mine.txt").to_str().unwrap()], &policy);
+    assert!(ok && out.contains("mine"), "the linked program starts and reads its jail: {out}");
+    let (ok, out) = run(tool.to_str().unwrap(), &[root.join("real/beside.txt").to_str().unwrap()], &policy);
+    assert!(!ok && !out.contains("not the program"), "only the program file is opened, not its directory: {out}");
+}
+
+/// A kernel without Landlock (before 5.13, or with it disabled): the app
+/// still starts, seccomp still takes, and the log line says the paths are
+/// not restricted. Runs only where Landlock is missing; on a Landlock
+/// kernel, run it under a filter that hides it:
+///
+/// ```sh
+/// sudo systemd-run --uid=$USER --pty --wait -p SystemCallErrorNumber=ENOSYS \
+///   -p 'SystemCallFilter=~landlock_create_ruleset landlock_add_rule landlock_restrict_self' \
+///   <test binary> without_landlock
+/// ```
+#[cfg(target_os = "linux")]
+#[test]
+fn without_landlock_the_app_still_starts_under_seccomp_and_says_so() {
+    if linux::landlock_abi() > 0 {
+        eprintln!("this kernel has Landlock; skipped (see the doc comment to hide it)");
+        return;
+    }
+    let scratch = Scratch::new("nolandlock");
+    let root = &scratch.0;
+    std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
+    let policy = jail_only(root, 1);
+    let args = vec![root.join("apps/probe/mine.txt").to_string_lossy().to_string()];
+    let (mut cmd, applied) = command(Path::new("/bin/cat"), &args, Some(&policy), false);
+    let Some(Applied::Sandboxed(how)) = applied else { panic!("{applied:?}") };
+    assert!(how.contains("no landlock (kernel lacks it): paths are not restricted") && how.contains("seccomp"), "{how}");
+    let out = cmd.output().expect("the app starts without Landlock");
+    assert!(out.status.success() && String::from_utf8_lossy(&out.stdout).contains("mine"));
+    // seccomp still refuses a child process.
+    let (mut cmd, _) = command(Path::new("/bin/sh"), &["-c".into(), "/bin/echo first; /bin/echo spawned".into()], Some(&policy), false);
+    let out = cmd.output().expect("sh starts");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains("spawned"), "no child process without Landlock either: {text}");
+}
+
+/// A cargo launch of `.sources/makepad` reads `.sources/octoscript-makepad`
+/// and, through it, `.sources/octoscript` (found on Linux, where the build
+/// runs inside the sandbox: "failed to read .../octoscript-node/Cargo.toml:
+/// Permission denied").
+#[test]
+fn a_cargo_checkouts_path_dependencies_are_found_by_workspace() {
+    let scratch = Scratch::new("pathdeps");
+    let root = &scratch.0;
+    let write = |rel: &str, text: &str| {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write("makepad/Cargo.toml", "[workspace]\nmembers = [\"widgets\"]\n[workspace.dependencies]\nwidgets = { path = \"widgets\" }\noctoscript-node = { path = \"../octoscript-makepad/crates/octoscript-node\" } # a comment path = \"../nowhere\"\n");
+    write("makepad/widgets/Cargo.toml", "[package]\nname = \"widgets\"\n");
+    write("octoscript-makepad/Cargo.toml", "[workspace]\n[workspace.dependencies]\nmakepad-widgets = { path = \"../makepad/widgets\" }\nui = { path = \"../octoscript/crates/ui\" }\n");
+    write("octoscript-makepad/crates/octoscript-node/Cargo.toml", "[package]\nname = \"octoscript-node\"\n[dependencies]\nlone = { path = \"../../../lone/lib\" }\n");
+    write("octoscript/Cargo.toml", "[workspace]\n");
+    write("octoscript/crates/ui/Cargo.toml", "[package]\nname = \"ui\"\n");
+    write("lone/lib/Cargo.toml", "[package]\nname = \"lone\"\n");
+    let mut found = cargo_path_roots(&root.join("makepad"));
+    found.sort();
+    let real = resolved(root);
+    assert_eq!(found, vec![real.join("lone/lib"), real.join("octoscript"), real.join("octoscript-makepad")]);
+    #[cfg(target_os = "linux")]
+    {
+        let mut p = jail_only(root, 1);
+        p.build_sources = found.clone();
+        let read_only = |via_cargo: bool| linux::rules(&p, 3, via_cargo).into_iter().filter(|r| found.contains(&r.path)).collect::<Vec<_>>();
+        assert!(read_only(false).is_empty(), "an installed launch reads none of them");
+        let rules = read_only(true);
+        assert_eq!(rules.len(), 3, "a cargo launch reads each: {rules:?}");
+        assert!(rules.iter().all(|r| r.access & !(linux::read_exec()) == 0 && r.access & 1 == 0), "read only: {rules:?}");
+    }
+}
+
 #[test]
 fn the_terminals_manifest_gives_a_broad_sandbox_and_narrowing_only_takes_away() {
     let terminal = crate::native_apps::find("terminal").unwrap();
@@ -344,6 +443,7 @@ fn a_child_gets_only_the_allow_list_and_never_a_key_or_token() {
         ("DISPLAY", ":0"),
         ("XAUTHORITY", "/home/person/.Xauthority"),
         ("MAKEPAD_WM_THEME_SPLASH", "dark"),
+        ("MAKEPAD", "vulkan"),
         ("OPENAI_API_KEY", fake),
         ("ANTHROPIC_API_KEY", fake),
         ("DEEPSEEK_API_KEY", fake),
@@ -370,7 +470,7 @@ fn a_child_gets_only_the_allow_list_and_never_a_key_or_token() {
         assert!(!secret_shaped(name) && !is_secret_var(name), "the child sees {name}");
     }
     assert!(!out.contains(fake), "no secret value reaches the child");
-    for kept in ["PATH", "HOME", "LANG", "TERM", "TMPDIR", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "MAKEPAD_WM_THEME_SPLASH", "STUDIO_HOST"] {
+    for kept in ["PATH", "HOME", "LANG", "TERM", "TMPDIR", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "MAKEPAD_WM_THEME_SPLASH", "MAKEPAD", "STUDIO_HOST"] {
         assert!(names.contains(&kept), "{kept} is passed on: {names:?}");
     }
     assert!(!names.contains(&"SOME_TOOLS_PRIVATE_SETTING"), "anything not on the list stays with the shell");
@@ -458,6 +558,19 @@ fn the_linux_rules_keep_a_program_inside_the_home_read_and_execute_only() {
             assert_eq!(r.access & !rx, 0, "read and execute only, never write (via_cargo={via_cargo}): {:#x}", r.access);
         }
     }
+    // A cargo launch's target dir there is written by the build (found on
+    // Linux: "failed to create directory <home>/build: Permission denied");
+    // an installed launch keeps it read and execute only, and a target dir
+    // that holds private data is never opened.
+    p.build_target = Some(build.clone());
+    let write = |p: &Policy, via_cargo: bool| linux::rules(p, 3, via_cargo).iter().any(|r| r.path == build && r.access & (1 << 1) != 0);
+    assert!(write(&p, true), "the build writes its target dir");
+    assert!(!write(&p, false), "an installed launch never writes it");
+    let other = octo.join("apps/other");
+    std::fs::create_dir_all(&other).unwrap();
+    p.build_target = Some(other.clone());
+    assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != other), "another app's jail is never a target dir");
+    p.build_target = None;
     // The home itself as the program: dropped, nothing reopened.
     p.program = vec![octo.clone()];
     assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != octo), "the OctoSense home is never granted");
