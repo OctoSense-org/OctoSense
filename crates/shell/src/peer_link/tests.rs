@@ -321,8 +321,9 @@ fn identity_is_the_sockets_and_a_process_uses_only_its_own_contexts() {
     let got = downs(&frames_a);
     assert!(matches!(got.as_slice(), [Down::Event { req_id: 6, .. }, Down::Reply { req_id: 6, result: Ok(_) }]), "{got:?}");
     assert!(matches!(&got[0], Down::Event { event, .. } if event["trigger"] == "unknown"), "a turn that says nothing is unknown: {got:?}");
-    // What started the turn reaches the broker as the app said it.
-    for (req, said, want) in [(7, json!("person"), "person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
+    // What started the turn reaches the broker as the app said it; its
+    // "person" is only its word (ADR 0004 §8: never the person's trigger).
+    for (req, said, want) in [(7, json!("person"), "app_says_person"), (8, json!("incoming"), "incoming"), (9, json!("system_agent"), "unknown")] {
         links.on_frame(1, "notes", &request(req, "octos.turn.start", json!({"context": ctx, "text": "x", "trigger": said})), None);
         let got = downs(&frames_a);
         assert!(matches!(got.first(), Some(Down::Event { event, .. }) if event["trigger"] == want), "{req}: {got:?}");

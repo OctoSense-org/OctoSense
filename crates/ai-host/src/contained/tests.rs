@@ -246,8 +246,8 @@ fn contained_turns_carry_what_started_them() {
     let triggers: Vec<TurnTrigger> = peers.ops("card.com.example.trip").into_iter().filter_map(|op| op.turn().map(|(_, t)| t)).collect();
     assert_eq!(
         triggers,
-        vec![TurnTrigger::Person, TurnTrigger::Incoming { from: Some("bo@example.org".into()) }, TurnTrigger::App, TurnTrigger::Unknown],
-        "an app never claims the system agent"
+        vec![TurnTrigger::AppSaysPerson, TurnTrigger::Incoming { from: Some("bo@example.org".into()) }, TurnTrigger::App, TurnTrigger::Unknown],
+        "an app never claims the system agent, and its word is not the person's (only a shell surface is)"
     );
 }
 

@@ -586,6 +586,9 @@ fn a_calls_trigger_is_the_one_its_host_stamped_and_unknown_by_default() {
         (TurnTrigger::Unknown, CallOrigin::PeerOwn, Trigger::Unknown),
         (TurnTrigger::Unknown, CallOrigin::System, Trigger::Unknown),
         (TurnTrigger::Person, CallOrigin::PeerInput, Trigger::SystemAgent),
+        // An app saying the person started it is the app's run: only a
+        // shell surface makes a turn the person's.
+        (TurnTrigger::AppSaysPerson, CallOrigin::Context, Trigger::App),
     ];
     for (i, (stamped, origin, want)) in cases.into_iter().enumerate() {
         let id = format!("c{i}");

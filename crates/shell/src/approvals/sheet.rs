@@ -144,7 +144,9 @@ impl Line {
 /// The rules a sheet offers for this call, narrowest first.
 fn always_choices(req: &Request, contacts: &dyn ContactsSource) -> Vec<AlwaysChoice> {
     let mut out = Vec::new();
-    let recipients = facts::recipients(&req.args);
+    // Only recipients the rule could read: no "always for people in my
+    // contacts" for a call it would never answer.
+    let recipients = facts::recipients_checked(&req.args).unwrap_or_default();
     let no_attachments = !facts::has_attachments(&req.args);
     let tool = &req.tool.name;
     let with_attachments = |mut c: Conditions| {
