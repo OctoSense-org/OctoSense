@@ -191,6 +191,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(dir.join("app_card.news_acct-2.token"), "new").unwrap();
         assert_eq!(newest_token(&dir).as_deref(), Some("new"));
+        // A peer record (token and workspace in one file) counts the same.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("app_notes_acct-3.peer"), r#"{"token":"newest","cwd":"/w"}"#).unwrap();
+        assert_eq!(newest_token(&dir).as_deref(), Some("newest"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
