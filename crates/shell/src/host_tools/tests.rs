@@ -516,7 +516,7 @@ fn a_peer_is_offered_exactly_its_granted_toolbox_tools_marked_with_their_owner_a
     // No grant, no toolbox tools; developer mode does not invent a grant
     // (the toolbox needs its scope), though it grants other shareable tools.
     assert!(offered_names(&relay, "calendar", false, true).is_empty());
-    assert_eq!(offered_names(&relay, "calendar", true, true), ["terminal.read_screen", "terminal.read_scrollback", TERMINAL_RUN]);
+    assert_eq!(offered_names(&relay, "calendar", true, true), [super::relay::DEV_RUN, "terminal.read_screen", "terminal.read_scrollback", TERMINAL_RUN]);
 }
 
 #[test]
@@ -801,4 +801,95 @@ fn an_expired_host_tool_approval_is_denied_with_its_reason() {
     }
     assert_eq!(answers.lock().unwrap().as_slice(), &[(false, "expired: no answer in 10 min".to_string())]);
     assert_eq!(w.router.expired().len(), 1);
+}
+
+// ------------------------------------------------------------ dev.run (ADR 0004 §13)
+
+fn dev_run_call(id: &str, calling: &str, owner: &str) -> HostToolCall {
+    let mut c = call(id, super::relay::DEV_RUN, calling);
+    c.app = owner.into();
+    c.risk = "destructive".into();
+    c.args = json!({"command": "echo hi"});
+    c
+}
+
+/// `dev.run` is offered only to the peers of apps developer mode covers,
+/// as the app's own tool; never to the system agent's session.
+#[test]
+fn dev_run_is_offered_only_under_developer_mode_as_the_apps_own_tool() {
+    let relay = Relay::default();
+    let offered = |app: &str, dev: bool| relay.catalog.offered(app, dev, true);
+    assert!(!offered("os.news", false).iter().any(|d| d["name"] == super::relay::DEV_RUN), "off: not offered");
+    let decl = offered("os.news", true).into_iter().find(|d| d["name"] == super::relay::DEV_RUN).expect("offered under developer mode");
+    assert_eq!(decl["app"], "os.news", "the app's own tool");
+    assert_eq!((decl["risk"].as_str(), decl["confirm"].as_str()), (Some("destructive"), Some("host")));
+    assert_eq!(decl["input_schema"]["required"], json!(["command"]));
+    assert!(!offered(super::SYSTEM, true).iter().any(|d| d["name"] == super::relay::DEV_RUN), "never on the system agent's session");
+    // The system chat's registration (the session a Talk to Octos client can
+    // reach) never carries it, whatever the switches.
+    for (commands, process) in [(false, false), (true, true)] {
+        assert!(!crate::system_chat::grants::host_tools_given(commands, process).contains(super::relay::DEV_RUN));
+    }
+}
+
+/// A covered app's own agent's `dev.run` runs on the shell's executor, even
+/// for a process app with a peer link; anyone else, or once developer mode
+/// is off, is refused before anything runs.
+#[test]
+fn dev_run_runs_on_the_shell_only_for_a_covered_apps_own_agent() {
+    let mut relay = Relay::default();
+    let host = Arc::new(Exec::default());
+    relay.set_executor(super::relay::HOST_EXECUTOR, Some(host.clone()));
+    let mut w = World::new(FixedDevMode::all());
+    w.links.push("terminal".into());
+    w.dev_all = true;
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: dev_run_call("c1", "terminal", "terminal"), reply: r }, &mut w);
+    assert_eq!(host.0.lock().unwrap().len(), 1, "run by the shell");
+    assert!(w.link_calls.is_empty(), "never down the app's link");
+    // Arguments are checked against its schema.
+    let mut bad = dev_run_call("c2", "terminal", "terminal");
+    bad.args = json!({"cmd": "ls"});
+    let (r, sent) = reply("c2");
+    relay.handle(Event::Call { call: bad, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "invalid_args");
+    // Another app's agent, or the system agent: never.
+    let (r, sent) = reply("c3");
+    relay.handle(Event::Call { call: dev_run_call("c3", "calendar", "terminal"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    let mut system = dev_run_call("c4", super::SYSTEM, "terminal");
+    system.caller_kind = CallerKind::System;
+    let (r, sent) = reply("c4");
+    relay.handle(Event::Call { call: system, reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted", "the system session never gets dev.run");
+    // Developer mode off: a late call is refused.
+    w.dev_all = false;
+    let (r, sent) = reply("c5");
+    relay.handle(Event::Call { call: dev_run_call("c5", "terminal", "terminal"), reply: r }, &mut w);
+    assert_eq!(sent.lock().unwrap()[0]["error"]["kind"], "not_granted");
+    assert_eq!(host.0.lock().unwrap().len(), 1, "nothing else ran");
+}
+
+/// `dev.run`'s approval is a command keyed to the calling app: developer
+/// mode answers it (and audits it) for a covered app, the person otherwise.
+#[test]
+fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
+    let mut relay = Relay::default();
+    for (dev, answered) in [(FixedDevMode { all: false, apps: vec!["os.news".into()] }, true), (FixedDevMode::off(), false)] {
+        let mut w = World::new(dev);
+        let answers: Arc<Mutex<Vec<bool>>> = Arc::default();
+        let a = answers.clone();
+        let approval = HostToolApproval::parse(
+            &json!({"approval_id": "d1", "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "os.news", "tool": "dev.run", "args": {"command": "ls"}, "risk": "destructive", "calling_kind": "app_peer", "calling_peer": "news-1"}}}),
+            "s#peer-news-1",
+        )
+        .unwrap();
+        relay.handle(Event::Approval { app: "os.news".into(), account: None, approval, answer: ApprovalAnswer::new(move |ok| a.lock().unwrap().push(ok)) }, &mut w);
+        assert!(w.asked[0].1.command, "a command: never a standing rule");
+        assert_eq!(w.asked[0].0, "os.news", "keyed to the calling app");
+        for event in w.decided() {
+            relay.handle(event, &mut w);
+        }
+        assert_eq!(answers.lock().unwrap().as_slice(), if answered { &[true][..] } else { &[][..] });
+    }
 }
