@@ -104,35 +104,6 @@ fn poll_js(job: u64, want_html: bool) -> String {
         .replace("MAX", &MAX_HTML_CHARS.to_string())
 }
 
-/// Wording of checks that clear themselves in a real browser within
-/// seconds. (octos#2637 adds `access::is_interstitial`; switch to it once
-/// OctoSense pins an octos that has it.)
-const SELF_CLEARING: &[&str] = &[
-    "just a moment",
-    "checking your browser",
-    "performing security verification",
-    "enable javascript and cookies to continue",
-    "正在进行安全检测",
-    "正在检测当前网络环境",
-];
-
-/// Wording of checks that ask a person (never done for them).
-const ASKS_PERSON: &[&str] = &[
-    "captcha",
-    "人机验证",
-    "滑动验证",
-    "拖动滑块",
-    "请完成安全验证",
-];
-
-/// Whether a page's visible text is a check that clears itself.
-fn self_clearing(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    lower.chars().filter(|c| !c.is_whitespace()).count() < 600
-        && !ASKS_PERSON.iter().any(|p| lower.contains(p))
-        && SELF_CLEARING.iter().any(|p| lower.contains(p))
-}
-
 struct Active {
     job: u64,
     url: String,
@@ -266,7 +237,7 @@ impl WebViewRenderHost {
         }
         if let Some(html) = v["html"].as_str() {
             let text = v["text"].as_str().unwrap_or("");
-            if self_clearing(text) && a.check_polls < MAX_CHECK_POLLS {
+            if octos_research::access::interstitial_text(text) && a.check_polls < MAX_CHECK_POLLS {
                 // Wait for the check to finish; read again later.
                 a.check_polls += 1;
                 a.reading = false;
@@ -351,7 +322,7 @@ pub fn crawl_test(seeds: Vec<String>) {
                             if depth == 0 {
                                 for link in links_of(&page.html, &page.final_url) {
                                     if octos_research::urls::domain_of(&link).as_deref() == Some(site.as_str())
-                                        && !account_link(&link)
+                                        && !octos_research::urls::is_account_link(&link)
                                         && seen.insert(link.clone())
                                     {
                                         queue.push_back((link, 1));
@@ -373,33 +344,6 @@ pub fn crawl_test(seeds: Vec<String>) {
             log!("[webview-crawl] done ok={} failed={:?}", ok, failed);
         });
     });
-}
-
-/// Sign-in, sign-up and account pages (not followed). octos#2637 adds
-/// `urls::is_account_link`; switch to it once OctoSense pins it.
-fn account_link(raw: &str) -> bool {
-    const SEGMENTS: &[&str] = &[
-        "login",
-        "signin",
-        "sign-in",
-        "signup",
-        "sign-up",
-        "register",
-        "auth",
-        "oauth",
-        "sso",
-        "account",
-        "accounts",
-        "usercenter",
-        "passport",
-        "logout",
-        "password",
-        "cart",
-    ];
-    url::Url::parse(raw).is_ok_and(|u| {
-        u.path_segments()
-            .is_some_and(|mut s| s.any(|seg| SEGMENTS.contains(&seg.to_ascii_lowercase().as_str())))
-    })
 }
 
 /// Absolute `<a href>` links of a page, in order, without fragments (not
@@ -444,32 +388,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_wait_only_for_checks_that_clear_themselves() {
-        assert!(self_clearing(
-            "Just a moment... Checking your browser before accessing"
-        ));
-        assert!(self_clearing(
-            "火山引擎 正在进行安全检测... 为保障您的访问安全，系统正在检测当前网络环境"
-        ));
-        assert!(
-            !self_clearing("请完成安全验证 拖动滑块完成拼图"),
-            "asks a person"
-        );
-        assert!(!self_clearing("Please complete the CAPTCHA to continue"));
-        let article = "Just a moment of reflection: ".to_string() + &"words ".repeat(300);
-        assert!(!self_clearing(&article), "a long page is content");
-    }
-
-    #[test]
-    fn should_find_links_and_skip_account_pages() {
+    fn should_find_anchor_links_only() {
         let html = r#"<link href="/favicon.ico"><a href="/news/a#top">A</a> <a class="x" href='https://x.org/b?a=1&amp;b=2'>B</a> <a href="mailto:x@y">m</a>"#;
         assert_eq!(
             links_of(html, "https://site.org/"),
             ["https://site.org/news/a", "https://x.org/b?a=1&b=2"]
         );
-        assert!(account_link("https://medium.com/m/signin?op=login"));
-        assert!(account_link("https://36kr.com/usercenter/basicinfo"));
-        assert!(!account_link("https://www.bbc.com/news/articles/c1"));
     }
 
     #[test]
