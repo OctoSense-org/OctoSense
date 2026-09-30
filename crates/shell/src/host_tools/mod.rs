@@ -63,7 +63,36 @@ static INBOX: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 
 fn with_relay<R>(f: impl FnOnce(&mut Relay) -> R) -> R {
     let mut guard = RELAY.lock().unwrap_or_else(|e| e.into_inner());
-    f(guard.get_or_insert_with(Relay::default))
+    f(guard.get_or_insert_with(|| {
+        let mut relay = Relay::default();
+        relay.set_audit(Arc::new(|entry| AUDIT.lock().unwrap_or_else(|e| e.into_inner()).push(entry)));
+        relay
+    }))
+}
+
+/// The relay's audit lines, queued (an executor may answer on any thread,
+/// under any lock) and written by [`pump`].
+static AUDIT: Mutex<Vec<relay::CallAudit>> = Mutex::new(Vec::new());
+
+/// Write the queued audit lines to the home's `logs/tool-calls.jsonl`
+/// (`approvals::audit::CALLS_FILE`, owner-only). Without a home (tests, an
+/// unset one) they are only logged.
+fn flush_audit() {
+    let entries = std::mem::take(&mut *AUDIT.lock().unwrap_or_else(|e| e.into_inner()));
+    if entries.is_empty() {
+        return;
+    }
+    let home = approvals::with(|a| a.router.audit.home()).flatten();
+    for entry in entries {
+        match &home {
+            Some(home) => {
+                if let Err(e) = approvals::audit::append_call(home, &entry) {
+                    makepad_widgets::log!("host tools: could not write the tool-call audit: {e}");
+                }
+            }
+            None => makepad_widgets::log!("host tools: audit {} {} {} {} {}", entry.caller, entry.owner, entry.tool, entry.phase, entry.outcome),
+        }
+    }
 }
 
 /// Queue an event for [`pump`], and wake the UI thread.
@@ -80,7 +109,7 @@ pub fn pump() {
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
-            return;
+            break;
         }
         let mut env = ShellEnv;
         with_relay(|r| {
@@ -89,6 +118,7 @@ pub fn pump() {
             }
         });
     }
+    flush_audit();
 }
 
 /// At startup, after `approvals::init`: install the host (every broker's),
