@@ -43,7 +43,12 @@
 //!   the calling context's client and the caller, executes each occurrence
 //!   at most once, refuses calls of turns it interrupted, and hands the call
 //!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
-//!   closed link end calls before they run. `peer/input` (the system agent's
+//!   closed link end calls before they run. When the app's last instance
+//!   releases (the app closed, or the person turned its agent off) it
+//!   releases the peer's route (`peer/tools/unregister`, octos#2658): the
+//!   shell's consumers share one kernel connection that never closes, so
+//!   without it the kernel would still accept the system agent's input for
+//!   a peer nobody runs; now `peer_send_input` fails visibly. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
 //!   id, once per input, queued while the peer is busy; every approval
 //!   (a `host_tool` one and octos's own tools', a `peer/input` turn's
@@ -82,6 +87,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
+use crate::peer_record::PeerRecord;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
@@ -208,8 +214,17 @@ impl BrokerConfig {
     }
 }
 
-/// A stable, non-secret account tag for names and namespaces.
+/// A stable, non-secret account tag for names and namespaces: FNV-1a of
+/// the account as the host keys it ([`crate::storage::normalize_account`],
+/// like the account folder's name), so one account has one memory. An id
+/// that was already normal keeps the tag it had before; a peer made under
+/// another spelling keeps its namespace through its record.
 pub fn account_tag(account: &str) -> String {
+    raw_tag(&crate::storage::normalize_account(account))
+}
+
+/// FNV-1a of the bytes (the tag before accounts were normalized).
+fn raw_tag(account: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in account.bytes() {
         hash ^= u64::from(b);
@@ -634,8 +649,9 @@ struct State {
     routes: HashMap<String, Route>,
     peer: Option<(u64, PeerInfo)>,
     peer_turn: Option<String>,
-    /// Host tokens by memory namespace, when no state dir persists them.
-    tokens: HashMap<String, String>,
+    /// Each peer's host token and workspace by memory namespace, also when
+    /// no state dir persists them.
+    records: HashMap<String, PeerRecord>,
     contexts: Vec<Weak<ContextInner>>,
     model: Option<ModelInfo>,
     last_error: Option<String>,
@@ -667,8 +683,6 @@ struct State {
     queue: VecDeque<PeerInput>,
     /// Conversations opened: each gets a new kernel context id.
     conversations: u64,
-    /// Workspaces new peers were created with, when no state dir keeps them.
-    cwds: HashMap<String, String>,
     /// Approval and question ids the host took: only the host answers them.
     host_held: VecDeque<String>,
     /// Questions the host holds, by id: the turn that asked.
@@ -719,7 +733,7 @@ impl Broker {
                 routes: HashMap::new(),
                 peer: None,
                 peer_turn: None,
-                tokens: HashMap::new(),
+                records: HashMap::new(),
                 contexts: Vec::new(),
                 model: None,
                 last_error: None,
@@ -735,7 +749,6 @@ impl Broker {
                 requests: VecDeque::new(),
                 queue: VecDeque::new(),
                 conversations: 0,
-                cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
                 prompts: HashMap::new(),
@@ -944,39 +957,40 @@ impl Inner {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn token_path(&self, namespace: &str) -> Option<std::path::PathBuf> {
-        let dir = self.cfg.state_dir.as_ref()?;
-        Some(dir.join(format!("{}.token", namespace.replace('/', "_"))))
+    /// The peer's record: this run's, else the state dir's
+    /// ([`crate::peer_record`]).
+    fn load_record(&self, namespace: &str) -> Option<PeerRecord> {
+        if let Some(record) = self.lock().records.get(namespace) {
+            return Some(record.clone());
+        }
+        crate::peer_record::load(self.cfg.state_dir.as_ref()?, namespace)
     }
 
-    fn load_token(&self, namespace: &str) -> Option<String> {
-        if let Some(token) = self.lock().tokens.get(namespace) {
-            return Some(token.clone());
+    /// Keep the peer's token and workspace together, in memory and (with a
+    /// state dir) in one owner-only file written at once.
+    fn save_record(&self, namespace: &str, record: PeerRecord) -> Result<(), String> {
+        let record = PeerRecord { legacy: false, ..record };
+        self.lock().records.insert(namespace.to_owned(), record.clone());
+        match &self.cfg.state_dir {
+            Some(dir) => crate::peer_record::save(dir, namespace, &record),
+            None => Ok(()),
         }
-        let text = std::fs::read_to_string(self.token_path(namespace)?).ok()?;
-        let token = text.trim().to_owned();
-        (!token.is_empty()).then_some(token)
     }
 
-    fn save_token(&self, namespace: &str, token: &str) -> Result<(), String> {
-        self.lock()
-            .tokens
-            .insert(namespace.to_owned(), token.to_owned());
-        let Some(path) = self.token_path(namespace) else {
-            return Ok(());
-        };
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    /// A resumed peer's workspace must exist (octos refuses a missing
+    /// `cwd`): an account folder deleted with its account is made again,
+    /// by the host when it is still the account's folder.
+    fn ensure_workspace(&self, host: &dyn ToolHost, account: &str, cwd: &str) {
+        let path = std::path::Path::new(cwd);
+        if path.is_dir() {
+            return;
         }
-        let tmp = path.with_extension("token.tmp");
-        std::fs::write(&tmp, token).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| e.to_string())?;
+        let ours = host.agent_workspace(&self.cfg.app_id, account);
+        if ours.as_deref() == Some(path) && !path.is_dir() {
+            if let Err(err) = crate::peer_record::private_dir(path) {
+                eprintln!("app-peers: could not recreate the workspace {cwd}: {err}");
+            }
         }
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
     fn tool_host(&self) -> Arc<dyn ToolHost> {
@@ -984,29 +998,6 @@ impl Inner {
             Some(handle) => handle.0.clone(),
             None => host_tools::host(),
         }
-    }
-
-    /// The workspace a peer was created with (`<namespace>.cwd` beside its
-    /// token): a resume must name the same one. None for a peer the kernel
-    /// provisioned.
-    fn load_cwd(&self, namespace: &str) -> Option<String> {
-        if let Some(cwd) = self.lock().cwds.get(namespace) {
-            return Some(cwd.clone());
-        }
-        let path = self.token_path(namespace)?.with_extension("cwd");
-        let text = std::fs::read_to_string(path).ok()?;
-        let cwd = text.trim().to_owned();
-        (!cwd.is_empty()).then_some(cwd)
-    }
-
-    fn save_cwd(&self, namespace: &str, cwd: &str) -> Result<(), String> {
-        self.lock().cwds.insert(namespace.to_owned(), cwd.to_owned());
-        let Some(path) = self.token_path(namespace).map(|p| p.with_extension("cwd")) else {
-            return Ok(());
-        };
-        let tmp = path.with_extension("cwd.tmp");
-        std::fs::write(&tmp, cwd).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
     fn fail(&self, error: &str) {
@@ -1468,9 +1459,31 @@ impl Inner {
             self.fail(&err);
             return Err(err);
         }
-        let tag = account_tag(&account);
-        let namespace = app_namespace(&self.cfg.app_id, &account);
-        let name = format!("{} {}", self.cfg.app_label, &tag[..8]);
+        // The record is kept under the account's namespace; a peer made
+        // before accounts were normalized is found under the raw one.
+        let key = app_namespace(&self.cfg.app_id, &account);
+        let mut known = self.load_record(&key);
+        let raw_namespace = format!("app/{}/acct-{}", self.cfg.app_id, raw_tag(&account));
+        let mut moved_from = None;
+        if known.is_none() && raw_namespace != key {
+            if let Some(mut record) = self.load_record(&raw_namespace) {
+                record.namespace.get_or_insert_with(|| raw_namespace.clone());
+                record.legacy = true;
+                known = Some(record);
+                moved_from = Some(raw_namespace);
+            }
+        }
+        // The kernel's memory namespace and the name a resume finds the peer
+        // by are the ones it was made with: a new peer's name carries the
+        // whole 64-bit tag; one recorded before, 32 bits of its own.
+        let namespace = known.as_ref().and_then(|r| r.namespace.clone()).unwrap_or_else(|| key.clone());
+        let name = match &known {
+            Some(record) => record.name.clone().unwrap_or_else(|| {
+                let tag = namespace.rsplit("acct-").next().unwrap_or_default();
+                format!("{} {}", self.cfg.app_label, &tag[..tag.len().min(8)])
+            }),
+            None => format!("{} {}", self.cfg.app_label, account_tag(&account)),
+        };
         // The owner session is live before its peer exists, so the kernel
         // can wake it when the peer asks a question.
         self.request(
@@ -1486,16 +1499,26 @@ impl Inner {
             "memory_namespace": namespace,
             "resume": true,
         });
-        let known_token = self.load_token(&namespace);
         // The agent's workspace is the account's folder (ADR 0004 §11) for
         // a peer created now; a resume names the workspace the peer was
-        // created with (the kernel refuses any other), so peers created
-        // before keep the one the kernel provisioned.
+        // created with (the kernel refuses any other). A record without one
+        // (a peer from before the record) tries the account folder, then
+        // the kernel's own workspace, and records whichever the kernel took.
         let mut chosen_cwd = None;
-        if let Some(token) = &known_token {
-            params["host_token"] = json!(token);
-            if let Some(cwd) = self.load_cwd(&namespace) {
-                params["cwd"] = json!(cwd);
+        let mut unknown_cwd = false;
+        if let Some(record) = &known {
+            params["host_token"] = json!(record.token);
+            match &record.cwd {
+                Some(cwd) => {
+                    self.ensure_workspace(host.as_ref(), &account, cwd);
+                    params["cwd"] = json!(cwd);
+                }
+                None => {
+                    unknown_cwd = true;
+                    if let Some(cwd) = host.agent_workspace(&self.cfg.app_id, &account) {
+                        params["cwd"] = json!(cwd.to_string_lossy());
+                    }
+                }
             }
         } else if let Some(cwd) = host.agent_workspace(&self.cfg.app_id, &account) {
             let cwd = cwd.to_string_lossy().into_owned();
@@ -1505,7 +1528,14 @@ impl Inner {
         if let Some(lane) = &self.cfg.model_lane {
             params["model"] = json!(lane);
         }
-        let result = match self.request("peer/prepare", params).await {
+        let mut result = self.request("peer/prepare", params.clone()).await;
+        if unknown_cwd && params.get("cwd").is_some() && result.as_ref().is_err_and(|e| e.contains("peer_binding_mismatch")) {
+            if let Some(obj) = params.as_object_mut() {
+                obj.remove("cwd");
+            }
+            result = self.request("peer/prepare", params).await;
+        }
+        let result = match result {
             Ok(result) => result,
             Err(err) => {
                 self.fail(&err);
@@ -1525,25 +1555,47 @@ impl Inner {
             .as_str()
             .ok_or("peer/prepare returned no slug")?
             .to_owned();
-        // A new peer's credential arrives once; keep it before anything else.
+        let kernel_cwd = result["cwd"].as_str().map(str::to_owned);
+        // A new peer's credential arrives once; keep it, with its
+        // workspace, before anything else.
         let token = match result["host_token"].as_str() {
             Some(token) => {
-                if let Err(err) = self.save_token(&namespace, token) {
+                let record = PeerRecord {
+                    token: token.to_owned(),
+                    cwd: chosen_cwd.map(|chosen| kernel_cwd.unwrap_or(chosen)),
+                    namespace: Some(namespace.clone()),
+                    name: Some(name.clone()),
+                    legacy: false,
+                };
+                if let Err(err) = self.save_record(&key, record) {
                     let err = format!("could not keep the assistant's peer credential: {err}");
                     self.fail(&err);
                     return Err(err);
                 }
-                if chosen_cwd.is_some() {
-                    let cwd = result["cwd"].as_str().map(str::to_owned).or(chosen_cwd);
-                    if let Some(cwd) = cwd {
-                        if let Err(err) = self.save_cwd(&namespace, &cwd) {
-                            eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run");
+                Some(token.to_owned())
+            }
+            None => {
+                // A resume: learn a workspace not recorded yet, and move a
+                // legacy record into one file.
+                if let Some(mut record) = known.clone() {
+                    if unknown_cwd && kernel_cwd.is_some() {
+                        record.cwd = kernel_cwd;
+                    }
+                    if record.legacy || unknown_cwd || record.name.is_none() || record.namespace.is_none() {
+                        record.namespace = Some(namespace.clone());
+                        record.name = Some(name.clone());
+                        match self.save_record(&key, record) {
+                            Ok(()) => {
+                                if let (Some(old), Some(dir)) = (&moved_from, &self.cfg.state_dir) {
+                                    crate::peer_record::remove(dir, old);
+                                }
+                            }
+                            Err(err) => eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run"),
                         }
                     }
                 }
-                Some(token.to_owned())
+                known.map(|r| r.token)
             }
-            None => known_token,
         };
         let session = format!(
             "{}#peer-{slug}",
@@ -1886,6 +1938,18 @@ impl Inner {
         };
         // Another instance of the app drives the peer: the input is its.
         if !self.drives() {
+            return;
+        }
+        // Released (the app closed or its agent was turned off), its route
+        // on the way out: refused, never started.
+        let released = {
+            let st = self.lock();
+            st.released.then(|| st.peer.as_ref().map(|(_, p)| p.clone()))
+        };
+        if let Some(peer) = released {
+            if let Some(peer) = peer.filter(|p| p.slug == input.peer) {
+                self.reject_input(&peer, &input, InputRefusal::Other("the app was closed".into()));
+            }
             return;
         }
         let (peer, account, busy, seen) = {
@@ -3269,7 +3333,8 @@ impl OctosAppService for Broker {
     }
 
     fn release(&self) {
-        let (peer_turn, account) = {
+        let drove = self.0.drives();
+        let (peer_turn, account, peer) = {
             let mut st = self.0.lock();
             if st.released {
                 return;
@@ -3277,7 +3342,8 @@ impl OctosAppService for Broker {
             st.released = true;
             // Kept until a next instance took it over (below).
             let turn = st.peer_turn.clone();
-            (turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone())), st.account.clone())
+            let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
+            (turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone())), st.account.clone(), peer)
         };
         self.0.revoke_contexts();
         // Another instance of the app still open on this kernel: it drives
@@ -3299,6 +3365,12 @@ impl OctosAppService for Broker {
         if let Some((turn, _)) = &peer_turn {
             self.0.note_interrupted(turn);
         }
+        // The last instance that drove the peer lets go of its route
+        // (octos#2658), after its running turn is stopped: the system
+        // agent's later input fails ("not connected") instead of being
+        // accepted with nobody to run it. Another instance re-registered it
+        // above instead.
+        let unregister = peer.filter(|_| drove && next.is_none()).and_then(|p| p.token.map(|t| (p.slug, t)));
         let inner = self.0.clone();
         self.0.rt().spawn(async move {
             if let Some((turn, session)) = peer_turn {
@@ -3308,6 +3380,12 @@ impl OctosAppService for Broker {
                         json!({"session_id": session, "turn_id": turn}),
                     )
                     .await;
+            }
+            if let Some((slug, token)) = unregister {
+                let params = json!({"profile_id": inner.cfg.profile_id, "session_id": inner.cfg.originator, "peer": slug, "host_token": token});
+                if let Err(e) = inner.request(host_tools::UNREGISTER, params).await {
+                    eprintln!("app-peers: {}: releasing the peer's route failed: {e}", inner.cfg.app_id);
+                }
             }
             // Let the context closes above reach the kernel, then let go of
             // the link: the shared kernel keeps serving other consumers.
@@ -3375,5 +3453,15 @@ mod tests {
         assert!(a.starts_with("app/rinx/acct-"));
         assert!(!a.contains("alice"));
         assert_eq!(a, app_namespace("rinx", "@alice:example.org"));
+    }
+
+    /// One account key (ADR 0004 §11): the memory tag normalizes an account
+    /// the way the host's folder name does (`storage::normalize_account`).
+    #[test]
+    fn should_tag_one_account_once_when_its_case_or_spaces_differ() {
+        assert_eq!(account_tag("  @Alice:Example.ORG\n"), account_tag("@alice:example.org"));
+        assert_ne!(account_tag("@bob:example.org"), account_tag("@alice:example.org"));
+        // An already-normal id keeps its tag: existing namespaces stay put.
+        assert_eq!(account_tag("@a:x"), "82c93996fd659248");
     }
 }

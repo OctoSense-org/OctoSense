@@ -142,13 +142,15 @@ Shell 把授权交给本 crate（`system_tools::set_grants`）；每次内核启
 因此更改在重启后生效，设置中提供重启按钮。每条命令都经过 Shell 的批准路由器，按 `auto_approvable: false` 处理，并在实时批准表单上显示完整命令（开发者模式仍可直接批准）。
 开关开启期间，Shell 的系统对话在自己的连接上把该宿主工具注册到系统会话（octos#2567 的宿主会话目标，不带 `peer` 的 `peer/tools/register`），开关关闭时撤回；每个获批的调用由 Shell 输入到用户可见的 Terminal。
 
-**内核今天执行的内容。** octos 没有宿主可为单个会话设置的工具名单，因此每次启动都写入 `_main` profile 的 `tool_policy`
-（`system_tools::tool_policy`）：任何授权可给予的一切，唯独去掉 octos 自己的 shell（`group:runtime`：`shell`、`bash`、
-`exec_command`、`write_stdin`）——这是 OctoSense 唯一从不提供的工具，因为 §12 只以宿主工具的形式授予命令执行。octos
-对该 profile 的每个回合（包括唤醒续接回合）都应用它。因此：
+**内核执行的内容。** 每次启动都写入 `_main` profile 的 `tool_policy`（`system_tools::tool_policy`）：任何授权可给予的一切，
+唯独去掉 octos 自己的 shell（`group:runtime`：`shell`、`bash`、`exec_command`、`write_stdin`）——这是 OctoSense 唯一从不提供的工具，
+因为 §12 只以宿主工具的形式授予命令执行——以及 `peer_close`。octos 对该 profile 的每个回合（包括唤醒续接回合）都应用它，作为上限。因此：
 
-- **§12 的“恰好是它的授权”对系统智能体尚未执行**：它拿不到 octos shell，但除此之外受可授权上限约束，而不是它的清单，
-  octos#2567 的宿主会话集合可以用 `generic_tools` 收窄它，但该列表会收窄该会话上所有客户端的回合，因此 Shell 注册时不传它；精确清单要等持久的宿主专用列表（octos#2605）。精确清单的真实内核测试在此之前被忽略；
+- **系统智能体恰好得到它的清单**（§12，计划第 4 步）：每次内核启动时，在宿主自己的连接上、在任何使用方的帧到达内核之前，
+  把系统会话的内核工具设为 `SystemAgentTools::kernel_tools`（octos `session/tool_list/set`，octos#2648）；`system_tools::set_grants`
+  会在运行中的内核上再设一次。octos 持久保存该清单，并用它收窄该会话上的每个回合，无论由谁发起（Shell、Talk to Octos 客户端、唤醒续接）。
+  它的宿主工具（命令执行的 `terminal.run`）由系统对话注册，不受清单过滤；`spawn` 系列工具从不在清单上（`SPAWN_FAMILY`）。
+  真实内核测试：`a_system_agent_turn_is_offered_exactly_the_system_agent_tools`；
 - 应用 peer 由其回合的 `generic_tools` 收窄到其授权（计划第 6 步）；
 - Talk to Octos 外部回合保留 octos 自己的允许列表。
 

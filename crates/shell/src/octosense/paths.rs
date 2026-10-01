@@ -41,6 +41,30 @@ pub fn home() -> PathBuf {
 /// real Matrix sessions. The default home keeps Rinx's standard folder until
 /// its data moves under ADR 0004 §11's layout (hagency-org/Rinx#37). An
 /// explicit `RINX_DATA_DIR` always wins.
+/// A folder of the host's own inside the OctoSense home (`rel`, such as
+/// `logs/clients` or `sandbox`), created owner-only. The OctoSense home is
+/// closed to every sandboxed app (ADR 0004 §3, G6), so what the shell keeps
+/// here (a process app's log, its generated sandbox profile) is neither
+/// readable nor writable by the apps, unlike the shared temp dir.
+pub fn private_dir(rel: &str) -> std::io::Result<PathBuf> {
+    let dir = home().join(rel);
+    std::fs::create_dir_all(&dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut at = dir.as_path();
+        // Owner-only from the home down to it.
+        for _ in Path::new(rel).components() {
+            std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o700))?;
+            match at.parent() {
+                Some(parent) => at = parent,
+                None => break,
+            }
+        }
+    }
+    Ok(dir)
+}
+
 fn linked_rinx_data_dir(custom_home: Option<&Path>, explicit: bool) -> Option<PathBuf> {
     if explicit {
         return None;

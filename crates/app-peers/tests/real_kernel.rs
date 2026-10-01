@@ -1207,3 +1207,62 @@ fn two_instances_of_one_app_run_the_system_agents_input_and_its_call_once() {
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// octos#2658: the shell's consumers share ONE kernel connection that never
+/// closes, so closing an app used to leave its peer's route in place and
+/// the system agent's `peer_send_input` was accepted with nobody to run it.
+/// Now the app's last instance releases the route (`peer/tools/unregister`)
+/// and the system agent's input fails visibly ("not connected"), while the
+/// kernel keeps serving the other consumer.
+#[test]
+fn closing_the_app_releases_its_route_so_the_system_agents_input_fails() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("unregister");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    // Another consumer of the shell's one kernel connection stays open.
+    let observer = broker(&core, "observer", "Observer");
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound and its tools registered");
+    let (slug, _) = rinx.peer().unwrap();
+    observer.host_request("session/open", json!({"session_id": "_main:api:octosense#system", "profile_id": "_main"})).expect("the observer's connection");
+    rinx.release();
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(core.status().running, "the kernel keeps serving the other consumer");
+
+    observer
+        .host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": format!("TELL_PEER_AGAIN:{slug}")}]}),
+        )
+        .expect("system turn");
+    let mut transcript = String::new();
+    for _ in 0..120 {
+        transcript = observer
+            .host_request("session/hydrate", json!({"session_id": "_main:api:octosense#system", "include": ["messages"]}))
+            .unwrap_or(Value::Null)
+            .to_string();
+        if transcript.contains("not connected") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(transcript.contains("is not connected"), "the system agent's input failed visibly: {transcript}");
+    drop(rinx);
+    drop(observer);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
