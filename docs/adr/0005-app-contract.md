@@ -38,7 +38,9 @@ App Hub publishes **`octosense-app-contract`**, versioned `1.x`, holding only wh
 - **Manifest:** `AppManifest` and its parts, `SCHEMA`, `MANIFEST_FILE`, `parse`.
 - **Policy:** `policy::resolve`, `HostLimits`, `AppPolicy` (the app-facing part: capabilities, network hosts, storage block, limits).
 - **Integrity:** `digest_dir`, `bundle_digest`, `admit`, `admit_digest`, `SignatureVerifier`, `RefuseAllSignatures`.
-- **Running a package:** `SCRIPT_ENTRY`, `script_source`, `ASSETS_PLACEHOLDER`, `AssetServer`, `StaticAssets`, `rewrite_assets`, and the Splash isolate settings an app is given (`IsolateSettings`, `splash_adapter::apply`).
+- **Running a package:** `SCRIPT_ENTRY`, `script_source`, `ASSETS_PLACEHOLDER`, `AssetServer`, `StaticAssets`, `rewrite_assets`.
+
+**What an app may do is in the contract; how a host sandboxes it is not (decided 2026-09-30).** The contract's `AppPolicy` fixes the app's permissions and limits: capabilities, network hosts, storage, budgets. Each host turns that into its own sandbox settings (App Hub's `IsolateSettings`, `splash_adapter::apply`, Rinx's own Splash setup), under one rule: **a host may restrict more than `AppPolicy` says, never less.** Hosts can evolve their sandboxes freely. App Hub may publish its Splash setup as a separate helper crate for other hosts to reuse, but that helper is not part of the contract and carries no stability promise. The fixture corpus checks `AppPolicy`, not any host's settings.
 
 Everything else stays inside App Hub and may change freely: the catalog and store, listings, research scopes, the host service registry, agent session profiles, the Card runner. **No app depends on `octosense-app-hub` or `octosense-app-policy` directly any more**; Rinx's `miniapp-catalog` keeps its own catalog on top of the contract. `octosense-app-policy` itself depends on the contract and re-exports it, so App Hub and the shell keep one implementation.
 
@@ -59,7 +61,7 @@ Within `1.x`:
 ### 3. Depend on the version, not a commit
 
 - `octosense-app-contract` is published to a registry, so consumers write `octosense-app-contract = "1"` and Cargo resolves one `1.x` for the whole build. No lockstep, no duplicate copies, no host-alias tricks.
-- **Registry: crates.io (recommended)** because App Hub is public and Rinx and third-party apps can depend on it with no extra setup. The alternative is a private registry for the OctoSense org (Cloudsmith, Kellnr, or a git-index registry), at the cost of credentials in every consumer's CI. Plain git dependencies cannot work: Cargo never unifies two git commits.
+- **Registry: crates.io (decided 2026-09-30).** App Hub's source is already public, and Rinx, OctoSense and third-party apps can depend on it with no credentials or setup. A published version can never be deleted, only yanked, so releases go through review. A private registry was the alternative, rejected because every consumer's CI and machine would need a token and outside app developers could not use it. Plain git dependencies cannot work: Cargo never unifies two git commits.
 - OctoSense's root `Cargo.toml` pins the exact contract version it ships with (`=1.y.z` in `Cargo.lock`); apps state the lowest `1.x` they need. Inside OctoSense, OctoSense's choice is what links.
 - Rinx's CI builds against the lowest and the highest `1.x` it claims.
 
@@ -82,12 +84,12 @@ The contract crate lives in the App Hub repository under `crates/app-contract`, 
 ## Plan
 
 1. **Stopgap now:** restore OctoSense's `www.github.com` App Hub alias (dropped in #221), so #210 (App Hub 2a3d84b3) lands without a Rinx release. Rinx 1.0.3 is not made.
-2. **App Hub:** create `crates/app-contract` with the section 1 surface, moved out of `app-policy` (which re-exports it); add `requires`/`schema_minor`; add the fixture corpus and the API-diff check; publish `1.0.0`.
+2. **App Hub:** create `crates/app-contract` with the section 1 surface, moved out of `app-policy` (which re-exports it); add `requires`/`schema_minor`; add the fixture corpus and the API-diff check; set up a crates.io publishing token in App Hub's release workflow; publish `1.0.0`.
 3. **OctoSense:** depend on `octosense-app-contract = "1"` where the shell uses the contract; remove the App Hub alias.
-4. **Rinx:** replace its `octosense-app-policy` and `octosense-app-hub` uses with the contract (about 30 call sites, plus its own catalog types); release as Rinx `1.1.0`, the last release coupled to an App Hub commit.
+4. **Rinx:** replace its `octosense-app-policy` and `octosense-app-hub` uses with the contract (about 30 call sites, plus its own catalog types), and build its mini-app sandbox from `AppPolicy` (or App Hub's optional helper crate); release as Rinx `1.1.0`, the last release coupled to an App Hub commit.
 5. **Other apps** (AppCard, OctoScript tooling) follow the same rule when they next change.
 
-## Open questions
+## Decided on review (2026-09-30)
 
-- crates.io or a private registry (section 3).
-- Whether `IsolateSettings` belongs in the contract (it is what a host gives an app) or stays host-side with a narrower contract type.
+- **Registry:** crates.io (section 3).
+- **Sandbox settings:** not in the contract. The contract fixes what an app may do (`AppPolicy`); each host builds its own sandbox from that and may only restrict further (section 1).
