@@ -4,7 +4,7 @@
     {
       "id": "rinx",
       "crate": "rinx",
-      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.0.2", "rev": "5a9e2af2433a04129f2ad0c11acafb187c66f649", "local": null },
+      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.1.0", "rev": "4b89097d8791a7190d01de1c576979c93df0013d", "local": null },
       "module": "rinx::module::RINX_MODULE",
       "bin": null,
       "default_features": false,
@@ -44,6 +44,7 @@
       "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9", "local": ".sources/makepad/apps/sheets" },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
+      "bin_features": ["standalone"],
       "default_features": false,
       "crate_features": [],
       "implies": [],
@@ -71,7 +72,7 @@
       "agent": {
         "octos": [],
         "tools": [
-          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
+          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
           {"name": "terminal.read_screen", "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
           {"name": "terminal.read_scrollback", "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).", "input_schema": {"type": "object", "properties": {"lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, "additionalProperties": false}, "risk": "read", "shareable": true}
         ],
@@ -98,12 +99,12 @@
       "id": "apphub",
       "feature": "app-hub",
       "crate": "octosense-app-hub-app",
-      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "0f332112f0b5a379c5bb33790df74b21597190cf", "local": null },
+      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "58c3c8aed8fc811a16d67c5f784a8a44214ff876", "local": null },
       "module": ["octosense_app_hub_app::APP_HUB_MODULE", "octosense_app_hub_app::CARD_MODULE"],
       "bin": null,
       "default_features": true,
       "crate_features": [],
-      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"],
+      "implies": ["dep:octosense-appstore", "dep:octosense-app-policy", "dep:octosense-app-hub", "dep:octosense-app-contract", "dep:octosense-mail-service", "dep:octosense-news-service", "octosense-ai-host/llm"],
       "hosting": { "macos": "module", "windows": "module", "linux": "module", "android": "module", "ios": "module", "ohos": "module" },
       "shells": { "desktop": "default", "phone": "default" },
       "native_mobile": "always",
