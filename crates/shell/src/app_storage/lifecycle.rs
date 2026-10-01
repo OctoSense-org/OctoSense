@@ -86,6 +86,8 @@ pub fn script_manifest(root: &Path, manifest_id: &str) -> Option<Value> {
 /// resumes; an app with accounts resumes each as it signs in
 /// ([`Storage::installed`]).
 pub fn prepare_script_app(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -> Result<StorageSpec, String> {
+    // A native app's folders and spec are never a script app's to set.
+    crate::apps::check_script_app_id(manifest_id)?;
     let spec = match script_manifest(root, manifest_id) {
         Some(manifest) => StorageSpec::from_manifest(&manifest, AppKind::Script).map_err(|e| format!("{manifest_id}: {e}"))?,
         None => StorageSpec::default(),
@@ -185,9 +187,14 @@ pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::Acco
 /// App Hub uninstalled `manifest_id` (its jail is gone or going): delete
 /// what the host keeps for it and keep its agents suspended. Only when the
 /// jail itself is gone: an update replaces `bundle/` alone, and a system
-/// app (`os.*`) ships with the build and is never uninstalled.
+/// app (`os.*`) ships with the build and is never uninstalled; nor is a
+/// native app, whose folders an event naming its id must never delete.
 pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -> bool {
-    if manifest_id.starts_with("os.") || super::validate_app_id(manifest_id).is_err() || root.join(manifest_id).exists() {
+    if manifest_id.starts_with("os.")
+        || super::validate_app_id(manifest_id).is_err()
+        || crate::apps::check_script_app_id(manifest_id).is_err()
+        || root.join(manifest_id).exists()
+    {
         return false;
     }
     if let Err(e) = storage.uninstall(manifest_id) {
