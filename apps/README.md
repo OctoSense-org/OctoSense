@@ -68,7 +68,7 @@ OctoScript-App-Design-Flow:
 | App | Id | What it does | Capabilities (manifest) | Network hosts (manifest) | Host services |
 | --- | --- | --- | --- | --- | --- |
 | [News](news/bundle) | `os.news` | Hacker News, TechMeme and Google News feeds in tabs (Today, HN, TechMeme, Google, Saved), with a reader for stories | `storage`, `net`, `images`, `web`, `news`, `glance` | `hn.algolia.com`, `www.techmeme.com`, `news.google.com`, `api.gdeltproject.org`, `feeds.bbci.co.uk`, `feeds.npr.org`, `www.theguardian.com`, `feeds.arstechnica.com` | [`news`](news/host-service) |
-| [Photos](photos/bundle) | `os.photos` | A sample library: moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance` | none | `photos.notify` via the shell notice service (full-size photos use the asset mount) |
+| [Photos](photos/bundle) | `os.photos` | A sample library with AI-curated Memories, optional story prompts, saved stories and slideshows; moments, albums, people, favorites, a grid with selection, a full-screen viewer | `storage`, `glance`, `model` | none (the host calls the model) | `model.complete`; `photos.notify` via the shell notice service (full-size photos use the asset mount) |
 | [Maps](maps/bundle) | `os.maps` | `MapView` map, place search, places, routes with a changeable start and up to two stops, and a drive mode with turn-by-turn and a 2D/3D view; starts at the device's GPS fix when there is one; the search and route map draws makepad's pre-baked world map (`makepad.nl`), the drive maps still read OpenStreetMap through Overpass | `storage`, `net`, `location`, `glance` | `photon.komoot.io`, `router.project-osrm.org`, `overpass-api.de`, `overpass.kumi.systems`, `maps.mail.ru`, `overpass.openstreetmap.fr`, `makepad.nl` | `maps.notify` via the shell notice service |
 | [Camera](camera/bundle) | `os.camera` (Home) | Photo and video over the runtime's `CameraPreview` widget, flash and zoom, a thumbnail of the last shot and a viewer | `storage`, `camera`, `microphone`, `library`, `glance` | none | `camera.notify` via the shell notice service |
 | [Mail](mail/bundle) | `os.mail` | Accounts, folders, message list, reader (HTML rebuilt by the service) and composer; its agent puts notice cards on the glance screen (`mail.notify`) | `storage`, `mail`, `glance` | none (the service connects, not the app) | [`mail`](mail/host-service) |
@@ -77,13 +77,14 @@ OctoScript-App-Design-Flow:
 | [Calendar](calendar/bundle) | `os.calendar` (desktop) | Its agent keeps the person's events and puts event and agenda cards on the glance screen; its own window cannot list the events yet (it needs an App Hub `calendar` capability) | `storage`, `glance` | none | [`calendar`](calendar/host-service) (for Calendar's agent only) |
 | [AppCard](appcard) | native, opt-in | The AppCard assistant: a routing brain picks or composes an app agent, which generates a live Splash or webview card. Shells link it only with `app-appcard`; not shipped by default | n/a (not a bundle) | n/a | the shell's octos kernel |
 
-What each capability means is defined by App Hub's closed list
-(`KNOWN_CAPABILITIES` in `crates/app-policy/src/manifest.rs`): `images` shows
+What each capability means is defined by the shared `octosense-app-contract` 1.x
+crate (`KNOWN_CAPABILITIES` in App Hub's `crates/app-contract/src/manifest.rs`): `images` shows
 pictures from any public https host, `web` opens a page in the system WebView,
 `library` offers captures to the system photo library, `mail` reaches the
 host's mail service, `llm` reaches the host's LLM-provider service, `news`
 reads the host's news service, `glance` publishes cards to the glance
-screen. `net` reaches only the hosts the manifest lists.
+screen, and `model` requests bounded one-shot model completions. `net`
+reaches only the hosts the manifest lists.
 
 ### Status and known gaps
 
@@ -96,7 +97,24 @@ screen. `net` reaches only the hosts the manifest lists.
   and released the camera in the background, but the live preview drew pure
   black; unresolved. Desktop builds have no camera and the Android emulator
   refuses one, so capture is untested elsewhere.
-- **Photos**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
+- **Photos Memories**: open **Memories → Create memories**, optionally entering
+  a theme such as “summer with family.” The host's `model.complete` uses the
+  provider configured in **Settings → AI providers** to curate up to three
+  stories with titles, short narratives and ordered slideshows. It receives
+  catalog metadata (dates, places, names, tags, titles and favorite flags),
+  never image bytes or credentials. This release uses the sample catalog;
+  it does not import the device library or analyze image pixels. Generation
+  runs only when requested. The latest 12 stories are kept in
+  alternating `accounts/device/memories.json` and `memories-backup.json`
+  snapshots, separately from albums and favorites; a failed write leaves
+  the previous snapshot recoverable.
+  Local moments and saved stories work without AI. Errors, invalid photo IDs,
+  missing providers and budget limits preserve saved stories. The model service
+  allows 270 seconds for its provider attempts; Photos clears its loading state
+  on timeout and allows retry, with a 300-second fallback if no callback arrives. **Stop waiting**
+  discards a late reply; the host request may still finish and count toward
+  its budget. A standalone `card-host` has no model service.
+- **Photos images**: the bundle ships only 75 thumbnails (`bundle/thumbs/`, about
   2 MB). Its Home preview keeps three columns and fits one, two or three rows
   to the card's available width and height, with favorites first. Photos fill
   the card edge to edge; the title overlays the lower-left corner instead of
@@ -108,7 +126,8 @@ screen. `net` reaches only the hosts the manifest lists.
   `{{assets}}/photos/...` only when a shell mounts them: Home mounts
   `photos/resources/photos` (about 87 MB, `phone/system-apps.json`);
   the desktop mounts nothing (`desktop/system-apps.json`), so the viewer has
-  no full-size image there.
+  no full-size image there. The viewer keeps a thumbnail fallback visible.
+  Memories on physical phones and with a live AI provider are **unverified**.
 - **Maps**: on the OnePlus 6 (2026-09-27) search, place, route, adding and
   removing a stop, driving with turn-by-turn and the 2D view worked. The 3D
   drive view draws the route but no map tiles, on the phone and on the
@@ -118,9 +137,12 @@ screen. `net` reaches only the hosts the manifest lists.
 - **Mail**: verified with the demo mailbox on desktop and on the OnePlus 6.
   Mail's and the `llm` host services use the App Hub revision selected by the root
   `Cargo.toml`, shared with the shells, so a build has one `octosense-appstore` and
-  one host-service registry.
-- **Script bundles have no CI.** [`apps.yml`](../.github/workflows/apps.yml)
-  tests the host services, AppCard and the shell services, not the bundles.
+  one host-service registry. Manifest and policy validation use the shared
+  versioned `octosense-app-contract` crate.
+- **Script bundle checks are partial.** [`apps.yml`](../.github/workflows/apps.yml)
+  runs Photos' app-contract admission, Splash memory logic and model-schema checks as part of
+  `cargo test --locked -p octosense-llm-service`, and News has script tests.
+  There is no comprehensive automated UI check for every bundle.
 - **AppCard `personal-data` skill** reads the old native Mail module's
   `mailbox-*.json` files. The script Mail app's mail now lives in the host
   service's own directory (`<host_dir>/mail/box-*.json`), so the skill

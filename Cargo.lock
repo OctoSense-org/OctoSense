@@ -7692,6 +7692,8 @@ name = "octosense-llm-service"
 version = "0.1.0"
 dependencies = [
  "image",
+ "makepad-script",
+ "octosense-app-contract",
  "octosense-appstore",
  "octosense-kernel",
  "octosense-llm-config",
