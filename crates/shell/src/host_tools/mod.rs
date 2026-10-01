@@ -67,33 +67,36 @@ fn with_relay<R>(f: impl FnOnce(&mut Relay) -> R) -> R {
     let mut guard = RELAY.lock().unwrap_or_else(|e| e.into_inner());
     f(guard.get_or_insert_with(|| {
         let mut relay = Relay::default();
-        relay.set_audit(Arc::new(|entry| AUDIT.lock().unwrap_or_else(|e| e.into_inner()).push(entry)));
+        relay.set_audit(Arc::new(write_audit));
         relay
     }))
 }
 
-/// The relay's audit lines, queued (an executor may answer on any thread,
-/// under any lock) and written by [`pump`].
-static AUDIT: Mutex<Vec<relay::CallAudit>> = Mutex::new(Vec::new());
+/// The home whose `logs/tool-calls.jsonl` the audit writes (set by
+/// [`init`]); unset, lines are only logged (tests, headless runs).
+static AUDIT_HOME: OnceLock<PathBuf> = OnceLock::new();
 
-/// Write the queued audit lines to the home's `logs/tool-calls.jsonl`
-/// (`approvals::audit::CALLS_FILE`, owner-only). Without a home (tests, an
-/// unset one) they are only logged.
-fn flush_audit() {
-    let entries = std::mem::take(&mut *AUDIT.lock().unwrap_or_else(|e| e.into_inner()));
-    if entries.is_empty() {
-        return;
-    }
-    let home = approvals::with(|a| a.router.audit.home()).flatten();
-    for entry in entries {
-        match &home {
-            Some(home) => {
-                if let Err(e) = approvals::audit::append_call(home, &entry) {
-                    makepad_widgets::log!("host tools: could not write the tool-call audit: {e}");
-                }
-            }
-            None => makepad_widgets::log!("host tools: audit {} {} {} {} {}", entry.caller, entry.owner, entry.tool, entry.phase, entry.outcome),
+/// An audit sink that writes each line to `home`'s
+/// `approvals::audit::CALLS_FILE` at once, from any thread (review of #222:
+/// nothing waits in memory for a crash or a quit to lose).
+pub fn audit_sink_for(home: PathBuf) -> relay::AuditSink {
+    Arc::new(move |entry| {
+        if let Err(e) = approvals::audit::append_call(&home, &entry) {
+            makepad_widgets::log!("host tools: could not write the tool-call audit: {e}");
         }
+    })
+}
+
+/// The shell's one tool-call audit (the relay's and the AI bus pane's):
+/// written at once to the home's file.
+pub fn write_audit(entry: relay::CallAudit) {
+    match AUDIT_HOME.get() {
+        Some(home) => {
+            if let Err(e) = approvals::audit::append_call(home, &entry) {
+                makepad_widgets::log!("host tools: could not write the tool-call audit: {e}");
+            }
+        }
+        None => makepad_widgets::log!("host tools: audit {} {} {} {} {}", entry.caller, entry.owner, entry.tool, entry.phase, entry.outcome),
     }
 }
 
@@ -120,7 +123,6 @@ pub fn pump() {
             }
         });
     }
-    flush_audit();
 }
 
 /// At startup, after `approvals::init`: install the host (every broker's),
@@ -128,6 +130,9 @@ pub fn pump() {
 pub fn init() {
     static DONE: OnceLock<()> = OnceLock::new();
     DONE.get_or_init(|| {
+        if let Some(home) = approvals::with(|a| a.router.audit.home()).flatten() {
+            let _ = AUDIT_HOME.set(home);
+        }
         host_tools::set_host(Arc::new(ShellToolHost));
         approvals::set_relay(Box::new(DecisionRelay));
         peer_link::set_tool_relay(Box::new(LinkRelay));

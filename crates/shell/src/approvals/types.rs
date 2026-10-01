@@ -68,11 +68,14 @@ pub struct ToolSpec {
     /// Argument names the schema types as secrets (`"format": "password"`,
     /// `"secret": true`), redacted on every sheet.
     pub secret_fields: Vec<String>,
+    /// The tool's declared `input_schema`: rule conditions read only the
+    /// fields it declares (`facts`); `None`, they read nothing.
+    pub input_schema: Option<Value>,
 }
 
 impl ToolSpec {
     pub fn host(name: &str) -> ToolSpec {
-        ToolSpec { name: name.into(), confirm: Confirm::Host, auto_approvable: true, command: false, secret_fields: Vec::new() }
+        ToolSpec { name: name.into(), confirm: Confirm::Host, auto_approvable: true, command: false, secret_fields: Vec::new(), input_schema: None }
     }
     pub fn app(name: &str) -> ToolSpec {
         ToolSpec { confirm: Confirm::App, ..ToolSpec::host(name) }
@@ -84,6 +87,12 @@ impl ToolSpec {
     pub fn command(mut self) -> ToolSpec {
         self.command = true;
         self.auto_approvable = false;
+        self
+    }
+    /// With its declared `input_schema` (an object schema; anything else is
+    /// no schema).
+    pub fn schema(mut self, schema: Value) -> ToolSpec {
+        self.input_schema = schema.is_object().then_some(schema);
         self
     }
     pub fn secret(mut self, field: &str) -> ToolSpec {

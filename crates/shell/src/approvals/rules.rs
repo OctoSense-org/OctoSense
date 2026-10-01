@@ -245,7 +245,7 @@ impl Rule {
         let c = &self.conditions;
         if c.recipients_in_contacts || c.recipients_in_thread {
             // A recipient the reader cannot make out fails, like none.
-            let recipients = facts::recipients_checked(&req.args).map_err(|_| Miss::Unreadable)?;
+            let recipients = facts::recipients_checked(&req.args, req.tool.input_schema.as_ref()).map_err(|_| Miss::Unreadable)?;
             if recipients.is_empty() {
                 return Err(Miss::NoRecipients);
             }
@@ -255,20 +255,20 @@ impl Rule {
                 return Err(Miss::RecipientsNotKnown);
             }
         }
-        if c.no_attachments && facts::has_attachments(&req.args) {
+        if c.no_attachments && facts::has_attachments(&req.args, req.tool.input_schema.as_ref()) {
             return Err(Miss::Attachments);
         }
         if c.triggered_by_person && req.context.trigger != Trigger::Person {
             return Err(Miss::NotByPerson);
         }
         if let Some(max) = c.max_amount {
-            match facts::amount(&req.args) {
+            match facts::amount(&req.args, req.tool.input_schema.as_ref()) {
                 Some(a) if a <= max => {}
                 _ => return Err(Miss::Amount),
             }
         }
         if let Some(max) = c.max_count {
-            match facts::count_checked(&req.args) {
+            match facts::count_checked(&req.args, req.tool.input_schema.as_ref()) {
                 Ok(n) if n <= max => {}
                 Ok(_) => return Err(Miss::Count),
                 Err(_) => return Err(Miss::Unreadable),

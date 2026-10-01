@@ -140,6 +140,8 @@ pub fn with<R>(f: impl FnOnce(&mut Approvals) -> R) -> Option<R> {
 
 /// At startup, once: this home's rules, consent and audit.
 pub fn init(home: &Path) {
+    // Every audit digest from now on is keyed by this home (review of #222).
+    facts::use_home_key(home);
     let a = Approvals::in_home(home);
     *STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(a);
     // Contained apps' `octos` service asks consent at first use too, and

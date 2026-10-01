@@ -84,6 +84,21 @@ pub struct Line {
     /// The app whose agent asked (its conversation's Stop stops that
     /// agent's turn); `None` for the system agent.
     pub agent: Option<String>,
+    /// The person has seen every argument row: true at once when they fit
+    /// ([`needs_reading`]), else once the view says so
+    /// ([`super::Router::mark_seen`]). Approve once and "Always …" wait for it.
+    pub seen: bool,
+}
+
+/// How many argument rows a sheet shows at once (the view scrolls past it).
+pub const MAX_ARG_ROWS: usize = 12;
+/// A row longer than this may wrap on a narrow sheet.
+pub const MAX_ROW_CHARS: usize = 60;
+
+/// Whether the person must scroll (or a row may wrap) to see every
+/// argument: then the router waits for the view's word that they did.
+pub fn needs_reading(args: &[String]) -> bool {
+    args.len() > MAX_ARG_ROWS || args.iter().any(|r| r.chars().count() > MAX_ROW_CHARS)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -124,22 +139,24 @@ impl Line {
         } else {
             Vec::new()
         };
+        let args = argument_rows(req);
         Line {
             request: req.id.clone(),
             app: req.app.clone(),
-            app_label: app_label(&req.app),
+            app_label: visible(&app_label(&req.app)),
             tool: req.tool.name.clone(),
-            caller: caller_label(&req.app, &req.caller),
-            args: argument_rows(req),
+            caller: visible(&caller_label(&req.app, &req.caller)),
+            seen: !needs_reading(&args),
+            args,
             surfaced,
             always,
             answer: None,
             agent: super::router::agent_of(req),
         }
     }
-    /// "Mail · mail.send".
+    /// "Mail · mail.send", hidden characters made [`visible`].
     pub fn heading(&self) -> String {
-        format!("{} \u{00b7} {}", self.app_label, self.tool)
+        format!("{} \u{00b7} {}", self.app_label, visible(&self.tool))
     }
 }
 
@@ -224,6 +241,33 @@ pub fn wrap(row: &str, max_w: f64, mut measure: impl FnMut(&str) -> f64) -> Vec<
     out
 }
 
+/// Each open line's wrapped rows, and the width and text scale they were
+/// wrapped at: a new width or scale wraps again, and says so, so the view
+/// starts the line's "seen" count over (review of #218).
+#[derive(Debug, Default)]
+pub struct WrapCache {
+    rows: std::collections::HashMap<RequestId, (f64, f64, Vec<String>)>,
+}
+
+impl WrapCache {
+    /// `args` wrapped to `width` at text `scale`, and whether they were
+    /// wrapped again now.
+    pub fn rows(&mut self, id: &RequestId, width: f64, scale: f64, args: &[String], mut measure: impl FnMut(&str) -> f64) -> (Vec<String>, bool) {
+        if let Some((w, s, rows)) = self.rows.get(id) {
+            if *w == width && *s == scale {
+                return (rows.clone(), false);
+            }
+        }
+        let rows: Vec<String> = args.iter().flat_map(|a| wrap(a, width, &mut measure)).collect();
+        self.rows.insert(id.clone(), (width, scale, rows.clone()));
+        (rows, true)
+    }
+    /// Forget the lines no longer open.
+    pub fn retain(&mut self, open: impl Fn(&RequestId) -> bool) {
+        self.rows.retain(|id, _| open(id));
+    }
+}
+
 /// Which rows of a line's argument area are on screen, and how far down the
 /// person has seen. Approve is enabled only once every row was on screen.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -261,8 +305,8 @@ fn always_choices(req: &Request, contacts: &dyn ContactsSource) -> Vec<AlwaysCho
     let mut out = Vec::new();
     // Only recipients the rule could read: no "always for people in my
     // contacts" for a call it would never answer.
-    let recipients = facts::recipients_checked(&req.args).unwrap_or_default();
-    let no_attachments = !facts::has_attachments(&req.args);
+    let recipients = facts::recipients_checked(&req.args, req.tool.input_schema.as_ref()).unwrap_or_default();
+    let no_attachments = !facts::has_attachments(&req.args, req.tool.input_schema.as_ref());
     let tool = &req.tool.name;
     let with_attachments = |mut c: Conditions| {
         c.no_attachments = no_attachments;
@@ -297,12 +341,12 @@ impl Sheet {
                 if plan.trim().is_empty() {
                     "The system agent asks".into()
                 } else {
-                    plan.clone()
+                    visible(plan)
                 }
             }
             Place::AppConversation { app } => {
                 let tool = self.lines.first().map(|l| l.tool.as_str()).unwrap_or("");
-                format!("{} wants to use {tool}", app_label(app))
+                format!("{} wants to use {}", visible(&app_label(app)), visible(tool))
             }
         }
     }

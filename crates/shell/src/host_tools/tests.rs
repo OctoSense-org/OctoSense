@@ -259,7 +259,7 @@ fn a_confirm_app_call_is_acknowledged_then_handed_to_the_owning_apps_sheet_and_r
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].caller_label, "Calendar's agent", "the sheet shows who is calling");
     assert_eq!(shown[0].args["text"], "hi", "and the exact arguments");
-    assert_eq!(w.asked[0].1, ToolSpec::app("rinx.message.send"));
+    assert_eq!(w.asked[0].1, ToolSpec::app("rinx.message.send").schema(json!({"type": "object"})), "with its declared schema, for rules");
     // The person approves on Rinx's sheet.
     w.router.app_confirm_answered(&RequestId(format!("{CONFIRM_PREFIX}c1")), true, "sent", 2).unwrap();
     for event in w.decided() {

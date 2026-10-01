@@ -8,18 +8,18 @@
 //! | --- | --- |
 //! | recipients | `to`, `cc`, `bcc`, `recipients`, `invitees`, `attendees` (a string, a list of strings, or objects with `address`/`email`/`id`) |
 //! | attachments | `attachments`, `files` (a non-empty list, or `true`) |
-//! | amount | `amount`, `total`, `price` (a number or a numeric string) |
+//! | amount | `amount`, `total`, `price` (a number or a numeric string; the largest) |
 //! | count | `count`, else the number of `items`, else the number of recipients |
 //!
-//! **Fail closed.** Nothing here guesses in the call's favour: a missing
-//! fact fails the condition that needs it, and so does one the reader
-//! cannot make out. An argument anywhere in the call (at any depth) whose
-//! name looks like the fact under a name the table does not list
-//! (`attachment`, `file_path`, `quantity`, `share_with`, `cost`, a nested
-//! `cc`), a value in a shape the reader does not know (a recipient object
-//! without an address, a count that is not a whole number), or two amounts
-//! that disagree: the fact is unreadable ([`Unreadable`]), and the rule
-//! does not answer; the person does.
+//! **Only declared fields, and fail closed** (ADR 0004 §8; review of #215).
+//! A condition reads only what the tool's own `input_schema` declares
+//! ([`readable`]): a call that carries any key the schema does not declare,
+//! at any depth (`dest`, `mailto`, `payload`, a key inside one of the
+//! `items`), or a tool with no declared schema, is unreadable for rules
+//! ([`Unreadable`]), and so is a fact in a shape the reader does not know (a
+//! recipient object without an address, a count that is not a whole
+//! number, an amount it cannot parse). A missing fact fails the condition
+//! that needs it too. Then the rule does not answer; the person does.
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -27,92 +27,53 @@ use sha2::{Digest, Sha256};
 const RECIPIENT_KEYS: &[&str] = &["to", "cc", "bcc", "recipients", "invitees", "attendees"];
 const ATTACHMENT_KEYS: &[&str] = &["attachments", "files"];
 const AMOUNT_KEYS: &[&str] = &["amount", "total", "price"];
-/// Words that make an argument name look like one of the facts. A name is
-/// split on `_`, `-`, `.` and camel case; one word matching (or starting
-/// with the stem, for `attach*`) is enough.
-const RECIPIENT_WORDS: &[&str] = &[
-    "to", "cc", "bcc", "recipient", "recipients", "invitee", "invitees", "attendee", "attendees", "participant", "participants", "guest", "guests", "member", "members", "email", "emails",
-    "address", "addresses", "phone", "phones", "contact", "contacts", "share", "notify", "user", "users", "people", "person",
-];
-const ATTACHMENT_WORDS: &[&str] = &["attachment", "attachments", "file", "files", "path", "paths", "upload", "uploads", "document", "documents", "media", "image", "images", "photo", "photos", "blob", "blobs"];
-const AMOUNT_WORDS: &[&str] = &["amount", "amounts", "total", "totals", "price", "prices", "cost", "costs", "fee", "fees", "sum", "payment", "subtotal", "charge"];
-const COUNT_WORDS: &[&str] = &["count", "counts", "quantity", "quantities", "qty", "number", "times", "repeat", "repeats", "copies", "batch", "limit", "max", "n"];
 /// Argument names redacted even when the schema does not type them.
 const SECRET_NAMES: &[&str] = &["password", "passphrase", "secret", "token", "api_key", "apikey", "pin", "otp", "one_time_code", "private_key", "access_token", "refresh_token", "client_secret"];
 pub const REDACTED: &str = "••••••";
 
-/// A fact the call carries in a shape (or under a name) the reader does
-/// not know: every condition that needs it fails.
+/// A call the rules cannot read: a key its tool's schema does not declare,
+/// no schema, or a fact in a shape the reader does not know.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unreadable;
 
-/// The words of an argument name: `shareWith` → `share`, `with`.
-fn words(name: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut prev_lower = false;
-    for c in name.chars() {
-        if c == '_' || c == '-' || c == '.' || c == ' ' {
-            if !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
+/// Whether every key of `value` is declared by `schema` (its `properties`,
+/// and theirs, through arrays' `items`), skipping the top-level fact keys
+/// whose values the fact readers check themselves. An object value whose
+/// schema declares no properties may carry nothing.
+fn declared(value: &Value, schema: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            if map.is_empty() {
+                return true;
             }
-            prev_lower = false;
+            let Some(props) = schema.get("properties").and_then(Value::as_object) else { return false };
+            map.iter().all(|(k, v)| props.get(k).is_some_and(|s| declared(v, s)))
+        }
+        Value::Array(items) => {
+            let item = schema.get("items").unwrap_or(&Value::Null);
+            items.iter().all(|i| !i.is_object() && !i.is_array() || declared(i, item))
+        }
+        _ => true,
+    }
+}
+
+/// The call's arguments, if the rules may read them: an object whose every
+/// key `schema` declares (the fact keys' own values are checked by their
+/// readers). `None` schema: nothing is readable.
+pub fn readable<'a>(args: &'a Value, schema: Option<&Value>) -> Result<&'a Map<String, Value>, Unreadable> {
+    let schema = schema.ok_or(Unreadable)?;
+    let map = args.as_object().ok_or(Unreadable)?;
+    let props = schema.get("properties").and_then(Value::as_object);
+    for (k, v) in map {
+        let Some(s) = props.and_then(|p| p.get(k)) else { return Err(Unreadable) };
+        if RECIPIENT_KEYS.contains(&k.as_str()) {
             continue;
         }
-        if c.is_uppercase() && prev_lower && !cur.is_empty() {
-            out.push(std::mem::take(&mut cur));
-        }
-        prev_lower = c.is_lowercase() || c.is_ascii_digit();
-        cur.extend(c.to_lowercase());
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
-}
-
-fn named_like(name: &str, vocabulary: &[&str]) -> bool {
-    words(name).iter().any(|w| vocabulary.contains(&w.as_str()) || (vocabulary == ATTACHMENT_WORDS && w.starts_with("attach")))
-}
-
-/// Every (name, value) in the call, at any depth, except the top-level
-/// keys in `skip` (the table's own, read by the fact itself) and, unless
-/// `into_skipped`, what they hold.
-fn walk<'a>(args: &'a Value, skip: &[&str], into_skipped: bool, out: &mut Vec<(&'a str, &'a Value)>) {
-    fn inner<'a>(v: &'a Value, out: &mut Vec<(&'a str, &'a Value)>) {
-        match v {
-            Value::Object(map) => {
-                for (k, v) in map {
-                    out.push((k.as_str(), v));
-                    inner(v, out);
-                }
-            }
-            Value::Array(items) => items.iter().for_each(|i| inner(i, out)),
-            _ => {}
+        if !declared(v, s) {
+            return Err(Unreadable);
         }
     }
-    match args {
-        Value::Object(map) => {
-            for (k, v) in map {
-                if skip.contains(&k.as_str()) {
-                    if into_skipped {
-                        inner(v, out);
-                    }
-                    continue;
-                }
-                out.push((k.as_str(), v));
-                inner(v, out);
-            }
-        }
-        other => inner(other, out),
-    }
-}
-
-/// The other arguments named like a fact (not the table's own keys).
-fn lookalikes<'a>(args: &'a Value, own: &[&str], into_own: bool, vocabulary: &[&str]) -> Vec<(&'a str, &'a Value)> {
-    let mut all = Vec::new();
-    walk(args, own, into_own, &mut all);
-    all.into_iter().filter(|(k, _)| named_like(k, vocabulary)).collect()
+    Ok(map)
 }
 
 fn addresses(v: &Value, out: &mut Vec<String>) -> Result<(), Unreadable> {
@@ -142,19 +103,14 @@ fn addresses(v: &Value, out: &mut Vec<String>) -> Result<(), Unreadable> {
     }
 }
 
-/// Every recipient the call names, lower-cased; unreadable when one of
-/// them is in a shape the reader does not know, or the call names people
-/// under another argument (at any depth).
-pub fn recipients_checked(args: &Value) -> Result<Vec<String>, Unreadable> {
+/// Every recipient the call names, lower-cased.
+pub fn recipients_checked(args: &Value, schema: Option<&Value>) -> Result<Vec<String>, Unreadable> {
+    let map = readable(args, schema)?;
     let mut out = Vec::new();
-    let Some(map) = args.as_object() else { return if args.is_null() { Ok(out) } else { Err(Unreadable) } };
     for key in RECIPIENT_KEYS {
         if let Some(v) = map.get(*key) {
             addresses(v, &mut out)?;
         }
-    }
-    if lookalikes(args, RECIPIENT_KEYS, false, RECIPIENT_WORDS).iter().any(|(_, v)| !empty(v)) {
-        return Err(Unreadable);
     }
     out.sort();
     out.dedup();
@@ -173,13 +129,13 @@ fn empty(v: &Value) -> bool {
     }
 }
 
-/// Whether the call carries attachments: the table's keys, or anything
-/// named like an attachment at any depth (`attachment`, `file_path`, a
-/// nested `attachments`), that is not empty. Fails closed: whatever the
-/// reader cannot rule out counts as an attachment.
-pub fn has_attachments(args: &Value) -> bool {
-    let own = args.as_object().map(|m| ATTACHMENT_KEYS.iter().filter_map(|k| m.get(*k)).any(|v| !empty(v))).unwrap_or(false);
-    own || lookalikes(args, ATTACHMENT_KEYS, false, ATTACHMENT_WORDS).iter().any(|(_, v)| !empty(v))
+/// Whether the call carries attachments. Fails closed: a call the rules
+/// cannot read counts as carrying them.
+pub fn has_attachments(args: &Value, schema: Option<&Value>) -> bool {
+    match readable(args, schema) {
+        Ok(map) => ATTACHMENT_KEYS.iter().filter_map(|k| map.get(*k)).any(|v| !empty(v)),
+        Err(_) => true,
+    }
 }
 
 fn number(v: &Value) -> Result<f64, Unreadable> {
@@ -192,14 +148,13 @@ fn number(v: &Value) -> Result<f64, Unreadable> {
     n.filter(|n| n.is_finite()).ok_or(Unreadable)
 }
 
-/// The amount the call names: the largest of every amount it carries
-/// (`amount`, `total`, `price`, and anything named like one at any depth);
-/// `None` when there is none, or one the reader cannot parse.
-pub fn amount(args: &Value) -> Option<f64> {
-    let own: Vec<&Value> = args.as_object().map(|m: &Map<String, Value>| AMOUNT_KEYS.iter().filter_map(|k| m.get(*k)).collect()).unwrap_or_default();
-    let others = lookalikes(args, AMOUNT_KEYS, false, AMOUNT_WORDS);
+/// The amount the call names: the largest of `amount`, `total` and `price`;
+/// `None` when it names none, one the reader cannot parse, or the call is
+/// unreadable.
+pub fn amount(args: &Value, schema: Option<&Value>) -> Option<f64> {
+    let map = readable(args, schema).ok()?;
     let mut max: Option<f64> = None;
-    for v in own.into_iter().chain(others.into_iter().map(|(_, v)| v)) {
+    for v in AMOUNT_KEYS.iter().filter_map(|k| map.get(*k)) {
         let n = number(v).ok()?;
         max = Some(max.map_or(n, |m| m.max(n)));
     }
@@ -207,21 +162,16 @@ pub fn amount(args: &Value) -> Option<f64> {
 }
 
 /// How many things the call acts on: `count` (a whole number), else the
-/// number of `items`, else the number of recipients (at least one).
-/// Unreadable when `count` or `items` is in another shape, the recipients
-/// are unreadable, or anything else is named like a count (`quantity`, a
-/// nested `repeat`, a `quantity` inside one of the `items`).
-pub fn count_checked(args: &Value) -> Result<u64, Unreadable> {
-    if !lookalikes(args, &["count", "items"], true, COUNT_WORDS).is_empty() {
-        return Err(Unreadable);
-    }
-    if let Some(v) = args.get("count") {
+/// number of `items` (a list), else the number of recipients (at least one).
+pub fn count_checked(args: &Value, schema: Option<&Value>) -> Result<u64, Unreadable> {
+    let map = readable(args, schema)?;
+    if let Some(v) = map.get("count") {
         return v.as_u64().ok_or(Unreadable);
     }
-    if let Some(v) = args.get("items") {
+    if let Some(v) = map.get("items") {
         return v.as_array().map(|a| a.len() as u64).ok_or(Unreadable);
     }
-    Ok(recipients_checked(args)?.len().max(1) as u64)
+    Ok(recipients_checked(args, schema)?.len().max(1) as u64)
 }
 
 /// Whether an argument name is a secret: declared by the schema, or named
@@ -256,27 +206,87 @@ pub fn pretty(args: &Value, declared: &[String]) -> Vec<String> {
     serde_json::to_string_pretty(&redacted).unwrap_or_default().lines().map(str::to_string).collect()
 }
 
-/// The audit's digest of the exact arguments: SHA-256 of their canonical
-/// (sorted-key, compact) JSON. The log never holds the arguments.
-pub fn digest(args: &Value) -> String {
-    fn canonical(v: &Value) -> Value {
-        match v {
-            Value::Object(map) => {
-                let mut keys: Vec<_> = map.keys().collect();
-                keys.sort();
-                Value::Object(keys.into_iter().map(|k| (k.clone(), canonical(&map[k]))).collect())
-            }
-            Value::Array(items) => Value::Array(items.iter().map(canonical).collect()),
-            v => v.clone(),
+fn canonical(v: &Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort();
+            Value::Object(keys.into_iter().map(|k| (k.clone(), canonical(&map[k]))).collect())
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical).collect()),
+        v => v.clone(),
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Relative to the OctoSense home: the audit's per-home digest key
+/// (32 bytes, owner-only), made on first use.
+pub const AUDIT_KEY_FILE: &str = "approvals/audit.key";
+
+static AUDIT_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+
+/// The home's audit key, read or made (owner-only).
+pub fn home_key(home: &std::path::Path) -> std::io::Result<[u8; 32]> {
+    let path = home.join(AUDIT_KEY_FILE);
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(key) = <[u8; 32]>::try_from(bytes.as_slice()) {
+            return Ok(key);
         }
     }
-    let bytes = serde_json::to_vec(&canonical(args)).unwrap_or_default();
-    let hash = Sha256::digest(&bytes);
-    let mut out = String::from("sha256:");
-    for b in hash {
-        out.push_str(&format!("{b:02x}"));
+    // 244 random bits from two v4 UUIDs (the OS's generator), hashed to 32 bytes.
+    let mut seed = Vec::with_capacity(32);
+    seed.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+    seed.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+    let key: [u8; 32] = Sha256::digest(&seed).into();
+    if let Some(dir) = path.parent() {
+        super::create_private_dir(dir)?;
     }
-    out
+    super::write_private(&path, &key)?;
+    Ok(key)
+}
+
+/// Use `home`'s key for every audit digest from now on (at startup).
+pub fn use_home_key(home: &std::path::Path) {
+    match home_key(home) {
+        Ok(key) => {
+            let _ = AUDIT_KEY.set(key);
+        }
+        Err(e) => eprintln!("approvals: no audit key ({e}); digests are unkeyed"),
+    }
+}
+
+/// HMAC-SHA256 (RFC 2104) of `msg` under `key`.
+fn hmac(key: &[u8; 32], msg: &[u8]) -> [u8; 32] {
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for (i, k) in key.iter().enumerate() {
+        ipad[i] ^= k;
+        opad[i] ^= k;
+    }
+    let inner = Sha256::new().chain_update(ipad).chain_update(msg).finalize();
+    Sha256::new().chain_update(opad).chain_update(inner).finalize().into()
+}
+
+/// The arguments' digest under `key`: HMAC-SHA256 of their canonical
+/// (sorted-key, compact) JSON.
+pub fn keyed_digest(key: &[u8; 32], args: &Value) -> String {
+    let bytes = serde_json::to_vec(&canonical(args)).unwrap_or_default();
+    format!("hmac-sha256:{}", hex(&hmac(key, &bytes)))
+}
+
+/// The audit's digest of the exact arguments (the log never holds the
+/// arguments): keyed by the home's [`AUDIT_KEY_FILE`] once the shell set it
+/// up ([`use_home_key`]), so a short secret (a PIN, a one-time code) cannot
+/// be found by hashing guesses; a plain SHA-256 before that (tests).
+pub fn digest(args: &Value) -> String {
+    if let Some(key) = AUDIT_KEY.get() {
+        return keyed_digest(key, args);
+    }
+    let bytes = serde_json::to_vec(&canonical(args)).unwrap_or_default();
+    format!("sha256:{}", hex(&Sha256::digest(&bytes)))
 }
 
 #[cfg(test)]
@@ -284,26 +294,39 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn schema() -> Value {
+        json!({"type": "object", "properties": {"to": {}, "cc": {}, "attendees": {}, "subject": {}, "attachments": {}, "amount": {}, "total": {}, "count": {}, "items": {"type": "array"}}})
+    }
+
     #[test]
     fn recipients_from_every_shape() {
+        let s = schema();
+        let s = Some(&s);
         let args = json!({"to": "Ana <Ana@Example.org>, bo@example.org", "cc": ["chen@example.org"], "attendees": [{"email": "ed@example.org"}]});
-        assert_eq!(recipients_checked(&args).unwrap(), vec!["ana@example.org", "bo@example.org", "chen@example.org", "ed@example.org"]);
-        assert!(recipients_checked(&json!({"subject": "x"})).unwrap().is_empty());
-        assert_eq!(recipients_checked(&json!({"to": [{"name": "Eve"}]})), Err(Unreadable));
-        assert_eq!(recipients_checked(&json!({"to": "a@x", "shareWith": "eve@x"})), Err(Unreadable), "camel case splits");
+        assert_eq!(recipients_checked(&args, s).unwrap(), vec!["ana@example.org", "bo@example.org", "chen@example.org", "ed@example.org"]);
+        assert!(recipients_checked(&json!({"subject": "x"}), s).unwrap().is_empty());
+        assert_eq!(recipients_checked(&json!({"to": [{"name": "Eve"}]}), s), Err(Unreadable));
+        assert_eq!(recipients_checked(&json!({"to": "a@x", "shareWith": "eve@x"}), s), Err(Unreadable), "not declared");
+        assert_eq!(recipients_checked(&json!({"to": "a@x"}), None), Err(Unreadable), "no schema");
     }
 
     #[test]
     fn attachments_amounts_counts() {
-        assert!(!has_attachments(&json!({"attachments": []})));
-        assert!(has_attachments(&json!({"attachments": ["a.pdf"]})));
-        assert_eq!(amount(&json!({"amount": "$1,250.50"})), Some(1250.5));
-        assert_eq!(amount(&json!({"total": 9})), Some(9.0));
-        assert_eq!(amount(&json!({})), None);
-        assert_eq!(count_checked(&json!({"count": 7})), Ok(7));
-        assert_eq!(count_checked(&json!({"items": [1, 2, 3]})), Ok(3));
-        assert_eq!(count_checked(&json!({"to": ["a@x", "b@x"]})), Ok(2));
-        assert_eq!(count_checked(&json!({"quantity": 2})), Err(Unreadable));
+        let s = schema();
+        let s = Some(&s);
+        assert!(!has_attachments(&json!({"attachments": []}), s));
+        assert!(has_attachments(&json!({"attachments": ["a.pdf"]}), s));
+        assert!(has_attachments(&json!({"enclosure": ["a.pdf"]}), s), "undeclared: counted as attachments");
+        assert!(has_attachments(&json!({}), None), "no schema: counted as attachments");
+        assert_eq!(amount(&json!({"amount": "$1,250.50"}), s), Some(1250.5));
+        assert_eq!(amount(&json!({"total": 9}), s), Some(9.0));
+        assert_eq!(amount(&json!({"amount": 1, "total": 9}), s), Some(9.0), "the largest");
+        assert_eq!(amount(&json!({}), s), None);
+        assert_eq!(count_checked(&json!({"count": 7}), s), Ok(7));
+        assert_eq!(count_checked(&json!({"items": [1, 2, 3]}), s), Ok(3));
+        assert_eq!(count_checked(&json!({"to": ["a@x", "b@x"]}), s), Ok(2));
+        assert_eq!(count_checked(&json!({"quantity": 2}), s), Err(Unreadable));
+        assert_eq!(count_checked(&json!({"items": [{"quantity": 2}]}), s), Err(Unreadable), "an undeclared key inside a list");
     }
 
     #[test]

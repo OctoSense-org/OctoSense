@@ -49,6 +49,9 @@ pub struct PaneLinks {
     /// (`ai_bus::dev_approved`) announces a changed copy, and the audit
     /// reads the real risks from this one.
     manifests: HashMap<ClientId, ServiceManifest>,
+    /// The chat's calls still open, for their tool-call audit line when
+    /// they end (`logs/tool-calls.jsonl`, as on the socket leg).
+    open_calls: std::sync::Mutex<HashMap<String, crate::approvals::audit::CallAudit>>,
 }
 
 impl PaneLinks {
@@ -115,6 +118,7 @@ impl PaneLinks {
                 match os.down.try_recv() {
                     Ok(HostedDown { msg: ServiceDown::Call(call), .. }) => {
                         crate::ai_bus::audit_dev_call(crate::ai_bus::OS_ENDPOINT, None, &call, false);
+                        self.audit_call(crate::ai_bus::OS_ENDPOINT, &call);
                         out.push(PaneCall::Os(call))
                     }
                     Ok(_) => {}
@@ -129,6 +133,7 @@ impl PaneLinks {
                         if let Some(manifest) = self.manifests.get(client) {
                             let approves = crate::dev_mode::overrides_every_approval(&manifest.id);
                             crate::ai_bus::audit_dev_call(&manifest.id, Some(manifest), &call, approves);
+                            self.audit_call(&manifest.id, &call);
                         }
                         out.push(PaneCall::Instance(*client, call))
                     }
@@ -147,13 +152,26 @@ impl PaneLinks {
         out
     }
 
+    fn audit_call(&self, owner: &str, call: &ServiceCall) {
+        let line = crate::ai_bus::pane_audit(owner, call);
+        self.open_calls.lock().unwrap_or_else(|e| e.into_inner()).insert(call.call_id.clone(), line.clone());
+        crate::host_tools::write_audit(line);
+    }
+
+    fn audit_done(&self, result: &ToolResult) {
+        let Some(line) = self.open_calls.lock().unwrap_or_else(|e| e.into_inner()).remove(&result.call_id) else { return };
+        crate::host_tools::write_audit(crate::approvals::audit::CallAudit { ts: crate::host_tools::relay::unix_now(), phase: "done".into(), outcome: crate::ai_bus::pane_outcome(result), ..line });
+    }
+
     pub fn reply_os(&self, result: ToolResult) {
+        self.audit_done(&result);
         if let Some(os) = &self.os {
             let _ = os.up.send(HostedUp { from: None, msg: ServiceUp::Result(result) });
         }
     }
 
     pub fn reply(&self, client: ClientId, result: ToolResult) -> bool {
+        self.audit_done(&result);
         self.send_up(client, ServiceUp::Result(result))
     }
 
