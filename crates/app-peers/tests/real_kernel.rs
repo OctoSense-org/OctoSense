@@ -1266,3 +1266,89 @@ fn closing_the_app_releases_its_route_so_the_system_agents_input_fails() {
     core.shutdown_within(Duration::from_secs(5));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// ADR 0004 §11 with octos#2649: removing an account erases its agent.
+/// After a turn, `purge::purge_app` purges the recorded peer on the real
+/// kernel and drops the host's record; the same (app, account) then binds
+/// a NEW peer (a new host token), and a second purge of the old record has
+/// nothing left to do.
+#[test]
+fn removing_an_account_purges_its_peer_and_the_account_binds_a_new_one() {
+    let Some(program) = kernel() else { return };
+    let model = start_model();
+    let dir = temp("purge");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let state = core_dir.parent().unwrap().join("host-state");
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound");
+    let ctx = rinx.open_context(spec("@alice:example.org", "app#1")).unwrap();
+    run(&ctx, ContextOp::Turn { text: "remember PURGE_ME".into() }, Duration::from_secs(60)).expect("a completion").expect("the turn");
+    let key = octosense_app_peers::broker::app_namespace("rinx", "@alice:example.org");
+    let before = octosense_app_peers::peer_record::load(&state, &key).expect("recorded").token;
+
+    let host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", &state);
+    let connector = CoreConnector::shared(core.clone());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let purged = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "rinx", &["Rinx".to_owned()], Some("@alice:example.org")));
+    assert!(purged.ok(), "{purged:?}");
+    assert_eq!(purged.erased, std::slice::from_ref(&key));
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_none(), "the record is dropped");
+    assert!(rinx.peer().is_none(), "the live broker forgot it");
+
+    rinx.bind().expect("the account binds again");
+    let after = octosense_app_peers::peer_record::load(&state, &key).expect("a new record").token;
+    assert_ne!(before, after, "a new peer, not a resume");
+    drop(ctx);
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A legacy record (saved before records carried the peer's name) on the
+/// real kernel: the peer was staged under the broker's old name
+/// `<label> <8 hex>`. A purge that guesses the wrong label gets
+/// `peer_not_found` and keeps the record (the agent stays suspended); the
+/// right label purges it and drops the record.
+#[test]
+fn a_legacy_unnamed_record_is_kept_on_a_wrong_guess_and_purged_on_the_right_one() {
+    let Some(program) = kernel() else { return };
+    let model = start_model();
+    let dir = temp("purge-legacy");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let state = core_dir.parent().unwrap().join("host-state");
+    let observer = broker(&core, "observer", "Observer");
+    let account = "@legacy:example.org";
+    let key = octosense_app_peers::broker::app_namespace("legacy.app", account);
+    let tag = octosense_app_peers::broker::account_tag(account);
+    observer.host_request("session/open", json!({"session_id": "_main:api:octosense#system", "profile_id": "_main"})).unwrap();
+    let staged = observer
+        .host_request("peer/prepare", json!({"profile_id": "_main", "session_id": "_main:api:octosense#system",
+            "names": [format!("Legacy {}", &tag[..8])], "brief": "legacy", "memory_namespace": key, "resume": true}))
+        .expect("a peer staged under the old name");
+    let token = staged["host_token"].as_str().expect("a host token").to_owned();
+    octosense_app_peers::peer_record::save(&state, &key, &octosense_app_peers::peer_record::PeerRecord {
+        token, cwd: staged["cwd"].as_str().map(str::to_owned), namespace: None, name: None, legacy: false,
+    }).unwrap();
+
+    let host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", &state);
+    let connector = CoreConnector::shared(core.clone());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let wrong = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &["legacy.app".to_owned()], Some(account)));
+    assert!(wrong.erased.is_empty() && wrong.failed.len() == 1, "{wrong:?}");
+    assert!(wrong.failed[0].1.contains("peer_not_found"), "{wrong:?}");
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_some(), "kept on a wrong guess");
+
+    let labels = ["legacy.app".to_owned(), "Legacy".to_owned()];
+    let right = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &labels, Some(account)));
+    assert!(right.ok(), "{right:?}");
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_none());
+    drop(observer);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}

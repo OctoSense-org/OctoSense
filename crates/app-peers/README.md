@@ -87,6 +87,18 @@ service.release();                            // app closed
   agent's `peer_send_input` fails ("not connected"). An input that reaches
   the released broker first is refused (`other`, "the app was closed").
   The next launch registers the route again.
+- **Removing an account or uninstalling the app** (ADR 0004 §11):
+  `purge::purge_app` (the shell's storage lifecycle calls it through
+  `purge::purge_in_background`, after deleting the folders) sends octos's
+  `peer/purge` for each (app, account) peer the host recorded (its name and
+  host token, owned by the system agent; octos#2649), retries
+  `peer_purge_busy`, then drops the record (`<ns>.peer`) and makes every
+  live broker of the app forget the peer. A record saved before records
+  carried the peer's name is tried under each name the host can derive
+  (`<label> <8 hex>` for the labels it passes and the label a broker of
+  the app used in this process); `peer_not_found` there is a failure and
+  the record is kept. Adding the account again makes a new peer. Signing
+  out never purges.
 - **Nobody answers**: an approval or question on the peer's session or a
   context expires after `BrokerConfig::prompt_deadline` (10 min;
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with

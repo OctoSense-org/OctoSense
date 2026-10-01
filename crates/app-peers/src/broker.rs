@@ -224,7 +224,7 @@ pub fn account_tag(account: &str) -> String {
 }
 
 /// FNV-1a of the bytes (the tag before accounts were normalized).
-fn raw_tag(account: &str) -> String {
+pub(crate) fn raw_tag(account: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in account.bytes() {
         hash ^= u64::from(b);
@@ -444,6 +444,45 @@ pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
         });
     }
     asked
+}
+
+/// The label each app's broker named its peers with in this process
+/// (`BrokerConfig::app_label`; it depends on how the app is hosted).
+static LABELS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+fn note_label(app_id: &str, label: &str) {
+    let mut labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
+    labels.retain(|(a, _)| a != app_id);
+    labels.push((app_id.to_owned(), label.to_owned()));
+}
+
+/// The label a broker of `app_id` used in this process, if one ran.
+pub fn known_label(app_id: &str) -> Option<String> {
+    LABELS.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(a, _)| a == app_id).map(|(_, l)| l.clone())
+}
+
+/// The kernel erased the peer recorded under `namespace` for `app_id`
+/// (`peer/purge`, [`crate::purge`]): every live broker of the app on that
+/// kernel forgets
+/// that record, and one bound to that peer forgets the peer, so its next
+/// request prepares a new one.
+pub(crate) fn forget_purged(kernel: Option<&str>, app_id: &str, namespace: &str) {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    for inner in brokers.into_iter().filter(|b| b.cfg.app_id == app_id && b.kernel.as_deref() == kernel) {
+        let mut st = inner.lock();
+        st.records.remove(namespace);
+        let bound = st.account.as_deref().is_some_and(|a| {
+            app_namespace(app_id, a) == namespace || format!("app/{app_id}/acct-{}", raw_tag(a)) == namespace
+        });
+        if bound {
+            st.peer = None;
+            st.model = None;
+        }
+    }
 }
 
 /// [`interrupt_where`] for one lane only ([`LANE_PERSON`] or
@@ -717,6 +756,7 @@ pub struct Broker(Arc<Inner>);
 
 impl Broker {
     pub fn new(cfg: BrokerConfig, connector: Arc<dyn Connector>) -> Self {
+        note_label(&cfg.app_id, &cfg.app_label);
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .thread_name("app-peers")
