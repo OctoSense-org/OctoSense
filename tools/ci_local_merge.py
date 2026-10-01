@@ -10,7 +10,12 @@ Refuses unless target/ci-local/last.json (from tools/ci-local.sh) shows:
   rebase main into the branch, push, and run tools/ci-local.sh again);
 - every workflow GitHub would run for the PR's files (its pull_request
   paths), with no FAIL, no step left NOT RUN and no unexpected SKIP in them;
-  a workflow GitHub would not run for the PR does not block it.
+  a workflow GitHub would not run for the PR does not block it;
+- steps that ran on the Linux host (--linux-host; `"host": "linux"`) count
+  like local ones, but only if the host ran that same head commit: a remote
+  result bound to another commit is stale. The Linux-only checks
+  (ci_local.LINUX_HOST_JOBS) count for the PRs that trigger the workflows
+  they cover.
 
 It also refuses while the last completed push run of a workflow on main
 failed: a red main is fixed first (--fixes-main for the PR that fixes it).
@@ -62,8 +67,20 @@ def evidence_problems(last, head, changed_files):
         problems.append(f"the run did not cover {', '.join(missing)} (GitHub runs them for this PR): "
                         f"run tools/ci-local.sh --only all")
     scope = set(required) | {"ci-local"}
+    for job_id, job in ci_local.LINUX_HOST_JOBS.items():
+        if set(ci_local.linux_host_job_covers(job)) & set(required):
+            scope.add(ci_local.LINUX_HOST)
+    stale = [s for s in last.get("steps", []) if s.get("host") == "linux" and s.get("sha") != head]
+    if stale:
+        ran = sorted({str(s.get("sha"))[:12] for s in stale})
+        problems.append(f"stale: {len(stale)} step(s) on the Linux host ran on {', '.join(ran)}, not the PR head "
+                        f"{head[:12]} (first: {stale[0]['workflow']} / {stale[0]['job']}: {stale[0]['name']})")
     for step in last.get("steps", []):
         where = f"{step['workflow']} / {step['job']}: {step['name']}"
+        if step in stale:
+            continue
+        if step.get("host") == "linux":
+            where += " (Linux host)"
         if step["workflow"] not in scope:
             continue  # GitHub would not run it for this PR either
         if step["status"] == ci_local.FAIL:
@@ -94,8 +111,14 @@ def red_main(repo_workflows):
 
 def comment_body(last, required):
     head = last["sha"]
-    lines = [f"Local CI passed on {head} (`tools/ci-local.sh --only {last['only']}`, "
-             f"{ci_local.fmt_seconds(last['seconds'])}, {last['host']['system']} {last['host']['machine']}).",
+    linux = last.get("linux_host") or {}
+    where = f"{last['host']['system']} {last['host']['machine']}"
+    flag = ""
+    if linux:
+        flag = " --linux-host"
+        where += f"; the ubuntu jobs on the Linux build host, {linux.get('system')} {linux.get('machine')}"
+    lines = [f"Local CI passed on {head} (`tools/ci-local.sh --only {last['only']}{flag}`, "
+             f"{ci_local.fmt_seconds(last['seconds'])}, {where}).",
              "",
              f"GitHub would run for this PR: {', '.join(required) or 'none'}. Merged on this local "
              f"pass (macOS runner queue); GitHub CI runs on the merge commit on main.",

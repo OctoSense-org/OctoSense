@@ -2,6 +2,7 @@
 # Run the GitHub workflows' checks locally (tools/ci_local.py; docs/local-ci.md):
 #
 #   tools/ci-local.sh [--only desktop|phone|apps|rom|all] [--jobs N] [--keep-going] [--no-wait]
+#   tools/ci-local.sh --linux-host ...   # ubuntu jobs on the Linux build host (~/.config/octosense/build.env)
 #
 # Prints PASS/FAIL/SKIPPED per step, writes target/ci-local/<timestamp>.log
 # and target/ci-local/last.json, and exits non-zero on any failure.
