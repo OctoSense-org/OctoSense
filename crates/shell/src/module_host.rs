@@ -309,6 +309,9 @@ pub struct ModuleHost {
 pub struct CloseGate {
     pending: HashMap<ClientId, WidgetUid>,
     quit_waiting: bool,
+    /// The person's closes of each instance: the third inside the window
+    /// ends one that keeps refusing (`process_close::Insistence`).
+    insistence: crate::process_close::Insistence,
 }
 
 impl CloseGate {
@@ -343,6 +346,25 @@ impl CloseGate {
     /// The instance went (torn down, failed): nothing to wait for.
     pub fn forget(&mut self, client: ClientId) {
         self.pending.remove(&client);
+        self.insistence.forget(client);
+    }
+
+    /// The person closes (or quits past) `client` at `now`: `true` when
+    /// this close is insisting (`process_close::FORCE_CLOSES` inside the
+    /// window) and ends the instance whatever it answers. Its pending close
+    /// is dropped then.
+    pub fn insist(&mut self, client: ClientId, now: f64) -> bool {
+        let forced = crate::process_close::Insistence::forced(self.insistence.close(client, now));
+        if forced {
+            self.pending.remove(&client);
+            self.insistence.forget(client);
+        }
+        forced
+    }
+
+    /// Whether the next close of `client` ends it.
+    pub fn next_close_forces(&self, client: ClientId) -> bool {
+        crate::process_close::Insistence::forced(self.insistence.count(client) + 1)
     }
 
     /// A person-initiated close of one instance: a quit that was waiting

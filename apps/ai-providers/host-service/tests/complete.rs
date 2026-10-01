@@ -110,7 +110,7 @@ impl Rig {
 
     fn call(&self, app: &str, method: &str, args: Value) -> Result<Value, String> {
         let heap = NEXT.fetch_add(1, Ordering::Relaxed);
-        let call = ServiceCall { app_id: app.into(), service: format!("model.{method}"), args, from_sheet: false, host_dir: self.dir.join(".host") };
+        let call = ServiceCall { app_id: app.into(), service: format!("model.{method}"), args, from_sheet: false, may_prompt: true, host_dir: self.dir.join(".host") };
         dispatch(call, heap, 1, &mut NoSheets);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
