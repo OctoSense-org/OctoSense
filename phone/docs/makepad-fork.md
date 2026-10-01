@@ -45,7 +45,7 @@ The revision is pinned as a chain, not in one place:
    PR #79, and OpenHarmony's keyboard, Studio, GL lifetimes and idle frames
    of PRs #84, #85 and #87–#89) and the
    Octoscript revision
-   (`5991dfa`). OctoSense, AppCard, Rinx and the ROM lock the same release.
+   (`5991dfa`, with the L0 `sys.digest` source of Octoscript #40). OctoSense, AppCard, Rinx and the ROM lock the same release.
 3. The manifests repeat the Makepad revision as `rev = "…"`: here in
    `Cargo.toml` and `apps/*/Cargo.toml`. Octoscript-Makepad's unmodified
    manifests retain their release pin. `[patch]` sections redirect every one

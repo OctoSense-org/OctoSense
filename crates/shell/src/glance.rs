@@ -28,7 +28,11 @@
 //!   no logic, as a card bundle is. A `sys.chat` source (an in-card chat
 //!   with the app's agent) must name the publishing app, and the host
 //!   answers it from its own transcript, whatever `data` says
-//!   (glance_chat.rs). An L2 `source` is refused: it cannot be
+//!   (glance_chat.rs). A `sys.digest(app:, id:)` source is not the
+//!   publisher's to supply either: the shell resolves it from the digests
+//!   it holds for the calling app, and a card naming another app is refused
+//!   (glance_digest.rs). A card bound to a current digest expires no later
+//!   than the digest does. An L2 `source` is refused: it cannot be
 //!   lowered, and a card that needs handlers and host requests is a
 //!   `script`.
 //! - `script`: a Splash program, the same thing a script app's `main.splash`
@@ -75,6 +79,7 @@
 //! ([`shown`]).
 use serde_json::{json, Value};
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -150,6 +155,9 @@ pub struct GlanceCard {
     /// The publisher is a contained app: its tile runs under that app's
     /// resolved policy. A native module's tile runs with no grants.
     pub contained: bool,
+    /// The digest run ids the card binds (`sys.digest`), kept from pruning
+    /// while the card is live.
+    pub digests: Vec<String>,
     /// For a `source` card, the L0 card and its data as published: the card
     /// window (glance_sheet.rs) carries out its taps against them and
     /// re-lowers. `None` for a `script` card.
@@ -174,6 +182,9 @@ impl GlanceCard {
 pub struct GlanceStore {
     cards: Vec<GlanceCard>,
     publishes: Vec<(String, VecDeque<u64>)>,
+    /// Where the host keeps each app's toolbox folder (`sys.digest`); no
+    /// digest resolves without one.
+    digest_root: Option<PathBuf>,
 }
 
 fn text<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
@@ -195,7 +206,67 @@ pub fn check_level(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The card's `sys.digest` sources, resolved for `caller` into `data`: the
+/// value under the source's name and its lifecycle under `$status`, both
+/// replacing anything the publisher sent. Returns the bound run ids and the
+/// earliest expiry of a current digest.
+fn resolve_digests(caller: &Caller, source: &str, data: &mut Value, root: Option<&std::path::Path>, now_ms: u64) -> Result<(Vec<String>, Option<u64>), String> {
+    use octoscript_ui_l0::SourceArg;
+    let plan = octoscript_ui_l0::source_plan(source);
+    let mut ids = Vec::new();
+    let mut expires: Option<u64> = None;
+    for request in plan.requests.iter().filter(|r| r.helper == "sys.digest") {
+        let arg = |name: &str| request.args.iter().find(|(n, _)| n == name).map(|(_, a)| a);
+        match arg("app") {
+            Some(SourceArg::Text(app)) if app == caller.app() || app == caller.launch_id() => {}
+            _ => return Err(format!("a card binds only its own app's digests: `sys.digest(app:)` must be {:?}", caller.app())),
+        }
+        let id = match arg("id") {
+            Some(SourceArg::Text(id)) => id.clone(),
+            // An id kept in card state: its declared initial.
+            Some(SourceArg::Path(path)) => match path.strip_prefix("state.") {
+                Some(state) => octoscript_ui_l0::state_initials(source).get(state).and_then(Value::as_str).unwrap_or("").to_string(),
+                None => path.split('.').try_fold(&*data, |v, k| v.get(k)).and_then(Value::as_str).unwrap_or("").to_string(),
+            },
+            _ => String::new(),
+        };
+        let resolved = crate::glance_digest::resolve(root, caller.app(), &id, now_ms);
+        if let Some(at) = resolved.expires_ms {
+            expires = Some(expires.map_or(at, |e| e.min(at)));
+        }
+        if crate::glance_digest::valid_id(&id) && !ids.contains(&id) {
+            ids.push(id);
+        }
+        let Some(fields) = data.as_object_mut() else { return Err("data must be an object of source values".into()) };
+        // A dotted source name navigates the data, as realization reads it.
+        let mut segments: Vec<&str> = request.name.split('.').collect();
+        let last = segments.pop().unwrap_or_default();
+        let mut at = fields;
+        for segment in segments {
+            let slot = at.entry(segment.to_string()).or_insert_with(|| json!({}));
+            if !slot.is_object() {
+                *slot = json!({});
+            }
+            at = slot.as_object_mut().expect("an object");
+        }
+        at.insert(last.to_string(), resolved.value);
+        let status = data.as_object_mut().expect("an object").entry("$status").or_insert_with(|| json!({}));
+        if !status.is_object() {
+            *status = json!({});
+        }
+        status[request.name.as_str()] = json!(resolved.state);
+    }
+    Ok((ids, expires))
+}
+
 impl GlanceStore {
+    /// A store whose `sys.digest` sources resolve under `root`
+    /// (`<root>/<app>/toolbox/runs/…`, glance_digest.rs).
+    pub fn with_digest_root(mut self, root: Option<PathBuf>) -> Self {
+        self.digest_root = root;
+        self
+    }
+
     /// `glance.publish`, for `caller`, at `now_ms`.
     pub fn publish(&mut self, caller: &Caller, args: &Value, now_ms: u64) -> Result<Value, String> {
         self.expire(now_ms);
@@ -230,7 +301,7 @@ impl GlanceStore {
         if kind == "script" && args.get("data").is_some_and(|d| !d.is_null()) {
             return Err("data is for a source card; a script carries its own values".into());
         }
-        let data = args.get("data").cloned().unwrap_or_else(|| json!({}));
+        let mut data = args.get("data").cloned().unwrap_or_else(|| json!({}));
         if !data.is_object() {
             return Err("data must be an object of source values".into());
         }
@@ -266,27 +337,33 @@ impl GlanceStore {
         // Charged before the costly part (check, realize, lower), so a
         // stream of refused cards is bounded too.
         self.charge(&app, now_ms)?;
-        let body: Arc<str> = if kind == "script" {
-            source.into()
+        let (body, digests, digest_expires): (Arc<str>, Vec<String>, Option<u64>) = if kind == "script" {
+            (source.into(), Vec::new(), None)
         } else {
             check_level(source)?;
+            // A card's `sys.digest` values are the host's (glance_digest.rs),
+            // resolved into the data the card keeps.
+            let (digests, digest_expires) = resolve_digests(caller, source, &mut data, self.digest_root.as_deref(), now_ms)?;
             // A card's `sys.chat` is its own app's (glance_chat.rs), and its
             // transcript is the host's, never the data's.
             crate::glance_chat::check_publisher(source, &app)?;
             let seeded = crate::glance_chat::seed(&app, source, &data, &Default::default());
-            crate::glance_card::lower(source, &seeded)?.into()
+            (crate::glance_card::lower(source, &seeded)?.into(), digests, digest_expires)
         };
+        let binds_digests = !digests.is_empty();
         let card = GlanceCard {
             app: app.clone(),
             card_id: card_id.to_string(),
             title: title.to_string(),
             priority,
             published_ms: now_ms,
-            expires_ms: now_ms + expires_s * 1000,
+            // Never past the digest it shows.
+            expires_ms: digest_expires.map_or(now_ms + expires_s * 1000, |d| d.min(now_ms + expires_s * 1000)),
             open_app: caller.launch_id().to_string(),
             route,
             body,
             contained: matches!(caller, Caller::Contained { .. }),
+            digests,
             l0: (kind == "source").then(|| Arc::new(L0Source { source: source.to_string(), data })),
         };
         let expires_at = card.expires_ms;
@@ -300,7 +377,19 @@ impl GlanceStore {
                 self.cards.remove(i);
             }
         }
+        if binds_digests {
+            self.retain_digests(&app);
+        }
         Ok(json!({"card_id": card_id, "replaced": replacing.is_some(), "expires_at": expires_at}))
+    }
+
+    /// Digest retention for `app` (glance_digest.rs): each template folder
+    /// keeps its newest results and every run a live card of the app binds.
+    /// Called after a publish that binds digests.
+    fn retain_digests(&self, app: &str) {
+        let Some(root) = &self.digest_root else { return };
+        let pinned: Vec<String> = self.cards.iter().filter(|c| c.app == app).flat_map(|c| c.digests.iter().cloned()).collect();
+        crate::glance_digest::retain(root, app, &pinned);
     }
 
     /// Count one publish against `app`'s window, or refuse it.
@@ -477,7 +566,7 @@ pub fn now_ms() -> u64 {
 
 fn with_store<R>(f: impl FnOnce(&mut GlanceStore) -> R) -> R {
     let mut guard = STORE.lock().unwrap();
-    f(guard.get_or_insert_with(GlanceStore::default))
+    f(guard.get_or_insert_with(|| GlanceStore::default().with_digest_root(crate::glance_digest::digest_root())))
 }
 
 fn changed() {
@@ -718,12 +807,17 @@ const DEMO_NOTICES: &[(&str, &str, &str, &str)] = &[
     ("os.calendar", "standup", "Standup moved", "Tomorrow's standup is at 9:30 instead of 9:00."),
 ];
 
+/// The News digest card (M4), bound to the digest the shell holds for
+/// `os.news` under the run id `glance` (glance_digest.rs).
+pub const NEWS_BRIEF_CARD: &str = include_str!("../resources/glance/news-brief.card");
+
 /// `OCTOSENSE_GLANCE_DEMO`, once, at startup (a test path; nothing publishes
 /// these otherwise): `mail` publishes the fake Mail cards as `os.mail`, each
 /// with a notification; `many` adds notices from five more apps and the News
 /// digest (eight cards, seven notifications: the panel's overflow and the
-/// toasts' cap); any other value but `0` publishes the sample News digest
-/// as `os.news`.
+/// toasts' cap); `digest` publishes [`NEWS_BRIEF_CARD`] as `os.news`, bound
+/// to `<apps root>/.host/toolbox/os.news/toolbox/runs/*/glance.json`; any
+/// other value but `0` publishes the sample News digest as `os.news`.
 pub fn publish_demo_if_asked() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -750,7 +844,7 @@ pub fn publish_demo_if_asked() {
                 }
             }
         }
-        let (source, data) = demo_digest();
+        let (source, data) = if demo == "digest" { (NEWS_BRIEF_CARD.to_string(), json!({})) } else { demo_digest() };
         let args = json!({
             "card_id": "digest", "title": "News digest", "source": source, "data": data,
             "priority": 70, "open": {"app": "news"}
@@ -839,6 +933,92 @@ mod tests {
             let shown = store.shown(1_000, SHOWN_CARDS);
             assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), (app, app.strip_prefix("os.").unwrap()));
             assert!(store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap_err().contains("opens the app that published it"), "{app}");
+        }
+    }
+
+    mod digest {
+        use super::*;
+        use crate::glance_digest::tests::{news_digest_result, now, root_with};
+
+        fn brief(card: &str) -> Value {
+            json!({"card_id": "brief", "title": "News digest", "source": card, "open": {"app": "news"}})
+        }
+
+        #[test]
+        fn a_digest_card_shows_the_digest_the_host_holds() {
+            let root = root_with("glance-bound", &[("os.news", "news-digest", news_digest_result())]);
+            let mut store = GlanceStore::default().with_digest_root(Some(root));
+            let mut args = brief(NEWS_BRIEF_CARD);
+            // The publisher cannot supply the digest: its value is replaced.
+            args["data"] = json!({"brief": {"summary": "Forged", "points": [], "sources": []}, "$status": {"brief": "ready"}});
+            let ok = store.publish(&news(), &args, now()).unwrap();
+            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            for want in ["Harbor City's council approved an order for 120 electric buses on Tuesday.", "Clearwater Courier", "city infrastructure", "SOURCES"] {
+                assert!(card.body.contains(want), "{want:?} not in {}", card.body);
+            }
+            assert!(!card.body.contains("Forged") && !card.body.contains("No digest yet"), "{}", card.body);
+            assert_eq!(card.digests, ["glance"]);
+            // The card expires with the digest (48 h from the run), not 24 h
+            // from now, whichever is sooner.
+            let digest_expires = crate::glance_digest::parse_rfc3339_ms("2026-09-20T08:00:00Z").unwrap() + crate::glance_digest::MAX_AGE_MS;
+            assert_eq!(ok["expires_at"], json!((now() + EXPIRES_DEFAULT_S * 1000).min(digest_expires)));
+            let mut long = brief(NEWS_BRIEF_CARD);
+            long["expires"] = json!(EXPIRES_MAX_S);
+            assert_eq!(store.publish(&news(), &long, now()).unwrap()["expires_at"], json!(digest_expires));
+        }
+
+        #[test]
+        fn a_card_binds_only_its_own_apps_digests() {
+            let root = root_with("glance-own", &[("os.news", "news-digest", news_digest_result())]);
+            let mut store = GlanceStore::default().with_digest_root(Some(root));
+            let other = NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"os.mail\"");
+            let err = store.publish(&news(), &brief(&other), now()).unwrap_err();
+            assert!(err.contains("own app's digests"), "{err}");
+            // Maps naming itself gets its own (empty) folder, never News's.
+            let maps = Caller::granted("os.maps");
+            let mut args = brief(&NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"os.maps\""));
+            args["open"] = Value::Null;
+            store.publish(&maps, &args, now()).unwrap();
+            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            assert!(card.body.contains("No digest yet") && !card.body.contains("Harbor"), "{}", card.body);
+            // The launcher id names the publisher too.
+            let short = NEWS_BRIEF_CARD.replace("app: \"os.news\"", "app: \"news\"");
+            store.publish(&news(), &brief(&short), now()).unwrap();
+            assert!(store.shown(now(), SHOWN_CARDS).iter().any(|c| c.app == "os.news" && c.body.contains("Harbor")));
+        }
+
+        #[test]
+        fn a_missing_or_expired_digest_renders_the_cards_own_absence() {
+            let mut store = GlanceStore::default();
+            store.publish(&news(), &brief(NEWS_BRIEF_CARD), now()).unwrap();
+            let card = &store.shown(now(), SHOWN_CARDS)[0];
+            assert!(card.body.contains("No digest yet"), "{}", card.body);
+            assert_eq!(card.expires_ms, now() + EXPIRES_DEFAULT_S * 1000);
+            let root = root_with("glance-expired", &[("os.news", "news-digest", news_digest_result())]);
+            let mut store = GlanceStore::default().with_digest_root(Some(root));
+            let late = now() + crate::glance_digest::MAX_AGE_MS;
+            store.publish(&news(), &brief(NEWS_BRIEF_CARD), late).unwrap();
+            assert!(store.shown(late, SHOWN_CARDS)[0].body.contains("No digest yet"));
+        }
+
+        #[test]
+        fn publishing_a_digest_card_prunes_old_runs_but_not_bound_ones() {
+            let mut runs = vec![("os.news", "news-digest", news_digest_result())];
+            for i in 0..crate::glance_digest::KEEP_PER_TEMPLATE + 2 {
+                let mut r = news_digest_result();
+                r["run_id"] = json!(format!("r{i:02}"));
+                runs.push(("os.news", "news-digest", r));
+            }
+            let root = root_with("glance-retain", &runs);
+            let dir = root.join("os.news/toolbox/runs/news-digest");
+            // `glance` is the oldest file, yet a live card binds it.
+            let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1);
+            std::fs::File::options().write(true).open(dir.join("glance.json")).unwrap().set_modified(old).unwrap();
+            let mut store = GlanceStore::default().with_digest_root(Some(root));
+            store.publish(&news(), &brief(NEWS_BRIEF_CARD), now()).unwrap();
+            let left = std::fs::read_dir(&dir).unwrap().count();
+            assert_eq!(left, crate::glance_digest::KEEP_PER_TEMPLATE + 1);
+            assert!(dir.join("glance.json").exists());
         }
     }
 
