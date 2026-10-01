@@ -59,7 +59,7 @@ Cards are no longer only generated in real time. The model also fills them with 
 - **Actions stay strict.** Send, Mark done and every other effect go only through declared actions the host checks. Model text can never trigger, retarget or change an action. This is what keeps an email's content (prompt injection) from steering the card.
 - **A chat component:** a new L0 component, a transcript plus an input, bound to the card's thread. Messages go to the owning app's agent in the person's lane (`octos.turn.start`), and answers appear in the card.
 
-Within those rules the card follows the L0 design. The model writes **an L0 card** (layout and its text) (declarative: sources, state, events, copy, view), checked by `check_ui_l0` with up to three repair rounds, as in AppCard (`L0_REPAIR_BUDGET`). It writes no L1 (arithmetic) and never L2 (imperative). The trusted theme kit (`Octoscript-Makepad/components/l0/_kit.octoscript`) turns roles into widgets.
+Within those rules the card follows the L0 design. The model writes **an L0 card**, both its layout and its text (declarative: sources, state, events, copy, view), checked by `check_ui_l0` with up to three repair rounds, as in AppCard (`L0_REPAIR_BUDGET`). It writes no L1 (arithmetic) and never L2 (imperative). The trusted theme kit (`Octoscript-Makepad/components/l0/_kit.octoscript`) turns roles into widgets.
 
 - **A new a2app L0 app:** `apps/appcard/a2app-l0/apps/email/{app.md, exemplar.card}`, with one exemplar per category shape (in the `email-card` skill), registered like the other L0 apps.
 - **New `sys.mail_*` sources:** declared in Octoscript's `docs/ui-l0-constructors.toml` (then the catalog is regenerated):
