@@ -863,7 +863,10 @@ fn assistant_items(existing: &[MenuItem]) -> Vec<MenuItem> {
 /// needs the confirmation typed into the menu's filter (the row carries it
 /// as an alias, so typing keeps it listed) and says what it risks.
 fn command_items() -> Vec<MenuItem> {
-    command_items_given(crate::system_chat::grants::command_execution(), crate::apps::terminal_runs_as_process())
+    // A Terminal whose launch ran unsandboxed counts as none; one not
+    // launched yet may still be (its first launch decides).
+    let terminal = crate::apps::terminal_runs_as_process() && crate::sandbox::launch_state(crate::apps::TERMINAL) != Some(false);
+    command_items_given(crate::system_chat::grants::command_execution(), terminal)
 }
 
 /// [`command_items`] for a switch and a Terminal: without a process
@@ -881,8 +884,8 @@ fn command_items_given(on: bool, terminal_process: bool) -> Vec<MenuItem> {
         .describe(&describe)];
     if !terminal_process {
         items.push(
-            MenuItem::new(&format!("{COMMANDS_ROW}.needs"), "Command execution needs Terminal as a process on this device", MenuKind::Inert)
-                .describe("Commands are typed into a Terminal that runs as its own sandboxed process; here the Terminal runs inside OctoSense (or not at all), so the assistant is not offered commands even if you allow them."),
+            MenuItem::new(&format!("{COMMANDS_ROW}.needs"), "Command execution needs Terminal as a sandboxed process on this device", MenuKind::Inert)
+                .describe("Commands are typed into a Terminal that runs as its own sandboxed process; here the Terminal runs inside OctoSense, without its sandbox, or not at all, so the assistant is not offered commands even if you allow them."),
         );
     }
     items.push(MenuItem::new(&format!("{COMMANDS_ROW}.risk"), "What this allows", MenuKind::Inert).describe(grants::RISK));
@@ -1932,10 +1935,10 @@ mod tests {
         let text = |items: &[MenuItem]| items.iter().map(|i| format!("{} {}", i.label, i.description)).collect::<Vec<_>>().join("\n");
         for on in [false, true] {
             let items = command_items_given(on, false);
-            assert!(text(&items).contains("needs Terminal as a process on this device"), "{on}: {}", text(&items));
+            assert!(text(&items).contains("needs Terminal as a sandboxed process on this device"), "{on}: {}", text(&items));
         }
         let items = command_items_given(true, true);
-        assert!(!text(&items).contains("needs Terminal as a process"), "{}", text(&items));
+        assert!(!text(&items).contains("needs Terminal as a sandboxed process"), "{}", text(&items));
         assert!(text(&items).contains("On: each command asks you first"));
     }
 
