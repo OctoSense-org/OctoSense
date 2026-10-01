@@ -110,6 +110,14 @@ pub trait Connector: Send + Sync {
     fn owns_runtime(&self) -> bool;
     /// Stop the runtime; a no-op unless [`Connector::owns_runtime`].
     fn shutdown(&self);
+    /// Which kernel this reaches, when other connectors may reach the same
+    /// one (the shell's process kernel): brokers of one app and account on
+    /// one kernel serve ONE peer, and exactly one of them drives it
+    /// ([`Broker::drives`]). `None`: this broker is the only one on its
+    /// kernel.
+    fn kernel_id(&self) -> Option<String> {
+        None
+    }
 }
 
 /// What a broker is for.
@@ -438,9 +446,37 @@ pub fn interrupt_lane_where(matches: impl Fn(&str) -> bool, lane: &str) -> Vec<S
 /// runs: a shell surface opens the app's conversation on the same peer the
 /// app uses (the shell's "Ask <app>" panel).
 pub fn live(app_id: &str) -> Option<Broker> {
-    let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
-    all.retain(|b| b.strong_count() > 0);
-    all.iter().rev().filter_map(Weak::upgrade).find(|b| b.cfg.app_id == app_id && !b.lock().released).map(Broker)
+    // Upgraded under the registry's lock, dropped after it: a broker whose
+    // last handle goes here hands its peer over in `Drop`, which takes it.
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().rev().filter_map(Weak::upgrade).collect()
+    };
+    brokers.into_iter().find(|b| b.cfg.app_id == app_id && !b.lock().released).map(Broker)
+}
+
+/// The live brokers of `app` on `kernel` bound to `account`, oldest first.
+fn instances_of(kernel: &str, app: &str, account: &str) -> Vec<Arc<Inner>> {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    brokers
+        .into_iter()
+        .filter(|b| b.kernel.as_deref() == Some(kernel) && b.cfg.app_id == app)
+        .filter(|b| {
+            let st = b.lock();
+            !st.released && st.account.as_deref() == Some(account)
+        })
+        .collect()
+}
+
+/// The broker that drives the peer of `app` and `account` on `kernel`:
+/// the oldest live one ([`Broker::drives`]).
+fn driver_of(kernel: &str, app: &str, account: &str) -> Option<Arc<Inner>> {
+    instances_of(kernel, app, account).into_iter().next()
 }
 
 /// Whether a kernel refusal is `turn_in_progress` (the session runs another
@@ -650,6 +686,8 @@ struct Inner {
     connecting: tokio::sync::Mutex<()>,
     binding: tokio::sync::Mutex<()>,
     nonce: String,
+    /// [`Connector::kernel_id`], read once.
+    kernel: Option<String>,
 }
 
 /// One app's scoped assistant service. Cheap to clone.
@@ -665,6 +703,7 @@ impl Broker {
             .build()
             .expect("app-peers: tokio runtime");
         let nonce = uuid::Uuid::new_v4().simple().to_string()[..8].to_owned();
+        let kernel = connector.kernel_id();
         let broker = Broker(Arc::new(Inner {
             cfg,
             connector,
@@ -704,6 +743,7 @@ impl Broker {
             connecting: tokio::sync::Mutex::new(()),
             binding: tokio::sync::Mutex::new(()),
             nonce,
+            kernel,
         }));
         {
             let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
@@ -787,6 +827,17 @@ impl Broker {
         running.into_iter().map(|(_, turn, _)| turn).collect()
     }
 
+    /// Whether this broker drives its app's peer: it registers the app's
+    /// tools and takes the peer's `peer/input`s, its own session's tool
+    /// calls, approvals and questions. With several instances of one app
+    /// on one kernel (two windows of one module) that is the
+    /// OLDEST live one bound to the same account; the others serve only
+    /// their own contexts and conversations. When the driver closes, the
+    /// next one registers on its own link and takes over.
+    pub fn drives(&self) -> bool {
+        self.0.drives()
+    }
+
     /// Approvals and questions still waiting for an answer.
     pub fn pending_prompts(&self) -> usize {
         self.0.lock().prompts.len()
@@ -867,6 +918,13 @@ impl Broker {
 
 impl Drop for Inner {
     fn drop(&mut self) {
+        // A driver dropped without a release: the next instance takes over.
+        let account = self.state.get_mut().map(|st| st.account.clone()).unwrap_or(None);
+        if let (Some(kernel), Some(account), false) = (&self.kernel, account, self.state.get_mut().map(|st| st.released).unwrap_or(true)) {
+            if let Some(next) = driver_of(kernel, &self.cfg.app_id, &account) {
+                next.take_over();
+            }
+        }
         // A broker may be dropped inside another runtime (a test's, a
         // shell's): never block there.
         if let Some(runtime) = self.runtime.take() {
@@ -953,6 +1011,85 @@ impl Inner {
 
     fn fail(&self, error: &str) {
         self.lock().last_error = Some(error.to_owned());
+    }
+
+    /// [`Broker::drives`]. Never called with this broker's state locked.
+    fn drives(self: &Arc<Self>) -> bool {
+        let Some(kernel) = &self.kernel else { return true };
+        let Some(account) = self.lock().account.clone() else { return true };
+        driver_of(kernel, &self.cfg.app_id, &account).is_none_or(|d| Arc::ptr_eq(&d, self))
+    }
+
+    /// Another live instance of this app on this kernel opened the request
+    /// context `context_id`: its calls are that broker's.
+    fn context_elsewhere(self: &Arc<Self>, context_id: &str) -> bool {
+        let Some(kernel) = &self.kernel else { return false };
+        let Some(account) = self.lock().account.clone() else { return false };
+        instances_of(kernel, &self.cfg.app_id, &account).iter().filter(|b| !Arc::ptr_eq(b, self)).any(|b| {
+            b.lock().contexts.iter().filter_map(Weak::upgrade).any(|c| c.context_id == context_id && c.open.load(Ordering::Acquire))
+        })
+    }
+
+    /// This broker now drives its app's peer (the driver closed, or it is
+    /// older than the one that drove): take the system agent's queued
+    /// inputs and what they started from the other instances, register the
+    /// app's tools on this link (octos routes the peer's inputs and calls
+    /// to the connection that registered last), and start the next input.
+    fn take_over(self: &Arc<Self>) {
+        let Some(kernel) = self.kernel.clone() else { return };
+        let Some(account) = self.lock().account.clone() else { return };
+        let others: Vec<Arc<Inner>> = {
+            let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+            all.retain(|b| b.strong_count() > 0);
+            all.iter().filter_map(Weak::upgrade).collect()
+        };
+        for other in others.iter().filter(|b| !Arc::ptr_eq(b, self) && b.kernel.as_deref() == Some(kernel.as_str()) && b.cfg.app_id == self.cfg.app_id) {
+            let (queue, input_turns, inputs_seen, peer_turn) = {
+                let mut o = other.lock();
+                if o.account.as_deref() != Some(account.as_str()) {
+                    continue;
+                }
+                (std::mem::take(&mut o.queue), o.input_turns.clone(), o.inputs_seen.clone(), o.peer_turn.clone())
+            };
+            let mut st = self.lock();
+            for turn in input_turns {
+                remember(&mut st.input_turns, turn);
+            }
+            for input in inputs_seen {
+                remember(&mut st.inputs_seen, input);
+            }
+            if st.peer_turn.is_none() {
+                st.peer_turn = peer_turn;
+            }
+            for input in queue {
+                if !st.queue.iter().any(|q| q.input_id == input.input_id) {
+                    st.queue.push_back(input);
+                }
+            }
+        }
+        let inner = self.clone();
+        self.rt().spawn(async move {
+            let bound = {
+                let st = inner.lock();
+                st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone())
+            };
+            let registered = match bound {
+                Some(peer) => match peer.token.clone() {
+                    Some(token) => inner.register_tools(&peer.slug, &token, &account).await.map(|_| ()),
+                    None => Err("no credential for the app's peer".to_owned()),
+                },
+                // Bound (and registered, now that this broker drives) on the
+                // way.
+                None => inner.ensure_peer().await.map(|_| ()),
+            };
+            match registered {
+                Ok(()) => inner.next_turn(),
+                Err(e) => {
+                    eprintln!("app-peers: {}: taking over the app's peer failed: {e}", inner.cfg.app_id);
+                    inner.fail(&e);
+                }
+            }
+        });
     }
 
     async fn ensure_link(self: &Arc<Self>) -> Result<mpsc::UnboundedSender<String>, String> {
@@ -1165,6 +1302,15 @@ impl Inner {
                 // Its approvals and questions end with it: no deadline.
                 self.lock().prompts.retain(|_, p| p.turn != turn);
             }
+        }
+        // Another instance of the app drives the peer: its approvals and
+        // questions are the driver's to hand to the host (once); this
+        // instance's conversations only hear that the host has them.
+        let own_session = peer_session.as_deref() == Some(session);
+        if own_session && (method == "approval/requested" || method == host_tools::USER_QUESTION_REQUESTED) && !self.drives() {
+            let handled = if method == "approval/requested" { host_tools::HANDLED_BY_HOST } else { host_tools::QUESTION_HANDLED_BY_HOST };
+            self.deliver_to_conversations(handled, &params);
+            return;
         }
         // An agent's question is the person's, asked by the shell in the
         // right conversation: never the app context's to answer.
@@ -1416,9 +1562,16 @@ impl Inner {
             self.fail(&err);
             return Err(err);
         };
-        if let Err(err) = self.register_tools(&slug, &host_token, &account).await {
-            self.fail(&err);
-            return Err(err);
+        // Only the instance that drives the peer registers: octos routes
+        // the peer's inputs and calls to the connection that registered
+        // last. Another instance on the same kernel serves its own contexts
+        // (their turns run on the same kernel connection, so they have the
+        // tools) and takes over when the driver closes.
+        if self.drives() {
+            if let Err(err) = self.register_tools(&slug, &host_token, &account).await {
+                self.fail(&err);
+                return Err(err);
+            }
         }
         let peer = PeerInfo {
             slug,
@@ -1609,6 +1762,13 @@ impl Inner {
         if call.peer.as_deref() != Some(peer.slug.as_str()) {
             return;
         }
+        // Another instance of the app: the peer's own session is the
+        // driver's, a context its opener's.
+        match &call.context_id {
+            None if !self.drives() => return,
+            Some(context_id) if self.context_elsewhere(context_id) => return,
+            _ => {}
+        }
         // Answered on the connection the call came on (the kernel refuses a
         // result from any other).
         let reply = self.reply_for(&call, link, peer.token.clone());
@@ -1713,6 +1873,10 @@ impl Inner {
         let Some(input) = PeerInput::parse(params) else {
             return eprintln!("app-peers: {} dropped: malformed", host_tools::PEER_INPUT);
         };
+        // Another instance of the app drives the peer: the input is its.
+        if !self.drives() {
+            return;
+        }
         let (peer, account, busy, seen) = {
             let mut st = self.lock();
             let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
@@ -2144,18 +2308,28 @@ impl Inner {
         }
     }
 
+    /// The open conversations of the current account.
+    fn conversations(&self) -> Vec<Arc<ContextInner>> {
+        let st = self.lock();
+        st.contexts
+            .iter()
+            .filter_map(Weak::upgrade)
+            .filter(|c| c.conversation && c.generation == st.generation)
+            .collect()
+    }
+
+    /// Deliver one event to every open conversation, as it is.
+    fn deliver_to_conversations(&self, method: &str, params: &Value) {
+        for conversation in self.conversations() {
+            conversation.deliver(method, params);
+        }
+    }
+
     /// Deliver one event of the peer's session to every open conversation
     /// of the current account (octos's own approval answered by the host
     /// once here, not by each of them).
     fn to_conversations(self: &Arc<Self>, method: &str, params: &Value, session: &str) {
-        let conversations: Vec<Arc<ContextInner>> = {
-            let st = self.lock();
-            st.contexts
-                .iter()
-                .filter_map(Weak::upgrade)
-                .filter(|c| c.conversation && c.generation == st.generation)
-                .collect()
-        };
+        let conversations = self.conversations();
         if conversations.is_empty() {
             return;
         }
@@ -3030,6 +3204,7 @@ impl OctosAppService for Broker {
     }
 
     fn set_account(&self, account: Option<&str>) {
+        let drove = self.0.drives();
         let changed = {
             let mut st = self.0.lock();
             if st.account.as_deref() == account {
@@ -3048,6 +3223,15 @@ impl OctosAppService for Broker {
             // peer is prepared below.
             crate::storage::account_changed(&self.0.cfg.app_id, previous.as_deref(), account);
             self.0.revoke_contexts();
+            // The previous account's peer: another instance still bound to
+            // it drives it now. This one, if it is the oldest instance of
+            // the new account's peer, takes it over (its tools are
+            // registered by the prepare below).
+            if let (true, Some(kernel), Some(previous)) = (drove, &self.0.kernel, &previous) {
+                if let Some(next) = driver_of(kernel, &self.0.cfg.app_id, previous) {
+                    next.take_over();
+                }
+            }
             // Create or resume the new account's peer now (no inference), so
             // the system agent can address it from launch on.
             if account.is_some()
@@ -3071,19 +3255,33 @@ impl OctosAppService for Broker {
     }
 
     fn release(&self) {
-        let peer_turn = {
+        let (peer_turn, account) = {
             let mut st = self.0.lock();
             if st.released {
                 return;
             }
             st.released = true;
-            let turn = st.peer_turn.take();
-            turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone()))
+            // Kept until a next instance took it over (below).
+            let turn = st.peer_turn.clone();
+            (turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone())), st.account.clone())
         };
         self.0.revoke_contexts();
+        // Another instance of the app still open on this kernel: it drives
+        // the peer from now on (if this one did, it takes over its queue and
+        // registers), and the peer's running turn goes on.
+        let next = match (&self.0.kernel, &account) {
+            (Some(kernel), Some(account)) => driver_of(kernel, &self.0.cfg.app_id, account),
+            _ => None,
+        };
+        if let Some(next) = &next {
+            next.take_over();
+        }
         // Conservative background policy (ADR 0007 open question): closing
-        // the app stops its peer's running turn too. The peer and its state
-        // stay for the next launch; nothing else is stopped.
+        // the app (its last instance) stops its peer's running turn too. The
+        // peer and its state stay for the next launch; nothing else is
+        // stopped.
+        self.0.lock().peer_turn = None;
+        let peer_turn = if next.is_some() { None } else { peer_turn };
         if let Some((turn, _)) = &peer_turn {
             self.0.note_interrupted(turn);
         }
