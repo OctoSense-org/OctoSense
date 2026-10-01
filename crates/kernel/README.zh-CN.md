@@ -134,8 +134,8 @@ adb -s SERIAL forward tcp:PORT tcp:PORT
 ## 系统智能体的工具
 
 [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12：系统智能体的工具集就是它获得的授权。它默认的 octos
-工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`、
-`peer_close`）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
+工具是 `system_tools::SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；
+不含 `peer_close`：octos 无法恢复已关闭的 peer，配置文件的 `tool_policy` 对所有智能体都禁用它）、其工作区内的文件工具（octos 将其限制在会话工作目录内）、记忆、`ask_user_question`、查看媒体、octos 的
 `web_search` / `web_fetch`（在工具箱授权取代它们之前，#108）以及 `tool_search`。授予的工具箱工具和跨应用工具通过 `SystemAgentTools` 作为宿主工具加入。命令执行作为授权**已完成**：用户在“设置 → 助手 → 命令执行”中的开关（默认关闭；开启需要用户输入确认语，确认语说明其风险；
 `crates/shell/src/system_chat/grants.rs`）通过 `SystemAgentTools::grant_command_execution` 为系统代理授予宿主工具 `terminal.run`。
 Shell 把授权交给本 crate（`system_tools::set_grants`）；每次内核启动时采用（`grants_at_start`、`system_agent_tools_in_effect()`），

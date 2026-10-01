@@ -45,9 +45,10 @@
 //!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
 //!   closed link end calls before they run. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
-//!   id, once per input, queued while the peer is busy; `host_tool`
-//!   approvals go to the host, never to the app, and are withdrawn there
-//!   when their turn ends before an answer;
+//!   id, once per input, queued while the peer is busy; every approval
+//!   (a `host_tool` one and octos's own tools', a `peer/input` turn's
+//!   included) goes to the host, never to the app, and is withdrawn there
+//!   when its turn ends, or its link closes, before an answer;
 //! - routes the agent's questions (`user_question/requested`, octos's
 //!   `ask_user_question`) on the peer's session and its contexts to the
 //!   host with the turn's origin (a context's, the peer's own, or a
@@ -67,6 +68,9 @@
 //!   [`interrupt_where`] for the shell's own surfaces) stops BOTH lanes:
 //!   the person's running turn and the system agent's (the person owns the
 //!   device). A plain request context's Stop stops its own turn only.
+//!   The shell's "Ask <app>" panel stops one lane at a time
+//!   ([`interrupt_lane_where`]): its Stop is the person's own turn, and the
+//!   system agent's turn has its own control.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -419,6 +423,17 @@ pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
     asked
 }
 
+/// [`interrupt_where`] for one lane only ([`LANE_PERSON`] or
+/// [`LANE_SYSTEM_AGENT`]): the other lane's turn goes on.
+pub fn interrupt_lane_where(matches: impl Fn(&str) -> bool, lane: &str) -> Vec<String> {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_lane(lane)).collect()
+}
+
 /// The live (not released) broker of the app whose id is `app_id`, if one
 /// runs: a shell surface opens the app's conversation on the same peer the
 /// app uses (the shell's "Ask <app>" panel).
@@ -748,7 +763,18 @@ impl Broker {
     /// calls are refused (N1) and the peer's next queued input starts. The
     /// turns stopped (none when nothing runs).
     pub fn interrupt_running(&self) -> Vec<String> {
-        let running = self.0.running_turns();
+        self.interrupt_turns(self.0.running_turns())
+    }
+
+    /// Stop only the turns running in `lane` ([`LANE_PERSON`]: the person's
+    /// or the app's, in every open conversation; [`LANE_SYSTEM_AGENT`]: the
+    /// peer's own session), as [`Broker::interrupt_running`] does.
+    pub fn interrupt_lane(&self, lane: &str) -> Vec<String> {
+        let running = self.0.running_turns().into_iter().filter(|(_, _, l)| *l == lane).collect();
+        self.interrupt_turns(running)
+    }
+
+    fn interrupt_turns(&self, running: Vec<(String, String, &'static str)>) -> Vec<String> {
         for (session, turn, _) in &running {
             let inner = self.0.clone();
             let (session, turn) = (session.clone(), turn.clone());
@@ -986,7 +1012,7 @@ impl Inner {
     /// request, or by the rebind this schedules. Tool calls that came on the
     /// link end now: the kernel fails them, and the host never runs them.
     fn link_closed(self: &Arc<Self>, epoch: u64, why: &str) {
-        let (pending, waiters, calls, rebind) = {
+        let (pending, waiters, calls, rebind, approvals, questions) = {
             let mut st = self.lock();
             if st.link_epoch != epoch {
                 return;
@@ -1002,16 +1028,30 @@ impl Inner {
             st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
             // Queued inputs are the kernel's to fail with the connection.
             st.queue.clear();
-            // What waited on the link can no longer be answered there.
+            // What waited on the link can no longer be answered there: what
+            // the host holds unanswered is withdrawn from its sheets too.
+            let approvals: Vec<String> = st
+                .prompts
+                .iter()
+                .filter(|(_, p)| matches!(&p.answer, PromptAnswer::HostApproval(answer) if !answer.is_sent()))
+                .map(|(id, _)| id.clone())
+                .collect();
             st.prompts.clear();
+            let questions: Vec<String> = st.questions.drain().map(|(id, _)| id).collect();
             let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
-            (pending, contexts, calls, rebind)
+            (pending, contexts, calls, rebind, approvals, questions)
         };
         let host = self.tool_host();
         for (call_id, reply) in calls {
             if reply.cancel() {
                 host.tool_cancel(&self.cfg.app_id, &call_id, "disconnected");
             }
+        }
+        for id in approvals {
+            host.host_tool_approval_closed(&self.cfg.app_id, &id);
+        }
+        for id in questions {
+            host.user_question_closed(&self.cfg.app_id, &id);
         }
         if let Some(generation) = rebind {
             self.schedule_rebind(generation);
