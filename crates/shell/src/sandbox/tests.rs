@@ -7,6 +7,7 @@
 
 use super::*;
 use std::io::Read;
+
 use std::net::TcpListener;
 
 struct Scratch(PathBuf);
@@ -59,7 +60,7 @@ fn jail_only(root: &Path, hub_port: u16) -> Policy {
 
 fn run(program: &str, args: &[&str], policy: &Policy) -> (bool, String) {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (mut cmd, applied) = command(Path::new(program), &args, Some(policy), false);
+    let (mut cmd, applied) = command(Path::new(program), &args, Some(policy));
     assert!(matches!(applied, Some(Applied::Sandboxed(_))), "{applied:?}");
     let out = cmd.output().expect("the probe starts");
     (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
@@ -120,6 +121,69 @@ fn a_jail_only_app_reads_its_jail_and_is_refused_everything_else() {
     let (ok, out) = run("/bin/sh", &["-c", "/bin/echo first; /bin/echo spawned"], &policy);
     assert!(!ok || !out.contains("spawned"), "no child process: {out}");
     drop((hub, other));
+}
+
+/// A program reached through a link that points outside its roots still
+/// starts (found on Ubuntu 26.04, where `/usr/bin/cat` links into
+/// `/usr/lib/cargo/bin/coreutils/`): the sandbox allows the file it really
+/// runs, and nothing else beside it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_program_reached_through_a_link_outside_its_roots_starts() {
+    if !sandbox_works_here() {
+        eprintln!("no process sandbox on this machine; skipped");
+        return;
+    }
+    let scratch = Scratch::new("linkedprog");
+    let root = &scratch.0;
+    std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
+    std::fs::create_dir_all(root.join("real")).unwrap();
+    std::fs::create_dir_all(root.join("links")).unwrap();
+    // Named `cat` wherever it is: a multicall coreutils picks by name.
+    std::fs::copy(resolved(Path::new("/bin/cat")), root.join("real/cat")).unwrap();
+    std::fs::write(root.join("real/beside.txt"), "not the program").unwrap();
+    std::os::unix::fs::symlink(root.join("real/cat"), root.join("links/cat")).unwrap();
+    let mut policy = jail_only(root, 1);
+    policy.program = vec![root.join("links")];
+    let tool = root.join("links/cat");
+    let (ok, out) = run(tool.to_str().unwrap(), &[root.join("apps/probe/mine.txt").to_str().unwrap()], &policy);
+    assert!(ok && out.contains("mine"), "the linked program starts and reads its jail: {out}");
+    let (ok, out) = run(tool.to_str().unwrap(), &[root.join("real/beside.txt").to_str().unwrap()], &policy);
+    assert!(!ok && !out.contains("not the program"), "only the program file is opened, not its directory: {out}");
+}
+
+/// A kernel without Landlock (before 5.13, or with it disabled): the app
+/// still starts, seccomp still takes, and the log line says the paths are
+/// not restricted. Runs only where Landlock is missing; on a Landlock
+/// kernel, run it under a filter that hides it:
+///
+/// ```sh
+/// sudo systemd-run --uid=$USER --pty --wait -p SystemCallErrorNumber=ENOSYS \
+///   -p 'SystemCallFilter=~landlock_create_ruleset landlock_add_rule landlock_restrict_self' \
+///   <test binary> without_landlock
+/// ```
+#[cfg(target_os = "linux")]
+#[test]
+fn without_landlock_the_app_still_starts_under_seccomp_and_says_so() {
+    if linux::landlock_abi() > 0 {
+        eprintln!("this kernel has Landlock; skipped (see the doc comment to hide it)");
+        return;
+    }
+    let scratch = Scratch::new("nolandlock");
+    let root = &scratch.0;
+    std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
+    let policy = jail_only(root, 1);
+    let args = vec![root.join("apps/probe/mine.txt").to_string_lossy().to_string()];
+    let (mut cmd, applied) = command(Path::new("/bin/cat"), &args, Some(&policy));
+    let Some(Applied::Sandboxed(how)) = applied else { panic!("{applied:?}") };
+    assert!(how.contains("no landlock (kernel lacks it): paths are not restricted") && how.contains("seccomp"), "{how}");
+    let out = cmd.output().expect("the app starts without Landlock");
+    assert!(out.status.success() && String::from_utf8_lossy(&out.stdout).contains("mine"));
+    // seccomp still refuses a child process.
+    let (mut cmd, _) = command(Path::new("/bin/sh"), &["-c".into(), "/bin/echo first; /bin/echo spawned".into()], Some(&policy));
+    let out = cmd.output().expect("sh starts");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!text.contains("spawned"), "no child process without Landlock either: {text}");
 }
 
 /// The seccomp program run on one system call, as the kernel would (the
@@ -191,7 +255,7 @@ fn home_rw_leaves_the_next_builds_inputs_read_only() {
     let mut p = home_rw_with_octosense_home(root);
     let read_only = [".cargo", ".rustup", "src/app", "src/rust-toolchain.toml", "bin/shell"].map(|r| root.join(r));
     p.read_only = read_only.to_vec();
-    let rules = linux::rules(&p, 3, false);
+    let rules = linux::rules(&p, 3);
     let rx = linux::read_exec();
     for ro in &read_only {
         let ro = resolved(ro);
@@ -538,20 +602,18 @@ fn the_linux_rules_keep_a_program_inside_the_home_read_and_execute_only() {
     let mut p = home_rw_with_octosense_home(root);
     let build = octo.join("build/makepad");
     p.program = vec![build.clone()];
-    // Under cargo the program gets every right elsewhere; inside the home it
-    // keeps read and execute only.
-    for via_cargo in [false, true] {
-        let rules = linux::rules(&p, 3, via_cargo);
-        let kept: Vec<_> = rules.iter().filter(|r| r.path == build).collect();
-        assert!(!kept.is_empty(), "the program stays reachable (via_cargo={via_cargo})");
-        let rx = linux::read_exec();
-        for r in kept {
-            assert_eq!(r.access & !rx, 0, "read and execute only, never write (via_cargo={via_cargo}): {:#x}", r.access);
-        }
+    // Inside the home it keeps read and execute only (a cargo launch builds
+    // outside the sandbox, so nothing ever writes it from inside).
+    let rules = linux::rules(&p, 3);
+    let kept: Vec<_> = rules.iter().filter(|r| r.path == build).collect();
+    assert!(!kept.is_empty(), "the program stays reachable");
+    let rx = linux::read_exec();
+    for r in kept {
+        assert_eq!(r.access & !rx, 0, "read and execute only, never write: {:#x}", r.access);
     }
     // The home itself as the program: dropped, nothing reopened.
     p.program = vec![octo.clone()];
-    assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != octo), "the OctoSense home is never granted");
+    assert!(linux::rules(&p, 3).iter().all(|r| r.path != octo), "the OctoSense home is never granted");
 }
 
 #[cfg(unix)]
@@ -579,7 +641,7 @@ fn a_linked_checkout_into_the_octosense_home_is_not_reopened() {
     {
         p.program = vec![link];
         let real = crate::sandbox::resolved(&octo);
-        assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != real), "Landlock never grants the home through a link");
+        assert!(linux::rules(&p, 3).iter().all(|r| r.path != real), "Landlock never grants the home through a link");
     }
 }
 

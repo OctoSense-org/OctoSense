@@ -1362,7 +1362,7 @@ pub fn spawn_client(
     // A native app runs under the OS sandbox its manifest entry builds
     // (ADR 0004 §3, sandbox/): the built binary itself, never the build.
     let policy = sandbox_policy(app, &plan, hub_port);
-    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref(), false);
+    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref());
     // A sandboxed app's Makepad home is its own jail (ADR 0004 §11): the
     // OctoSense home is closed to it (G6), so settings it kept under
     // `<OctoSense home>/<app id>/` could no longer be written. Its old data

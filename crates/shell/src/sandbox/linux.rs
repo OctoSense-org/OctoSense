@@ -40,11 +40,12 @@
 //! rules). A layer that fails in the child is skipped, never fatal: the app
 //! still starts.
 //!
-//! **A launch through cargo** (a dev run from a checkout) sandboxes the
-//! build as well: the build's own paths (the checkout, the target dir,
-//! cargo's and rustup's homes) are added and child processes are allowed so
-//! cargo can run rustc. An installed launch gets exactly the manifest's
-//! sandbox.
+//! **Only the app is sandboxed, never a build.** The shell builds a dev
+//! app first, outside any sandbox (`clients::launch_plan`), and starts the
+//! built binary here with exactly the manifest's sandbox. (A build inside
+//! the sandbox needed the checkout, the target dir, cargo's home and `/tmp`
+//! writable, which let the app rewrite what the next build runs; found on a
+//! real kernel, #138.)
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -129,12 +130,11 @@ fn read() -> u64 {
     FS_READ_FILE | FS_READ_DIR
 }
 
-/// The path rules for `policy` at `abi` (`via_cargo`: the build's paths too).
-pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
+/// The path rules for `policy` at `abi`.
+pub fn rules(policy: &Policy, abi: u32) -> Vec<Rule> {
     let all = handled_fs(abi);
     let rx = read() | FS_EXECUTE;
-    let processes = policy.processes || via_cargo;
-    let system_exec = if processes { rx } else { read() };
+    let system_exec = if policy.processes { rx } else { read() };
     let mut out = Vec::new();
     let mut add = |path: PathBuf, access: u64| {
         if path.as_os_str().is_empty() {
@@ -170,17 +170,6 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
     add(policy.secrets.clone(), all);
     for (path, access) in &policy.external {
         add(path.clone(), if *access == Access::Read { read() } else { all });
-    }
-    if via_cargo {
-        let home = super::person_home().unwrap_or_default();
-        let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".cargo"));
-        let rustup_home = std::env::var_os("RUSTUP_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".rustup"));
-        add(cargo_home, all);
-        add(rustup_home, rx);
-        add(PathBuf::from("/tmp"), all);
-        for program in &policy.program {
-            add(program.clone(), all);
-        }
     }
     // Compare real paths: Landlock follows links when it opens a rule's
     // path, so a linked checkout or grant must not slip past the private
@@ -345,21 +334,21 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
 }
 
 /// Put Landlock and seccomp on `cmd` (installed in the child before exec).
-pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
+pub fn apply(cmd: &mut Command, policy: &Policy) -> Applied {
     let abi = landlock_abi();
-    let processes = policy.processes || via_cargo;
+    let processes = policy.processes;
     // Everything the child does is prepared here: between fork and exec it
     // only opens paths and makes system calls.
     let prepared: Vec<(CString, u64)> = if abi == 0 {
         Vec::new()
     } else {
-        rules(policy, abi, via_cargo)
+        rules(policy, abi)
             .into_iter()
             .filter(|r| r.path.exists())
             .filter_map(|r| CString::new(r.path.as_os_str().as_bytes()).ok().map(|c| (c, r.access)))
             .collect()
     };
-    let net = abi >= 4 && policy.network == Network::None && !via_cargo;
+    let net = abi >= 4 && policy.network == Network::None;
     let hub_port = policy.hub_port;
     let filter = seccomp_filter(processes);
     let handled = handled_fs(abi);
@@ -373,9 +362,6 @@ pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
         layers.push("network not restricted (landlock < 4)".into());
     }
     layers.push(if filter.is_some() { "seccomp".into() } else { "no seccomp on this architecture".to_string() });
-    if via_cargo {
-        layers.push("launched through cargo: the build's paths and processes added".into());
-    }
     unsafe {
         cmd.pre_exec(move || {
             // Landlock and seccomp both need no_new_privs.

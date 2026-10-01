@@ -11,7 +11,7 @@
 //! | OS | Mechanism | Status |
 //! | --- | --- | --- |
 //! | macOS | a Seatbelt profile ([`macos`]) run through `/usr/bin/sandbox-exec` around the built binary (the build runs before, outside it: `clients::launch_plan`) | built and tested |
-//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec; best-effort, logged per layer when the kernel lacks it | built, compile-checked; not run here |
+//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec; best-effort, logged per layer when the kernel lacks it | built and tested on Linux 7.0 (Landlock ABI 8) and with Landlock hidden (#138); not in CI, whose shell tests run on macOS |
 //! | Windows | AppContainer (design below) | **TODO**: not built; a process app runs unsandboxed and the shell says so in its log |
 //!
 //! **Files.** The person's data roots ([`Policy::protected`]: the home
@@ -432,21 +432,20 @@ pub fn scrub_env_from(cmd: &mut Command, inherited: impl IntoIterator<Item = (st
 }
 
 /// The command that starts `program args` under `policy` (`None`: no
-/// sandbox, the plain command). `via_cargo`: `program` is cargo and the app
-/// is what `cargo run` runs at the end (Linux's runner only). The shell no
-/// longer launches that way (`clients::launch_plan` builds first and starts
-/// the binary), so every launch passes `false`; macOS refuses `true`.
-pub fn command(program: &Path, args: &[String], policy: Option<&Policy>, via_cargo: bool) -> (Command, Option<Applied>) {
+/// sandbox, the plain command). `program` is the built binary itself: the
+/// shell builds first, outside any sandbox (`clients::launch_plan`), and
+/// never sandboxes a build.
+pub fn command(program: &Path, args: &[String], policy: Option<&Policy>) -> (Command, Option<Applied>) {
     let Some(policy) = policy else {
         let mut cmd = Command::new(program);
         cmd.args(args);
         return (cmd, None);
     };
-    platform_command(program, args, policy, via_cargo)
+    platform_command(program, args, policy)
 }
 
 #[cfg(target_os = "macos")]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let plain = || {
         let mut cmd = Command::new(program);
         cmd.args(args);
@@ -459,26 +458,31 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo:
         Ok(p) => p,
         Err(e) => return (plain(), Some(Applied::Unavailable(format!("{}: {e}", policy.app)))),
     };
-    if via_cargo {
-        // A build sandboxed with its app would let the app's writes decide
-        // the next build; the shell builds first and starts the binary.
-        return (plain(), Some(Applied::Unavailable(format!("{}: a `cargo run` launch is not sandboxed on macOS", policy.app))));
-    }
     let mut cmd = Command::new(macos::SANDBOX_EXEC);
     cmd.arg("-f").arg(&profile).arg(program).args(args);
     (cmd, Some(Applied::Sandboxed(format!("{} (via sandbox-exec, profile {})", policy.summary(), profile.display()))))
 }
 
 #[cfg(target_os = "linux")]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);
-    let applied = linux::apply(&mut cmd, policy, via_cargo);
+    // The program itself is readable and executable wherever it really
+    // lives: Landlock checks the file a link resolves to, and a program
+    // reached through a link outside its roots (`/usr/bin/cat` ->
+    // `/usr/lib/cargo/bin/coreutils/cat` on Ubuntu 26.04, an installed
+    // binary linked from `~/.local/bin`) would otherwise fail to start
+    // with EACCES.
+    let mut policy = policy.clone();
+    if program.is_absolute() && !policy.program.iter().any(|p| p == program) {
+        policy.program.push(program.to_path_buf());
+    }
+    let applied = linux::apply(&mut cmd, &policy);
     (cmd, Some(applied))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, _via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);
     let why = format!("{}: no process sandbox on this platform yet (Windows AppContainer is a TODO, sandbox/mod.rs); running unsandboxed", policy.app);
