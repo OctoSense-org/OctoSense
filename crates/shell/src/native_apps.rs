@@ -184,7 +184,7 @@ pub const APPS: &[NativeApp] = &[
         accounts: false,
         external: &["home:rw"],
         storage: r#"{"accounts": false, "agent_workspace": "none", "external": ["home:rw"]}"#,
-        tools_json: r##"[{"name":"terminal.run","description":"Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.","input_schema":{"type":"object","properties":{"command":{"type":"string","maxLength":4096}},"required":["command"],"additionalProperties":false},"risk":"destructive","confirm":"host","shareable":true},{"name":"terminal.read_screen","description":"Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"read","shareable":true},{"name":"terminal.read_scrollback","description":"Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).","input_schema":{"type":"object","properties":{"lines":{"type":"integer","minimum":1,"maximum":2000}},"additionalProperties":false},"risk":"read","shareable":true}]"##,
+        tools_json: r##"[{"name":"terminal.run","description":"Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.","input_schema":{"type":"object","properties":{"command":{"type":"string","maxLength":4096}},"required":["command"],"additionalProperties":false},"risk":"destructive","confirm":"host","shareable":true},{"name":"terminal.read_screen","description":"Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.","input_schema":{"type":"object","properties":{},"additionalProperties":false},"risk":"read","shareable":true},{"name":"terminal.read_scrollback","description":"Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).","input_schema":{"type":"object","properties":{"lines":{"type":"integer","minimum":1,"maximum":2000}},"additionalProperties":false},"risk":"read","shareable":true}]"##,
         generic_tools: &[],
         grants: &[],
         calls_per_turn: None,
@@ -271,6 +271,18 @@ impl NativeApp {
 /// The manifest entry for an app id.
 pub fn find(id: &str) -> Option<&'static NativeApp> {
     APPS.iter().find(|app| app.id == id)
+}
+
+/// The Cargo package (`crate`) of an app with a `bin`: what a process
+/// launch builds from the workspace, `cargo build --locked -p
+/// octosense-process-apps -p <package>` (crates/process-apps).
+pub fn package_of(id: &str) -> Option<&'static str> {
+    match id {
+        "reference" => Some("octosense-reference"),
+        "sheets" => Some("makepad-sheets"),
+        "terminal" => Some("makepad-terminal"),
+        _ => None,
+    }
 }
 
 /// Push the native modules this build links, in manifest order.

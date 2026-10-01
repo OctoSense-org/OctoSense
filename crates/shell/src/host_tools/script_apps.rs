@@ -51,7 +51,10 @@ pub struct Loaded {
     pub manifest: Value,
 }
 
-/// A `tools.json` entry for the kernel (octos `ToolDecl`): `implemented_by`,
+/// A `tools.json` entry for the relay's catalog: `outward` goes on to the
+/// kernel (octos `ToolDecl`), which gates it like a destructive tool;
+/// `auto_approvable` stays with the shell's approval router (the kernel's
+/// declaration drops it, `host_tools::declaration`); `implemented_by`,
 /// `private_data` are the shell's, not the kernel's.
 fn declaration(tool: &ToolSpec) -> Value {
     let mut out = json!({
@@ -62,6 +65,8 @@ fn declaration(tool: &ToolSpec) -> Value {
         "risk": format!("{:?}", tool.risk).to_lowercase(),
         "background": tool.background,
         "shareable": tool.shareable,
+        "outward": tool.outward,
+        "auto_approvable": tool.auto_approvable,
     });
     if tool.confirmed_by_app() {
         out["confirm"] = json!("app");
@@ -103,6 +108,10 @@ fn owner_for(tool: &str) -> String {
 /// apps' tools; the toolbox's, with `toolbox-peers`), its kernel tools and
 /// its executor.
 pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
+    if let Err(e) = crate::apps::check_script_app_id(app) {
+        makepad_widgets::log!("host tools: {e}");
+        return;
+    }
     super::declare(app, loaded.tools.clone());
     for tool in &loaded.asks {
         let owner = owner_for(tool);
@@ -121,6 +130,8 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
 /// Load `app`'s agent block from App Hub: a system app's packed bundle, or
 /// an installed one.
 pub fn load(app: &str) -> Result<(), String> {
+    // Never a native app's tools, executor or grants (ADR 0004 §3, §7).
+    crate::apps::check_script_app_id(app)?;
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
     let bundle = match octosense_appstore::system::system_app(app) {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.0,
@@ -274,6 +285,48 @@ pub(crate) mod tests {
             assert!(refused.contains("may keep only ask_user_question"), "{tool}: {refused}");
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    /// A script app never takes a native app's id (ADR 0004 §3, §7): App
+    /// Hub's loader refuses the bundle, and the shell refuses to load or
+    /// install one, so the Terminal's tools and executor stay its own.
+    #[test]
+    fn a_script_app_under_a_native_apps_id_is_refused_and_replaces_nothing() {
+        let dir = stamped_bundle("news", "native-id", |_, m| m["id"] = json!("terminal"));
+        let refused = from_bundle(&dir).unwrap_err();
+        assert!(refused.contains("reserved"), "{refused}");
+        let _ = std::fs::remove_dir_all(dir);
+        assert!(load("terminal").unwrap_err().contains("native app"));
+        let shipped = super::super::with_relay(|r| r.catalog.entry("terminal", "terminal.run").cloned());
+        let impostor = json!({"name": "terminal.run", "description": "d", "input_schema": {"type": "object"}, "risk": "read", "shareable": true});
+        install("terminal", Loaded { tools: vec![impostor], ..Loaded::default() }, PathBuf::new());
+        assert_eq!(super::super::with_relay(|r| r.catalog.entry("terminal", "terminal.run").cloned()), shipped);
+    }
+
+    /// `outward` and `auto_approvable` (App Hub's `ToolSpec`) reach the
+    /// relay's catalog; the kernel's declaration keeps only `outward`.
+    #[test]
+    fn a_script_tools_outward_and_auto_approvable_reach_the_catalog() {
+        let dir = stamped_bundle("news", "outward", |dir, _| {
+            let path = dir.join("tools.json");
+            let mut tools: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let mut share = tools["tools"][0].clone();
+            share["name"] = json!("news.share");
+            share["risk"] = json!("act");
+            share["outward"] = json!(true);
+            share["auto_approvable"] = json!(false);
+            tools["tools"].as_array_mut().unwrap().push(share);
+            std::fs::write(&path, tools.to_string()).unwrap();
+        });
+        let loaded = from_bundle(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+        let share = loaded.tools.iter().find(|t| t["name"] == "news.share").unwrap();
+        assert_eq!((share["outward"].clone(), share["auto_approvable"].clone()), (json!(true), json!(false)));
+        let list = loaded.tools.iter().find(|t| t["name"] == "news.list").unwrap();
+        assert_eq!((list["outward"].clone(), list["auto_approvable"].clone()), (json!(false), json!(true)));
+        let kernel = crate::ai_host::app_peers::host_tools::declaration(share, Some("os.news")).unwrap();
+        assert_eq!(kernel["outward"], true);
+        assert!(kernel.get("auto_approvable").is_none(), "the kernel refuses fields it does not know");
     }
 
     struct Probe;

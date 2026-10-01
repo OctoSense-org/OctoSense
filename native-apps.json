@@ -44,6 +44,7 @@
       "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9", "local": ".sources/makepad/apps/sheets" },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
+      "bin_features": ["standalone"],
       "default_features": false,
       "crate_features": [],
       "implies": [],
@@ -71,7 +72,7 @@
       "agent": {
         "octos": [],
         "tools": [
-          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real, unsandboxed, in the terminal they see. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
+          {"name": "terminal.run", "description": "Type a command followed by Enter into the person's live Terminal. The person approves each command first, on a sheet that shows it exactly; it then runs for real in the terminal they see, inside the Terminal's own sandbox: the person's files and the network are reachable, OctoSense's private data and the build toolchain are not. It returns at once: the output is on the Terminal's screen.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "maxLength": 4096}}, "required": ["command"], "additionalProperties": false}, "risk": "destructive", "confirm": "host", "shareable": true},
           {"name": "terminal.read_screen", "description": "Read the terminal grid that is visible now, with trailing spaces removed from each row, plus cursor and working-directory context.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": false}, "risk": "read", "shareable": true},
           {"name": "terminal.read_scrollback", "description": "Read the last requested number of lines from the terminal's scrollback plus screen (default 200, at most 2000).", "input_schema": {"type": "object", "properties": {"lines": {"type": "integer", "minimum": 1, "maximum": 2000}}, "additionalProperties": false}, "risk": "read", "shareable": true}
         ],
