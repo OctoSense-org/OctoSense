@@ -445,7 +445,9 @@ fn checked_reply(reply: ToolReply, tool: &str, schema: Option<Value>, max_bytes:
 pub fn trigger_of(stamped: &TurnTrigger) -> Trigger {
     match stamped {
         TurnTrigger::Person => Trigger::Person,
-        TurnTrigger::App => Trigger::App,
+        // The app's word that the person asked: its run, not the person's
+        // (only a shell surface vouches for the person).
+        TurnTrigger::AppSaysPerson | TurnTrigger::App => Trigger::App,
         TurnTrigger::Incoming { from } => Trigger::IncomingContent { from: from.clone() },
         TurnTrigger::SystemAgent => Trigger::SystemAgent,
         TurnTrigger::Unknown => Trigger::Unknown,
