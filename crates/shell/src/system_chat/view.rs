@@ -17,6 +17,8 @@
 //!   with its cursor; a double-click on the header puts it back in its
 //!   column. The placement holds while the shell runs and stays on screen
 //!   when the window shrinks ([`placed_pane`], [`dragged`]).
+//! - **The caret** blinks at the end of the prompt while the pane holds
+//!   the keyboard, and stays on while the person types.
 //! - **Scrolling**: the wheel, and a touch drag with its fling
 //!   ([`TouchScroll`]): a phone sends no scroll events for a drag. A drag
 //!   that starts on a button scrolls and presses nothing.
@@ -72,6 +74,8 @@ const CORNER: f64 = 14.0;
 const HEADER_H: f64 = PAD + 30.0 + 22.0;
 /// Two presses on the header this close (seconds) put the pane back.
 const DOUBLE_PRESS_S: f64 = 0.4;
+/// The caret's half period (seconds), as makepad's `TextInput` blinks.
+const BLINK_S: f64 = 0.5;
 
 /// What a press on the desktop pane's frame drags: the header moves it; an
 /// edge or a corner (by compass point) sizes it.
@@ -385,6 +389,9 @@ pub struct ShellSystemChat {
     /// The "Ask <app>" panel ([`crate::app_chat`]) instead of the system chat.
     #[live]
     app_panel: bool,
+    /// The pane's own area: what `redraw` repaints (`draw_bg` draws
+    /// nothing, so its area alone would repaint nothing).
+    #[redraw]
     #[rust]
     area: Area,
     #[rust]
@@ -435,6 +442,14 @@ pub struct ShellSystemChat {
     /// the pane back).
     #[rust]
     header_pressed: f64,
+    /// The caret's blink: its timer, whether it is in its off half, and
+    /// the prompt it last saw (typing keeps it on).
+    #[rust]
+    blink_timer: Timer,
+    #[rust]
+    blink_off: bool,
+    #[rust]
+    blink_draft: String,
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -746,6 +761,45 @@ impl ShellSystemChat {
     }
 
     /// This is the "Ask <app>" panel.
+    /// Whether what the person types lands in this prompt now: the pane is
+    /// open and takes text, and its prompt holds the key focus, or nothing
+    /// does and the shell hands typed text to this pane (F8 opened it
+    /// without a press; lib.rs `chat_text_input`).
+    fn typing(&self, cx: &Cx) -> bool {
+        if !self.usable || !self.source().is_open() {
+            return false;
+        }
+        if self.has_keyboard(cx) {
+            return true;
+        }
+        let pane = match self.source() {
+            Source::System => super::composer::Pane::System,
+            Source::App => super::composer::Pane::App,
+        };
+        cx.key_focus().is_empty() && super::composer::text_target(true, crate::app_chat::is_focused(), super::is_open()) == Some(pane)
+    }
+
+    /// The caret's blink: on again (and its half period restarted) when the
+    /// prompt changed, so it never hides while the person types; started
+    /// when the prompt takes the keyboard; dropped when it lets go.
+    fn keep_blinking(&mut self, cx: &mut Cx) {
+        if !self.typing(cx) {
+            self.blink_off = false;
+            if !self.blink_timer.is_empty() {
+                cx.stop_timer(self.blink_timer);
+                self.blink_timer = Timer::empty();
+            }
+            return;
+        }
+        let draft = self.source().draft();
+        if draft != self.blink_draft || self.blink_timer.is_empty() {
+            self.blink_draft = draft;
+            self.blink_off = false;
+            cx.stop_timer(self.blink_timer);
+            self.blink_timer = cx.start_timeout(BLINK_S);
+        }
+    }
+
     pub fn is_app_panel(&self) -> bool {
         self.app_panel
     }
@@ -923,6 +977,7 @@ impl ShellSystemChat {
         let usable = source.usable(&model);
         self.usable = usable;
         let (label, hit, enabled) = composer_button(source.person_running(&model), usable, &draft);
+        let caret = self.typing(cx) && !self.blink_off;
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
@@ -932,7 +987,7 @@ impl ShellSystemChat {
             let field = rect(x, field_y, cw - bw - 8.0, FIELD_H);
             self.field = field;
             let placeholder = source.placeholder(model.open_question().is_some());
-            b.d.text_field(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink);
+            b.d.text_field_caret(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink, caret);
             hits.push((field, Hit::Field));
         }
         shown.push(format!("prompt: {draft}"));
@@ -1046,8 +1101,14 @@ fn act(source: Source, hit: Hit) -> Outcome {
 
 impl Widget for ShellSystemChat {
     fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.keep_blinking(cx);
         cx.begin_turtle(walk, self.layout);
-        let screen = visible(cx.turtle().rect(), cx.current_pass_size());
+        let mut screen = visible(cx.turtle().rect(), cx.current_pass_size());
+        // The developer-mode banner holds the bottom strip while it shows:
+        // the pane (and its prompt) stays above it.
+        if crate::dev_mode::status().is_some() {
+            screen.size.y = (screen.size.y - crate::shell::dev_banner::HEIGHT).max(0.0);
+        }
         self.d.begin_surface(cx);
         self.draw_pane(cx, screen);
         self.d.end_surface(cx);
@@ -1073,6 +1134,18 @@ impl Widget for ShellSystemChat {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // The caret's blink, while the prompt holds the keyboard.
+        if self.blink_timer.is_event(event).is_some() {
+            self.blink_timer = Timer::empty();
+            if self.typing(cx) {
+                self.blink_off = !self.blink_off;
+                self.blink_timer = cx.start_timeout(BLINK_S);
+            } else {
+                // The keyboard went elsewhere: the caret goes too.
+                self.blink_off = false;
+            }
+            self.redraw(cx);
+        }
         // A fling goes on frame by frame.
         if let Some(ne) = self.fling_frame.is_event(event) {
             if let Some(dy) = self.touch.fling_step(ne.time) {

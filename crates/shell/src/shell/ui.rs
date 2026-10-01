@@ -1618,6 +1618,24 @@ impl ShellDraw {
         hot: bool,
         foreground: Vec4f,
     ) {
+        self.text_field_caret(cx, r, tok, text, placeholder, focused, hot, foreground, focused && !text.is_empty());
+    }
+
+    /// [`Self::text_field`] with the caret (at the end of the text, at the
+    /// start of an empty field) drawn only when `caret` says: a blinking
+    /// caret is drawn every other half second.
+    pub fn text_field_caret(
+        &mut self,
+        cx: &mut Cx2d,
+        r: Rect,
+        tok: &ShellTokens,
+        text: &str,
+        placeholder: &str,
+        focused: bool,
+        hot: bool,
+        foreground: Vec4f,
+        caret: bool,
+    ) {
         let state = if focused {
             CtrlState::Focus
         } else if hot {
@@ -1645,19 +1663,19 @@ impl ShellDraw {
             );
         } else {
             self.label_elided(cx, inner, false, px, foreground, HAlign::Left, text);
-            if focused {
-                let w = self.measure(cx, false, px, text).min(inner.size.x);
-                self.solid(
-                    cx,
-                    rect(
-                        inner.pos.x + w + 1.0,
-                        inner.pos.y + (inner.size.y - px * 1.1) * 0.5,
-                        1.0,
-                        px * 1.1,
-                    ),
-                    foreground,
-                );
-            }
+        }
+        if caret {
+            let w = if text.is_empty() { 0.0 } else { self.measure(cx, false, px, text).min(inner.size.x) };
+            self.solid(
+                cx,
+                rect(
+                    inner.pos.x + w + 1.0,
+                    inner.pos.y + (inner.size.y - px * 1.1) * 0.5,
+                    1.0,
+                    px * 1.1,
+                ),
+                foreground,
+            );
         }
     }
 
