@@ -153,6 +153,22 @@ fn a_run_files_every_source_and_reports_it() {
 }
 
 #[test]
+fn list_includes_null_for_missing_story_fields_used_by_news_card() {
+    let rig = Rig::new("list-optional-fields");
+    rig.refresh();
+
+    for feed in ["hn", "techmeme", "google"] {
+        let list = rig.list(json!({"feed": feed, "current": true}));
+        for item in list["items"].as_array().unwrap() {
+            let fields = item.as_object().unwrap();
+            for field in ["image", "discussion", "points", "comments"] {
+                assert!(fields.contains_key(field), "{feed} story is missing {field}: {item}");
+            }
+        }
+    }
+}
+
+#[test]
 fn the_ledger_keeps_stories_from_coming_back() {
     let rig = Rig::new("ledger");
     rig.refresh();
