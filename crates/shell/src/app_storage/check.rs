@@ -13,7 +13,9 @@
 //!
 //! A flagged workspace is refused: the shell logs it and
 //! `AppStorage::agent_workspace` answers `Refused` for that account until
-//! a later start finds it clean. Nothing is deleted: the person's files
+//! a later start finds it clean, and the broker (through
+//! `ToolHost::workspace_refused`) neither prepares nor resumes its peer,
+//! rejects its `peer/input` and answers its calls `workspace_refused`. Nothing is deleted: the person's files
 //! stay where they are. The walk never follows symlinks and stops after
 //! [`MAX_ENTRIES`] entries (logged as incomplete).
 

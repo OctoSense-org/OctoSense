@@ -105,14 +105,20 @@ fn refresh(){
     ui.tile_list.render()
 }
 
-// A story as the news service keeps it, in this script's row shape.
+// A story as the news service keeps it, in this script's row shape. The
+// service leaves out the fields a story does not have (`image`,
+// `discussion`, `points`, `comments`), and reading a missing field is an
+// error here, not nil: `optional` reads one that may be missing.
+fn optional(it, key, fallback){
+    let value = try { it[key] } catch { nil }
+    if value == nil { return fallback }
+    value
+}
+
 fn service_row(it){
-    let image = ""
-    if it.image != nil { image = it.image }
-    let discussion = ""
-    if it.discussion != nil { discussion = it.discussion }
     let row = {title: it.title link: it.url source: it.source published: it.published summary: it.summary
-        image: image discussion: discussion points: it.points comments: it.comments}
+        image: optional(it, "image", "") discussion: optional(it, "discussion", "")
+        points: optional(it, "points", nil) comments: optional(it, "comments", nil)}
     row
 }
 
@@ -361,7 +367,7 @@ HostedView{width: Fill height: Fill
             View{width: Fill height: Fit flow: Right align: Align{y: 1.0} padding: Inset{left: 18 right: 12 top: 14 bottom: 6}
                 View{width: Fill height: Fit flow: Down spacing: 2
                     date := Label{text: "" draw_text.color: secondary draw_text.text_style: theme.font_bold{font_size: 12}}
-                    Label{text: "News" draw_text.color: ink draw_text.text_style: theme.font_bold{font_size: 32}}
+                    Label{text: "News" draw_text.color: theme.color_text draw_text.text_style: theme.font_bold{font_size: 32}}
                 }
                 BarButton{text: "Refresh" on_click: || refresh()}
             }

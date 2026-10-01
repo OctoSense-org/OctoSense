@@ -40,6 +40,9 @@ use serde_json::{json, Value};
 
 /// Raw methods and notifications of UPCR-2026-035.
 pub const REGISTER: &str = "peer/tools/register";
+/// The host releases an app peer's route (octos#2658): the app closed or
+/// its agent was turned off.
+pub const UNREGISTER: &str = "peer/tools/unregister";
 pub const TOOL_CALL: &str = "peer/tool/call";
 pub const TOOL_RESULT: &str = "peer/tool/result";
 pub const TOOL_CANCEL: &str = "peer/tool/cancel";
@@ -972,6 +975,15 @@ pub trait ToolHost: Send + Sync {
     /// its calls are answered `signed_out` and no turn starts for it.
     fn suspended(&self, _app_id: &str, _account: &str) -> bool {
         false
+    }
+
+    /// Why the host's startup check refused `app_id`'s `account` workspace
+    /// (ADR 0004 §11: it contains or reaches the host's secrets), if it
+    /// did. A refused account's peer is neither prepared nor resumed, its
+    /// `peer/input` is rejected and its calls are answered
+    /// `workspace_refused`, until a later start finds the folder clean.
+    fn workspace_refused(&self, _app_id: &str, _account: &str) -> Option<String> {
+        None
     }
 
     /// One call, stamped. Answer through `reply`, once.
