@@ -3552,6 +3552,7 @@ impl App {
         if target == shell::menu::SYSTEM_CHAT_ROW {
             self.close_shell_menu(cx);
             system_chat::open();
+            self.focus_system_chat(cx);
             self.system_chat_changed(cx);
             return;
         }
@@ -3861,6 +3862,18 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// The system chat just opened on a desktop: its prompt takes the
+    /// keyboard, so an input method composes in it at once (a phone opens
+    /// it with a tap, which gives the keyboard itself).
+    fn focus_system_chat(&mut self, cx: &mut Cx) {
+        if !system_chat::is_open() || self.state.is_none() || self.state_mut().style.target.mobile() {
+            return;
+        }
+        if let Some(mut pane) = self.ui.widget(cx, ids!(shell_system_chat)).borrow_mut::<system_chat::view::ShellSystemChat>() {
+            pane.focus_prompt(cx);
+        }
     }
 
     /// A press on a toast (shell/notifications.rs `hit`). Only the press: a
@@ -6298,6 +6311,7 @@ impl App {
                     system_chat::toggle();
                     // The system chat takes the keyboard when it opens.
                     app_chat::focus(!system_chat::is_open());
+                    self.focus_system_chat(cx);
                     self.system_chat_changed(cx);
                     return;
                 }

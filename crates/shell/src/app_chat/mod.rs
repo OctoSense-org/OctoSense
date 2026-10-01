@@ -547,6 +547,10 @@ pub fn key(e: &KeyEvent) -> bool {
                 p.ui_generation += 1;
             }
         }),
+        Key::NewLine => with(|p| {
+            p.draft.newline();
+            p.ui_generation += 1;
+        }),
         Key::Stop => stop(),
         Key::Swallow => {}
         // Function keys (F8: the system chat) go on to the shell.

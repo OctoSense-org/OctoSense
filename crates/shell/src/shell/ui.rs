@@ -1000,47 +1000,24 @@ impl ShellDraw {
         max_w: f64,
         max_lines: usize,
     ) -> Vec<String> {
-        let mut lines: Vec<String> = Vec::new();
-        for para in text.split('\n') {
-            let mut line = String::new();
-            for word in para.split_whitespace() {
-                let candidate = if line.is_empty() {
-                    word.to_string()
-                } else {
-                    format!("{} {}", line, word)
-                };
-                if self.measure(cx, bold, px, &candidate) <= max_w || line.is_empty() {
-                    line = candidate;
-                } else {
-                    lines.push(std::mem::take(&mut line));
-                    line = word.to_string();
-                    if lines.len() == max_lines {
-                        break;
-                    }
-                }
-            }
-            if !line.is_empty() && lines.len() < max_lines {
-                lines.push(line);
-            }
-            if lines.len() >= max_lines {
-                break;
-            }
-        }
+        let mut lines = self.wrap_lines(cx, bold, px, text, max_w, false);
         // Anything that did not fit is elided onto the last line.
-        let overflowed = {
-            let joined = lines.join(" ");
-            joined.split_whitespace().count() < text.split_whitespace().count()
-        };
-        if overflowed {
+        if lines.len() > max_lines {
+            lines.truncate(max_lines);
             if let Some(last) = lines.last_mut() {
-                let s = format!("{}\u{2026}", last);
-                *last = s;
+                last.push('\u{2026}');
             }
         }
         if lines.is_empty() && !text.is_empty() {
             lines.push(self.elide(cx, bold, px, text, max_w));
         }
         lines
+    }
+
+    /// Every line of `text` wrapped to `max_w` ([`wrap_with`]), blank lines
+    /// kept when `keep_blank` says (a prompt being typed shows them).
+    pub fn wrap_lines(&mut self, cx: &mut Cx2d, bold: bool, px: f64, text: &str, max_w: f64, keep_blank: bool) -> Vec<String> {
+        wrap_with(text, max_w, keep_blank, |s| self.measure(cx, bold, px, s))
     }
 
     /// One line, placed at an absolute top-left.
@@ -1679,6 +1656,56 @@ impl ShellDraw {
         }
     }
 
+    /// A text field of several lines: `lines` (wrapped already) from the
+    /// top, `line_h` apart and centred as a block; the placeholder while
+    /// there is no text; the caret after the last line when `caret` says.
+    /// Gives back the caret's rect (the input method's anchor).
+    pub fn text_area(
+        &mut self,
+        cx: &mut Cx2d,
+        r: Rect,
+        tok: &ShellTokens,
+        lines: &[String],
+        line_h: f64,
+        placeholder: &str,
+        focused: bool,
+        hot: bool,
+        foreground: Vec4f,
+        caret: bool,
+    ) -> Rect {
+        let state = if focused {
+            CtrlState::Focus
+        } else if hot {
+            CtrlState::Hover
+        } else {
+            CtrlState::Normal
+        };
+        self.control(cx, r, &tok.controls, state);
+        let inner = rect(
+            r.pos.x + tok.spacing.control_padding_x,
+            r.pos.y,
+            (r.size.x - tok.spacing.control_padding_x * 2.0).max(0.0),
+            r.size.y,
+        );
+        let px = tok.font.body;
+        let n = lines.len().max(1) as f64;
+        let top = r.pos.y + (r.size.y - n * line_h) * 0.5;
+        if lines.iter().all(|l| l.is_empty()) && lines.len() <= 1 {
+            self.label_elided(cx, rect(inner.pos.x, top, inner.size.x, line_h), false, px, super::darker(foreground, 1.6), HAlign::Left, placeholder);
+        } else {
+            for (i, line) in lines.iter().enumerate() {
+                self.label_elided(cx, rect(inner.pos.x, top + i as f64 * line_h, inner.size.x, line_h), false, px, foreground, HAlign::Left, line);
+            }
+        }
+        let last = lines.last().map(String::as_str).unwrap_or("");
+        let w = if last.is_empty() { 0.0 } else { self.measure(cx, false, px, last).min(inner.size.x) };
+        let at = rect(inner.pos.x + w + 1.0, top + (n - 1.0) * line_h + (line_h - px * 1.1) * 0.5, 1.0, px * 1.1);
+        if caret {
+            self.solid(cx, at, foreground);
+        }
+        at
+    }
+
     /// `Ui/PanelSectionHeader.qml`: bold caption in `darker(fg, 1.4)`.
     pub fn section_header(&mut self, cx: &mut Cx2d, r: Rect, tok: &ShellTokens, fg: Vec4f, s: &str) {
         self.label(
@@ -1869,3 +1896,176 @@ mod tests {
         assert!(d.material().is_glass());
     }
 }
+
+/// Whether a line may break before and after `c` with no space between: the
+/// CJK scripts (ideographs, kana, hangul) and their punctuation and
+/// full-width forms.
+pub fn breaks_anywhere(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF | 0x2E80..=0x2FDF | 0x2FF0..=0x30FF | 0x3100..=0x33FF
+        | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xA000..=0xA4CF | 0xAC00..=0xD7AF
+        | 0xF900..=0xFAFF | 0xFE30..=0xFE4F | 0xFF00..=0xFFEF | 0x20000..=0x3FFFF)
+}
+
+/// Punctuation a line must not start with: it stays at the end of the line
+/// before, a little past the edge (CJK line breaking's "kinsoku").
+fn closes(c: char) -> bool {
+    matches!(c, '，' | '。' | '、' | '；' | '：' | '！' | '？' | '）' | '」' | '』' | '】' | '》' | '〉' | '〕' | '”' | '’' | '…' | '．' | '・' | 'ー' | '～' | ',' | '.' | ';' | ':' | '!' | '?' | ')' | ']' | '}')
+}
+
+/// A paragraph's pieces for wrapping: a run of spaces, or a word. A word
+/// is a run of other characters, across style runs ("**bold**text" is one
+/// word, two segments), or one CJK character, which a line may break
+/// around.
+#[derive(Debug, PartialEq)]
+enum Piece<S> {
+    Space,
+    Word(Vec<(String, S)>),
+}
+
+fn pieces<S: Copy + PartialEq>(runs: &[(&str, S)]) -> Vec<Piece<S>> {
+    let mut out: Vec<Piece<S>> = Vec::new();
+    // Whether the last piece is a word that takes more characters.
+    let mut open = false;
+    for &(text, style) in runs {
+        for c in text.chars() {
+            if c.is_whitespace() {
+                open = false;
+                if !matches!(out.last(), Some(Piece::Space)) {
+                    out.push(Piece::Space);
+                }
+            } else if breaks_anywhere(c) {
+                open = false;
+                out.push(Piece::Word(vec![(c.to_string(), style)]));
+            } else if let (true, Some(Piece::Word(segments))) = (open, out.last_mut()) {
+                match segments.last_mut() {
+                    Some((last, s)) if *s == style => last.push(c),
+                    _ => segments.push((c.to_string(), style)),
+                }
+            } else {
+                out.push(Piece::Word(vec![(c.to_string(), style)]));
+                open = true;
+            }
+        }
+    }
+    out
+}
+
+/// One paragraph of styled runs wrapped to `max_w` by `measure` (a
+/// string's width in a style): lines break at spaces (a run of them is
+/// one), between CJK characters, and inside a word longer than a line;
+/// never before closing punctuation. Each line is its runs, adjacent ones
+/// of one style merged. No lines for an empty paragraph.
+pub fn wrap_styled<S: Copy + PartialEq>(runs: &[(&str, S)], max_w: f64, mut measure: impl FnMut(&str, S) -> f64) -> Vec<Vec<(String, S)>> {
+    fn push<S: PartialEq>(line: &mut Vec<(String, S)>, text: &str, style: S) {
+        match line.last_mut() {
+            Some((last, s)) if *s == style => last.push_str(text),
+            _ => line.push((text.to_string(), style)),
+        }
+    }
+    let mut lines = Vec::new();
+    let mut line: Vec<(String, S)> = Vec::new();
+    let mut w = 0.0;
+    // A space is owed before the next word on this line, in this style.
+    let mut space: Option<S> = None;
+    let mut last_style: Option<S> = None;
+    for piece in pieces(runs) {
+        let segments = match piece {
+            Piece::Space => {
+                space = if line.is_empty() { None } else { last_style };
+                continue;
+            }
+            Piece::Word(segments) => segments,
+        };
+        let ww: f64 = segments.iter().map(|(t, s)| measure(t, *s)).sum();
+        let gap = space.map_or(0.0, |s| measure(" ", s));
+        let lone_closer = matches!(&segments[..], [(t, _)] if { let mut cs = t.chars(); matches!((cs.next(), cs.next()), (Some(c), None) if closes(c)) });
+        if !line.is_empty() && w + gap + ww > max_w && !lone_closer {
+            lines.push(std::mem::take(&mut line));
+            w = 0.0;
+        } else if let (Some(s), false) = (space, line.is_empty()) {
+            push(&mut line, " ", s);
+            w += gap;
+        }
+        space = None;
+        if line.is_empty() && ww > max_w {
+            // Longer than a line: broken between its characters.
+            for (text, style) in &segments {
+                for c in text.chars() {
+                    let mut buf = [0u8; 4];
+                    let c_str = c.encode_utf8(&mut buf);
+                    let cw = measure(c_str, *style);
+                    if !line.is_empty() && w + cw > max_w && !closes(c) {
+                        lines.push(std::mem::take(&mut line));
+                        w = 0.0;
+                    }
+                    push(&mut line, c_str, *style);
+                    w += cw;
+                }
+            }
+        } else {
+            for (text, style) in &segments {
+                push(&mut line, text, *style);
+            }
+            w += ww;
+        }
+        last_style = segments.last().map(|(_, s)| *s);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// `text` wrapped to `max_w` by `measure` ([`wrap_styled`], one style): a
+/// paragraph per line break; blank paragraphs are lines only when
+/// `keep_blank`.
+pub fn wrap_with(text: &str, max_w: f64, keep_blank: bool, mut measure: impl FnMut(&str) -> f64) -> Vec<String> {
+    let mut lines = Vec::new();
+    for para in text.split('\n') {
+        let para = para.trim_end_matches('\r');
+        let wrapped = wrap_styled(&[(para, ())], max_w, |s, _| measure(s));
+        if wrapped.is_empty() {
+            if keep_blank {
+                lines.push(String::new());
+            }
+            continue;
+        }
+        lines.extend(wrapped.into_iter().map(|runs| runs.into_iter().map(|(t, _)| t).collect::<String>()));
+    }
+    lines
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::*;
+
+    /// A width per character: 1 for Latin, 2 for CJK (as full-width text).
+    fn width(s: &str) -> f64 {
+        s.chars().map(|c| if breaks_anywhere(c) { 2.0 } else { 1.0 }).sum()
+    }
+
+    #[test]
+    fn latin_text_breaks_at_spaces_and_a_long_word_between_its_letters() {
+        assert_eq!(wrap_with("the quick brown fox", 10.0, false, width), ["the quick", "brown fox"]);
+        assert_eq!(wrap_with("a  b", 10.0, false, width), ["a b"], "a run of spaces is one");
+        assert_eq!(wrap_with("https://example.com/x", 8.0, false, width), ["https://", "example.", "com/x"]);
+    }
+
+    #[test]
+    fn chinese_breaks_between_characters_but_never_before_a_closing_mark() {
+        assert_eq!(wrap_with("你好世界再见", 6.0, false, width), ["你好世", "界再见"]);
+        // "，" would start the second line: it stays on the first.
+        assert_eq!(wrap_with("你好世，再见", 6.0, false, width), ["你好世，", "再见"]);
+        // Latin words and CJK mix with no space between them.
+        assert_eq!(wrap_with("用OctoSense发送", 12.0, false, width), ["用OctoSense", "发送"]);
+    }
+
+    #[test]
+    fn paragraphs_are_lines_and_blank_ones_only_when_asked() {
+        assert_eq!(wrap_with("one\n\ntwo", 10.0, false, width), ["one", "two"]);
+        assert_eq!(wrap_with("one\n\ntwo", 10.0, true, width), ["one", "", "two"]);
+        assert_eq!(wrap_with("one\r\ntwo\n", 10.0, true, width), ["one", "two", ""], "a trailing break is a new, empty line");
+    }
+}
+

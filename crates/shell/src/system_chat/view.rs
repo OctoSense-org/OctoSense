@@ -19,6 +19,17 @@
 //!   when the window shrinks ([`placed_pane`], [`dragged`]).
 //! - **The caret** blinks at the end of the prompt while the pane holds
 //!   the keyboard, and stays on while the person types.
+//! - **The prompt** takes several lines: it grows with what is typed up to
+//!   [`PROMPT_LINES`], then shows its last lines; Shift+Return breaks a
+//!   line ([`super::composer`]). On a desktop it takes the keyboard when the
+//!   pane opens, so an input method (Chinese, Japanese) composes in it at
+//!   once, its candidates at the caret.
+//! - **Replies are Markdown** ([`super::markdown`]): styled runs, lists,
+//!   quotes, code and rules. Text wraps between CJK characters as well as
+//!   at spaces. The laid-out transcript is kept until the conversation,
+//!   the width or the font changes.
+//! - **Colours** follow the shell's theme, light or dark, like its other
+//!   surfaces ([`ShellSystemChat::set_material`]).
 //! - **Scrolling**: the wheel, and a touch drag with its fling
 //!   ([`TouchScroll`]): a phone sends no scroll events for a drag. A drag
 //!   that starts on a button scrolls and presses nothing.
@@ -40,10 +51,12 @@
 
 use makepad_widgets::*;
 
+use super::markdown as md;
 use super::model::{ApprovalState, ChatModel, Item, Phase, Role, ToolStatus};
 use crate::approvals::view::Buttons;
-use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
-use crate::shell::{alpha, ShellTokens};
+use crate::shell::ui::{contains, rect, wrap_styled, DrawShellFill, HAlign, ShellDraw};
+use crate::shell::{alpha, MaterialTokens, ShellPalette, ShellTokens};
+use std::rc::Rc;
 
 script_mod! {
     use mod.prelude.widgets_internal.*
@@ -76,6 +89,12 @@ const HEADER_H: f64 = PAD + 30.0 + 22.0;
 const DOUBLE_PRESS_S: f64 = 0.4;
 /// The caret's half period (seconds), as makepad's `TextInput` blinks.
 const BLINK_S: f64 = 0.5;
+/// The most lines the prompt grows to; past them its last lines show.
+pub const PROMPT_LINES: usize = 8;
+/// A list's nesting step, a quote's and a code line's inset.
+const LIST_INDENT: f64 = 16.0;
+const QUOTE_INDENT: f64 = 12.0;
+const CODE_PAD: f64 = 8.0;
 
 /// What a press on the desktop pane's frame drags: the header moves it; an
 /// edge or a corner (by compass point) sizes it.
@@ -361,12 +380,140 @@ impl TouchScroll {
 /// One drawn line of the transcript.
 #[derive(Clone, Debug, PartialEq)]
 struct Line {
+    /// The line as plain text (what a hidden-window run logs).
     text: String,
+    /// Its styled runs (a reply's Markdown), drawn instead of `text`.
+    runs: md::Runs,
     bold: bool,
     small: bool,
     dim: bool,
     accent: bool,
     gap_before: f64,
+    /// How far right of the transcript's edge it starts (lists, quotes).
+    indent: f64,
+    /// A heading's size over the body's; 1 for any other line.
+    scale: f64,
+    kind: LineKind,
+}
+
+/// What a transcript line is drawn as, besides its text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum LineKind {
+    #[default]
+    Text,
+    /// A line of a code block or a table, on a tint.
+    Code,
+    /// A quoted line, with a bar to its left.
+    Quote,
+    Rule,
+}
+
+impl Line {
+    fn plain(text: String, bold: bool, small: bool, dim: bool, accent: bool, gap_before: f64) -> Line {
+        Line { text, runs: Vec::new(), bold, small, dim, accent, gap_before, indent: 0.0, scale: 1.0, kind: LineKind::Text }
+    }
+
+    fn height(&self, body: f64, small: f64) -> f64 {
+        let px = if self.small { small } else { body } * self.scale;
+        self.gap_before + if self.kind == LineKind::Rule { 12.0 } else { px * 1.45 }
+    }
+}
+
+/// What a laid-out transcript depends on: the conversation's generation,
+/// the width, the two font sizes and the text scale.
+type TranscriptKey = (u64, f64, f64, f64, f64);
+
+/// Styled runs wrapped to `width`, each run measured in its weight at `px`
+/// (the drawn size).
+fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<md::Runs> {
+    let runs: Vec<(&str, md::Style)> = runs.iter().map(|(t, s)| (t.as_str(), *s)).collect();
+    wrap_styled(&runs, width, |t, s| d.measure(cx, bold || s.bold, px, t))
+}
+
+/// A code line wrapped to `width` between characters, its spaces kept (a
+/// tab as four).
+fn wrap_code(d: &mut ShellDraw, cx: &mut Cx2d, text: &str, width: f64, px: f64) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut w = 0.0;
+    for c in text.chars() {
+        let piece = if c == '\t' { "    ".to_string() } else { c.to_string() };
+        let cw = d.measure(cx, false, px, &piece);
+        if !line.is_empty() && w + cw > width {
+            lines.push(std::mem::take(&mut line));
+            w = 0.0;
+        }
+        line.push_str(&piece);
+        w += cw;
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// An agent's reply as transcript lines ([`md::blocks`]): each block
+/// wrapped to `width`, the first line `gap` below the speaker.
+fn markdown_lines(d: &mut ShellDraw, cx: &mut Cx2d, lines: &mut Vec<Line>, text: &str, width: f64, body: f64, gap: f64) {
+    let ts = d.text_scale();
+    let first = lines.len();
+    let mut gap_next = gap;
+    for block in md::blocks(text) {
+        let base = Line::plain(String::new(), false, false, false, false, 0.0);
+        let mut out: Vec<Line> = Vec::new();
+        match block {
+            md::Block::Blank => {
+                gap_next = gap_next.max(6.0);
+                continue;
+            }
+            md::Block::Rule => out.push(Line { kind: LineKind::Rule, dim: true, ..base }),
+            md::Block::Code(code) => {
+                let wrapped = wrap_code(d, cx, &code, (width - CODE_PAD * 2.0).max(1.0), body * ts);
+                let wrapped = if wrapped.is_empty() { vec![String::new()] } else { wrapped };
+                out.extend(wrapped.into_iter().map(|l| Line { text: l, kind: LineKind::Code, indent: CODE_PAD, ..base.clone() }));
+            }
+            md::Block::Heading(level, runs) => {
+                let scale = match level {
+                    1 => 1.3,
+                    2 => 1.15,
+                    _ => 1.0,
+                };
+                if lines.len() > first {
+                    gap_next = gap_next.max(8.0);
+                }
+                out.extend(wrap_runs(d, cx, &runs, width, body * scale * ts, true).into_iter().map(|r| Line { runs: r, bold: true, scale, ..base.clone() }));
+            }
+            md::Block::Item { depth, marker, runs } => {
+                let indent = depth as f64 * LIST_INDENT;
+                let marker = format!("{marker} ");
+                let mw = d.measure(cx, false, body * ts, &marker);
+                let wrapped = wrap_runs(d, cx, &runs, (width - indent - mw).max(1.0), body * ts, false);
+                let wrapped = if wrapped.is_empty() { vec![Vec::new()] } else { wrapped };
+                for (i, mut r) in wrapped.into_iter().enumerate() {
+                    let at = if i == 0 {
+                        r.insert(0, (marker.clone(), md::Style::default()));
+                        indent
+                    } else {
+                        indent + mw
+                    };
+                    out.push(Line { runs: r, indent: at, ..base.clone() });
+                }
+            }
+            md::Block::Quote(runs) => {
+                out.extend(wrap_runs(d, cx, &runs, (width - QUOTE_INDENT).max(1.0), body * ts, false).into_iter().map(|r| Line { runs: r, dim: true, indent: QUOTE_INDENT, kind: LineKind::Quote, ..base.clone() }));
+            }
+            md::Block::Para(runs) => {
+                out.extend(wrap_runs(d, cx, &runs, width, body * ts, false).into_iter().map(|r| Line { runs: r, ..base.clone() }));
+            }
+        }
+        for mut line in out {
+            if !line.runs.is_empty() {
+                line.text = line.runs.iter().map(|(t, _)| t.as_str()).collect();
+            }
+            line.gap_before = std::mem::take(&mut gap_next);
+            lines.push(line);
+        }
+    }
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -450,6 +597,9 @@ pub struct ShellSystemChat {
     blink_off: bool,
     #[rust]
     blink_draft: String,
+    /// The transcript last laid out, and what it was laid out for.
+    #[rust]
+    laid_out: Option<(TranscriptKey, Rc<Vec<Line>>)>,
 }
 
 /// The conversation a pane shows: the system chat's or an app's.
@@ -501,6 +651,12 @@ impl Source {
         match self {
             Source::System => super::scroll(),
             Source::App => crate::app_chat::scroll(),
+        }
+    }
+    fn generation(self) -> u64 {
+        match self {
+            Source::System => super::generation(),
+            Source::App => crate::app_chat::generation(),
         }
     }
     fn scroll_by(self, dy: f64, max: f64) {
@@ -800,6 +956,23 @@ impl ShellSystemChat {
         }
     }
 
+    /// The shell's theme (light or dark) and material, as its other
+    /// surfaces take them (desktop_app.rs `apply_material_to_chrome`).
+    pub fn set_material(&mut self, m: MaterialTokens, palette: Option<ShellPalette>) {
+        self.d.set_material(m);
+        self.d.set_palette(palette);
+        self.laid_out = None;
+    }
+
+    /// The pane just opened on a desktop: its prompt takes the keyboard
+    /// unless a field already holds it, so typing (and an input method's
+    /// composing) lands in it at once.
+    pub fn focus_prompt(&mut self, cx: &mut Cx) {
+        if self.source().is_open() && cx.key_focus().is_empty() {
+            self.take_keyboard(cx);
+        }
+    }
+
     pub fn is_app_panel(&self) -> bool {
         self.app_panel
     }
@@ -852,7 +1025,7 @@ impl ShellSystemChat {
             for para in text.split('\n') {
                 let wrapped = if para.trim().is_empty() { vec![String::new()] } else { d.wrap(cx, false, px, para, width, 400) };
                 for l in wrapped {
-                    lines.push(Line { text: l, bold: false, small: small_text, dim, accent, gap_before: if first { gap } else { 0.0 } });
+                    lines.push(Line::plain(l, false, small_text, dim, accent, if first { gap } else { 0.0 }));
                     first = false;
                 }
             }
@@ -865,12 +1038,17 @@ impl ShellSystemChat {
                         (None, Role::User) => "You",
                         (None, Role::Assistant) => self.source().assistant_label(),
                     };
-                    lines.push(Line { text: who.into(), bold: true, small: true, dim: *role == Role::User, accent: false, gap_before: 12.0 });
+                    lines.push(Line::plain(who.into(), true, true, *role == Role::User, false, 12.0));
                     let mut text = text.clone();
                     if running && i == last && *role == Role::Assistant {
                         text.push('\u{258d}');
                     }
-                    push_wrapped(&mut self.d, cx, &mut lines, &text, false, false, false, 2.0);
+                    // A reply is Markdown; what the person typed is shown as typed.
+                    if *role == Role::Assistant {
+                        markdown_lines(&mut self.d, cx, &mut lines, &text, width, body, 2.0);
+                    } else {
+                        push_wrapped(&mut self.d, cx, &mut lines, &text, false, false, false, 2.0);
+                    }
                 }
                 Item::Tool { name, status, detail, .. } => {
                     let state = match status {
@@ -971,9 +1149,9 @@ impl ShellSystemChat {
         self.d.separator(cx, rect(x, y, cw, 1.0), ink, 0.12);
         let top = y + 6.0;
 
-        // Composer at the bottom.
+        // Composer at the bottom: as tall as its lines.
         let bottom = pane.pos.y + pane.size.y - PAD;
-        let field_y = bottom - FIELD_H;
+        let field_y;
         let usable = source.usable(&model);
         self.usable = usable;
         let (label, hit, enabled) = composer_button(source.person_running(&model), usable, &draft);
@@ -981,13 +1159,24 @@ impl ShellSystemChat {
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
-            let button = b.draw(cx, x + cw - bw, field_y + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
+            let field_w = cw - bw - 8.0;
+            let inner_w = (field_w - tok.spacing.control_padding_x * 2.0).max(1.0);
+            let ts = b.d.text_scale();
+            let mut lines = b.d.wrap_lines(cx, false, tok.font.body * ts, &draft, inner_w, true);
+            if lines.len() > PROMPT_LINES {
+                // Past its height the prompt shows its last lines: the caret's.
+                lines.drain(..lines.len() - PROMPT_LINES);
+            }
+            let line_h = (tok.font.body * ts * 1.45).ceil();
+            let field_h = FIELD_H.max(lines.len() as f64 * line_h + (FIELD_H - line_h));
+            field_y = bottom - field_h;
+            let button = b.draw(cx, x + cw - bw, bottom - FIELD_H + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
             hits.push((button, hit));
             shown.push(format!("button: {label}"));
-            let field = rect(x, field_y, cw - bw - 8.0, FIELD_H);
-            self.field = field;
+            let field = rect(x, field_y, field_w, field_h);
             let placeholder = source.placeholder(model.open_question().is_some());
-            b.d.text_field_caret(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink, caret);
+            // The input method's candidates go by the caret.
+            self.field = b.d.text_area(cx, field, &tok, &lines, line_h, &placeholder, true, hover == Some(field), ink, caret);
             hits.push((field, Hit::Field));
         }
         shown.push(format!("prompt: {draft}"));
@@ -1036,9 +1225,18 @@ impl ShellSystemChat {
             shown.push("Open AI providers".into());
         }
 
-        // The transcript, newest at the bottom, scrolled back by `scroll`.
-        let lines = self.transcript(cx, &model, cw, &tok);
-        let heights: Vec<f64> = lines.iter().map(|l| l.gap_before + if l.small { tok.font.body_small * 1.45 } else { tok.font.body * 1.45 }).collect();
+        // The transcript, newest at the bottom, scrolled back by `scroll`;
+        // laid out again only when it or its measure changed.
+        let key: TranscriptKey = (source.generation(), cw, tok.font.body, tok.font.body_small, self.d.text_scale());
+        let lines = match &self.laid_out {
+            Some((k, lines)) if *k == key => lines.clone(),
+            _ => {
+                let lines = Rc::new(self.transcript(cx, &model, cw, &tok));
+                self.laid_out = Some((key, lines.clone()));
+                lines
+            }
+        };
+        let heights: Vec<f64> = lines.iter().map(|l| l.height(tok.font.body, tok.font.body_small)).collect();
         let total: f64 = heights.iter().sum();
         let room = (list_bottom - top).max(0.0);
         self.max_scroll = (total - room).max(0.0);
@@ -1050,9 +1248,36 @@ impl ShellSystemChat {
             if line_top < top || ly > list_bottom + 0.5 {
                 continue;
             }
-            let px = if line.small { tok.font.body_small } else { tok.font.body };
+            let lh = h - line.gap_before;
+            let px = if line.small { tok.font.body_small } else { tok.font.body } * line.scale;
             let color = if line.accent { accent } else if line.dim { dim } else { ink };
-            self.d.label_elided(cx, rect(x, line_top, cw, h - line.gap_before), line.bold, px, color, HAlign::Left, &line.text);
+            match line.kind {
+                LineKind::Rule => {
+                    self.d.separator(cx, rect(x, line_top + lh * 0.5, cw, 1.0), ink, 0.18);
+                    continue;
+                }
+                LineKind::Code => self.d.solid(cx, rect(x, line_top, cw, lh), alpha(ink, 0.07)),
+                LineKind::Quote => self.d.solid(cx, rect(x + 3.0, line_top, 2.0, lh), alpha(ink, 0.35)),
+                LineKind::Text => {}
+            }
+            let lx = x + line.indent;
+            if line.runs.is_empty() {
+                self.d.label_elided(cx, rect(lx, line_top, (cw - line.indent).max(0.0), lh), line.bold, px, color, HAlign::Left, &line.text);
+                continue;
+            }
+            // Styled runs side by side, measured as they are drawn.
+            let ts = self.d.text_scale();
+            let mut rx = lx;
+            for (text, style) in &line.runs {
+                let bold = line.bold || style.bold;
+                let w = self.d.measure(cx, bold, px * ts, text);
+                if style.code {
+                    self.d.solid(cx, rect(rx - 1.0, line_top + lh * 0.1, w + 2.0, lh * 0.8), alpha(ink, 0.1));
+                }
+                let run_color = if style.link { accent } else { color };
+                self.d.label_elided(cx, rect(rx, line_top, (x + cw - rx).max(0.0) + 2.0, lh), bold, px, run_color, HAlign::Left, text);
+                rx += w;
+            }
         }
         if model.items.is_empty() && usable {
             let hint = source.hint();

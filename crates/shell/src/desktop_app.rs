@@ -63,6 +63,12 @@ impl App {
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<crate::glance_sheet::ShellGlanceSheet>() {
             w.set_material(material, palette);
         }
+        // The chat panes: the system chat and "Ask <app>".
+        for pane in [ids!(shell_system_chat), ids!(shell_app_chat)] {
+            if let Some(mut w) = self.ui.widget(cx, pane).borrow_mut::<crate::system_chat::view::ShellSystemChat>() {
+                w.set_material(material, palette);
+            }
+        }
         if let Some(mut w) = self.ui.widget(cx, ids!(shell_ai_pane)).borrow_mut::<ShellAiPane>() {
             w.set_material(material);
         }

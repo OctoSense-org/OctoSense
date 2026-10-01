@@ -15,9 +15,11 @@
 //!   replaces the text. Without the answer the platform drops the edit.
 //! - **Composition** (a word being composed, `replace_last`) replaces the
 //!   previous preview until it is committed, as the widget does.
-//! - **A line break sends**: the prompt is one line, so a newline an input
-//!   method types (its Enter key) is taken out and asks to send
-//!   ([`Composer::take_submit`]).
+//! - **Lines**: Return sends; Shift+Return breaks the line
+//!   ([`Composer::newline`]); a paste keeps its line breaks. A line break an
+//!   input method types (a phone keyboard's Enter) still sends: it is taken
+//!   out and asks to send ([`Composer::take_submit`]), and the breaks the
+//!   prompt already held stay.
 //!
 //! The caret is always at the end: the pane has no cursor of its own.
 
@@ -30,6 +32,9 @@ pub struct Composer {
     composition: Option<std::ops::Range<usize>>,
     /// A line break was typed: send.
     submit: bool,
+    /// Shift+Return just broke the line: a platform that also types that
+    /// break as text input has it dropped once.
+    key_break: bool,
 }
 
 impl Composer {
@@ -65,14 +70,45 @@ impl Composer {
         CharOffset(chars).to_byte_index(&self.text)
     }
 
+    /// Shift+Return: a line break at the end (the caret's place).
+    pub fn newline(&mut self) {
+        self.composition = None;
+        self.text.push('\n');
+        self.key_break = true;
+    }
+
     /// One text-input event. True when the text changed.
     pub fn text_input(&mut self, event: &TextInputEvent) -> bool {
+        let is_break = |c: char| c == '\n' || c == '\r';
+        // The break Shift+Return already made, typed again as text.
+        if std::mem::take(&mut self.key_break) && !event.was_paste && event.full_state_sync.is_none() && !event.input.is_empty() && event.input.chars().all(is_break) {
+            return false;
+        }
         let before = self.text.clone();
         self.apply(event);
-        if self.text.contains(['\n', '\r']) {
-            self.text.retain(|c| c != '\n' && c != '\r');
-            self.composition = None;
-            self.submit = true;
+        if event.was_paste {
+            // A paste keeps its lines, as plain line breaks.
+            if self.text.contains('\r') {
+                self.text = self.text.replace("\r\n", "\n").replace('\r', "\n");
+            }
+        } else {
+            // A typed line break (an input method's Enter) sends: the new
+            // breaks go, the prompt's own stay.
+            let breaks = |s: &str| s.chars().filter(|c| is_break(*c)).count();
+            let mut typed = breaks(&self.text).saturating_sub(breaks(&before));
+            if typed > 0 {
+                while typed > 0 {
+                    match self.text.rfind(is_break) {
+                        Some(i) => {
+                            self.text.remove(i);
+                        }
+                        None => break,
+                    }
+                    typed -= 1;
+                }
+                self.composition = None;
+                self.submit = true;
+            }
         }
         self.text != before
     }
@@ -175,6 +211,8 @@ pub fn text_target(nothing_focused: bool, app_focused: bool, system_open: bool) 
 pub enum Key {
     Close,
     Send,
+    /// Shift+Return: a line break in the prompt.
+    NewLine,
     Backspace,
     /// Command+N / Control+N.
     New,
@@ -192,6 +230,7 @@ pub fn key(e: &makepad_widgets::KeyEvent) -> Key {
     match e.key_code {
         KeyCode::Escape => Key::Close,
         KeyCode::ReturnKey if !e.modifiers.shift => Key::Send,
+        KeyCode::ReturnKey if !command_key => Key::NewLine,
         KeyCode::Backspace => Key::Backspace,
         KeyCode::KeyN if command_key => Key::New,
         KeyCode::Period if command_key => Key::Stop,
@@ -302,6 +341,28 @@ mod tests {
         let mut c = Composer::default();
         c.text_input(&typed("a\nb"));
         assert_eq!(c.text(), "ab");
+        assert!(c.take_submit());
+    }
+
+    /// Shift+Return breaks the line and a paste keeps its breaks; an input
+    /// method's Enter still sends, and the prompt's own breaks stay.
+    #[test]
+    fn shift_return_and_a_paste_keep_their_line_breaks() {
+        let mut c = Composer::default();
+        c.text_input(&typed("first"));
+        let shifted = KeyEvent { key_code: KeyCode::ReturnKey, modifiers: KeyModifiers { shift: true, ..Default::default() }, ..Default::default() };
+        assert_eq!(key(&shifted), Key::NewLine);
+        c.newline();
+        // A platform that types that break as text too: dropped once.
+        assert!(!c.text_input(&typed("\r")));
+        c.text_input(&typed("second"));
+        assert_eq!(c.text(), "first\nsecond");
+        assert!(!c.take_submit());
+        c.text_input(&TextInputEvent { input: "\r\nthird\r\nfourth".into(), was_paste: true, ..Default::default() });
+        assert_eq!(c.text(), "first\nsecond\nthird\nfourth");
+        assert!(!c.take_submit(), "a paste never sends");
+        c.text_input(&typed("\n"));
+        assert_eq!(c.text(), "first\nsecond\nthird\nfourth");
         assert!(c.take_submit());
     }
 

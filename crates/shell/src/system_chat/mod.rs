@@ -10,6 +10,7 @@
 //! | Setup → Assistant → Command execution: the grant, the person's gesture, restart to apply | [`grants`] |
 //! | the pane (desktop side panel, phone full screen) | [`view`] |
 //! | its prompt: text input, the input method, the pane's keys | [`composer`] |
+//! | Markdown in the replies, as the pane draws it | [`markdown`] |
 //!
 //! **Where it runs.** A thread owns the [`session::Driver`] and its link;
 //! the UI thread sends it [`session::Command`]s and draws a snapshot of the
@@ -38,6 +39,7 @@
 
 pub mod composer;
 pub mod grants;
+pub mod markdown;
 pub mod model;
 pub mod session;
 pub mod view;
@@ -468,6 +470,10 @@ pub fn key(e: &KeyEvent) -> bool {
             if c.draft.backspace() {
                 c.ui_generation += 1;
             }
+        }),
+        composer::Key::NewLine => with(|c| {
+            c.draft.newline();
+            c.ui_generation += 1;
         }),
         composer::Key::New => new_conversation(),
         composer::Key::Stop => interrupt(),
