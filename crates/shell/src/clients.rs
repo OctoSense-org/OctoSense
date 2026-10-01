@@ -175,7 +175,11 @@ pub fn available_apps() -> Vec<AppDef> {
 /// process form) is still an app: its bundled definition answers, and the
 /// hosting rules decide whether it may open (`--module <id>` on a desktop).
 pub fn find_app(id: &str) -> Option<AppDef> {
-    let apps = registry();
+    find_app_in(&registry(), id)
+}
+
+/// Every Card runner row has the binary `card`, so that name is no alias.
+fn find_app_in(apps: &[AppDef], id: &str) -> Option<AppDef> {
     apps.iter().find(|a| a.id == id)
         .or_else(|| apps.iter().find(|a| a.bin == id && a.bin != "card")).cloned()
 }
@@ -1358,13 +1362,18 @@ pub fn spawn_client(
     // A native app runs under the OS sandbox its manifest entry builds
     // (ADR 0004 §3, sandbox/): the built binary itself, never the build.
     let policy = sandbox_policy(app, &plan, hub_port);
-    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref(), false);
+    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref());
     // A sandboxed app's Makepad home is its own jail (ADR 0004 §11): the
     // OctoSense home is closed to it (G6), so settings it kept under
     // `<OctoSense home>/<app id>/` could no longer be written. Its old data
     // is copied into the jail once, by the host.
     if let Some(policy) = &policy {
-        adopt_legacy_app_home(&crate::octosense::paths::home().join(&app.id), &policy.jail.join(&app.id));
+        // Started at startup off the UI thread (`app_storage::init`); a
+        // launch waits only for a copy still running, and copies itself
+        // only when none was started.
+        let (legacy, into) = (crate::octosense::paths::home().join(&app.id), policy.jail.join(&app.id));
+        wait_adopted(&into);
+        adopt_legacy_app_home(&legacy, &into);
         cmd.env("MAKEPAD_HOME", &policy.jail);
     }
     match &applied {
@@ -1478,6 +1487,66 @@ pub fn spawn_client(
     })
 }
 
+type Adoption = std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>;
+
+/// Adoptions started, by target folder: done or still copying.
+fn adoptions() -> &'static std::sync::Mutex<HashMap<PathBuf, Adoption>> {
+    static ADOPTIONS: std::sync::OnceLock<std::sync::Mutex<HashMap<PathBuf, Adoption>>> = std::sync::OnceLock::new();
+    ADOPTIONS.get_or_init(Default::default)
+}
+
+/// [`adopt_legacy_app_home`] on its own thread (the shell starts it at
+/// startup for every app that runs as a process, so a launch rarely waits),
+/// once per target per run.
+pub(crate) fn adopt_legacy_app_home_later(legacy: PathBuf, into: PathBuf) {
+    if into.exists() || !real_dir(&legacy) {
+        return;
+    }
+    let state: Adoption = std::sync::Arc::default();
+    {
+        let mut all = adoptions().lock().unwrap_or_else(|e| e.into_inner());
+        if all.contains_key(&into) {
+            return;
+        }
+        all.insert(into.clone(), state.clone());
+    }
+    let spawned = std::thread::Builder::new().name("adopt-app-home".into()).spawn({
+        let state = state.clone();
+        move || {
+            adopt_legacy_app_home(&legacy, &into);
+            *state.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+            state.1.notify_all();
+        }
+    });
+    if spawned.is_err() {
+        *state.0.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
+}
+
+/// At startup: adopt, in the background, the legacy home of every native
+/// app that runs as a process on this target (its launch sets
+/// `MAKEPAD_HOME` to its jail).
+pub fn adopt_legacy_homes_later(layout: &crate::app_storage::Layout) {
+    use crate::native_apps::Hosting;
+    for app in crate::native_apps::APPS {
+        let hosting = if cfg!(target_os = "macos") {
+            app.macos
+        } else if cfg!(target_os = "windows") {
+            app.windows
+        } else if cfg!(target_os = "linux") {
+            app.linux
+        } else {
+            Hosting::Module
+        };
+        if matches!(hosting, Hosting::Module) {
+            continue;
+        }
+        if let Ok(paths) = layout.app(app.id) {
+            adopt_legacy_app_home_later(crate::octosense::paths::home().join(app.id), paths.jail.join(app.id));
+        }
+    }
+}
+
 impl ClientSlot {
     /// A launch whose build is still running, or whose app has not started.
     pub fn building(&self) -> bool {
@@ -1531,9 +1600,27 @@ impl ClientSlot {
     }
 }
 
+/// Wait for a background adoption into `into` still copying (a launch
+/// needs the data); returns at once when none was started or it is done.
+pub(crate) fn wait_adopted(into: &Path) {
+    let Some(state) = adoptions().lock().unwrap_or_else(|e| e.into_inner()).get(into).cloned() else { return };
+    let mut done = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    while !*done {
+        done = state.1.wait(done).unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+/// A directory that is not a symlink (a legacy home is never followed).
+fn real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+}
+
 /// Copies an app's data from where it lived before its jail (`legacy`) to
 /// `into`, once: only when `into` does not exist yet. Files and folders
-/// are copied, links skipped; the old copy stays where it was.
+/// are copied, links skipped; the old copy stays where it was. The copy
+/// goes to a staging folder beside `into` and is renamed into place only
+/// when complete, so a copy that fails part way (or a crash) leaves no
+/// `into`, and the next launch copies again.
 pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
     fn copy(from: &Path, to: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(to)?;
@@ -1549,17 +1636,89 @@ pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
         }
         Ok(())
     }
-    if into.exists() || !legacy.is_dir() {
+    if into.exists() || !real_dir(legacy) {
         return;
     }
-    match copy(legacy, into) {
+    let Some(name) = into.file_name() else { return };
+    let mut staging_name = name.to_os_string();
+    staging_name.push(".adopting");
+    let staging = into.with_file_name(staging_name);
+    let _ = std::fs::remove_dir_all(&staging);
+    match copy(legacy, &staging).and_then(|()| std::fs::rename(&staging, into)) {
         Ok(()) => makepad_widgets::log!("storage: moved {} into its jail ({})", legacy.display(), into.display()),
-        Err(e) => makepad_widgets::log!("storage: could not copy {} into {}: {e}", legacy.display(), into.display()),
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&staging);
+            makepad_widgets::log!("storage: could not copy {} into {} (retried at the next launch): {e}", legacy.display(), into.display());
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    /// A copy that failed part way leaves nothing in the jail, so the next
+    /// launch copies again (it used to leave a partial folder, and "once"
+    /// then meant never).
+    #[cfg(unix)]
+    #[test]
+    fn should_retry_the_copy_when_an_earlier_one_failed_part_way() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("octosense-adopt-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("home/terminal");
+        let jail = root.join("home/apps/terminal/terminal");
+        std::fs::create_dir_all(legacy.join("a")).unwrap();
+        std::fs::write(legacy.join("a/first.conf"), "1").unwrap();
+        std::fs::write(legacy.join("locked.conf"), "2").unwrap();
+        std::fs::set_permissions(legacy.join("locked.conf"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = std::fs::read(legacy.join("locked.conf")).is_ok(); // root reads anything
+        super::adopt_legacy_app_home(&legacy, &jail);
+        if !readable {
+            assert!(!jail.exists(), "a failed copy leaves no jail folder behind");
+        }
+        std::fs::set_permissions(legacy.join("locked.conf"), std::fs::Permissions::from_mode(0o600)).unwrap();
+        super::adopt_legacy_app_home(&legacy, &jail);
+        assert_eq!(std::fs::read_to_string(jail.join("locked.conf")).unwrap(), "2", "retried");
+        assert!(jail.join("a/first.conf").is_file());
+        let leftovers: Vec<_> = std::fs::read_dir(jail.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(leftovers, vec![std::ffi::OsString::from("terminal")], "no staging folder left");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A symlinked legacy home is never followed (it could point anywhere).
+    #[cfg(unix)]
+    #[test]
+    fn should_not_adopt_a_legacy_home_that_is_a_symlink() {
+        let root = std::env::temp_dir().join(format!("octosense-adopt-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("elsewhere")).unwrap();
+        std::fs::write(root.join("elsewhere/secret.conf"), "x").unwrap();
+        std::fs::create_dir_all(root.join("home")).unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere"), root.join("home/terminal")).unwrap();
+        let jail = root.join("home/apps/terminal/terminal");
+        super::adopt_legacy_app_home(&root.join("home/terminal"), &jail);
+        super::adopt_legacy_app_home_later(root.join("home/terminal"), jail.clone());
+        super::wait_adopted(&jail);
+        assert!(!jail.exists(), "nothing copied through the link");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The copy runs off the UI thread; a launch waits only for a copy
+    /// still running.
+    #[test]
+    fn should_adopt_in_the_background_and_let_a_launch_wait_for_it() {
+        let root = std::env::temp_dir().join(format!("octosense-adopt-bg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join("home/terminal");
+        let jail = root.join("home/apps/terminal/terminal");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("settings.conf"), "x").unwrap();
+        super::adopt_legacy_app_home_later(legacy.clone(), jail.clone());
+        super::wait_adopted(&jail);
+        assert!(jail.join("settings.conf").is_file());
+        super::wait_adopted(&root.join("never-started"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn an_apps_legacy_home_is_copied_into_its_jail_once() {
@@ -1600,6 +1759,16 @@ mod tests {
         );
         // The system Mail took the example's place, not its name only.
         assert_eq!((merged[1].label.as_str(), merged[1].bin.as_str()), ("Mail", "card"));
+    }
+
+    /// Every Card runner row shares the binary `card`, so the binary-name
+    /// fallback must not hand `"card"` to whichever of them is listed first.
+    #[test]
+    fn the_card_binary_names_no_card_runner_app() {
+        let app = |id: &str, bin: &str| AppDef::app(id, id, "", "", bin, LaunchPolicy::OrFocus);
+        let rows = vec![app("hub:demo", "card"), app("news", "card"), app("browser", "firefox")];
+        assert_eq!(find_app_in(&rows, "card"), None);
+        assert_eq!(find_app_in(&rows, "firefox").map(|a| a.id), Some("browser".to_string()));
     }
 
     /// Cargo's checkout is Cargo's to manage: a build there is invisible to

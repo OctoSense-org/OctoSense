@@ -164,7 +164,7 @@ flowchart TB
 
 | Agent | 是什么 | 状态 |
 | --- | --- | --- |
-| **系统 Agent** | `_main` profile 上的会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs` 中的 `SYSTEM_SESSION`）。它拥有并监督所有应用 peer。目前用户通过 Talk to Octos 客户端与它对话；Shell 还没有为它绘制对话界面 | 已在 main |
+| **系统 Agent** | `_main` profile 上的会话 `_main:api:octosense#system`（`crates/kernel/src/network.rs` 中的 `SYSTEM_SESSION`）。它拥有并监督所有应用 peer。用户在 Shell 的**系统聊天**中与它对话（`crates/shell/src/system_chat/`，[#132](https://github.com/OctoSense-org/OctoSense/pull/132)：设置 → Assistant → Assistant chat、F8、桌面 Dock 上的 Assistant 图标或手机主屏的 Assistant 磁贴；桌面上为侧边面板，手机上为全屏），或通过已配对的 Talk to Octos 客户端 | 已在 main |
 | **应用 Agent** | 每个（应用，账号）一个由宿主拥有的 octos **peer**，归系统 Agent 所有（octos UPCR-2026-034，Rinx [ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md)） 用户可在应用自己的界面中，或在 Shell 的 **"Ask <app>" 面板**（`crates/shell/src/app_chat/`：状态栏的 "Ask <app>"、Shift+F8；桌面上位于系统聊天旁，手机上为全屏面板）与它对话，面板显示两条通道及发言者、输入框和停止按钮 | Rinx（原生）和每个带 Agent 的脚本应用已在 main，需首次使用同意；见下文 |
 
 每个应用 peer 都独立拥有：
@@ -173,7 +173,7 @@ flowchart TB
 - **记忆命名空间** `app/<app>/acct-<hash>`（`crates/app-peers/src/broker.rs` 中的 `app_namespace()`）；不返回它的内核会被拒绝；
 - 自己的**对话记录**和**模型**通道（宿主通过 `peer/prepare` / `peer/model/set` 设置模型）；
 - 自己的**工具列表**：内核对 peer 安全的默认工具，加上 Shell 注册的工具（octos [#2567](https://github.com/octos-org/octos/pull/2567)，UPCR-2026-035）：每次 `peer/prepare` 和重连之后，broker 在驱动该 peer 回合的连接上注册应用声明的工具，以及授予它的其他应用可共享工具，每个都标明所属应用（`crates/shell/src/host_tools/`），不传 `generic_tools`。`main` 上还没有应用声明 `tools.json`，因此每个 peer 注册一个空集合，这仍然让它的回合获得应用的记忆和上下文（注册失败的 peer 不运行任何回合）；
-- **请求上下文**（`peer/context/open`）：每个客户端实例一个（一个 Rinx 小程序），各有自己的对话记录、peer 工作区内的目录 `contexts/<id>/` 和子记忆命名空间。上下文读不到旁边的文件。ADR 0004 §6（2026-09-29 决定）只把它们留给按客户端划分的工作（`OctosAppService::open_context`：Rinx 小程序，以及带 `client` 的进程应用 `octos.session.open`）：用户与应用 Agent 的对话（来自应用界面或其卡片）在 peer 自己的会话上运行，与系统 Agent 共享（见下文）。
+- **请求上下文**（`peer/context/open`）：每个客户端实例一个（一个 Rinx 小程序），各有自己的对话记录、peer 工作区内的目录 `contexts/<id>/` 和子记忆命名空间。这类客户端上下文不能直接读旁边的文件；它通过 Shell 的宿主读取工具 `files.list`、`files.read` 和 `files.search`（ADR 0004 §11，`crates/shell/src/host_tools/files.rs`）读取账户数据，这些工具从不显示其他上下文的目录。除了这些按客户端划分的上下文（`OctosAppService::open_context`：Rinx 小程序，以及带 `client` 的进程应用 `octos.session.open`），每个应用对话也是一个请求上下文：用户与应用 Agent 的对话（来自应用界面或其卡片）在用户通道中运行，这是一个以 `share_history` 打开的上下文，与 peer 自己的会话（系统 Agent 的通道）并行，并让每条通道看到另一条通道最近的回合（ADR 0004 §6，2026-09-29 决定；见下文）。在清单声明 Agent 工作在账号文件夹中时（`storage.agent_workspace: "account"`，octos#2647），该对话上下文以 octos 的 `read_parent` 打开：它只读地读取账号文件夹，从不读取其他上下文的文件夹，且只写入自己的文件夹。
 
 目前谁有 peer（`crates/ai-host/src/lib.rs`，`Policy::shipped()`；`crates/app-peers/src/hosted.rs`，`effective_services` = 声明 ∩ 支持 ∩ 策略）：
 
@@ -243,6 +243,7 @@ flowchart LR
 
 | 托管方式 | 通道 | 状态 |
 | --- | --- | --- |
+| 进程内原生模块，经 peer link | Makepad 的 `OctosPeer::open` 暂存一对通道；模块宿主把它归给打开它的实例，Shell 用进程应用同一套 **peer link** 服务它（`peer_link::module_connected`、`octosense_ai_host::module_peer`），应用无需知道自己如何被承载 | 已在 main（[#142](https://github.com/OctoSense-org/OctoSense/issues/142)）；尚无模块使用 |
 | 进程内原生模块（Rinx） | **注入的服务**：`create` 之前调用 `ai_host::offer`，在其中调用 `octosense_app_peers::injection::claim`，得到受限的 `OctosAppService`（`Open`、`History`、`Turn`、`Interrupt`、`Approval`）；模块永远看不到协议 | 已在 main |
 | 脚本应用 | 向 `octos` 宿主服务（`crates/ai-host/src/contained.rs`）调用 `host.request("octos.session.open" / "octos.session.history" / "octos.turn.start" / "octos.turn.interrupt", …)`；受清单、`Policy::contained_apps` 和首次使用同意（`consent_for_contained`）约束；其 peer 发起的工具审批一律被拒绝，并列在 `denied_approvals` 中 | 已在 main（[#106](https://github.com/OctoSense-org/OctoSense/pull/106)，同意机制来自 [#120](https://github.com/OctoSense-org/OctoSense/pull/120)） |
 | 独立进程的原生应用 | **peer link**：应用 hub 连接上的独立通道（`PeerRequest`、`PeerReply`，以及由 Shell 盖上身份和调用方的 `PeerToolCall`），从不注册到 AI 总线；客户端 API 在 Makepad 的 `makepad-ai-services` 中 | 规划中（ADR 0004 §5，步骤 8）；`hub.rs` 中尚无代码 |
@@ -314,7 +315,7 @@ flowchart TB
   sheet --> person
 ```
 
-1. **开发者模式**（`dev_hooks.rs`、`crates/shell/src/dev_mode.rs`，[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）批准它所覆盖应用的一切，包括 `auto_approvable: false` 和 `confirm: app`，但从不替外部客户端批准。只有用户能开启它：开发构建中用 `OCTOSENSE_DEV_MODE=all`（或应用列表），发布构建只能用 `--dev-grant-all`，或在桌面端的 Developer options 中输入确认短语；商店构建永远不能。开启时显示横幅，审计每次调用，不在开发者 profile 中时 8 小时后或重启时自动结束。`dev.run` 作为被覆盖应用自己的宿主工具注册在它的 peer 上，由 shell 执行（`crates/shell/src/host_tools/dev_run.rs`），从不注册在系统智能体的会话上。
+1. **开发者模式**（`dev_hooks.rs`、`crates/shell/src/dev_mode.rs`，[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）批准它所覆盖应用的一切，包括 `auto_approvable: false` 和 `confirm: app`，但从不替外部客户端批准。只有用户能开启它：开发构建中用 `OCTOSENSE_DEV_MODE=all`（或应用列表），发布构建只能用 `--dev-grant-all`，或在 Settings 中开启：桌面端在 Setup › Developer options 中输入确认短语，手机上在 Home 的 Settings › About phone 中连续点按 Build number 七次显示 Developer options，再在那里确认开启；开启范围是 Developer options › Apps it covers 中选定的应用（每个 home 保存在 `assistant/developer-apps.json`）；商店构建永远不能。开启时显示横幅，审计每次调用，不在开发者 profile 中时 8 小时后或重启时自动结束。`dev.run` 作为被覆盖应用自己的宿主工具注册在它的 peer 上，由 shell 执行（`crates/shell/src/host_tools/dev_run.rs`），从不注册在系统智能体的会话上。
 2. **`confirm: app`** 工具交给所属应用自己的面板（应用通过 `register_app_confirm` 注册的 `AppConfirm`），并附上调用方；规则不回答它们。未注册面板的应用有 120 秒（`app_wait_s`），之后调用被明确拒绝。进程内应用通过自己的服务注册面板（`OctosAppService::set_confirm_sheet`，由 `host_tools::SheetBridge` 接入）；所锁定标签的 Rinx 还没有这样做，因此它的发送面板仍在 Rinx 内部作答。
 3. **`auto_approvable: false`**、**结果未知**和**外部客户端**的调用总是交给用户。
 4. **常设规则**（`rules.rs`），以**（所属应用，工具）**为键，不论谁调用；可以对确切参数设条件（收件人在联系人中或在该会话中、无附件、由用户触发、次数或金额上限；调用缺少所需信息时条件不成立），有每日上限（工具规则默认 20 次），范围最宽的规则（“这个应用接下来一小时的所有请求”）最多 60 分钟（没有“一切、永久”的规则），还有一个“关闭所有规则”。联系人来自 Mail 宿主服务的数据（用户自己的账户，以及用户发过邮件的地址；`contacts.rs`），并且只有在用户于设置中打开“在审批规则中使用我的联系人”（默认关闭）之后才会使用；在此之前“收件人在联系人中”从不匹配。系统通讯录是后续工作。由收到的内容触发的运行会被跳过，除非规则明确包含。用户在 Settings → Assistant → Approvals（`settings_page.rs`）中或从面板上创建规则；系统 Agent 只能建议。
@@ -347,7 +348,7 @@ flowchart TB
 - **清单到达宿主**（`app_storage/lifecycle.rs`）：启动时读取 `native-apps.json` 的每个 `storage` 块（生成的 `NativeApp::storage`），脚本应用在安装和每次启动时读取其 `manifest.json` 的块（已安装应用的 `<apps>/<id>/bundle/`，系统应用最新的 `.system/<id>/<build>/`），用 `StorageSpec` 解析并以 `Storage::set_spec` 记录；`Storage::open` 据此为模块交接（`module_host.rs`）、进程应用的沙箱（`clients::sandbox_policy`）和 Card 启动布置 jail、账号文件夹、`common/`、`cache/` 和 `secrets/<id>/`。App Hub 的清单目前只接受 `storage.max_bytes`，因此脚本应用按设备运行。
 - **配额**：原生应用打开时，后台线程测量其 jail 和 `cache/`（不跟随符号链接），超过 `storage.max_bytes` / `cache_max_bytes` 时记录警告；脚本应用的隔离环境自行执行配额。
 - **账号**来自真正拥有账号的地方：应用的助手服务（`OctosAppService::set_account`：Rinx 的 Matrix 登录和登出）通过 `app_peers::storage::account_changed` 报告每次变化，Mail 的宿主服务报告 `mail.add_account` / `mail.remove_account`（`octosense_mail_service::AccountEvent`）。登录会打开账号文件夹并解除暂停，然后 broker 才恢复 peer。**登出**（`Some(a)` → `None`）会暂停 Agent 而不是关闭它：broker 关闭该账号的请求上下文，`Storage::sign_out` 让工作区返回 `SignedOut`，工具调用返回 `signed_out`，不启动 `peer/input` 回合，已暂停账号的 peer 不会被准备。切换账号（`Some(a)` → `Some(b)`）会登录 `b`，不改变 `a`。没有账号的应用按设备运行，设备不会登出。
-- **移除账号**（Mail）会删除其文件夹；**卸载**（App Hub 删除 jail；Shell 在 `installed_app_changed` 中发现 jail 已不存在）会删除 `secrets/<id>/` 及其密钥库条目。两者都保持 Agent 暂停，并记录在宿主的 `secrets/.host/suspended.json`（0600，账号 id 已哈希）中，重启后依然有效；重新登录该账号会恢复同一个 Agent（重新安装后，没有账号的应用会恢复其设备 Agent）。在 octos 提供 `peer/purge`（octos#2604）之前，octos 保留该 Agent 的记录和记忆，设置 → 审批 → 应用 Agent 中该应用的行会说明这一点。App Hub 当前固定的版本没有卸载按钮；加入后，它必须像 `take_completed_installs` 报告安装那样向 Shell 报告移除。
+- **移除账号**（Mail）会删除其文件夹；**卸载**（App Hub 删除 jail；Shell 在 `installed_app_changed` 中发现 jail 已不存在）会删除 `secrets/<id>/` 及其密钥库条目。随后两者都会抹除该 Agent：Shell 请 octos 对它记录的每个（应用，账号）peer 执行 `peer/purge`（octos#2649；在后台进行，`peer_purge_busy` 会重试），抹除其对话记录、记忆和黑板并释放绑定，并删除记录（`<ns>.peer`）。该账号保持暂停，并记录在宿主的 `secrets/.host/suspended.json`（0600，账号 id 已哈希）中，重启后依然有效，直到再次添加；那时它会得到一个新的 Agent（记录已删除）。清除成功后，设置 → 审批 → 应用 Agent 不再说明其记忆仍在；清除失败时保留记录以便之后再清除，设置会继续说明。对于记录尚未保存 peer 名称的旧记录，按 Shell 能推导出的名称（应用的标签和 id）清除；此时的 `peer_not_found` 视为失败，绝不视为成功。**退出登录**只会暂停：重新登录会恢复同一个 Agent。App Hub 当前固定的版本没有卸载按钮；加入后，它必须像 `take_completed_installs` 报告安装那样向 Shell 报告移除。
 - **Rinx** 声明 `accounts: true`，Shell 也向其模块提供该存储（`storage` 能力），但 Rinx 尚未领取：其数据保持原位（见下）。Rinx 使用按账号文件夹需要做的事（hagency-org/Rinx#37）：在 `RinxModule::create` 中调用 `octosense_app_peers::storage::claim("rinx", &handles.scope.to_string())` 并保留该句柄；登录后，把其 Agent 需要读取的内容（导出的会话、共享的附件）写入 `storage.account_folder(Some(<Matrix 用户 id>))`；Matrix 存储和令牌通过 `storage.secrets()` 或放在 `secrets/rinx/` 下，绝不放在账号文件夹中；在迁移之前，现有数据继续使用 `app_data_dir()`。Shell 的 API 无需改动。
 - **内核自己的数据**是分开的：core 目录 `<数据目录>/octos-home/.octos`（桌面端为 `~/.octosense/octos-home/.octos`，`OCTOS_APP_CORE_DIR` 可覆盖；`crates/kernel/src/dirs.rs`），存放 `_main` profile、会话、黑板和记忆命名空间。提供方密钥归 `llm` 服务管理（macOS 钥匙串，其他平台为仅所有者可读的文件；见 [ai-services.zh-CN.md](ai-services.zh-CN.md#ai-providers-与-llm-宿主服务)）。peer 的宿主 token 在 `<core 目录>/../app-peers`（0600）。
 - **脚本应用**保留 App Hub 的 jail 和配额；它们的机密由宿主服务和宿主面板保管（“机密归宿主所有”，AGENTS.md 规则 3）。在数据迁入这一布局之前，Rinx 仍使用自己的数据目录（[hagency-org/Rinx#37](https://github.com/hagency-org/Rinx/issues/37)）；显式设置了 `OCTOSENSE_HOME` 时，Shell 把它指向 `<home>/apps/rinx/data`（`RINX_DATA_DIR`，在 `crates/shell/src/octosense/paths.rs` 中设置；显式设置的 `RINX_DATA_DIR` 优先）。
@@ -448,7 +449,7 @@ sequenceDiagram
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都通过 `peer/tool/call` 到达 Shell，每个有门控的调用都到达路由（见上文）。还没有应用注册自己的 `confirm: app` 面板（Rinx 需要通过 `OctosAppService::set_confirm_sheet` 交出它的发送面板），因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。
 9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。（已修复：app storage 和同意面板中 `storage.accounts` 都默认为 `false`，同意面板现在读取 `StorageSpec`。）
-10. **开发者模式，ADR 0004 §13。** 已修复：`dev.run` 已注册在被覆盖应用的 peer 上，由 shell 执行。未完成：Settings 只能为所有应用开启（选定应用只能通过 `OCTOSENSE_DEV_MODE`）；手机上没有开启手势；进程内模块仍会显示自己的确认面板。
+10. **开发者模式，ADR 0004 §13。** 已修复：`dev.run` 已注册在被覆盖应用的 peer 上，由 shell 执行。已修复：Settings 可以选择覆盖哪些应用（桌面端在 Setup › Developer options，手机上在 About phone › Developer options），手机上连续点按 Build number 七次显示 Developer options，再在那里确认开启。未完成：进程内模块仍会显示自己的确认面板。
 11. **应用 Agent，来自 2026-09-29 的代码审查**（octos acffad3b、`main` ecb3583；列在 ADR 0004 的后续事项中）：`peer/input` 回合上内核工具的审批被 broker 对 peer 会话的事件过滤丢弃（`broker.rs`），无人能回答；受限脚本应用的卡片没有流式输出、所有审批都被拒绝、每个应用共用一个上下文并使用固定账号 `device`（`crates/ai-host/src/contained.rs`）；卡片从不回答 `user_question/requested`：问题由 Shell 的请求模型按回合发起者路由，只由用户在 Shell 界面上回答（已修复）；`peer/input` 的宿主 `turn/start` 失败只记日志；`peer/input` 路由归最后注册该 peer 工具的连接所有（多实例未测试）。
 
 ## 源码位置

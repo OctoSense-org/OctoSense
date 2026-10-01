@@ -25,6 +25,7 @@ fn settings_new() {
         pending:false, message:"", message_origin:"",
         theme_draft:settings_theme_default(), theme_seen:settings_theme_default(),
         search_query:"", search_offset:0, search_rows:[], search_pressed:nil,
+        developer_offset:0, developer_confirm:false,
         search_destination:nil, controls_section:"Notifications", controls_parent:"Overview",
         drafts:{}, pressed:{}, context:{}, lists:{}
     }

@@ -35,8 +35,14 @@ struct Script {
     history: Vec<Value>,
     /// What session/hydrate answers for the peer's own session.
     peer_history: Vec<Value>,
+    /// What it answers for one session, before `history`.
+    session_history: std::collections::HashMap<String, Vec<Value>>,
+    /// Sessions the kernel no longer has (session/hydrate refuses them).
+    gone: Vec<String>,
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
+    /// peer/context/open ignores `read_parent` (a kernel before octos#2647).
+    no_read_parent: bool,
     connects: usize,
     /// Like octos: each staged peer's workspace by name; a resume must name
     /// the same one (no `cwd`: the kernel's `/kernel/ws`), and a `cwd` must
@@ -44,6 +50,11 @@ struct Script {
     bindings: Option<std::collections::HashMap<String, String>>,
     /// Each connection's kernel-to-broker half (`None`: closed).
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
+    /// The next this-many peer/purges are refused `peer_purge_busy`.
+    purge_busy: usize,
+    /// Like octos: the slugs of the peers staged (`peer/prepare`); a purge
+    /// of any other name is refused `peer_not_found`.
+    staged: std::collections::HashSet<String>,
 }
 
 struct FakeConnector(Arc<Mutex<Script>>);
@@ -124,7 +135,11 @@ impl Connector for FakeConnector {
                             s.busy_starts -= 1;
                         }
                         let on_peer = params["session_id"].as_str().is_some_and(|id| id.contains("#peer-"));
-                        let history = if on_peer { s.peer_history.clone() } else { s.history.clone() };
+                        let history = match params["session_id"].as_str().and_then(|id| s.session_history.get(id)) {
+                            Some(rows) => rows.clone(),
+                            None if on_peer => s.peer_history.clone(),
+                            None => s.history.clone(),
+                        };
                         (s.legacy, s.hold_turns, s.refuse_register, busy, history, s.no_share_history)
                     };
                     let send = |frame: String| emit(&script, conn, frame);
@@ -141,6 +156,7 @@ impl Connector for FakeConnector {
                                 .unwrap()
                                 .to_lowercase()
                                 .replace(' ', "-");
+                            script.lock().unwrap().staged.insert(name.clone());
                             let cwd = params["cwd"].as_str().unwrap_or("/kernel/ws").to_owned();
                             let checked = {
                                 let mut s = script.lock().unwrap();
@@ -173,7 +189,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "peer/tools/register" if refuse_register => send(refuse("peer_tools_invalid")),
-                        "peer/tools/register" | "peer/tools/unregister" | "peer/context/open" | "peer/context/close" | "peer/tool/result"
+                        "peer/tools/register" | "peer/tools/unregister" | "peer/context/open" | "peer/context/close" | "peer/tool/result" | "peer/purge"
                             if params["host_token"] != "fixture-host-token" =>
                         {
                             send(refuse("peer_host_token_mismatch"));
@@ -194,7 +210,8 @@ impl Connector for FakeConnector {
                                 params["peer"].as_str().unwrap(),
                                 params["context_id"].as_str().unwrap()
                             );
-                            let mut result = json!({"session_id": session, "created": true, "share_history": null});
+                            let read_parent = params["read_parent"] == json!(true) && !script.lock().unwrap().no_read_parent;
+                            let mut result = json!({"session_id": session, "created": true, "share_history": null, "read_parent": read_parent});
                             if params.get("share_history").is_some() && !no_share {
                                 result["share_history"] = json!({"last_n": 20, "max_bytes": 16384});
                             }
@@ -220,8 +237,26 @@ impl Connector for FakeConnector {
                                 send(note("turn/completed", json!({})));
                             }
                         }
+                        "session/hydrate" if params["session_id"].as_str().is_some_and(|id| script.lock().unwrap().gone.iter().any(|g| g == id)) => send(refuse("session_not_found")),
                         "session/hydrate" => send(reply(json!({"messages": history}))),
                         "peer/tools/unregister" => send(reply(json!({"slug": params["peer"], "profile_id": "_main", "unregistered": true}))),
+                        "peer/purge" => {
+                            let slug = params["peer"].as_str().unwrap_or("").to_lowercase().replace(' ', "-");
+                            let (busy, staged) = {
+                                let mut s = script.lock().unwrap();
+                                let busy = s.purge_busy > 0;
+                                s.purge_busy = s.purge_busy.saturating_sub(1);
+                                (busy, s.staged.contains(&slug))
+                            };
+                            if !staged {
+                                send(refuse("peer_not_found"));
+                            } else if busy {
+                                send(refuse("peer_purge_busy"));
+                            } else {
+                                script.lock().unwrap().staged.remove(&slug);
+                                send(reply(json!({"session_id": params["session_id"], "slug": params["peer"], "purged": true, "already_purged": false})));
+                            }
+                        }
                         "turn/interrupt" => {
                             send(reply(json!({"interrupted": true})));
                             if interrupts_end {
@@ -561,6 +596,8 @@ struct RecordingHost {
     generic: Mutex<Option<Vec<String>>>,
     /// Refuse each `peer/input` with this.
     refuse_input: Mutex<Option<InputRefusal>>,
+    /// The app's conversation reads the account folder (`read_parent`).
+    reads_account: Mutex<bool>,
 }
 
 impl ToolHost for RecordingHost {
@@ -578,6 +615,9 @@ impl ToolHost for RecordingHost {
     }
     fn workspace_refused(&self, _app: &str, _account: &str) -> Option<String> {
         self.refused.lock().unwrap().clone()
+    }
+    fn context_reads_account(&self, _app: &str, _account: &str) -> bool {
+        *self.reads_account.lock().unwrap()
     }
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         if let Some(outcome) = self.answer.lock().unwrap().clone() {
@@ -2298,6 +2338,126 @@ fn stop_on_the_conversation_interrupts_both_lanes() {
     drop(broker);
 }
 
+/// A conversation opened again for the same instance (the shell's panel
+/// reopened after its context closed) is a new kernel context, whose
+/// person's lane starts empty: its history still has the person's rows of
+/// the earlier handles, merged with the system agent's lane. Another
+/// instance does not see them.
+#[test]
+fn a_reopened_conversation_keeps_the_persons_earlier_rows() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let first = broker.open_conversation(spec("@a:x", "shell-ask", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    first.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane1) = person_lane(&script, 0);
+    first.close();
+    let second = broker.open_conversation(spec("@a:x", "shell-ask", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    second.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane2) = person_lane(&script, 1);
+    assert_ne!(lane1, lane2, "a new kernel context");
+    let slug = peer_slug(&script);
+    {
+        let mut s = script.lock().unwrap();
+        s.session_history.insert(lane1.clone(), vec![
+            json!({"role": "user", "content": "[from the person] what is new?", "persisted_at": "2026-09-30T10:00:00Z"}),
+            json!({"role": "assistant", "content": "Three stories.", "persisted_at": "2026-09-30T10:00:05Z"}),
+        ]);
+        s.session_history.insert(lane2.clone(), vec![]);
+        s.session_history.insert(format!("_main:api:octosense#peer-{slug}"), vec![
+            json!({"role": "user", "content": "[from the system agent] digest", "persisted_at": "2026-09-30T10:00:02Z"}),
+        ]);
+    }
+    let (sink, rx) = collect();
+    second.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    let said: Vec<(String, String)> = rows.as_array().unwrap().iter().map(|r| (r["lane"].as_str().unwrap_or("").to_owned(), r["content"].as_str().unwrap_or("").to_owned())).collect();
+    assert_eq!(said.len(), 3, "{rows}");
+    assert_eq!(said[0].0, "person");
+    assert!(said[0].1.contains("what is new?"), "{said:?}");
+    assert_eq!(said[1].0, "system_agent", "merged by time: {said:?}");
+    assert_eq!(said[2], ("person".to_owned(), "Three stories.".to_owned()));
+    // Another instance (another app UI) has only its own.
+    let other = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    other.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane3) = person_lane(&script, 2);
+    script.lock().unwrap().session_history.insert(lane3, vec![]);
+    let (sink, rx) = collect();
+    other.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    assert!(rows.as_array().unwrap().iter().all(|r| r["lane"] == "system_agent"), "{rows}");
+    drop(broker);
+}
+
+/// Open a conversation for `account`/`instance`, and the session of its
+/// person's lane (the `n`th context opened), with `rows` as its history.
+fn bound_lane(broker: &Broker, script: &Arc<Mutex<Script>>, account: &str, instance: &str, n: usize, rows: Vec<Value>) -> (Arc<dyn OctosContext>, String) {
+    let chat = broker.open_conversation(spec(account, instance, &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane) = person_lane(script, n);
+    script.lock().unwrap().session_history.insert(lane.clone(), rows);
+    (chat, lane)
+}
+
+fn person_rows(chat: &Arc<dyn OctosContext>) -> Vec<String> {
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    rows.as_array().unwrap().iter().filter(|r| r["lane"] == "person").map(|r| r["content"].as_str().unwrap_or("").to_owned()).collect()
+}
+
+/// The earlier handles' rows are the same ACCOUNT's only: after a switch
+/// to another account the panel (same instance) shows none of the first
+/// account's, and switching back does not bring them back either (the
+/// switch cleared them with the contexts).
+#[test]
+fn a_reopened_conversation_never_shows_another_accounts_rows() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let (first, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 0, vec![json!({"role": "user", "content": "A's secret question"})]);
+    first.close();
+    broker.set_account(Some("@b:x"));
+    wait_for("B's peer", || broker.availability() == Availability::Ready);
+    let opened = calls_of(&script, "peer/context/open").len();
+    let (second, _) = bound_lane(&broker, &script, "@b:x", "shell-ask", opened, vec![]);
+    assert!(person_rows(&second).is_empty(), "no rows of A's in B's panel");
+    second.close();
+    broker.set_account(Some("@a:x"));
+    wait_for("A's peer", || broker.availability() == Availability::Ready);
+    let opened = calls_of(&script, "peer/context/open").len();
+    let (third, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", opened, vec![]);
+    assert!(person_rows(&third).is_empty(), "the switch cleared the earlier handles");
+    drop(broker);
+}
+
+/// An earlier lane the kernel no longer has (purged) is skipped and
+/// forgotten; the others still show.
+#[test]
+fn a_gone_earlier_lane_is_dropped() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let (one, lane1) = bound_lane(&broker, &script, "@a:x", "shell-ask", 0, vec![json!({"role": "user", "content": "first"})]);
+    one.close();
+    let (two, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 1, vec![json!({"role": "user", "content": "second"})]);
+    two.close();
+    let (three, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 2, vec![]);
+    assert_eq!(person_rows(&three), ["first", "second"]);
+    script.lock().unwrap().gone.push(lane1.clone());
+    assert_eq!(person_rows(&three), ["second"]);
+    let asked = calls_of(&script, "session/hydrate").iter().filter(|(_, p)| p["session_id"] == lane1.as_str()).count();
+    assert_eq!(person_rows(&three), ["second"]);
+    let again = calls_of(&script, "session/hydrate").iter().filter(|(_, p)| p["session_id"] == lane1.as_str()).count();
+    assert_eq!(asked, again, "not asked again once gone");
+    drop(broker);
+}
+
 /// The shell's "Ask <app>" panel stops one lane at a time: its Stop ends
 /// the person's own turn and leaves the system agent's running; the system
 /// agent's is stopped only on its own control. Late calls of a stopped turn
@@ -2371,4 +2531,202 @@ fn an_unanswered_approval_in_the_persons_lane_expires_and_its_turn_is_interrupte
     assert_eq!(broker.pending_prompts(), 0);
     assert!(broker.peer_active_turn().is_none(), "the system agent's lane was never involved");
     drop(broker);
+}
+
+// ---------------------------------------------------------------- peer/purge (octos#2649)
+
+fn purge_host(dir: &std::path::Path) -> octosense_app_peers::purge::PurgeHost {
+    let mut host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", dir);
+    host.retry_waits = vec![Duration::from_millis(50); 3];
+    host
+}
+
+fn purge(script: &Arc<Mutex<Script>>, dir: &std::path::Path, app: &str, account: Option<&str>) -> octosense_app_peers::purge::Purged {
+    let connector = FakeConnector(script.clone());
+    let host = purge_host(dir);
+    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap()
+        .block_on(octosense_app_peers::purge::purge_app(&connector, &host, app, &["Rinx".to_owned()], account))
+}
+
+/// ADR 0004 §11: removing an account erases its agent. The host names the
+/// peer it recorded (its name and host token, owned by the system agent),
+/// drops the record, and a live broker bound to it forgets the peer, so the
+/// account's next use prepares a NEW peer (no host token: not a resume).
+#[test]
+fn removing_an_account_purges_its_recorded_peer_and_drops_the_record() {
+    let dir = scratch("purge-one");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let key = app_namespace("rinx", "@purge-a:x");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_some(), "recorded");
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert_eq!(done.erased, std::slice::from_ref(&key));
+    let purges = calls_of(&script, "peer/purge");
+    assert_eq!(purges.len(), 1);
+    let p = &purges[0].1;
+    assert_eq!(p["session_id"], "_main:api:octosense#system");
+    assert_eq!(p["peer"], format!("Rinx {}", account_tag("@purge-a:x")), "the name a resume finds it by");
+    assert_eq!(p["host_token"], "fixture-host-token");
+    assert_eq!(p["profile_id"], "_main");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_none(), "the record is dropped");
+    assert!(broker.peer().is_none(), "the live broker forgot the purged peer");
+    // Its next use prepares a new peer, not a resume.
+    broker.bind().unwrap();
+    let prepares = calls_of(&script, "peer/prepare");
+    assert!(prepares.last().unwrap().1.get("host_token").is_none(), "a new peer: {prepares:?}");
+    // Nothing recorded: no kernel call.
+    let before = calls_of(&script, "peer/purge").len();
+    assert!(purge(&script, &dir, "rinx", Some("@nobody:x")).erased.is_empty());
+    assert_eq!(calls_of(&script, "peer/purge").len(), before);
+}
+
+/// `peer_purge_busy` (a turn did not stop in time) is retried; past the
+/// retries the purge fails and the record is kept (the peer stays
+/// suspended, and a later purge can finish it).
+#[test]
+fn a_busy_purge_is_retried_and_one_still_busy_keeps_the_record() {
+    let dir = scratch("purge-busy");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let key = app_namespace("rinx", "@purge-a:x");
+    script.lock().unwrap().purge_busy = 2;
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert_eq!(calls_of(&script, "peer/purge").len(), 3, "two busy, then purged");
+
+    let dir = scratch("purge-still-busy");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    script.lock().unwrap().purge_busy = 99;
+    let done = purge(&script, &dir, "rinx", Some("@purge-a:x"));
+    assert_eq!(done.failed.len(), 1);
+    assert!(done.failed[0].1.contains("peer_purge_busy"), "{done:?}");
+    assert_eq!(calls_of(&script, "peer/purge").len(), 4, "the first try and three retries");
+    assert!(octosense_app_peers::peer_record::load(&dir, &key).is_some(), "kept for a later purge");
+}
+
+/// Uninstalling the app purges every account's peer the host recorded.
+#[test]
+fn uninstalling_purges_every_recorded_account_of_the_app() {
+    let dir = scratch("purge-all");
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), Some(dir.clone()));
+    broker.set_account(Some("@purge-a:x"));
+    wait_for("a", || broker.availability() == Availability::Ready && broker.peer().is_some());
+    broker.set_account(Some("@purge-b:x"));
+    wait_for("b", || broker.availability() == Availability::Ready && broker.peer().is_some());
+    let done = purge(&script, &dir, "rinx", None);
+    assert!(done.ok(), "{done:?}");
+    let mut erased = done.erased.clone();
+    erased.sort();
+    let mut expected = vec![app_namespace("rinx", "@purge-a:x"), app_namespace("rinx", "@purge-b:x")];
+    expected.sort();
+    assert_eq!(erased, expected);
+    assert!(octosense_app_peers::peer_record::namespaces_under(&dir, "app/rinx/acct-").is_empty());
+    assert_eq!(calls_of(&script, "peer/purge").len(), 2);
+    // Another app's records are not touched.
+    assert!(purge(&script, &dir, "other", None).erased.is_empty());
+}
+
+// ---------------------------------------------------------------- read_parent (octos#2647)
+
+/// ADR 0004 §11 gap 7: where the agent reads its account's folder (the host
+/// says so from the manifest's `storage.agent_workspace`), the app's
+/// conversation (the person's lane) is opened with `read_parent`: a
+/// read-only view of the account folder. A plain request context (an app's
+/// client, a Rinx mini app) never is, nor is any context of a host that does
+/// not say so (the default).
+#[test]
+fn the_apps_conversation_reads_the_account_folder_when_the_host_says_so() {
+    let host = Arc::new(RecordingHost::default());
+    *host.reads_account.lock().unwrap() = true;
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "what's in my notes".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    complete(&rx).unwrap();
+    let mini = broker.open_context(spec("@a:x", "mini.news#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    mini.call(ContextOp::Turn { text: "hi".into() }, sink).unwrap();
+    complete(&rx).unwrap();
+    let opens = calls_of(&script, "peer/context/open");
+    assert_eq!(opens.len(), 2);
+    assert_eq!(opens[0].1["read_parent"], json!(true), "the conversation: {:?}", opens[0].1);
+    assert!(opens[1].1.get("read_parent").is_none(), "a mini app's context stays fenced: {:?}", opens[1].1);
+
+    // The default host: fenced.
+    let (broker, script) = new_broker_with(&ALL, Some(Arc::new(RecordingHost::default())), None);
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    complete(&rx).unwrap();
+    assert!(calls_of(&script, "peer/context/open")[0].1.get("read_parent").is_none());
+}
+
+/// A kernel that ignores `read_parent` (before octos#2647) would open the
+/// conversation fenced: refused, never run without the account's files.
+#[test]
+fn a_kernel_without_read_parent_is_refused_for_the_conversation() {
+    let host = Arc::new(RecordingHost::default());
+    *host.reads_account.lock().unwrap() = true;
+    let (broker, script) = new_broker_with(&ALL, Some(host), None);
+    script.lock().unwrap().no_read_parent = true;
+    broker.set_account(Some("@a:x"));
+    let chat = broker.open_conversation(spec("@a:x", "rinx-ui", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "hi".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    let err = complete(&rx).unwrap_err();
+    assert!(err.contains("read_parent"), "{err}");
+    assert!(calls_of(&script, "turn/start").is_empty());
+}
+
+/// A record saved before records carried the peer's name: the host guesses
+/// the broker's name, `<label> <8 hex>`, from the labels the app may have
+/// been hosted under. A wrong guess (`peer_not_found`) is NOT success: the
+/// record is kept (the agent stays suspended, octos may still hold its
+/// memory) until a label that names the staged peer purges it.
+#[test]
+fn a_legacy_record_without_a_name_is_purged_only_under_a_name_the_kernel_knows() {
+    use octosense_app_peers::peer_record::{self, PeerRecord};
+    let dir = scratch("purge-legacy");
+    let script = Arc::new(Mutex::new(Script::default()));
+    let key = app_namespace("legacy.app", "@a:x");
+    let tag = account_tag("@a:x");
+    peer_record::save(&dir, &key, &PeerRecord { token: "fixture-host-token".into(), cwd: None, namespace: None, name: None, legacy: false }).unwrap();
+    // The kernel staged it as a native host named it: "Legacy <8 hex>".
+    script.lock().unwrap().staged.insert(format!("legacy-{}", &tag[..8]));
+    let connector = FakeConnector(script.clone());
+    let host = purge_host(&dir);
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+
+    let wrong = rt.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &["legacy.app".to_owned()], Some("@a:x")));
+    assert!(wrong.erased.is_empty(), "{wrong:?}");
+    assert!(wrong.failed[0].1.contains("peer_not_found"), "{wrong:?}");
+    assert!(peer_record::load(&dir, &key).is_some(), "kept: the agent was not erased");
+
+    let labels = ["legacy.app".to_owned(), "Legacy".to_owned()];
+    let right = rt.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &labels, Some("@a:x")));
+    assert!(right.ok(), "{right:?}");
+    assert!(peer_record::load(&dir, &key).is_none());
+    let tried: Vec<String> = calls_of(&script, "peer/purge").iter().map(|(_, p)| p["peer"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(tried, [format!("legacy.app {}", &tag[..8]), format!("legacy.app {}", &tag[..8]), format!("Legacy {}", &tag[..8])]);
+}
+
+/// A RECORDED name the kernel does not know means the peer is gone (a
+/// kernel whose data was reset): the record is dropped.
+#[test]
+fn a_recorded_name_the_kernel_does_not_know_is_gone() {
+    use octosense_app_peers::peer_record::{self, PeerRecord};
+    let dir = scratch("purge-gone");
+    let script = Arc::new(Mutex::new(Script::default()));
+    let key = app_namespace("gone.app", "@a:x");
+    peer_record::save(&dir, &key, &PeerRecord { token: "fixture-host-token".into(), cwd: None, namespace: None, name: Some("Gone 1".into()), legacy: false }).unwrap();
+    let done = purge(&script, &dir, "gone.app", Some("@a:x"));
+    assert!(done.ok(), "{done:?}");
+    assert!(peer_record::load(&dir, &key).is_none());
 }
