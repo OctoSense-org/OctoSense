@@ -1137,7 +1137,15 @@ impl App {
                 // A drawer scroll lifted at speed keeps going; a lift after a
                 // pause, or anything else, stops it.
                 let scrolled=g.screen==PhoneScreen::Drawer && !g.shell && delta.length()>=12.0;
+                // A pull on a list already at its top closes search, like the
+                // pull that opened it (mobile.rs).
+                let pull_close=g.screen==PhoneScreen::Drawer && !g.shell && g.hit!=Some(PhoneHit::Scrub)
+                    && phone.search_pull_closes();
                 phone.search_lift(time,scrolled);
+                if pull_close {
+                    self.phone_action(cx,PhoneHit::CancelSearch);
+                    self.animate_phone(cx);return true;
+                }
                 if let (Some(PhoneHit::Shade(h)),true)=(&g.hit,delta.length()>=12.0 && !g.shell) {
                     let native_dismiss=matches!(h,ShadeHit::Note(id) if cfg!(target_os="android") && phone.android.notices.contains_key(id))
                         && (delta.x>96.0 || (time-g.time<0.3 && delta.x>40.0));

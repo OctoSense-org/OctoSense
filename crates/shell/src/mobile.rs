@@ -135,6 +135,9 @@ pub struct PhoneState {
     /// The finger's recent samples on the drawer (y, time), newest last:
     /// the lift velocity is measured over them (`search_lift`).
     pub search_track: Vec<(f64, f64)>,
+    /// The list was at its top when the finger landed: pulling it further
+    /// down closes search (`search_pull_closes`).
+    pub search_touch_at_top: bool,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -173,7 +176,7 @@ impl Default for PhoneState {
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, native_keyboard_seen: 0.0, body_reflow: 0.0, search_focus_at: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
-            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(),
+            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(), search_touch_at_top: false,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -196,6 +199,9 @@ impl Default for PhoneState {
 /// stretch, and the most it can stretch.
 pub const SEARCH_STRETCH: f64 = 0.45;
 pub const SEARCH_STRETCH_MAX: f64 = 72.0;
+/// The stretch (points) a pull on a list already at its top reaches to close
+/// search: about 80 points of finger travel. A shorter pull only stretches.
+pub const SEARCH_PULL_CLOSE: f64 = 36.0;
 /// How far back the drawer's lift velocity looks, in seconds.
 const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 /// The flicked drawer's friction: its speed falls by e every 1/k seconds,
@@ -367,6 +373,7 @@ impl PhoneState {
     }
     /// A finger landed on the drawer list: a coasting list stops under it.
     pub fn search_touch(&mut self, y: f64, time: f64) {
+        self.search_touch_at_top = self.search_scroll <= 0.5;
         self.search_velocity = 0.0;
         self.search_track.clear();
         self.search_track.push((y, time));
@@ -395,6 +402,13 @@ impl PhoneState {
         self.search_track.retain(|(_, t)| time - *t <= SEARCH_VELOCITY_WINDOW);
         if self.search_track.len() >= 16 { self.search_track.remove(0); }
         self.search_track.push((y, time));
+    }
+    /// Lifting now closes search: the list was already at its top when the
+    /// finger landed and the finger pulled it on down. Reaching the top in a
+    /// pull that started further down only stretches it, so it takes another
+    /// pull from the top to close, like the pull that opened search.
+    pub fn search_pull_closes(&self) -> bool {
+        self.searching() && self.search_touch_at_top && self.search_stretch >= SEARCH_PULL_CLOSE
     }
     /// The finger left the drawer list at `time`. A list flicked past the
     /// slop keeps going at the finger's speed over the last tenth of a
@@ -523,8 +537,10 @@ mod tests {
             phone.step(1.0 / 120.0);
         }
         let out = if shell { rec.feed(FingerPhase::Up, last, t0 + secs, &ctx, &zones) } else { None };
+        // As mobile_app.rs: a pull on a list at its top closes search (Cancel).
+        let close = !shell && phone.search_pull_closes();
         phone.search_lift(t0 + secs, (last - start).length() >= 12.0);
-        if out == Some(ShellGesture::Commit(GestureKind::Back)) { phone.navigate(PhoneScreen::Home); }
+        if close || out == Some(ShellGesture::Commit(GestureKind::Back)) { phone.navigate(PhoneScreen::Home); }
     }
     fn searching_phone() -> PhoneState {
         let mut phone = PhoneState::default();
@@ -536,23 +552,44 @@ mod tests {
     }
 
     #[test]
-    fn a_pull_down_at_the_top_of_search_stretches_and_springs_back_without_closing_it() {
+    fn a_pull_down_on_search_already_at_the_top_closes_it() {
         // Straight down, and down along a right thumb's arc (it starts a
-        // little sideways): 300 points over six moves with the list at 0.
+        // little sideways, and must not be taken for the swipe back): 300
+        // points over six moves with the list at 0.
         let straight = [(200.0, 400.0), (200.0, 450.0), (200.0, 500.0), (200.0, 550.0), (200.0, 600.0), (200.0, 650.0), (200.0, 700.0)];
         let arc = [(200.0, 400.0), (214.0, 410.0), (240.0, 460.0), (270.0, 520.0), (295.0, 580.0), (315.0, 640.0), (330.0, 700.0)];
         for (what, path, secs) in [("straight", &straight, 0.3), ("arc", &arc, 0.3), ("fast arc", &arc, 0.1)] {
             let mut phone = searching_phone();
             drawer_finger(&mut phone, path, secs);
-            assert!(phone.searching(), "{what}: a pull at the top must not close search");
-            assert_eq!(phone.search_query, "a", "{what}");
-            assert_eq!(phone.search_scroll, 0.0, "{what}");
-            assert!(phone.search_stretch > 0.0, "{what}: the list stretches under the finger");
-            assert_eq!(phone.search_velocity, 0.0, "{what}: a stretched list does not coast");
-            for _ in 0..60 { phone.step(1.0 / 60.0); }
-            assert_eq!(phone.search_stretch, 0.0, "{what}: the stretch springs back");
-            assert!(phone.searching(), "{what}");
+            assert!(!phone.searching(), "{what}: a pull at the top closes search");
+            assert_eq!(phone.screen, PhoneScreen::Home, "{what}");
         }
+    }
+
+    #[test]
+    fn a_short_pull_at_the_top_stretches_and_springs_back_without_closing_search() {
+        let short = [(200.0, 400.0), (200.0, 420.0), (200.0, 440.0), (200.0, 460.0)];
+        let mut phone = searching_phone();
+        drawer_finger(&mut phone, &short, 0.3);
+        assert!(phone.searching(), "60 points only stretches");
+        assert_eq!(phone.search_query, "a");
+        assert_eq!(phone.search_scroll, 0.0);
+        assert!(phone.search_stretch > 0.0, "the list stretches under the finger");
+        assert_eq!(phone.search_velocity, 0.0, "a stretched list does not coast");
+        for _ in 0..60 { phone.step(1.0 / 60.0); }
+        assert_eq!(phone.search_stretch, 0.0, "the stretch springs back");
+        assert!(phone.searching());
+    }
+
+    #[test]
+    fn a_pull_that_brings_the_list_back_to_its_top_keeps_search_open() {
+        let path = [(200.0, 300.0), (200.0, 400.0), (200.0, 500.0), (200.0, 600.0), (200.0, 700.0)];
+        let mut phone = searching_phone();
+        phone.search_scroll = 250.0;
+        drawer_finger(&mut phone, &path, 0.4);
+        assert_eq!(phone.search_scroll, 0.0, "the list reached its top");
+        assert!(phone.search_stretch > 0.0, "and stretched past it");
+        assert!(phone.searching(), "it takes another pull from the top to close");
     }
 
     #[test]
