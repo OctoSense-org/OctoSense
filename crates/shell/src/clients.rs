@@ -1495,7 +1495,7 @@ fn adoptions() -> &'static std::sync::Mutex<HashMap<PathBuf, Adoption>> {
 /// startup for every app that runs as a process, so a launch rarely waits),
 /// once per target per run.
 pub(crate) fn adopt_legacy_app_home_later(legacy: PathBuf, into: PathBuf) {
-    if into.exists() || !legacy.is_dir() {
+    if into.exists() || !real_dir(&legacy) {
         return;
     }
     let state: Adoption = std::sync::Arc::default();
@@ -1606,6 +1606,11 @@ pub(crate) fn wait_adopted(into: &Path) {
     }
 }
 
+/// A directory that is not a symlink (a legacy home is never followed).
+fn real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+}
+
 /// Copies an app's data from where it lived before its jail (`legacy`) to
 /// `into`, once: only when `into` does not exist yet. Files and folders
 /// are copied, links skipped; the old copy stays where it was. The copy
@@ -1627,7 +1632,7 @@ pub(crate) fn adopt_legacy_app_home(legacy: &Path, into: &Path) {
         }
         Ok(())
     }
-    if into.exists() || !legacy.is_dir() {
+    if into.exists() || !real_dir(legacy) {
         return;
     }
     let Some(name) = into.file_name() else { return };

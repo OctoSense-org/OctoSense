@@ -507,16 +507,19 @@ impl Storage {
         }
         let purged = secrets::purge(self.layout.secrets_root(), app_id);
         remove_tree(&paths.jail)?;
+        // A symlinked secrets folder is never followed: the link goes.
+        match std::fs::symlink_metadata(&paths.secrets) {
+            Ok(meta) if !meta.is_dir() => return remove_tree(&paths.secrets),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(io_err(e)),
+            Ok(_) => {}
+        }
         if purged {
             return remove_tree(&paths.secrets);
         }
         // This run cannot reach the keychain: keep the index naming the
         // items, so a run that can deletes them (`secrets::purge_leftovers`).
-        let entries = match std::fs::read_dir(&paths.secrets) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(io_err(e)),
-        };
+        let entries = std::fs::read_dir(&paths.secrets).map_err(io_err)?;
         for entry in entries.flatten() {
             if entry.file_name() != secrets::KEYCHAIN_INDEX {
                 remove_tree(&entry.path())?;
