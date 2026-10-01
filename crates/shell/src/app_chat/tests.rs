@@ -225,9 +225,18 @@ impl OctosContext for FakeContext {
         }
         self.ops.lock().unwrap().push(op.clone());
         match op {
-            ContextOp::History => sink(ContextEvent::Complete(Ok(json!({"messages": [
-                {"role": "user", "content": "[from the system agent] earlier", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "earlier"},
-            ]})))),
+            ContextOp::History => {
+                // Both lanes, as the broker merges them: the system agent's
+                // row, then what the person said in THIS context.
+                let mut rows = vec![json!({"role": "user", "content": "[from the system agent] earlier", "lane": "system_agent", "speaker": {"kind": "system_agent"}, "display_text": "earlier"})];
+                for op in self.ops.lock().unwrap().iter() {
+                    if let ContextOp::TurnFrom { text, .. } = op {
+                        rows.push(json!({"role": "user", "content": text, "lane": "person", "speaker": {"kind": "person"}}));
+                        rows.push(json!({"role": "assistant", "content": "Noted.", "lane": "person"}));
+                    }
+                }
+                sink(ContextEvent::Complete(Ok(json!({"messages": rows}))))
+            }
             ContextOp::TurnFrom { text, .. } if self.stop_next.swap(false, Ordering::SeqCst) => {
                 let follower = self.follower.lock().unwrap().clone();
                 let events = [
@@ -427,6 +436,78 @@ fn the_panel_opens_a_sharing_context_and_sends_person_turns_there() {
     assert_eq!(super::status(), super::Status::Off);
     assert!(!context.is_open());
     super::close();
+}
+
+/// Close and reopen "Ask <app>": the person's own rows are still there
+/// (the device lost them: every open made a new context, whose person's
+/// lane starts empty), both lanes' history is loaded again, and the live
+/// follower still delivers.
+#[test]
+fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
+    const APP: &str = "org.example.askreopen";
+    let _factory = crate::agents::FACTORY_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    if crate::approvals::with(|_| ()).is_none() {
+        crate::approvals::init_memory();
+    }
+    let peers = Arc::new(FakePeers::default());
+    crate::ai_host::contained::set_factory(peers.clone());
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), APP, true, 2));
+    let app = AgentApp { id: APP.into(), name: "Reopen".into(), octos: Vec::new(), manifest: json!({"capabilities": ["storage"]}), native: false };
+    let persons_rows = || -> Vec<String> {
+        super::snapshot().items.iter().filter_map(|i| match i {
+            Item::Message { role: Role::User, speaker: Some(s), text, .. } if s == "You" => Some(text.clone()),
+            _ => None,
+        }).collect()
+    };
+
+    super::open_app(app.clone());
+    wait("the conversation", || super::status() == super::Status::Ready);
+    super::send("what is new?");
+    assert_eq!(persons_rows(), ["what is new?"]);
+    let context = peers.0.lock().unwrap()[0].1.conversations.lock().unwrap()[0].1.clone();
+
+    super::close();
+    assert!(!super::is_open());
+    assert!(context.is_open(), "closing hides the panel; its context stays");
+    // While hidden, the follower keeps the conversation up to date.
+    let follower = context.follower.lock().unwrap().clone().expect("still followed");
+    follower(ContextEvent::Data(env("system_agent", "s7", 5, "assistant_persisted", json!({"assistant_segment_id": "s7:1", "text": "Digest ready."}))));
+
+    super::open_app(app.clone());
+    wait("the history again", || context.ops.lock().unwrap().iter().filter(|op| **op == ContextOp::History).count() == 2);
+    wait("ready", || super::status() == super::Status::Ready);
+    assert_eq!(peers.0.lock().unwrap()[0].1.conversations.lock().unwrap().len(), 1, "the same context, not a new empty lane");
+    assert_eq!(persons_rows(), ["what is new?"], "{:?}", super::snapshot().items);
+    assert!(super::snapshot().items.iter().any(|i| matches!(i, Item::Message { speaker: Some(s), text, .. } if s == "System agent" && text == "earlier")), "the system agent's lane too");
+    // The live follower still delivers after the reopen.
+    follower(ContextEvent::Data(env("system_agent", "s8", 6, "assistant_persisted", json!({"assistant_segment_id": "s8:1", "text": "Live again."}))));
+    assert!(super::snapshot().items.iter().any(|i| matches!(i, Item::Message { text, .. } if text == "Live again.")));
+    super::send("and now?");
+    assert_eq!(persons_rows(), ["what is new?", "and now?"]);
+
+    // The peer went while hidden (the agent turned off, the app released):
+    // a reopen opens a new context.
+    super::close();
+    crate::approvals::with(|a| a.consent.turn_off(APP, 3));
+    crate::ai_host::contained::revoke(APP);
+    assert!(!context.is_open());
+    super::close();
+    assert_eq!(super::status(), super::Status::Idle);
+}
+
+/// The two lanes are independent: the system agent's running turn does not
+/// make the person's lane busy (Send stays), and each lane's turn is known.
+#[test]
+fn each_lane_has_its_own_running_turn() {
+    let mut c = Conversation::new("News");
+    c.apply(&json!({"method": "turn/started", "lane": LANE_SYSTEM_AGENT, "params": {"turn_id": "s1"}, "request": {"text": "digest", "speaker": {"kind": "system_agent"}}}));
+    assert_eq!(c.running_in(LANE_SYSTEM_AGENT), Some("s1"));
+    assert_eq!(c.running_in(LANE_PERSON), None, "the person may send");
+    c.apply(&json!({"method": "turn/started", "lane": LANE_PERSON, "params": {"turn_id": "p1"}, "request": {"text": "why?", "speaker": {"kind": "person"}}}));
+    assert_eq!(c.running_in(LANE_PERSON), Some("p1"));
+    c.apply(&env(LANE_PERSON, "p1", 3, "turn_terminal", json!({"outcome": "interrupted"})));
+    assert_eq!(c.running_in(LANE_PERSON), None, "the person's Stop ended only theirs");
+    assert_eq!(c.running_in(LANE_SYSTEM_AGENT), Some("s1"));
 }
 
 // ---------------------------------------------------------------- the system agent
