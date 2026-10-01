@@ -27,6 +27,10 @@ let reading = nil
 let use_service = false
 let service_waiting = 0
 let service_relist = false
+// A run where a source failed (the network not up yet, say) is tried again
+// on its own: after 15 s, then 30 s, 1 min … at most every 15 min.
+let retry_delay = 15
+let retry_armed = false
 let months = ["January" "February" "March" "April" "May" "June" "July" "August" "September" "October" "November" "December"]
 let days = ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"]
 let specials = ["\\" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|" "^" "$"]
@@ -110,9 +114,46 @@ fn load_source(s){
     fs.write(cache_path("cache_" + s.id + ".json"), rows.to_json())
 }
 
-fn refresh(){
+// The wait before the next retry after `delay`: twice as long, at most
+// 15 minutes.
+fn next_retry_delay(delay){
+    let next = delay * 2
+    if next > 900 { next = 900 }
+    next
+}
+
+fn any_failed(){
+    for s in sources { if failed_by[s.id] { return true } }
+    false
+}
+
+// After a run: a failed source is fetched again later, sooner at first.
+fn schedule_retry(){
+    if !any_failed() {
+        retry_delay = 15
+        return
+    }
+    if retry_armed { return }
+    retry_armed = true
+    let wait = retry_delay
+    retry_delay = next_retry_delay(retry_delay)
+    start_timeout(wait, || {
+        retry_armed = false
+        refresh_due()
+    })
+}
+
+// The person's Refresh (and News opening): the service fetches a failed
+// source again at once.
+fn refresh(){ refresh_with(false) }
+
+// A timer's run (the retry, the 15-minute interval): only what is due, so a
+// failing or rate-limited source keeps its back-off.
+fn refresh_due(){ refresh_with(true) }
+
+fn refresh_with(due){
     if busy { return }
-    if use_service { refresh_service(); return }
+    if use_service { refresh_service(due); return }
     busy = true
     sync_status()
     for s in sources {
@@ -123,6 +164,7 @@ fn refresh(){
     updated = time_now()
     sync_status()
     ui.tile_list.render()
+    schedule_retry()
 }
 
 // A story as the news service keeps it, in this script's row shape. The
@@ -175,6 +217,7 @@ fn listed_service(){
     ui.list.render()
     sync_status()
     ui.tile_list.render()
+    schedule_retry()
     if service_relist {
         service_relist = false
         busy = true
@@ -183,11 +226,11 @@ fn listed_service(){
 }
 
 // Show what the service has now, ask it to fetch what is due, then show that.
-fn refresh_service(){
+fn refresh_service(due){
     busy = true
     sync_status()
     list_service()
-    host.request("news.refresh", {}, fn(r){
+    host.request("news.refresh", {due: due}, fn(r){
         if !use_service { return }
         if busy { service_relist = true }
         else {
@@ -345,7 +388,7 @@ fn boot(){
     refresh()
 }
 start_timeout(0.05, || boot())
-start_interval(900, || refresh())
+start_interval(900, || refresh_due())
 
 let ink = #x1c1c1e
 let secondary = #x8e8e93

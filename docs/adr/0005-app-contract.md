@@ -62,8 +62,8 @@ Within `1.x`:
 
 - `octosense-app-contract` is published to a registry, so consumers write `octosense-app-contract = "1"` and Cargo resolves one `1.x` for the whole build. No lockstep, no duplicate copies, no host-alias tricks.
 - **Registry: crates.io (decided 2026-09-30).** App Hub's source is already public, and Rinx, OctoSense and third-party apps can depend on it with no credentials or setup. A published version can never be deleted, only yanked, so releases go through review. A private registry was the alternative, rejected because every consumer's CI and machine would need a token and outside app developers could not use it. Plain git dependencies cannot work: Cargo never unifies two git commits.
-- OctoSense's root `Cargo.toml` pins the exact contract version it ships with (`=1.y.z` in `Cargo.lock`); apps state the lowest `1.x` they need. Inside OctoSense, OctoSense's choice is what links.
-- Rinx's CI builds against the lowest and the highest `1.x` it claims.
+- OctoSense's root `Cargo.toml` states `octosense-app-contract = "1"`, and its `Cargo.lock` records the exact version it ships with (1.0.0 today); apps state the lowest `1.x` they need. Inside OctoSense, OctoSense's lock is what links.
+- Rinx's CI should build against the lowest and the highest `1.x` it claims. *Not yet in place (2026-10-01): with only 1.0.0 published both are the same version; the check joins Rinx's CI (`main.yml`) with the first 1.1.0.*
 
 ### 4. Breaking changes
 
@@ -71,7 +71,7 @@ A change that cannot be additive becomes `octosense-app-contract 2.0`. Hosts sup
 
 ### 5. Who changes the contract
 
-The contract crate lives in the App Hub repository under `crates/app-contract`, with its own changelog. A pull request that touches it needs review from App Hub and from one app owner (Rinx). CI runs: the fixture corpus, a public-API diff (`cargo public-api` or `cargo semver-checks`) that fails on any non-additive change within `1.x`, and Rinx's build against the new version.
+The contract crate lives in the App Hub repository under `crates/app-contract`, with its own changelog. A pull request that touches it needs review from App Hub and from one app owner (Rinx). *Not yet enforced (2026-10-01): App Hub has no CODEOWNERS; the rule is followed by hand until a CODEOWNERS entry for `crates/app-contract` is added.* CI runs: the fixture corpus, a public-API diff (`cargo public-api` or `cargo semver-checks`) that fails on any non-additive change within `1.x`, and Rinx's build against the new version.
 
 ## Consequences
 
@@ -83,11 +83,11 @@ The contract crate lives in the App Hub repository under `crates/app-contract`, 
 
 ## Plan
 
-1. **Stopgap now:** restore OctoSense's `www.github.com` App Hub alias (dropped in #221), so #210 (App Hub 2a3d84b3) lands without a Rinx release. Rinx 1.0.3 is not made.
-2. **App Hub:** create `crates/app-contract` with the section 1 surface, moved out of `app-policy` (which re-exports it); add `requires`/`schema_minor`; add the fixture corpus and the API-diff check; set up a crates.io publishing token in App Hub's release workflow; publish `1.0.0`.
-3. **OctoSense:** depend on `octosense-app-contract = "1"` where the shell uses the contract; remove the App Hub alias.
-4. **Rinx:** replace its `octosense-app-policy` and `octosense-app-hub` uses with the contract (about 30 call sites, plus its own catalog types), and build its mini-app sandbox from `AppPolicy` (or App Hub's optional helper crate); release as Rinx `1.1.0`, the last release coupled to an App Hub commit.
-5. **Other apps** (AppCard, OctoScript tooling) follow the same rule when they next change.
+1. **Done (#210):** stopgap: restore OctoSense's `www.github.com` App Hub alias (dropped in #221), so #210 (App Hub 2a3d84b3) lands without a Rinx release. Rinx 1.0.3 is not made.
+2. **Done (App Hub #46, #47; 1.0.0 on crates.io):** create `crates/app-contract` with the section 1 surface, moved out of `app-policy` (which re-exports it); add `requires`/`schema_minor`; add the fixture corpus and the API-diff check; set up a crates.io publishing token in App Hub's release workflow; publish `1.0.0`.
+3. **Done (#243):** OctoSense: depend on `octosense-app-contract = "1"` where the shell uses the contract; remove the App Hub alias.
+4. **Done (Rinx #49, tag `v1.1.0`):** Rinx: replace its `octosense-app-policy` and `octosense-app-hub` uses with the contract (about 30 call sites, plus its own catalog types), and build its mini-app sandbox from `AppPolicy` (or App Hub's optional helper crate); release as Rinx `1.1.0`, the last release coupled to an App Hub commit.
+5. **Open:** other apps (AppCard, OctoScript tooling) follow the same rule when they next change.
 
 ## Decided on review (2026-09-30)
 

@@ -119,7 +119,7 @@ The host **policy** decides which native modules may use the assistant, by exact
 
 ### The system agent
 
-Today the system agent is the **owner** of every app peer: the session that created it and can address it. It does not hold any app's tools, and it cannot answer an app peer's approvals (octos [#2560](https://github.com/octos-org/octos/pull/2560)). Its tools are a defined set the shell writes before every kernel start, with octos's shell never offered ([#117](https://github.com/OctoSense-org/OctoSense/pull/117), `crates/kernel/src/system_tools.rs`; see [architecture § Tools and grants](architecture.md#4-tools-and-grants)). The person reaches it in the shell's **system chat** ([#132](https://github.com/OctoSense-org/OctoSense/pull/132), `crates/shell/src/system_chat/`: Setup → Assistant → Assistant chat, or F8; full screen on a phone), whose approvals go through the approval router, or from a Talk to Octos client ([#98](https://github.com/OctoSense-org/OctoSense/pull/98), [ADR 0003](adr/0003-shared-octos-client-access.md)). Its larger role in ADR 0002 (supervising app agents, budgets, the kill switch, ranking the glance screen, improving app agents) is **planned**; the glance screen currently orders cards by priority and recency.
+Today the system agent is the **owner** of every app peer: the session that created it and can address it. It does not hold any app's tools, and it cannot answer an app peer's approvals (octos [#2560](https://github.com/octos-org/octos/pull/2560)). Its tools are a defined set the shell writes before every kernel start, with octos's shell never offered ([#117](https://github.com/OctoSense-org/OctoSense/pull/117), `crates/kernel/src/system_tools.rs`; see [architecture § Tools and grants](architecture.md#4-tools-and-grants)). The person reaches it in the shell's **system chat** ([#132](https://github.com/OctoSense-org/OctoSense/pull/132), `crates/shell/src/system_chat/`: Setup → Assistant → Assistant chat, F8, the desktop dock's Assistant icon, or the phone home's Assistant tile; full screen on a phone), whose approvals go through the approval router, or from a Talk to Octos client ([#98](https://github.com/OctoSense-org/OctoSense/pull/98), [ADR 0003](adr/0003-shared-octos-client-access.md)). Its larger role in ADR 0002 (supervising app agents, budgets, the kill switch, ranking the glance screen, improving app agents) is **planned**; the glance screen currently orders cards by priority and recency.
 
 ### Other assistants in the shell
 
@@ -219,10 +219,10 @@ The tracking issue is [#68](https://github.com/OctoSense-org/OctoSense/issues/68
 
 ### Desktop, with a throwaway kernel and profile
 
-1. Build octos at the revision the root `Cargo.toml` pins (`4a3ec9f9`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
+1. Build octos at the revision the root `Cargo.toml` pins (`ae230ce0`), in a checkout of [octos-org/octos](https://github.com/octos-org/octos) (the flags are `tools/kernel-artifact.py`'s; **unverified** at this revision in this page's refresh):
 
    ```sh
-   git checkout 4a3ec9f9d527544a0a67ac9167da60d0854d69e9
+   git checkout ae230ce04d57f3c29cf6c2518e5956a86c07d788
    cargo build --release -p octos-cli --bin octos --no-default-features --features api,git,ast
    ```
 

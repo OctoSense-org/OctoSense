@@ -297,7 +297,31 @@ fn settings_says_a_suspended_agents_memory_remains() {
     host.sign_out("rinx", Some("a"));
     host.remove_account("rinx", Some("b")).unwrap();
     let text = agent_state_text(&State::Allowed, memory_notice(&host, "rinx"));
-    assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until octos can erase it");
+    assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until the account is removed and its agent erased");
+}
+
+/// At startup the shell moves every password Mail left under `apps/`.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_move_mails_old_passwords_when_the_shell_starts() {
+    let home = Scratch::new("mail-move");
+    let host = storage(&home.0);
+    let old = home.0.join("apps/.host/mail/secrets");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("acct-1"), "pw").unwrap();
+    mail_secrets_at_startup(&host);
+    assert!(!old.join("acct-1").exists());
+    assert_eq!(std::fs::read_to_string(home.0.join("secrets/os.mail/acct-1")).unwrap(), "pw");
+}
+
+/// Mail's passwords live in the host's secrets, never under `apps/`.
+#[test]
+fn should_keep_mails_passwords_in_the_host_secrets_when_the_shell_starts() {
+    let home = Scratch::new("mail-secrets");
+    let layout = Layout::new(&home.0).unwrap();
+    let dir = mail_secrets_dir(&layout);
+    assert_eq!(dir, home.0.join("secrets/os.mail"));
+    assert!(!dir.starts_with(layout.apps_root()));
 }
 
 /// A script app never takes a native app's id (ADR 0004 §3, §11): an
@@ -322,4 +346,116 @@ fn a_script_app_with_a_native_apps_id_touches_none_of_its_storage() {
     assert!(!app_uninstalled(&host, &root, "rinx"));
     assert!(home.0.join("secrets/rinx").is_dir(), "Rinx's secrets stay");
     assert!(!host.is_signed_out("rinx", Some("@me:x")));
+}
+
+// ---- erasing the agent (peer/purge, octos#2649) ----------------------------
+
+/// The process has one purger: the tests that install one run one at a time.
+static PURGER_TESTS: Mutex<()> = Mutex::new(());
+
+/// The purge requests for apps whose id starts with `prefix` (other tests
+/// running at the same time remove accounts too), answered with `erased`.
+fn recording_purger(prefix: &'static str, erased: bool) -> Arc<Mutex<Vec<PurgeRequest>>> {
+    let seen: Arc<Mutex<Vec<PurgeRequest>>> = Arc::default();
+    let log = seen.clone();
+    set_purger(Some(Arc::new(move |request: PurgeRequest, done: Box<dyn FnOnce(bool) + Send>| {
+        if request.app.starts_with(prefix) {
+            log.lock().unwrap().push(request);
+            done(erased);
+        }
+    })));
+    seen
+}
+
+/// ADR 0004 §11: removing an account deletes its folder, then erases its
+/// agent (under both ids it may have: a native app's own, a script app's
+/// `card.<id>`; with the labels a legacy record's peer may be named by).
+/// Once erased, Settings no longer says memory remains, but the account
+/// STAYS suspended (a broker still bound to it must not make a new agent)
+/// until it is added again. An erase that failed says the memory remains.
+/// Uninstalling erases every account's agent the same way.
+#[test]
+fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
+    let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("purge");
+    let host = storage(&home.0);
+    let seen = recording_purger("org.purge.", true);
+    host.set_spec("org.purge.mail", StorageSpec { accounts: true, ..Default::default() });
+    let added = AccountEvent::Added { app_id: "org.purge.mail".into(), account: "id1".into() };
+    let Change::SignedIn { folder, .. } = mail_account(&host, &added) else { panic!() };
+    let removed = AccountEvent::Removed { app_id: "org.purge.mail".into(), account: "id1".into() };
+    mail_account(&host, &removed);
+    assert!(!folder.exists(), "the folder first");
+    assert_eq!(*seen.lock().unwrap(), vec![PurgeRequest {
+        app: "org.purge.mail".into(),
+        service_apps: vec!["org.purge.mail".into(), "card.org.purge.mail".into()],
+        labels: vec!["Org.purge.mail".into(), "org.purge.mail".into()],
+        account: Some("id1".into()),
+    }]);
+    assert!(host.is_signed_out("org.purge.mail", Some("id1")), "erased, but still refused until added again");
+    assert!(storage(&home.0).is_signed_out("org.purge.mail", Some("id1")), "across a restart");
+    assert_eq!(memory_notice(&host, "org.purge.mail"), None, "no memory remains");
+    assert_eq!(memory_notice(&storage(&home.0), "org.purge.mail"), None, "across a restart");
+    // Added again: a new agent may run.
+    mail_account(&host, &added);
+    assert!(!host.is_signed_out("org.purge.mail", Some("id1")));
+
+    // An erase that failed: the agent stays suspended and Settings says so.
+    set_purger(None);
+    let _failed = recording_purger("org.purge.", false);
+    mail_account(&host, &removed);
+    assert!(host.is_signed_out("org.purge.mail", Some("id1")));
+    assert!(memory_notice(&host, "org.purge.mail").is_some());
+
+    // Uninstall: every account's agent; the accounts stay refused.
+    set_purger(None);
+    let seen = recording_purger("org.purge.", true);
+    let root = host.layout().apps_root().to_path_buf();
+    write_json(&root.join("org.purge.chat/bundle/manifest.json"), &json!({"id": "org.purge.chat"}));
+    host.set_spec("org.purge.chat", StorageSpec { accounts: true, ..Default::default() });
+    host.open("org.purge.chat").unwrap().account_folder(Some("me")).unwrap();
+    std::fs::remove_dir_all(root.join("org.purge.chat")).unwrap();
+    assert!(app_uninstalled(&host, &root, "org.purge.chat"));
+    assert_eq!(seen.lock().unwrap().last().unwrap().account, None, "every account");
+    assert!(host.is_signed_out("org.purge.chat", Some("me")), "still refused");
+    assert_eq!(memory_notice(&host, "org.purge.chat"), None);
+    assert_eq!(memory_notice(&storage(&home.0), "org.purge.chat"), None, "across a restart");
+    set_purger(None);
+}
+
+/// The account is added again while its agent's purge still runs: it
+/// stays signed in when the purge ends (the purge's late success marks
+/// nothing), and is not reported as holding memory.
+#[test]
+fn an_account_added_again_while_its_purge_runs_stays_signed_in() {
+    let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("purge-readd");
+    let host = storage(&home.0);
+    let held: Arc<Mutex<Vec<Box<dyn FnOnce(bool) + Send>>>> = Arc::default();
+    let hold = held.clone();
+    set_purger(Some(Arc::new(move |request: PurgeRequest, done: Box<dyn FnOnce(bool) + Send>| {
+        if request.app == "org.readd.mail" {
+            hold.lock().unwrap().push(done);
+        }
+    })));
+    host.set_spec("org.readd.mail", StorageSpec { accounts: true, ..Default::default() });
+    let added = AccountEvent::Added { app_id: "org.readd.mail".into(), account: "id1".into() };
+    let removed = AccountEvent::Removed { app_id: "org.readd.mail".into(), account: "id1".into() };
+    mail_account(&host, &added);
+    mail_account(&host, &removed);
+    assert_eq!(held.lock().unwrap().len(), 1, "the purge is running");
+    assert!(host.is_signed_out("org.readd.mail", Some("id1")), "refused while it runs");
+    mail_account(&host, &added);
+    assert!(!host.is_signed_out("org.readd.mail", Some("id1")));
+    let done = held.lock().unwrap().pop().unwrap();
+    done(true);
+    assert!(!host.is_signed_out("org.readd.mail", Some("id1")), "still signed in after the purge ends");
+    assert_eq!(memory_notice(&host, "org.readd.mail"), None);
+    // Removed again later: suspended, and its (new) agent's memory remains
+    // until that one is erased.
+    mail_account(&host, &removed);
+    assert!(memory_notice(&host, "org.readd.mail").is_some());
+    set_purger(None);
 }

@@ -4,8 +4,12 @@
 //!
 //! - **The approval sheet**: the router's front [`Sheet`]. Each open line
 //!   shows the owning app and tool, who is calling, the exact arguments
-//!   (secrets redacted) and why it needs the person, with Approve once,
-//!   Deny and up to two "Always …" choices. Modal while up.
+//!   (secrets redacted, hidden characters shown as `⟨U+202E⟩`) and why it
+//!   needs the person, with Approve once, Deny and up to two "Always …"
+//!   choices. Modal while up. The argument area shows **every** row: long
+//!   rows wrap (`↳`), and past [`MAX_ARG_ROWS`] rows it scrolls (the wheel,
+//!   or "More ↓"); Approve once and "Always …" stay disabled until every
+//!   row has been on screen ([`ArgWindow`]).
 //! - **The first-use sheet** ([`super::consent`]): what the agent may read
 //!   and use and where the model runs; Allow or Don't allow. Modal.
 //! - **The time-box indicator**: while a rule approves everything one app
@@ -25,10 +29,11 @@
 //! Settings page) is a [`ApprovalGesture`] made.
 
 use makepad_widgets::*;
+use std::collections::HashMap;
 
 use super::consent::AgentSummary;
 use super::rules::{ApprovalGesture, Rule};
-use super::sheet::{app_label, Answer, Line, Sheet};
+use super::sheet::{app_label, wrap, Answer, ArgWindow, Line, Sheet};
 use super::types::{RequestId, RuleId};
 use crate::shell::ui::{contains, rect, DrawShellFill, HAlign, ShellDraw};
 use crate::shell::{alpha, rgb, CtrlState, ShellTokens};
@@ -50,7 +55,8 @@ const CARD_MAX_W: f64 = 600.0;
 const PAD: f64 = 18.0;
 const BUTTON_H: f64 = 28.0;
 const ARG_LINE_H: f64 = 17.0;
-const MAX_ARG_LINES: usize = 12;
+/// Rows the argument area shows at once; more scroll.
+pub const MAX_ARG_ROWS: usize = 12;
 const INDICATOR_H: f64 = 30.0;
 
 /// What a press lands on.
@@ -63,6 +69,8 @@ pub enum Hit {
     QuestionOption { id: u64, label: Option<String> },
     /// Stop the app agent's running turn (the app's conversation).
     StopAgent { app: String },
+    /// Scroll a line's argument area by `rows` (down when positive).
+    ScrollArgs { request: RequestId, rows: isize },
     /// Dismiss an expired approval's record, or an expired question's.
     DismissExpired(RequestId),
     DismissQuestion(u64),
@@ -97,6 +105,15 @@ impl Buttons<'_> {
             self.d.control(cx, r, &self.tok.controls, state);
             self.d.label_elided(cx, rect(r.pos.x + 10.0, r.pos.y, r.size.x - 20.0, r.size.y), false, self.tok.font.body, ink, HAlign::Center, label);
         }
+        r
+    }
+    /// A button that cannot be pressed yet (no hit is registered for it).
+    pub fn draw_disabled(&mut self, cx: &mut Cx2d, x: f64, y: f64, max_w: f64, label: &str) -> Rect {
+        let w = self.width(cx, label).min(max_w.max(40.0));
+        let r = rect(x, y, w, BUTTON_H);
+        let ink = alpha(self.tok.popups.text, 0.35);
+        self.d.bordered(cx, r, alpha(self.tok.popups.text, 0.06), alpha(self.tok.popups.text, 0.18), alpha(self.tok.popups.text, 0.06), 0.0, 0.0);
+        self.d.label_elided(cx, rect(r.pos.x + 10.0, r.pos.y, r.size.x - 20.0, r.size.y), false, self.tok.font.body, ink, HAlign::Center, label);
         r
     }
 }
@@ -179,6 +196,16 @@ pub struct ShellApprovals {
     /// What was last drawn, for the control surface and tests.
     #[rust]
     pub shown: Vec<String>,
+    /// Each open line's argument area: where it is scrolled, how far down
+    /// the person has seen.
+    #[rust]
+    windows: HashMap<RequestId, ArgWindow>,
+    /// The argument areas drawn last frame: (area, line, rows, rows shown).
+    #[rust]
+    arg_boxes: Vec<(Rect, RequestId, usize, usize)>,
+    /// Each open line's wrapped rows, and the width they were wrapped to.
+    #[rust]
+    wrapped: HashMap<RequestId, (f64, Vec<String>)>,
 }
 
 impl ShellApprovals {
@@ -187,8 +214,25 @@ impl ShellApprovals {
         self.hits.iter().rev().find(|(r, h)| *h != Hit::Card && contains(*r, p)).or_else(|| self.hits.iter().find(|(r, _)| contains(*r, p))).map(|(_, h)| h.clone())
     }
 
+    /// Scroll `request`'s argument area.
+    fn scroll_args(&mut self, request: &RequestId, rows: isize) {
+        let Some((_, _, total, shown)) = self.arg_boxes.iter().find(|(_, r, _, _)| r == request).cloned() else { return };
+        self.windows.entry(request.clone()).or_default().scroll(rows, total, shown);
+    }
+
     /// The shell's pointer hook (`approvals::pointer`). True when taken.
     pub fn pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if let Event::Scroll(e) = event {
+            let over = self.arg_boxes.iter().find(|(r, ..)| contains(*r, e.abs)).map(|(_, id, ..)| id.clone());
+            if let Some(id) = over {
+                let rows = (e.scroll.y / ARG_LINE_H).round() as isize;
+                let rows = if rows == 0 { e.scroll.y.signum() as isize } else { rows };
+                self.scroll_args(&id, rows);
+                self.redraw(cx);
+                return true;
+            }
+            return self.modal;
+        }
         let (down, up, moved) = match event {
             Event::MouseDown(e) => (Some(e.abs), None, None),
             Event::MouseUp(e) => (None, Some(e.abs), None),
@@ -217,7 +261,10 @@ impl ShellApprovals {
             let pressed = self.down.take();
             if let (Some(h), Some(d)) = (&hit, &pressed) {
                 if h == d {
-                    act(h.clone());
+                    match h.clone() {
+                        Hit::ScrollArgs { request, rows } => self.scroll_args(&request, rows),
+                        h => act(h),
+                    }
                     self.redraw(cx);
                 }
             }
@@ -352,18 +399,44 @@ impl ShellApprovals {
         self.d.solid(cx, screen, Vec4f { x: 0.0, y: 0.0, z: 0.0, w: 0.45 });
     }
 
-    fn line_height(line: &Line) -> f64 {
-        let args = line.args.len().min(MAX_ARG_LINES) as f64 * ARG_LINE_H + if line.args.len() > MAX_ARG_LINES { ARG_LINE_H } else { 0.0 };
+    /// A line's height with `rows` argument rows on screen (and the scroll
+    /// row when `scrolls`).
+    fn line_height(line: &Line, rows: usize, scrolls: bool) -> f64 {
+        let args = rows as f64 * ARG_LINE_H + if scrolls { BUTTON_H + 4.0 } else { 0.0 };
         let note = if line.surfaced.note().is_empty() { 0.0 } else { 18.0 };
         let always = if line.always.is_empty() { 0.0 } else { BUTTON_H + 8.0 };
-        22.0 + 18.0 + 8.0 + args + 12.0 + note + BUTTON_H + 8.0 + always + 14.0
+        22.0 + 18.0 + 8.0 + args + 8.0 + 12.0 + note + BUTTON_H + 8.0 + always + 14.0
     }
 
     fn draw_sheet(&mut self, cx: &mut Cx2d, screen: Rect, sheet: &Sheet, more: usize, tok: ShellTokens) {
         self.scrim(cx, screen);
         let lines: Vec<&Line> = sheet.open_lines().collect();
+        // Forget the windows of lines no longer open.
+        self.windows.retain(|id, _| lines.iter().any(|l| l.request == *id));
+        self.arg_boxes.clear();
+        let card_w = Self::card_rect(screen, 100.0).size.x;
+        let row_w = card_w - PAD * 2.0 - 16.0;
+        // Every argument row, wrapped to the card: nothing is elided.
+        let px = tok.font.body_small;
+        let scaled = px * self.d.text_scale();
+        self.wrapped.retain(|id, _| lines.iter().any(|l| l.request == *id));
+        let wrapped: Vec<Vec<String>> = lines
+            .iter()
+            .map(|l| {
+                if let Some((at, rows)) = self.wrapped.get(&l.request) {
+                    if *at == row_w {
+                        return rows.clone();
+                    }
+                }
+                let d = &mut self.d;
+                let rows: Vec<String> = l.args.iter().flat_map(|a| wrap(a, row_w, |t| d.measure(cx, false, scaled, t))).collect();
+                self.wrapped.insert(l.request.clone(), (row_w, rows.clone()));
+                rows
+            })
+            .collect();
+        let shown_rows = |n: usize| n.min(MAX_ARG_ROWS);
         let header = 26.0 + 20.0 + 14.0;
-        let body: f64 = lines.iter().map(|l| Self::line_height(l)).sum();
+        let body: f64 = lines.iter().zip(&wrapped).map(|(l, w)| Self::line_height(l, shown_rows(w.len()), w.len() > MAX_ARG_ROWS)).sum();
         let stop = sheet.stop_target().map(str::to_string);
         let footer = if more > 0 { 20.0 } else { 0.0 } + if stop.is_some() { BUTTON_H + 8.0 } else { 0.0 };
         let card = Self::card_rect(screen, PAD * 2.0 + header + body + footer);
@@ -383,45 +456,68 @@ impl ShellApprovals {
         y += 20.0 + 14.0;
         self.shown.push(title);
         self.shown.push(sub);
-        let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
         let mut hits = Vec::new();
-        for (i, line) in lines.iter().enumerate() {
-            let h = Self::line_height(line);
+        let mut boxes = Vec::new();
+        for (i, (line, rows)) in lines.iter().zip(&wrapped).enumerate() {
+            let total = rows.len();
+            let visible = shown_rows(total);
+            let scrolls = total > visible;
+            let h = Self::line_height(line, visible, scrolls);
             if y + h > bottom + 1.0 {
                 let rest = lines.len() - i;
-                buttons.d.label_elided(cx, rect(x, y, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, &format!("{rest} more below: answer these first"));
+                self.d.label_elided(cx, rect(x, y, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, &format!("{rest} more below: answer these first"));
                 break;
             }
             if i > 0 {
-                buttons.d.solid(cx, rect(x, y - 8.0, w, 1.0), alpha(ink, 0.12));
+                self.d.solid(cx, rect(x, y - 8.0, w, 1.0), alpha(ink, 0.12));
             }
             let heading = line.heading();
-            buttons.d.label_elided(cx, rect(x, y, w, 20.0), true, tok.font.subtitle, ink, HAlign::Left, &heading);
+            self.d.label_elided(cx, rect(x, y, w, 20.0), true, tok.font.subtitle, ink, HAlign::Left, &heading);
             y += 22.0;
             let asked = format!("Asked by {}", line.caller);
-            buttons.d.label_elided(cx, rect(x, y, w, 16.0), false, tok.font.body_small, dim, HAlign::Left, &asked);
+            self.d.label_elided(cx, rect(x, y, w, 16.0), false, tok.font.body_small, dim, HAlign::Left, &asked);
             y += 18.0 + 8.0;
-            let shown_args = line.args.len().min(MAX_ARG_LINES);
-            let extra = if line.args.len() > MAX_ARG_LINES { 1 } else { 0 };
-            let box_h = (shown_args + extra) as f64 * ARG_LINE_H + 8.0;
-            buttons.d.solid(cx, rect(x, y - 4.0, w, box_h), alpha(ink, 0.06));
-            for a in line.args.iter().take(MAX_ARG_LINES) {
-                buttons.d.label_elided(cx, rect(x + 8.0, y, w - 16.0, ARG_LINE_H), false, tok.font.body_small, ink, HAlign::Left, a);
+            let window = self.windows.entry(line.request.clone()).or_default();
+            let range = window.show(total, visible);
+            let (at_end, at_top, seen_all) = (window.at_end(total, visible), window.top == 0, window.seen_all(total));
+            let box_h = visible as f64 * ARG_LINE_H + 8.0;
+            let area = rect(x, y - 4.0, w, box_h);
+            self.d.solid(cx, area, alpha(ink, 0.06));
+            boxes.push((area, line.request.clone(), total, visible));
+            for row in &rows[range.clone()] {
+                // Wrapped already: fits, never elided.
+                self.d.label(cx, rect(x + 8.0, y, w - 16.0, ARG_LINE_H), false, px, ink, HAlign::Left, row);
                 y += ARG_LINE_H;
             }
-            if extra == 1 {
-                buttons.d.label_elided(cx, rect(x + 8.0, y, w - 16.0, ARG_LINE_H), false, tok.font.body_small, dim, HAlign::Left, &format!("\u{2026} {} more lines", line.args.len() - MAX_ARG_LINES));
-                y += ARG_LINE_H;
+            y += 8.0;
+            let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
+            if scrolls {
+                let status = format!("Rows {}\u{2013}{} of {total}", range.start + 1, range.end);
+                if !at_end {
+                    let r = buttons.draw(cx, x, y, w, &format!("More \u{2193} ({} rows left)", total - range.end), false);
+                    hits.push((r, Hit::ScrollArgs { request: line.request.clone(), rows: visible as isize }));
+                    buttons.d.label_elided(cx, rect(r.pos.x + r.size.x + 10.0, y, (x + w - r.pos.x - r.size.x - 10.0).max(0.0), BUTTON_H), false, px, dim, HAlign::Left, &status);
+                } else if !at_top {
+                    let r = buttons.draw(cx, x, y, w, "Back to the top \u{2191}", false);
+                    hits.push((r, Hit::ScrollArgs { request: line.request.clone(), rows: -(total as isize) }));
+                    buttons.d.label_elided(cx, rect(r.pos.x + r.size.x + 10.0, y, (x + w - r.pos.x - r.size.x - 10.0).max(0.0), BUTTON_H), false, px, dim, HAlign::Left, &status);
+                }
+                y += BUTTON_H + 4.0;
             }
             y += 12.0;
-            let note = line.surfaced.note();
-            if !note.is_empty() {
-                buttons.d.label_elided(cx, rect(x, y, w, 16.0), false, tok.font.body_small, rgb(0xE0, 0x8A, 0x00), HAlign::Left, note);
+            let note = if seen_all { line.surfaced.note() } else { "Read every argument (scroll to the end) to approve." };
+            if !note.is_empty() || !line.surfaced.note().is_empty() {
+                buttons.d.label_elided(cx, rect(x, y, w, 16.0), false, px, rgb(0xE0, 0x8A, 0x00), HAlign::Left, note);
                 y += 18.0;
             }
             let mut bx = x;
-            let once = buttons.draw(cx, bx, y, w, "Approve once", true);
-            hits.push((once, Hit::Answer { sheet: sheet.id, request: line.request.clone(), answer: Answer::Once }));
+            let once = if seen_all {
+                let r = buttons.draw(cx, bx, y, w, "Approve once", true);
+                hits.push((r, Hit::Answer { sheet: sheet.id, request: line.request.clone(), answer: Answer::Once }));
+                r
+            } else {
+                buttons.draw_disabled(cx, bx, y, w, "Approve once")
+            };
             bx += once.size.x + 8.0;
             let deny = buttons.draw(cx, bx, y, x + w - bx, "Deny", false);
             hits.push((deny, Hit::Answer { sheet: sheet.id, request: line.request.clone(), answer: Answer::Deny }));
@@ -433,8 +529,14 @@ impl ShellApprovals {
                     if room < 80.0 {
                         break;
                     }
-                    let r = buttons.draw(cx, bx, y, if k == 0 { room * 0.6 } else { room }, &choice.label, false);
-                    hits.push((r, Hit::Answer { sheet: sheet.id, request: line.request.clone(), answer: Answer::Always(k) }));
+                    let max = if k == 0 { room * 0.6 } else { room };
+                    let r = if seen_all {
+                        let r = buttons.draw(cx, bx, y, max, &choice.label, false);
+                        hits.push((r, Hit::Answer { sheet: sheet.id, request: line.request.clone(), answer: Answer::Always(k) }));
+                        r
+                    } else {
+                        buttons.draw_disabled(cx, bx, y, max, &choice.label)
+                    };
                     bx += r.size.x + 8.0;
                 }
                 y += BUTTON_H + 8.0;
@@ -443,7 +545,9 @@ impl ShellApprovals {
             self.shown.push(heading);
             self.shown.push(asked);
             self.shown.extend(line.args.iter().cloned());
+            self.shown.push(if seen_all { "Approve once".to_string() } else { format!("Approve once (disabled: rows {}\u{2013}{} of {total} seen)", 1, window_seen(&self.windows, &line.request, total)) });
         }
+        let mut buttons = Buttons { d: &mut self.d, tok, hover: self.hover };
         if let Some(app) = &stop {
             let label = stop_label(app);
             let top = if more > 0 { bottom - 20.0 - BUTTON_H - 4.0 } else { bottom - BUTTON_H };
@@ -455,6 +559,7 @@ impl ShellApprovals {
             buttons.d.label_elided(cx, rect(x, bottom - 18.0, w, 18.0), false, tok.font.body_small, dim, HAlign::Left, &format!("{more} more sheet{} after this one", if more == 1 { "" } else { "s" }));
         }
         self.hits.extend(hits);
+        self.arg_boxes = boxes;
     }
 
     fn draw_consent(&mut self, cx: &mut Cx2d, screen: Rect, s: &AgentSummary, tok: ShellTokens) {
@@ -498,6 +603,11 @@ impl ShellApprovals {
         self.shown.extend(s.uses.iter().cloned());
         self.shown.push(s.model.clone());
     }
+}
+
+/// How many of a line's `total` rows the person has seen.
+fn window_seen(windows: &HashMap<RequestId, ArgWindow>, id: &RequestId, total: usize) -> usize {
+    windows.get(id).map_or(0, |w| w.seen_to.min(total))
 }
 
 /// "Stop Rinx's agent".
@@ -546,7 +656,8 @@ fn act(hit: Hit) {
         }
         Hit::DismissExpired(id) => super::dismiss_expired(&id),
         Hit::DismissQuestion(id) => crate::questions::dismiss(id),
-        Hit::Card => {}
+        // The view scrolls its own argument areas (`pointer`).
+        Hit::ScrollArgs { .. } | Hit::Card => {}
     }
 }
 

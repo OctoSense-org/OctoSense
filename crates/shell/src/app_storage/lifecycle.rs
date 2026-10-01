@@ -23,11 +23,17 @@
 //!   then resumes its peer), sign out (suspend: the broker closes the
 //!   request contexts, `crate::host_tools` answers `signed_out` and starts no
 //!   turn), remove an account or uninstall (delete the folders, stay
-//!   suspended). The agent's transcript and memory stay in octos until it has
-//!   a `peer/purge` (octos#2604): [`memory_notice`] is what Settings says.
+//!   suspended), then erase the agent: [`set_purger`]'s purger asks octos
+//!   to `peer/purge` each (app, account) peer the host recorded (octos#2649,
+//!   in the background, a busy peer retried) and drops the record; once it
+//!   succeeded the storage notes it ([`Storage::mark_erased`],
+//!   [`Storage::mark_app_erased`]). The account STAYS suspended until it is
+//!   added again (then it gets a new agent, the record being gone); only
+//!   [`memory_notice`] stops saying the memory remains. A failed purge
+//!   keeps the record for a later one. Signing out keeps the agent.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
@@ -173,6 +179,7 @@ pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::Acco
             if let Err(e) = storage.remove_account(app_id, Some(account)) {
                 makepad_widgets::log!("app storage: {app_id}: cannot remove the account's folder: {e}");
             }
+            erase_agents(storage, app_of(app_id), Some(account));
             Change::SignedOut { app: app_id.clone(), account: Some(account.clone()) }
         }
     }
@@ -194,16 +201,95 @@ pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -
     if let Err(e) = storage.uninstall(manifest_id) {
         makepad_widgets::log!("app storage: {manifest_id}: uninstall left something behind: {e}");
     }
+    erase_agents(storage, manifest_id, None);
     true
 }
 
-/// Settings' line for an app whose agent has suspended accounts: octos
-/// keeps a peer's transcript and memory until it can purge one.
+/// What the host asks octos to erase: the peers of a storage app id under
+/// each id its agent may have (a native app's own id, a script app's
+/// `card.<manifest id>`), for one account or (`None`) every account.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PurgeRequest {
+    pub app: String,
+    pub service_apps: Vec<String>,
+    /// The labels a broker of the app may have named its peers with (the
+    /// name of a peer recorded before records carried it): the shell's
+    /// display label and the app id (a contained app's broker is labelled
+    /// with its manifest id).
+    pub labels: Vec<String>,
+    pub account: Option<String>,
+}
+
+/// Erases agents (`peer/purge`) and says, once done, whether every one is
+/// gone. The shell installs [`kernel_purger`]; tests install their own.
+pub type Purger = Arc<dyn Fn(PurgeRequest, Box<dyn FnOnce(bool) + Send>) + Send + Sync>;
+
+fn purger() -> &'static Mutex<Option<Purger>> {
+    static PURGER: Mutex<Option<Purger>> = Mutex::new(None);
+    &PURGER
+}
+
+/// Install (or with `None` remove) the process's purger.
+pub fn set_purger(purger_fn: Option<Purger>) {
+    *purger().lock().unwrap_or_else(|e| e.into_inner()) = purger_fn;
+}
+
+/// After the storage lifecycle deleted an account's folder or an app's
+/// jail: erase the agent, and once it is gone forget its suspension.
+fn erase_agents(storage: &Arc<Storage>, app: &str, account: Option<&str>) {
+    let Some(purge) = purger().lock().unwrap_or_else(|e| e.into_inner()).clone() else { return };
+    let mut service_apps = vec![app.to_owned()];
+    let contained = format!("{}{app}", crate::ai_host::contained::PEER_PREFIX);
+    if !service_apps.contains(&contained) {
+        service_apps.push(contained);
+    }
+    let mut labels = vec![crate::approvals::sheet::app_label(app)];
+    if !labels.iter().any(|l| l == app) {
+        labels.push(app.to_owned());
+    }
+    let request = PurgeRequest { app: app.to_owned(), service_apps, labels, account: account.map(str::to_owned) };
+    let storage = storage.clone();
+    let (app, account) = (request.app.clone(), request.account.clone());
+    // `done` may run on the purge's background thread: `Storage` locks its
+    // own state, so marking it there is safe.
+    purge(request, Box::new(move |erased| {
+        if !erased {
+            makepad_widgets::log!("app storage: {app}: its agent could not be erased; it stays suspended and its record is kept");
+            return;
+        }
+        match account {
+            Some(account) => storage.mark_erased(&app, Some(&account)),
+            None => storage.mark_app_erased(&app),
+        }
+    }));
+}
+
+/// The shell's purger: octos `peer/purge` on the shell's kernel for every
+/// peer the host recorded (`crate::ai_host::app_peers::purge`), off the UI
+/// thread.
+#[cfg(kernel)]
+pub fn kernel_purger() -> Purger {
+    use crate::ai_host::app_peers::{connectors::CoreConnector, hosted, purge};
+    Arc::new(|request: PurgeRequest, done: Box<dyn FnOnce(bool) + Send>| {
+        let Some(core_dir) = crate::ai_host::kernel::core_dir() else { return done(false) };
+        let host = purge::PurgeHost::new(hosted::SHARED_PROFILE, hosted::system_session(), hosted::host_state_dir(&core_dir));
+        purge::purge_in_background(Arc::new(CoreConnector::shell()), host, request.service_apps, request.labels, request.account, move |purged| {
+            if !purged.erased.is_empty() {
+                makepad_widgets::log!("app storage: erased the agents of {:?}", purged.erased);
+            }
+            done(purged.ok());
+        });
+    })
+}
+
+/// Settings' line for an app whose agent has suspended accounts: a
+/// signed-out account's agent keeps its memory, and a removed one's until
+/// it is erased.
 pub fn memory_notice(storage: &Storage, app_id: &str) -> Option<String> {
     let n = storage.suspended_accounts(app_id);
     (n > 0).then(|| {
         let who = if n == 1 { "1 account is".to_owned() } else { format!("{n} accounts are") };
-        format!("{who} signed out or removed; its agent's memory remains until octos can erase it")
+        format!("{who} signed out or removed; its agent's memory remains until the account is removed and its agent erased")
     })
 }
 
@@ -211,13 +297,42 @@ pub fn memory_notice(storage: &Storage, app_id: &str) -> Option<String> {
 /// host storage is set up): the brokers' account changes and Mail's.
 pub fn install(storage: &'static Arc<Storage>) {
     register_native_specs(storage);
+    #[cfg(kernel)]
+    set_purger(Some(kernel_purger()));
     crate::ai_host::app_peers::storage::observe_accounts(Some(Arc::new(move |app: &str, previous: Option<&str>, current: Option<&str>| {
         account_changed(storage, app, previous, current);
     })));
     #[cfg(any(feature = "app-hub", native_mobile))]
-    octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
-        mail_account(storage, &event);
-    })));
+    {
+        octosense_mail_service::on_account_event(Some(Arc::new(move |event| {
+            mail_account(storage, &event);
+        })));
+        mail_secrets_at_startup(storage);
+    }
+}
+
+/// Mail's passwords in the host's secrets (ADR 0004 §11), not under
+/// `apps/.host/mail/`: name the folder for the service, and move every
+/// password an older build left there now (an old copy a failed delete
+/// left behind goes too, so a failure is retried at the next start).
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn mail_secrets_at_startup(storage: &Storage) {
+    let dir = mail_secrets_dir(storage.layout());
+    if let Err(e) = super::ensure_private_dir(storage.layout().secrets_root(), &dir) {
+        makepad_widgets::log!("app storage: Mail's secrets stay in its service folder: {}: {e}", dir.display());
+        return;
+    }
+    let mail_dir = storage.layout().apps_root().join(".host").join("mail");
+    let moved = octosense_mail_service::vault::migrate_all(&octosense_mail_service::vault::Place::resolve(&mail_dir, Some(&dir)));
+    if moved > 0 {
+        makepad_widgets::log!("app storage: moved {moved} of Mail's passwords into {}", dir.display());
+    }
+    octosense_mail_service::set_secrets_dir(Some(dir));
+}
+
+/// Where Mail's host service keeps passwords: `secrets/os.mail/`.
+pub fn mail_secrets_dir(layout: &super::Layout) -> std::path::PathBuf {
+    layout.secrets_root().join("os.mail")
 }
 
 #[cfg(test)]
