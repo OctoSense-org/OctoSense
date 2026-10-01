@@ -446,6 +446,21 @@ pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
     asked
 }
 
+/// The label each app's broker named its peers with in this process
+/// (`BrokerConfig::app_label`; it depends on how the app is hosted).
+static LABELS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+fn note_label(app_id: &str, label: &str) {
+    let mut labels = LABELS.lock().unwrap_or_else(|e| e.into_inner());
+    labels.retain(|(a, _)| a != app_id);
+    labels.push((app_id.to_owned(), label.to_owned()));
+}
+
+/// The label a broker of `app_id` used in this process, if one ran.
+pub fn known_label(app_id: &str) -> Option<String> {
+    LABELS.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(a, _)| a == app_id).map(|(_, l)| l.clone())
+}
+
 /// The kernel erased the peer recorded under `namespace` for `app_id`
 /// (`peer/purge`, [`crate::purge`]): every live broker of the app on that
 /// kernel forgets
@@ -734,6 +749,7 @@ pub struct Broker(Arc<Inner>);
 
 impl Broker {
     pub fn new(cfg: BrokerConfig, connector: Arc<dyn Connector>) -> Self {
+        note_label(&cfg.app_id, &cfg.app_label);
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
             .thread_name("app-peers")

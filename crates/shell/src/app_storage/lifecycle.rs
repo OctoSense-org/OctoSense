@@ -26,10 +26,11 @@
 //!   suspended), then erase the agent: [`set_purger`]'s purger asks octos
 //!   to `peer/purge` each (app, account) peer the host recorded (octos#2649,
 //!   in the background, a busy peer retried) and drops the record; once it
-//!   succeeded the account's suspension is forgotten ([`Storage::forget_account`],
-//!   [`Storage::forget_agents`]), so adding the account or installing the
-//!   app again makes a new agent. Until then (or when it fails)
-//!   [`memory_notice`] says the memory remains. Signing out keeps the agent.
+//!   succeeded the storage notes it ([`Storage::mark_erased`],
+//!   [`Storage::mark_app_erased`]). The account STAYS suspended until it is
+//!   added again (then it gets a new agent, the record being gone); only
+//!   [`memory_notice`] stops saying the memory remains. A failed purge
+//!   keeps the record for a later one. Signing out keeps the agent.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -86,6 +87,8 @@ pub fn script_manifest(root: &Path, manifest_id: &str) -> Option<Value> {
 /// resumes; an app with accounts resumes each as it signs in
 /// ([`Storage::installed`]).
 pub fn prepare_script_app(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -> Result<StorageSpec, String> {
+    // A native app's folders and spec are never a script app's to set.
+    crate::apps::check_script_app_id(manifest_id)?;
     let spec = match script_manifest(root, manifest_id) {
         Some(manifest) => StorageSpec::from_manifest(&manifest, AppKind::Script).map_err(|e| format!("{manifest_id}: {e}"))?,
         None => StorageSpec::default(),
@@ -185,9 +188,14 @@ pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::Acco
 /// App Hub uninstalled `manifest_id` (its jail is gone or going): delete
 /// what the host keeps for it and keep its agents suspended. Only when the
 /// jail itself is gone: an update replaces `bundle/` alone, and a system
-/// app (`os.*`) ships with the build and is never uninstalled.
+/// app (`os.*`) ships with the build and is never uninstalled; nor is a
+/// native app, whose folders an event naming its id must never delete.
 pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -> bool {
-    if manifest_id.starts_with("os.") || super::validate_app_id(manifest_id).is_err() || root.join(manifest_id).exists() {
+    if manifest_id.starts_with("os.")
+        || super::validate_app_id(manifest_id).is_err()
+        || crate::apps::check_script_app_id(manifest_id).is_err()
+        || root.join(manifest_id).exists()
+    {
         return false;
     }
     if let Err(e) = storage.uninstall(manifest_id) {
@@ -204,6 +212,11 @@ pub fn app_uninstalled(storage: &Arc<Storage>, root: &Path, manifest_id: &str) -
 pub struct PurgeRequest {
     pub app: String,
     pub service_apps: Vec<String>,
+    /// The labels a broker of the app may have named its peers with (the
+    /// name of a peer recorded before records carried it): the shell's
+    /// display label and the app id (a contained app's broker is labelled
+    /// with its manifest id).
+    pub labels: Vec<String>,
     pub account: Option<String>,
 }
 
@@ -230,17 +243,23 @@ fn erase_agents(storage: &Arc<Storage>, app: &str, account: Option<&str>) {
     if !service_apps.contains(&contained) {
         service_apps.push(contained);
     }
-    let request = PurgeRequest { app: app.to_owned(), service_apps, account: account.map(str::to_owned) };
+    let mut labels = vec![crate::approvals::sheet::app_label(app)];
+    if !labels.iter().any(|l| l == app) {
+        labels.push(app.to_owned());
+    }
+    let request = PurgeRequest { app: app.to_owned(), service_apps, labels, account: account.map(str::to_owned) };
     let storage = storage.clone();
     let (app, account) = (request.app.clone(), request.account.clone());
+    // `done` may run on the purge's background thread: `Storage` locks its
+    // own state, so marking it there is safe.
     purge(request, Box::new(move |erased| {
         if !erased {
-            makepad_widgets::log!("app storage: {app}: its agent could not be erased; it stays suspended");
+            makepad_widgets::log!("app storage: {app}: its agent could not be erased; it stays suspended and its record is kept");
             return;
         }
         match account {
-            Some(account) => storage.forget_account(&app, Some(&account)),
-            None => storage.forget_agents(&app),
+            Some(account) => storage.mark_erased(&app, Some(&account)),
+            None => storage.mark_app_erased(&app),
         }
     }));
 }
@@ -254,7 +273,7 @@ pub fn kernel_purger() -> Purger {
     Arc::new(|request: PurgeRequest, done: Box<dyn FnOnce(bool) + Send>| {
         let Some(core_dir) = crate::ai_host::kernel::core_dir() else { return done(false) };
         let host = purge::PurgeHost::new(hosted::SHARED_PROFILE, hosted::system_session(), hosted::host_state_dir(&core_dir));
-        purge::purge_in_background(Arc::new(CoreConnector::shell()), host, request.service_apps, request.app, request.account, move |purged| {
+        purge::purge_in_background(Arc::new(CoreConnector::shell()), host, request.service_apps, request.labels, request.account, move |purged| {
             if !purged.erased.is_empty() {
                 makepad_widgets::log!("app storage: erased the agents of {:?}", purged.erased);
             }

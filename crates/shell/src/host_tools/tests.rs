@@ -431,7 +431,7 @@ fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
     let catalog = Catalog::shipped();
     for tool in ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"] {
         assert!(catalog.entry("terminal", tool).is_some(), "{tool}");
-        assert_eq!(catalog.owner_of(tool), Some("terminal"));
+        assert_eq!(catalog.owner_of(tool).as_deref(), Some("terminal"));
     }
     let rinx = crate::native_apps::find("rinx").unwrap();
     assert_eq!(catalog.generic("rinx", false), rinx.generic_tools.iter().map(|t| t.to_string()).collect::<Vec<_>>());
@@ -803,6 +803,28 @@ fn an_expired_host_tool_approval_is_denied_with_its_reason() {
     assert_eq!(w.router.expired().len(), 1);
 }
 
+/// A script app's `tools.json` may say `auto_approvable: false` (App Hub's
+/// `ToolSpec`): its approvals then never go to a standing rule, whatever
+/// the host's own rule says (ADR 0004 §8).
+#[test]
+fn a_script_apps_declared_auto_approvable_false_holds_on_its_approvals() {
+    let mut relay = Relay::default();
+    let mut pay = decl("pay.transfer", true, "host");
+    pay["auto_approvable"] = json!(false);
+    relay.catalog.declare("com.example.pay", vec![pay, decl("pay.quote", true, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    for (id, tool) in [("a1", "pay.transfer"), ("a2", "pay.quote")] {
+        let approval = HostToolApproval::parse(
+            &json!({"approval_id": id, "turn_id": "t", "approval_kind": "host_tool", "typed_details": {"host_tool": {"app": "com.example.pay", "tool": tool, "args": {}, "risk": "act", "outward": true, "calling_kind": "system"}}}),
+            "s#system",
+        )
+        .unwrap();
+        relay.handle(Event::Approval { app: "system".into(), account: None, approval, answer: ApprovalAnswer::new(|_| {}) }, &mut w);
+    }
+    assert!(!w.asked[0].1.auto_approvable, "declared false: no rule answers it");
+    assert!(w.asked[1].1.auto_approvable, "omitted: a rule may");
+}
+
 // ------------------------------------------------------------ dev.run (ADR 0004 §13)
 
 fn dev_run_call(id: &str, calling: &str, owner: &str) -> HostToolCall {
@@ -909,4 +931,26 @@ fn a_conversation_reads_the_account_folder_only_where_the_agent_works_there() {
     assert!(super::reads_account(&StorageSpec::default(), Some(folder)), "\"account\" is the default");
     assert!(!super::reads_account(&account, None), "no workspace now: fenced");
     assert!(!super::reads_account(&none, Some(folder)), "agent_workspace none: fenced");
+}
+
+/// ADR 0004 §7: a grant names its owning app explicitly, by the tool's
+/// namespace (the native app of that id, else the system app `os.<ns>`, the
+/// toolbox for its own), never whichever app declared the name first.
+#[test]
+fn a_grants_owner_is_the_namespaces_app_never_the_first_declarer() {
+    let mut c = Catalog::shipped();
+    c.declare("os.mail", vec![decl("mail.send", true, "host")]);
+    c.declare("com.evil.mail", vec![decl("mail.send", true, "host")]);
+    assert_eq!(c.owner_of("mail.send"), Some("os.mail".to_string()), "com.evil.mail sorts first but owns nothing");
+    c.declare("com.evil.news", vec![decl("news.list", true, "host")]);
+    assert_eq!(c.owner_of("news.list"), Some("os.news".to_string()), "whoever declares it, not yet loaded");
+    c.declare("com.evil.terminal", vec![decl("terminal.run", true, "host")]);
+    assert_eq!(c.owner_of("terminal.run"), Some("terminal".to_string()), "a native app owns its namespace");
+    assert_eq!(c.owner_of("toolbox.search"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("workflow.run"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("search"), None, "a kernel tool has no owning app");
+    // A grant resolved so reaches only the owner's tool.
+    c.grant("com.example.trip", &c.owner_of("mail.send").unwrap(), "mail.send");
+    assert!(c.may_call("com.example.trip", "os.mail", "mail.send", false));
+    assert!(!c.may_call("com.example.trip", "com.evil.mail", "mail.send", false));
 }

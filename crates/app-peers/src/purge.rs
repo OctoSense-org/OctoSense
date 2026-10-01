@@ -96,9 +96,13 @@ pub fn recorded(state_dir: &std::path::Path, app_id: &str, account: Option<&str>
 }
 
 /// Erase `app_id`'s peer for `account` (`None`: every recorded account of
-/// the app) on the kernel `connector` reaches. `app_label` names a peer
-/// whose record predates the recorded name (the broker's own fallback).
-pub async fn purge_app(connector: &dyn Connector, host: &PurgeHost, app_id: &str, app_label: &str, account: Option<&str>) -> Purged {
+/// the app) on the kernel `connector` reaches. `labels` are the app labels
+/// a broker of the app may have named a peer with (the broker's name for a
+/// record saved before records carried the name is `<label> <8 hex>`, and
+/// the label depends on how the app was hosted); the label of a broker of
+/// the app that ran in this process is tried first
+/// ([`crate::broker::known_label`]).
+pub async fn purge_app(connector: &dyn Connector, host: &PurgeHost, app_id: &str, labels: &[String], account: Option<&str>) -> Purged {
     let mut done = Purged { erased: Vec::new(), failed: Vec::new() };
     let namespaces = recorded(&host.state_dir, app_id, account);
     if namespaces.is_empty() {
@@ -112,7 +116,13 @@ pub async fn purge_app(connector: &dyn Connector, host: &PurgeHost, app_id: &str
         }
     };
     for namespace in namespaces {
-        match purge_one(link.as_mut(), host, app_label, &namespace).await {
+        let mut candidates: Vec<String> = crate::broker::known_label(app_id).into_iter().collect();
+        for label in labels {
+            if !candidates.contains(label) {
+                candidates.push(label.clone());
+            }
+        }
+        match purge_one(link.as_mut(), host, &candidates, &namespace).await {
             Ok(()) => {
                 peer_record::remove(&host.state_dir, &namespace);
                 crate::broker::forget_purged(connector.kernel_id().as_deref(), app_id, &namespace);
@@ -128,12 +138,13 @@ pub async fn purge_app(connector: &dyn Connector, host: &PurgeHost, app_id: &str
 }
 
 /// [`purge_app`] on a thread of its own (the shell's lifecycle runs on the
-/// UI thread); `done` gets the outcome there.
+/// UI thread). `done` runs on THAT background thread: it must only touch
+/// thread-safe state (the shell's `Storage` locks its own state).
 pub fn purge_in_background(
     connector: Arc<dyn Connector>,
     host: PurgeHost,
     app_ids: Vec<String>,
-    app_label: String,
+    labels: Vec<String>,
     account: Option<String>,
     done: impl FnOnce(Purged) + Send + 'static,
 ) {
@@ -144,7 +155,7 @@ pub fn purge_in_background(
         };
         let mut all = Purged { erased: Vec::new(), failed: Vec::new() };
         for app in &app_ids {
-            let purged = runtime.block_on(purge_app(connector.as_ref(), &host, app, &app_label, account.as_deref()));
+            let purged = runtime.block_on(purge_app(connector.as_ref(), &host, app, &labels, account.as_deref()));
             all.erased.extend(purged.erased);
             all.failed.extend(purged.failed);
         }
@@ -152,28 +163,51 @@ pub fn purge_in_background(
     });
 }
 
-/// One peer: `peer/purge`, retried while busy.
-async fn purge_one(link: &mut dyn Link, host: &PurgeHost, app_label: &str, namespace: &str) -> Result<(), String> {
+/// The names a peer recorded under `namespace` may have: its recorded name
+/// (`exact`), else the broker's name for a record saved before names were,
+/// `<label> <first 8 hex of the tag>`, for each candidate label (guesses).
+pub fn candidate_names(record: &peer_record::PeerRecord, namespace: &str, labels: &[String]) -> (Vec<String>, bool) {
+    if let Some(name) = &record.name {
+        return (vec![name.clone()], true);
+    }
+    let tag = record.namespace.as_deref().unwrap_or(namespace).rsplit("acct-").next().unwrap_or_default().to_owned();
+    let short = &tag[..tag.len().min(8)];
+    (labels.iter().map(|label| format!("{label} {short}")).collect(), false)
+}
+
+/// One peer: `peer/purge`, retried while busy. `peer_not_found` counts as
+/// gone only for the peer's RECORDED name; for a guessed name (a record
+/// from before names were kept) it means the guess was wrong, so the next
+/// candidate is tried, and when none is found the purge FAILS: the record
+/// is kept and the agent stays suspended, never forgotten while octos may
+/// still hold its memory.
+async fn purge_one(link: &mut dyn Link, host: &PurgeHost, labels: &[String], namespace: &str) -> Result<(), String> {
     let record = peer_record::load(&host.state_dir, namespace).ok_or("its record is gone")?;
-    let name = match &record.name {
-        Some(name) => name.clone(),
-        // The broker's name for a peer recorded before names were.
-        None => {
-            let tag = record.namespace.as_deref().unwrap_or(namespace).rsplit("acct-").next().unwrap_or_default().to_owned();
-            format!("{app_label} {}", &tag[..tag.len().min(8)])
+    let (names, exact) = candidate_names(&record, namespace, labels);
+    for name in &names {
+        match purge_named(link, host, name, &record.token).await? {
+            true => return Ok(()),
+            false if exact => return Ok(()),
+            false => continue,
         }
-    };
+    }
+    Err(format!("peer_not_found: no peer under any name the host could derive ({names:?}); the record is kept"))
+}
+
+/// `peer/purge` of the peer called `name`: `Ok(true)` purged (or already),
+/// `Ok(false)` the kernel has no such peer.
+async fn purge_named(link: &mut dyn Link, host: &PurgeHost, name: &str, token: &str) -> Result<bool, String> {
     let params = json!({
         "session_id": host.originator,
         "peer": name,
-        "host_token": record.token,
+        "host_token": token,
         "profile_id": host.profile_id,
     });
     let mut waits = host.retry_waits.iter();
     loop {
         match request(link, PEER_PURGE, params.clone()).await {
-            Ok(_) => return Ok(()),
-            Err(Refused { kind, .. }) if kind == "peer_not_found" => return Ok(()),
+            Ok(_) => return Ok(true),
+            Err(Refused { kind, .. }) if kind == "peer_not_found" => return Ok(false),
             Err(Refused { kind, message }) if kind == "peer_purge_busy" || kind == "peer_purge_in_progress" => match waits.next() {
                 Some(wait) => tokio::time::sleep(*wait).await,
                 None => return Err(format!("{kind}: {message}")),

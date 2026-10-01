@@ -125,10 +125,29 @@ pub fn namespaces_under(dir: &Path, prefix: &str) -> Vec<String> {
             let name = entry.file_name().to_string_lossy().into_owned();
             let rest = name.strip_prefix(&stem_prefix)?;
             let rest = rest.strip_suffix(".peer").or_else(|| rest.strip_suffix(".token"))?;
-            (!rest.is_empty() && !rest.contains('/')).then(|| format!("{prefix}{rest}"))
+            // A tag is 16 lowercase hex digits (`broker::account_tag`).
+            (rest.len() == 16 && rest.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))).then(|| format!("{prefix}{rest}"))
         })
         .collect();
     found.sort();
     found.dedup();
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn namespaces_under_lists_only_well_formed_tags_of_the_app() {
+        let dir = std::env::temp_dir().join(format!("peer-record-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["app_rinx_acct-0123456789abcdef.peer", "app_rinx_acct-fedcba9876543210.token", "app_rinx_acct-xyz.peer",
+                     "app_rinx_acct-0123456789ABCDEF.peer", "app_rinx_acct-0123.peer", "app_other_acct-0123456789abcdef.peer"] {
+            std::fs::write(dir.join(name), "{}").unwrap();
+        }
+        assert_eq!(namespaces_under(&dir, "app/rinx/acct-"), ["app/rinx/acct-0123456789abcdef", "app/rinx/acct-fedcba9876543210"]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
