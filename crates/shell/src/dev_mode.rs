@@ -179,6 +179,14 @@ impl Scope {
         }
         (!apps.is_empty()).then_some(Scope::Apps(apps))
     }
+    /// Whether every app this scope covers, `other` covers too (narrowing).
+    pub fn within(&self, other: &Scope) -> bool {
+        match (self, other) {
+            (_, Scope::AllApps) => true,
+            (Scope::AllApps, Scope::Apps(_)) => false,
+            (Scope::Apps(apps), Scope::Apps(_)) => apps.iter().all(|a| other.covers(a)),
+        }
+    }
     /// For Settings: "all apps", or the chosen ids.
     pub fn label(&self) -> String {
         match self {
@@ -263,10 +271,11 @@ impl PersonGesture {
         let typed = typed.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
         (typed == CONFIRM_PHRASE).then_some(PersonGesture { origin: Origin::Settings })
     }
-    /// The phone's developer-options gesture: [`TAPS_TO_TURN_ON`] taps on
-    /// Settings › About phone › Build number, counted by [`BuildTaps`]
-    /// (only it makes a [`TapsReached`]).
-    pub(crate) fn phone_build_taps(_reached: TapsReached) -> PersonGesture {
+    /// The phone's Developer options: revealed by the familiar gesture
+    /// ([`TAPS_TO_TURN_ON`] taps on About phone › Build number, counted by
+    /// [`BuildTaps`], the only maker of a [`TapsReached`]), then the person
+    /// confirmed Turn on there, with the apps it covers shown.
+    pub(crate) fn phone_confirmed(_revealed: &TapsReached) -> PersonGesture {
         PersonGesture { origin: Origin::Settings }
     }
     fn launch(origin: Origin) -> PersonGesture {
@@ -627,9 +636,11 @@ impl Controller {
         &self.choice
     }
 
-    /// Settings chose which apps developer mode covers: kept for this home,
-    /// and, while developer mode is on, its scope from now on (audited).
-    pub fn set_choice(&mut self, scope: Scope, now: u64) -> Result<(), String> {
+    /// Settings chose which apps developer mode covers: kept for this home.
+    /// While developer mode is on, a narrower choice is its scope at once
+    /// (audited); a wider one waits for the person to turn it on again, with
+    /// the same confirmation (`Ok(true)`: it waits).
+    pub fn set_choice(&mut self, scope: Scope, now: u64) -> Result<bool, String> {
         let path = self.home.join(CHOICE_FILE);
         let body = json!({"apps": scope.to_json()}).to_string();
         write_private(&path, body.as_bytes()).map_err(|e| format!("could not save {}: {e}", path.display()))?;
@@ -637,13 +648,16 @@ impl Controller {
         self.audit.append(now, "choice", json!({"scope": scope.to_json()}));
         if let Some(active) = self.active.as_mut() {
             if active.scope != scope {
+                if !scope.within(&active.scope) {
+                    return Ok(true);
+                }
                 active.scope = scope;
                 self.generation += 1;
                 self.audit.append(now, "mode_scope", self.mode_entry(false));
                 self.save();
             }
         }
-        Ok(())
+        Ok(false)
     }
 
     /// Turn it off (anyone may; `reason` goes to the audit log).
@@ -757,7 +771,7 @@ pub fn chosen_scope() -> Scope {
 }
 /// See [`Controller::set_choice`]. Only Settings' rows call it (a test
 /// scans the sources).
-pub fn choose_apps(scope: Scope) -> Result<(), String> {
+pub fn choose_apps(scope: Scope) -> Result<bool, String> {
     with(|c| c.set_choice(scope, now())).unwrap_or_else(|| Err("developer mode is not set up".into()))
 }
 
@@ -1181,16 +1195,26 @@ mod tests {
         let scope = c.choice().clone();
         c.turn_on(PersonGesture::settings_phrase(CONFIRM_PHRASE).unwrap(), scope, T0 + 1).unwrap();
         assert!(c.grants_all("news", T0 + 1) && !c.grants_all("os.mail", T0 + 1));
+        // Widening while on waits for the person to turn it on again.
         let before = c.generation();
-        c.set_choice(Scope::AllApps, T0 + 2).unwrap();
-        assert!(c.grants_all("os.mail", T0 + 2), "on: the new choice applies at once");
+        assert_eq!(c.set_choice(Scope::AllApps, T0 + 2), Ok(true));
+        assert!(!c.grants_all("os.mail", T0 + 2), "a wider choice never applies without the confirmation");
+        assert_eq!(c.generation(), before);
+        c.turn_off("test", T0 + 2);
+        c.turn_on(PersonGesture::settings_phrase(CONFIRM_PHRASE).unwrap(), Scope::parse("os.news,os.mail").unwrap(), T0 + 3).unwrap();
+        // Narrowing while on applies at once.
+        assert_eq!(c.set_choice(news.clone(), T0 + 4), Ok(false));
+        assert!(!c.grants_all("os.mail", T0 + 4) && c.grants_all("os.news", T0 + 4), "on: a narrower choice applies at once");
         assert!(c.generation() > before, "the shell re-announces the apps' tools");
         let kinds: Vec<String> = home.audit().iter().map(|e| e["kind"].as_str().unwrap().to_owned()).collect();
-        assert_eq!(kinds, ["choice", "mode_on", "choice", "mode_scope"]);
+        assert_eq!(kinds, ["choice", "mode_on", "choice", "mode_off", "mode_on", "choice", "mode_scope"]);
     }
 
     #[test]
     fn an_app_is_toggled_in_and_out_of_the_choice() {
+        let news = Scope::parse("os.news").unwrap();
+        assert!(news.within(&Scope::AllApps) && news.within(&Scope::parse("news,rinx").unwrap()));
+        assert!(!Scope::AllApps.within(&news) && !Scope::parse("rinx").unwrap().within(&news));
         let every: Vec<String> = ["os.news", "os.mail", "rinx"].iter().map(|s| s.to_string()).collect();
         let no_mail = Scope::AllApps.toggled("mail", &every).unwrap();
         assert!(!no_mail.covers("os.mail") && no_mail.covers("os.news") && no_mail.covers("rinx"));
@@ -1255,7 +1279,7 @@ mod tests {
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let text = std::fs::read_to_string(&path).unwrap();
                     let rel = path.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
-                    for needle in ["PersonGesture::", "PersonGesture {", "dev_mode::turn_on(", "dev_mode::choose_apps(", "TapsReached("] {
+                    for needle in ["PersonGesture::", "PersonGesture {", "dev_mode::turn_on(", "dev_mode::choose_apps(", "TapsReached(", ".developer_build_tap(", ".developer_choose(", ".developer_phone_turn_on("] {
                         if text.contains(needle) && rel != "dev_mode.rs" {
                             makers.push(format!("{rel}: {needle}"));
                         }
@@ -1267,6 +1291,32 @@ mod tests {
         makers.dedup();
         // The one caller outside this module: the Settings row's handler.
         assert_eq!(makers, ["lib.rs: PersonGesture::", "lib.rs: dev_mode::choose_apps(", "lib.rs: dev_mode::turn_on("], "{makers:?}");
+        // Home's packaging (`phone/`) reaches the shell's Settings entry
+        // points only from Settings' request handler, for the person's taps
+        // on About phone (settings_host.rs), never anywhere else.
+        let phone = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../phone/src");
+        let mut callers = Vec::new();
+        for entry in std::fs::read_dir(&phone).unwrap().flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                for needle in [".developer_build_tap(", ".developer_choose(", ".developer_phone_turn_on(", ".developer_turn_off(", "PersonGesture", "dev_mode::turn_on(", "dev_mode::choose_apps("] {
+                    for _ in text.matches(needle) {
+                        callers.push(format!("{}: {needle}", path.file_name().unwrap().to_string_lossy()));
+                    }
+                }
+            }
+        }
+        callers.sort();
+        assert_eq!(
+            callers,
+            ["settings_host.rs: .developer_build_tap(", "settings_host.rs: .developer_choose(", "settings_host.rs: .developer_phone_turn_on(", "settings_host.rs: .developer_turn_off("],
+            "{callers:?}"
+        );
+        let host = std::fs::read_to_string(phone.join("settings_host.rs")).unwrap();
+        let at = host.find(".developer_build_tap(").unwrap();
+        let handler = host[..at].rfind("fn ").map(|i| &host[i..at]).unwrap();
+        assert!(handler.starts_with("fn settings_request"), "only Settings' request handler: {}", &handler[..60.min(handler.len())]);
         let lib = std::fs::read_to_string(src.join("lib.rs")).unwrap();
         let at = lib.find("PersonGesture::").unwrap();
         let handler = lib[..at].rfind("fn ").map(|i| &lib[i..at]).unwrap();

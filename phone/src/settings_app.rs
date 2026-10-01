@@ -82,8 +82,11 @@ pub enum SettingsRequest {
     Device(DeviceSetting), DeviceAccess, DateTime(TimeRequest), NotificationHistory(HistoryRead), Sounds(SoundsRequest),
     AppsCatalog { query: String, include_system: bool, offset: u32, generation: Option<String> },
     /// One tap on About phone › Build number: the shell's developer-options
-    /// gesture (seven in a row turn developer mode on, ADR 0004 §13).
+    /// gesture (seven in a row reveal Developer options, ADR 0004 §13).
     DeveloperTap,
+    /// Developer options › Turn on, confirmed on its sheet with the apps it
+    /// covers shown.
+    DeveloperOn,
     /// Developer options › an app it covers, toggled (`None`: all apps).
     DeveloperChoose(Option<String>),
     /// Developer options › Turn off developer mode.
@@ -228,13 +231,15 @@ impl DeviceSnapshot {
 }
 
 /// Developer options on About phone (ADR 0004 §13), from the shell's
-/// developer mode: present only where Settings may turn it on (a development
-/// build) or while it is on.
+/// developer mode: present once seven taps on Build number revealed them
+/// where Settings may turn it on (a development build), or while it is on.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct DeveloperOptions {
     pub on: bool,
     /// One line: whether it is on, and what it covers.
     pub summary: String,
+    /// The apps Turn on would cover ("all apps", or the chosen ids).
+    pub covers: String,
     /// It covers all apps (the choice).
     pub all: bool,
     /// Every app with an agent, and whether the choice covers it.

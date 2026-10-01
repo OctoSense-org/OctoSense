@@ -466,6 +466,11 @@ pub fn basic_request(value: &Value, observed: &SettingsSnapshot) -> Option<Setti
             if app == "all" { SettingsRequest::DeveloperChoose(None) }
             else { SettingsRequest::DeveloperChoose(Some(options.apps.iter().find(|a| a.id == app)?.id.clone())) }
         }
+        "developer_on" => {
+            exact(value, &["kind"])?;
+            if observed.developer.as_ref()?.on { return None; }
+            SettingsRequest::DeveloperOn
+        }
         "developer_off" => {
             exact(value, &["kind"])?;
             if !observed.developer.as_ref()?.on { return None; }

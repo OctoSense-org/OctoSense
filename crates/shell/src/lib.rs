@@ -262,7 +262,7 @@ script_mod! {
 /// Windows, and macOS before the first geometry event).
 const BAR_HEIGHT_FALLBACK: f64 = 26.0;
 /// `developer_options_activate`'s target for the phone's finished gesture.
-const DEVELOPER_TAPS: &str = "setup.developer.phone-taps";
+const DEVELOPER_PHONE_ON: &str = "setup.developer.phone-on";
 
 /// The bar's height and the left padding its content starts at. macOS puts
 /// its traffic lights on the left; Linux and Windows put caption buttons on
@@ -406,10 +406,10 @@ pub struct App {
     /// The developer-mode generation last acted on (dev_mode.rs).
     #[rust]
     pub dev_generation: u64,
-    /// The phone's developer-options gesture, finished and not yet acted on
-    /// (`developer_build_tap`).
+    /// The phone's developer-options gesture, finished in this run: About
+    /// phone shows Developer options (`developer_build_tap`).
     #[rust]
-    developer_taps_reached: Option<dev_mode::TapsReached>,
+    developer_options_revealed: Option<dev_mode::TapsReached>,
     /// The approvals' generation last drawn (approvals/).
     #[rust]
     pub approvals_generation: u64,
@@ -3350,11 +3350,13 @@ impl App {
     }
 
     /// Settings → Developer options (`setup.developer.*`, shell/menu.rs), and
-    /// the phone's gesture (Settings › About phone › Build number, seven
-    /// taps: [`App::developer_build_tap`]). The one place outside
-    /// dev_mode.rs that turns developer mode on: the person typed the
-    /// confirmation phrase into the menu and chose the row, or finished the
-    /// gesture. It turns on for the apps chosen under Apps it covers.
+    /// the phone's (About phone, revealed by seven taps on Build number:
+    /// [`App::developer_build_tap`]). The one place outside dev_mode.rs that
+    /// turns developer mode on: the person typed the confirmation phrase
+    /// into the menu and chose the row, or confirmed Turn on in the phone's
+    /// revealed Developer options. It turns on for the apps chosen under
+    /// Apps it covers, which both show. A wider choice made while it is on
+    /// waits for that confirmation again.
     fn developer_options_activate(&mut self, cx: &mut Cx, target: &str) {
         // Choosing apps keeps the menu open on the list.
         if let Some(choice) = target.strip_prefix(shell::menu::DEVELOPER_APPS_ROW).and_then(|t| t.strip_prefix('.')) {
@@ -3367,11 +3369,11 @@ impl App {
             };
             match scope {
                 None => self.notify(cx, "Developer mode", "Choose at least one app, or All apps."),
-                Some(scope) => {
-                    if let Err(why) = dev_mode::choose_apps(scope) {
-                        self.notify(cx, "Developer mode", &why);
-                    }
-                }
+                Some(scope) => match dev_mode::choose_apps(scope) {
+                    Err(why) => self.notify(cx, "Developer mode", &why),
+                    Ok(true) => self.notify(cx, "Developer mode", "Saved. It covers more apps once you turn it off and on again, with the confirmation."),
+                    Ok(false) => {}
+                },
             }
             self.refresh_shell_menu(cx);
             self.dev_mode_changed(cx);
@@ -3391,9 +3393,14 @@ impl App {
                     }
                 }
             }
-        } else if let Some(reached) = self.developer_taps_reached.take().filter(|_| target == DEVELOPER_TAPS) {
-            if let Err(why) = dev_mode::turn_on(dev_mode::PersonGesture::phone_build_taps(reached), dev_mode::chosen_scope()) {
-                self.notify(cx, "Developer mode is off", &why);
+        } else if target == DEVELOPER_PHONE_ON {
+            match &self.developer_options_revealed {
+                Some(revealed) => {
+                    if let Err(why) = dev_mode::turn_on(dev_mode::PersonGesture::phone_confirmed(revealed), dev_mode::chosen_scope()) {
+                        self.notify(cx, "Developer mode is off", &why);
+                    }
+                }
+                None => self.notify(cx, "Developer mode is off", "Tap Build number seven times first."),
             }
         } else if target == "setup.developer.off" {
             dev_mode::turn_off("settings");
@@ -3401,9 +3408,19 @@ impl App {
         self.dev_mode_changed(cx);
     }
 
+    /// Whether About phone shows Developer options: revealed in this run, or
+    /// developer mode is on.
+    pub fn developer_options_shown(&self) -> bool {
+        self.developer_options_revealed.is_some() || dev_mode::is_on()
+    }
+
     /// Home's Settings › About phone › Developer options: toggle `app` in the
-    /// apps developer mode covers (`None`: all apps).
+    /// apps developer mode covers (`None`: all apps). Only Settings' request
+    /// handler calls it (`dev_mode` tests scan `phone/`).
     pub fn developer_choose(&mut self, cx: &mut Cx, app: Option<&str>) {
+        if !self.developer_options_shown() {
+            return;
+        }
         let row = match app {
             Some(app) => shell::menu::developer_app_row(app),
             None => format!("{}.all", shell::menu::DEVELOPER_APPS_ROW),
@@ -3416,27 +3433,32 @@ impl App {
         self.developer_options_activate(cx, "setup.developer.off");
     }
 
+    /// Home's Settings › About phone › Developer options › Turn on, confirmed
+    /// on its sheet with the apps it covers shown. Only after the gesture
+    /// revealed Developer options; only Settings' request handler calls it.
+    pub fn developer_phone_turn_on(&mut self, cx: &mut Cx) {
+        self.developer_options_activate(cx, DEVELOPER_PHONE_ON);
+    }
+
     /// One tap on Settings › About phone › Build number (Home's Settings,
-    /// `phone/`): the phone's developer-options gesture, as on Android. What
-    /// Settings shows the person.
+    /// `phone/`): the phone's developer-options gesture, as on Android. The
+    /// seventh reveals Developer options; it turns nothing on. What
+    /// Settings shows the person. Only Settings' request handler calls it.
     pub fn developer_build_tap(&mut self, cx: &mut Cx) -> String {
-        if dev_mode::is_on() {
-            return "Developer mode is already on.".into();
+        let _ = cx;
+        if self.developer_options_shown() {
+            return "Developer options are already shown.".into();
         }
         if !dev_mode::settings_available() {
             return "Developer mode needs a development build of OctoSense.".into();
         }
         match dev_mode::build_number_tap() {
             dev_mode::Tap::Remaining(left) if left > 4 => String::new(),
-            dev_mode::Tap::Remaining(1) => "You are now 1 step away from turning on developer mode.".into(),
-            dev_mode::Tap::Remaining(left) => format!("You are now {left} steps away from turning on developer mode."),
+            dev_mode::Tap::Remaining(1) => "You are now 1 step away from showing developer options.".into(),
+            dev_mode::Tap::Remaining(left) => format!("You are now {left} steps away from showing developer options."),
             dev_mode::Tap::Reached(reached) => {
-                self.developer_taps_reached = Some(reached);
-                self.developer_options_activate(cx, DEVELOPER_TAPS);
-                match dev_mode::status() {
-                    Some((active, _)) => format!("{}.", dev_mode::banner_text(&active)),
-                    None => "Developer mode is off.".into(),
-                }
+                self.developer_options_revealed = Some(reached);
+                "Developer options are shown below. Developer mode stays off until you turn it on there.".into()
             }
         }
     }
