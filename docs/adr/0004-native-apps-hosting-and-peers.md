@@ -63,7 +63,7 @@ Verified at e6223ef when this ADR was written. OctoSense now pins octos fe08d8e6
 5. Only Rinx is granted an agent, in code (`Policy::shipped()`).
 6. ~~**Host-driven turns cannot ask questions**~~. *(Withdrawn 2026-09-29: the premise was false. octos keeps `ask_user_question` on host-driven turns: `generic_tools` is an exact list the host chooses, and omitted it keeps the whole roster. What is missing is on the shell's side: the broker does not forward a peer's `user_question/requested` to any conversation yet. See the decision in section 6.)*
 7. **Request contexts cannot read their account's data** (the fence above).
-8. **An agent cannot be paused or erased**: signing out cannot use `peer_close`, and removing an account or the app cannot free or erase its agent.
+8. **An agent cannot be paused or erased**: signing out cannot use `peer_close`, and removing an account or the app cannot free or erase its agent. For the same reason no agent may close a peer (2026-09-30): `peer_close` is not in the system agent's default tools, and the `_main` profile's `tool_policy` denies it beside octos's shell (`crates/kernel/src/system_tools.rs`).
 
 ## Decision
 

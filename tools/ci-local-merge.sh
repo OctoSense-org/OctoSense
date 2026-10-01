@@ -5,7 +5,7 @@
 #   tools/ci-local-merge.sh <PR number>     # [--dry-run] [--fixes-main]
 #
 # Refuses a stale, failed or unexpectedly skipped run; then comments the
-# summary on the PR and merges with --admin and a `[skip ci]` subject.
+# summary on the PR and merges with --admin; GitHub CI then runs on main.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec python3 "$here/ci_local_merge.py" "$@"
