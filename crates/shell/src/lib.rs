@@ -72,6 +72,8 @@ pub mod ext;
 pub mod glance;
 pub mod glance_card;
 pub mod glance_panel;
+pub mod glance_sheet;
+use glance::NoteTargets as GlanceNoteTargets;
 pub mod system_chat;
 pub use octosense_ai_host as ai_host;
 
@@ -216,6 +218,9 @@ script_mod! {
                         shell_glance := ShellGlancePanel{}
                         shell_panel := ShellPanel{}
                         shell_menu := ShellMenu{}
+                        // One glance card, full size, over a dimmed desk
+                        // (glance_sheet.rs): a card's toast opens it.
+                        shell_glance_sheet := ShellGlanceSheet{}
                         shell_notes := ShellNotifications{}
                         shell_osd := ShellOsd{}
                         // The approval surface (approvals/): the shell's
@@ -400,9 +405,10 @@ pub struct App {
     #[rust]
     pub glance_generation: u64,
     /// The notifications cards asked for (`glance.publish` with `notify`):
-    /// the desktop toasts' and the phone shade's ids, which open the card.
+    /// the desktop toasts' ids and the card each opens, and the phone
+    /// shade's ids, which open the glance page.
     #[rust]
-    pub glance_toasts: Vec<u64>,
+    pub glance_toasts: GlanceNoteTargets,
     #[rust]
     pub glance_shade_notes: Vec<u64>,
     /// The developer-mode generation last acted on (dev_mode.rs).
@@ -3640,6 +3646,34 @@ impl App {
         self.redraw_all(cx);
     }
 
+    /// The card window (glance_sheet.rs) is modal: while a card is open
+    /// every pointer event is its own (a press outside the card closes it).
+    fn glance_sheet_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
+        if !sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) {
+            return false;
+        }
+        sheet.handle_event(cx, event, &mut Scope::empty());
+        if matches!(event, Event::MouseDown(_) | Event::MouseUp(_)) {
+            self.redraw_all(cx);
+        }
+        true
+    }
+
+    /// Open the published card `key` in the card window; when it is gone
+    /// (withdrawn, expired), the glance panel instead.
+    fn open_glance_card(&mut self, cx: &mut Cx, key: &str) {
+        self.set_glance_open(cx, false);
+        let opened = self.ui.widget(cx, ids!(shell_glance_sheet)).borrow_mut::<glance_sheet::ShellGlanceSheet>().is_some_and(|mut s| s.open_card(cx, key));
+        if opened {
+            log!("wm: glance toast opens card {key}");
+        } else {
+            log!("wm: glance card {key} is gone; opening the glance panel");
+            self.set_glance_open(cx, true);
+        }
+        self.redraw_all(cx);
+    }
+
     /// As `shell_panel_pointer`, for the glance panel: while it is open a
     /// press anywhere (outside it, which closes it) and any pointer event
     /// over its column is its own, so its live cards get whole gestures.
@@ -3917,13 +3951,25 @@ impl App {
     }
 
     /// Announce a card that asked for it (`glance.publish` with `notify`):
-    /// a toast on a desktop, a shade notification on the phone. Either opens
-    /// where the card is live (the glance panel, the glance page).
+    /// a toast on a desktop, which opens that card in the card window
+    /// (glance_sheet.rs); a shade notification on the phone, which opens the
+    /// glance page.
     fn glance_notify(&mut self, cx: &mut Cx, note: &glance::GlanceNote) {
         let body = "Open the card at a glance";
         let notes = self.ui.widget(cx, ids!(shell_notes));
-        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.notify(cx, &note.title, body)) {
-            self.glance_toasts.push(id);
+        let toast = shell::notifications::Notification {
+            id: 0,
+            app: note.app.clone(),
+            summary: note.title.clone(),
+            body: "Click to open the card".into(),
+            icon: Some(shell::ui::Ico::Bell),
+            urgency: shell::notifications::Urgency::Normal,
+            // A card's toast stays its longest, so it can still be opened.
+            requested: 30.0,
+        };
+        if let Some(id) = notes.borrow_mut::<shell::notifications::ShellNotifications>().map(|mut n| n.post(cx, toast)) {
+            self.glance_toasts.record(id, &note.key);
+            log!("glance: toast {id} opens {}", note.key);
         }
         let now = cx.seconds_since_app_start();
         if let Some(state) = self.state.as_mut() {
@@ -5694,13 +5740,14 @@ impl MatchEvent for App {
                 self.set_glance_open(cx, false);
                 self.launch_app(cx, &app);
             }
-            // A card's notification opens the glance panel, where it is live.
+            // A card's notification opens that card in the card window.
             match wa.cast::<shell::notifications::ShellNotificationsAction>() {
-                shell::notifications::ShellNotificationsAction::Activated(id) if self.glance_toasts.contains(&id) => {
-                    self.glance_toasts.retain(|t| *t != id);
-                    self.set_glance_open(cx, true);
+                shell::notifications::ShellNotificationsAction::Activated(id) if self.glance_toasts.contains(id) => {
+                    if let Some(key) = self.glance_toasts.activated(id) {
+                        self.open_glance_card(cx, &key);
+                    }
                 }
-                shell::notifications::ShellNotificationsAction::Dismissed(id) => self.glance_toasts.retain(|t| *t != id),
+                shell::notifications::ShellNotificationsAction::Dismissed(id) => self.glance_toasts.dismissed(id),
                 _ => {}
             }
             #[cfg(any(feature = "app-hub", native_mobile))]
@@ -5947,6 +5994,7 @@ impl App {
         shell::script_mod(vm);
         glance_card::script_mod(vm);
         glance_panel::script_mod(vm);
+        glance_sheet::script_mod(vm);
         approvals::script_mod(vm);
         system_chat::script_mod(vm);
         desktop::script_mod(vm);
@@ -6083,6 +6131,7 @@ impl App {
             && (self.dev_banner_pointer(cx, event)
                 || self.shell_menu_pointer(cx, event)
                 || self.shell_panel_pointer(cx, event)
+                || self.glance_sheet_pointer(cx, event)
                 || self.shell_glance_pointer(cx, event)
                 || self.app_chat_pointer(cx, event)
                 || self.system_chat_pointer(cx, event))
@@ -6185,6 +6234,15 @@ impl App {
         // WM keybinds intercept before anything reaches the tiles.
         if let Event::KeyDown(e) = event {
             if self.state.is_some() {
+                // The card window is modal: its card has the keyboard, and
+                // Esc closes it.
+                let sheet = self.ui.widget(cx, ids!(shell_glance_sheet));
+                if sheet.borrow::<glance_sheet::ShellGlanceSheet>().is_some_and(|s| s.is_open()) {
+                    self.alt_armed = false;
+                    sheet.handle_event(cx, event, &mut Scope::empty());
+                    self.redraw_all(cx);
+                    return;
+                }
                 // The shell menu grabs the keyboard while it is up.
                 if self.shell_menu_key(cx, e) {
                     self.alt_armed = false;

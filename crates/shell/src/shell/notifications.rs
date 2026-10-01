@@ -151,6 +151,9 @@ pub struct ShellNotifications {
     last_time: f64,
     #[rust]
     pub inert: bool,
+    /// What the last layout log said, so it is logged once per change.
+    #[rust]
+    logged: String,
 }
 
 impl ShellNotifications {
@@ -359,6 +362,13 @@ impl ShellNotifications {
 
             self.card_rects.push((note.id, card, close));
             y += h + STACK_SPACING;
+        }
+        // Where the toasts landed, once per change: evidence for a remote run.
+        let layout: Vec<String> = self.card_rects.iter().map(|(id, r, _)| format!("{id}@{},{},{},{}", r.pos.x as i32, r.pos.y as i32, r.size.x as i32, r.size.y as i32)).collect();
+        let layout = layout.join(" ");
+        if layout != self.logged {
+            log!("notifications: {} toast(s) {layout}", self.card_rects.len());
+            self.logged = layout;
         }
     }
 }
