@@ -169,7 +169,15 @@ impl AppModule for AppCardModule {
     /// Cards fetch live values over HTTP; the store keeps sessions and
     /// cursors on disk; the agent talks to the kernel (the shell's, or a socket).
     fn capabilities(&self) -> &'static [&'static str] { &["storage", "net"] }
-    fn create(&self, vm: &mut ScriptVm, _open: ValidatedOpen, _handles: InstanceHandles) -> InstanceParts {
+    fn create(&self, vm: &mut ScriptVm, _open: ValidatedOpen, handles: InstanceHandles) -> InstanceParts {
+        // Its storage (ADR 0004 §11), when the shell offers one: the cards'
+        // chat threads (`sys.chat`) go in its account folder.
+        if let Some(storage) = octosense_app_peers::storage::claim(self.id(), &handles.scope.to_string()) {
+            match storage.account_folder(None) {
+                Ok(dir) => octos_app::set_l0_chat_folder(dir.join("chat")),
+                Err(e) => makepad_widgets::log!("appcard: no account folder for card chats: {e}"),
+            }
+        }
         let root = AppShell::create(vm);
         let shell = root.clone();
         InstanceParts {

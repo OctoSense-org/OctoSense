@@ -318,6 +318,9 @@ fn walk_inner(vm: &mut ScriptVm, value: ScriptValue, depth: usize, remaining: &m
         ink: u32_prop(vm, value, id!(ink)),
         on: int_prop(vm, value, id!(on)),
         tap: int_prop(vm, value, id!(tap)),
+        // Model-written text (profile §4.2): the kit's `l0_ai_text` stamps it,
+        // and `l0_widgets::to_dsl` draws the AI-written mark.
+        ai: int_prop(vm, value, id!(ai)),
         lat: num_prop(vm, value, id!(lat)),
         lon: num_prop(vm, value, id!(lon)),
         zoom: num_prop(vm, value, id!(zoom)),

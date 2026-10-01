@@ -13,6 +13,7 @@ pub mod coding;
 pub mod content_browser;
 pub mod diagram_safety;
 pub mod l0_card;
+pub mod l0_chat;
 mod l0_approval;
 pub(crate) mod l0_approval_store;
 pub mod l0_eval;

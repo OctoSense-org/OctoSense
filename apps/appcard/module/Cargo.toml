@@ -17,3 +17,6 @@ makepad-app-module = { workspace = true }
 octos-app = { workspace = true }
 # Tool arguments (`ask` takes `{"text": ...}`).
 serde_json = "1.0"
+# The storage the shell offers the instance (ADR 0004 §11): AppCard keeps
+# its cards' chat threads in its account folder.
+octosense-app-peers = { workspace = true }
