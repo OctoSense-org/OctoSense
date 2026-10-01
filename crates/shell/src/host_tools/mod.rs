@@ -261,6 +261,10 @@ impl ToolHost for ShellToolHost {
         suspended(app_id, Some(account))
     }
 
+    fn context_reads_account(&self, app_id: &str, account: &str) -> bool {
+        context_reads_account(app_id, account)
+    }
+
     fn workspace_refused(&self, app_id: &str, account: &str) -> Option<String> {
         workspace_refused_in(crate::app_storage::host()?, app_id, account)
     }
@@ -494,6 +498,21 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     let dir = storage.layout().app(app).ok()?.account(account);
     crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &dir).ok()?;
     Some(dir)
+}
+
+/// Whether the app's conversation reads its account's folder (octos
+/// `read_parent`, ADR 0004 §11): the manifest's `storage.agent_workspace`
+/// is `"account"` and the agent has that folder as its workspace now
+/// ([`agent_workspace`]: files, not suspended, not refused).
+pub fn context_reads_account(app_id: &str, account: &str) -> bool {
+    let Some(storage) = crate::app_storage::host() else { return false };
+    reads_account(&storage.spec(app_of_peer(app_id)), agent_workspace(app_id, account).as_deref())
+}
+
+/// [`context_reads_account`]'s rule, on the app's declared storage and the
+/// agent's workspace now.
+pub(crate) fn reads_account(spec: &crate::app_storage::StorageSpec, workspace: Option<&std::path::Path>) -> bool {
+    spec.agent_workspace == crate::app_storage::AgentWorkspace::Account && workspace.is_some()
 }
 
 /// Why the startup check refused the workspace of `app_id`'s `account`,

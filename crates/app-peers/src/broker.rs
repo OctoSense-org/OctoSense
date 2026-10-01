@@ -919,6 +919,9 @@ impl Broker {
     /// person's lane, a request context that shares history with the
     /// peer's session.
     fn open_handle(&self, spec: ContextSpec, conversation: bool) -> Result<Arc<dyn OctosContext>, String> {
+        // Decided once per context: a re-open must restate it (octos refuses
+        // a changed `read_parent` with `peer_binding_mismatch`).
+        let read_parent = conversation && self.0.tool_host().context_reads_account(&self.0.cfg.app_id, &spec.account);
         let mut st = self.0.lock();
         if st.released {
             return Err("The app was closed".into());
@@ -951,6 +954,7 @@ impl Broker {
             instance: spec.instance.clone(),
             open: AtomicBool::new(true),
             conversation,
+            read_parent,
             bound: Mutex::new(None),
             turn: Mutex::new(None),
             sink: Mutex::new(None),
@@ -2725,6 +2729,9 @@ struct ContextInner {
     /// context opened with `share_history` that also follows the system
     /// agent's lane (the peer's session). `false`: a plain request context.
     conversation: bool,
+    /// Opened with octos's `read_parent` (a read-only view of the account
+    /// folder, ADR 0004 §11; [`host_tools::ToolHost::context_reads_account`]).
+    read_parent: bool,
     bound: Mutex<Option<Bound>>,
     turn: Mutex<Option<TurnWaiter>>,
     sink: Mutex<Option<EventSink>>,
@@ -2942,7 +2949,18 @@ impl ContextInner {
             // each shown the other's recent turns (the kernel's defaults).
             open["share_history"] = json!({});
         }
+        if self.read_parent {
+            open["read_parent"] = json!(true);
+        }
         let result = inner.request("peer/context/open", open).await?;
+        // A kernel without `read_parent` (before octos#2647) would open the
+        // context fenced, and the person's lane would not see the account's
+        // files the app's agent works on. Refuse it rather than pretend.
+        if self.read_parent && result["read_parent"] != json!(true) {
+            return Err("This assistant kernel cannot give the app's conversation its account's folder \
+                        (octos UPCR-2026-034 read_parent); update it"
+                .into());
+        }
         // A kernel that ignored `share_history` opened a plain context: the
         // person would talk without the system agent's side, and the system
         // agent would never see the person's. Refuse it.

@@ -1308,6 +1308,84 @@ fn removing_an_account_purges_its_peer_and_the_account_binds_a_new_one() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// ADR 0004 §11 gap 7 with octos#2647: where the agent reads its account
+/// folder, the app's conversation (the person's lane) is opened with
+/// `read_parent` and its `read_file` reads a file in the account folder; a
+/// plain request context (an app's client) stays fenced and cannot.
+#[test]
+fn the_apps_conversation_reads_the_account_folder_and_a_client_context_does_not() {
+    let Some(program) = kernel() else { return };
+    struct ReadHost(PathBuf);
+    impl ToolHost for ReadHost {
+        fn agent_workspace(&self, _app: &str, _account: &str) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+        fn context_reads_account(&self, _app: &str, _account: &str) -> bool {
+            true
+        }
+    }
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("read-parent");
+    let ws = dir.join("apps/rinx/accounts/alice");
+    std::fs::create_dir_all(&ws).unwrap();
+    let ws = std::fs::canonicalize(&ws).unwrap();
+    std::fs::write(ws.join("notes.txt"), "ACCOUNT_NOTE_42").unwrap();
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+    cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+    cfg.tool_host = Some(ToolHostHandle(Arc::new(ReadHost(ws.clone())) as Arc<dyn ToolHost>));
+    let rinx = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound in the account folder");
+    let ask = format!("CALL_TOOL:read_file {}", json!({"path": ws.join("notes.txt")}));
+
+    let chat = rinx.open_conversation(spec("@alice:example.org", "rinx-ui")).unwrap();
+    let answer = run(&chat, ContextOp::TurnFrom { text: ask.clone(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the conversation's turn");
+    assert!(answer["text"].as_str().unwrap_or("").contains("ACCOUNT_NOTE_42"), "the conversation read the account folder: {answer}");
+
+    let client = rinx.open_context(spec("@alice:example.org", "mini.notes#1")).unwrap();
+    let answer = run(&client, ContextOp::Turn { text: ask }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the client's turn");
+    let text = answer["text"].as_str().unwrap_or("").to_owned();
+    assert!(text.starts_with("TOOL SAID"), "{answer}");
+    assert!(!text.contains("ACCOUNT_NOTE_42"), "a client's context stays fenced: {answer}");
+
+    // The conversation's view stops at other contexts: a mini app's
+    // context folder (`contexts/<its id>/`) is refused to it.
+    let other = std::fs::read_dir(ws.join("contexts")).unwrap().flatten()
+        .map(|e| e.path()).find(|p| p.file_name().unwrap().to_string_lossy().contains("mini-notes"))
+        .expect("the mini app's context folder");
+    std::fs::write(other.join("private.txt"), "MINI_APP_SECRET_7").unwrap();
+    let ask_other = format!("CALL_TOOL:read_file {}", json!({"path": other.join("private.txt")}));
+    let answer = run(&chat, ContextOp::TurnFrom { text: ask_other, trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the conversation's second turn");
+    let text = answer["text"].as_str().unwrap_or("").to_owned();
+    assert!(text.starts_with("TOOL SAID"), "{answer}");
+    assert!(!text.contains("MINI_APP_SECRET_7"), "another context's folder is refused to the conversation: {answer}");
+    assert!(text.contains("outside session scope"), "refused by octos's scope check: {answer}");
+    drop((chat, client));
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A legacy record (saved before records carried the peer's name) on the
 /// real kernel: the peer was staged under the broker's old name
 /// `<label> <8 hex>`. A purge that guesses the wrong label gets
