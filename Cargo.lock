@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "article-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "blake3",
  "image",
@@ -373,7 +373,7 @@ dependencies = [
 [[package]]
 name = "article-makepad"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "article-core",
  "libc",
@@ -2894,7 +2894,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.1.3",
+ "windows-link 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "windows-result 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -7362,7 +7362,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -7378,7 +7378,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-hub-app"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7406,7 +7406,7 @@ dependencies = [
 [[package]]
 name = "octosense-app-policy"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "blake3",
  "makepad-widgets",
@@ -7427,7 +7427,7 @@ dependencies = [
 [[package]]
 name = "octosense-appstore"
 version = "0.1.0"
-source = "git+https://www.github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
+source = "git+https://github.com/OctoSense-org/OctoSense-App-Hub?rev=0f332112f0b5a379c5bb33790df74b21597190cf#0f332112f0b5a379c5bb33790df74b21597190cf"
 dependencies = [
  "makepad-app-module",
  "makepad-widgets",
@@ -7585,6 +7585,7 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-tungstenite 0.24.0",
+ "uuid",
 ]
 
 [[package]]
@@ -8728,8 +8729,8 @@ dependencies = [
 
 [[package]]
 name = "rinx"
-version = "1.0.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+version = "1.0.2"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "anyhow",
  "arboard",
@@ -8803,7 +8804,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-catalog"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "octosense-app-hub",
  "octosense-app-policy",
@@ -8815,7 +8816,7 @@ dependencies = [
 [[package]]
 name = "rinx-miniapp-core"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "serde",
  "serde_json",
@@ -8824,7 +8825,7 @@ dependencies = [
 [[package]]
 name = "rinx-system-apps"
 version = "0.1.0"
-source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.0#0879548ba826c786eb6ad3f60dfba7bd342bd750"
+source = "git+https://github.com/hagency-org/Rinx.git?tag=v1.0.2#5a9e2af2433a04129f2ad0c11acafb187c66f649"
 dependencies = [
  "octosense-app-policy",
  "serde",
@@ -10486,7 +10487,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell 1.21.4",
  "rustix",
  "windows-sys 0.61.2",
