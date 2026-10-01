@@ -28,6 +28,9 @@ struct Script {
     busy_starts: usize,
     /// turn/interrupt ends the turn (a v2 `turn_terminal`, `interrupted`).
     interrupts_end: bool,
+    /// Every turn/start is refused with this kind (a refusal other than
+    /// `turn_in_progress`).
+    refuse_starts: Option<String>,
     /// What session/hydrate answers (`messages`) for a request context.
     history: Vec<Value>,
     /// What session/hydrate answers for the peer's own session.
@@ -107,6 +110,7 @@ impl Connector for FakeConnector {
                     let params = frame["params"].clone();
                     let id = frame["id"].clone();
                     let interrupts_end = script.lock().unwrap().interrupts_end;
+                    let refuse_start = script.lock().unwrap().refuse_starts.clone().filter(|_| method == "turn/start");
                     let (legacy, hold, refuse_register, busy, history, no_share) = {
                         let mut s = script.lock().unwrap();
                         s.calls.push((method.clone(), params.clone()));
@@ -173,6 +177,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "turn/start" if busy => send(refuse("turn_in_progress")),
+                        "turn/start" if refuse_start.is_some() => send(refuse(refuse_start.as_deref().unwrap())),
                         "turn/start" => {
                             let session = params["session_id"].clone();
                             let turn = params["turn_id"].clone();
@@ -232,6 +237,10 @@ fn new_broker_timed(services: &[&str], host: Option<Arc<RecordingHost>>, state_d
 }
 
 fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>) -> (Broker, Arc<Mutex<Script>>) {
+    new_broker_cfg(app, services, host, state_dir, timing, None)
+}
+
+fn new_broker_cfg(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>, state_dir: Option<std::path::PathBuf>, timing: Option<(u64, u64)>, turn_timeout: Option<Duration>) -> (Broker, Arc<Mutex<Script>>) {
     let script = Arc::new(Mutex::new(Script::default()));
     let mut cfg = BrokerConfig::new(
         Deployment::Hosted,
@@ -246,6 +255,9 @@ fn new_broker_app(app: &str, services: &[&str], host: Option<Arc<RecordingHost>>
     if let Some((deadline, grace)) = timing {
         cfg.prompt_deadline = Duration::from_millis(deadline);
         cfg.expiry_grace = Duration::from_millis(grace);
+    }
+    if let Some(timeout) = turn_timeout {
+        cfg.turn_timeout = timeout;
     }
     (
         Broker::new(cfg, Arc::new(FakeConnector(script.clone()))),
@@ -1068,6 +1080,66 @@ fn octos_own_approvals_on_a_context_or_the_peers_session_go_to_the_host() {
     drop(broker);
 }
 
+/// ADR 0004 §8 (the 2026-09-29 review's first gap): a kernel tool's
+/// approval on the system agent's `peer/input` turn reaches the host (the
+/// person decides; the system agent never answers it), stamped as the
+/// system agent's turn, and the app only hears that the host has it. When
+/// its turn ends unanswered it is withdrawn from the host.
+#[test]
+fn a_kernel_tool_approval_on_a_peer_input_turn_goes_to_the_host_and_ends_with_its_turn() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    let conversation = broker.open_conversation(spec("@a:x", "ask#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    conversation.subscribe(Some(sink));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls",
+        "risk_level": "high"}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    let (approval, answer) = host.approvals.lock().unwrap()[0].clone();
+    assert!(approval.octos, "a kernel tool, not a host tool");
+    assert_eq!((approval.app.as_str(), approval.tool.as_str(), approval.turn_id.as_str()), ("rinx", "shell", "turn-i1"));
+    assert_eq!(approval.trigger, TurnTrigger::SystemAgent, "the system agent's turn: its rules, never 'the person'");
+    assert_eq!(approval.calling_kind, octosense_app_peers::host_tools::CallerKind::AppPeer, "the app's own agent calls; the person decides");
+    assert!(approval.context_id.is_none() && approval.client.is_none());
+    let seen: Vec<String> = events(&rx, Duration::from_millis(300)).iter().map(|d| d["method"].as_str().unwrap_or("").to_owned()).collect();
+    assert!(seen.iter().any(|m| m == host_tools::HANDLED_BY_HOST), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "approval/requested"), "the app never answers it: {seen:?}");
+    assert!(position(&script, "approval/respond").is_none(), "nobody answered for the person");
+    // The turn ends before anyone answered: the host's sheet stops asking,
+    // and the next queued input starts.
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("withdrawn", || host.closed_approvals.lock().unwrap().contains(&"k1".to_string()));
+    assert!(!answer.is_sent());
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+/// The link an approval or question came on closed (a kernel restart, the
+/// app released): nothing can answer it there any more, so the host
+/// withdraws what it holds instead of asking until the deadline.
+#[test]
+fn a_closed_link_withdraws_the_approvals_and_questions_the_host_holds() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k2", "turn_id": "turn-i1", "tool_name": "write_file", "title": "Write", "body": "b"}));
+    notify(&script, "user_question/requested", json!({"session_id": session, "question_id": "q1", "turn_id": "turn-i1", "title": "Which?", "body": "",
+        "questions": [{"header": "H", "question": "Which?", "options": [], "allow_free_text": true}]}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 2 && host.questions.lock().unwrap().len() == 1);
+    // One answered before the link went: that one is not withdrawn.
+    assert!(host.approvals.lock().unwrap()[1].1.respond(true));
+    kill_link(&script);
+    wait_for("withdrawn", || !host.closed_approvals.lock().unwrap().is_empty() && !host.closed_questions.lock().unwrap().is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(*host.closed_approvals.lock().unwrap(), ["k1"]);
+    assert_eq!(*host.closed_questions.lock().unwrap(), ["q1"]);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
 
 /// octos#2621: a `peer/input` the host will not act on is refused on the
 /// connection it came on, with the reason (signed_out, no_consent, busy,
@@ -1223,6 +1295,55 @@ fn two_instances_of_one_app_drive_the_peer_once_and_hand_over_on_close() {
     wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
     drop(first);
     drop(second);
+}
+
+/// The 2026-09-29 review: a host `turn/start` for a `peer/input` that the
+/// kernel refuses (anything but `turn_in_progress`, which is retried) is
+/// said to the kernel with `peer/input/reject` and the reason, on the
+/// connection the input came on, so the system agent learns why the app
+/// did not act; the peer's queue moves on. Retrying `turn_in_progress`
+/// until the turn timeout ends as `busy`.
+#[test]
+fn a_refused_turn_start_for_an_input_is_rejected_with_its_reason() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_cfg("rinx", &ALL, Some(host.clone()), None, None, Some(Duration::from_millis(600)));
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let input = |id: &str| json!({"peer": slug, "session_id": session, "input_id": id, "turn_id": format!("turn-{id}"), "text": id});
+    let rejects = || calls_of(&script, "peer/input/reject");
+
+    // A refusal other than turn_in_progress: `other`, with the kernel's words.
+    script.lock().unwrap().refuse_starts = Some("session_not_found".into());
+    notify(&script, "peer/input", input("r1"));
+    wait_for("the reject", || rejects().len() == 1);
+    let (conn, reject) = rejects()[0].clone();
+    assert_eq!(reject["input_id"], "r1");
+    assert_eq!(reject["reason"], "other");
+    let message = reject["message"].as_str().unwrap();
+    assert!(message.contains("session_not_found"), "{message}");
+    assert!(message.len() <= 256 && !message.chars().any(char::is_control));
+    assert_eq!((reject["peer"].as_str(), reject["host_token"].as_str()), (Some(slug.as_str()), Some("fixture-host-token")));
+    assert_eq!(conn, calls_of(&script, "peer/tools/register")[0].0, "on the connection the input came on");
+    assert!(broker.peer_active_turn().is_none(), "the peer is free again");
+
+    // Still busy after the turn timeout: `busy`.
+    script.lock().unwrap().refuse_starts = None;
+    script.lock().unwrap().busy_starts = 1000;
+    notify(&script, "peer/input", input("b1"));
+    wait_for("the busy reject", || rejects().len() == 2);
+    assert_eq!(rejects()[1].1["input_id"], "b1");
+    assert_eq!(rejects()[1].1["reason"], "busy");
+    assert!(rejects()[1].1.get("message").is_none());
+
+    // The next input starts as usual.
+    script.lock().unwrap().busy_starts = 0;
+    notify(&script, "peer/input", input("ok"));
+    wait_for("the next turn", || calls_of(&script, "turn/start").iter().any(|(_, p)| p["turn_id"] == "turn-ok"));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rejects().len(), 2, "a started input is never refused");
+    drop(broker);
 }
 
 // ---------------------------------------------------------------------------
@@ -1826,6 +1947,43 @@ fn stop_on_the_conversation_interrupts_both_lanes() {
     let (sink, rx) = collect();
     chat.call(ContextOp::Interrupt, sink).unwrap();
     assert!(complete(&rx).unwrap_err().contains("Nothing is running"));
+    drop(broker);
+}
+
+/// The shell's "Ask <app>" panel stops one lane at a time: its Stop ends
+/// the person's own turn and leaves the system agent's running; the system
+/// agent's is stopped only on its own control. Late calls of a stopped turn
+/// are refused as with any Stop.
+#[test]
+fn a_lane_stop_leaves_the_other_lane_running() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_app("lane-stop-test", &ALL, Some(host.clone()), None, None);
+    let (slug, session) = busy_peer(&broker, &script);
+    script.lock().unwrap().interrupts_end = true;
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, person_rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "long job".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    wait_for("the person's turn", || calls_of(&script, "turn/start").len() == 2);
+    let (_, lane) = person_lane(&script, 0);
+    let person_turn = calls_of(&script, "turn/start")[1].1["turn_id"].as_str().unwrap().to_owned();
+    let mine = |app: &str| app == "lane-stop-test";
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_PERSON);
+    assert_eq!(stopped, std::slice::from_ref(&person_turn));
+    wait_for("the person's interrupt", || calls_of(&script, "turn/interrupt").len() == 1);
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1, json!({"session_id": lane, "turn_id": person_turn}));
+    assert!(complete(&person_rx).is_err(), "the person's turn ended interrupted");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls_of(&script, "turn/interrupt").len(), 1, "the system agent's turn goes on");
+    assert_eq!(broker.peer_active_turn().as_deref(), Some("turn-i1"));
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_SYSTEM_AGENT);
+    assert_eq!(stopped, ["turn-i1"]);
+    wait_for("the system agent's interrupt", || calls_of(&script, "turn/interrupt").len() == 2);
+    assert_eq!(calls_of(&script, "turn/interrupt")[1].1, json!({"session_id": session, "turn_id": "turn-i1"}));
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", "turn-i1", None));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    assert!(octosense_app_peers::broker::interrupt_lane_where(|app| app == "other", octosense_app_peers::broker::LANE_PERSON).is_empty());
     drop(broker);
 }
 

@@ -4,7 +4,7 @@
     {
       "id": "rinx",
       "crate": "rinx",
-      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.0.0", "rev": "0879548ba826c786eb6ad3f60dfba7bd342bd750", "local": null },
+      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.0.2", "rev": "5a9e2af2433a04129f2ad0c11acafb187c66f649", "local": null },
       "module": "rinx::module::RINX_MODULE",
       "bin": null,
       "default_features": false,
@@ -41,7 +41,7 @@
     {
       "id": "sheets",
       "crate": "makepad-sheets",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "a1c81312cfbbfe8bb11a363351dce709e402bce3", "local": ".sources/makepad/apps/sheets" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9", "local": ".sources/makepad/apps/sheets" },
       "module": "makepad_sheets::SHEETS_MODULE",
       "bin": "sheets",
       "default_features": false,
@@ -57,7 +57,7 @@
     {
       "id": "terminal",
       "crate": "makepad-terminal",
-      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "a1c81312cfbbfe8bb11a363351dce709e402bce3", "local": ".sources/makepad/apps/terminal" },
+      "source": { "git": "https://github.com/OctoSense-org/makepad.git", "rev": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9", "local": ".sources/makepad/apps/terminal" },
       "module": "makepad_terminal::TERMINAL_MODULE",
       "bin": "terminal",
       "default_features": true,

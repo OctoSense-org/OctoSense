@@ -218,6 +218,12 @@ impl PeerLinks {
         if self.host.granted(app).is_empty() {
             return false;
         }
+        // One socket per launch (ADR 0004 §5, hub.rs): a link is never
+        // rebound to another socket while it lives.
+        if self.links.contains_key(&client_id) {
+            self.log.push(format!("peer link: {app} (client {client_id}): second socket refused"));
+            return false;
+        }
         self.links.insert(client_id, Link { app: app.to_string(), out, contexts: Vec::new() });
         self.host.link_opened(app);
         self.log.push(format!("peer link: {app} (client {client_id}) opened"));
@@ -259,7 +265,10 @@ impl PeerLinks {
             return;
         };
         // The socket's app, never the frame's.
-        debug_assert_eq!(link.app, app);
+        if link.app != app {
+            self.log.push(format!("peer link: client {client_id}: frame for {app} on {}'s link dropped", link.app));
+            return;
+        }
         let out = link.out.clone();
         let app = link.app.clone();
         let granted = self.host.granted(&app);

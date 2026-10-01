@@ -45,9 +45,10 @@
 //!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
 //!   closed link end calls before they run. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
-//!   id, once per input, queued while the peer is busy; `host_tool`
-//!   approvals go to the host, never to the app, and are withdrawn there
-//!   when their turn ends before an answer;
+//!   id, once per input, queued while the peer is busy; every approval
+//!   (a `host_tool` one and octos's own tools', a `peer/input` turn's
+//!   included) goes to the host, never to the app, and is withdrawn there
+//!   when its turn ends, or its link closes, before an answer;
 //! - routes the agent's questions (`user_question/requested`, octos's
 //!   `ask_user_question`) on the peer's session and its contexts to the
 //!   host with the turn's origin (a context's, the peer's own, or a
@@ -67,6 +68,9 @@
 //!   [`interrupt_where`] for the shell's own surfaces) stops BOTH lanes:
 //!   the person's running turn and the system agent's (the person owns the
 //!   device). A plain request context's Stop stops its own turn only.
+//!   The shell's "Ask <app>" panel stops one lane at a time
+//!   ([`interrupt_lane_where`]): its Stop is the person's own turn, and the
+//!   system agent's turn has its own control.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -427,6 +431,17 @@ pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
     asked
 }
 
+/// [`interrupt_where`] for one lane only ([`LANE_PERSON`] or
+/// [`LANE_SYSTEM_AGENT`]): the other lane's turn goes on.
+pub fn interrupt_lane_where(matches: impl Fn(&str) -> bool, lane: &str) -> Vec<String> {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_lane(lane)).collect()
+}
+
 /// The live (not released) broker of the app whose id is `app_id`, if one
 /// runs: a shell surface opens the app's conversation on the same peer the
 /// app uses (the shell's "Ask <app>" panel).
@@ -468,6 +483,18 @@ fn driver_of(kernel: &str, app: &str, account: &str) -> Option<Arc<Inner>> {
 /// turn: the kernel queues nothing).
 fn turn_in_progress(error: &str) -> bool {
     error.contains("(turn_in_progress)")
+}
+
+/// Why a `peer/input`'s turn did not start, for `peer/input/reject`: still
+/// `turn_in_progress` at the turn timeout is `busy`; anything else (the
+/// kernel's refusal, a timeout, the turn withdrawn by a Stop or the app
+/// closing) is `other` with the reason.
+fn start_refusal(error: &str) -> InputRefusal {
+    if turn_in_progress(error) {
+        InputRefusal::Busy
+    } else {
+        InputRefusal::Other(format!("the app could not start the turn: {error}"))
+    }
 }
 
 impl State {
@@ -776,7 +803,18 @@ impl Broker {
     /// calls are refused (N1) and the peer's next queued input starts. The
     /// turns stopped (none when nothing runs).
     pub fn interrupt_running(&self) -> Vec<String> {
-        let running = self.0.running_turns();
+        self.interrupt_turns(self.0.running_turns())
+    }
+
+    /// Stop only the turns running in `lane` ([`LANE_PERSON`]: the person's
+    /// or the app's, in every open conversation; [`LANE_SYSTEM_AGENT`]: the
+    /// peer's own session), as [`Broker::interrupt_running`] does.
+    pub fn interrupt_lane(&self, lane: &str) -> Vec<String> {
+        let running = self.0.running_turns().into_iter().filter(|(_, _, l)| *l == lane).collect();
+        self.interrupt_turns(running)
+    }
+
+    fn interrupt_turns(&self, running: Vec<(String, String, &'static str)>) -> Vec<String> {
         for (session, turn, _) in &running {
             let inner = self.0.clone();
             let (session, turn) = (session.clone(), turn.clone());
@@ -1111,7 +1149,7 @@ impl Inner {
     /// request, or by the rebind this schedules. Tool calls that came on the
     /// link end now: the kernel fails them, and the host never runs them.
     fn link_closed(self: &Arc<Self>, epoch: u64, why: &str) {
-        let (pending, waiters, calls, rebind) = {
+        let (pending, waiters, calls, rebind, approvals, questions) = {
             let mut st = self.lock();
             if st.link_epoch != epoch {
                 return;
@@ -1127,16 +1165,30 @@ impl Inner {
             st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
             // Queued inputs are the kernel's to fail with the connection.
             st.queue.clear();
-            // What waited on the link can no longer be answered there.
+            // What waited on the link can no longer be answered there: what
+            // the host holds unanswered is withdrawn from its sheets too.
+            let approvals: Vec<String> = st
+                .prompts
+                .iter()
+                .filter(|(_, p)| matches!(&p.answer, PromptAnswer::HostApproval(answer) if !answer.is_sent()))
+                .map(|(id, _)| id.clone())
+                .collect();
             st.prompts.clear();
+            let questions: Vec<String> = st.questions.drain().map(|(id, _)| id).collect();
             let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
-            (pending, contexts, calls, rebind)
+            (pending, contexts, calls, rebind, approvals, questions)
         };
         let host = self.tool_host();
         for (call_id, reply) in calls {
             if reply.cancel() {
                 host.tool_cancel(&self.cfg.app_id, &call_id, "disconnected");
             }
+        }
+        for id in approvals {
+            host.host_tool_approval_closed(&self.cfg.app_id, &id);
+        }
+        for id in questions {
+            host.user_question_closed(&self.cfg.app_id, &id);
         }
         if let Some(generation) = rebind {
             self.schedule_rebind(generation);
@@ -1866,8 +1918,15 @@ impl Inner {
     /// `peer/input/reject` on this link (the one the input came on), with
     /// the peer's credential, before any `turn/start` with its turn id.
     fn reject_input(self: &Arc<Self>, peer: &PeerInfo, input: &PeerInput, why: InputRefusal) {
+        let Some(link) = self.lock().link.clone() else {
+            return eprintln!("app-peers: {}: input {} refused: {why} (no link to say so)", self.cfg.app_id, input.input_id);
+        };
+        self.reject_input_on(&link, peer, input, why);
+    }
+
+    /// `peer/input/reject` on `link`.
+    fn reject_input_on(self: &Arc<Self>, link: &mpsc::UnboundedSender<String>, peer: &PeerInfo, input: &PeerInput, why: InputRefusal) {
         eprintln!("app-peers: {}: input {} refused: {why}", self.cfg.app_id, input.input_id);
-        let Some(link) = self.lock().link.clone() else { return };
         let mut params = json!({
             "profile_id": self.cfg.profile_id,
             "session_id": self.cfg.originator,
@@ -1878,15 +1937,18 @@ impl Inner {
         for (k, v) in why.fields().as_object().into_iter().flatten() {
             params[k] = v.clone();
         }
-        self.fire(&link, host_tools::PEER_INPUT_REJECT, params);
+        self.fire(link, host_tools::PEER_INPUT_REJECT, params);
     }
 
     /// Start the system agent's input as the peer's turn: the kernel's turn
     /// id and NO origin (the kernel labels a `peer/input` turn
     /// `system_agent` itself and refuses any other label on it).
     fn start_input(self: &Arc<Self>, input: PeerInput) {
-        {
+        // The link the input came on: only there may it be refused.
+        let (link, peer) = {
             let mut st = self.lock();
+            let link = st.link.clone();
+            let peer = st.peer.as_ref().map(|(_, p)| p.clone());
             st.peer_turn = Some(input.turn_id.clone());
             remember(&mut st.input_turns, input.turn_id.clone());
             st.note_request(Request {
@@ -1897,7 +1959,8 @@ impl Inner {
                 speaker: Speaker { kind: host_tools::TurnOrigin::SystemAgent, label: None },
                 at: rfc3339_now(),
             });
-        }
+            (link, peer)
+        };
         let inner = self.clone();
         self.rt().spawn(async move {
             let params = json!({
@@ -1909,6 +1972,11 @@ impl Inner {
             let still = move |inner: &Inner| inner.lock().peer_turn.as_deref() == Some(turn.as_str());
             if let Err(e) = inner.start_turn_retrying(params, still).await {
                 eprintln!("app-peers: {}: the system agent's input {} did not start: {e}", inner.cfg.app_id, input.input_id);
+                // The system agent is told why (octos#2621), on the link the
+                // input came on; a closed link fails its inputs itself.
+                if let (Some(link), Some(peer)) = (link, peer) {
+                    inner.reject_input_on(&link, &peer, &input, start_refusal(&e));
+                }
                 inner.peer_turn_ended(&input.turn_id);
             }
         });

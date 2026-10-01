@@ -7,8 +7,8 @@
 //!
 //! - **Lanes.** Every event carries its `lane`: `person` (this panel's
 //!   sharing context) or `system_agent` (the peer's own session, the
-//!   system agent's `peer/input` turns). Both run in parallel: the panel
-//!   is busy while either runs.
+//!   system agent's `peer/input` turns). Both run in parallel: the person
+//!   may send while the system agent's turn runs ([`Conversation::running_in`]).
 //! - **Speakers.** A user message names who spoke (`speaker`, from the
 //!   kernel's origin marker or the broker's record): the person ("You"),
 //!   the system agent, or the app itself; the text shown is the text after
@@ -68,6 +68,13 @@ impl Conversation {
     /// Whether a turn runs in either lane.
     pub fn busy(&self) -> bool {
         !self.running.is_empty()
+    }
+
+    /// The turn running in `lane` ([`LANE_PERSON`] or
+    /// [`LANE_SYSTEM_AGENT`]), if one does. The lanes are independent: the
+    /// person may send while the system agent's turn runs.
+    pub fn running_in(&self, lane: &str) -> Option<&str> {
+        self.running.iter().find(|t| self.lanes.get(*t).map(String::as_str).unwrap_or(LANE_PERSON) == lane).map(String::as_str)
     }
 
     /// The label of a user message's speaker (`{"kind", "label"?}`).

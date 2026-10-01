@@ -162,7 +162,9 @@ for the threat model.
 [ADR 0004](../../docs/adr/0004-native-apps-hosting-and-peers.md) §12: the
 system agent's tool set is its grants. Its default octos tools are
 `system_tools::SYSTEM_AGENT_TOOLS`: supervision (`peer_send_input`,
-`peer_gather`, `peer_list`, `peer_respond`, `peer_close`), its workspace's
+`peer_gather`, `peer_list`, `peer_respond`; never `peer_close`, which the
+profile's `tool_policy` denies to every agent, since octos cannot resume a
+closed peer), its workspace's
 file tools (octos fences them to the session's working directory), memory,
 `ask_user_question`, media viewing, octos's `web_search` / `web_fetch` (until
 toolbox grants replace them, #108) and `tool_search`. Granted toolbox and
