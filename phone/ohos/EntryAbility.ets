@@ -1,7 +1,7 @@
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import makepad from 'libmakepad.so'
 import {ArkGlue} from '../makepad/makepad'
 
@@ -51,6 +51,16 @@ export default class EntryAbility extends UIAbility {
       }
       hilog.info(0x0000, 'testTag', 'Succeeded in loading the content.');
     });
+
+    // A 2-in-1 starts the shell full size: its desktop build is the
+    // OctoSense desktop, which is its own window manager.
+    if (deviceInfo.deviceType === '2in1') {
+      windowStage.getMainWindow().then((mainWindow) => {
+        mainWindow.maximize().catch((e: BusinessError) => {
+          hilog.warn(0x0000, 'testTag', 'maximize failed: %{public}d', e.code);
+        });
+      });
+    }
 
     // HarmonyOS lays the XComponent between its native system bars. Its
     // surface dimensions and local touch coordinates already exclude them.

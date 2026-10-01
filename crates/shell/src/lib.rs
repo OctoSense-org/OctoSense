@@ -6415,6 +6415,10 @@ app_main!(
 /// The person's home directory (`HOME`; `USERPROFILE` on Windows), where a
 /// new terminal with no directory to inherit opens.
 fn user_home() -> Option<std::path::PathBuf> {
+    // Android, iOS and OpenHarmony: `HOME` is not the app's to use.
+    if let Some(dir) = makepad_widgets::makepad_platform::home::platform_data_dir() {
+        return Some(dir);
+    }
     let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     std::env::var_os(var).filter(|home| !home.is_empty()).map(std::path::PathBuf::from).filter(|home| home.is_dir())
 }
