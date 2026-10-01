@@ -160,28 +160,39 @@ pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Opti
     }
 }
 
-/// Stub.
-pub fn prepare_agent_with<R>(storage: &Storage, _root: &Path, _app_id: &str, prepare: impl FnOnce(&Storage) -> R) -> R {
+/// Before a script app's agent is prepared (`agents::prepare`, which the
+/// system chat runs for every allowed agent before the app was ever
+/// opened): record its manifest's storage block, so its agent acts for the
+/// right account and its suspension is keyed right; then `prepare`.
+pub fn prepare_agent_with<R>(storage: &Storage, root: &Path, app_id: &str, prepare: impl FnOnce(&Storage) -> R) -> R {
+    if let Some(manifest) = script_manifest(root, app_id) {
+        match StorageSpec::from_manifest(&manifest, AppKind::Script) {
+            Ok(spec) => storage.set_spec(app_id, spec),
+            Err(e) => makepad_widgets::log!("app storage: {app_id}: {e}"),
+        }
+    }
     prepare(storage)
 }
 
-/// Stub.
-pub fn contained_account_in(_storage: &Storage, app: &str) -> Option<String> {
-    contained_account(app)
+/// The account a contained app's agent acts for (`contained::set_account_of`).
+pub fn contained_account(app: &str) -> Option<String> {
+    match super::host() {
+        Some(storage) => contained_account_in(storage, app),
+        None => Some(crate::ai_host::contained::ACCOUNT.to_owned()),
+    }
 }
 
-/// The account a contained app's agent acts for (`contained::set_account_of`):
-/// the device for an app without accounts; for one that keeps accounts, the
-/// newest account Mail's host service granted it, or none yet.
-pub fn contained_account(app: &str) -> Option<String> {
-    let device = || Some(crate::ai_host::contained::ACCOUNT.to_owned());
-    let Some(storage) = super::host() else { return device() };
+/// The device for an app without accounts; for one that keeps accounts
+/// (Mail), its active account (the one the person signed in to last, from
+/// Mail's host service), or none yet. One agent is live per app at a time,
+/// bound to that account (ADR 0004 §11).
+pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
     if !storage.spec(app).accounts {
-        return device();
+        return Some(crate::ai_host::contained::ACCOUNT.to_owned());
     }
     #[cfg(any(feature = "app-hub", native_mobile))]
     {
-        octosense_mail_service::account_ids(&storage.layout().apps_root().join(".host"), app).pop()
+        octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
     }
     #[cfg(not(any(feature = "app-hub", native_mobile)))]
     None

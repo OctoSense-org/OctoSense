@@ -157,23 +157,27 @@ impl Transport for Network {
     }
 }
 
-/// The accounts `app_id` was granted, oldest first (ids only), from the
-/// service's state under `host_dir` (the Card runner's `<apps root>/.host`):
-/// the shell binds the app's agent to the newest (ADR 0004 §11).
+/// The accounts `app_id` was granted, in the order the person signed in to
+/// them (`signed_in`, seconds; an account kept before that field counts as
+/// the oldest), from the service's state under `host_dir` (the Card
+/// runner's `<apps root>/.host`).
 pub fn account_ids(host_dir: &Path, app_id: &str) -> Vec<String> {
     let accounts = std::fs::read(host_dir.join("mail").join("accounts.json"))
         .ok()
         .and_then(|b| serde_json::from_slice::<Vec<Value>>(&b).ok())
         .unwrap_or_default();
-    accounts
+    let mut granted: Vec<(u64, String)> = accounts
         .iter()
         .filter(|a| a["apps"].as_array().is_some_and(|apps| apps.iter().any(|x| x == app_id)))
-        .map(|a| text(a, "id").to_owned())
-        .filter(|id| !id.is_empty())
-        .collect()
+        .map(|a| (a["signed_in"].as_u64().unwrap_or(0), text(a, "id").to_owned()))
+        .filter(|(_, id)| !id.is_empty())
+        .collect();
+    granted.sort_by_key(|(t, _)| *t);
+    granted.into_iter().map(|(_, id)| id).collect()
 }
 
-/// Stub.
+/// The app's active account: the one the person signed in to last. The
+/// shell binds the app's one agent to it (ADR 0004 §11).
 pub fn active_account(host_dir: &Path, app_id: &str) -> Option<String> {
     account_ids(host_dir, app_id).pop()
 }
@@ -487,7 +491,8 @@ impl HostService for MailService {
                     }
                     let id = network::identity(&account);
                     let mut accounts = store.accounts();
-                    let mut kept = json!({"apps": [app_id], "id": id});
+                    let signed_in = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                    let mut kept = json!({"apps": [app_id], "id": id, "signed_in": signed_in});
                     for key in ACCOUNT_FIELDS.iter().filter(|k| **k != "id") {
                         kept[*key] = account[*key].clone();
                     }

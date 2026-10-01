@@ -440,17 +440,11 @@ pub fn suspended_in(storage: &crate::app_storage::Storage, app_id: &str, account
 }
 
 /// Why the startup check refused the workspace of `app_id`'s `account`,
-/// keyed like [`agent_workspace`]: the account for an app that keeps
-/// accounts, else the device folder (a script app's `card.<id>` peer too).
+/// keyed like [`agent_workspace`] ([`keeps_accounts`]): the account for an
+/// app that keeps accounts, native or script (Mail), else the device folder.
 pub fn workspace_refused_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<String> {
     let app = app_of_peer(app_id);
-    storage.refused(app, workspace_account(app_id, account))
-}
-
-/// The account a peer's workspace is keyed by: `account` for a native app
-/// that keeps accounts, else the device (`None`).
-fn workspace_account<'a>(app_id: &str, account: &'a str) -> Option<&'a str> {
-    crate::native_apps::find(app_of_peer(app_id)).is_some_and(|e| e.accounts).then_some(account)
+    storage.refused(app, keeps_accounts(storage, app_id).then_some(account))
 }
 
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
