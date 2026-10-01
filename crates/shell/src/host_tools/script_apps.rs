@@ -31,7 +31,8 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 
 use crate::ai_host::app_peers::host_tools::{HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
-use octosense_app_policy::{AgentBundle, AppManifest, ImplementedBy, ToolSpec, MANIFEST_FILE};
+use octosense_app_contract::{AppManifest, MANIFEST_FILE};
+use octosense_app_policy::{AgentBundle, ImplementedBy, ToolSpec};
 use octosense_appstore::services::{ServiceCall, ServiceHost};
 
 /// What one script app's bundle gives the host.
@@ -228,7 +229,7 @@ pub(crate) mod tests {
         }
         let mut manifest: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
         edit(&dir, &mut manifest);
-        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_policy::digest_dir(&dir).unwrap());
+        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_contract::digest_dir(&dir).unwrap());
         std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
         dir
     }
