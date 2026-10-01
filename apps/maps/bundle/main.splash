@@ -14,14 +14,19 @@ let view3d = true       // drive view: 3D follow camera, or the flat 2D map
 // ADR 0004 §11: the app's data is its account folder (a system app acts for
 // the device), the folder its agent works in; what it can fetch again is
 // cache/. A file an earlier build kept at the top of the jail moves on first
-// use.
+// use: the old one is removed only once the copy reads back the same; if the
+// copy fails the app keeps using the old file and tries again next time.
 let DATA = "accounts/device/"
 fn moved(name, path){
-    if !fs.exists(path) && fs.exists(name) {
-        fs.write(path, fs.read(name))
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
         fs.remove(name)
+        return path
     }
-    return path
+    if fs.exists(path) { fs.remove(path) }
+    return name
 }
 fn data_path(name){ return moved(name, DATA + name) }
 
