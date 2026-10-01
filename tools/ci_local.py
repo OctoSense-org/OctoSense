@@ -17,9 +17,12 @@ commands cannot drift from the workflows. What GitHub does with an action
 
 A step that cannot run here is SKIPPED with the reason, never passed. Jobs
 GitHub runs on ubuntu-latest run on this Mac; `#[cfg(target_os = "linux")]`
-code in them is not exercised here (the summary says so).
+code in them is not exercised here (the summary says so), unless
+--linux-host sends them to a Linux build host over ssh (see "The Linux host"
+below and docs/local-ci.md).
 
   tools/ci-local.sh [--only desktop|phone|apps|rom|all[,...]] [--jobs N] [--keep-going] [--no-wait]
+  tools/ci-local.sh --linux-host [SSH]  # ubuntu jobs on the Linux host
   tools/ci-local.sh --list              # the plan, nothing run
   tools/ci-local.sh --check-drift       # the local mapping still fits the workflows
   tools/ci-local-merge.sh <PR number>   # merge on a local pass (see docs/local-ci.md)
@@ -28,6 +31,18 @@ Heavy runs share the machine: at most OCTOSENSE_CI_LOCAL_SLOTS (default 2)
 run at once, through mkdir locks in ${TMPDIR}/octosense-ci-local/; a run waits
 for a slot (or, --no-wait, exits 75). Results: target/ci-local/<timestamp>.log
 and target/ci-local/last.json.
+
+The Linux host (--linux-host): every job whose runs-on is ubuntu, and the
+Linux-only checks in LINUX_HOST_JOBS (the process sandbox's Landlock and
+seccomp tests), run on the host as the ssh user, under ~/octosense-ci/ only.
+The exact commit under test goes there as a git bundle and is checked out in
+~/octosense-ci/runs/<sha>-<timestamp> (the newest five are kept); the host runs
+tools/setup.py itself from the same locks. The same `run:` steps run there,
+from this file, with an allow-listed environment (no tokens). At most
+OCTOSENSE_CI_LINUX_SLOTS (default 4) runs share the host; each of a run's
+jobs runs in parallel, with its own cargo target in ~/octosense-ci/cache/.
+Their results join the table and last.json marked `"host": "linux"`, bound
+to the commit the host checked out.
 """
 import argparse
 import datetime
@@ -37,11 +52,14 @@ import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -279,6 +297,65 @@ STEP_REQUIREMENTS = {
     },
 }
 
+# Checks that only mean something on Linux and that no workflow runs on
+# Linux: --linux-host adds them, as jobs of the pseudo-workflow "linux-host",
+# whenever the run includes a workflow that a change to `source` triggers.
+# They have the shape of a workflow job and run like one.
+LINUX_HOST = "linux-host"
+LINUX_HOST_JOBS = {
+    # The process sandbox's #[cfg(target_os = "linux")] tests (Landlock and
+    # seccomp: crates/shell/src/sandbox/{linux,tests}.rs). The workflows run
+    # the shell's tests on macOS only, so without a Linux host these never run.
+    # The tests skip themselves on a kernel without Landlock; that is a
+    # failure here, not a pass.
+    "sandbox": {
+        "runs-on": "ubuntu-latest",
+        "source": "crates/shell/src/sandbox/linux.rs",
+        "steps": [
+            {"uses": "actions/checkout@v6"},
+            {"uses": "dtolnay/rust-toolchain@stable"},
+            {"run": "python3 tools/setup.py\n"},
+            {"name": "Process sandbox on Linux (Landlock, seccomp)",
+             "run": "cargo test --locked -p octosense-shell --lib sandbox:: -- --nocapture 2>&1"
+                    " | tee \"$RUNNER_TEMP/sandbox-tests.txt\"\n"
+                    "if grep -q 'no process sandbox on this machine' \"$RUNNER_TEMP/sandbox-tests.txt\"; then\n"
+                    "  echo '::error::the sandbox tests skipped themselves: this kernel has no Landlock'; exit 1\n"
+                    "fi\n"},
+        ],
+    },
+}
+
+
+def linux_host_job_covers(job):
+    """The workflows whose runs include a LINUX_HOST_JOBS job: those a change
+    to its source triggers (ci-local-merge.sh requires it for the same PRs)."""
+    return triggered_workflows([job["source"]])
+
+
+def plan_jobs(workflows, linux_host=False):
+    """[(workflow, job id, job, where)], where is "local" or "linux": with a
+    Linux host, every job whose runs-on is ubuntu runs there, and the
+    LINUX_HOST_JOBS that the chosen workflows cover are added."""
+    plan = []
+    for workflow in workflows:
+        for job_id, job in jobs_of(workflow):
+            where = "linux" if linux_host and "ubuntu" in str(job.get("runs-on", "")) else "local"
+            plan.append((workflow, job_id, job, where))
+    if linux_host:
+        for job_id, job in LINUX_HOST_JOBS.items():
+            if set(linux_host_job_covers(job)) & set(workflows):
+                plan.append((LINUX_HOST, job_id, job, "linux"))
+    return plan
+
+
+def job_definition(key):
+    """The job `<workflow>:<job>` names (a workflow's, or a LINUX_HOST_JOBS one)."""
+    workflow, job_id = key.split(":", 1)
+    if workflow == LINUX_HOST:
+        return LINUX_HOST_JOBS[job_id]
+    return dict(jobs_of(workflow))[job_id]
+
+
 # GitHub expressions the runner can evaluate. Anything else fails --check-drift.
 EXPRESSION = re.compile(r"\$\{\{\s*(.*?)\s*\}\}")
 KNOWN_EXPRESSIONS = [re.compile(p) for p in (
@@ -360,6 +437,15 @@ def check_drift(workflows=None):
     for key in STEP_REQUIREMENTS:
         if key.split(":")[0] in names and key not in seen_steps:
             problems.append(f"{key}: listed in STEP_REQUIREMENTS but no step has that name")
+    if workflows is None:
+        for job_id, job in LINUX_HOST_JOBS.items():
+            if not (ROOT / job["source"]).is_file():
+                problems.append(f"{LINUX_HOST}:{job_id}: its source {job['source']} is gone: update LINUX_HOST_JOBS")
+            elif not linux_host_job_covers(job):
+                problems.append(f"{LINUX_HOST}:{job_id}: no workflow is triggered by {job['source']}")
+            for step in job["steps"]:
+                if "uses" in step and action_name(step["uses"]) not in ACTIONS:
+                    problems.append(f"{LINUX_HOST}:{job_id}: uses {step['uses']}, which has no local mapping")
     return problems
 
 
@@ -539,24 +625,43 @@ PASS, FAIL, SKIPPED, NOT_RUN = "PASS", "FAIL", "SKIPPED", "NOT RUN"
 
 
 class Run:
-    def __init__(self, args):
+    def __init__(self, args, out_dir=None):
         self.args = args
-        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        self.out_dir = ROOT / "target/ci-local"
+        self.stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.out_dir = Path(out_dir) if out_dir else ROOT / "target/ci-local"
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.log_path = self.out_dir / f"{stamp}.log"
+        self.log_path = self.out_dir / f"{self.stamp}.log"
         self.log_file = open(self.log_path, "w", buffering=1)
         self.runner_temp = self.out_dir / "runner-temp"
+        self.runner_temp.mkdir(exist_ok=True)
         self.steps = []
         self.actions = []
         self.notes = []
         self.failed = False
+        self.lock = threading.Lock()
+        # The Linux host's address and key path never reach the log or the results.
+        self.linux = getattr(args, "linux_settings", None)
+        self.scrub = []
+        if self.linux:
+            target, key = self.linux
+            self.scrub = [v for v in (target, target.split("@")[-1], key) if v]
+        self.linux_info = None
         self.env = self.base_env()
 
+    def close(self):
+        self.log_file.close()
+
+    def clean(self, text):
+        for secret in self.scrub:
+            text = text.replace(secret, "<linux-host>")
+        return text
+
     def log(self, message, echo=True):
-        self.log_file.write(message + "\n")
-        if echo:
-            print(message, flush=True)
+        message = self.clean(message)
+        with self.lock:
+            self.log_file.write(message + "\n")
+            if echo:
+                print(message, flush=True)
 
     def base_env(self):
         env = dict(os.environ)
@@ -589,18 +694,21 @@ class Run:
             raise RuntimeError(f"cannot evaluate ${{{{ {expression} }}}}")
         return EXPRESSION.sub(replace, str(text))
 
-    def record(self, workflow, job, name, status, seconds=0.0, reason="", expected=True, command=None):
-        reason = reason.replace(str(Path.home()), "~")  # results get posted: no home paths
-        self.steps.append({"workflow": workflow, "job": job, "name": name, "status": status,
-                           "seconds": round(seconds, 1), "reason": reason,
-                           "expected_skip": expected if status == SKIPPED else None,
-                           "command": command})
-        if status == FAIL:
-            self.failed = True
+    def record(self, workflow, job, name, status, seconds=0.0, reason="", expected=True, command=None, echo=True):
+        reason = self.clean(reason.replace(str(Path.home()), "~"))  # results get posted: no home paths
+        step = {"workflow": workflow, "job": job, "name": name, "status": status,
+                "seconds": round(seconds, 1), "reason": reason,
+                "expected_skip": expected if status == SKIPPED else None,
+                "command": command, "host": "local"}
+        with self.lock:
+            self.steps.append(step)
+            if status == FAIL:
+                self.failed = True
         line = f"[{status}] {workflow} {job}: {name}" + (f" ({seconds:.0f}s)" if seconds else "")
         if reason:
             line += f" -- {reason}"
-        self.log(line)
+        self.log(line, echo=echo)
+        return step
 
     def android_sdk(self):
         for candidate in (self.env.get("ANDROID_HOME"), self.env.get("ANDROID_SDK_ROOT"),
@@ -676,10 +784,17 @@ class Run:
         output_file.write_text("")
         env["GITHUB_OUTPUT"] = str(output_file)
         building_kernel = "kernel-artifact.py --host" in script
-        kernel_lock = None
+        step_lock = None
         if building_kernel:
-            kernel_lock = self.prepare_kernel_build()
-        self.log(f"--> {workflow} {job_id}: {label}  (cwd {cwd.relative_to(ROOT) if cwd != ROOT else '.'})")
+            step_lock = self.prepare_kernel_build()
+        elif "tools/setup.py" in script and getattr(self.args, "worker_job", None):
+            # A run's jobs share one checkout on the Linux host; setup.py, even
+            # with nothing to change, takes git's index locks in .sources/.
+            step_lock = DirLock(ROOT / "target/ci-remote/setup.lock")
+            while not step_lock.try_acquire({"root": str(ROOT)}):
+                time.sleep(1)
+        self.log(f"--> {workflow} {job_id}: {label}  (cwd {cwd.relative_to(ROOT) if cwd != ROOT else '.'})",
+                 echo=not getattr(self.args, "worker_job", None) or self.args.verbose)
         for line in script.rstrip().splitlines():
             self.log(f"  $ {line}", echo=self.args.verbose)
         started = time.time()
@@ -707,8 +822,8 @@ class Run:
             if code == 0 and building_kernel:
                 self.finish_kernel_build()
         finally:
-            if kernel_lock:
-                kernel_lock.release()
+            if step_lock:
+                step_lock.release()
         for line in output_file.read_text().splitlines():
             if "=" in line and step.get("id"):
                 k, v = line.split("=", 1)
@@ -769,7 +884,8 @@ class Run:
         runs_on = str(job.get("runs-on", ""))
         self.log(f"\n=== {workflow} / {job_id} (GitHub: {runs_on}) ===")
         if JOBS.get(key, {}).get("linux_only_note") and "ubuntu" in runs_on and sys.platform == "darwin":
-            note = f"{key} runs on {runs_on} in GitHub; here on macOS, so #[cfg(target_os = \"linux\")] code in it is not exercised"
+            note = (f"{key} runs on {runs_on} in GitHub; here on macOS, so #[cfg(target_os = \"linux\")] code in it "
+                    f"is not exercised (--linux-host runs it on Linux)")
             if note not in self.notes:
                 self.notes.append(note)
         problem = self.job_problem(workflow, job_id, job)
@@ -793,6 +909,14 @@ class Run:
         result = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True)
         return result.stdout.strip() if result.returncode == 0 else ""
 
+    def versions(self):
+        versions = {}
+        for tool, argv in (("cargo", ["cargo", "--version"]), ("rustc", ["rustc", "--version"]),
+                           ("python3", ["python3", "--version"]), ("node", ["node", "--version"])):
+            if self.which(tool):
+                versions[tool] = subprocess.run(argv, env=self.env, capture_output=True, text=True).stdout.strip()
+        return versions
+
     def execute(self, workflows):
         started = time.time()
         sha = self.git("rev-parse", "HEAD")
@@ -800,11 +924,7 @@ class Run:
         self.log(f"ci-local: {ROOT} at {sha} ({self.git('rev-parse', '--abbrev-ref', 'HEAD')})"
                  + (" with uncommitted changes" if dirty else ""))
         self.log(f"ci-local: workflows {', '.join(workflows)}; CARGO_BUILD_JOBS={self.args.jobs}; log {self.log_path}")
-        versions = {}
-        for tool, argv in (("cargo", ["cargo", "--version"]), ("rustc", ["rustc", "--version"]),
-                           ("python3", ["python3", "--version"]), ("node", ["node", "--version"])):
-            if self.which(tool):
-                versions[tool] = subprocess.run(argv, env=self.env, capture_output=True, text=True).stdout.strip()
+        versions = self.versions()
         self.log("ci-local: " + "; ".join(f"{v}" for v in versions.values()))
         if not versions.get("python3", "").startswith("Python 3.12"):
             self.notes.append(f"GitHub runs Python 3.12; this run used {versions.get('python3', 'no python3')}")
@@ -812,10 +932,22 @@ class Run:
         drift = check_drift()
         self.record("ci-local", "drift", "The local mapping fits the workflows",
                     FAIL if drift else PASS, reason="; ".join(drift))
-        for workflow in workflows:
-            data = load_workflow(workflow)
-            for job_id, job in jobs_of(workflow, data):
+        plan = plan_jobs(workflows, linux_host=self.linux is not None)
+        remote = [(w, j, job) for w, j, job, where in plan if where == "linux"]
+        self.linux_info = None
+        thread = None
+        if remote:
+            self.log(f"ci-local: on the Linux host: {', '.join(f'{w} / {j}' for w, j, _ in remote)}")
+            thread = threading.Thread(target=self.run_remote, args=(sha, bool(dirty), remote), daemon=True)
+            thread.start()
+        for workflow, job_id, job, where in plan:
+            if where == "local":
                 self.run_job(workflow, job_id, job)
+        if thread:
+            while thread.is_alive():
+                thread.join(timeout=1)
+        order = {(w, j): i for i, (w, j, _, _) in enumerate(plan)}
+        self.steps.sort(key=lambda s: order.get((s["workflow"], s["job"]), -1))
 
         passed = not any(s["status"] in (FAIL, NOT_RUN) for s in self.steps)
         summary = {
@@ -831,6 +963,7 @@ class Run:
             "started": datetime.datetime.fromtimestamp(started).isoformat(timespec="seconds"),
             "seconds": round(time.time() - started, 1),
             "host": {"system": platform.system(), "machine": platform.machine(), "cpus": os.cpu_count()},
+            "linux_host": self.linux_info,
             "versions": versions,
             "jobs": self.args.jobs,
             "notes": self.notes,
@@ -840,11 +973,369 @@ class Run:
         }
         self.log("\n" + format_table(summary))
         tmp = self.out_dir / "last.json.tmp"
-        tmp.write_text(json.dumps(summary, indent=2) + "\n")
+        tmp.write_text(self.clean(json.dumps(summary, indent=2)) + "\n")
         os.replace(tmp, self.out_dir / "last.json")
         self.log(f"\nci-local: {'PASSED' if passed else 'FAILED'} in {fmt_seconds(summary['seconds'])}; "
                  f"log {self.log_path}; result target/ci-local/last.json")
         return summary
+
+    # The Linux host: ship the commit, run the coordinator there (--linux-worker),
+    # relay its output, then merge its results into this run's steps.
+    def remote_fail(self, keys, reason):
+        for key in keys:
+            workflow, job_id = key.split(":", 1)
+            self.add_remote_steps([{"workflow": workflow, "job": job_id, "name": "Run on the Linux host",
+                                    "status": FAIL, "seconds": 0, "reason": reason,
+                                    "expected_skip": None, "command": None}], sha=None)
+
+    def add_remote_steps(self, steps, sha):
+        with self.lock:
+            for step in steps:
+                step = dict(step, host="linux", sha=sha, reason=self.clean(step.get("reason") or ""))
+                self.steps.append(step)
+                if step["status"] != PASS:
+                    line = f"[{step['status']}] {step['workflow']} {step['job']} (linux): {step['name']}"
+                    self.log_file.write(self.clean(line + (f" -- {step['reason']}" if step["reason"] else "")) + "\n")
+
+    def run_remote(self, sha, dirty, jobs):
+        keys = [f"{w}:{j}" for w, j, _ in jobs]
+        host = LinuxHost(self.linux, self.log)
+        try:
+            if dirty:
+                self.log(f"ci-local: the Linux host runs the commit {sha[:12]}, without this tree's uncommitted changes")
+            started = time.time()
+            run_dir = host.ship(sha, self.stamp)
+            self.log(f"ci-local: linux: {sha[:12]} checked out as ~/{CI_HOME}/runs/{run_dir} "
+                     f"({fmt_seconds(time.time() - started)})")
+            result = host.run(run_dir, sha, keys, self.args)
+        except HostError as error:
+            self.log(f"ci-local: linux: {error}")
+            self.remote_fail(keys, f"the Linux host: {error}")
+            return
+        merge_remote_result(self, result, sha, keys)
+
+
+def merge_remote_result(run, result, sha, keys):
+    """Add the coordinator's `result` for `keys` to `run`, bound to `sha`."""
+    if result.get("error"):
+        run.remote_fail(keys, f"the Linux host: {result['error']}")
+        return
+    if result.get("sha") != sha:
+        run.remote_fail(keys, f"stale: the Linux host ran {str(result.get('sha'))[:12]}, not {sha[:12]}")
+        return
+    if result.get("busy"):
+        for key in keys:
+            workflow, job_id = key.split(":", 1)
+            run.add_remote_steps([{"workflow": workflow, "job": job_id, "name": "Run on the Linux host",
+                                   "status": SKIPPED, "seconds": 0, "expected_skip": False, "command": None,
+                                   "reason": "every Linux host slot is busy (--no-wait)"}], sha=sha)
+        return
+    for key in keys:
+        job = (result.get("jobs") or {}).get(key)
+        if not job:
+            run.remote_fail([key], "the Linux host returned no result for this job")
+            continue
+        run.add_remote_steps(job.get("steps") or [], sha=result["sha"])
+        run.actions += [dict(a, host="linux") for a in job.get("actions") or []]
+        run.notes += [f"linux: {n}" for n in job.get("notes") or [] if f"linux: {n}" not in run.notes]
+    run.linux_info = {k: result.get(k) for k in ("sha", "run", "slot", "slots", "system", "machine", "cpus",
+                                                 "kernel", "versions", "seconds", "prepare_seconds")}
+    python = (result.get("versions") or {}).get("python3", "no python3")
+    if not python.startswith("Python 3.12"):
+        run.notes.append(f"GitHub runs Python 3.12; the Linux host used {python}")
+
+
+# ---------------------------------------------------------------------------
+# The Linux host (--linux-host). This side ships the commit and starts the
+# coordinator over ssh; the coordinator (--linux-worker, on the host) takes a
+# host slot, prepares the checkout and runs one worker (--worker-job) per job
+# in parallel. Nothing here needs more than the ssh user: no sudo.
+# ---------------------------------------------------------------------------
+
+CI_HOME = "octosense-ci"  # under the ssh user's home on the host
+RESULT_MARK = "::ci-local-result:: "
+KEEP_RUNS = 5
+LINUX_SLOTS = 4
+BUILD_ENV = Path.home() / ".config/octosense/build.env"
+# The only environment remote steps get: no tokens, no keys, nothing from
+# this machine. $HOME and the user are the host's own.
+REMOTE_ENV = ('HOME="$HOME" USER="$(id -un)" LOGNAME="$(id -un)" LANG=C.UTF-8 '
+              f'PATH="$HOME/{CI_HOME}/venv/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin"')
+
+
+class HostError(RuntimeError):
+    pass
+
+
+def linux_host_settings(value):
+    """(ssh target, key path or None) from --linux-host, else the environment
+    (OCTOSENSE_BUILD_HOST, OCTOSENSE_BUILD_KEY), else ~/.config/octosense/build.env."""
+    env = dict(os.environ)
+    if not env.get("OCTOSENSE_BUILD_HOST") and BUILD_ENV.is_file():
+        for line in BUILD_ENV.read_text().splitlines():
+            match = re.match(r"\s*(?:export\s+)?(OCTOSENSE_BUILD_[A-Z_]+)=(.*)$", line)
+            if match:
+                env.setdefault(match.group(1), match.group(2).strip().strip("'\""))
+    target = value or env.get("OCTOSENSE_BUILD_HOST")
+    if not target:
+        return None, None
+    key = env.get("OCTOSENSE_BUILD_KEY") or None
+    return target, (os.path.expanduser(os.path.expandvars(key)) if key else None)
+
+
+class LinuxHost:
+    def __init__(self, settings, log):
+        self.target, self.key = settings
+        self.log = log
+
+    def ssh_argv(self, command):
+        return ["ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=6",
+                *(["-i", self.key] if self.key else []), self.target, command]
+
+    def ssh(self, command, stdin=None):
+        result = subprocess.run(self.ssh_argv(command), stdin=stdin if stdin is not None else subprocess.DEVNULL,
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise HostError(f"ssh exited {result.returncode}: {(result.stderr or result.stdout).strip()[-800:]}")
+        return result.stdout
+
+    def ship(self, sha, stamp):
+        """Check out `sha` in a new run directory on the host; its name."""
+        known = self.ssh(f"git -C ~/{CI_HOME}/repo.git cat-file -e {sha}^{{commit}} 2>/dev/null && echo have || "
+                         f"{{ echo need; git -C ~/{CI_HOME}/repo.git for-each-ref --sort=-committerdate --count=50 "
+                         f"--format='%(objectname)' refs/ci 2>/dev/null || true; }}").split()
+        run_dir = f"{sha}-{stamp}"
+        bundle = None
+        try:
+            if known[:1] != ["have"]:
+                bases = [r for r in known[1:] if re.fullmatch(r"[0-9a-f]{40}", r) and subprocess.run(
+                    ["git", "-C", str(ROOT), "cat-file", "-e", f"{r}^{{commit}}"], capture_output=True).returncode == 0]
+                handle = tempfile.NamedTemporaryFile(suffix=".bundle", delete=False)
+                handle.close()
+                bundle = handle.name
+                ref = "refs/ci-local/linux-host"
+                subprocess.run(["git", "-C", str(ROOT), "update-ref", ref, sha], check=True)
+                try:
+                    made = subprocess.run(["git", "-C", str(ROOT), "bundle", "create", "--quiet", bundle, ref,
+                                           *(f"^{b}" for b in bases)], capture_output=True, text=True)
+                finally:
+                    subprocess.run(["git", "-C", str(ROOT), "update-ref", "-d", ref])
+                if made.returncode != 0:
+                    raise HostError(f"git bundle: {made.stderr.strip()}")
+                self.log(f"ci-local: linux: sending {sha[:12]} ({os.path.getsize(bundle) // 1024} KiB bundle, "
+                         f"{len(bases)} known commits on the host)")
+            script = PREPARE_RUN.replace("@SHA@", sha).replace("@DIR@", run_dir).replace(
+                "@BUNDLE@", "1" if bundle else "0").replace("@CI@", CI_HOME)
+            with open(bundle or os.devnull, "rb") as stdin:
+                checked_out = self.ssh("bash -c " + shlex.quote(script), stdin=stdin).split()
+        finally:
+            if bundle:
+                os.unlink(bundle)
+        if checked_out[-1:] != [sha]:
+            raise HostError(f"the host checked out {checked_out[-1:]}, not {sha}")
+        return run_dir
+
+    def run(self, run_dir, sha, keys, args):
+        options = [f"--linux-slots={args.linux_slots}", f"--expect-sha={sha}", f"--worker-jobs={','.join(keys)}"]
+        if args.linux_jobs:
+            options.append(f"--jobs={args.linux_jobs}")
+        options += [o for o, on in (("--keep-going", args.keep_going), ("--verbose", args.verbose),
+                                    ("--no-wait", args.no_wait)) if on]
+        command = (f"cd ~/{CI_HOME}/runs/{run_dir} && exec env -i {REMOTE_ENV} "
+                   f"python3 tools/ci_local.py --linux-worker {' '.join(shlex.quote(o) for o in options)}")
+        process = subprocess.Popen(self.ssh_argv(command), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True, errors="replace")
+        result = None
+        tail = []
+        for line in process.stdout:
+            line = line.rstrip("\n")
+            if line.startswith(RESULT_MARK):
+                result = json.loads(line[len(RESULT_MARK):])
+                continue
+            tail = (tail + [line])[-20:]
+            self.log(f"linux| {line}")
+        code = process.wait()
+        if result is None:
+            raise HostError(f"no result (exit {code}): " + " / ".join(tail[-5:]))
+        return result
+
+
+# Runs on the host (bash -c) with the bundle, if any, on stdin: fetch the
+# commit into ~/octosense-ci/repo.git and check it out as a worktree.
+PREPARE_RUN = r"""set -euo pipefail
+ci="$HOME/@CI@"
+mkdir -p "$ci/runs" "$ci/cache" "$ci/locks"
+[ -d "$ci/repo.git" ] || git init --quiet --bare "$ci/repo.git"
+exec 9>"$ci/locks/repo.flock"
+flock 9
+if [ @BUNDLE@ = 1 ]; then
+  incoming="$ci/runs/.incoming-$$.bundle"
+  trap 'rm -f "$incoming"' EXIT
+  cat > "$incoming"
+  git -C "$ci/repo.git" fetch --quiet "$incoming" "refs/ci-local/linux-host:refs/ci/@SHA@"
+fi
+git -C "$ci/repo.git" update-ref "refs/ci/@SHA@" "@SHA@"
+git -C "$ci/repo.git" worktree prune
+git -C "$ci/repo.git" worktree add --quiet --detach "$ci/runs/@DIR@" "@SHA@"
+git -C "$ci/runs/@DIR@" rev-parse HEAD
+"""
+
+
+def slug(key):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", key)
+
+
+def prepare_linux_checkout(ci, log):
+    """On the host, under the prepare lock: the source hubs (cloned once),
+    tools/setup.py in this checkout, and old run directories removed."""
+    spec = importlib_util().spec_from_file_location("octosense_setup", ROOT / "tools/setup.py")
+    setup = importlib_util().module_from_spec(spec)
+    spec.loader.exec_module(setup)
+    hub = ci / "cache/hub"
+    for name, url in {"octoscript-makepad": setup.URL, **setup.RUNTIME_URLS}.items():
+        if not (hub / name / ".git").exists():
+            log(f"ci-local: cloning the {name} hub (once)")
+            partial = hub / f".{name}.partial"
+            shutil.rmtree(partial, ignore_errors=True)
+            subprocess.run(["git", "clone", "--quiet", "--no-checkout", "--filter=blob:none", url, str(partial)],
+                           check=True)
+            os.replace(partial, hub / name)
+    result = subprocess.run([sys.executable, "tools/setup.py"], cwd=ROOT, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HostError("tools/setup.py failed: " + (result.stderr or result.stdout).strip()[-1500:])
+    runs = sorted((p for p in (ci / "runs").iterdir() if p.is_dir() and not p.name.startswith(".")),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in runs[KEEP_RUNS:]:
+        if old.resolve() == ROOT or run_is_active(old):
+            continue
+        log(f"ci-local: removing the old run {old.name}")
+        shutil.rmtree(old, ignore_errors=True)
+    for repo in [ci / "repo.git", *(p for p in hub.iterdir() if (p / ".git").exists())]:
+        subprocess.run(["git", "-C", str(repo), "worktree", "prune"], capture_output=True)
+
+
+def importlib_util():
+    import importlib.util
+    return importlib.util
+
+
+def run_is_active(path):
+    try:
+        return pid_alive(int((path / "target/ci-remote/active").read_text()))
+    except (OSError, ValueError):
+        return False
+
+
+def linux_worker(args):
+    """The coordinator, on the host: one slot, one prepare, a worker per job."""
+    ci = Path.home() / CI_HOME
+    os.environ["OCTOSENSE_CI_LOCAL_LOCKS"] = str(ci / "locks/linux-slots")
+    os.environ["OCTOSENSE_CI_LOCAL_CACHE"] = str(ci / "cache")
+    os.environ["OCTOSENSE_SOURCES_HUB"] = str(ci / "cache/hub")
+    started = time.time()
+
+    def emit(result):
+        print(RESULT_MARK + json.dumps(result), flush=True)
+
+    def stop(signum, frame):
+        raise SystemExit(128 + signum)
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGHUP, stop)
+    sha = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if sha != args.expect_sha:
+        emit({"sha": sha, "error": f"the checkout is at {sha[:12]}, not {args.expect_sha[:12]}"})
+        return 1
+    state = ROOT / "target/ci-remote"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "active").write_text(str(os.getpid()))
+    slot = acquire_slot(args.linux_slots, not args.no_wait, lambda m: print(m, flush=True), {"root": str(ROOT)})
+    if slot is None:
+        emit({"sha": sha, "busy": True})
+        return EXIT_BUSY
+    workers = []
+    try:
+        number = int(slot.path.name.split("-")[-1])
+        print(f"ci-local: Linux host slot {number + 1} of {args.linux_slots}", flush=True)
+        prepare = DirLock(ci / "locks/prepare")
+        while not prepare.try_acquire({"root": str(ROOT)}):
+            time.sleep(2)
+        try:
+            prepare_linux_checkout(ci, lambda m: print(m, flush=True))
+        except (HostError, subprocess.CalledProcessError, OSError) as error:
+            emit({"sha": sha, "error": f"preparing the checkout: {error}"})
+            return 1
+        finally:
+            prepare.release()
+        prepare_seconds = time.time() - started
+        keys = [k for k in args.worker_jobs.split(",") if k]
+        jobs = args.jobs if args.jobs_given else max(1, (os.cpu_count() or 4) // args.linux_slots)
+        printing = threading.Lock()
+
+        def relay(key, process):
+            for line in process.stdout:
+                with printing:
+                    try:
+                        sys.stdout.write(line if line.startswith("[") or line.startswith("ci-local:")
+                                         else f"  {key}| {line}")
+                        sys.stdout.flush()
+                    except BrokenPipeError:
+                        pass
+
+        threads = []
+        for key in keys:
+            env = dict(os.environ, CARGO_TARGET_DIR=str(ci / f"cache/target/slot-{number}" / slug(key)))
+            argv = [sys.executable, str(Path(__file__).resolve()), f"--worker-job={key}",
+                    f"--worker-out={state / slug(key)}", f"--jobs={jobs}"]
+            argv += [o for o, on in (("--keep-going", args.keep_going), ("--verbose", args.verbose)) if on]
+            process = subprocess.Popen(argv, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, errors="replace", start_new_session=True)
+            workers.append(process)
+            thread = threading.Thread(target=relay, args=(key, process), daemon=True)
+            thread.start()
+            threads.append(thread)
+        for process in workers:
+            process.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+        results = {}
+        versions = {}
+        for key in keys:
+            try:
+                data = json.loads((state / slug(key) / "result.json").read_text())
+            except (OSError, ValueError):
+                continue
+            versions = versions or data.get("versions", {})
+            results[key] = data
+        emit({"sha": sha, "run": ROOT.name, "slot": number + 1, "slots": args.linux_slots,
+              "system": platform.system(), "machine": platform.machine(), "cpus": os.cpu_count(),
+              "kernel": platform.release(), "versions": versions, "jobs": results,
+              "prepare_seconds": round(prepare_seconds, 1), "seconds": round(time.time() - started, 1)})
+        return 0
+    finally:
+        for process in workers:
+            if process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except OSError:
+                    pass
+        slot.release()
+        try:
+            (state / "active").unlink()
+        except OSError:
+            pass
+
+
+def run_worker(args):
+    """One job (--worker-job <workflow>:<job>), its result in --worker-out."""
+    run = Run(args, out_dir=args.worker_out)
+    workflow, job_id = args.worker_job.split(":", 1)
+    run.run_job(workflow, job_id, job_definition(args.worker_job))
+    result = {"key": args.worker_job, "steps": run.steps, "actions": run.actions, "notes": run.notes,
+              "versions": run.versions(), "log": str(run.log_path.relative_to(ROOT))}
+    tmp = run.out_dir / "result.json.tmp"
+    tmp.write_text(json.dumps(result, indent=2) + "\n")
+    os.replace(tmp, run.out_dir / "result.json")
+    return 0
 
 
 def fmt_seconds(seconds):
@@ -853,7 +1344,7 @@ def fmt_seconds(seconds):
 
 
 def format_table(summary, markdown=False):
-    rows = [(f"{s['workflow']} / {s['job']}", s["name"], s["status"] + ("" if s["expected_skip"] in (None, True) else " (!)"),
+    rows = [(f"{s['workflow']} / {s['job']}" + (" (linux)" if s.get("host") == "linux" else ""), s["name"], s["status"] + ("" if s["expected_skip"] in (None, True) else " (!)"),
              fmt_seconds(s["seconds"]) if s["seconds"] else "-") for s in summary["steps"]]
     lines = []
     if markdown:
@@ -873,7 +1364,8 @@ def format_table(summary, markdown=False):
     if skipped:
         lines.append("")
         lines.append("Skipped (these did NOT pass; (!) marks a skip that blocks tools/ci-local-merge.sh):")
-        lines += [f"- {s['workflow']} / {s['job']}: {s['name']}: {s['reason']}" for s in skipped]
+        lines += [f"- {s['workflow']} / {s['job']}{' (linux)' if s.get('host') == 'linux' else ''}: {s['name']}: {s['reason']}"
+                  for s in skipped]
     if summary.get("notes"):
         lines.append("")
         lines.append("Notes:")
@@ -881,26 +1373,25 @@ def format_table(summary, markdown=False):
     return "\n".join(lines)
 
 
-def print_plan(workflows):
-    for workflow in workflows:
-        for job_id, job in jobs_of(workflow):
-            print(f"{workflow} / {job_id} (GitHub: {job.get('runs-on')})")
-            for index, step in enumerate(job.get("steps") or []):
-                label = step_label(step, index)
-                if "uses" in step:
-                    print(f"  [action] {step['uses']} -> {ACTIONS.get(action_name(step['uses']), 'NO MAPPING')}")
-                else:
-                    cwd = step.get("working-directory") or ((job.get("defaults") or {}).get("run") or {}).get("working-directory") or "."
-                    extra = " (needs: " + STEP_REQUIREMENTS[f"{workflow}:{job_id}:{label}"]["hint"] + ")" \
-                        if f"{workflow}:{job_id}:{label}" in STEP_REQUIREMENTS else ""
-                    print(f"  [run]    {label}  (cwd {cwd}){extra}")
+def print_plan(workflows, linux_host=False):
+    for workflow, job_id, job, where in plan_jobs(workflows, linux_host):
+        print(f"{workflow} / {job_id} (GitHub: {job.get('runs-on')})" + (" -> the Linux host" if where == "linux" else ""))
+        for index, step in enumerate(job.get("steps") or []):
+            label = step_label(step, index)
+            if "uses" in step:
+                print(f"  [action] {step['uses']} -> {ACTIONS.get(action_name(step['uses']), 'NO MAPPING')}")
+            else:
+                cwd = step.get("working-directory") or ((job.get("defaults") or {}).get("run") or {}).get("working-directory") or "."
+                extra = " (needs: " + STEP_REQUIREMENTS[f"{workflow}:{job_id}:{label}"]["hint"] + ")" \
+                    if f"{workflow}:{job_id}:{label}" in STEP_REQUIREMENTS else ""
+                print(f"  [run]    {label}  (cwd {cwd}){extra}")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--only", default="all", metavar="|".join(sorted(GROUPS)),
                         help="Which workflows to run, comma-separated (default all)")
-    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2),
+    parser.add_argument("--jobs", type=int, default=None,
                         help="CARGO_BUILD_JOBS for the run (default: half the CPUs)")
     parser.add_argument("--keep-going", action="store_true", help="Run every step even after a failure")
     parser.add_argument("--no-wait", action="store_true", help=f"Exit {EXIT_BUSY} instead of waiting for a free slot")
@@ -909,14 +1400,38 @@ def main(argv=None):
     parser.add_argument("--verbose", "-v", action="store_true", help="Echo every step's output (always in the log)")
     parser.add_argument("--list", action="store_true", help="Print the plan and exit")
     parser.add_argument("--check-drift", action="store_true", help="Check the local mapping against the workflows and exit")
-    parser.add_argument("--linux-host", metavar="SSH", help=argparse.SUPPRESS)
+    parser.add_argument("--linux-host", nargs="?", const="", default=None, metavar="SSH",
+                        help="Run the ubuntu jobs and the Linux-only checks on a Linux build host over ssh "
+                             "(default: OCTOSENSE_BUILD_HOST, with the key OCTOSENSE_BUILD_KEY, from the "
+                             "environment or ~/.config/octosense/build.env)")
+    parser.add_argument("--linux-slots", type=int, default=int(os.environ.get("OCTOSENSE_CI_LINUX_SLOTS", LINUX_SLOTS)),
+                        help=f"How many runs may share the Linux host (default {LINUX_SLOTS}, or OCTOSENSE_CI_LINUX_SLOTS)")
+    parser.add_argument("--linux-jobs", type=int, default=0,
+                        help="CARGO_BUILD_JOBS for each job on the Linux host (default: its CPUs / --linux-slots)")
+    # Internal: what runs on the Linux host.
+    parser.add_argument("--linux-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--expect-sha", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-jobs", default="", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-job", help=argparse.SUPPRESS)
+    parser.add_argument("--worker-out", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    args.jobs_given = args.jobs is not None
+    if args.jobs is None:
+        args.jobs = max(1, (os.cpu_count() or 2) // 2)
+    if args.linux_worker:
+        return linux_worker(args)
+    if args.worker_job:
+        return run_worker(args)
     unknown = [g for g in args.only.split(",") if g not in GROUPS]
     if unknown:
         parser.error(f"--only: unknown {', '.join(unknown)} (choose from {', '.join(sorted(GROUPS))})")
     workflows = [w for w in GROUPS["all"] if any(w in GROUPS[g] for g in args.only.split(","))]
-    if args.linux_host:
-        parser.error("--linux-host is not implemented: the ubuntu jobs run on this Mac (see docs/local-ci.md)")
+    args.linux_settings = None
+    if args.linux_host is not None:
+        args.linux_settings = linux_host_settings(args.linux_host)
+        if not args.linux_settings[0]:
+            parser.error("--linux-host: name the ssh target, or set OCTOSENSE_BUILD_HOST (and OCTOSENSE_BUILD_KEY) "
+                         "in the environment or ~/.config/octosense/build.env")
     if args.check_drift:
         problems = check_drift()
         for problem in problems:
@@ -924,7 +1439,7 @@ def main(argv=None):
         print("ci-local: the local mapping fits the workflows" if not problems else f"ci-local: {len(problems)} drift problem(s)")
         return 1 if problems else 0
     if args.list:
-        print_plan(workflows)
+        print_plan(workflows, args.linux_settings is not None)
         return 0
     clone_lock = DirLock(ROOT / "target/ci-local/running.lock")
     if not clone_lock.try_acquire({"root": str(ROOT)}):
