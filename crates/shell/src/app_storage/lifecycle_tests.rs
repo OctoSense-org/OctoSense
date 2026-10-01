@@ -300,6 +300,20 @@ fn settings_says_a_suspended_agents_memory_remains() {
     assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until octos can erase it");
 }
 
+/// At startup the shell moves every password Mail left under `apps/`.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_move_mails_old_passwords_when_the_shell_starts() {
+    let home = Scratch::new("mail-move");
+    let host = storage(&home.0);
+    let old = home.0.join("apps/.host/mail/secrets");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("acct-1"), "pw").unwrap();
+    mail_secrets_at_startup(&host);
+    assert!(!old.join("acct-1").exists());
+    assert_eq!(std::fs::read_to_string(home.0.join("secrets/os.mail/acct-1")).unwrap(), "pw");
+}
+
 /// Mail's passwords live in the host's secrets, never under `apps/`.
 #[test]
 fn should_keep_mails_passwords_in_the_host_secrets_when_the_shell_starts() {

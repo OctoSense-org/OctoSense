@@ -229,6 +229,10 @@ pub fn install(storage: &'static Arc<Storage>) {
     }
 }
 
+/// Stub.
+#[cfg(any(feature = "app-hub", native_mobile))]
+pub fn mail_secrets_at_startup(_storage: &Storage) {}
+
 /// Where Mail's host service keeps passwords: `secrets/os.mail/`.
 pub fn mail_secrets_dir(layout: &super::Layout) -> std::path::PathBuf {
     layout.secrets_root().join("os.mail")

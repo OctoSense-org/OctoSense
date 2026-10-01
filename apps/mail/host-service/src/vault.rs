@@ -69,6 +69,11 @@ impl Place {
     }
 }
 
+/// Stub.
+pub fn migrate_all(_place: &Place) -> usize {
+    0
+}
+
 pub trait Vault: Send + Sync {
     /// `place` says where the service keeps passwords; `id` is the account.
     fn put(&self, place: &Place, id: &str, secret: &str) -> Result<(), String>;
@@ -446,6 +451,28 @@ mod tests {
         FileVault.put(&old, "a2", "x").unwrap();
         FileVault.remove(&place, "a2");
         assert!(!dir.join("apps/.host/mail/secrets/a2").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// At startup every password left under the mail folder moves, not only
+    /// those read later; a leftover whose move already happened (its delete
+    /// failed) is removed then.
+    #[test]
+    fn should_move_every_old_password_at_startup_and_retry_a_leftover() {
+        let dir = scratch("startup");
+        let place = Place { mail_dir: dir.join("apps/.host/mail"), secrets_dir: dir.join("secrets/os.mail") };
+        let old = Place::legacy(&place.mail_dir);
+        FileVault.put(&old, "a1", "one").unwrap();
+        FileVault.put(&old, "b2", "two").unwrap();
+        // b2 was moved before, but its old copy could not be deleted.
+        FileVault.put(&place, "b2", "two").unwrap();
+        assert_eq!(migrate_all(&place), 2);
+        assert!(!dir.join("apps/.host/mail/secrets").exists(), "nothing left under apps/");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/a1")).unwrap(), "one");
+        assert_eq!(std::fs::read_to_string(dir.join("secrets/os.mail/b2")).unwrap(), "two");
+        assert_eq!(migrate_all(&place), 0, "nothing to do the second time");
+        // Without a host folder (the legacy place itself) nothing moves.
+        assert_eq!(migrate_all(&old), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
