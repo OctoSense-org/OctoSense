@@ -15,9 +15,9 @@
 //! instance whose code opened it, as it attributes a socket to the process
 //! it launched.
 //!
-//! A frame the client does not read yet is dropped here, as the client
-//! itself drops it on the hub socket (for example `conversation` frames,
-//! until Makepad's client reads them).
+//! A frame the client cannot parse is dropped here, as the client itself
+//! drops it on the hub socket. `conversation` frames (both lanes of the
+//! app's conversation) pass, since Makepad's client reads them.
 
 use makepad_ai_services::peer::{PeerDown, PeerLink, PeerUp};
 use makepad_widgets::SignalToUI;
@@ -72,7 +72,7 @@ mod tests {
         let (mut peer, link) = OctosPeer::in_process();
         let link = ModulePeerLink::new(link);
         let open = peer.open_session(None);
-        let turn = peer.start_turn("pl3-1", "hello");
+        let turn = peer.start_turn("pl3-1", "hello").unwrap();
         let frames = link.take_up();
         assert_eq!(frames.len(), 2);
         // The exact wire of a hosted process (makepad's fixture).
@@ -99,12 +99,13 @@ mod tests {
         // What the shell's `peer_link::wire` writes (serde_json key order).
         down(r#"{"octos_peer":{"data":{"context":"pl3-1"},"down":"reply","ok":true,"req_id":1}}"#.to_string());
         down(r#"{"octos_peer":{"account":"device","args":{},"call_id":"c1","caller":"own_agent","client":null,"confirm_required":false,"context_id":null,"down":"tool_call","name":"lookup","risk":"read","timeout_ms":30000}}"#.to_string());
-        // A frame this client does not read yet is dropped, not an error,
-        // and so is anything that is not a peer frame.
-        down(r#"{"octos_peer":{"down":"conversation","context":"pl3-1","event":{}}}"#.to_string());
+        // The conversation (both lanes) the shell follows for the app.
+        down(r#"{"octos_peer":{"context":"pl3-1","down":"conversation","event":{"method":"message/delta","lane":"system_agent","params":{}}}}"#.to_string());
+        // Anything that is not a peer frame is dropped, not an error.
         down("not a frame".to_string());
         let got: Vec<PeerDown> = down_rx.try_iter().collect();
-        assert_eq!(got.len(), 2, "{got:?}");
+        assert_eq!(got.len(), 3, "{got:?}");
+        assert!(matches!(&got[2], PeerDown::Conversation { context, .. } if context == "pl3-1"));
         assert!(matches!(&got[0], PeerDown::Reply { req_id: 1, result: Ok(_) }));
         match &got[1] {
             PeerDown::ToolCall(call) => assert_eq!((call.name.as_str(), call.caller.clone(), call.account.as_deref()), ("lookup", PeerCaller::OwnAgent, Some("device"))),
