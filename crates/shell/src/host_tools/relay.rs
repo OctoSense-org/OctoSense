@@ -66,7 +66,15 @@ pub const HOST_EXECUTOR: &str = "@shell";
 /// Whether `tool` is one the shell runs itself, as the calling app's own
 /// tool, whatever its declaration names (never routed to the app).
 pub fn is_host_run(tool: &str) -> bool {
-    tool == DEV_RUN
+    tool == DEV_RUN || super::files::TOOLS.contains(&tool)
+}
+
+/// A tool the shell runs, as `owner` declares it (its schemas).
+fn host_run_declaration(owner: &str, tool: &str) -> Option<Value> {
+    if tool == DEV_RUN {
+        return Some(super::dev_run::declaration(owner));
+    }
+    super::files::declarations(owner).into_iter().find(|d| d["name"] == tool)
 }
 /// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
 /// (`workflow.run`, `toolbox.search`, …; [`super::toolbox`] with the
@@ -624,10 +632,11 @@ impl Relay {
         // 1. Authorize by (owning app, tool) and caller.
         let host_run = is_host_run(&tool);
         let (caller, granted) = match call.caller_kind {
-            // `dev.run`: only the covered app's own agent, on its own peer.
+            // The shell's own: only the app's own agent, on its own peer;
+            // `dev.run` only while developer mode covers the app.
             _ if host_run => (
                 if call.caller_kind == CallerKind::System { Caller::SystemAgent } else { Caller::OwnAgent { client: call.client.clone() } },
-                call.caller_kind == CallerKind::AppPeer && calling == owner && env.grants_all(&calling),
+                call.caller_kind == CallerKind::AppPeer && calling == owner && (tool != DEV_RUN || env.grants_all(&calling)),
             ),
             CallerKind::System => (Caller::SystemAgent, env.system_tools().contains(&tool) || env.grants_all(SYSTEM)),
             CallerKind::AppPeer if calling == owner => (Caller::OwnAgent { client: call.client.clone() }, self.catalog.entry(&owner, &tool).is_some() || env.grants_all(&owner)),
@@ -673,7 +682,7 @@ impl Relay {
             }
         }
         // 0. The arguments against the declared schema (G8).
-        let entry = if host_run { Some(super::dev_run::declaration(&owner)) } else { self.catalog.entry(&owner, &tool).cloned() };
+        let entry = if host_run { host_run_declaration(&owner, &tool) } else { self.catalog.entry(&owner, &tool).cloned() };
         let size = call.args.to_string().len();
         if size > MAX_ARGS_BYTES {
             return refuse(&reply, "invalid_args", format!("{tool}'s arguments are {size} bytes, over the {MAX_ARGS_BYTES}-byte cap"));
@@ -694,7 +703,7 @@ impl Relay {
         let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
         self.outers.insert(call.call_id.clone(), kernel_reply);
         // 2. Route to the owning app's executor (the shell's own for
-        // `dev.run`).
+        // `dev.run` and the host read tools).
         if host_run {
             if !self.executors.contains_key(HOST_EXECUTOR) {
                 return refuse(&reply, "app_not_running", format!("nothing on this host runs {tool}"));

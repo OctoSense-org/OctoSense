@@ -12,6 +12,7 @@
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
+//! | `files.list`, `files.read`, `files.search` on every app peer with a workspace (ADR 0004 §11) | declared as the app's own tools, run by the shell over the calling account's folder, never another context's ([`files`]) |
 //! | `dev.run` on a covered app's peer (developer mode, ADR 0004 §13) | offered as the app's own tool, run by the shell ([`dev_run`]); registered again on every peer when the mode changes ([`developer_mode_changed`]) |
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
@@ -33,6 +34,7 @@
 //! router here ([`SheetBridge`]).
 
 pub mod dev_run;
+pub mod files;
 pub mod relay;
 pub mod schema;
 #[cfg(feature = "toolbox-peers")]
@@ -130,7 +132,7 @@ pub fn init() {
         approvals::set_relay(Box::new(DecisionRelay));
         peer_link::set_tool_relay(Box::new(LinkRelay));
         // The tools the shell runs itself for an app's own agent (`dev.run`).
-        with_relay(|r| r.set_executor(relay::HOST_EXECUTOR, Some(Arc::new(dev_run::DevRunExecutor::new(agent_workspace)))));
+        with_relay(|r| r.set_executor(relay::HOST_EXECUTOR, Some(Arc::new(HostExecutor::new(agent_workspace)))));
         #[cfg(feature = "toolbox-peers")]
         toolbox::init();
     });
@@ -227,14 +229,21 @@ pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
 pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
-    fn declarations(&self, app_id: &str, _account: &str) -> Result<Vec<Value>, String> {
+    fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
         ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
         // The toolbox's tools only once the person allowed this app's agent
         // (ADR 0004 §4); its calls are refused before that too (the relay).
         let consented = approvals::consent_granted(&app) || dev;
-        Ok(with_relay(|r| r.catalog.offered(&app, dev, consented)))
+        let mut tools = with_relay(|r| r.catalog.offered(&app, dev, consented));
+        // The host read tools (ADR 0004 §11) on every consented peer whose
+        // agent has a workspace: how its request contexts read the
+        // account's data (Unix only, files.rs).
+        if files::SUPPORTED && consented && agent_workspace(app_id, account).is_some() {
+            tools.extend(files::declarations(&app));
+        }
+        Ok(tools)
     }
 
     fn generic_tools(&self, app_id: &str, _account: &str) -> Option<Vec<String>> {
@@ -322,6 +331,44 @@ pub fn developer_mode_changed() -> usize {
     #[cfg(not(kernel))]
     {
         0
+    }
+}
+
+/// The shell's executor for the tools it runs itself for an app's own
+/// agent: `dev.run` ([`dev_run`]) and the host read tools ([`files`]), each
+/// over the calling account's workspace.
+pub struct HostExecutor {
+    dev_run: dev_run::DevRunExecutor,
+    workspace: fn(&str, &str) -> Option<PathBuf>,
+}
+
+impl HostExecutor {
+    pub fn new(workspace: fn(&str, &str) -> Option<PathBuf>) -> HostExecutor {
+        HostExecutor { dev_run: dev_run::DevRunExecutor::new(workspace), workspace }
+    }
+}
+
+impl ToolExecutor for HostExecutor {
+    fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        if call.name == relay::DEV_RUN {
+            return self.dev_run.execute(call, reply);
+        }
+        let Some(root) = (self.workspace)(&call.calling_app, call.account.as_deref().unwrap_or("device")) else {
+            reply.finish(ToolOutcome::error("no_workspace", "this agent has no data folder"));
+            return;
+        };
+        // Off the UI thread: a search reads many files.
+        std::thread::spawn(move || {
+            let scope = files::Scope { root: &root, context: call.context_id.as_deref() };
+            reply.finish(match files::run(&call.name, &scope, &call.args) {
+                Ok(data) => ToolOutcome::Ok(data),
+                Err((kind, message)) => ToolOutcome::error(&kind, message),
+            });
+        });
+    }
+
+    fn cancel(&self, call_id: &str) {
+        self.dev_run.cancel(call_id);
     }
 }
 
