@@ -40,6 +40,9 @@ use serde_json::{json, Value};
 
 /// Raw methods and notifications of UPCR-2026-035.
 pub const REGISTER: &str = "peer/tools/register";
+/// The host releases an app peer's route (octos#2658): the app closed or
+/// its agent was turned off.
+pub const UNREGISTER: &str = "peer/tools/unregister";
 pub const TOOL_CALL: &str = "peer/tool/call";
 pub const TOOL_RESULT: &str = "peer/tool/result";
 pub const TOOL_CANCEL: &str = "peer/tool/cancel";
