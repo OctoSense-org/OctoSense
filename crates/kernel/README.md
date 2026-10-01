@@ -184,21 +184,24 @@ connection (octos#2567's host session target, `peer/tools/register` without
 `peer`) and withdraws it when the switch goes off; the shell types each approved
 call into the Terminal the person sees.
 
-**What the kernel enforces today.** octos has no tool list the host can set
-for one session, so every start writes the `_main` profile's `tool_policy`
-(`system_tools::tool_policy`): everything a grant can give, minus octos's own
-shell (`group:runtime`: `shell`, `bash`, `exec_command`, `write_stdin`), the
-one tool OctoSense never offers, since §12 grants command execution only as
-a host tool. octos applies it to every turn of the profile, wake
-continuations included. So:
+**What the kernel enforces.** Every start writes the `_main` profile's
+`tool_policy` (`system_tools::tool_policy`): everything a grant can give,
+minus octos's own shell (`group:runtime`: `shell`, `bash`, `exec_command`,
+`write_stdin`), the one tool OctoSense never offers, since §12 grants command
+execution only as a host tool, and `peer_close`. octos applies it to every
+turn of the profile, wake continuations included: the ceiling. So:
 
-- **§12's "exactly its grants" is not yet enforced for the system agent**:
-  it gets no octos shell, but otherwise is bounded by the grantable ceiling,
-  not its list. octos#2567's host session set could narrow it with
-  `generic_tools`, but that list narrows every client's turns on the session,
-  so the shell registers without it; the exact list waits for a durable
-  host-only list (octos#2605). The exact-list real-kernel test is ignored
-  until then;
+- **The system agent gets exactly its list** (§12, plan step 4): every
+  kernel start sets the system session's kernel tools to
+  `SystemAgentTools::kernel_tools` (octos `session/tool_list/set`,
+  octos#2648) on the host's own connection, before any consumer's frame
+  reaches the kernel, and `system_tools::set_grants` sets it again on a
+  running kernel. octos keeps the list durably and narrows every turn on the
+  session with it, whoever starts it (the shell, a Talk to Octos client, a
+  wake continuation). Its host tools (command execution's `terminal.run`)
+  are registered by the system chat and are not filtered by it; the `spawn`
+  family is never on it (`SPAWN_FAMILY`). Real-kernel test:
+  `a_system_agent_turn_is_offered_exactly_the_system_agent_tools`;
 - app peers are narrowed to their grants by their turns' `generic_tools`
   (plan step 6);
 - Talk to Octos external turns keep octos's own allowlist.

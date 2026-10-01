@@ -146,9 +146,10 @@ pub fn set_executor(app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
     with_relay(|r| r.set_executor(app, executor));
 }
 
-/// The owning app of a declared tool.
+/// The owning app of a tool another app is granted ([`relay::Catalog::owner_of`]:
+/// by its namespace, never the first app that declares the name).
 pub fn owner_of(tool: &str) -> Option<String> {
-    with_relay(|r| r.catalog.owner_of(tool).map(str::to_string))
+    with_relay(|r| r.catalog.owner_of(tool))
 }
 
 /// A tool's declaration, as a host registers it (the system chat).
@@ -221,6 +222,10 @@ impl ToolHost for ShellToolHost {
         suspended(app_id, Some(account))
     }
 
+    fn workspace_refused(&self, app_id: &str, account: &str) -> Option<String> {
+        workspace_refused_in(crate::app_storage::host()?, app_id, account)
+    }
+
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         submit(Event::Call { call, reply });
     }
@@ -233,6 +238,9 @@ impl ToolHost for ShellToolHost {
         let app = app_of_peer(app_id);
         if suspended(app_id, Some(account)) {
             return Err(InputRefusal::SignedOut);
+        }
+        if let Some(why) = crate::app_storage::host().and_then(|s| workspace_refused_in(s, app_id, account)) {
+            return Err(InputRefusal::Other(format!("the app's workspace was refused: {why}")));
         }
         if !approvals::consent_granted(app) && !crate::dev_mode::grants_all(app) {
             return Err(InputRefusal::NoConsent);
@@ -409,6 +417,20 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     let dir = storage.layout().app(app).ok()?.account(account);
     crate::app_storage::ensure_private_dir(storage.layout().apps_root(), &dir).ok()?;
     Some(dir)
+}
+
+/// Why the startup check refused the workspace of `app_id`'s `account`,
+/// keyed like [`agent_workspace`]: the account for an app that keeps
+/// accounts, else the device folder (a script app's `card.<id>` peer too).
+pub fn workspace_refused_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<String> {
+    let app = app_of_peer(app_id);
+    storage.refused(app, workspace_account(app_id, account))
+}
+
+/// The account a peer's workspace is keyed by: `account` for a native app
+/// that keeps accounts, else the device (`None`).
+fn workspace_account<'a>(app_id: &str, account: &'a str) -> Option<&'a str> {
+    crate::native_apps::find(app_of_peer(app_id)).is_some_and(|e| e.accounts).then_some(account)
 }
 
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
