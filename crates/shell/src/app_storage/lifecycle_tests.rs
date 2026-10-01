@@ -300,6 +300,30 @@ fn settings_says_a_suspended_agents_memory_remains() {
     assert_eq!(text, "Allowed \u{00b7} 2 accounts are signed out or removed; its agent's memory remains until the account is removed and its agent erased");
 }
 
+/// At startup the shell moves every password Mail left under `apps/`.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_move_mails_old_passwords_when_the_shell_starts() {
+    let home = Scratch::new("mail-move");
+    let host = storage(&home.0);
+    let old = home.0.join("apps/.host/mail/secrets");
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join("acct-1"), "pw").unwrap();
+    mail_secrets_at_startup(&host);
+    assert!(!old.join("acct-1").exists());
+    assert_eq!(std::fs::read_to_string(home.0.join("secrets/os.mail/acct-1")).unwrap(), "pw");
+}
+
+/// Mail's passwords live in the host's secrets, never under `apps/`.
+#[test]
+fn should_keep_mails_passwords_in_the_host_secrets_when_the_shell_starts() {
+    let home = Scratch::new("mail-secrets");
+    let layout = Layout::new(&home.0).unwrap();
+    let dir = mail_secrets_dir(&layout);
+    assert_eq!(dir, home.0.join("secrets/os.mail"));
+    assert!(!dir.starts_with(layout.apps_root()));
+}
+
 /// A script app never takes a native app's id (ADR 0004 §3, §11): an
 /// install or launch naming `rinx` leaves Rinx's spec alone, and an
 /// install event naming it never deletes Rinx's folders or secrets.

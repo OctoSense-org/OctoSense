@@ -29,7 +29,8 @@
 //!
 //! State lives under the host's own directory (`<host_dir>/mail`), outside
 //! every app's jail: `accounts.json` (no passwords) and `box-<id>…json` (the
-//! fetched mail). Passwords go to the platform's secret store ([`vault`]).
+//! fetched mail). Passwords go to the platform's secret store ([`vault`]),
+//! whose files are in the host's secrets folder ([`set_secrets_dir`]).
 //!
 //! The shell reads one more thing, host-side and only with the person's
 //! consent: [`contacts::known_addresses`], their own addresses and the
@@ -157,6 +158,22 @@ impl Transport for Network {
     }
 }
 
+fn secrets_slot() -> &'static Mutex<Option<PathBuf>> {
+    static SLOT: std::sync::OnceLock<Mutex<Option<PathBuf>>> = std::sync::OnceLock::new();
+    SLOT.get_or_init(Default::default)
+}
+
+/// The host's secrets folder for Mail's passwords (`<home>/secrets/os.mail/`,
+/// ADR 0004 §11): the shell names it at startup, before any request. Without
+/// one they stay in `<host dir>/mail/secrets/`.
+pub fn set_secrets_dir(dir: Option<PathBuf>) {
+    *secrets_slot().lock().unwrap_or_else(|e| e.into_inner()) = dir;
+}
+
+fn secrets_dir() -> Option<PathBuf> {
+    secrets_slot().lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 /// Offer the service to the Card runner, over the network, with passwords in
 /// the platform's secret store.
 pub fn register() {
@@ -252,12 +269,15 @@ fn text<'a>(v: &'a Value, key: &str) -> &'a str {
 
 struct Store {
     dir: PathBuf,
+    place: vault::Place,
     vault: Arc<dyn Vault>,
 }
 
 impl Store {
     fn at(host_dir: &Path, vault: Arc<dyn Vault>) -> Self {
-        Store { dir: host_dir.join("mail"), vault }
+        let dir = host_dir.join("mail");
+        let place = vault::Place::resolve(&dir, secrets_dir().as_deref());
+        Store { dir, place, vault }
     }
 
     fn accounts(&self) -> Vec<Value> {
@@ -276,7 +296,7 @@ impl Store {
     fn account_for(&self, app_id: &str, id: &str) -> Result<Value, String> {
         let account = self.granted(app_id, id)?;
         let mut full = account.clone();
-        full["password"] = json!(self.vault.get(&self.dir, id)?);
+        full["password"] = json!(self.vault.get(&self.place, id)?);
         Ok(full)
     }
 
@@ -319,7 +339,7 @@ impl Store {
     }
 
     fn forget(&self, id: &str) {
-        self.vault.remove(&self.dir, id);
+        self.vault.remove(&self.place, id);
         contacts::forget(&self.dir, id);
         if let Ok(entries) = std::fs::read_dir(&self.dir) {
             for entry in entries.flatten() {
@@ -483,7 +503,7 @@ impl HostService for MailService {
                         }
                         None => accounts.push(kept),
                     }
-                    let saved = store.vault.put(&store.dir, &id, text(&account, "password")).and_then(|_| store.save_accounts(&accounts));
+                    let saved = store.vault.put(&store.place, &id, text(&account, "password")).and_then(|_| store.save_accounts(&accounts));
                     if let Err(e) = saved {
                         return reply.send(Err(e));
                     }
