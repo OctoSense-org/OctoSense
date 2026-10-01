@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the Info.plist cargo-packager writes for OctoSense.app
+     (desktop/scripts/package.py). The usage strings are the ones the
+     hosted apps need once the app is a bundle: Camera, voice input, Maps. -->
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>Camera and the apps you open in OctoSense use the camera when you ask them to.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>OctoSense uses the microphone for voice input when you turn it on.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Maps shows where you are on the map and gives directions from there.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Maps shows where you are on the map and gives directions from there.</string>
+</dict>
+</plist>

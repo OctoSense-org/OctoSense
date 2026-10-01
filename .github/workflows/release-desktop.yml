@@ -1,0 +1,462 @@
+name: Release desktop
+
+# The OctoSense desktop as installable packages (desktop/scripts/package.py):
+# macOS .app (zipped) and .dmg (arm64), Windows NSIS installer (x64), Linux
+# .deb and .AppImage (x86_64, built on Ubuntu 22.04 for an older glibc).
+#
+# - plan: which commit to build, whether to sign and whether to release.
+#   A pushed `desktop-v<version>` tag, or a manual run naming one, builds
+#   THAT TAG (never the branch the run was started from).
+# - package (macOS, Windows, Linux): builds UNSIGNED packages and scans them
+#   for private paths. It has no secrets: nothing a build script or a
+#   dependency runs can read a signing key.
+# - sign-macos, sign-windows: in the protected `release` environment, only
+#   for a tag push or a manual run from main. They download the unsigned
+#   packages and run codesign/notarytool and signtool on them; they check
+#   out no code and never run Cargo. Without the secrets they pass the
+#   packages through unsigned, with a warning.
+# - release: for a tag push, or a manual run from main naming a tag with
+#   dry_run off. Checks out the tag, verifies HEAD is the tag's commit,
+#   scans again and attaches everything with SHA256SUMS to a DRAFT release
+#   for the tag, not marked latest (home-v* and rom-v* share this
+#   repository). A person reviews and publishes the draft.
+#
+# A pull request that changes the packaging runs plan and package only: no
+# secrets, no signing, nothing released.
+#
+# Secrets, in the `release` environment (see desktop/README.md, "Signing"):
+#   APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+#   APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_P8,
+#   WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD,
+#   RELEASE_SCAN_EXTRA (optional: regexes the final scan also refuses)
+#
+# Not run by tools/ci-local.sh (tools/ci_local.py NOT_LOCAL): a release
+# workflow, with a matrix, environments and artifacts it does not model.
+
+on:
+  push:
+    tags: ['desktop-v*']
+  pull_request:
+    paths:
+      - 'desktop/packaging/**'
+      - 'desktop/scripts/package.py'
+      - 'tools/release-scan.py'
+      - 'tools/kernel-artifact.py'
+      - '.github/workflows/release-desktop.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: A desktop-v tag to build (empty builds the branch, as a dry run)
+        type: string
+        default: ''
+      dry_run:
+        description: Build, sign (from main) and scan only; attach nothing to the tag's release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-desktop-${{ github.event_name }}-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ref: ${{ steps.plan.outputs.ref }}
+      commit: ${{ steps.plan.outputs.commit }}
+      tag: ${{ steps.plan.outputs.tag }}
+      sign: ${{ steps.plan.outputs.sign }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - name: What to build, sign and release
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "$EVENT" = push ]; then tag="$REF_NAME"; fi
+          if [ "$EVENT" = workflow_dispatch ]; then tag="$INPUT_TAG"; fi
+          if [ -n "$tag" ]; then
+            if ! [[ "$tag" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::$tag is not a desktop release tag (desktop-v<major>.<minor>.<patch>[-<pre>])"; exit 1
+            fi
+            # The tag's commit on the server (an annotated tag peeled).
+            commit=$(gh api "repos/$GH_REPO/commits/refs/tags/$tag" --jq .sha)
+            ref="refs/tags/$tag"
+          else
+            commit="$SHA"
+            ref="$SHA"
+          fi
+          # Secrets only for a tag push or a manual run from main; never for
+          # a pull request or a manual run from another branch.
+          sign=false
+          if [ "$EVENT" = push ] || { [ "$EVENT" = workflow_dispatch ] && [ "$REF" = refs/heads/main ]; }; then
+            sign=true
+          fi
+          release=false
+          if [ -n "$tag" ] && [ "$sign" = true ] && { [ "$EVENT" = push ] || [ "$DRY_RUN" = false ]; }; then
+            release=true
+          fi
+          {
+            echo "ref=$ref"
+            echo "commit=$commit"
+            echo "tag=$tag"
+            echo "sign=$sign"
+            echo "release=$release"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  package:
+    name: package (${{ matrix.platform }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+          - os: windows-2022
+            platform: windows-x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      # linuxdeploy (AppImage) runs without FUSE on the runner.
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+      CARGO_TERM_COLOR: always
+      # Cargo's JSON is UTF-8; Windows' Python would decode it as cp1252.
+      PYTHONUTF8: '1'
+    steps:
+      - name: Check out byte for byte
+        # Windows' Git converts to CRLF by default, which breaks the
+        # runtime patch's recorded digest and the system apps' packed ones.
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          persist-credentials: false
+      - name: The checkout is the planned commit
+        env:
+          WANT: ${{ needs.plan.outputs.commit }}
+        run: |
+          head=$(git rev-parse HEAD)
+          [ "$head" = "$WANT" ] || { echo "::error::checked out $head, planned $WANT"; exit 1; }
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09-12
+        with:
+          toolchain: 1.97.1
+      - name: Linux build and packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev libx11-dev libxcursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev libva-dev dpkg-dev file \
+            desktop-file-utils libfuse2
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked --version 0.11.8
+      - name: Neutral build paths
+        # Crates embed their CARGO_MANIFEST_DIR as strings, which
+        # --remap-path-prefix does not reach: build where no user directory
+        # appears. macOS checkouts live under /Users/runner and Windows'
+        # CARGO_HOME under C:\Users\runneradmin, so move those; Linux's
+        # /home/runner is a CI path already.
+        run: |
+          case "$RUNNER_OS" in
+            macOS)
+              src=/private/tmp/octosense-build/OctoSense
+              mkdir -p "$src" && cp -R "$GITHUB_WORKSPACE/." "$src/"
+              echo "CARGO_HOME=/private/tmp/octosense-build/cargo" >> "$GITHUB_ENV" ;;
+            Windows)
+              src="$GITHUB_WORKSPACE"
+              echo "CARGO_HOME=D:\\octosense-cargo" >> "$GITHUB_ENV" ;;
+            *)
+              src="$GITHUB_WORKSPACE" ;;
+          esac
+          echo "SRC=$src" >> "$GITHUB_ENV"
+      - name: Prepare the pinned framework sources
+        run: cd "$SRC" && python tools/setup.py
+      - name: One Makepad, App Hub, octos and Rinx; the shell graph guards
+        run: |
+          cd "$SRC"
+          python tools/setup.py --check --cargo
+          bash tools/check-shell-graph.sh -p octosense
+      - name: Build and package, unsigned (paths remapped, resources and kernel bundled)
+        run: |
+          cd "$SRC"
+          if [ -n "$TAG" ]; then
+            python desktop/scripts/package.py --version-from-tag "$TAG"
+          else
+            python desktop/scripts/package.py
+          fi
+      - name: Collect the packages
+        run: |
+          cd "$SRC/target/octosense-package"
+          version=$(python -c 'import json; print(json.load(open("receipt.json"))["version"])')
+          rm -rf upload && mkdir -p upload/packages upload/signing
+          case "$RUNNER_OS" in
+            macOS)
+              cp dist/*.dmg upload/packages/
+              ditto -c -k --keepParent dist/OctoSense.app "upload/packages/OctoSense_${version}_macos_aarch64.app.zip"
+              # What sign-macos needs besides the packages (it checks out nothing).
+              cp "$SRC/desktop/packaging/macos/entitlements.plist" upload/signing/ ;;
+            Windows)
+              cp dist/*-setup.exe upload/packages/ ;;
+            *)
+              cp dist/*.deb dist/*.AppImage upload/packages/ ;;
+          esac
+          cp receipt.json "upload/packages/OctoSense_${version}_${{ matrix.platform }}.receipt.json"
+          ls -la upload/packages
+      - name: Refuse private paths and names (the packages and their payloads)
+        run: |
+          cd "$SRC/target/octosense-package"
+          # The packages (inside .dmg, .deb, .AppImage, .zip, the NSIS
+          # installer), plus what went into them: the binary, the kernel and
+          # the staged resources.
+          exe=octosense; [ "$RUNNER_OS" = Windows ] && exe=octosense.exe
+          python "$SRC/tools/release-scan.py" upload/packages/* resources kernel "$SRC/target/release/$exe"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: octosense-desktop-unsigned-${{ matrix.platform }}
+          path: ${{ env.SRC }}/target/octosense-package/upload
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-macos:
+    needs: [plan, package]
+    if: needs.plan.outputs.sign == 'true'
+    runs-on: macos-14
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: octosense-desktop-unsigned-macos-arm64
+          path: in
+      - name: Sign, notarize and staple (unsigned without the secrets)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "::warning::no Apple signing secrets in the release environment: the macOS packages stay unsigned"
+            cp in/packages/* out/
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -hex 24)
+          (umask 077; printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12")
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain"
+          sign() { codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$@"; }
+
+          zip=$(ls in/packages/*.app.zip)
+          dmg=$(ls in/packages/*.dmg)
+          receipt=$(ls in/packages/*.receipt.json)
+          mkdir -p work
+          ditto -x -k "$zip" work
+          app=work/OctoSense.app
+          kernel="$app/Contents/MacOS/octos-kernel"
+          if [ -f "$kernel" ]; then
+            sign "$kernel"
+            # codesign rewrites the kernel, and the desktop runs it only when
+            # its receipt records these bytes: record the signed ones (in
+            # Contents/Resources, sealed by the app's signature below).
+            python3 - "$app/Contents/Resources/octos-kernel.json" "$receipt" "$kernel" <<'PY'
+          import hashlib, json, sys
+          kernel_receipt, package_receipt, kernel = sys.argv[1:]
+          digest = hashlib.sha256(open(kernel, "rb").read()).hexdigest()
+          record = json.load(open(kernel_receipt))
+          record["sha256"] = digest
+          open(kernel_receipt, "w").write(json.dumps(record, indent=2) + "\n")
+          package = json.load(open(package_receipt))
+          package["kernel"]["sha256"] = digest
+          package["signed"] = True
+          open(package_receipt, "w").write(json.dumps(package, indent=2) + "\n")
+          PY
+          fi
+          sign --entitlements in/signing/entitlements.plist "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          # The .dmg again, around the signed app.
+          mkdir -p work/dmg
+          ditto "$app" work/dmg/OctoSense.app
+          ln -s /Applications work/dmg/Applications
+          signed_dmg="out/$(basename "$dmg")"
+          hdiutil create -volname OctoSense -srcfolder work/dmg -fs HFS+ -format UDZO -ov "$signed_dmg"
+          codesign --force --timestamp --keychain "$keychain" --sign "$APPLE_SIGNING_IDENTITY" "$signed_dmg"
+
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_KEY_P8" ]; then
+            key="$RUNNER_TEMP/AuthKey.p8"
+            (umask 077; printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$key")
+            xcrun notarytool submit "$signed_dmg" --key "$key" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+            rm -f "$key"
+            xcrun stapler staple "$signed_dmg"
+            xcrun stapler staple "$app"
+            spctl --assess --type open --context context:primary-signature -v "$signed_dmg"
+          else
+            echo "::warning::no notarization key in the release environment: the macOS packages are signed, not notarized"
+          fi
+          ditto -c -k --keepParent "$app" "out/$(basename "$zip")"
+          cp "$receipt" out/
+          ls -la out
+      - name: Remove the signing keychain and the notarization key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2> /dev/null || true
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/signing.p12"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: octosense-desktop-macos-arm64
+          path: out
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-windows:
+    needs: [plan, package]
+    if: needs.plan.outputs.sign == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: octosense-desktop-unsigned-windows-x64
+          path: in
+      - name: Sign the installer (unsigned without the secrets)
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item in/packages/* out/
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Output "::warning::no Windows signing secrets in the release environment: the installer stays unsigned"
+            exit 0
+          }
+          # The certificate is used from a file for signtool alone, never
+          # imported into a certificate store.
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+          foreach ($installer in Get-ChildItem out/*-setup.exe) {
+            & $signtool sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $installer.FullName
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            & $signtool verify /pa $installer.FullName
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          Remove-Item -Force $pfx
+      - name: Remove the certificate file
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'signing.pfx')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: octosense-desktop-windows-x64
+          path: out
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: draft release
+    needs: [plan, package, sign-macos, sign-windows]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          sparse-checkout: tools
+          persist-credentials: false
+      - name: HEAD is the tag's commit
+        env:
+          WANT: ${{ needs.plan.outputs.commit }}
+        run: |
+          head=$(git rev-parse HEAD)
+          tagged=$(gh api "repos/$GH_REPO/commits/refs/tags/$TAG" --jq .sha)
+          if [ "$head" != "$WANT" ] || [ "$head" != "$tagged" ]; then
+            echo "::error::HEAD $head, built $WANT, $TAG is $tagged: not attaching"
+            exit 1
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: octosense-desktop-macos-arm64
+          path: packages
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: octosense-desktop-windows-x64
+          path: packages
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: octosense-desktop-unsigned-linux-x64
+          path: linux
+      - name: SHA256SUMS
+        run: |
+          mv linux/packages/* packages/
+          cd packages
+          sha256sum -- * | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      - name: Scan again what is attached
+        env:
+          RELEASE_SCAN_EXTRA: ${{ secrets.RELEASE_SCAN_EXTRA }}
+        run: |
+          # A .dmg cannot be opened here: its contents were scanned on macOS
+          # before signing, and the same app is in the .app.zip scanned now.
+          python3 tools/release-scan.py --dmg-bytes-only packages/*
+      - name: Attach to the tag's draft release
+        run: |
+          version="${TAG#desktop-v}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true ] \
+              || { echo "::error::$TAG is already published; not replacing its files"; exit 1; }
+            gh release upload "$TAG" packages/* --clobber
+          else
+            gh release create "$TAG" packages/* --draft --latest=false --verify-tag \
+              --title "OctoSense desktop $version" \
+              --notes "OctoSense desktop $version, built from the $TAG tag by the release-desktop workflow (run $GITHUB_RUN_ID). Signed only when the release environment has the signing secrets (see desktop/README.md, Signing). Check the files against SHA256SUMS."
+          fi

@@ -55,11 +55,14 @@ pub fn load_sheet(style: DesktopStyle, dark: bool) -> StyleSheet {
         return sheet;
     }
     let read = |name: &str, bundled: &str| {
-        // Source checkouts reload on selection; installed/mobile builds use embedded data.
+        // Source checkouts reload on selection; packaged and mobile builds
+        // use the embedded data (never a path on the build machine).
         #[cfg(not(target_arch = "wasm32"))]
-        if let Ok(text) = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/themes/octosense").join(name)
-        ) { return text; }
+        if !super::paths::packaged() {
+            if let Ok(text) = std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/themes/octosense").join(name)
+            ) { return text; }
+        }
         let _ = name;
         bundled.to_string()
     };

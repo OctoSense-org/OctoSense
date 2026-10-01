@@ -73,6 +73,21 @@ class Drift(unittest.TestCase):
     def test_the_mapping_fits_the_workflows(self):
         self.assertEqual(ci.check_drift(), [])
 
+    def test_the_release_workflow_is_left_out_on_purpose(self):
+        self.assertIn("release-desktop.yml", ci.NOT_LOCAL)
+        self.assertNotIn("release-desktop.yml", ci.GROUPS["all"])
+        self.assertTrue(ci.NOT_LOCAL["release-desktop.yml"].strip())
+        # It is left out, not invisible: checked on its own it is drift.
+        self.assertTrue(ci.check_drift(["release-desktop.yml"]))
+        with tempfile.TemporaryDirectory() as temp:
+            workflows = Path(temp)
+            for path in (ROOT / ".github/workflows").glob("*.yml"):
+                if path.name != "release-desktop.yml":
+                    shutil.copy(path, workflows / path.name)
+            with patch.object(ci, "WORKFLOWS", workflows):
+                problems = "\n".join(ci.check_drift())
+        self.assertIn("release-desktop.yml: listed in NOT_LOCAL but no such workflow", problems)
+
     def test_a_changed_workflow_is_drift(self):
         with tempfile.TemporaryDirectory() as temp:
             workflows = Path(temp)

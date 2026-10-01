@@ -89,17 +89,43 @@ pub fn scope_linked_app_data() {
     }
 }
 
+/// Whether this is a packaged (installed) build: `desktop/scripts/package.py`
+/// builds with `MAKEPAD_PACKAGE_DIR` set, and Makepad then reads every
+/// `crate_resource` from the package instead of the source tree.
+pub const fn packaged() -> bool {
+    option_env!("MAKEPAD_PACKAGE_DIR").is_some()
+}
+
 static PACKAGE_DIR: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
 /// The running package's source directory (desktop/ or phone/), set by its
-/// `octosense_main!` before the app starts. The shell's own
-/// `CARGO_MANIFEST_DIR` is crates/shell, which carries no catalog.
+/// `octosense_main!` before the app starts (not in a packaged build). The
+/// shell's own `CARGO_MANIFEST_DIR` is crates/shell, which carries no catalog.
 pub fn set_package_dir(dir: &'static str) {
+    if packaged() {
+        return;
+    }
     let _ = PACKAGE_DIR.set(dir);
 }
 
-/// A source tree belongs to OctoSense only when it has our provenance marker.
+/// The OctoSense checkout this shell runs from: its developer catalog
+/// (`config/apps.json`), whose programs it builds and runs, and the Makepad
+/// sources. A source tree belongs to OctoSense only when it has our
+/// provenance marker.
+///
+/// A packaged build has none, wherever it runs: not where it was built (that
+/// path belongs to the build machine), not the working directory and not its
+/// executable's ancestors, so starting the installed app inside someone
+/// else's checkout can never make it build and run that checkout's code.
+/// `--apps <catalog>` still names a catalog explicitly.
 pub fn project_root() -> Option<PathBuf> {
+    project_root_for(packaged())
+}
+
+fn project_root_for(packaged: bool) -> Option<PathBuf> {
+    if packaged {
+        return None;
+    }
     let starts = [
         PACKAGE_DIR.get().map(PathBuf::from),
         std::env::current_exe()
@@ -122,6 +148,14 @@ pub fn project_root() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_packaged_build_has_no_checkout_even_inside_one() {
+        // The tests run inside the checkout (cwd and CARGO_MANIFEST_DIR).
+        assert!(project_root_for(false).is_some(), "a source build finds its checkout");
+        assert_eq!(project_root_for(true), None, "a packaged build never does");
+        assert!(!packaged(), "tests are a source build");
+    }
 
     #[test]
     fn a_linked_rinx_keeps_its_data_under_a_chosen_home_only() {
