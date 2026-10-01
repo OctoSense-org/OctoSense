@@ -160,6 +160,16 @@ pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Opti
     }
 }
 
+/// Stub.
+pub fn prepare_agent_with<R>(storage: &Storage, _root: &Path, _app_id: &str, prepare: impl FnOnce(&Storage) -> R) -> R {
+    prepare(storage)
+}
+
+/// Stub.
+pub fn contained_account_in(_storage: &Storage, app: &str) -> Option<String> {
+    contained_account(app)
+}
+
 /// The account a contained app's agent acts for (`contained::set_account_of`):
 /// the device for an app without accounts; for one that keeps accounts, the
 /// newest account Mail's host service granted it, or none yet.
