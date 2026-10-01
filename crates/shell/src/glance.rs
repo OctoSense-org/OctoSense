@@ -721,7 +721,7 @@ mod tests {
             fn close_sheet(&mut self) {}
         }
         register();
-        let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, host_dir: std::env::temp_dir() };
+        let call = |app: &str, service: &str, args: Value| ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: true, host_dir: std::env::temp_dir() };
         let from_sheet = |app: &str, service: &str, args: Value| ServiceCall { from_sheet: true, ..call(app, service, args) };
         let mut spoof = args("dispatch-test");
         spoof["app"] = json!("os.mail");

@@ -7,7 +7,8 @@ sends one `session/ping` notification for the session; `session/list`
 answers `{sessions: [{pid}]}`; `test/notify`
 sends a notification for `params.session_id`; `test/exit` exits with 3.
 Ends on stdin EOF. Writes `argv`, `cwd` and selected env to
-`$FAKE_KERNEL_LOG` (if set) once at start.
+`$FAKE_KERNEL_LOG` (if set) once at start, and every request it reads
+(`{method, params}`) to `$FAKE_KERNEL_FRAMES` (if set).
 """
 import json
 import os
@@ -15,6 +16,7 @@ import sys
 
 pid = os.getpid()
 log = os.environ.get("FAKE_KERNEL_LOG")
+frames = os.environ.get("FAKE_KERNEL_FRAMES")
 if log:
     with open(log, "a") as f:
         f.write(json.dumps({"pid": pid, "argv": sys.argv[1:], "cwd": os.getcwd(),
@@ -42,6 +44,9 @@ for line in sys.stdin:
         sys.exit(3)
     if rid is None:
         continue
+    if frames:
+        with open(frames, "a") as f:
+            f.write(json.dumps({"method": method, "params": params}) + "\n")
     if method == "session/open":
         sid = params.get("session_id")
         send({"jsonrpc": "2.0", "id": rid,

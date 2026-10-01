@@ -555,3 +555,23 @@ fn a_session_without_a_client_is_the_apps_conversation_and_follows_both_lanes() 
     assert!(matches!(downs(&frames).pop(), Some(Down::Reply { req_id: 2, result: Ok(_) })));
     assert_eq!(world.with(|s| s.contexts[0].calls.load(Ordering::SeqCst)), 2);
 }
+
+#[test]
+fn should_refuse_a_second_socket_when_the_clients_link_is_live() {
+    let (mut links, _world, _) = setup();
+    let (first, frames_first) = out();
+    let (second, frames_second) = out();
+    assert!(links.connected(1, "notes", first));
+    assert!(!links.connected(1, "notes", second), "the link is never rebound");
+    links.on_frame(1, "notes", &request(1, "octos.session.open", json!({})), None);
+    assert!(matches!(downs(&frames_first).as_slice(), [Down::Reply { req_id: 1, result: Ok(_) }]));
+    assert!(downs(&frames_second).is_empty(), "the second socket hears nothing");
+    // A frame read as another app's on this client's link is dropped.
+    let (reply, frames_reply) = out();
+    links.on_frame(1, "mail", &request(2, "octos.session.open", json!({})), Some(reply));
+    assert!(downs(&frames_first).is_empty() && downs(&frames_reply).is_empty());
+    // Once the process is gone, a new launch of the id may link again.
+    links.process_gone(1);
+    let (third, _) = out();
+    assert!(links.connected(1, "notes", third));
+}

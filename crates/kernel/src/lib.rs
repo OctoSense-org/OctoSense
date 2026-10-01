@@ -371,6 +371,16 @@ impl Core {
         running
     }
 
+    /// Set the system agent's exact kernel tool list again on the running
+    /// kernel ([`system_tools::grants`]; every start sets it anyway). A
+    /// no-op when none runs. Callable from any thread.
+    pub fn apply_system_agent_tool_list(&self) {
+        let st = self.0.state.lock().unwrap();
+        if let Some(current) = st.current.as_ref() {
+            let _ = current.ctl.send(Ctl::SystemToolList);
+        }
+    }
+
     fn shared_launch(&self) -> bool {
         matches!(self.launch(), Ok(Launch::WebSocket { .. }))
     }
@@ -642,9 +652,10 @@ impl Drop for Connection {
 
 // ---- the process's kernel --------------------------------------------------
 
+static GLOBAL: OnceLock<Core> = OnceLock::new();
+
 fn global() -> &'static Core {
-    static CORE: OnceLock<Core> = OnceLock::new();
-    CORE.get_or_init(Core::default)
+    GLOBAL.get_or_init(Core::default)
 }
 
 /// Configure the process's kernel (the shell, at startup, before the first
@@ -777,6 +788,14 @@ pub fn set_web_client_origin(origin: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The process's kernel sets the system agent's tool list again (after a
+/// grant change; [`system_tools::set_grants`] calls this).
+pub(crate) fn apply_system_agent_tool_list() {
+    if let Some(core) = GLOBAL.get() {
+        core.apply_system_agent_tool_list();
+    }
 }
 
 /// Restart the process's kernel if it runs (after a provider change).
