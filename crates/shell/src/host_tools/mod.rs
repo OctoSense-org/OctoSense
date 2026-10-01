@@ -12,6 +12,7 @@
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
+//! | `dev.run` on a covered app's peer (developer mode, ADR 0004 §13) | offered as the app's own tool, run by the shell ([`dev_run`]); registered again on every peer when the mode changes ([`developer_mode_changed`]) |
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
 //! **Threads.** Brokers call in on their own threads and the system chat on
@@ -31,6 +32,7 @@
 //! (`OctosAppService::set_confirm_sheet`), which registers it with the
 //! router here ([`SheetBridge`]).
 
+pub mod dev_run;
 pub mod relay;
 pub mod schema;
 #[cfg(feature = "toolbox-peers")]
@@ -97,6 +99,8 @@ pub fn init() {
         host_tools::set_host(Arc::new(ShellToolHost));
         approvals::set_relay(Box::new(DecisionRelay));
         peer_link::set_tool_relay(Box::new(LinkRelay));
+        // The tools the shell runs itself for an app's own agent (`dev.run`).
+        with_relay(|r| r.set_executor(relay::HOST_EXECUTOR, Some(Arc::new(dev_run::DevRunExecutor::new(agent_workspace)))));
         #[cfg(feature = "toolbox-peers")]
         toolbox::init();
     });
@@ -268,6 +272,21 @@ impl ToolHost for ShellToolHost {
     }
 }
 
+/// Developer mode turned on, off or expired (ADR 0004 §13): every live app
+/// peer registers its tools again, so `dev.run` and developer grants come
+/// with it and are withdrawn the moment it ends (the relay also refuses a
+/// late call). The peers asked.
+pub fn developer_mode_changed() -> usize {
+    #[cfg(kernel)]
+    {
+        crate::ai_host::app_peers::broker::reregister_tools_where(|_| true)
+    }
+    #[cfg(not(kernel))]
+    {
+        0
+    }
+}
+
 /// Stop the turns running in both lanes of `app`'s agent's conversation,
 /// the person's and the system agent's, whoever started them (the Stop on
 /// the shell's app-conversation surface; ADR 0004 §6): every live broker
@@ -282,6 +301,24 @@ pub fn interrupt_agent(app: &str) -> Vec<String> {
     #[cfg(not(kernel))]
     {
         let _ = app;
+        Vec::new()
+    }
+}
+
+/// Stop only the turns of one `lane` of `app`'s agent's conversation
+/// (`person` or `system_agent`, as the broker names them): the Stop of the
+/// "Ask <app>" panel stops the person's own turn and leaves the system
+/// agent's running; stopping the system agent's is a separate gesture.
+/// The turns stopped.
+pub fn interrupt_agent_lane(app: &str, lane: &str) -> Vec<String> {
+    #[cfg(kernel)]
+    {
+        let app = app.to_string();
+        crate::ai_host::app_peers::broker::interrupt_lane_where(move |peer_app| app_of_peer(peer_app) == app, lane)
+    }
+    #[cfg(not(kernel))]
+    {
+        let _ = (app, lane);
         Vec::new()
     }
 }

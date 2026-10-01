@@ -126,7 +126,7 @@ Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::host
 **进程托管**使用 Makepad 窗口管理器的托管机制（`crates/shell/src/clients.rs`、`hub.rs`）：
 
 - Shell 以 `--stdin-loop` 启动应用子进程（在源码检出中为 `cargo run … -- --stdin-loop`，否则为同目录下的二进制），放在独立的进程组中，并设置 `STUDIO_HOST=http://127.0.0.1:<hub 端口>` 和其客户端 id。
-- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。
+- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。hub 只接受出示了 Shell 写入该子进程 stdin 的本次启动密钥的连接，每次启动只接受一次，并拒绝浏览器来源（[ADR 0004 §5](adr/0004-native-apps-hosting-and-peers.md#5-the-peer-link-for-process-hosted-native-apps)）。
 - 在操作系统允许时，画面以零拷贝方式到达合成器（在 Makepad `platform/src/os` 中实现）：macOS 上用 IOSurface，Windows 上用 D3D11 共享句柄，Linux 在 Vulkan 加 Wayland 下用 DMA_BUF；Linux 的 OpenGL 构建则每帧经 CPU 回读。
 - 进程应用崩溃只影响它自己：Shell 移除其客户端并显示 “App stopped”。（目前只有进程内模块有 Restart 界面；见[不一致之处](#代码与-adr-不一致之处)。）
 
@@ -276,7 +276,7 @@ Agent 的工具来源：
 
 **系统 Agent 的工具集**（`crates/kernel/src/system_tools.rs`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)）。**已在 main**，部分生效：
 
-- 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`、`peer_close`；不含 `peer_handoff`）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
+- 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；不含 `peer_handoff`，也不含 `peer_close`，`_main` 配置文件的 `tool_policy` 对所有智能体禁用它）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
 - **从不提供 octos 自己的 shell。** 每次启动内核前，`enforce` 写入 `_main` profile 的 `tool_policy`，拒绝 `group:runtime`（`shell`、`bash`、`exec_command`、`write_stdin`）。它只替换 OctoSense 自己写的策略，并拒绝用户自己的 octos 主目录。
 - **还不是精确列表。** octos#2567 的宿主会话集合可以用 `generic_tools` 收窄会话，但 Shell 注册时不传它（按 #2567 的约定：该列表会收窄该会话上所有客户端的回合），因此系统 Agent 仍会得到 octos 注册的其余所有工具；精确列表的测试已保留但被忽略（持久的宿主专用列表是 octos#2605）。
 - **从 Settings 开启命令执行**（默认关闭，每条命令实时批准）：Setup › Assistant › Command execution 设置授权；开启期间，系统对话在自己的连接上把 `terminal.run` 注册到系统会话（不带 `peer` 的 `peer/tools/register`），关闭时立即撤回。octos 以某个应用 peer 的宿主令牌作为凭据，因此在某个应用的 Agent 启动之前，对话会说明暂时无法提供。
@@ -314,7 +314,7 @@ flowchart TB
   sheet --> person
 ```
 
-1. **开发者模式**（`dev_hooks.rs`、`crates/shell/src/dev_mode.rs`，[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）批准它所覆盖应用的一切，包括 `auto_approvable: false` 和 `confirm: app`，但从不替外部客户端批准。只有用户能开启它：开发构建中用 `OCTOSENSE_DEV_MODE=all`（或应用列表），发布构建只能用 `--dev-grant-all`，或在桌面端的 Developer options 中输入确认短语；商店构建永远不能。开启时显示横幅，审计每次调用，不在开发者 profile 中时 8 小时后或重启时自动结束。`dev.run` 尚未注册（步骤 11）。
+1. **开发者模式**（`dev_hooks.rs`、`crates/shell/src/dev_mode.rs`，[#118](https://github.com/OctoSense-org/OctoSense/pull/118)）批准它所覆盖应用的一切，包括 `auto_approvable: false` 和 `confirm: app`，但从不替外部客户端批准。只有用户能开启它：开发构建中用 `OCTOSENSE_DEV_MODE=all`（或应用列表），发布构建只能用 `--dev-grant-all`，或在桌面端的 Developer options 中输入确认短语；商店构建永远不能。开启时显示横幅，审计每次调用，不在开发者 profile 中时 8 小时后或重启时自动结束。`dev.run` 作为被覆盖应用自己的宿主工具注册在它的 peer 上，由 shell 执行（`crates/shell/src/host_tools/dev_run.rs`），从不注册在系统智能体的会话上。
 2. **`confirm: app`** 工具交给所属应用自己的面板（应用通过 `register_app_confirm` 注册的 `AppConfirm`），并附上调用方；规则不回答它们。未注册面板的应用有 120 秒（`app_wait_s`），之后调用被明确拒绝。进程内应用通过自己的服务注册面板（`OctosAppService::set_confirm_sheet`，由 `host_tools::SheetBridge` 接入）；所锁定标签的 Rinx 还没有这样做，因此它的发送面板仍在 Rinx 内部作答。
 3. **`auto_approvable: false`**、**结果未知**和**外部客户端**的调用总是交给用户。
 4. **常设规则**（`rules.rs`），以**（所属应用，工具）**为键，不论谁调用；可以对确切参数设条件（收件人在联系人中或在该会话中、无附件、由用户触发、次数或金额上限；调用缺少所需信息时条件不成立），有每日上限（工具规则默认 20 次），范围最宽的规则（“这个应用接下来一小时的所有请求”）最多 60 分钟（没有“一切、永久”的规则），还有一个“关闭所有规则”。联系人来自 Mail 宿主服务的数据（用户自己的账户，以及用户发过邮件的地址；`contacts.rs`），并且只有在用户于设置中打开“在审批规则中使用我的联系人”（默认关闭）之后才会使用；在此之前“收件人在联系人中”从不匹配。系统通讯录是后续工作。由收到的内容触发的运行会被跳过，除非规则明确包含。用户在 Settings → Assistant → Approvals（`settings_page.rs`）中或从面板上创建规则；系统 Agent 只能建议。
@@ -448,7 +448,7 @@ sequenceDiagram
 7. **`host::processes_available()` 的测试**只检查 `wasm32`，而函数本身还排除了原生移动平台。
 8. **审批，ADR 0004 §8。** 每次应用工具调用都通过 `peer/tool/call` 到达 Shell，每个有门控的调用都到达路由（见上文）。还没有应用注册自己的 `confirm: app` 面板（Rinx 需要通过 `OctosAppService::set_confirm_sheet` 交出它的发送面板），因此这类调用会等待后被拒绝。审计记录的是参数摘要而不是参数。发送队列和撤销窗口尚未实现。
 9. **存储，ADR 0004 §11。** 机密只在 macOS 和 iOS 上使用系统钥匙串（其他平台为 0600 明文文件）。启动检查拒绝通过链接或包含关系通向机密的工作区，而不是查找 `secrets/` 路径，并且不会中止启动。（已修复：app storage 和同意面板中 `storage.accounts` 都默认为 `false`，同意面板现在读取 `StorageSpec`。）
-10. **开发者模式，ADR 0004 §13。** `dev.run` 尚未注册；Settings 只能为所有应用开启（选定应用只能通过 `OCTOSENSE_DEV_MODE`）；手机上没有开启手势；进程内模块仍会显示自己的确认面板。
+10. **开发者模式，ADR 0004 §13。** 已修复：`dev.run` 已注册在被覆盖应用的 peer 上，由 shell 执行。未完成：Settings 只能为所有应用开启（选定应用只能通过 `OCTOSENSE_DEV_MODE`）；手机上没有开启手势；进程内模块仍会显示自己的确认面板。
 11. **应用 Agent，来自 2026-09-29 的代码审查**（octos acffad3b、`main` ecb3583；列在 ADR 0004 的后续事项中）：`peer/input` 回合上内核工具的审批被 broker 对 peer 会话的事件过滤丢弃（`broker.rs`），无人能回答；受限脚本应用的卡片没有流式输出、所有审批都被拒绝、每个应用共用一个上下文并使用固定账号 `device`（`crates/ai-host/src/contained.rs`）；卡片从不回答 `user_question/requested`：问题由 Shell 的请求模型按回合发起者路由，只由用户在 Shell 界面上回答（已修复）；`peer/input` 的宿主 `turn/start` 失败只记日志；`peer/input` 路由归最后注册该 peer 工具的连接所有（多实例未测试）。
 
 ## 源码位置

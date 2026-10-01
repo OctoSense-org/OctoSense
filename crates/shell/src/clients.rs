@@ -1047,10 +1047,15 @@ pub fn spawn_client(
     // one fresh pgid lets `kill_child_group` reach the whole tree.
     #[cfg(unix)]
     own_process_group(&mut cmd);
+    // The hub admits this launch's socket only with this secret (ADR 0004
+    // §5, hub.rs): it goes to the child on its stdin, never in its
+    // environment or command line.
+    let launch_token = crate::hub::issue_launch_token(id);
     cmd.env("STUDIO_HOST", format!("http://127.0.0.1:{}", hub_port))
         .env("STUDIO_BUILD", id.to_string())
         .env("STUDIO_CRATE", &app.bin)
-        .stdin(Stdio::null())
+        .env(crate::hub::HANDSHAKE_STDIN_ENV, "1")
+        .stdin(Stdio::piped())
         // Both streams are piped so a reader thread can put the newest
         // line on the tile while the app builds — cargo talks on stderr.
         .stdout(Stdio::piped())
@@ -1091,9 +1096,15 @@ pub fn spawn_client(
     // No child inherits the kernel's descriptors or the host token: a
     // process app reaches its agent only over the peer link (ADR 0004 §3).
     crate::sandbox::scrub_env(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn {}: {}", app.package, e))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        crate::hub::revoke_launch_token(id);
+        format!("spawn {}: {}", app.package, e)
+    })?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        // One line, then EOF: the child reads nothing else from us.
+        let _ = stdin.write_all(format!("{launch_token}\n").as_bytes());
+    }
     // Child output (and cargo's "Compiling …") goes to a per-client log —
     // silent children are undebuggable — and every line also reaches the
     // UI so the tile can show what the build is doing.

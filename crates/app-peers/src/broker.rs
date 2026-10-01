@@ -67,6 +67,9 @@
 //!   [`interrupt_where`] for the shell's own surfaces) stops BOTH lanes:
 //!   the person's running turn and the system agent's (the person owns the
 //!   device). A plain request context's Stop stops its own turn only.
+//!   The shell's "Ask <app>" panel stops one lane at a time
+//!   ([`interrupt_lane_where`]): its Stop is the person's own turn, and the
+//!   system agent's turn has its own control.
 //!
 //! Nothing here chooses a provider, touches credentials or stops a kernel it
 //! does not own.
@@ -387,6 +390,49 @@ pub fn interrupt_where(matches: impl Fn(&str) -> bool) -> Vec<String> {
     brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_running()).collect()
 }
 
+/// Register the tools again on every live, prepared peer whose app id
+/// `matches` (what the host offers changed: developer mode's `dev.run` and
+/// grants came or went, ADR 0004 §13). Each registration replaces the peer's
+/// set on the link it was prepared on; a failure is logged. The brokers
+/// asked.
+pub fn reregister_tools_where(matches: impl Fn(&str) -> bool) -> usize {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    let mut asked = 0;
+    for inner in brokers.into_iter().filter(|b| matches(&b.cfg.app_id)) {
+        let target = {
+            let st = inner.lock();
+            match (&st.peer, &st.account, st.released) {
+                (Some((_, peer)), Some(account), false) => peer.token.clone().map(|t| (peer.slug.clone(), t, account.clone())),
+                _ => None,
+            }
+        };
+        let Some((slug, token, account)) = target else { continue };
+        asked += 1;
+        let task = inner.clone();
+        inner.rt().spawn(async move {
+            if let Err(e) = task.register_tools(&slug, &token, &account).await {
+                eprintln!("app-peers: {}: registering its tools again: {e}", task.cfg.app_id);
+            }
+        });
+    }
+    asked
+}
+
+/// [`interrupt_where`] for one lane only ([`LANE_PERSON`] or
+/// [`LANE_SYSTEM_AGENT`]): the other lane's turn goes on.
+pub fn interrupt_lane_where(matches: impl Fn(&str) -> bool, lane: &str) -> Vec<String> {
+    let brokers: Vec<Arc<Inner>> = {
+        let mut all = BROKERS.lock().unwrap_or_else(|e| e.into_inner());
+        all.retain(|b| b.strong_count() > 0);
+        all.iter().filter_map(Weak::upgrade).collect()
+    };
+    brokers.into_iter().filter(|b| matches(&b.cfg.app_id)).flat_map(|b| Broker(b).interrupt_lane(lane)).collect()
+}
+
 /// The live (not released) broker of the app whose id is `app_id`, if one
 /// runs: a shell surface opens the app's conversation on the same peer the
 /// app uses (the shell's "Ask <app>" panel).
@@ -704,7 +750,18 @@ impl Broker {
     /// calls are refused (N1) and the peer's next queued input starts. The
     /// turns stopped (none when nothing runs).
     pub fn interrupt_running(&self) -> Vec<String> {
-        let running = self.0.running_turns();
+        self.interrupt_turns(self.0.running_turns())
+    }
+
+    /// Stop only the turns running in `lane` ([`LANE_PERSON`]: the person's
+    /// or the app's, in every open conversation; [`LANE_SYSTEM_AGENT`]: the
+    /// peer's own session), as [`Broker::interrupt_running`] does.
+    pub fn interrupt_lane(&self, lane: &str) -> Vec<String> {
+        let running = self.0.running_turns().into_iter().filter(|(_, _, l)| *l == lane).collect();
+        self.interrupt_turns(running)
+    }
+
+    fn interrupt_turns(&self, running: Vec<(String, String, &'static str)>) -> Vec<String> {
         for (session, turn, _) in &running {
             let inner = self.0.clone();
             let (session, turn) = (session.clone(), turn.clone());

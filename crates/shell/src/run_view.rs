@@ -16,6 +16,9 @@ use makepad_widgets::makepad_platform::shared_framebuf::{
 };
 use makepad_widgets::*;
 
+mod pacing;
+use pacing::TickPacer;
+
 #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
 use makepad_widgets::makepad_platform::shared_framebuf::aux_chan;
 #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
@@ -232,11 +235,13 @@ pub struct MpRunView {
     #[rust]
     tick_timer: Timer,
     #[rust]
+    tick_pacer: TickPacer,
+    #[rust]
+    pending_move: Option<RemoteMouseMove>,
+    #[rust]
     last_rect: Rect,
     #[rust]
     last_dpi_factor: f64,
-    #[rust]
-    redraw_countdown: usize,
     #[rust]
     bootstrap_pending: bool,
     #[rust]
@@ -303,12 +308,43 @@ impl MpRunView {
         cx.widget_action(self.uid, MpRunViewAction::ForwardToApp { client, msg_bin });
     }
 
+    fn append_tick(&mut self, target: RunTarget, msgs: &mut Vec<StudioToApp>) {
+        trace_host(&format!("tick c{}", target.client));
+        if let Some(mv) = self.pending_move.take() {
+            msgs.push(StudioToApp::MouseMove(mv));
+        }
+        msgs.push(StudioToApp::Tick);
+    }
+
+    // Match Makepad WM's tick acknowledgement and latest-pointer pacing.
+    // Button/scroll edges flush the pointer first, preserving input order.
+    fn emit_after_pending_move(&mut self, cx: &mut Cx, client: ClientId, msg: StudioToApp) {
+        let mut msgs = Vec::with_capacity(2);
+        if let Some(mv) = self.pending_move.take() {
+            msgs.push(StudioToApp::MouseMove(mv));
+        }
+        msgs.push(msg);
+        self.emit_to_app(cx, client, msgs);
+    }
+
+    pub fn tick_done(&mut self, cx: &mut Cx) {
+        let Some(target) = self.current_target else { return };
+        trace_host(&format!("ack c{}", target.client));
+        if self.tick_pacer.complete(crate::host::now()) {
+            let mut msgs = Vec::new();
+            self.append_tick(target, &mut msgs);
+            self.emit_to_app(cx, target.client, msgs);
+        }
+    }
+
     fn set_target(&mut self, cx: &mut Cx, target: Option<RunTarget>) {
         if self.current_target == target {
             return;
         }
         let had_target = self.current_target.is_some();
         self.current_target = target;
+        self.tick_pacer = TickPacer::default();
+        self.pending_move = None;
         self.remote_cursor = MouseCursor::Default;
         self.is_hovered = false;
         self.swapchain = None;
@@ -334,9 +370,6 @@ impl MpRunView {
             if self.tick_timer.is_empty() {
                 self.tick_timer = cx.start_interval(0.008);
             }
-            // Keep redrawing during startup so bootstrap messages resend
-            // until the child socket is ready.
-            self.redraw_countdown = self.redraw_countdown.max(240);
         } else {
             if had_target {
                 cx.hide_text_ime();
@@ -345,7 +378,6 @@ impl MpRunView {
                 cx.stop_timer(self.tick_timer);
                 self.tick_timer = Timer::empty();
             }
-            self.redraw_countdown = 0;
         }
         self.draw_app.set_texture(0, &cx.null_texture());
         self.draw_app
@@ -379,7 +411,6 @@ impl MpRunView {
     fn apply_presentable_draw_to_quad(
         cx: &mut Cx,
         draw_app: &mut DrawQuad,
-        redraw_countdown: &mut usize,
         presentable_draw: PresentableDraw,
         swapchain: &HostSwapchain,
     ) -> bool {
@@ -449,7 +480,6 @@ impl MpRunView {
             .draw_vars
             .set_dyn_instance(cx, id!(y_flip), &[0.0f32]);
 
-        *redraw_countdown = (*redraw_countdown).max(20);
         true
     }
 
@@ -458,7 +488,6 @@ impl MpRunView {
             if Self::apply_presentable_draw_to_quad(
                 cx,
                 &mut self.draw_app,
-                &mut self.redraw_countdown,
                 presentable_draw,
                 swapchain,
             ) {
@@ -471,7 +500,6 @@ impl MpRunView {
             if Self::apply_presentable_draw_to_quad(
                 cx,
                 &mut self.draw_app,
-                &mut self.redraw_countdown,
                 presentable_draw,
                 swapchain,
             ) {
@@ -681,11 +709,11 @@ impl MpRunView {
             self.set_target(cx, Some(target));
         }
         self.app_ready_for_swapchain = true;
+        self.tick_pacer = TickPacer::default();
         self.present_ok_count = 0;
         self.first_present_at = None;
         self.bootstrap_pending = true;
         self.bootstrap_tick_count = 0;
-        self.redraw_countdown = self.redraw_countdown.max(240);
         self.redraw(cx);
     }
 
@@ -773,9 +801,9 @@ impl MpRunView {
     /// The child died unexpectedly: show the tile closed ("<app> stopped",
     /// "Click to restart") and stop talking to it.
     pub fn show_stopped(&mut self, cx: &mut Cx, client: ClientId, label: &str) {
+        self.set_target(cx, None);
         self.stopped = Some((client, format!("{label} stopped")));
         self.status_line = "Click to restart".into();
-        self.current_target = None;
         self.present_ok_count = 0;
         self.first_present_at = None;
         self.pending_draw = None;
@@ -875,12 +903,9 @@ impl Widget for MpRunView {
         // A cargo build has no protocol target yet. Its launch panel must
         // still be visible before the application connects.
         let waiting_for_framebuffer = self.present_ok_count == 0;
-        if waiting_for_framebuffer {
-            self.redraw(cx);
-        } else if self.redraw_countdown > 0 {
-            self.redraw_countdown -= 1;
-            self.redraw(cx);
-        }
+        // Bootstrap retries are driven by tick_timer; status changes and
+        // completed child frames invalidate this view themselves. Only the
+        // arrival animation below needs another draw of the same frame.
 
         if self.present_ok_count > 0 {
             trace_host(&format!(
@@ -994,7 +1019,6 @@ impl Widget for MpRunView {
         if let Event::Timer(timer_event) = event {
             if self.tick_timer.is_timer(timer_event).is_some() {
                 if let Some(target) = target {
-                    trace_host(&format!("tick c{}", target.client));
                     let mut msgs = Vec::new();
                     let should_bootstrap = self.present_ok_count == 0 || self.bootstrap_pending;
                     if should_bootstrap {
@@ -1003,7 +1027,9 @@ impl Widget for MpRunView {
                             msgs.extend(self.build_bootstrap_msgs(cx, target));
                         }
                     }
-                    msgs.push(StudioToApp::Tick);
+                    if self.tick_pacer.beat(crate::host::now()) {
+                        self.append_tick(target, &mut msgs);
+                    }
                     self.emit_to_app(cx, target.client, msgs);
                 }
             }
@@ -1037,48 +1063,40 @@ impl Widget for MpRunView {
                         },
                     );
                     self.redraw(cx);
-                    self.emit_to_app(
+                    self.emit_after_pending_move(
                         cx,
                         target.client,
-                        vec![StudioToApp::MouseDown(RemoteMouseDown {
+                        StudioToApp::MouseDown(RemoteMouseDown {
                             button_raw_bits: Self::default_mouse_button(&e.device).bits(),
                             x: local.x,
                             y: local.y,
                             time: e.time,
                             modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
-                        })],
+                        }),
                     );
                 }
             }
             Hit::FingerMove(e) => {
                 if let Some(local) = self.local_from_area(cx, e.abs) {
                     trace_host("mm");
-                    self.emit_to_app(
-                        cx,
-                        target.client,
-                        vec![StudioToApp::MouseMove(RemoteMouseMove {
-                            x: local.x,
-                            y: local.y,
-                            time: e.time,
-                            modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
-                        })],
-                    );
+                    self.pending_move = Some(RemoteMouseMove {
+                        x: local.x,
+                        y: local.y,
+                        time: e.time,
+                        modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
+                    });
                 }
             }
             Hit::FingerHoverIn(e) | Hit::FingerHoverOver(e) => {
                 self.is_hovered = true;
                 cx.set_cursor(self.remote_cursor);
                 if let Some(local) = self.local_from_area(cx, e.abs) {
-                    self.emit_to_app(
-                        cx,
-                        target.client,
-                        vec![StudioToApp::MouseMove(RemoteMouseMove {
-                            x: local.x,
-                            y: local.y,
-                            time: e.time,
-                            modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
-                        })],
-                    );
+                    self.pending_move = Some(RemoteMouseMove {
+                        x: local.x,
+                        y: local.y,
+                        time: e.time,
+                        modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
+                    });
                 }
             }
             Hit::FingerHoverOut(_) => {
@@ -1087,25 +1105,25 @@ impl Widget for MpRunView {
             }
             Hit::FingerUp(e) => {
                 if let Some(local) = self.local_from_area(cx, e.abs) {
-                    self.emit_to_app(
+                    self.emit_after_pending_move(
                         cx,
                         target.client,
-                        vec![StudioToApp::MouseUp(RemoteMouseUp {
+                        StudioToApp::MouseUp(RemoteMouseUp {
                             button_raw_bits: Self::default_mouse_button(&e.device).bits(),
                             x: local.x,
                             y: local.y,
                             time: e.time,
                             modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
-                        })],
+                        }),
                     );
                 }
             }
             Hit::FingerScroll(e) => {
                 if let Some(local) = self.local_from_area(cx, e.abs) {
-                    self.emit_to_app(
+                    self.emit_after_pending_move(
                         cx,
                         target.client,
-                        vec![StudioToApp::Scroll(RemoteScroll {
+                        StudioToApp::Scroll(RemoteScroll {
                             is_mouse: e.is_mouse,
                             time: e.time,
                             x: local.x,
@@ -1113,7 +1131,7 @@ impl Widget for MpRunView {
                             sx: e.scroll.x,
                             sy: e.scroll.y,
                             modifiers: RemoteKeyModifiers::from_key_modifiers(&e.modifiers),
-                        })],
+                        }),
                     );
                 }
             }
