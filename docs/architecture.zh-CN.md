@@ -279,7 +279,7 @@ Agent 的工具来源：
 - 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；不含 `peer_handoff`，也不含 `peer_close`，`_main` 配置文件的 `tool_policy` 对所有智能体禁用它）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
 - **从不提供 octos 自己的 shell。** 每次启动内核前，`enforce` 写入 `_main` profile 的 `tool_policy`，拒绝 `group:runtime`（`shell`、`bash`、`exec_command`、`write_stdin`）。它只替换 OctoSense 自己写的策略，并拒绝用户自己的 octos 主目录。
 - **恰好是它的列表。** 每次内核启动时，在宿主自己的连接上、在任何使用方的帧之前，用 octos 持久的宿主专用 `session/tool_list/set`（octos#2648）把系统会话的内核工具设为 `SystemAgentTools::kernel_tools`；授权变化时再设一次。该会话上的每个回合（无论由谁发起）都被收窄到它；宿主工具（`terminal.run`）在它之外注册，`spawn` 系列工具从不在其中。真实内核测试：`a_system_agent_turn_is_offered_exactly_the_system_agent_tools`。
-- **从 Settings 开启命令执行**（默认关闭，每条命令实时批准）：Setup › Assistant › Command execution 设置授权；开启期间，系统对话在自己的连接上把 `terminal.run` 注册到系统会话（不带 `peer` 的 `peer/tools/register`），关闭时立即撤回。octos 以某个应用 peer 的宿主令牌作为凭据，因此在某个应用的 Agent 启动之前，对话会说明暂时无法提供。
+- **从 Settings 开启命令执行**（默认关闭，每条命令实时批准）：Setup › Assistant › Command execution 设置授权；开启期间，系统对话在自己的连接上把 `terminal.run` 注册到系统会话（不带 `peer` 的 `peer/tools/register`），关闭时立即撤回。对话的连接就是宿主自己的连接，octos 对它不需要凭据（octos#2657，[#146](https://github.com/OctoSense-org/OctoSense/issues/146)）：在任何应用的 Agent 启动之前就会立即提供该工具。
 
 **外部客户端**只有 octos 的固定允许列表（[第 3 节](#内核与客户端之间的-oup)）；宿主路由的工具、开发者授权和 `dev.run` 永远到不了它们。
 
