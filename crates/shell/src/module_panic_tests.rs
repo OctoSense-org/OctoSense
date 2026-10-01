@@ -58,6 +58,12 @@ pub struct PanicProbe {
     customs: usize,
     #[rust]
     draws: usize,
+    /// Frames it animated on, and the frame it waits for (an animation
+    /// asks for the next frame on every frame).
+    #[rust]
+    frames: usize,
+    #[rust]
+    waiting: Option<NextFrame>,
 }
 
 impl Drop for PanicProbe {
@@ -70,11 +76,23 @@ impl Drop for PanicProbe {
 }
 
 impl Widget for PanicProbe {
-    fn handle_event(&mut self, _cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
         if let Event::Custom(message) = event {
             self.customs += 1;
             if self.faults.event && message == "panic" {
                 panic!("probe: panic in an event");
+            }
+            if message == "animate" {
+                self.waiting = Some(cx.new_next_frame());
+            }
+            if message == "redraw" {
+                self.draw_bg.redraw(cx);
+            }
+        }
+        if let Event::NextFrame(frame) = event {
+            if self.waiting.is_some_and(|w| frame.set.contains(&w)) {
+                self.frames += 1;
+                self.waiting = Some(cx.new_next_frame());
             }
         }
     }
@@ -339,6 +357,54 @@ fn draw_frame(cx: &mut Cx, tiles: &[&WidgetRef]) {
     cx.end_turtle();
     list.end(&mut cx);
     cx.end_pass(&pass);
+}
+
+fn probe<R>(cx: &mut Cx, host: &mut ModuleHost, client: u64, read: impl FnOnce(&PanicProbe) -> R) -> R {
+    host.dispatch(cx, client, "a test read", |_, root| read(&root.borrow::<PanicProbe>().unwrap())).unwrap()
+}
+
+fn frame(id: NextFrame) -> Event {
+    Event::NextFrame(NextFrameEvent { frame: id.0, time: 1.0, set: [id].into_iter().collect() })
+}
+
+#[test]
+fn an_asleep_tile_gets_no_frames_and_holds_its_redraws_until_it_wakes() {
+    let (mut cx, mut host) = setup();
+    create(&mut cx, &mut host, 1, &CALM).unwrap();
+    let tile = tile(&mut cx);
+    seat(&mut cx, &host, &tile, 1);
+    // Drawn once, so its redraws have an area to mark.
+    draw_frame(&mut cx, &[&tile]);
+    let send = |cx: &mut Cx, event: Event| tile.handle_event(cx, &event, &mut Scope::empty());
+    // Awake, a redraw it asks for is pending.
+    cx.new_draw_event = DrawEvent::default();
+    send(&mut cx, Event::Custom("redraw".into()));
+    assert!(cx.new_draw_event.will_redraw(), "an awake app's redraw is pending");
+    // Awake, it animates: every frame asks for the next.
+    send(&mut cx, Event::Custom("animate".into()));
+    let first = probe(&mut cx, &mut host, 1, |p| p.waiting).unwrap();
+    send(&mut cx, frame(first));
+    assert_eq!(probe(&mut cx, &mut host, 1, |p| p.frames), 1);
+    let waiting = probe(&mut cx, &mut host, 1, |p| p.waiting).unwrap();
+
+    // Asleep: its frame is held back, so the animation stops asking.
+    tile.borrow_mut::<MpModuleView>().unwrap().set_asleep(&mut cx, true);
+    send(&mut cx, frame(waiting));
+    assert_eq!(probe(&mut cx, &mut host, 1, |p| p.frames), 1, "no frame while asleep");
+    // Messages still arrive, but the redraw they ask for is held.
+    cx.new_draw_event = DrawEvent::default();
+    send(&mut cx, Event::Custom("redraw".into()));
+    assert_eq!(customs(&mut cx, &mut host, 1), 3, "messages reach an asleep app");
+    assert!(!cx.new_draw_event.will_redraw(), "an asleep app's redraw is held");
+
+    // Woken: its own frame brings the frame it missed and the held redraw.
+    tile.borrow_mut::<MpModuleView>().unwrap().set_asleep(&mut cx, false);
+    let wake = tile.borrow::<MpModuleView>().unwrap().wake_frame().expect("waking asks for a frame");
+    cx.new_draw_event = DrawEvent::default();
+    send(&mut cx, frame(wake));
+    assert_eq!(probe(&mut cx, &mut host, 1, |p| p.frames), 2, "the missed frame resumes the animation");
+    assert!(cx.new_draw_event.will_redraw(), "the held redraw happens on wake");
+    assert!(host.teardown(&mut cx, 1));
 }
 
 fn probe_draws(cx: &mut Cx, host: &mut ModuleHost, client: u64) -> usize {
