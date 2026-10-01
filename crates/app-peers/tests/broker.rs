@@ -1792,6 +1792,43 @@ fn stop_on_the_conversation_interrupts_both_lanes() {
     drop(broker);
 }
 
+/// The shell's "Ask <app>" panel stops one lane at a time: its Stop ends
+/// the person's own turn and leaves the system agent's running; the system
+/// agent's is stopped only on its own control. Late calls of a stopped turn
+/// are refused as with any Stop.
+#[test]
+fn a_lane_stop_leaves_the_other_lane_running() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_app("lane-stop-test", &ALL, Some(host.clone()), None, None);
+    let (slug, session) = busy_peer(&broker, &script);
+    script.lock().unwrap().interrupts_end = true;
+    let chat = broker.open_conversation(spec("@a:x", "ui", &ALL)).unwrap();
+    let (sink, person_rx) = collect();
+    chat.call(ContextOp::TurnFrom { text: "long job".into(), trigger: TurnTrigger::Person }, sink).unwrap();
+    wait_for("the person's turn", || calls_of(&script, "turn/start").len() == 2);
+    let (_, lane) = person_lane(&script, 0);
+    let person_turn = calls_of(&script, "turn/start")[1].1["turn_id"].as_str().unwrap().to_owned();
+    let mine = |app: &str| app == "lane-stop-test";
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_PERSON);
+    assert_eq!(stopped, std::slice::from_ref(&person_turn));
+    wait_for("the person's interrupt", || calls_of(&script, "turn/interrupt").len() == 1);
+    assert_eq!(calls_of(&script, "turn/interrupt")[0].1, json!({"session_id": lane, "turn_id": person_turn}));
+    assert!(complete(&person_rx).is_err(), "the person's turn ended interrupted");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls_of(&script, "turn/interrupt").len(), 1, "the system agent's turn goes on");
+    assert_eq!(broker.peer_active_turn().as_deref(), Some("turn-i1"));
+
+    let stopped = octosense_app_peers::broker::interrupt_lane_where(mine, octosense_app_peers::broker::LANE_SYSTEM_AGENT);
+    assert_eq!(stopped, ["turn-i1"]);
+    wait_for("the system agent's interrupt", || calls_of(&script, "turn/interrupt").len() == 2);
+    assert_eq!(calls_of(&script, "turn/interrupt")[1].1, json!({"session_id": session, "turn_id": "turn-i1"}));
+    notify(&script, "peer/tool/call", tool_call_params(&slug, "c-late", "turn-i1", None));
+    wait_for("the refusal", || calls_of(&script, "peer/tool/result").iter().any(|(_, p)| p["call_id"] == "c-late"));
+    assert!(octosense_app_peers::broker::interrupt_lane_where(|app| app == "other", octosense_app_peers::broker::LANE_PERSON).is_empty());
+    drop(broker);
+}
+
 /// The person's lane keeps #167's deadlines: an approval in the person's
 /// turn that nobody answers expires (denied, never approved), the app's
 /// conversation hears it, and the stuck turn is interrupted after the
