@@ -96,15 +96,6 @@ pub fn host_state_dir(core_dir: &std::path::Path) -> std::path::PathBuf {
     core_dir.parent().unwrap_or(core_dir).join("app-peers")
 }
 
-/// The host token of an app peer the shell's system agent prepared: octos's
-/// credential for a tool set registered on the system session itself
-/// (UPCR-2026-035's host session target). The newest one the shell keeps;
-/// `None` until an app's agent has been prepared.
-pub fn system_host_token() -> Option<String> {
-    let dir = host_state_dir(&octosense_kernel::core_dir()?);
-    newest_token(&dir)
-}
-
 /// The newest peer's token under `dir`: a peer record (`*.peer`,
 /// [`crate::peer_record`]) or an older `*.token` file.
 pub fn newest_token(dir: &std::path::Path) -> Option<String> {
