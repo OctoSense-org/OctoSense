@@ -173,7 +173,7 @@ impl Connector for FakeConnector {
                             send(reply(result));
                         }
                         "peer/tools/register" if refuse_register => send(refuse("peer_tools_invalid")),
-                        "peer/tools/register" | "peer/context/open" | "peer/context/close" | "peer/tool/result"
+                        "peer/tools/register" | "peer/tools/unregister" | "peer/context/open" | "peer/context/close" | "peer/tool/result"
                             if params["host_token"] != "fixture-host-token" =>
                         {
                             send(refuse("peer_host_token_mismatch"));
@@ -221,6 +221,7 @@ impl Connector for FakeConnector {
                             }
                         }
                         "session/hydrate" => send(reply(json!({"messages": history}))),
+                        "peer/tools/unregister" => send(reply(json!({"slug": params["peer"], "profile_id": "_main", "unregistered": true}))),
                         "turn/interrupt" => {
                             send(reply(json!({"interrupted": true})));
                             if interrupts_end {
@@ -1500,6 +1501,49 @@ fn a_refused_input_is_rejected_with_its_reason_before_any_turn() {
 }
 
 
+/// octos#2658: when the app's last instance releases (the app closed, or
+/// the person turned its agent off), the broker releases the peer's route
+/// with `peer/tools/unregister` (the originator, the peer, its host token),
+/// so the system agent's later `peer_send_input` fails in the kernel
+/// instead of being accepted with nobody to run it. An input that still
+/// reaches the released broker before then is refused, never started.
+#[test]
+fn the_last_instance_releasing_unregisters_its_peers_route_and_refuses_a_late_input() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    broker.set_account(Some("@a:x"));
+    wait_for("ready", || broker.availability() == Availability::Ready);
+    let slug = peer_slug(&script);
+    let session = format!("_main:api:octosense#peer-{slug}");
+    let register_conn = calls_of(&script, "peer/tools/register")[0].0;
+    broker.release();
+    // Before its link goes: a late input is refused, not started.
+    notify(&script, "peer/input", json!({"peer": slug, "session_id": session, "input_id": "late", "turn_id": "turn-late", "text": "late"}));
+    wait_for("the unregister", || !calls_of(&script, "peer/tools/unregister").is_empty());
+    let unregister = calls_of(&script, "peer/tools/unregister");
+    assert_eq!(unregister.len(), 1);
+    let (conn, params) = &unregister[0];
+    assert_eq!(*conn, register_conn, "on the connection that holds the route");
+    assert_eq!(params["peer"], slug.as_str());
+    assert_eq!(params["session_id"], "_main:api:octosense#system", "the peer's originator");
+    assert_eq!(params["host_token"], "fixture-host-token");
+    assert_eq!(params["profile_id"], "_main");
+    wait_for("the late input's refusal", || !calls_of(&script, "peer/input/reject").is_empty());
+    let reject = &calls_of(&script, "peer/input/reject")[0].1;
+    assert_eq!((reject["input_id"].as_str(), reject["reason"].as_str()), (Some("late"), Some("other")));
+    assert!(calls_of(&script, "turn/start").is_empty(), "no turn for a released app");
+    assert!(host.inputs.lock().unwrap().is_empty(), "never admitted");
+}
+
+/// A broker that never bound a peer (no account) has no route to release.
+#[test]
+fn a_release_without_a_bound_peer_unregisters_nothing() {
+    let (broker, script) = new_broker(&ALL);
+    broker.release();
+    std::thread::sleep(Duration::from_millis(700));
+    assert!(calls_of(&script, "peer/tools/unregister").is_empty());
+}
+
 /// A second instance of the app on the same kernel: its broker for the same
 /// peer, on a connection of its own.
 fn second_instance(script: &Arc<Mutex<Script>>, host: &Arc<RecordingHost>) -> Broker {
@@ -1571,6 +1615,7 @@ fn two_instances_of_one_app_drive_the_peer_once_and_hand_over_on_close() {
     // instance registers on its own connection and takes over.
     first.release();
     wait_for("the hand-over", || calls_of(&script, "peer/tools/register").len() == 2);
+    assert!(calls_of(&script, "peer/tools/unregister").is_empty(), "an instance still drives the peer: its route stays");
     let registers = calls_of(&script, "peer/tools/register");
     assert_ne!(registers[1].0, first_conn, "on the second instance's connection");
     std::thread::sleep(Duration::from_millis(700));
@@ -1590,6 +1635,12 @@ fn two_instances_of_one_app_drive_the_peer_once_and_hand_over_on_close() {
     // The last instance closes: now its running turn is stopped.
     second.release();
     wait_for("the interrupt", || position(&script, "turn/interrupt").is_some());
+    // ...and its route is released (octos#2658), on its own connection.
+    wait_for("the unregister", || !calls_of(&script, "peer/tools/unregister").is_empty());
+    let unregister = calls_of(&script, "peer/tools/unregister");
+    assert_eq!(unregister.len(), 1);
+    assert_eq!(unregister[0].0, registers[1].0, "on the driving instance's connection");
+    assert!(position(&script, "turn/interrupt") < position(&script, "peer/tools/unregister"), "after its turn is stopped");
     drop(first);
     drop(second);
 }

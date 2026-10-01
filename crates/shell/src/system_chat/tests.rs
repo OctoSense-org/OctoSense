@@ -910,3 +910,19 @@ fn terminal_run_needs_a_process_terminal_even_when_granted() {
     assert!(host_tools_given(false, true).is_empty());
     assert!(host_tools_given(false, false).is_empty());
 }
+
+/// Review 2026-09-30: `terminal.run` needs the Terminal's newest launch to
+/// have reported its sandbox applied, not only a process Terminal. Its
+/// declared description no longer calls it unsandboxed.
+#[test]
+fn terminal_run_needs_a_launch_that_reported_its_sandbox() {
+    use super::grants::terminal_target;
+    use crate::sandbox::{note_launch, Applied};
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Unavailable("no sandbox here".into())));
+    assert!(!terminal_target(), "an unsandboxed Terminal is no target");
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Sandboxed("ok".into())));
+    assert_eq!(terminal_target(), crate::apps::terminal_runs_as_process(), "sandboxed: as the hosting says");
+    let run = crate::native_apps::find("terminal").unwrap().tools_json;
+    assert!(!run.contains("unsandboxed"), "{run}");
+    assert!(run.contains("inside the Terminal's own sandbox"), "{run}");
+}

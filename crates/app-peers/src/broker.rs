@@ -43,7 +43,12 @@
 //!   the calling context's client and the caller, executes each occurrence
 //!   at most once, refuses calls of turns it interrupted, and hands the call
 //!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
-//!   closed link end calls before they run. `peer/input` (the system agent's
+//!   closed link end calls before they run. When the app's last instance
+//!   releases (the app closed, or the person turned its agent off) it
+//!   releases the peer's route (`peer/tools/unregister`, octos#2658): the
+//!   shell's consumers share one kernel connection that never closes, so
+//!   without it the kernel would still accept the system agent's input for
+//!   a peer nobody runs; now `peer_send_input` fails visibly. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
 //!   id, once per input, queued while the peer is busy; every approval
 //!   (a `host_tool` one and octos's own tools', a `peer/input` turn's
@@ -1935,6 +1940,18 @@ impl Inner {
         if !self.drives() {
             return;
         }
+        // Released (the app closed or its agent was turned off), its route
+        // on the way out: refused, never started.
+        let released = {
+            let st = self.lock();
+            st.released.then(|| st.peer.as_ref().map(|(_, p)| p.clone()))
+        };
+        if let Some(peer) = released {
+            if let Some(peer) = peer.filter(|p| p.slug == input.peer) {
+                self.reject_input(&peer, &input, InputRefusal::Other("the app was closed".into()));
+            }
+            return;
+        }
         let (peer, account, busy, seen) = {
             let mut st = self.lock();
             let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
@@ -3316,7 +3333,8 @@ impl OctosAppService for Broker {
     }
 
     fn release(&self) {
-        let (peer_turn, account) = {
+        let drove = self.0.drives();
+        let (peer_turn, account, peer) = {
             let mut st = self.0.lock();
             if st.released {
                 return;
@@ -3324,7 +3342,8 @@ impl OctosAppService for Broker {
             st.released = true;
             // Kept until a next instance took it over (below).
             let turn = st.peer_turn.clone();
-            (turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone())), st.account.clone())
+            let peer = st.peer.as_ref().filter(|(g, _)| *g == st.generation).map(|(_, p)| p.clone());
+            (turn.zip(st.peer.as_ref().map(|(_, p)| p.session.clone())), st.account.clone(), peer)
         };
         self.0.revoke_contexts();
         // Another instance of the app still open on this kernel: it drives
@@ -3346,6 +3365,12 @@ impl OctosAppService for Broker {
         if let Some((turn, _)) = &peer_turn {
             self.0.note_interrupted(turn);
         }
+        // The last instance that drove the peer lets go of its route
+        // (octos#2658), after its running turn is stopped: the system
+        // agent's later input fails ("not connected") instead of being
+        // accepted with nobody to run it. Another instance re-registered it
+        // above instead.
+        let unregister = peer.filter(|_| drove && next.is_none()).and_then(|p| p.token.map(|t| (p.slug, t)));
         let inner = self.0.clone();
         self.0.rt().spawn(async move {
             if let Some((turn, session)) = peer_turn {
@@ -3355,6 +3380,12 @@ impl OctosAppService for Broker {
                         json!({"session_id": session, "turn_id": turn}),
                     )
                     .await;
+            }
+            if let Some((slug, token)) = unregister {
+                let params = json!({"profile_id": inner.cfg.profile_id, "session_id": inner.cfg.originator, "peer": slug, "host_token": token});
+                if let Err(e) = inner.request(host_tools::UNREGISTER, params).await {
+                    eprintln!("app-peers: {}: releasing the peer's route failed: {e}", inner.cfg.app_id);
+                }
             }
             // Let the context closes above reach the kernel, then let go of
             // the link: the shared kernel keeps serving other consumers.
