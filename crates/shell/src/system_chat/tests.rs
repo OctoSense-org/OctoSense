@@ -90,16 +90,13 @@ impl Connector for FakeConnector {
     }
 }
 
-/// The system session's grants and credential, as a test sets them.
+/// The system session's grants as a test sets them (and a token it never sends).
 #[derive(Clone, Default)]
 struct Grants(Arc<Mutex<(Vec<Value>, Option<String>)>>);
 
 impl SystemHost for Grants {
     fn declarations(&self) -> Vec<Value> {
         self.0.lock().unwrap().0.clone()
-    }
-    fn host_token(&self) -> Option<String> {
-        self.0.lock().unwrap().1.clone()
     }
 }
 
@@ -431,6 +428,43 @@ fn closing_the_pane_lets_the_kernel_go_unless_a_turn_runs() {
     assert!(d.is_connected(), "a running turn keeps its connection");
 }
 
+/// Closing and reopening the pane shows the conversation again: after an
+/// idle close the reconnect loads the history, and a reopen on a
+/// connection a running turn kept loads it again once nothing runs (the
+/// pane once came back empty until Home restarted).
+#[test]
+fn reopening_the_pane_loads_the_history_again() {
+    let (mut d, fake) = opened();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "earlier"}, {"seq": 2, "role": "assistant", "content": "Earlier answer."}]);
+    d.command(Command::Close);
+    d.model.load_history(&json!([]));
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Earlier answer."], "an idle close: reconnect and history");
+
+    // A turn keeps the connection through a close; the reopen after it
+    // ended loads the history again on the same connection.
+    d.command(Command::Send("go on".into()));
+    let turn = fake.sent("turn/start").last().unwrap()["turn_id"].as_str().unwrap().to_string();
+    d.command(Command::Close);
+    assert!(d.is_connected());
+    fake.notify("turn/completed", json!({"turn_id": turn}));
+    settle(&mut d);
+    let hydrates = fake.sent("session/hydrate").len();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "go on"}, {"seq": 2, "role": "assistant", "content": "Went on."}]);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Went on."]);
+    // While a turn runs, a reopen keeps the live rows instead.
+    d.command(Command::Send("more".into()));
+    d.command(Command::Close);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert!(text_of(&d.model, Role::User).contains(&"more".to_string()));
+}
+
 // ---------------------------------------------------------------- approvals
 
 #[test]
@@ -557,7 +591,10 @@ fn only_the_settings_row_makes_a_command_gesture() {
 /// A system-agent turn from the pane's driver against a real `octos`
 /// kernel and a scripted model (`crates/app-peers/tests/fixtures/mock_llm.py`,
 /// no network, no keys): the answer streams in, the history reloads it, a
-/// kernel restart resumes the same conversation. Runs when
+/// kernel restart resumes the same conversation. With command execution
+/// granted and no app's agent anywhere, `terminal.run` is registered on the
+/// system session with no token, and again after the restart (#146,
+/// octos#2657). Runs when
 /// `OCTOS_CORE_TEST_KERNEL` names an `octos` binary (see
 /// crates/kernel/tests/real_kernel.rs); otherwise it says so and passes.
 #[cfg(kernel)]
@@ -591,7 +628,9 @@ fn a_system_agent_turn_from_the_pane_on_a_real_kernel() {
             self.0.connect().map(super::link::link).map_err(|e| Unavailable::Failed(e.to_string()))
         }
     }
-    let mut d = Driver::new(Box::new(CoreConnector(core.clone())));
+    let grants = command_grant();
+    grants.0.lock().unwrap().1 = None;
+    let mut d = Driver::with_system_host(Box::new(CoreConnector(core.clone())), Box::new(grants));
     let until = |d: &mut Driver, what: &str, done: &dyn Fn(&Driver) -> bool| {
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         while !done(d) {
@@ -601,6 +640,7 @@ fn a_system_agent_turn_from_the_pane_on_a_real_kernel() {
     };
     d.command(Command::Open);
     until(&mut d, "the session", &|d| d.model.phase() == &Phase::Ready);
+    until(&mut d, "terminal.run registered without a token", &|d| d.registered_tools() == Some(&["terminal.run".to_string()][..]));
     d.command(Command::Send("hello from the pane".into()));
     until(&mut d, "the answer", &|d| d.model.phase() == &Phase::Ready && text_of(&d.model, Role::Assistant).iter().any(|t| t.contains("ECHO: hello from the pane")));
     // The kernel restarts (a provider change, Settings' restart): the chat
@@ -609,6 +649,7 @@ fn a_system_agent_turn_from_the_pane_on_a_real_kernel() {
     until(&mut d, "the reconnect", &|d| matches!(d.model.phase(), Phase::Reconnecting(_) | Phase::Connecting));
     until(&mut d, "the resumed session", &|d| d.model.phase() == &Phase::Ready && text_of(&d.model, Role::User).iter().any(|t| t == "hello from the pane")
         && text_of(&d.model, Role::Assistant).iter().any(|t| t.contains("ECHO: hello from the pane")));
+    until(&mut d, "terminal.run registered again", &|d| d.registered_tools() == Some(&["terminal.run".to_string()][..]));
     d.command(Command::Send("second".into()));
     until(&mut d, "the second answer", &|d| d.model.phase() == &Phase::Ready && text_of(&d.model, Role::Assistant).iter().any(|t| t.contains("ECHO: second")));
     drop(d);
@@ -636,7 +677,7 @@ fn the_granted_command_tool_is_registered_on_the_system_session_and_withdrawn_wh
     assert_eq!(register.len(), 1, "registered once the session is open");
     assert!(register[0].get("peer").is_none(), "the host session itself: no peer");
     assert_eq!(register[0]["session_id"], SYSTEM_SESSION);
-    assert_eq!(register[0]["host_token"], "peer-host-token", "an app peer's credential");
+    assert!(register[0].get("host_token").is_none(), "the host's own connection needs no app peer's token (octos#2657)");
     assert!(register[0].get("generic_tools").is_none(), "the system agent keeps its kernel tools");
     assert_eq!(register[0]["tools"][0]["name"], "terminal.run");
     assert_eq!(d.registered_tools(), Some(&["terminal.run".to_string()][..]));
@@ -669,21 +710,21 @@ fn nothing_is_registered_without_a_grant_and_a_reconnect_registers_again() {
     d.command(Command::Close);
 }
 
+/// #146: before any app's agent exists (no app peer's token anywhere) the
+/// grant is registered at once, with no token and no "needs an app's
+/// agent" notice (octos#2657).
 #[test]
-fn without_a_credential_the_grant_waits_and_says_why() {
+fn the_grant_is_registered_before_any_app_agent_exists() {
     let grants = command_grant();
     grants.0.lock().unwrap().1 = None;
-    let (mut d, fake, grants) = driver_with(grants);
+    let (mut d, fake, _) = driver_with(grants);
     d.command(Command::Open);
-    settle(&mut d);
-    assert!(fake.sent("peer/tools/register").is_empty());
-    assert!(d.model.items.iter().any(|i| matches!(i, Item::Notice(n) if n.contains("app's agent"))));
-    // Once an app's agent exists, the next request registers first.
-    grants.0.lock().unwrap().1 = Some("t".into());
     d.command(Command::Send("list my files".into()));
     settle(&mut d);
+    assert!(!d.model.items.iter().any(|i| matches!(i, Item::Notice(n) if n.contains("app's agent"))));
     let s = fake.s();
     let register = s.sent.iter().position(|(m, _)| m == "peer/tools/register").expect("registered");
+    assert!(s.sent[register].1.get("host_token").is_none());
     let turn = s.sent.iter().position(|(m, _)| m == "turn/start").unwrap();
     assert!(register < turn);
 }
@@ -711,7 +752,7 @@ fn the_system_agents_calls_go_to_the_relay_and_are_answered_once_on_this_link() 
     let results = fake.sent("peer/tool/result");
     assert_eq!(results.len(), 1);
     assert!(results[0].get("peer").is_none(), "a host session set's result names no peer");
-    assert_eq!(results[0]["host_token"], "peer-host-token");
+    assert!(results[0].get("host_token").is_none(), "no token on the host's own connection");
     assert_eq!((results[0]["call_id"].as_str(), results[0]["ok"].as_bool()), (Some("c1"), Some(true)));
 
     // A cancel closes the call: its late answer is never sent.
@@ -868,4 +909,20 @@ fn terminal_run_needs_a_process_terminal_even_when_granted() {
     assert!(host_tools_given(true, false).is_empty(), "granted, but the Terminal runs in-process here");
     assert!(host_tools_given(false, true).is_empty());
     assert!(host_tools_given(false, false).is_empty());
+}
+
+/// Review 2026-09-30: `terminal.run` needs the Terminal's newest launch to
+/// have reported its sandbox applied, not only a process Terminal. Its
+/// declared description no longer calls it unsandboxed.
+#[test]
+fn terminal_run_needs_a_launch_that_reported_its_sandbox() {
+    use super::grants::terminal_target;
+    use crate::sandbox::{note_launch, Applied};
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Unavailable("no sandbox here".into())));
+    assert!(!terminal_target(), "an unsandboxed Terminal is no target");
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Sandboxed("ok".into())));
+    assert_eq!(terminal_target(), crate::apps::terminal_runs_as_process(), "sandboxed: as the hosting says");
+    let run = crate::native_apps::find("terminal").unwrap().tools_json;
+    assert!(!run.contains("unsandboxed"), "{run}");
+    assert!(run.contains("inside the Terminal's own sandbox"), "{run}");
 }

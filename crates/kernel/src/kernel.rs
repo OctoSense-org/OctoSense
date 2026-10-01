@@ -28,8 +28,14 @@ pub(crate) enum Ctl {
     Attach(ConnId, mpsc::UnboundedSender<Inbound>),
     Frame(ConnId, String),
     Detach(ConnId),
+    /// Set the system agent's exact kernel tool list again (a grant changed).
+    SystemToolList,
     Stop(CloseReason),
 }
+
+/// The ids of the host's own `session/tool_list/set` requests: never a
+/// consumer's (the router gives theirs `k<n>`), answered only to the log.
+const TOOL_LIST_ID: &str = "octosense-system-tool-list-";
 
 /// How long a stopping kernel may drain before it is killed.
 const STDIO_GRACE: Duration = Duration::from_secs(3);
@@ -338,6 +344,20 @@ pub(crate) async fn supervise(
                     }
                 }
             };
+            // ADR 0004 §12 step 4: the system agent's exact kernel tool list,
+            // before any consumer's frame reaches the kernel (octos#2648).
+            let mut tool_lists = 0u64;
+            let set_tool_list = |tool_lists: &mut u64| {
+                *tool_lists += 1;
+                let tools = crate::system_tools::grants();
+                crate::system_tools::tool_list_request(&format!("{TOOL_LIST_ID}{tool_lists}"), &tools)
+            };
+            let first = startup.is_ok().then(|| set_tool_list(&mut tool_lists));
+            let startup = match (startup, first) {
+                (Ok(()), Some(frame)) => write_line(&mut io, &frame).await
+                    .map_err(|e| CloseReason::Exited(format!("writing to the kernel failed: {e}"))),
+                (other, _) => other,
+            };
             let reason = if let Err(reason) = startup { reason } else { loop {
                 tokio::select! {
                     biased;
@@ -348,14 +368,15 @@ pub(crate) async fn supervise(
                         }
                         Some(Ctl::Frame(id, text)) => {
                             if let Some(frame) = router.consumer_frame(id, &text) {
-                                let write = async {
-                                    io.writer.write_all(frame.as_bytes()).await?;
-                                    io.writer.write_all(b"\n").await?;
-                                    io.writer.flush().await
-                                };
-                                if let Err(e) = write.await {
+                                if let Err(e) = write_line(&mut io, &frame).await {
                                     break CloseReason::Exited(format!("writing to the kernel failed: {e}"));
                                 }
+                            }
+                        }
+                        Some(Ctl::SystemToolList) => {
+                            let frame = set_tool_list(&mut tool_lists);
+                            if let Err(e) = write_line(&mut io, &frame).await {
+                                break CloseReason::Exited(format!("writing to the kernel failed: {e}"));
                             }
                         }
                         Some(Ctl::Detach(id)) => {
@@ -368,6 +389,10 @@ pub(crate) async fn supervise(
                     line = io.lines.next_line() => match line {
                         Ok(Some(text)) => {
                             if text.trim().is_empty() {
+                                continue;
+                            }
+                            if let Some(outcome) = tool_list_reply(&text) {
+                                (log)(&format!("octos-core: kernel {generation}: the system agent's tool list {outcome}"));
                                 continue;
                             }
                             for (id, frame) in router.kernel_frame(&text) {
@@ -414,6 +439,29 @@ pub(crate) async fn supervise(
     }
     ended();
     let _ = done.send(true);
+}
+
+async fn write_line(io: &mut Io, frame: &str) -> std::io::Result<()> {
+    io.writer.write_all(frame.as_bytes()).await?;
+    io.writer.write_all(b"\n").await?;
+    io.writer.flush().await
+}
+
+/// The kernel's answer to one of the host's own tool-list requests, as a
+/// log line; `None` for every other frame.
+fn tool_list_reply(text: &str) -> Option<String> {
+    if !text.contains(TOOL_LIST_ID) {
+        return None;
+    }
+    let frame: serde_json::Value = serde_json::from_str(text).ok()?;
+    let id = frame.get("id")?.as_str()?;
+    if !id.starts_with(TOOL_LIST_ID) || frame.get("method").is_some() {
+        return None;
+    }
+    Some(match frame.get("error") {
+        Some(error) => format!("was NOT set: {error}"),
+        None => format!("is set (version {})", frame["result"]["version"]),
+    })
 }
 
 fn with_tail(why: &str, tail: &Tail) -> String {

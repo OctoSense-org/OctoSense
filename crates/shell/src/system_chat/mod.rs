@@ -9,6 +9,7 @@
 //! | its link: the shell's one kernel through `octosense_ai_host::kernel` | `link` (with a kernel) |
 //! | Setup → Assistant → Command execution: the grant, the person's gesture, restart to apply | [`grants`] |
 //! | the pane (desktop side panel, phone full screen) | [`view`] |
+//! | its prompt: text input, the input method, the pane's keys | [`composer`] |
 //!
 //! **Where it runs.** A thread owns the [`session::Driver`] and its link;
 //! the UI thread sends it [`session::Command`]s and draws a snapshot of the
@@ -35,6 +36,7 @@
 //! conversation (ids `routed:<n>`); the person's answer goes back through
 //! [`crate::questions::answer`], never through this chat's own session.
 
+pub mod composer;
 pub mod grants;
 pub mod model;
 pub mod session;
@@ -76,7 +78,7 @@ struct Worker {
 
 struct Chat {
     open: bool,
-    draft: String,
+    draft: composer::Composer,
     /// Bumped on UI-only changes (open, the draft).
     ui_generation: u64,
     shared: Arc<Mutex<Shared>>,
@@ -138,7 +140,7 @@ fn with<R>(f: impl FnOnce(&mut Chat) -> R) -> R {
     let mut guard = CHAT.lock().unwrap_or_else(|e| e.into_inner());
     let chat = guard.get_or_insert_with(|| Chat {
         open: false,
-        draft: String::new(),
+        draft: composer::Composer::default(),
         ui_generation: 0,
         shared: Arc::new(Mutex::new(Shared { model: ChatModel::new(), effects: Vec::new() })),
         worker: None,
@@ -259,7 +261,7 @@ pub fn send_draft() {
     let text = with(|c| {
         c.ui_generation += 1;
         c.scroll = 0.0;
-        std::mem::take(&mut c.draft)
+        c.draft.take()
     });
     send(&text);
 }
@@ -346,7 +348,12 @@ pub fn snapshot() -> ChatModel {
 }
 
 pub fn draft() -> String {
-    with(|c| c.draft.clone())
+    with(|c| c.draft.text().to_string())
+}
+
+/// The prompt's editor state, for the input method.
+pub fn draft_state() -> makepad_widgets::makepad_platform::event::FullTextState {
+    with(|c| c.draft.state())
 }
 
 pub fn scroll() -> f64 {
@@ -448,41 +455,44 @@ pub fn approval_request(ask: &model::ApprovalAsk) -> (String, crate::approvals::
 }
 
 /// The keyboard while the pane is open. True when it was the pane's.
+/// Characters are not typed here: they arrive as text input
+/// ([`text_input`]), as they do for makepad's `TextInput`.
 pub fn key(e: &KeyEvent) -> bool {
     if !is_open() {
         return false;
     }
-    let command_key = e.modifiers.logo || e.modifiers.control;
-    match e.key_code {
-        KeyCode::Escape => close(),
-        KeyCode::ReturnKey if !e.modifiers.shift => send_draft(),
-        KeyCode::Backspace => with(|c| {
-            c.draft.pop();
-            c.ui_generation += 1;
-        }),
-        KeyCode::KeyN if command_key => new_conversation(),
-        KeyCode::Period if command_key => interrupt(),
-        other if !command_key => {
-            let Some(ch) = other.to_char(e.modifiers.shift) else { return true };
-            with(|c| {
-                c.draft.push(ch);
+    match composer::key(e) {
+        composer::Key::Close => close(),
+        composer::Key::Send => send_draft(),
+        composer::Key::Backspace => with(|c| {
+            if c.draft.backspace() {
                 c.ui_generation += 1;
-            });
-        }
-        _ => return false,
+            }
+        }),
+        composer::Key::New => new_conversation(),
+        composer::Key::Stop => interrupt(),
+        composer::Key::Swallow => {}
+        // Other keys stay the pane's too, unless they are shortcuts.
+        composer::Key::Pass => return !(e.modifiers.logo || e.modifiers.control),
     }
     true
 }
 
-/// Text from the platform's input method (phones), while the pane is open.
-pub fn text_input(text: &str) -> bool {
+/// Text input while the pane is open: typed characters, a paste, the
+/// phone's input method (see [`composer`]).
+pub fn text_input(event: &makepad_widgets::makepad_platform::event::TextInputEvent) -> bool {
     if !is_open() {
         return false;
     }
-    with(|c| {
-        c.draft.push_str(text);
-        c.ui_generation += 1;
+    let submit = with(|c| {
+        if c.draft.text_input(event) {
+            c.ui_generation += 1;
+        }
+        c.draft.take_submit()
     });
+    if submit {
+        send_draft();
+    }
     true
 }
 
