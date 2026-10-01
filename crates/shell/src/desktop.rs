@@ -536,8 +536,23 @@ mod tests {
     fn the_assistant_entry_toggles_the_chat_and_an_app_entry_launches_the_app() {
         let clients = vec![(7 as ClientId, "photos".to_string(), "Photos".to_string())];
         assert!(matches!(dock_hit(ASSISTANT_ENTRY, &clients).0, ShelfHit::Assistant));
-        assert_eq!(dock_hit("photos", &clients), (ShelfHit::App("photos".into()), true));
-        assert_eq!(dock_hit("news", &clients), (ShelfHit::App("news".into()), false));
+        assert_eq!(dock_hit("apps.photos", &clients), (ShelfHit::App("photos".into()), true));
+        assert_eq!(dock_hit("apps.news", &clients), (ShelfHit::App("news".into()), false));
+        // An app whose id is the entry's, or `assistant`, is just an app.
+        assert_eq!(dock_hit("apps.shell.assistant", &clients), (ShelfHit::App("shell.assistant".into()), false));
+        assert_eq!(dock_hit("apps.assistant", &clients), (ShelfHit::App("assistant".into()), false));
+    }
+
+    #[test]
+    fn the_assistant_entry_is_not_an_app_to_the_launcher_or_the_dock_warp() {
+        // The launcher's apps (what the phone dock, pages, reordering and
+        // pinning work from) never carry it: it is added to the desktop
+        // dock alone, and is not an `apps.` id.
+        assert!(crate::shell::launcher::apps().iter().all(|a| a.id != ASSISTANT_ENTRY));
+        assert!(!ASSISTANT_ENTRY.starts_with("apps."));
+        // A window warps to its own app's icon (`dock_icon_bounds` looks up
+        // `apps.<app>`), never to the entry.
+        assert_ne!(format!("apps.{}", "shell.assistant"), ASSISTANT_ENTRY);
     }
 }
 
@@ -970,7 +985,9 @@ fn shelf_geometry(screen: Rect, style: &StyleTween, app_count: usize) -> Rect {
 }
 
 /// The dock's entry for the system chat (#143), right after the launcher.
-/// Not an app: its id has no `apps.` prefix, so no client can claim it.
+/// Not an app: its id has no `apps.` prefix, and [`dock_hit`] compares the
+/// whole entry id, so no app (not even one whose id is `shell.assistant`)
+/// can claim it.
 pub const ASSISTANT_ENTRY: &str = "shell.assistant";
 /// The art the entry draws: the shell's own (`resources/icons/apps/assistant.svg`,
 /// worn over every style in `octosense::style::icon_assets`).
@@ -991,12 +1008,14 @@ pub fn dock_assistant() -> Option<crate::shell::menu::MenuItem> {
     })
 }
 
-/// What a dock entry does, and whether it shows the running dot: the
+/// What a dock entry (its whole menu id, `apps.<id>` or
+/// [`ASSISTANT_ENTRY`]) does, and whether it shows the running dot: the
 /// assistant's while its chat is open, an app's while it has a window.
-fn dock_hit(id: &str, clients: &[(ClientId, String, String)]) -> (ShelfHit, bool) {
-    if id == ASSISTANT_ENTRY {
+fn dock_hit(entry: &str, clients: &[(ClientId, String, String)]) -> (ShelfHit, bool) {
+    if entry == ASSISTANT_ENTRY {
         return (ShelfHit::Assistant, crate::system_chat::is_open());
     }
+    let id = entry.trim_start_matches("apps.");
     (ShelfHit::App(id.into()), clients.iter().any(|(_, a, _)| a == id))
 }
 
@@ -1197,7 +1216,7 @@ impl Widget for DesktopShelf {
                         self.button(cx, rect(x,y,w,cell), ShelfHit::Launcher, Ico::Menu, "Workspace", false, style, opacity);
                         for (i, app) in apps.iter().enumerate() {
                             let id = app.id.trim_start_matches("apps.");
-                            let (hit, running) = dock_hit(id, &clients);
+                            let (hit, running) = dock_hit(&app.id, &clients);
                             self.button(cx, rect(x,y+(i+1) as f64*cell,w,cell), hit, app_icon(id), &app.label, running, style, opacity);
                         }
                     } else if style == DesktopStyle::Windows2000 {
@@ -1257,7 +1276,7 @@ impl Widget for DesktopShelf {
                         );
                         for (i, app) in apps.iter().enumerate() {
                             let id = app.id.trim_start_matches("apps.");
-                            let (hit, running) = dock_hit(id, &clients);
+                            let (hit, running) = dock_hit(&app.id, &clients);
                             self.button(
                                 cx,
                                 rect(

@@ -35,8 +35,9 @@ impl TileKind {
 /// The assistant chip's slot name. [`home_layout_for_apps`] places it when
 /// `apps` names it ([`crate::mobile_surface::PhoneSurface::home_layout`]
 /// does, in a build with an assistant); the Android placements journal
-/// hides it like any tile.
-pub const ASSISTANT_TILE: &str = "assistant";
+/// hides it like any tile. Namespaced (`shell:`, like `android:` ids) so
+/// no app id, `assistant` included, can stand for it.
+pub const ASSISTANT_TILE: &str = "shell:assistant";
 
 /// The apps that own a home tile, in tile order. Every id is a launcher
 /// registry entry; the tile launches it through the same cargo path.
@@ -548,6 +549,9 @@ mod tests {
         let landscape = home_layout_for_apps(wide, wide.pos.y + 44.0, PhoneSurface::home_dock(wide), &["clock", "photos", ASSISTANT_TILE]);
         let y = landscape.tiles[0].rect.pos.y;
         assert!(chip(&landscape).is_some_and(|c| c.rect.pos.y == y));
+        // An app that happens to be called `assistant` is just an app.
+        let named = home_layout_for_apps(screen, top, dock, &["clock", "assistant"]);
+        assert!(chip(&named).is_none(), "an app id never stands for the chip");
         // Hidden through the placements journal, like any tile.
         set_hidden_tiles(&[ASSISTANT_TILE.to_string()]);
         let hidden = chip(&home_layout_for_apps(screen, top, dock, &["clock", ASSISTANT_TILE]));
