@@ -4,7 +4,7 @@
     {
       "id": "rinx",
       "crate": "rinx",
-      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.1.0", "rev": "af3a039fa9d96c2abdc46966a810c19c2b18caf8", "local": null },
+      "source": { "git": "https://github.com/hagency-org/Rinx.git", "tag": "v1.1.0", "rev": "4b89097d8791a7190d01de1c576979c93df0013d", "local": null },
       "module": "rinx::module::RINX_MODULE",
       "bin": null,
       "default_features": false,
@@ -98,7 +98,7 @@
       "id": "apphub",
       "feature": "app-hub",
       "crate": "octosense-app-hub-app",
-      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "72c8d792e961bb02b4353d199f42f9e83b47f8b6", "local": null },
+      "source": { "git": "https://github.com/OctoSense-org/OctoSense-App-Hub", "rev": "58c3c8aed8fc811a16d67c5f784a8a44214ff876", "local": null },
       "module": ["octosense_app_hub_app::APP_HUB_MODULE", "octosense_app_hub_app::CARD_MODULE"],
       "bin": null,
       "default_features": true,
