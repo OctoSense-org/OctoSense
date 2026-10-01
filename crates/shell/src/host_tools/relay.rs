@@ -23,6 +23,13 @@
 //! 4. **Answer once** through the call's [`ToolReply`]; a cancel closes it
 //!    and tells whoever holds the call.
 //!
+//! **Audit** (ADR 0004 §8, §12, §13): every call is recorded when it
+//! arrives and when it ends, answered, refused or cancelled ([`CallAudit`]:
+//! caller, owning app, tool, argument digest, outcome) through the relay's
+//! one audit sink ([`Relay::set_audit`]; the shell's writes
+//! `logs/tool-calls.jsonl`, owner-only). `dev.run` and `terminal.run` are
+//! calls like any other, so they are audited here too.
+//!
 //! `host_tool` approvals (the kernel's `confirm: host` sheets) go to the
 //! router with the owning app, the exact arguments and the caller, and its
 //! decision answers the kernel.
@@ -34,6 +41,7 @@ use serde_json::Value;
 
 use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, CallOrigin, CallerKind, HostToolApproval, HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
 use crate::ai_host::app_peers::TurnTrigger;
+pub use crate::approvals::audit::CallAudit;
 use crate::approvals::{Caller, Decision, RequestContext, RequestId, Route, ToolSpec, Trigger};
 use crate::peer_link::{KernelToolCall, Refused, Risk, ToolCallResult};
 
@@ -396,6 +404,34 @@ struct Pending {
     at: At,
 }
 
+/// Where the relay's audit lines go.
+pub type AuditSink = Arc<dyn Fn(CallAudit) + Send + Sync>;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `reply`, audited: its answer (a result or an error) is recorded once, as
+/// `record` with phase `done`. Acknowledgements pass through.
+fn audited_reply(reply: ToolReply, record: CallAudit, sink: AuditSink) -> ToolReply {
+    let outer = reply.clone();
+    ToolReply::new(reply.call_id().to_string(), move |fields: Value| {
+        if fields.get("status").is_some() {
+            outer.acknowledge();
+            return;
+        }
+        let (outcome, audit) = if fields["ok"] == true {
+            (ToolOutcome::Ok(fields.get("data").cloned().unwrap_or(Value::Null)), "ok".to_string())
+        } else {
+            let kind = fields["error"]["kind"].as_str().unwrap_or("error").to_string();
+            (ToolOutcome::error(&kind, fields["error"]["message"].as_str().unwrap_or("").to_string()), format!("error:{kind}"))
+        };
+        if outer.finish(outcome) {
+            sink(CallAudit { ts: unix_now(), phase: "done".into(), outcome: audit, ..record.clone() });
+        }
+    })
+}
+
 /// The relay.
 pub struct Relay {
     pub catalog: Catalog,
@@ -406,11 +442,24 @@ pub struct Relay {
     usage: HashMap<String, Usage>,
     /// The caller's own reply for each checked one (a cancel closes both).
     outers: HashMap<String, ToolReply>,
+    /// Every call's audit line (ADR 0004 §8); none in a bare relay.
+    audit: Option<AuditSink>,
+    /// The audit line of each call still open, for its cancel.
+    audited: HashMap<String, CallAudit>,
 }
 
 impl Default for Relay {
     fn default() -> Self {
-        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new(), usage: HashMap::new(), outers: HashMap::new() }
+        Relay {
+            catalog: Catalog::shipped(),
+            executors: HashMap::new(),
+            calls: HashMap::new(),
+            approvals: HashMap::new(),
+            usage: HashMap::new(),
+            outers: HashMap::new(),
+            audit: None,
+            audited: HashMap::new(),
+        }
     }
 }
 
@@ -453,7 +502,9 @@ fn checked_reply(reply: ToolReply, tool: &str, schema: Option<Value>, max_bytes:
 pub fn trigger_of(stamped: &TurnTrigger) -> Trigger {
     match stamped {
         TurnTrigger::Person => Trigger::Person,
-        TurnTrigger::App => Trigger::App,
+        // The app's word that the person asked: its run, not the person's
+        // (only a shell surface vouches for the person).
+        TurnTrigger::AppSaysPerson | TurnTrigger::App => Trigger::App,
         TurnTrigger::Incoming { from } => Trigger::IncomingContent { from: from.clone() },
         TurnTrigger::SystemAgent => Trigger::SystemAgent,
         TurnTrigger::Unknown => Trigger::Unknown,
@@ -478,6 +529,11 @@ fn error_of(result: &str) -> ToolOutcome {
 }
 
 impl Relay {
+    /// Where every call's audit lines go.
+    pub fn set_audit(&mut self, sink: AuditSink) {
+        self.audit = Some(sink);
+    }
+
     /// (auto_approvable, command) for `owner`'s `tool`: the host's rule
     /// (`native-apps.json` `tool_policy`, commands), and a script app's own
     /// `tools.json` declaration (App Hub's `auto_approvable`), whichever is
@@ -533,6 +589,8 @@ impl Relay {
         self.calls.retain(|_, p| p.reply.is_open());
         let calls = &self.calls;
         self.outers.retain(|id, outer| outer.is_open() && calls.contains_key(id));
+        let outers = &self.outers;
+        self.audited.retain(|id, _| calls.contains_key(id) || outers.contains_key(id));
     }
 
     /// Spend one call of `agent`'s budget in `turn`; why not, when spent.
@@ -587,6 +645,27 @@ impl Relay {
                 (Caller::AppAgent { app: calling.clone() }, self.catalog.may_call(&calling, &owner, &tool, dev) || (dev && self.catalog.entry(&owner, &tool).is_none()))
             }
         };
+        // The kernel's own reply: a cancel closes it (nothing is sent after).
+        let kernel_reply = reply.clone();
+        // Audited from here on: received now, and its end, whatever it is.
+        let reply = match self.audit.clone() {
+            Some(sink) => {
+                let record = CallAudit {
+                    ts: env.now(),
+                    call_id: call.call_id.clone(),
+                    caller: caller.as_audit(),
+                    owner: owner.clone(),
+                    tool: tool.clone(),
+                    args_digest: crate::approvals::facts::digest(&call.args),
+                    phase: "call".into(),
+                    outcome: "received".into(),
+                };
+                sink(record.clone());
+                self.audited.insert(call.call_id.clone(), record.clone());
+                audited_reply(reply, record, sink)
+            }
+            None => reply,
+        };
         let refuse = |reply: &ToolReply, kind: &str, message: String| {
             reply.finish(ToolOutcome::error(kind, message));
         };
@@ -621,9 +700,8 @@ impl Relay {
             return refuse(&reply, "budget_exceeded", why);
         }
         // The result is checked on its way back.
-        let outer = reply.clone();
         let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
-        self.outers.insert(call.call_id.clone(), outer);
+        self.outers.insert(call.call_id.clone(), kernel_reply);
         // 2. Route to the owning app's executor (the shell's own for
         // `dev.run` and the host read tools).
         if host_run {
@@ -632,7 +710,12 @@ impl Relay {
             }
             return self.run(call, reply, Target::Executor(HOST_EXECUTOR.to_string()), env);
         }
-        if env.has_link(&owner) {
+        // An app with its own executor (an in-process module's, a script
+        // app's host service) runs its tools there, even when it also holds
+        // a peer link for its conversation (#142): the link serves the tools
+        // of an app that has nothing else, a process app or a module that
+        // serves its tools over the link.
+        if env.has_link(&owner) && !self.executors.contains_key(&owner) {
             let kernel_call = KernelToolCall {
                 call_id: call.call_id.clone(),
                 name: tool.clone(),
@@ -726,8 +809,15 @@ impl Relay {
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {
+        let mut cancelled = false;
         if let Some(outer) = self.outers.remove(call_id) {
-            outer.cancel();
+            cancelled |= outer.cancel();
+        }
+        if let (Some(record), Some(sink)) = (self.audited.remove(call_id), self.audit.clone()) {
+            let open = self.calls.get(call_id).is_some_and(|p| p.reply.is_open());
+            if cancelled || open {
+                sink(CallAudit { ts: env.now(), phase: "done".into(), outcome: "cancelled".into(), ..record });
+            }
         }
         let Some(p) = self.calls.remove(call_id) else { return };
         p.reply.cancel();

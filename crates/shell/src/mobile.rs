@@ -34,6 +34,8 @@ pub enum PhoneHit {
     Scrub,
     /// A published card on the glance page: open the app that published it.
     Glance(String),
+    /// The assistant chip on the home page: the system chat (#143).
+    Assistant,
 }
 
 /// The launch effect of an Android app (`PhoneState::launch`).

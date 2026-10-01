@@ -67,7 +67,8 @@ pub enum RuleScope {
 }
 
 /// Every condition set must hold. A fact the call does not carry fails the
-/// condition that needs it.
+/// condition that needs it, and so does one the reader cannot make out
+/// ([`facts`]: conditions fail closed).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Conditions {
     /// Every recipient is in the person's contacts (or, with
@@ -188,6 +189,9 @@ pub enum Miss {
     Amount,
     Count,
     CapReached,
+    /// The call carries a fact a condition needs in a shape (or under a
+    /// name) the reader does not know: conditions fail closed.
+    Unreadable,
     /// An external client's call: no rule ever answers it.
     External,
 }
@@ -240,7 +244,8 @@ impl Rule {
         }
         let c = &self.conditions;
         if c.recipients_in_contacts || c.recipients_in_thread {
-            let recipients = facts::recipients(&req.args);
+            // A recipient the reader cannot make out fails, like none.
+            let recipients = facts::recipients_checked(&req.args).map_err(|_| Miss::Unreadable)?;
             if recipients.is_empty() {
                 return Err(Miss::NoRecipients);
             }
@@ -263,8 +268,10 @@ impl Rule {
             }
         }
         if let Some(max) = c.max_count {
-            if facts::count(&req.args) > max {
-                return Err(Miss::Count);
+            match facts::count_checked(&req.args) {
+                Ok(n) if n <= max => {}
+                Ok(_) => return Err(Miss::Count),
+                Err(_) => return Err(Miss::Unreadable),
             }
         }
         if let Some(cap) = self.daily_cap {
