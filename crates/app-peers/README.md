@@ -51,10 +51,16 @@ octosense_app_peers::injection::withdraw(module.id(), &scope);
 The owner of every app peer is the system agent session
 `_main:api:octosense#system`. The kernel mints a host token when it creates a
 peer (octos UPCR-2026-034); every later control call on the peer needs it. The
-shell keeps the tokens beside its kernel's core dir (`<core_dir>/../app-peers`,
-mode 0600), outside every app's reach. A standalone app sets
-`BrokerConfig::state_dir` to its own data dir. Apps get the kernel's own provisioned workspace
-per app and account; their memory namespace is `app/<app>/acct-<hash>`.
+shell keeps each peer's token and the workspace it was created with in one
+record beside its kernel's core dir (`<core_dir>/../app-peers/<namespace>.peer`,
+written at once, mode 0600 in a 0700 directory; `src/peer_record.rs`), outside
+every app's reach. A standalone app sets `BrokerConfig::state_dir` to its own
+data dir. A new peer's workspace is the account's folder the host names
+(`ToolHost::agent_workspace`), else the kernel's own provisioned one; a resume
+names the recorded one, made again first if the account's folder was removed.
+A peer recorded without a workspace (older `.token` files) resumes with the
+account folder, else the kernel's, and the one the kernel takes is recorded.
+Their memory namespace is `app/<app>/acct-<hash>`.
 
 ## An app
 
@@ -74,7 +80,13 @@ service.release();                            // app closed
   (`ContextOp::Approval`); the system agent never approves for an app.
 - **Background work after close**: `release()` closes every context and
   interrupts the peer's running turn. The peer and its memory stay for the
-  next launch.
+  next launch. The app's last instance then releases the peer's route
+  (`peer/tools/unregister`, octos#2658): the shell's consumers share one
+  kernel connection that stays open, so without it the kernel would still
+  accept the system agent's input for the closed app; now the system
+  agent's `peer_send_input` fails ("not connected"). An input that reaches
+  the released broker first is refused (`other`, "the app was closed").
+  The next launch registers the route again.
 - **Nobody answers**: an approval or question on the peer's session or a
   context expires after `BrokerConfig::prompt_deadline` (10 min;
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with
@@ -85,7 +97,9 @@ service.release();                            // app closed
   an answer).
 - **Stop**: `ContextOp::Interrupt` on a conversation stops whatever turn
   runs on the peer, the system agent's included (the person owns the
-  device); the shell's own surfaces use `broker::interrupt_where`. A turn
+  device); the shell's own surfaces use `broker::interrupt_where`, and the
+  "Ask <app>" panel `broker::interrupt_lane_where` (one lane: its Stop is
+  the person's own turn, the system agent's has its own control). A turn
   that ends before the host answered its `host_tool` approval withdraws it
   from the host (`ToolHost::host_tool_approval_closed`), as its questions
   are closed (`ToolHost::user_question_closed`).

@@ -16,7 +16,8 @@ native_apps = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native_apps)
 
 GENERATED = ["Cargo.toml", "crates/shell/Cargo.toml", "desktop/Cargo.toml", "phone/Cargo.toml",
-             native_apps.RUST_FILE, native_apps.AGENTS_FILE, native_apps.MANIFEST]
+             native_apps.RUST_FILE, native_apps.AGENTS_FILE, native_apps.MANIFEST, native_apps.DESKTOP_CATALOG,
+             native_apps.PROCESS_APPS]
 
 
 def quiet():
@@ -308,6 +309,54 @@ class Generation(Fixture):
         self.assertEqual(commands, [["cargo", "update", "-p", "rinx"], ["cargo", "metadata", "--format-version", "1"]])
         self.assertIn('rinx = { git = "https://github.com/hagency-org/Rinx.git", tag = "v1.0.1"',
                       (self.root / "Cargo.toml").read_text())
+
+    def catalog(self):
+        path = self.root / native_apps.DESKTOP_CATALOG
+        return path, json.loads(path.read_text())
+
+    def test_the_desktop_catalog_names_what_a_process_launch_builds(self):
+        path, rows = self.catalog()
+        terminal = next(row for row in rows if row["id"] == "terminal")
+        terminal["bin"] = "makepad-terminal"
+        terminal["package"] = "terminal"
+        path.write_text(json.dumps(rows))
+        with contextlib.redirect_stdout(io.StringIO()) as out, quiet():
+            self.assertEqual(native_apps.main(["--check"], root=self.root), 1)
+        self.assertIn("terminal's bin is 'makepad-terminal', native-apps.json says 'terminal'", out.getvalue())
+        self.assertIn("terminal's package is 'terminal', native-apps.json says 'makepad-terminal'", out.getvalue())
+
+    def test_a_process_app_needs_a_catalog_row_from_its_own_source(self):
+        path, rows = self.catalog()
+        sheets = next(row for row in rows if row["id"] == "sheets")
+        sheets.pop("source")
+        sheets["manifest"] = "../../apps/sheets/Cargo.toml"
+        reference = next(row for row in rows if row["id"] == "reference")
+        reference["manifest"] = "../../apps/elsewhere/Cargo.toml"
+        path.write_text(json.dumps([row for row in rows if row["id"] != "terminal"]))
+        problems = native_apps.catalog_problems(self.root, native_apps.load(self.root))
+        self.assertIn(f"{native_apps.DESKTOP_CATALOG} has no row for terminal, which runs as a process on a desktop", problems)
+        self.assertTrue(any("sheets comes from Makepad" in p for p in problems), problems)
+        self.assertTrue(any("reference's manifest should be apps/reference/Cargo.toml" in p for p in problems), problems)
+        # A native app with no bin has no process form, so no row either.
+        rows.append({"id": "rinx", "label": "Rinx", "source": "makepad", "package": "rinx", "bin": "rinx"})
+        path.write_text(json.dumps(rows))
+        problems = native_apps.catalog_problems(self.root, native_apps.load(self.root))
+        self.assertTrue(any("rinx has a row but no bin" in p for p in problems), problems)
+
+    def test_the_shell_reads_each_process_apps_package_from_the_manifest(self):
+        rust = native_apps.render_rust(native_apps.load(self.root))
+        self.assertIn('"terminal" => Some("makepad-terminal"),', rust)
+        self.assertIn('"reference" => Some("octosense-reference"),', rust)
+        self.assertNotIn('"rinx" => Some(', rust, "no bin: no process package")
+
+    def test_the_process_build_package_names_every_binary_with_its_features(self):
+        blocks = native_apps.process_blocks(native_apps.load(self.root))["process deps"]
+        self.assertIn('makepad-sheets = { workspace = true, features = ["standalone"] }', blocks)
+        self.assertIn("makepad-terminal = { workspace = true }", blocks)
+        self.assertIn("octosense-reference = { workspace = true }", blocks)
+        self.assertFalse(any(line.startswith("rinx ") for line in blocks), "no bin: no process build")
+        self.app("rinx")["bin_features"] = ["x"]
+        self.assertRefused(r"rinx: bin_features without a bin")
 
     def test_nothing_changed_runs_no_cargo(self):
         with patch.object(native_apps.subprocess, "run") as run:

@@ -309,3 +309,27 @@ fn should_keep_mails_passwords_in_the_host_secrets_when_the_shell_starts() {
     assert_eq!(dir, home.0.join("secrets/os.mail"));
     assert!(!dir.starts_with(layout.apps_root()));
 }
+
+/// A script app never takes a native app's id (ADR 0004 §3, §11): an
+/// install or launch naming `rinx` leaves Rinx's spec alone, and an
+/// install event naming it never deletes Rinx's folders or secrets.
+#[test]
+fn a_script_app_with_a_native_apps_id_touches_none_of_its_storage() {
+    let home = Scratch::new("native-id");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    host.set_spec("rinx", StorageSpec { accounts: true, ..Default::default() });
+    let rinx = host.open("rinx").unwrap();
+    rinx.account_folder(Some("@me:x")).unwrap();
+    rinx.secrets().put("token", b"t").unwrap();
+    write_json(&root.join("rinx/bundle/manifest.json"), &json!({"id": "rinx"}));
+
+    assert!(prepare_script_app(&host, &root, "rinx").unwrap_err().contains("native app"));
+    assert!(prepare_script_app(&host, &root, "com.example.rinx").is_err(), "nor its namespace");
+    assert!(host.spec("rinx").accounts, "Rinx's own block holds");
+
+    std::fs::remove_dir_all(root.join("rinx")).unwrap();
+    assert!(!app_uninstalled(&host, &root, "rinx"));
+    assert!(home.0.join("secrets/rinx").is_dir(), "Rinx's secrets stay");
+    assert!(!host.is_signed_out("rinx", Some("@me:x")));
+}

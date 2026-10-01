@@ -194,7 +194,7 @@ def decide(body):
             "header": "Number", "question": "Which number should I use?",
             "options": [{"label": "42", "description": "the answer"}, {"label": "7"}]}]}}
     if "peer_respond" in tools and "QUESTION_HOLD" not in everything and "TELL_PEER_HOLD" not in everything:
-        waiting = re.search(r"\b(rinx-[0-9a-f]{8})\b", last_user)
+        waiting = re.search(r"\b(rinx-[0-9a-f]{8,16})\b", last_user)
         if waiting and ("await" in last_user.lower() or "question" in last_user.lower() or "input" in last_user.lower()):
             return {"tool": "peer_respond", "args": {"slug": waiting.group(1), "answer": "42"}}
     return {"text": "ECHO: " + (last_user.strip().splitlines()[-1] if last_user.strip() else "")}
