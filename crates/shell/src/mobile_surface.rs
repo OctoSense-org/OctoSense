@@ -1,7 +1,6 @@
 //! Phone chrome drawn around compositor-owned application surfaces.
 use crate::{desktop::DesktopStyle, desk::WmState, mobile::*, mobile_tiles::{self, HomeLayout, TileSlot, TILE_RADIUS}, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussRoundedView, GaussBlurSnapshot}, *};
-use crate::desktop::DrawDesktopChrome;
 use crate::mobile_shade::ShadeContentCache;
 use crate::glance_card::GlanceTiles;
 use crate::octosense::style::AppIconDraw;
@@ -11,6 +10,24 @@ use search::SearchResults;
 script_mod! {
     use mod.prelude.widgets_internal.*
     use mod.widgets.*
+    // The phone's rounded rects: cards, pills, badges and dims. The same
+    // corner field and edge coverage as the desktop chrome shader, without
+    // its bevel, checker, gradient, frame and caption work: that shader was
+    // 39% of the home's GPU time on a Snapdragon 685.
+    set_type_default() do #(DrawPhoneRound::script_shader(vm)) {
+        ..mod.draw.DrawQuad
+        radius: 0.0 color: #fff
+        pixel: fn() {
+            let p=self.pos*self.rect_size
+            let h=self.rect_size*0.5
+            let k=min(self.radius,min(h.x,h.y))
+            let q=abs(p-h)-h+vec2(k,k)
+            let d=min(max(q.x,q.y),0.0)+length(max(q,vec2(0.0,0.0)))-k
+            let aa=1.0/length(vec2(length(dFdx(p)),length(dFdy(p))))
+            let f=clamp(-d*aa,0.0,1.0)*self.color.a
+            return vec4(self.color.rgb*f,f)
+        }
+    }
     set_type_default() do #(DrawNavigationSurface::script_shader(vm)) {
         ..mod.draw.DrawQuad
         radius: 24.0 color: #fff opacity: 1.0
@@ -158,7 +175,7 @@ script_mod! {
             chinese := FontMember{res: crate_resource("makepad_widgets:resources/LXGWWenKaiBold.ttf") asc: 0.0 desc: 0.0}
             emoji := FontMember{res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf") asc: 0.0 desc: 0.0}
         }}
-        chrome +: {}
+        round +: {}
         navigation_surface +: {}
         navigation_home +: {svg: crate_resource("self:resources/icons/navigation-home.svg")}
         key_shift +: {svg: crate_resource("self:resources/icons/key-shift.svg")}
@@ -324,6 +341,16 @@ pub fn dock_ids<'a>(saved: &'a [String], has: impl Fn(&str) -> bool) -> [&'a str
     dock
 }
 
+/// A filled rounded rect; `radius` is the corner radius, capped at half
+/// the shorter side.
+#[derive(Script, ScriptHook)]
+#[repr(C)]
+pub struct DrawPhoneRound {
+    #[deref] pub draw_super: DrawQuad,
+    #[live] pub radius: f32,
+    #[live] pub color: Vec4f,
+}
+
 #[derive(Script, ScriptHook)]
 #[repr(C)]
 struct DrawNavigationSurface {
@@ -348,7 +375,7 @@ pub struct PhoneSurface {
     #[live] navigation_font: TextStyle,
     #[live] navigation_surface: DrawNavigationSurface,
     #[live] navigation_home: DrawSvg,
-    #[live] chrome: DrawDesktopChrome,
+    #[live] round: DrawPhoneRound,
     #[live] key_shift: DrawSvg,
     #[live] key_backspace: DrawSvg,
     #[live] glass: GaussRoundedView,
@@ -566,9 +593,9 @@ impl PhoneSurface {
     pub fn begin(&mut self) { self.hits.clear();self.home_icon_bounds.clear(); }
     pub fn pressed_hit(&self) -> Option<&PhoneHit> { self.pressed.as_ref() }
     pub fn rounded(&mut self, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
-        self.chrome.radius = radius*2.0;
-        self.chrome.bevel = 0.0; self.chrome.color = color;
-        self.chrome.draw_abs(cx,r);
+        self.round.radius = radius*2.0;
+        self.round.color = color;
+        self.round.draw_abs(cx,r);
     }
     pub fn label(&mut self, cx: &mut Cx2d, r: Rect, label: &str, size: f64, bold: bool, color: Vec4f) {
         self.d.label_elided(cx,r,bold,size,color,HAlign::Center,label);
@@ -1120,7 +1147,7 @@ impl PhoneSurface {
             self.rounded(cx,rect(screen.pos.x+screen.size.x-38.0,screen.pos.y+(status_h-7.0)*0.5,16.0,7.0),1.5,ink);
         }
         if !crate::mobile_navigation::ENABLED && !phone.android.system_panel {crate::mobile_shade::status_bar_hits(&mut self.hits,state,screen);}
-        if !crate::mobile_navigation::ENABLED {crate::mobile_island::draw(cx,&mut self.chrome,&mut self.d,&mut self.icons,&mut self.hits,state,screen);}
+        if !crate::mobile_navigation::ENABLED {crate::mobile_island::draw(cx,&mut self.round,&mut self.d,&mut self.icons,&mut self.hits,state,screen);}
         // The battery icon: three quick taps switch the frame-time reporter.
         if !crate::mobile_navigation::ENABLED && phone.shade.open<0.001 {self.hits.push((rect(screen.pos.x+screen.size.x-46.0,screen.pos.y,46.0,status_h),PhoneHit::Perf));}
         if phone.overview>0.01 {
@@ -1172,7 +1199,7 @@ impl PhoneSurface {
         if !self.shade_warm && phone.shade.open<0.001 && phone.gesture.is_none() {
             self.shade_warm=true;
             if !crate::mobile_navigation::ENABLED && !phone.android.system_panel {
-                crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,state,screen);
+                crate::mobile_shade::prewarm(cx,&mut self.d,&mut self.round,&mut self.icons,&mut self.android_icon,state,screen);
                 self.shade_glass.draw_surface_with_backdrop(cx,
                     rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
             }
@@ -1190,7 +1217,7 @@ impl PhoneSurface {
             self.keyboard_glass.draw_surface_with_backdrop(cx,
                 rect(screen.pos.x + screen.size.x * 3.0, screen.pos.y, 1.0, 1.0), None, 0.0);
         }
-        crate::mobile_shade::draw(cx,&mut self.d,&mut self.chrome,&mut self.icons,&mut self.android_icon,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
+        crate::mobile_shade::draw(cx,&mut self.d,&mut self.round,&mut self.icons,&mut self.android_icon,&mut self.shade_glass,&mut self.hits,state,screen,backdrop,&mut self.shade_content,present);
         if let Some(launch)=phone.launch.as_ref().filter(|_|!phone.android.reduce_motion) {
             // The tapped icon grows from its place towards the middle and
             // fades as the page dims under it; Android's own window
