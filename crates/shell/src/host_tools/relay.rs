@@ -285,9 +285,25 @@ impl Catalog {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
 
-    /// The owning app of a declared tool name.
-    pub fn owner_of(&self, tool: &str) -> Option<&str> {
-        self.tools.iter().find(|(_, entries)| entries.iter().any(|e| e["name"] == tool)).map(|(owner, _)| owner.as_str())
+    /// The owning app of a tool another app is granted, resolved
+    /// explicitly by its namespace (ADR 0004 §7): the toolbox for its own
+    /// (`toolbox.*`, `workflow.*`), the native app of that id (`terminal.run`
+    /// → `terminal`), else the system app of the namespace (`mail.send` →
+    /// `os.mail`). Never whichever app declared the name first: a store app
+    /// may declare `mail.send` for itself, and owns only its own. `None` for
+    /// a name without a namespace (a kernel tool).
+    pub fn owner_of(&self, tool: &str) -> Option<String> {
+        let (ns, _) = tool.split_once('.')?;
+        if ns.is_empty() {
+            return None;
+        }
+        if ns == TOOLBOX || ns == "workflow" {
+            return Some(TOOLBOX.to_string());
+        }
+        if crate::native_apps::find(ns).is_some() {
+            return Some(ns.to_string());
+        }
+        Some(format!("os.{ns}"))
     }
 
     fn shareable(entry: &Value) -> bool {
@@ -454,6 +470,16 @@ fn error_of(result: &str) -> ToolOutcome {
 }
 
 impl Relay {
+    /// (auto_approvable, command) for `owner`'s `tool`: the host's rule
+    /// (`native-apps.json` `tool_policy`, commands), and a script app's own
+    /// `tools.json` declaration (App Hub's `auto_approvable`), whichever is
+    /// stricter.
+    fn tool_rule(&self, env: &dyn Env, owner: &str, tool: &str) -> (bool, bool) {
+        let (auto, command) = env.tool_rule(owner, tool);
+        let declared = self.catalog.entry(owner, tool).and_then(|e| e.get("auto_approvable")).and_then(Value::as_bool).unwrap_or(true);
+        (auto && declared, command)
+    }
+
     pub fn set_executor(&mut self, app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
         match executor {
             Some(e) => {
@@ -641,7 +667,7 @@ impl Relay {
         // 3. `confirm: app`: acknowledge, then the owning app's own sheet.
         if call.confirm_required {
             reply.acknowledge();
-            let (auto, _) = env.tool_rule(&owner, &tool);
+            let (auto, _) = self.tool_rule(&*env, &owner, &tool);
             let mut spec = ToolSpec::app(&tool);
             spec.auto_approvable = auto;
             let id = format!("{CONFIRM_PREFIX}{}", call.call_id);
@@ -715,7 +741,7 @@ impl Relay {
         // agent's call on a tool the app owns; a `host_tool` one names its
         // owning app.
         let owner = if approval.octos { calling.clone() } else { approval.app.clone() };
-        let (auto, command) = env.tool_rule(&owner, &approval.tool);
+        let (auto, command) = self.tool_rule(&*env, &owner, &approval.tool);
         let mut spec = ToolSpec::host(&approval.tool);
         spec.auto_approvable = auto;
         if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN || (approval.octos && OCTOS_COMMANDS.contains(&approval.tool.as_str())) {

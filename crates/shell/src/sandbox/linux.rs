@@ -19,6 +19,12 @@
 //! a split directory after the app started (a new file directly in `~`) are
 //! not covered, and the directories on the way cannot be listed.
 //!
+//! **What the next build reads or runs** ([`Policy::read_only`]: the
+//! checkout, its target dir, `~/.cargo`, `~/.rustup`, `.cargo/` and
+//! `rust-toolchain` files on the way up, the shell's own directory) is split
+//! out of a writable grant the same way and granted again read and execute
+//! only, as macOS's profile makes it read-only after every grant.
+//!
 //! seccomp refuses, with `EPERM`, what no process app needs: `ptrace`,
 //! `process_vm_readv/writev`, `perf_event_open`, `bpf`, `userfaultfd`,
 //! `kexec_load`, mounts, namespaces and the kernel keyring; with
@@ -201,7 +207,40 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
             around_private(rule, &private, &mut split);
         }
     }
-    split
+    around_read_only(split, policy, abi)
+}
+
+/// What the shell's next build reads or runs ([`Policy::read_only`]: the
+/// checkout and its target dir, `~/.cargo`, `~/.rustup`, the `.cargo/` and
+/// `rust-toolchain` files on the way up, the shell's own directory) stays
+/// read and execute only, whatever a grant opened (the Terminal's
+/// `home:rw`); a write there would run code outside the sandbox at the next
+/// launch. Landlock cannot take a right back beneath a granted directory,
+/// so a writable rule that contains one is split around it the way the
+/// private dirs are, and the read-only path is granted again with read and
+/// execute. The app's own jail and secrets keep their rights.
+fn around_read_only(rules: Vec<Rule>, policy: &Policy, abi: u32) -> Vec<Rule> {
+    let rx = read() | FS_EXECUTE;
+    let writes = handled_fs(abi) & !rx;
+    let read_only: Vec<PathBuf> = policy.read_only.iter().map(|p| super::resolved(p)).collect();
+    let own = [super::resolved(&policy.jail), super::resolved(&policy.secrets)];
+    let mut out = Vec::new();
+    for rule in rules {
+        if rule.access & writes == 0 || own.contains(&rule.path) {
+            out.push(rule);
+        } else if read_only.iter().any(|ro| rule.path.starts_with(ro)) {
+            out.push(Rule { path: rule.path, access: rule.access & rx });
+        } else if read_only.iter().any(|ro| ro.starts_with(&rule.path)) {
+            for ro in read_only.iter().filter(|ro| ro.starts_with(&rule.path) && ro.exists()) {
+                let access = if ro.is_dir() { rule.access } else { rule.access & FILE_RIGHTS };
+                out.push(Rule { path: ro.clone(), access: access & rx });
+            }
+            around_private(rule, &read_only, &mut out);
+        } else {
+            out.push(rule);
+        }
+    }
+    out
 }
 
 /// `rule`, minus the private directories: dropped when it lies inside one;

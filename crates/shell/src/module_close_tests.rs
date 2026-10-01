@@ -157,6 +157,36 @@ fn closing_one_app_abandons_a_waiting_quit() {
     assert!(!gate.take_quit_ready(), "the shell stays up");
 }
 
+/// Review 2026-09-30: an instance that keeps refusing is never unclosable,
+/// and never holds a quit forever: the third close (or quit) inside the
+/// window ends it, and the one before says so.
+#[test]
+fn an_instance_that_keeps_refusing_is_ended_by_the_third_close() {
+    let mut gate = CloseGate::default();
+    assert!(!gate.insist(1, 0.0));
+    assert!(!gate.answered(1, CloseDecision::Veto, WidgetUid(10)));
+    assert!(!gate.next_close_forces(1));
+    assert!(!gate.insist(1, 0.2), "a double click is one close");
+    assert!(!gate.insist(1, 1.0));
+    assert!(!gate.answered(1, CloseDecision::Veto, WidgetUid(10)));
+    assert!(gate.next_close_forces(1), "the shell warns before the last one");
+    assert!(gate.insist(1, 2.0), "the third close ends it");
+    assert!(!gate.is_pending(1), "nothing waits on it any more");
+    // Spread out, closes never add up.
+    for t in [10.0, 16.0, 22.0] {
+        assert!(!gate.insist(2, t), "{t}");
+    }
+    // A quit waiting only on a refusing instance goes once it is ended.
+    let mut gate = CloseGate::default();
+    for t in [0.0, 1.0] {
+        assert!(!gate.insist(3, t));
+        assert!(!gate.quit_asked([(3, WidgetUid(30))]));
+    }
+    assert!(gate.insist(3, 2.0));
+    gate.forget(3);
+    assert!(gate.take_quit_ready(), "the quit goes");
+}
+
 // ---- the host, with real instances ----
 
 #[test]

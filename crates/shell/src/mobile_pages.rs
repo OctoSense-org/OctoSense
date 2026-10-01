@@ -484,7 +484,11 @@ impl PhoneSurface {
     pub fn draw_glance(&mut self, cx: &mut Cx2d, phone: &PhoneState, screen: Rect, style: DesktopStyle, dark: bool, opacity: f32, dx: f64) {
         self.use_fonts(style == DesktopStyle::Ios);
         let page = rect(screen.pos.x + dx, screen.pos.y, screen.size.x, screen.size.y);
-        self.rounded(cx, page, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
+        // The dimming runs under the system bars too, so the status and
+        // navigation bands match the page instead of showing bare wallpaper.
+        let i = &phone.insets;
+        let dimmed = rect(page.pos.x, page.pos.y - i.top, page.size.x, page.size.y + i.top + i.bottom);
+        self.rounded(cx, dimmed, 0.0, alpha(self.theme_ground(if dark { rgb(8, 9, 16) } else { rgb(228, 231, 242) }), 0.86 * opacity));
         let ink = alpha(self.theme_ink(if dark { rgb(255, 255, 255) } else { rgb(26, 26, 32) }), opacity);
         let landscape = screen.size.x > screen.size.y;
         let top = page.pos.y + if landscape { 30.0 } else { 52.0 };
