@@ -115,7 +115,7 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
             return Err(format!("theme axis {axis}: .{value} is not offered on a glance tile"));
         }
     }
-    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
+    let kit_source = [PALETTE_BASE, delta, DERIVE_COLOR, DERIVE, KIT, HOST_KIT, &octoscript_ui_l0::kit::lower(root)].join("\n");
     let tree = octoscript_makepad::design::prepare(&kit_source)?;
     // A measured design (an imported artboard) lowers as the Card runner
     // lowers it; a kit-composed card (columns, rows, text) through the
@@ -124,7 +124,64 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
     // A card's page fills its screen; a tile measures it instead. The root's
     // own properties are the only lines at this indentation.
     let ui = ui.replacen("\n    height: Fill\n", "\n    height: Fit\n", 1);
+    let ui = multiline_fields(&ui);
     Ok(format!("width:Fill height:Fit flow:Overlay {ui}"))
+}
+
+/// The host's additions to the L0 kit, after the kit so they win.
+///
+/// A multi-line field. L0's `Field` has no argument for it (that needs
+/// Octoscript: a constructor argument in `ui-l0-constructors.toml`, the
+/// checker, and the kit), so the host decides by what the field is for: a
+/// field with no `on_commit` has nothing for Return to do, so its text is a
+/// body (a reply draft) and it wraps over several lines; a field that
+/// commits on Return (a search, a question) stays one line. The kit's own
+/// `l0_field`, with the multi-line ones marked for [`multiline_fields`].
+const HOST_KIT: &str = r#"
+fn l0_field(text, placeholder, target, changing) {
+    let node = {t: "input", fillw: 1, text: text, placeholder: placeholder,
+            tapto: target, changeto: changing, bg: l0_fill, radius: 12, padx: 14,
+            padtop: 14, padbottom: 14, size: 11, color: l0_text}
+    if target == "" { node.id = "l0_multiline" }
+    return node
+}
+"#;
+
+/// The lines a multi-line field shows before it scrolls: it grows from
+/// about three to about six lines of the kit's field text.
+pub const MULTILINE_MIN: f64 = 92.0;
+pub const MULTILINE_MAX: f64 = 156.0;
+
+/// Make the fields [`HOST_KIT`] marked multi-line: wrapping, growing with
+/// their text between [`MULTILINE_MIN`] and [`MULTILINE_MAX`], then
+/// scrolling (Makepad's `TextInput` scrolls a multi-line input inside its
+/// bounded height).
+fn multiline_fields(ui: &str) -> String {
+    let lines: Vec<&str> = ui.lines().collect();
+    let mut out = Vec::with_capacity(lines.len() + 4);
+    let mut close_at: Option<String> = None;
+    for line in lines {
+        if let Some(rest) = line.trim_start().strip_prefix("l0_multiline := TextInput {") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push(format!("{indent}TextInput {{{rest}"));
+            close_at = Some(format!("{indent}}}"));
+            continue;
+        }
+        if close_at.as_deref() == Some(line) {
+            let indent = &line[..line.len() - 1];
+            out.push(format!("{indent}    is_multiline: true"));
+            out.push(format!("{indent}    height: Fit{{min: FitBound.Abs({MULTILINE_MIN}) max: FitBound.Abs({MULTILINE_MAX})}}"));
+            close_at = None;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
+/// The card's last measured height (unclamped), for a surface that sizes
+/// to its card.
+pub fn measured_height(key: &str) -> Option<f64> {
+    HEIGHTS.with(|h| h.borrow().get(key).copied())
 }
 
 // ------------------------------------------------------------- L0 taps
@@ -327,6 +384,11 @@ script_mod! {
         width: Fill height: Fit flow: Down clip_y: true clip_x: true
         card := Splash { width: Fill height: Fit }
     }
+    // The card window's frame: a card taller than the window scrolls.
+    mod.widgets.GlanceSheetFrame = ScrollYView {
+        width: Fill height: Fill flow: Down
+        card := Splash { width: Fill height: Fit }
+    }
 }
 
 struct Tile {
@@ -343,9 +405,16 @@ struct Tile {
 #[derive(Default)]
 pub struct GlanceTiles {
     tiles: HashMap<String, Tile>,
+    /// Cards scroll inside their rect instead of clipping (the card window).
+    scroll: bool,
 }
 
 impl GlanceTiles {
+    /// Tiles whose cards scroll inside their rect (the card window).
+    pub fn scrolling() -> Self {
+        GlanceTiles { tiles: HashMap::new(), scroll: true }
+    }
+
     /// Draw `card` (its `body`, published by `app`) at `rect`: the rect's
     /// height is the tile height; the Splash lays out at its natural height,
     /// and that height is recorded for the next layout. Asks for a redraw
@@ -375,8 +444,9 @@ impl GlanceTiles {
     pub(crate) fn open(&mut self, cx: &mut Cx, key: &str, app: &str, contained: bool, body: &std::sync::Arc<str>) -> SplashRef {
         let tile = self.tiles.entry(key.to_string()).or_insert_with(|| Tile { frame: WidgetRef::empty(), body: "".into(), app: app.to_string(), contained });
         if tile.frame.is_empty() {
+            let scroll = self.scroll;
             tile.frame = cx.with_vm(|vm| {
-                let value = script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} });
+                let value = if scroll { script_eval!(vm, { use mod.widgets.* GlanceSheetFrame {} }) } else { script_eval!(vm, { use mod.widgets.* GlanceTileFrame {} }) };
                 WidgetRef::script_from_value(vm, value)
             });
             let splash = tile.frame.splash(cx, ids!(card));
@@ -656,6 +726,9 @@ mod tests {
         assert!(s.tap(&reply, None).unwrap().relower);
         let body = s.body().unwrap();
         assert!(body.contains("AI DRAFT") && body.contains("Hi Ana, Friday works for us.") && body.contains("Cancel") && body.contains("Send"), "{body}");
+        // The draft (no on_commit) wraps over several lines; nothing else does.
+        assert_eq!(body.matches("is_multiline: true").count(), 1, "{body}");
+        assert!(body.contains("max: FitBound.Abs(156)") && !body.contains("l0_multiline"), "{body}");
         // A keystroke in the draft updates state without re-lowering.
         let edit = target_for(&body, "edit");
         let typed = s.tap(&edit, Some("Hi Ana, Friday is fine.")).unwrap();
@@ -670,6 +743,7 @@ mod tests {
         s.tap(&ask, None).unwrap();
         let body = s.body().unwrap();
         assert!(body.contains("What did they say about payment?") && body.contains("Net 30 instead of net 45"), "{body}");
+        assert!(!body.contains("is_multiline"), "the question commits on Return: one line");
         let typing = target_for(&body, "typing");
         assert!(!s.tap(&typing, Some("When do they need it?")).unwrap().relower);
         // The arrow carries the question as it stands now, not as it was

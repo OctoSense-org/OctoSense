@@ -9,7 +9,8 @@
 # toast. Two runs:
 #
 # 1. the toasts; the Ana Lee toast opens THAT card in the card window
-#    (glance_sheet.rs); Reply shows the AI draft; Send shows "Sent (demo)";
+#    (glance_sheet.rs), sized to the card; Reply shows the AI draft in a
+#    multi-line field; Send shows "Sent (demo)";
 #    ✕ closes it; the UPS toast opens the shipping card; Track; Esc closes.
 # 2. the Ana Lee card's Ask: the transcript; a typed question sent with the
 #    arrow adds itself and a canned answer.
@@ -82,9 +83,10 @@ sheet() {
     IFS=, read -r SX SY _ _ <<<"$(echo "$line" | sed 's/.*sheet@\([0-9,]*\) .*/\1/')"
     IFS=, read -r CX CY <<<"$(echo "$line" | sed 's/.*close@\([0-9,]*\).*/\1/')"
 }
-# Click at an offset into the card window (the card's layout is fixed).
-at() { click $((SX + $1)) $((SY + $2)); }
-taps() { grep -c "glance sheet: os.mail/$1 tap $2 (applied true" "$LOG" || true; }
+# Click at an offset into the card window. The window sizes to its card and
+# re-centres when the card changes, so its origin is read again each time
+# (the card's layout inside the window is fixed).
+at() { sleep 0.5; sheet "$CARD"; click $((SX + $1)) $((SY + $2)); }
 
 # ---------------------------------------------------------------- run 1
 launch run1
@@ -101,17 +103,18 @@ wait_log "wm: glance toast opens card os.mail/ana-contract"
 wait_log "glance sheet: os.mail/ana-contract sheet@"
 sleep 1
 grab 02-mail-card
-sheet ana-contract
+CARD=ana-contract
 pass "the toast opened the Ana Lee card in the card window (not the panel)"
 
 at 80 296 # Reply
 wait_log "tap reply (applied true, relower true)"
 grab 03-mail-reply-draft
-at 147 276 # Send
+at 147 318 # Send
 wait_log "tap send (applied true, relower true)"
 grab 04-mail-sent
 pass "Reply showed the AI draft; Send moved the card to Sent (demo)"
 
+sheet ana-contract
 click "$CX" "$CY" # ✕
 wait_log "glance sheet: closed os.mail/ana-contract"
 grab 05-mail-closed
@@ -122,7 +125,7 @@ wait_log "wm: glance toast opens card os.mail/ups-lamp"
 wait_log "glance sheet: os.mail/ups-lamp sheet@"
 sleep 1
 grab 06-shipping-card
-sheet ups-lamp
+CARD=ups-lamp
 at 70 372 # Track
 wait_log "tap track (applied true, relower true)"
 grab 07-shipping-track
@@ -140,7 +143,7 @@ sleep 1
 read -r TX TY <<<"$(toast_at ana-contract)"
 click "$TX" "$TY"
 wait_log "glance sheet: os.mail/ana-contract sheet@"
-sheet ana-contract
+CARD=ana-contract
 at 248 296 # Ask
 wait_log "tap ask (applied true, relower true)"
 grab 09-mail-ask-transcript

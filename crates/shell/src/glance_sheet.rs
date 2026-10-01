@@ -3,9 +3,11 @@
 //! it here (lib.rs, by the key the notification carries); ✕, Esc or a click
 //! on the dimmed desk closes it.
 //!
-//! The card is [`SHEET_WIDTH`]×[`SHEET_HEIGHT`] (smaller on a small screen),
-//! not clipped to the glance tile's 260 pt. It runs in its own isolate, under
-//! the publishing app's policy, as a glance tile does (glance_card.rs).
+//! The window is [`SHEET_WIDTH`] wide and as tall as its card (measured each
+//! frame, so it follows the card from state to state), not clipped to the
+//! glance tile's 260 pt: at most the screen less a margin, and a taller card
+//! scrolls inside. The card runs in its own isolate, under the publishing
+//! app's policy, as a glance tile does (glance_card.rs).
 //!
 //! An L0 card is live here: its taps and field edits run through an
 //! [`L0Session`] (the declared transition, the §5.12 writes this host
@@ -18,7 +20,11 @@ use makepad_widgets::*;
 use std::sync::Arc;
 
 pub const SHEET_WIDTH: f64 = 380.0;
-pub const SHEET_HEIGHT: f64 = 520.0;
+/// The window's least height, and its card's height before it is measured.
+pub const SHEET_MIN_HEIGHT: f64 = 160.0;
+const UNMEASURED_CARD: f64 = 320.0;
+/// What the window keeps clear of the screen's edges.
+const MARGIN: f64 = 16.0;
 const HEADER: f64 = 44.0;
 const PAD: f64 = 12.0;
 const CLOSE: f64 = 28.0;
@@ -36,10 +42,11 @@ script_mod! {
     }
 }
 
-/// Where the window sits on a screen: centred, at most the App Clip size.
-pub fn sheet_rect(screen: Rect) -> Rect {
-    let w = SHEET_WIDTH.min(screen.size.x - 32.0).max(200.0);
-    let h = SHEET_HEIGHT.min(screen.size.y - 32.0).max(200.0);
+/// Where the window sits on a screen for a card `card_h` tall: centred, as
+/// tall as the card (the header above, a margin below), within the screen.
+pub fn sheet_rect(screen: Rect, card_h: f64) -> Rect {
+    let w = SHEET_WIDTH.min(screen.size.x - MARGIN * 2.0).max(200.0);
+    let h = (HEADER + card_h + PAD).max(SHEET_MIN_HEIGHT).min(screen.size.y - MARGIN * 2.0).max(120.0);
     rect(screen.pos.x + (screen.size.x - w) * 0.5, screen.pos.y + (screen.size.y - h) * 0.5, w, h)
 }
 
@@ -116,6 +123,7 @@ impl ShellGlanceSheet {
         };
         // A fresh isolate for each opening: the card starts as published.
         self.tiles.sweep(cx, &[]);
+        self.tiles = GlanceTiles::scrolling();
         self.open = Some(Open { key: key.to_string(), app: card.app.clone(), title: card.title.clone(), contained: card.contained, body, session });
         log!("glance sheet: opened {key}");
         self.redraw(cx);
@@ -182,7 +190,8 @@ impl Widget for ShellGlanceSheet {
             let tok = self.d.tokens(self.tokens);
             let ink = tok.notifications.surface.text;
             self.d.solid(cx, screen, vec4(0.0, 0.0, 0.0, 0.55));
-            let sheet = sheet_rect(screen);
+            let card_h = crate::glance_card::measured_height(&Self::tile_key(&open.key)).unwrap_or(UNMEASURED_CARD);
+            let sheet = sheet_rect(screen, card_h);
             self.sheet = sheet;
             self.d.card(cx, sheet, &tok.notifications.surface);
             let close = close_rect(sheet);
@@ -227,15 +236,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_window_is_centred_at_the_app_clip_size() {
+    fn the_window_is_centred_and_sized_to_its_card() {
         let screen = rect(0.0, 0.0, 1280.0, 800.0);
-        let sheet = sheet_rect(screen);
-        assert_eq!((sheet.pos.x, sheet.pos.y, sheet.size.x, sheet.size.y), (450.0, 140.0, SHEET_WIDTH, SHEET_HEIGHT));
+        let sheet = sheet_rect(screen, 300.0);
+        assert_eq!((sheet.pos.x, sheet.size.x, sheet.size.y), (450.0, SHEET_WIDTH, HEADER + 300.0 + PAD));
+        assert_eq!(sheet.pos.y, (800.0 - sheet.size.y) * 0.5);
         let card = card_rect(sheet);
-        assert!(card.size.y > crate::glance_card::TILE_MAX_HEIGHT, "not clipped at the tile cap");
+        assert_eq!(card.size.y, 300.0, "the card fills the window: no empty area below it");
         assert!(contains(sheet, close_rect(sheet).pos));
-        // A small screen keeps it on screen.
-        let small = sheet_rect(rect(0.0, 0.0, 360.0, 480.0));
+        // Taller than the tile cap, it is not clipped there.
+        assert_eq!(card_rect(sheet_rect(screen, 400.0)).size.y, 400.0);
+        assert!(400.0 > crate::glance_card::TILE_MAX_HEIGHT);
+        // Taller than the screen, the window stops at the margin (the card
+        // scrolls inside); a tiny card keeps the least height.
+        assert_eq!(sheet_rect(screen, 5000.0).size.y, 800.0 - MARGIN * 2.0);
+        assert_eq!(sheet_rect(screen, 10.0).size.y, SHEET_MIN_HEIGHT);
+        let small = sheet_rect(rect(0.0, 0.0, 360.0, 480.0), 600.0);
         assert!(small.size.x <= 328.0 && small.size.y <= 448.0 && small.pos.x >= 16.0);
     }
 }
