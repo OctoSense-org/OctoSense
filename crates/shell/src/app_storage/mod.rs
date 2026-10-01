@@ -556,9 +556,27 @@ impl Storage {
             state.erased_apps.remove(app_id);
             self.save_suspended(&state);
         }
-        secrets::purge(self.layout.secrets_root(), app_id);
+        let purged = secrets::purge(self.layout.secrets_root(), app_id);
         remove_tree(&paths.jail)?;
-        remove_tree(&paths.secrets)
+        // A symlinked secrets folder is never followed: the link goes.
+        match std::fs::symlink_metadata(&paths.secrets) {
+            Ok(meta) if !meta.is_dir() => return remove_tree(&paths.secrets),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(io_err(e)),
+            Ok(_) => {}
+        }
+        if purged {
+            return remove_tree(&paths.secrets);
+        }
+        // This run cannot reach the keychain: keep the index naming the
+        // items, so a run that can deletes them (`secrets::purge_leftovers`).
+        let entries = std::fs::read_dir(&paths.secrets).map_err(io_err)?;
+        for entry in entries.flatten() {
+            if entry.file_name() != secrets::KEYCHAIN_INDEX {
+                remove_tree(&entry.path())?;
+            }
+        }
+        Ok(())
     }
 
     /// Run the startup check and refuse every workspace it flags.
@@ -732,6 +750,11 @@ pub fn init(data_dir: Option<PathBuf>) -> Option<&'static Arc<Storage>> {
     // The manifests' storage blocks and the account sources (lifecycle.rs),
     // before any module is created or any account binds.
     lifecycle::install(host);
+    // Keychain items a headless uninstall had to leave (their index kept).
+    let layout = host.layout().clone();
+    secrets::purge_leftovers(layout.secrets_root(), |app| layout.app(app).is_ok_and(|p| !p.jail.exists()));
+    // Process apps' data from before their jails, copied off the UI thread.
+    crate::clients::adopt_legacy_homes_later(host.layout());
     Some(host)
 }
 
