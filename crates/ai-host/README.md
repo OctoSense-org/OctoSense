@@ -27,6 +27,10 @@ ai_host::qr_image_result(id, &status, &detail);
 let offer = ai_host::offer(module, &scope);
 let parts = module.create(vm, open, handles);
 let assistant = offer.finish(); // Option<Assistant>; dropping it releases the instance's leases
+// a module's own peer link (Makepad's `OctosPeer::open`), as frames for the shell's peer link:
+let link = ai_host::module_peer::ModulePeerLink::new(parked_link);
+let out = link.frames_down(); // hand to peer_link::module_connected
+for frame in link.take_up() { /* peer_link::on_module_frame(...) */ }
 // Event::Shutdown:
 ai_host::shutdown();
 ```
