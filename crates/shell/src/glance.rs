@@ -650,6 +650,21 @@ mod tests {
         assert_eq!(store.len(), 1);
     }
 
+    /// Mail's `mail.notify` card is a valid L0 card the store admits as
+    /// Mail's, and a Mail without the `glance` grant cannot publish it.
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    #[test]
+    fn mails_notice_card_is_admitted_as_mails_own() {
+        let mut store = GlanceStore::default();
+        let args = octosense_mail_service::notice_publish_args(&json!({"title": "Hello", "body": "From the system agent", "card_id": "hello"}), 1).unwrap();
+        let ok = store.publish(&Caller::granted("os.mail"), &args, 1_000).unwrap();
+        assert_eq!(ok["card_id"], "hello");
+        let shown = store.shown(1_000, SHOWN_CARDS);
+        assert_eq!((shown[0].app.as_str(), shown[0].open_app.as_str()), ("os.mail", "mail"));
+        let ungranted = Caller::Contained { app: "os.mail".into(), granted: false };
+        assert!(store.publish(&ungranted, &args, 1_000).is_err());
+    }
+
     #[test]
     fn a_contained_app_needs_the_glance_capability_whoever_it_is() {
         let mut store = GlanceStore::default();

@@ -132,6 +132,15 @@ pub fn install(app: &str, loaded: Loaded, host_dir: PathBuf) {
 /// Load `app`'s agent block from App Hub: a system app's packed bundle, or
 /// an installed one.
 pub fn load(app: &str) -> Result<(), String> {
+    let (root, bundle) = admitted_bundle(app)?;
+    let loaded = from_bundle(&bundle)?;
+    install(app, loaded, root.join(".host"));
+    Ok(())
+}
+
+/// `app`'s admitted bundle: a system app's packed bundle, or an installed
+/// one, with App Hub's apps root.
+fn admitted_bundle(app: &str) -> Result<(PathBuf, PathBuf), String> {
     // Never a native app's tools, executor or grants (ADR 0004 §3, §7).
     crate::apps::check_script_app_id(app)?;
     let root = octosense_appstore::data_root_if_set().ok_or("App Hub has no apps root yet")?;
@@ -139,9 +148,14 @@ pub fn load(app: &str) -> Result<(), String> {
         Some(system) => octosense_appstore::system::prepare(&root, &system)?.0,
         None => root.join(app).join("bundle"),
     };
-    let loaded = from_bundle(&bundle)?;
-    install(app, loaded, root.join(".host"));
-    Ok(())
+    Ok((root, bundle))
+}
+
+/// Whether `app`'s admitted manifest was granted the capability `family`:
+/// for a host service acting for the app outside its isolate (a tool call),
+/// where the Card runner's gate does not run.
+pub fn grants(app: &str, family: &str) -> bool {
+    admitted_bundle(app).and_then(|(_, bundle)| from_bundle(&bundle)).is_ok_and(|loaded| loaded.families.contains(family))
 }
 
 // ------------------------------------------------------------ the executor
@@ -279,6 +293,23 @@ pub(crate) mod tests {
         // A tampered bundle is refused (App Hub's digest check).
         std::fs::write(dir.join("tools.json"), "{}").unwrap();
         assert!(from_bundle(&dir).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Mail's bundle gives its agent `mail.notify` on the `mail` host
+    /// service, and Mail is granted `glance` (what `mail.notify` publishes
+    /// under). octos takes a tool only with object schemas.
+    #[test]
+    fn mail_offers_its_tools_and_notify_from_its_bundle() {
+        let dir = stamped_bundle("mail", "tools", |_, _| {});
+        let loaded = from_bundle(&dir).unwrap();
+        let names: Vec<&str> = loaded.tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names, ["mail.notify"]);
+        assert_eq!(loaded.host_service_tools.len(), 1);
+        assert!(loaded.tools.iter().all(|t| t["input_schema"]["type"] == "object" && t["output_schema"]["type"] == "object"));
+        assert!(loaded.tools.iter().all(|t| t["shareable"] == false), "Mail's tools are its own agent's");
+        assert!(["mail", "glance"].iter().all(|f| loaded.families.contains(*f)));
+        assert_eq!(loaded.generic, ["ask_user_question"]);
         let _ = std::fs::remove_dir_all(dir);
     }
 

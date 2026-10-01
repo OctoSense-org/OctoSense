@@ -169,6 +169,12 @@ fn register_host_services() {
         } else {
             octosense_mail_service::register()
         }
+        // `mail.notify` (Mail's agent's tool): a notice card published as
+        // the calling app, only when its manifest was granted `glance`.
+        octosense_mail_service::on_publish_card(Some(std::sync::Arc::new(|app: &str, args| {
+            let caller = crate::glance::Caller::Contained { app: app.to_string(), granted: crate::host_tools::script_apps::grants(app, "glance") };
+            crate::glance::request(&caller, "glance.publish", &args)
+        })));
         register_news();
     });
 }
