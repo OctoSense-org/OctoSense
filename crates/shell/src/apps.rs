@@ -69,6 +69,28 @@ pub fn installed_launch_id(manifest_id: &str) -> String {
     format!("hub:{manifest_id}")
 }
 
+/// Whether `manifest_id` may be a script app's id (ADR 0004 §1, §3, §11): a
+/// store or system app never takes a native app's id or tool namespace
+/// (`terminal`, or `com.example.terminal`, whose tools would be
+/// `terminal.*`), nor a name the shell acts under (App Hub's
+/// `RESERVED_NAMES`: `system`, `toolbox`, `dev`, ...). The shell keys a
+/// script app's jail and storage folders, tool declarations, executor and
+/// consent by that id, so one that took a native app's would stand in for
+/// it. App Hub refuses such ids at its gate, install and admission; the
+/// shell checks again against its own `native-apps.json`, so a native app
+/// App Hub has not heard of yet is covered too.
+pub fn check_script_app_id(manifest_id: &str) -> Result<(), String> {
+    let namespace = manifest_id.rsplit('.').next().unwrap_or(manifest_id);
+    for name in [manifest_id, namespace] {
+        if crate::native_apps::find(name).is_some() {
+            return Err(format!("{manifest_id} takes the native app {name:?}'s name, which no script app may use"));
+        }
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    octosense_app_policy::check_reserved_id(manifest_id)?;
+    Ok(())
+}
+
 /// The manifest id the `card` module opens for a launcher row: `os.<name>`
 /// for a system app, the installed app's own id for `hub:<id>`.
 pub fn card_manifest_id(app: &crate::clients::AppDef) -> Option<&str> {
@@ -588,6 +610,26 @@ impl AppRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR 0004 §3: no script app takes a native app's id or namespace.
+    /// App Hub's `RESERVED_NAMES` must name every native app this shell
+    /// ships, so its gate refuses them before a device sees one.
+    #[test]
+    fn a_script_app_may_not_take_a_native_apps_id_or_namespace() {
+        for app in crate::native_apps::APPS {
+            assert!(check_script_app_id(app.id).is_err(), "{}", app.id);
+            assert!(check_script_app_id(&format!("com.example.{}", app.id)).is_err(), "{}", app.id);
+            #[cfg(any(feature = "app-hub", native_mobile))]
+            assert!(octosense_app_policy::RESERVED_NAMES.contains(&app.id), "App Hub's RESERVED_NAMES lacks the native app {}", app.id);
+        }
+        for ok in ["os.news", "org.example.timer", "dev.example.news", "org.example.terminal-notes"] {
+            assert_eq!(check_script_app_id(ok), Ok(()), "{ok}");
+        }
+        #[cfg(any(feature = "app-hub", native_mobile))]
+        for host in ["system", "toolbox", "com.example.dev"] {
+            assert!(check_script_app_id(host).is_err(), "{host}");
+        }
+    }
 
     /// The system apps this build's system-apps.json selects, in its order:
     /// the desktop and the phone pack different sets (no Camera on the
