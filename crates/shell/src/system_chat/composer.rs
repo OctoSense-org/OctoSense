@@ -133,16 +133,33 @@ pub fn ime_action_sends(action: makepad_widgets::makepad_platform::event::ImeAct
     !matches!(action, ImeAction::Next | ImeAction::Previous)
 }
 
-/// Which pane a keyboard action goes to when no pane holds the key focus:
-/// the focused "Ask <app>" panel, else the open system chat.
+/// A chat pane.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pane {
     App,
     System,
 }
 
-pub fn ime_target(app_focused: bool, system_open: bool) -> Option<Pane> {
-    if app_focused {
+/// Which pane the keyboard's action key sends: only one whose prompt holds
+/// the key focus. With another field focused (an app's, a host sheet's)
+/// the action is that field's, never the chat's.
+pub fn ime_target(app_has_focus: bool, system_has_focus: bool) -> Option<Pane> {
+    if app_has_focus {
+        Some(Pane::App)
+    } else if system_has_focus {
+        Some(Pane::System)
+    } else {
+        None
+    }
+}
+
+/// Which pane plain typed text goes to when no prompt holds the key focus
+/// (the pane opened by F8, no press yet): only when no other field holds
+/// it either.
+pub fn text_target(nothing_focused: bool, app_focused: bool, system_open: bool) -> Option<Pane> {
+    if !nothing_focused {
+        None
+    } else if app_focused {
         Some(Pane::App)
     } else if system_open {
         Some(Pane::System)
@@ -298,9 +315,21 @@ mod tests {
         }
         assert!(!ime_action_sends(ImeAction::Next));
         assert!(!ime_action_sends(ImeAction::Previous));
-        assert_eq!(ime_target(false, true), Some(Pane::System), "the system chat");
-        assert_eq!(ime_target(true, true), Some(Pane::App), "the focused Ask panel");
-        assert_eq!(ime_target(false, false), None);
+        assert_eq!(ime_target(false, true), Some(Pane::System), "the system chat's prompt");
+        assert_eq!(ime_target(true, false), Some(Pane::App), "the Ask panel's prompt");
+    }
+
+    /// With the system chat open but ANOTHER field focused (an app's text
+    /// input, a host sheet), that field's Send and typing are its own: the
+    /// chat's draft is not sent and nothing is swallowed.
+    #[test]
+    fn another_focused_field_keeps_its_keyboard() {
+        assert_eq!(ime_target(false, false), None, "no chat prompt holds the focus");
+        assert_eq!(text_target(false, false, true), None, "another field is focused");
+        assert_eq!(text_target(false, true, true), None);
+        assert_eq!(text_target(true, false, true), Some(Pane::System), "nothing focused: the open chat");
+        assert_eq!(text_target(true, true, true), Some(Pane::App));
+        assert_eq!(text_target(true, false, false), None);
     }
 
     /// The first character after the prompt takes the focus is kept (the

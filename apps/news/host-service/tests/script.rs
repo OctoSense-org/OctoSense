@@ -93,6 +93,12 @@ fn a_failed_run_is_retried_with_a_growing_wait() {
     }
     // Both ends of a run schedule it: the service's list and the own fetch.
     assert_eq!(SCRIPT.matches("    schedule_retry()\n").count(), 2);
+    // The retry and the interval keep the service's back-off (`due`); only
+    // the person's Refresh and News opening skip a failed source's.
+    assert!(SCRIPT.contains("retry_armed = false\n        refresh_due()"));
+    assert!(SCRIPT.contains("start_interval(900, || refresh_due())"));
+    assert!(SCRIPT.contains("host.request(\"news.refresh\", {due: due}"));
+    assert!(SCRIPT.contains("on_click: || refresh()"));
 }
 
 /// Every function of the script parses and defines (all of main.splash up to

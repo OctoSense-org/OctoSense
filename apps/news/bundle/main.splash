@@ -119,13 +119,21 @@ fn schedule_retry(){
     retry_delay = next_retry_delay(retry_delay)
     start_timeout(wait, || {
         retry_armed = false
-        refresh()
+        refresh_due()
     })
 }
 
-fn refresh(){
+// The person's Refresh (and News opening): the service fetches a failed
+// source again at once.
+fn refresh(){ refresh_with(false) }
+
+// A timer's run (the retry, the 15-minute interval): only what is due, so a
+// failing or rate-limited source keeps its back-off.
+fn refresh_due(){ refresh_with(true) }
+
+fn refresh_with(due){
     if busy { return }
-    if use_service { refresh_service(); return }
+    if use_service { refresh_service(due); return }
     busy = true
     sync_status()
     for s in sources {
@@ -198,11 +206,11 @@ fn listed_service(){
 }
 
 // Show what the service has now, ask it to fetch what is due, then show that.
-fn refresh_service(){
+fn refresh_service(due){
     busy = true
     sync_status()
     list_service()
-    host.request("news.refresh", {}, fn(r){
+    host.request("news.refresh", {due: due}, fn(r){
         if !use_service { return }
         if busy { service_relist = true }
         else {
@@ -360,7 +368,7 @@ fn boot(){
     refresh()
 }
 start_timeout(0.05, || boot())
-start_interval(900, || refresh())
+start_interval(900, || refresh_due())
 
 let ink = #x1c1c1e
 let secondary = #x8e8e93

@@ -346,6 +346,34 @@ fn refresh_retries_a_failed_source_at_once() {
     assert!(rig.reports.lock().unwrap().len() >= 2, "each run that fetched is reported (and logged by the shell)");
 }
 
+/// A source that answers 429 is not asked again before its back-off or its
+/// `Retry-After` (whichever is longer), not even by Refresh; the timer's
+/// due run waits too.
+#[test]
+fn a_rate_limited_source_waits_for_retry_after_even_on_refresh() {
+    let rig = Rig::new("slow-down");
+    {
+        let mut routes = rig.fixtures.routes.lock().unwrap();
+        routes.retain(|(p, _)| p != "https://www.techmeme.com/");
+        routes.push(("https://www.techmeme.com/".into(), Response { status: 429, retry_after: Some(600), ..Response::default() }));
+    }
+    rig.refresh();
+    let asked = || rig.fixtures.requests_to("https://www.techmeme.com/").len();
+    assert_eq!(asked(), 1);
+    for _ in 0..5 {
+        rig.advance(60);
+        rig.refresh();
+        rig.news.refresh_due().unwrap();
+    }
+    assert_eq!(asked(), 1, "Retry-After: 600 is respected by Refresh and the timer");
+    rig.fixtures.route("https://www.techmeme.com/", 200, &fixture("techmeme.xml"), None);
+    rig.advance(301);
+    rig.refresh();
+    assert_eq!(asked(), 2, "asked again once it passed");
+    assert_eq!(octosense_news_service::fetch::retry_after_secs("120", 0), Some(120));
+    assert_eq!(octosense_news_service::fetch::retry_after_secs("Wed, 30 Sep 2026 10:00:30 GMT", 1790762400), Some(30));
+}
+
 struct Reader;
 impl ArticleReader for Reader {
     fn read(&self, url: &str) -> Result<String, String> {

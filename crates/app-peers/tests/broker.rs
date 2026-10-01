@@ -37,6 +37,8 @@ struct Script {
     peer_history: Vec<Value>,
     /// What it answers for one session, before `history`.
     session_history: std::collections::HashMap<String, Vec<Value>>,
+    /// Sessions the kernel no longer has (session/hydrate refuses them).
+    gone: Vec<String>,
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
     connects: usize,
@@ -226,6 +228,7 @@ impl Connector for FakeConnector {
                                 send(note("turn/completed", json!({})));
                             }
                         }
+                        "session/hydrate" if params["session_id"].as_str().is_some_and(|id| script.lock().unwrap().gone.iter().any(|g| g == id)) => send(refuse("session_not_found")),
                         "session/hydrate" => send(reply(json!({"messages": history}))),
                         "peer/tools/unregister" => send(reply(json!({"slug": params["peer"], "profile_id": "_main", "unregistered": true}))),
                         "turn/interrupt" => {
@@ -2357,6 +2360,70 @@ fn a_reopened_conversation_keeps_the_persons_earlier_rows() {
     other.call(ContextOp::History, sink).unwrap();
     let rows = complete(&rx).unwrap()["messages"].clone();
     assert!(rows.as_array().unwrap().iter().all(|r| r["lane"] == "system_agent"), "{rows}");
+    drop(broker);
+}
+
+/// Open a conversation for `account`/`instance`, and the session of its
+/// person's lane (the `n`th context opened), with `rows` as its history.
+fn bound_lane(broker: &Broker, script: &Arc<Mutex<Script>>, account: &str, instance: &str, n: usize, rows: Vec<Value>) -> (Arc<dyn OctosContext>, String) {
+    let chat = broker.open_conversation(spec(account, instance, &ALL)).unwrap();
+    let (sink, rx) = collect();
+    chat.call(ContextOp::Open, sink).unwrap();
+    complete(&rx).unwrap();
+    let (_, lane) = person_lane(script, n);
+    script.lock().unwrap().session_history.insert(lane.clone(), rows);
+    (chat, lane)
+}
+
+fn person_rows(chat: &Arc<dyn OctosContext>) -> Vec<String> {
+    let (sink, rx) = collect();
+    chat.call(ContextOp::History, sink).unwrap();
+    let rows = complete(&rx).unwrap()["messages"].clone();
+    rows.as_array().unwrap().iter().filter(|r| r["lane"] == "person").map(|r| r["content"].as_str().unwrap_or("").to_owned()).collect()
+}
+
+/// The earlier handles' rows are the same ACCOUNT's only: after a switch
+/// to another account the panel (same instance) shows none of the first
+/// account's, and switching back does not bring them back either (the
+/// switch cleared them with the contexts).
+#[test]
+fn a_reopened_conversation_never_shows_another_accounts_rows() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let (first, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 0, vec![json!({"role": "user", "content": "A's secret question"})]);
+    first.close();
+    broker.set_account(Some("@b:x"));
+    wait_for("B's peer", || broker.availability() == Availability::Ready);
+    let opened = calls_of(&script, "peer/context/open").len();
+    let (second, _) = bound_lane(&broker, &script, "@b:x", "shell-ask", opened, vec![]);
+    assert!(person_rows(&second).is_empty(), "no rows of A's in B's panel");
+    second.close();
+    broker.set_account(Some("@a:x"));
+    wait_for("A's peer", || broker.availability() == Availability::Ready);
+    let opened = calls_of(&script, "peer/context/open").len();
+    let (third, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", opened, vec![]);
+    assert!(person_rows(&third).is_empty(), "the switch cleared the earlier handles");
+    drop(broker);
+}
+
+/// An earlier lane the kernel no longer has (purged) is skipped and
+/// forgotten; the others still show.
+#[test]
+fn a_gone_earlier_lane_is_dropped() {
+    let (broker, script) = new_broker_with(&ALL, None, None);
+    broker.set_account(Some("@a:x"));
+    let (one, lane1) = bound_lane(&broker, &script, "@a:x", "shell-ask", 0, vec![json!({"role": "user", "content": "first"})]);
+    one.close();
+    let (two, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 1, vec![json!({"role": "user", "content": "second"})]);
+    two.close();
+    let (three, _) = bound_lane(&broker, &script, "@a:x", "shell-ask", 2, vec![]);
+    assert_eq!(person_rows(&three), ["first", "second"]);
+    script.lock().unwrap().gone.push(lane1.clone());
+    assert_eq!(person_rows(&three), ["second"]);
+    let asked = calls_of(&script, "session/hydrate").iter().filter(|(_, p)| p["session_id"] == lane1.as_str()).count();
+    assert_eq!(person_rows(&three), ["second"]);
+    let again = calls_of(&script, "session/hydrate").iter().filter(|(_, p)| p["session_id"] == lane1.as_str()).count();
+    assert_eq!(asked, again, "not asked again once gone");
     drop(broker);
 }
 
