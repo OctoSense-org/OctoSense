@@ -1278,6 +1278,8 @@ struct PendingApp {
     spawner: ThreadSpawner,
     lines: Sender<ClientLine>,
     log: Option<std::fs::File>,
+    /// The hub's secret for this launch, written to the app's stdin.
+    launch_token: String,
 }
 
 impl std::fmt::Debug for PendingApp {
@@ -1287,13 +1289,16 @@ impl std::fmt::Debug for PendingApp {
 }
 
 /// Start `cmd` at the head of its own process group with both streams
-/// piped into the client's log and tile.
+/// piped into the client's log and tile. `stdin_line`: the app's hub
+/// secret, written as the only line of its stdin (then EOF); `None` (a
+/// build): no stdin at all.
 fn start_piped(
     mut cmd: Command,
     spawner: &ThreadSpawner,
     id: ClientId,
     log: Option<std::fs::File>,
     lines: Sender<ClientLine>,
+    stdin_line: Option<&str>,
 ) -> std::io::Result<ProcessGroup> {
     // Its own group (unix): whatever it forks (rustc under a build) shares
     // one fresh pgid, so `kill_child_group` reaches the whole tree.
@@ -1301,8 +1306,16 @@ fn start_piped(
     own_process_group(&mut cmd);
     // Both streams are piped so a reader thread can put the newest line on
     // the tile while the app builds — cargo talks on stderr.
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(if stdin_line.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let mut child = cmd.spawn()?;
+    if let (Some(line), Some(mut stdin)) = (stdin_line, child.stdin.take()) {
+        use std::io::Write;
+        // One line, then EOF (the pipe closes here): the app reads nothing
+        // else from us.
+        let _ = stdin.write_all(format!("{line}\n").as_bytes());
+    }
     if let Some(out) = child.stdout.take() {
         pump(spawner, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
     }
@@ -1360,9 +1373,14 @@ pub fn spawn_client(
         None => {}
     }
     crate::sandbox::note_launch(&app.id, applied.as_ref());
+    // The hub admits this launch's socket only with this secret (ADR 0004
+    // §5, hub.rs): it goes to the APP on its stdin (never to the build),
+    // never in its environment or command line.
+    let launch_token = crate::hub::issue_launch_token(id);
     cmd.env("STUDIO_HOST", format!("http://127.0.0.1:{}", hub_port))
         .env("STUDIO_BUILD", id.to_string())
-        .env("STUDIO_CRATE", &app.bin);
+        .env("STUDIO_CRATE", &app.bin)
+        .env(crate::hub::HANDSHAKE_STDIN_ENV, "1");
     // The directory the app opens in is the app's alone: the build runs in
     // its checkout whatever this is.
     if let Some(cwd) = cwd.filter(|dir| dir.is_dir()) {
@@ -1411,12 +1429,21 @@ pub fn spawn_client(
                 spawner: spawner.clone(),
                 lines: lines.clone(),
                 log: log.as_ref().and_then(|f| f.try_clone().ok()),
+                launch_token,
             };
-            let child = start_piped(build_command(build), spawner, id, log, lines)
-                .map_err(|e| format!("build {}: {}", app.package, e))?;
+            let child = start_piped(build_command(build), spawner, id, log, lines, None).map_err(|e| {
+                crate::hub::revoke_launch_token(id);
+                format!("build {}: {}", app.package, e)
+            })?;
             (child, Some(pending))
         }
-        None => (start_piped(cmd, spawner, id, log, lines).map_err(|e| format!("spawn {}: {}", app.bin, e))?, None),
+        None => {
+            let child = start_piped(cmd, spawner, id, log, lines, Some(&launch_token)).map_err(|e| {
+                crate::hub::revoke_launch_token(id);
+                format!("spawn {}: {}", app.bin, e)
+            })?;
+            (child, None)
+        }
     };
     Ok(ClientSlot {
         id,
@@ -1471,6 +1498,7 @@ impl ClientSlot {
             Ok(None) => return None,
             Err(e) => {
                 self.pending = None;
+                crate::hub::revoke_launch_token(id);
                 let why = format!("could not wait for its build: {e}");
                 self.launch_error = Some(why.clone());
                 return Some(Err(why));
@@ -1478,19 +1506,23 @@ impl ClientSlot {
         };
         let pending = self.pending.take()?;
         if self.closing.is_some() {
+            // Nothing will ever present this launch's secret.
+            crate::hub::revoke_launch_token(id);
             return Some(Ok(()));
         }
         if !status.success() {
+            crate::hub::revoke_launch_token(id);
             let why = format!("its build failed ({status})");
             self.launch_error = Some(why.clone());
             return Some(Err(why));
         }
-        match start_piped(pending.cmd, &pending.spawner, id, pending.log, pending.lines) {
+        match start_piped(pending.cmd, &pending.spawner, id, pending.log, pending.lines, Some(&pending.launch_token)) {
             Ok(app) => {
                 self.child = Some(app);
                 Some(Ok(()))
             }
             Err(e) => {
+                crate::hub::revoke_launch_token(id);
                 let why = format!("it could not start: {e}");
                 self.launch_error = Some(why.clone());
                 Some(Err(why))
@@ -2187,10 +2219,10 @@ mod tests {
             slot.ready = false;
             let mut cmd = Command::new("/bin/sh");
             cmd.args(["-c", build]);
-            slot.child = Some(start_piped(cmd, &spawner, 4, None, tx.clone()).unwrap());
+            slot.child = Some(start_piped(cmd, &spawner, 4, None, tx.clone(), None).unwrap());
             let mut app_cmd = Command::new("/bin/sh");
             app_cmd.args(["-c", app]);
-            slot.pending = Some(PendingApp { cmd: app_cmd, spawner: spawner.clone(), lines: tx.clone(), log: None });
+            slot.pending = Some(PendingApp { cmd: app_cmd, spawner: spawner.clone(), lines: tx.clone(), log: None, launch_token: "the-secret".into() });
             slot
         };
         let settle = |slot: &mut ClientSlot| {
@@ -2201,13 +2233,15 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
         };
-        let mut ok = slot_for("exit 0", "exit 7");
+        // The build has no stdin (a read fails at once); the app reads the
+        // hub secret as its stdin's only line (#220).
+        let mut ok = slot_for("read x && exit 1; exit 0", "read t || exit 2; [ \"$t\" = the-secret ] || exit 3; read u && exit 4; exit 7");
         let build_pid = ok.child.as_ref().unwrap().id();
         assert!(ok.building());
         assert_eq!(settle(&mut ok), Ok(()));
         assert!(!ok.building());
         assert_ne!(ok.child.as_ref().unwrap().id(), build_pid, "the app's group replaced the build's");
-        assert_eq!(ok.child.as_mut().unwrap().wait().unwrap().code(), Some(7), "the app itself ran");
+        assert_eq!(ok.child.as_mut().unwrap().wait().unwrap().code(), Some(7), "the app ran, read the secret, then EOF");
         assert!(ok.continue_launch(4).is_none(), "nothing left to continue");
 
         let mut failed = slot_for("exit 101", "exit 0");
