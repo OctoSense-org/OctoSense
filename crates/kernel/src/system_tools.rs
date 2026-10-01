@@ -23,7 +23,9 @@
 //! octos re-applies to every turn's finished registry (after the per-turn
 //! `peer_*`, `spawn` and `send_file` tools) and to kernel wake continuations
 //! alike. So before every kernel start ([`enforce`], from `launch::prepare`)
-//! the host writes [`tool_policy`] into its OWN profile. Consequently:
+//! the host writes [`tool_policy`] into its OWN profile. It also denies
+//! octos's `peer_close` ([`PEER_CLOSE`]): a closed app peer cannot be
+//! resumed or replaced, so no agent may close one. Consequently:
 //!
 //! - **§12's "exactly its grants" is NOT yet enforced for the system
 //!   agent.** It is bounded by the grantable ceiling: no octos shell, but
@@ -66,8 +68,10 @@ use serde_json::{json, Value};
 /// - **Supervision** of app peers (ADR 0004 §6): `peer_send_input` briefs
 ///   and asks, `peer_gather` / `peer_list` read the blackboard,
 ///   `peer_respond` answers a peer's question (never its approvals, which
-///   octos refuses), `peer_close` retires one. Not `peer_handoff`: app peers
-///   are prepared by the host (`peer/prepare`).
+///   octos refuses). Not `peer_handoff`: app peers are prepared by the host
+///   (`peer/prepare`). Not `peer_close`: octos cannot resume a closed peer
+///   or make a new one for its (app, account), so closing one would erase
+///   an app's agent for good; [`tool_policy`] denies it too.
 /// - **Its workspace**, fenced by octos to the session's working directory:
 ///   read, search and edit files there.
 /// - **The person**: `ask_user_question`, media viewing.
@@ -85,7 +89,6 @@ pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     "peer_gather",
     "peer_list",
     "peer_respond",
-    "peer_close",
     // Its workspace (octos fences these to the session's working directory).
     "read_file",
     "write_file",
@@ -262,8 +265,13 @@ pub fn grants_at_start() -> Option<SystemAgentTools> {
 /// can give (an empty allowlist is octos's "allow all") except octos's
 /// shell, marked as OctoSense's.
 pub fn tool_policy() -> Value {
-    json!({ "allow": [], "deny": [OCTOS_SHELL], "owner": POLICY_OWNER })
+    json!({ "allow": [], "deny": [OCTOS_SHELL, PEER_CLOSE], "owner": POLICY_OWNER })
 }
+
+/// octos's tool that retires a peer for good (ADR 0004 gap 8: a closed peer
+/// cannot be resumed or replaced for its (app, account)). No agent gets it;
+/// only the host decides a peer's life (it never closes one today).
+pub const PEER_CLOSE: &str = "peer_close";
 
 /// What [`enforce`] did.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -357,11 +365,21 @@ mod tests {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
 
+    /// ADR 0004 gap 8: octos cannot resume a closed peer or make a new one
+    /// for its (app, account), so no agent may close one: not in the system
+    /// agent's defaults, and denied by the profile whatever else it has.
+    #[test]
+    fn no_agent_may_close_an_app_peer() {
+        assert!(!SYSTEM_AGENT_TOOLS.contains(&"peer_close"));
+        assert!(tool_policy()["deny"].as_array().unwrap().contains(&json!("peer_close")));
+        assert!(!SystemAgentTools::new().names().iter().any(|t| t == "peer_close"));
+    }
+
     #[test]
     fn only_octos_shell_is_excluded_and_the_system_agent_default_has_none_of_it() {
         let policy = tool_policy();
         assert_eq!(policy["allow"], json!([]), "everything a grant can give");
-        assert_eq!(policy["deny"], json!(["group:runtime"]), "octos's shell, and nothing else");
+        assert_eq!(policy["deny"], json!(["group:runtime", "peer_close"]), "octos's shell and closing a peer, and nothing else");
         for shell in ["shell", "bash", "exec_command", "write_stdin"] {
             assert!(!SYSTEM_AGENT_TOOLS.contains(&shell));
             assert!(!EXTERNAL_TURN_TOOLS.contains(&shell), "external clients lose nothing");

@@ -1954,6 +1954,7 @@ impl App {
         }
         self.state_mut().layout.remove(client);
         self.state_mut().clients.remove(&client);
+        hub::revoke_launch_token(client);
         // A dying warm viewer (or its requester) clears the cache's
         // reference to it — "if a viewer process dies clear its slot, so
         // the next Space respawns" instead of talking to a dead socket.
@@ -2867,6 +2868,14 @@ impl App {
                     socket,
                     sender,
                 } => {
+                    // The hub admitted this socket with the launch's own
+                    // secret; the slot must still be that live process,
+                    // and not bound already (ADR 0004 §5).
+                    if !slot_accepts_socket(self.state_mut().clients.get(&client)) {
+                        log!("wm: refused a socket for client {client}: no unbound process slot");
+                        let _ = sender.send(Vec::new());
+                        continue;
+                    }
                     let theme_splash = theme::theme_splash_path(&self.state_mut().theme_name)
                         .to_string_lossy()
                         .to_string();
@@ -2912,7 +2921,13 @@ impl App {
                         }
                     }
                 }
-                HubEvent::FromApp { client, msgs } => {
+                HubEvent::FromApp { client, socket, msgs } => {
+                    // Only the socket bound to a live slot speaks for it: a
+                    // slot that is gone, or a socket that is not (or no
+                    // longer) the bound one, is not heard.
+                    if !frame_is_bound(self.state_mut().clients.get(&client), socket) {
+                        continue;
+                    }
                     for msg in msgs {
                         self.on_app_msg(cx, client, msg);
                     }
@@ -3006,6 +3021,19 @@ impl App {
                 // drawn) lands now that the client has a frame.
                 if self.pending_focus == Some(client) {
                     self.focus_client(cx, client);
+                }
+            }
+            AppToStudio::TickDone => {
+                // Dormant warm clients are pumped by the warm heartbeat.
+                if self.is_warm(client) {
+                    return;
+                }
+                if self.ai_bus.is_pane(client) {
+                    self.with_pane_run_view(cx, |cx, v| v.tick_done(cx));
+                } else {
+                    self.desk(cx).borrow_mut::<WmDesk>().map(|mut d| {
+                        d.with_run_view(cx, client, |cx, v| v.tick_done(cx))
+                    });
                 }
             }
             AppToStudio::SetCursor(cursor) => {
@@ -3605,6 +3633,35 @@ impl App {
                 true
             }
         }
+    }
+
+    /// Text input, the input method's state query and its action key for
+    /// the chat panes. True when a pane took the event.
+    fn chat_text_input(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        for pane in [ids!(shell_app_chat), ids!(shell_system_chat)] {
+            let pane = self.ui.widget(cx, pane);
+            let Some(mut pane) = pane.borrow_mut::<system_chat::view::ShellSystemChat>() else { continue };
+            if let Event::ImeAction(action) = event {
+                use makepad_widgets::makepad_platform::event::ImeAction;
+                if pane.has_keyboard(cx) && matches!(action.action, ImeAction::Send | ImeAction::Done | ImeAction::Go) {
+                    if pane.is_app_panel() { app_chat::send_draft() } else { system_chat::send_draft() }
+                    return true;
+                }
+                continue;
+            }
+            if pane.ime(cx, event) {
+                return true;
+            }
+        }
+        // Typed text with no pane focused by a press (F8 opened it): the
+        // pane that has the keyboard. Never an input method's whole editor
+        // state: that belongs to the field it was asked of.
+        if let Event::TextInput(t) = event {
+            if t.full_state_sync.is_none() {
+                return app_chat::text_input(t) || system_chat::text_input(t);
+            }
+        }
+        false
     }
 
     /// The system chat's pane owns the pointer inside its rect while open.
@@ -4956,6 +5013,20 @@ fn test_action(name: &str) -> Option<WmAction> {
 /// The SUPER chord for mouse binds — Ctrl+Alt nested, the Logo key on a
 /// Linux session (binds.rs carries the same law for keys).
 /// No modifier at all: the bare function keys the WM owns (F10).
+/// Whether an admitted hub socket may bind `slot` (ADR 0004 §5): only a
+/// live process client's slot that no socket holds yet. An in-process
+/// module has no process, so it is never bound to a socket; a bound slot is
+/// never rebound, not even after its socket drops.
+fn slot_accepts_socket(slot: Option<&clients::ClientSlot>) -> bool {
+    slot.is_some_and(|slot| slot.child.is_some() && !slot.stopped && slot.socket.is_none() && slot.sender.is_none())
+}
+
+/// Whether frames from hub socket `socket` speak for `slot`: only while it
+/// is the socket bound to that live slot.
+fn frame_is_bound(slot: Option<&clients::ClientSlot>, socket: u64) -> bool {
+    slot.is_some_and(|slot| slot.socket == Some(socket))
+}
+
 fn bare_key(m: &KeyModifiers) -> bool {
     !m.shift && !m.control && !m.alt && !m.logo
 }
@@ -5012,6 +5083,47 @@ fn os_list_result(call_id: &str, rows: &[OsAppRow]) -> ToolResult {
         format!("{} apps, {} running", rows.len(), running),
     )
     .with_data(rows.to_vec().serialize_json())
+}
+
+#[cfg(all(test, unix))]
+mod hub_binding_tests {
+    use super::*;
+
+    fn process_slot(id: ClientId) -> clients::ClientSlot {
+        let mut slot = clients::ClientSlot::module(id, "terminal", "Terminal");
+        slot.child = Some(std::process::Command::new("true").spawn().expect("spawn true"));
+        slot
+    }
+
+    #[test]
+    fn should_bind_a_socket_only_when_the_slot_is_an_unbound_live_process() {
+        let mut slot = process_slot(4);
+        assert!(slot_accepts_socket(Some(&slot)));
+        assert!(!slot_accepts_socket(None), "no slot: nothing to bind");
+        assert!(!slot_accepts_socket(Some(&clients::ClientSlot::module(5, "reference", "Reference"))), "a module slot never takes a socket");
+        // Bound: a second socket is refused, and so is a rebind after the
+        // first socket dropped.
+        let (tx, _rx) = std::sync::mpsc::channel();
+        slot.socket = Some(11);
+        slot.sender = Some(tx);
+        assert!(!slot_accepts_socket(Some(&slot)));
+        slot.stopped = true;
+        slot.socket = None;
+        slot.sender = None;
+        assert!(!slot_accepts_socket(Some(&slot)), "a stopped slot is not live");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
+
+    #[test]
+    fn should_ignore_frames_when_the_socket_is_not_bound_to_the_slot() {
+        let mut slot = process_slot(4);
+        assert!(!frame_is_bound(Some(&slot), 11), "not bound yet");
+        slot.socket = Some(11);
+        assert!(frame_is_bound(Some(&slot), 11));
+        assert!(!frame_is_bound(Some(&slot), 12), "another socket naming the same id");
+        assert!(!frame_is_bound(None, 11), "a slot that is gone");
+        let _ = slot.child.take().map(|mut c| c.wait());
+    }
 }
 
 #[cfg(test)]
@@ -6012,12 +6124,14 @@ impl App {
                 self.pump_warm(cx);
             }
         }
-        // The phone's input method types into the system chat's prompt.
-        if let Event::TextInput(t) = event {
-            if cfg!(native_mobile) && self.state.is_some() && (app_chat::text_input(&t.input) || system_chat::text_input(&t.input)) {
-                self.system_chat_changed(cx);
-                return;
-            }
+        // The chat panes' prompts: text input and the input method (see
+        // system_chat/composer.rs). A pane whose prompt holds the key focus
+        // takes its text and answers the input method's state query; plain
+        // typed text (a desktop's) goes to the pane that has the keyboard.
+        // Characters are typed only here, never on KeyDown.
+        if self.state.is_some() && matches!(event, Event::TextInput(_) | Event::TextInputStateQuery(_) | Event::ImeAction(_)) && self.chat_text_input(cx, event) {
+            self.system_chat_changed(cx);
+            return;
         }
         if let Event::Signal = event {
             if self.state.is_some() {
