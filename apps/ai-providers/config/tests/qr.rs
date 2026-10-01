@@ -109,12 +109,21 @@ fn tampered_codes_are_rejected() {
     let p = three_providers();
     let text = qr::encode_encrypted(&p, QR_A_PIN).unwrap();
     let body = &text["OCTOS1E:".len()..];
+    // Truncate to a length of 3k + 1 (invalid base45). The cut must not end in
+    // a space: space is a base45 digit, `decode` trims the input, and a body
+    // trimmed back to 3k is a valid prefix that only fails authentication
+    // (WrongPin). The first digit of a triple is a space ~1 time in 45, so
+    // with a random salt and nonce a fixed cut made this test flaky.
+    let mut cut = (body.len() - 3) / 3 * 3 + 1;
+    while body.as_bytes()[cut - 1] == b' ' {
+        cut -= 3;
+    }
 
     // Structural damage: a character outside the QR alphanumeric set, a
     // truncated body, a triple beyond 0xFFFF.
     for bad in [
         format!("OCTOS1E:{}a{}", &body[..10], &body[11..]),
-        format!("OCTOS1E:{}", &body[..(body.len() - 3) / 3 * 3 + 1]),
+        format!("OCTOS1E:{}", &body[..cut]),
         "OCTOS1E:000".to_string(),
         format!("OCTOS1E::::{}", &body[3..]),
         "OCTOS1E:0000".to_string(),
