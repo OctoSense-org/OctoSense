@@ -1,6 +1,7 @@
 //! The system chat pane, drawn by the shell like its other surfaces
-//! (approvals/view.rs, glance_panel.rs): a column at the right of the
-//! desktop, the whole screen on a phone (or any narrow window).
+//! (approvals/view.rs, glance_panel.rs): a medium pane at the left of the
+//! desktop ([`default_pane`]), which the person can move and size; the
+//! whole screen on a phone (or any narrow window).
 //!
 //! It shows the conversation ([`super::model`]): the person's messages,
 //! the assistant's streamed text, each tool call with its status, the
@@ -14,8 +15,8 @@
 //!
 //! - **Placing it** (a desktop, not the full-screen surface): the header
 //!   (title and status) moves the pane, an edge or a corner sizes it, each
-//!   with its cursor; a double-click on the header puts it back in its
-//!   column. The placement holds while the shell runs and stays on screen
+//!   with its cursor; a double-click on the header puts it back where it
+//!   opens. The placement holds while the shell runs and stays on screen
 //!   when the window shrinks ([`placed_pane`], [`dragged`]).
 //! - **The caret** blinks at the end of the prompt while the pane holds
 //!   the keyboard, and stays on while the person types.
@@ -46,8 +47,8 @@
 //! whenever the PERSON's lane is idle, even while the system agent's turn
 //! runs, and Stop stops the person's own turn. The system agent's running
 //! turn has its own row with "Stop the system agent's task". On a desktop
-//! the panel stands left of the system chat when both are open, so the two
-//! lanes show side by side; on a phone it is a full-screen sheet.
+//! the panel stands right of the system chat when both are open, so the
+//! two lanes show side by side; on a phone it is a full-screen sheet.
 
 use makepad_widgets::*;
 
@@ -77,6 +78,10 @@ pub const PANE_W: f64 = 440.0;
 pub const FULL_SCREEN_BELOW: f64 = 720.0;
 const PAD: f64 = 16.0;
 const FIELD_H: f64 = 36.0;
+/// The desktop pane's default height, as a share of the screen's, and the
+/// most it takes by default.
+const DEFAULT_HEIGHT: f64 = 0.6;
+const DEFAULT_MAX_H: f64 = 640.0;
 /// The smallest the person may size the desktop pane.
 pub const MIN_W: f64 = 320.0;
 pub const MIN_H: f64 = 240.0;
@@ -138,6 +143,16 @@ pub fn visible(r: Rect, pass: Vec2d) -> Rect {
         return r;
     }
     rect(r.pos.x, r.pos.y, r.size.x.min((pass.x - r.pos.x).max(0.0)), r.size.y.min((pass.y - r.pos.y).max(0.0)))
+}
+
+/// Where the desktop pane opens: a medium pane at the left (the column's
+/// width, [`DEFAULT_HEIGHT`] of the screen up to [`DEFAULT_MAX_H`]),
+/// centred top to bottom; `beside` (the "Ask <app>" panel while the system
+/// chat is open) right of the system chat's.
+pub fn default_pane(screen: Rect, gap: f64, beside: bool) -> Rect {
+    let h = between(screen.size.y * DEFAULT_HEIGHT, MIN_H, DEFAULT_MAX_H).min((screen.size.y - gap * 2.0).max(0.0));
+    let x = screen.pos.x + gap + if beside { PANE_W + gap } else { 0.0 };
+    placed_pane(rect(x, screen.pos.y + (screen.size.y - h) * 0.5, PANE_W, h), screen)
 }
 
 /// A placement kept on `screen`: no smaller than the minimum (unless the
@@ -582,7 +597,7 @@ pub struct ShellSystemChat {
     /// hidden-window runs' logs).
     #[rust]
     pub shown: Vec<String>,
-    /// Where the person put the desktop pane (None: its column).
+    /// Where the person put the desktop pane (None: where it opens).
     #[rust]
     placed: Option<Rect>,
     /// The surface the pane was last drawn on (a drag stays on it).
@@ -781,7 +796,7 @@ impl ShellSystemChat {
             Event::MouseDown(e) => {
                 if let Some(grip) = self.grip_at(e.abs) {
                     if grip == Grip::Move && e.time - self.header_pressed < DOUBLE_PRESS_S {
-                        // A double-click on the header: back in its column.
+                        // A double-click on the header: back where it opens.
                         self.placed = None;
                         self.header_pressed = 0.0;
                         self.redraw(cx);
@@ -1108,10 +1123,8 @@ impl ShellSystemChat {
             self.placed = Some(kept);
             kept
         } else {
-            let gap = tok.spacing.gaps_out;
-            // "Ask <app>" stands left of the system chat when both are open.
-            let beside = if source == Source::App && super::is_open() { PANE_W + gap } else { 0.0 };
-            rect(screen.pos.x + screen.size.x - gap - PANE_W - beside, screen.pos.y + gap, PANE_W, (screen.size.y - gap * 2.0).max(240.0))
+            // "Ask <app>" stands right of the system chat when both are open.
+            default_pane(screen, tok.spacing.gaps_out, source == Source::App && super::is_open())
         };
         self.pane = pane;
         self.d.card(cx, pane, &tok.popups);
@@ -1447,6 +1460,20 @@ mod tests {
         assert_eq!(hit_in(&hits, dvec2(102.0, 400.0)), Some(Hit::Grip(Grip::W)));
         assert_eq!(hit_in(&hits, dvec2(537.0, 747.0)), Some(Hit::Grip(Grip::SE)));
         assert_eq!(hit_in(&hits, dvec2(300.0, 400.0)), Some(Hit::Pane), "the transcript stays the pane's");
+    }
+
+    /// The pane opens at the left, medium and centred; "Ask <app>" beside
+    /// it; a short screen gives it its minimum height.
+    #[test]
+    fn the_pane_opens_medium_at_the_left() {
+        let screen = rect(0.0, 31.0, 1400.0, 832.0);
+        let pane = default_pane(screen, 5.0, false);
+        assert_eq!((pane.pos.x, pane.size.x), (5.0, PANE_W));
+        assert!((pane.size.y - 832.0 * DEFAULT_HEIGHT).abs() < 1e-9);
+        assert!((pane.pos.y + pane.size.y * 0.5 - (31.0 + 416.0)).abs() < 1e-9, "centred top to bottom");
+        assert_eq!(default_pane(screen, 5.0, true).pos.x, 5.0 + PANE_W + 5.0, "Ask <app> right of it");
+        assert_eq!(default_pane(rect(0.0, 0.0, 1400.0, 2000.0), 5.0, false).size.y, DEFAULT_MAX_H);
+        assert_eq!(default_pane(rect(0.0, 0.0, 800.0, 300.0), 5.0, false).size.y, MIN_H);
     }
 
     /// Moving keeps the pane on screen; sizing moves only the dragged edges,
