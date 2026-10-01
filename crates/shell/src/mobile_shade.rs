@@ -10,7 +10,7 @@
 //! tapping the status bar's left or right half, or `--test-action
 //! shade:<notifications|controls>`.
 use crate::mobile_gestures::{Dir, GestureKind, ShadeSide, ShellGesture};
-use crate::{desk::WmState, desktop::{DesktopStyle, DrawDesktopChrome}, mobile::PhoneHit, octosense::style::AppIconDraw, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
+use crate::{desk::WmState, desktop::DesktopStyle, mobile::PhoneHit, mobile_surface::DrawPhoneRound, octosense::style::AppIconDraw, shell::{alpha, rgb, ui::{rect, HAlign, Ico, ShellDraw}}};
 use makepad_widgets::{gauss_view::{GaussBlurSnapshot, GaussRoundedView}, *};
 use crate::android_integration::AndroidState;
 
@@ -411,9 +411,8 @@ fn app_label(id: &str) -> String {
     })
 }
 
-fn rounded(chrome: &mut DrawDesktopChrome, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
+fn rounded(chrome: &mut DrawPhoneRound, cx: &mut Cx2d, r: Rect, radius: f32, color: Vec4f) {
     chrome.radius = radius;
-    chrome.bevel = 0.0;
     chrome.color = color;
     chrome.draw_abs(cx, r);
 }
@@ -477,7 +476,7 @@ fn content_key(shade: &ShadeState, android: &AndroidState, clock: &str, dark: bo
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, cache: &mut ShadeContentCache, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
+pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawPhoneRound, icons: &mut AppIconDraw, native_icon: &mut DrawImage, glass: &mut GaussRoundedView, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, backdrop: Option<GaussBlurSnapshot>, cache: &mut ShadeContentCache, present: &mut dyn FnMut(&mut Cx2d, &Texture, Rect)) {
     let shade = &state.phone.shade;
     let style = state.style.target;
     let dark = state.style.dark;
@@ -555,7 +554,7 @@ pub fn draw(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, ic
 /// The status line, then the notifications page and the controls page,
 /// side by side across `shade.page`, in `content`.
 #[allow(clippy::too_many_arguments)]
-fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, content: Rect, ink: Vec4f, accent: Vec4f, card: Vec4f) {
+fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawPhoneRound, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, state: &WmState, screen: Rect, content: Rect, ink: Vec4f, accent: Vec4f, card: Vec4f) {
     let shade = &state.phone.shade;
     let style = state.style.target;
     let dark = state.style.dark;
@@ -586,7 +585,7 @@ fn draw_content(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome
 /// pay it inside its first frames (glyph atlas packing under `draw_overlay`,
 /// ~30 ms of a 55 ms frame on the OnePlus 6T). The live shade is untouched:
 /// its fixtures still seed on the first real open.
-pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, state: &WmState, screen: Rect) {
+pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawPhoneRound, icons: &mut AppIconDraw, native_icon: &mut DrawImage, state: &WmState, screen: Rect) {
     let mut shade = state.phone.shade.clone();
     if shade.notifications.is_empty() { shade.seed_fixtures(); }
     let style = state.style.target;
@@ -604,7 +603,7 @@ pub fn prewarm(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, android: &AndroidState, style: DesktopStyle, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
+fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawPhoneRound, icons: &mut AppIconDraw, native_icon: &mut DrawImage, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, android: &AndroidState, style: DesktopStyle, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
     let x = page.pos.x;
     let w = page.size.x;
     let head = rect(x + 24.0, page.pos.y + 58.0, w - 48.0, 30.0);
@@ -687,7 +686,7 @@ fn draw_notifications(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktop
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawDesktopChrome, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
+fn draw_controls(cx: &mut Cx2d, d: &mut ShellDraw, chrome: &mut DrawPhoneRound, hits: &mut Vec<(Rect, PhoneHit)>, shade: &ShadeState, dark: bool, ink: Vec4f, accent: Vec4f, card: Vec4f, page: Rect) {
     let x = page.pos.x;
     let w = page.size.x;
     d.label(cx, rect(x + 24.0, page.pos.y + 58.0, w - 48.0, 30.0), true, 17.0, ink, HAlign::Left, "Controls");

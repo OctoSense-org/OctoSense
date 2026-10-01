@@ -30,7 +30,8 @@
 //! and a demo (`--test-action island:demo`, or three quick taps on the
 //! status-bar clock on a phone).
 use crate::{
-    desktop::{DesktopStyle, DrawDesktopChrome},
+    desktop::DesktopStyle,
+    mobile_surface::DrawPhoneRound,
     mobile::PhoneHit,
     mobile_gestures::{GestureKind, ShellGesture},
     octosense::style::AppIconDraw,
@@ -526,10 +527,9 @@ impl App {
 
 // ---------------------------------------------------------------- drawing
 
-fn rounded(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, r: Rect, radius: f64, color: Vec4f) {
+fn rounded(cx: &mut Cx2d, chrome: &mut DrawPhoneRound, r: Rect, radius: f64, color: Vec4f) {
     if r.size.x <= 0.0 || r.size.y <= 0.0 || color.w <= 0.0 { return; }
     chrome.radius = (radius * 2.0) as f32;
-    chrome.bevel = 0.0;
     chrome.color = color;
     chrome.draw_abs(cx, r);
 }
@@ -542,7 +542,7 @@ fn card_height(activities: &[LiveActivity]) -> f64 {
 
 /// Draw the island for this frame and register its taps. One call from
 /// `PhoneSurface::draw_overlay`, after the status bar.
-pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
+pub fn draw(cx: &mut Cx2d, chrome: &mut DrawPhoneRound, d: &mut ShellDraw, icons: &mut AppIconDraw, hits: &mut Vec<(Rect, PhoneHit)>, state: &crate::desk::WmState, screen: Rect) {
     let island = &state.phone.island;
     let style = state.style.target;
     let ios = style == DesktopStyle::Ios;
@@ -684,7 +684,7 @@ pub fn draw(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, d: &mut ShellDraw, ic
 
 /// A tiny progress ring: eight dots around `center`, `fraction` of them
 /// lit — no arc shader needed.
-fn ring(cx: &mut Cx2d, chrome: &mut DrawDesktopChrome, center: Vec2d, radius: f64, fraction: f32, lit: Vec4f, dim: Vec4f) {
+fn ring(cx: &mut Cx2d, chrome: &mut DrawPhoneRound, center: Vec2d, radius: f64, fraction: f32, lit: Vec4f, dim: Vec4f) {
     let n = 8;
     let count = (fraction.clamp(0.0, 1.0) * n as f32).round() as usize;
     for i in 0..n {
