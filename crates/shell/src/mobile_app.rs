@@ -711,6 +711,14 @@ impl App {
             self.animate_phone(cx);
         }
         if let Some(app)=self.state_mut().phone.search_launch.take() {self.phone_action(cx,PhoneHit::App(app));}
+        // The field let a pull go: it lands on the list where the finger
+        // first touched, and this event carries on from there.
+        if let Some((start,time))=self.state_mut().phone.search_field_pull.take() {
+            if self.phone_pointer_at(cx,PhonePointerPhase::Down,start,time,true,0.0) && self.state_mut().phone.gesture.is_some() {
+                if let Event::TouchUpdate(e)=event {self.state_mut().phone.touch=e.touches.first().map(|t|t.uid);}
+            }
+            return false;
+        }
         handled
     }
     pub(super) fn phone_pointer(&mut self,cx:&mut Cx,event:&Event)->bool {

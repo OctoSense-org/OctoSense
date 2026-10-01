@@ -418,6 +418,8 @@ pub struct PhoneSurface {
     #[rust] search_focus_pending: bool,
     #[rust] search_rect: Rect,
     #[rust] search_pointer: bool,
+    /// Where and when the finger on the field landed.
+    #[rust] search_press: Option<(Vec2d, f64)>,
     #[rust] pub search_scroll_max: f64,
     // The results for the last query drawn (search.rs): matched and sorted
     // once per query and catalog, not on every frame of a scroll.

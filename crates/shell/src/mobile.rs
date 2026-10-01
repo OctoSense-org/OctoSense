@@ -138,6 +138,10 @@ pub struct PhoneState {
     /// The list was at its top when the finger landed: pulling it further
     /// down closes search (`search_pull_closes`).
     pub search_touch_at_top: bool,
+    /// A finger that landed on the search field and is pulling down: where
+    /// and when it landed. The field lets it go (`search_field_releases`) and
+    /// the shell takes it as a pull on the list from there.
+    pub search_field_pull: Option<(Vec2d, f64)>,
     pub ime: HashMap<ClientId, makepad_platform::ime::HostedImeState>,
     pub shift: bool,
     pub symbols: bool,
@@ -176,7 +180,7 @@ impl Default for PhoneState {
             animation_active: false, draw_active: false,
             keyboard: 0.0, native_keyboard: 0.0, native_keyboard_seen: 0.0, body_reflow: 0.0, search_focus_at: 0.0, keyboard_target: 0.0, keyboard_sent_height: 0.0, keyboard_client: None,
             search_query: String::new(), search_open: false, search_launch: None, search_focused: false, search_scroll: 0.0,
-            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(), search_touch_at_top: false,
+            search_velocity: 0.0, search_stretch: 0.0, search_scroll_limit: 0.0, search_track: Vec::new(), search_touch_at_top: false, search_field_pull: None,
             ime: HashMap::new(), shift: false, symbols: false,
             #[cfg(not(mobile_only))] desktop_size: None,
             #[cfg(not(mobile_only))] desktop_clients: Vec::new(),
@@ -202,6 +206,18 @@ pub const SEARCH_STRETCH_MAX: f64 = 72.0;
 /// The stretch (points) a pull on a list already at its top reaches to close
 /// search: about 80 points of finger travel. A shorter pull only stretches.
 pub const SEARCH_PULL_CLOSE: f64 = 36.0;
+/// How far (points) a finger on the search field moves down, mostly
+/// vertically, before it is a pull and no longer a tap or a selection.
+pub const SEARCH_FIELD_PULL_SLOP: f64 = 12.0;
+
+/// Whether a finger that landed on the search field at `start` and is now at
+/// `p` is pulling down a list that is at its top (`search_scroll`): the field
+/// lets it go, so a pull that starts on the field closes search too. Taps,
+/// sideways selection drags and pulls on a scrolled list stay with it.
+pub fn search_field_releases(start: Vec2d, p: Vec2d, search_scroll: f64) -> bool {
+    let d = p - start;
+    search_scroll <= 0.5 && d.y >= SEARCH_FIELD_PULL_SLOP && d.y > d.x.abs() * 1.5
+}
 /// How far back the drawer's lift velocity looks, in seconds.
 const SEARCH_VELOCITY_WINDOW: f64 = 0.1;
 /// The flicked drawer's friction: its speed falls by e every 1/k seconds,
@@ -566,6 +582,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_search_field_lets_a_pull_down_go_to_the_list_and_keeps_taps_and_selection() {
+        let start = dvec2(200.0, 300.0);
+        // A pull down from the field, at the list's top: the list takes it.
+        assert!(search_field_releases(start, dvec2(203.0, 314.0), 0.0));
+        // A tap's jitter, a sideways selection drag and an upward drag stay
+        // with the field.
+        assert!(!search_field_releases(start, dvec2(201.0, 306.0), 0.0));
+        assert!(!search_field_releases(start, dvec2(260.0, 320.0), 0.0));
+        assert!(!search_field_releases(start, dvec2(200.0, 260.0), 0.0));
+        // A scrolled list is not pulled from the field.
+        assert!(!search_field_releases(start, dvec2(200.0, 340.0), 120.0));
+    }
     #[test]
     fn a_short_pull_at_the_top_stretches_and_springs_back_without_closing_search() {
         let short = [(200.0, 400.0), (200.0, 420.0), (200.0, 440.0), (200.0, 460.0)];
