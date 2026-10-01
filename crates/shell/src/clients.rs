@@ -12,13 +12,16 @@
 //! `STUDIO_HOST`/`STUDIO_BUILD` pointing at the in-process hub, exactly
 //! like studio launches run targets.
 //!
-//! **They are launched through cargo** (`cargo run --release -p <pkg>`)
-//! whenever wm is running out of a checkout, so a stale or missing
-//! binary is rebuilt on launch instead of failing or showing yesterday's
-//! app. cargo passes stdio and the environment straight through, so the
-//! protocol is unaffected; its "Compiling …" output lands in the client's
-//! log. An installed wm with no checkout around it falls back to
-//! exec'ing the sibling binary.
+//! **They are built before they start** (`cargo build --release`, see
+//! [`launch_plan`]) whenever the shell runs out of a checkout, so a stale
+//! or missing binary is rebuilt on launch instead of failing or showing
+//! yesterday's app; a native app from the OctoSense workspace, held to its
+//! `Cargo.lock`. The build runs outside any sandbox, in its checkout, and
+//! its "Compiling …" output lands in the client's log; then the built
+//! binary itself starts under the app's sandbox ([`ClientSlot::continue_launch`]).
+//! Cargo never starts the app (no `cargo run`): what the app can write never
+//! decides what the next build runs. An installed shell with no checkout
+//! around it starts the sibling binary.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -496,7 +499,14 @@ pub struct ClientSlot {
     /// Registry id of the app this client runs.
     pub app: String,
     pub title: String,
-    pub child: Option<Child>,
+    /// The process behind the slot: the build (`cargo build`) while
+    /// `pending` holds the app, then the app itself.
+    pub child: Option<ProcessGroup>,
+    /// The app a launch starts once its build succeeded
+    /// ([`ClientSlot::continue_launch`]).
+    pending: Option<PendingApp>,
+    /// Why the app could not start after its build (shown on failure).
+    pub launch_error: Option<String>,
     task_pool: Option<TaskPool>,
     pub sender: Option<Sender<Vec<u8>>>,
     pub socket: Option<u64>,
@@ -565,6 +575,8 @@ impl ClientSlot {
             app: app.to_string(),
             title: title.to_string(),
             child: None,
+            pending: None,
+            launch_error: None,
             task_pool: None,
             sender: None,
             socket: None,
@@ -600,9 +612,9 @@ pub const GROUP_KILL_GRACE: std::time::Duration = std::time::Duration::from_mill
 
 /// Put `cmd`'s child at the head of a brand-new process group (unix only):
 /// `process_group(0)` is `setpgid(0, 0)` before exec, so the pgid becomes
-/// the child's own pid. Every process it forks (rustc, the app `cargo run`
-/// execs into a further child) inherits that same pgid, so the whole tree
-/// can be reached by one negative-pid signal later.
+/// the child's own pid. Every process it forks (rustc under a build, a
+/// helper the app starts) inherits that same pgid, so the whole tree can be
+/// reached by one negative-pid signal later.
 #[cfg(unix)]
 fn own_process_group(cmd: &mut Command) {
     cmd.process_group(0);
@@ -631,45 +643,166 @@ mod signal {
     }
 }
 
+/// What a [`ProcessGroup`] shares with the escalations it starts: its
+/// leader's pid and whether that leader has been reaped.
+#[derive(Debug)]
+struct GroupState {
+    pid: i32,
+    /// Held while the leader is reaped and while the group is signalled, so
+    /// no signal ever goes out after the reap.
+    reaped: std::sync::Mutex<bool>,
+    /// Group signals sent, for the tests.
+    sent: std::sync::atomic::AtomicUsize,
+}
+
+impl GroupState {
+    /// Signal the group, unless its leader was reaped: from then on its pid,
+    /// and with it the group id, may name someone else's process group.
+    #[cfg_attr(not(unix), allow(unused_variables))]
+    fn signal(&self, sig: i32, only_if_alive: bool) -> bool {
+        let reaped = self.reaped.lock().unwrap_or_else(|e| e.into_inner());
+        if *reaped {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            if only_if_alive && !signal::alive(-self.pid) {
+                return false;
+            }
+            signal::kill_group(self.pid, sig);
+            self.sent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            true
+        }
+        #[cfg(not(unix))]
+        false
+    }
+}
+
+/// A child at the head of its own process group (unix), and the rule for
+/// signalling that group: **only until its leader is reaped**. An unreaped
+/// leader (running, or a zombie) holds its pid, so the group id is still
+/// this group's. The moment [`ProcessGroup::try_wait`] or
+/// [`ProcessGroup::wait`] reaps it, whatever the group still holds is killed
+/// at once (the leader's leftovers: nothing of an ended app outlives it),
+/// and after that nothing, not a close, not a slot's drop, not an
+/// escalation already under way, signals that group id again.
+#[derive(Debug)]
+pub struct ProcessGroup {
+    child: Child,
+    state: std::sync::Arc<GroupState>,
+}
+
+impl ProcessGroup {
+    pub fn new(child: Child) -> ProcessGroup {
+        let pid = child.id() as i32;
+        ProcessGroup { child, state: std::sync::Arc::new(GroupState { pid, reaped: std::sync::Mutex::new(false), sent: Default::default() }) }
+    }
+
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// The leader's exit status, reaping it if it has exited (then the
+    /// group's leftovers are killed, and the group is never signalled again).
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        let mut reaped = self.state.reaped.lock().unwrap_or_else(|e| e.into_inner());
+        let status = self.child.try_wait();
+        if !*reaped && matches!(status, Ok(Some(_))) {
+            Self::sweep(&self.state);
+            *reaped = true;
+        }
+        status
+    }
+
+    /// Block until the leader exits, then as [`ProcessGroup::try_wait`].
+    pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        let mut reaped = self.state.reaped.lock().unwrap_or_else(|e| e.into_inner());
+        let status = self.child.wait();
+        if !*reaped && status.is_ok() {
+            Self::sweep(&self.state);
+            *reaped = true;
+        }
+        status
+    }
+
+    /// Right after the reap: whatever is left in the group. The group id is
+    /// still ours while anything is left in it (a group id is not reused
+    /// while its group exists).
+    #[cfg_attr(not(unix), allow(unused_variables))]
+    fn sweep(state: &GroupState) {
+        #[cfg(unix)]
+        if signal::alive(-state.pid) {
+            signal::kill_group(state.pid, signal::SIGKILL);
+            state.sent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// SIGKILL to the group now (the child alone on Windows); nothing once
+    /// the leader has been reaped.
+    pub fn kill_now(&mut self) {
+        #[cfg(unix)]
+        self.state.signal(signal::SIGKILL, false);
+        #[cfg(not(unix))]
+        if !self.reaped() {
+            let _ = self.child.kill();
+        }
+    }
+
+    /// Whether the leader has been reaped.
+    pub fn reaped(&self) -> bool {
+        *self.state.reaped.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// How many group signals were sent (tests).
+    #[cfg(test)]
+    fn signals_sent(&self) -> usize {
+        self.state.sent.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
 /// Kill the whole process group a `spawn_client` child heads — the fix for
-/// the leak `Child::kill()` had: through cargo, that call only ever reached
-/// cargo itself, leaving the exec'd app (and any still-building rustc)
-/// running as orphans. SIGTERM now, SIGKILL after `grace` for whatever is
-/// still alive; the escalation runs off-thread so a UI-thread caller never
-/// blocks on it. Windows keeps the plain `Child::kill()` this replaced.
+/// the leak `Child::kill()` had through a wrapper (then `cargo run`, which
+/// left the app and any still-building rustc running as orphans). SIGTERM
+/// now, SIGKILL after `grace` for whatever is still alive; the escalation
+/// runs off-thread so a UI-thread caller never blocks on it, and it never
+/// fires once the leader has been reaped ([`ProcessGroup`]). Windows keeps
+/// the plain `Child::kill()` this replaced.
 #[cfg(unix)]
-pub fn kill_child_group(child: &mut Child, grace: std::time::Duration, pool: &TaskPool) {
-    let pid = child.id() as i32;
-    signal::kill_group(pid, signal::SIGTERM);
+pub fn kill_child_group(child: &mut ProcessGroup, grace: std::time::Duration, pool: &TaskPool) {
+    if !child.state.signal(signal::SIGTERM, false) {
+        return;
+    }
+    let state = child.state.clone();
     let wait = CancellationToken::new();
     let submitted = pool.submit(Lane::Heavy, move || {
         let _ = wait.wait_until(Cx::monotonic_now() + grace.as_secs_f64());
-        if signal::alive(-pid) {
-            signal::kill_group(pid, signal::SIGKILL);
-        }
+        state.signal(signal::SIGKILL, true);
     });
     match submitted {
         Ok(task) => task.detach(),
-        Err(_) if signal::alive(-pid) => signal::kill_group(pid, signal::SIGKILL),
-        Err(_) => {}
+        Err(_) => {
+            child.state.signal(signal::SIGKILL, true);
+        }
     }
 }
 
 #[cfg(not(unix))]
-pub fn kill_child_group(child: &mut Child, _grace: std::time::Duration, _pool: &TaskPool) {
-    let _ = child.kill();
+pub fn kill_child_group(child: &mut ProcessGroup, _grace: std::time::Duration, _pool: &TaskPool) {
+    if !child.reaped() {
+        let _ = child.child.kill();
+    }
 }
 
 /// Final slot teardown owns the child from here on. Signal and reap it wholly
 /// on a heavy pool worker; dropping a slot on the UI thread never waits for a
-/// process or decoder wrapper to exit.
-fn reap_child_group(mut child: Child, _grace: std::time::Duration, pool: &TaskPool) {
+/// process or decoder wrapper to exit. A leader reaped already (the tick saw
+/// it exit) is left alone: its group id may be someone else's by now.
+fn reap_child_group(mut child: ProcessGroup, _grace: std::time::Duration, pool: &TaskPool) {
+    if child.reaped() {
+        return;
+    }
     #[cfg(unix)]
-    let pid = {
-        let pid = child.id() as i32;
-        signal::kill_group(pid, signal::SIGTERM);
-        pid
-    };
+    child.state.signal(signal::SIGTERM, false);
     match pool.reserve(Lane::Heavy) {
         Ok(slot) => slot
             .submit(move || {
@@ -677,43 +810,43 @@ fn reap_child_group(mut child: Child, _grace: std::time::Duration, pool: &TaskPo
                 {
                     let wait = CancellationToken::new();
                     let _ = wait.wait_until(Cx::monotonic_now() + _grace.as_secs_f64());
-                    if signal::alive(-pid) {
-                        signal::kill_group(pid, signal::SIGKILL);
-                    }
+                    child.state.signal(signal::SIGKILL, true);
                 }
                 #[cfg(not(unix))]
-                let _ = child.kill();
+                let _ = child.child.kill();
                 let _ = child.wait();
             })
             .detach(),
         Err(_) => {
             #[cfg(unix)]
-            signal::kill_group(pid, signal::SIGKILL);
+            child.state.signal(signal::SIGKILL, true);
             #[cfg(not(unix))]
-            let _ = child.kill();
+            let _ = child.child.kill();
         }
     }
 }
 
 /// Final application shutdown cannot depend on UI ticks, destructors, or
 /// detached workers. Stop every group together and reap the direct children
-/// within one shared deadline, including Cargo launches that never connected.
+/// within one shared deadline, including builds that never connected.
 pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
-    let mut children = Vec::new();
-    let mut groups = Vec::new();
+    let mut children: Vec<ProcessGroup> = Vec::new();
+    let mut groups: Vec<i32> = Vec::new();
     for slot in clients.values_mut() {
         if let Some(sender) = slot.sender.take() {
             crate::hub::send_to_app(&sender, vec![makepad_studio_protocol::StudioToApp::Kill]);
         }
+        slot.pending = None;
         if let Some(child) = slot.child.take() {
             #[cfg(not(unix))]
             let mut child = child;
-            let pid = child.id() as i32;
             #[cfg(unix)]
-            signal::kill_group(pid, signal::SIGTERM);
+            child.state.signal(signal::SIGTERM, false);
             #[cfg(not(unix))]
-            let _ = child.kill();
-            groups.push(pid);
+            if !child.reaped() {
+                let _ = child.child.kill();
+            }
+            groups.push(child.id() as i32);
             children.push(child);
         }
         slot.task_pool = None;
@@ -723,14 +856,15 @@ pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
     for (phase, grace) in [GROUP_KILL_GRACE, std::time::Duration::from_secs(2)].into_iter().enumerate() {
         #[cfg(unix)]
         if phase == 1 {
-            for pid in &groups {
-                if signal::alive(-*pid) { signal::kill_group(*pid, signal::SIGKILL); }
+            for child in &children {
+                child.state.signal(signal::SIGKILL, true);
             }
         }
         #[cfg(not(unix))]
         let _ = phase;
         let deadline = std::time::Instant::now() + grace;
         loop {
+            // Reaping sweeps each group's leftovers (ProcessGroup::try_wait).
             children.retain_mut(|child| match child.try_wait() {
                 Ok(Some(_)) => false,
                 Ok(None) => true,
@@ -739,10 +873,11 @@ pub fn shutdown_clients(clients: &mut HashMap<ClientId, ClientSlot>) {
                     false
                 }
             });
+            // Only looked at, never signalled: the swept leftovers going.
             #[cfg(unix)]
             let group_alive = groups.iter().any(|pid| signal::alive(-*pid));
             #[cfg(not(unix))]
-            let group_alive = false;
+            let group_alive = { let _ = &groups; false };
             if children.is_empty() && !group_alive { return; }
             if std::time::Instant::now() >= deadline { break; }
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -756,8 +891,13 @@ impl ClientSlot {
         if self.closing.is_some() || self.warm || (self.ready && status.success()) {
             return None;
         }
-        let reason = if self.ready { "exited unexpectedly" } else { "exited before opening a window" };
-        let mut message = format!("{label} {reason} ({status}).");
+        let mut message = match &self.launch_error {
+            Some(why) => format!("{label} did not start: {why}."),
+            None => {
+                let reason = if self.ready { "exited unexpectedly" } else { "exited before opening a window" };
+                format!("{label} {reason} ({status}).")
+            }
+        };
         if !self.diagnostic.is_empty() {
             message.push('\n');
             message.extend(self.diagnostic.chars().take(400));
@@ -882,63 +1022,200 @@ pub fn cargo_progress(raw: &str) -> Option<(String, bool)> {
     }
 }
 
-/// The command line a launch runs, split out so the release-only law is
-/// testable: children are ALWAYS `--release`, never debug.
-pub fn launch_argv(
-    app: &AppDef,
-    root: Option<&Path>,
-    extra_args: &[String],
-) -> Result<(PathBuf, Vec<String>), String> {
-    let mut args: Vec<String> = Vec::new();
-    let root = if app.package.is_empty() { None } else { root };
-    let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent());
-    let root = if app.package.is_empty() { None } else { manifest_root.or(root) };
-    let program = match root {
-        Some(root) => {
-            // `cargo run --release` so a stale binary is rebuilt on launch.
-            // --manifest-path keeps it working whatever the cwd ends up
-            // being (the terminal opens in the focused shell's directory).
-            let manifest = app
-                .manifest
-                .clone()
-                .unwrap_or_else(|| "Cargo.toml".to_string());
-            args.push("run".to_string());
-            args.push("--release".to_string());
-            // Never rewrite the checkout's Cargo.lock (the pinned Makepad
-            // in .sources/ is shared and must stay as prepared): a stale
-            // lock fails the launch, visibly, instead. A checkout without a
-            // lock (Makepad ignores its own) can't be held to one: `--locked`
-            // there refuses to create it and every launch fails.
-            if root.join("Cargo.lock").is_file() {
-                args.push("--locked".to_string());
-            }
-            args.push("--manifest-path".to_string());
-            args.push(root.join(manifest).to_string_lossy().to_string());
-            args.push("-p".to_string());
-            args.push(app.package.clone());
-            args.push("--bin".to_string());
-            args.push(app.bin.clone());
-            if let Some(target) = &app.target_dir {
-                args.push("--target-dir".to_string());
-                args.push(target.clone());
-            }
-            args.push("--".to_string());
-            cargo_bin()
-        }
-        None => resolve_bin(&app.bin).ok_or_else(|| format!("binary not found: {}", app.bin))?,
-    };
-    args.push("--stdin-loop".to_string());
+/// The build a process launch runs before its app starts, outside any
+/// sandbox (ADR 0004 §3): `cargo build --release`, never `cargo run`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BuildStep {
+    pub cargo: PathBuf,
+    pub args: Vec<String>,
+    /// Cargo's working directory, which decides the `.cargo/config.toml`
+    /// and toolchain files it reads: always the checkout (the OctoSense
+    /// workspace for a native app), never the directory the app opens in.
+    pub dir: PathBuf,
+    /// The checkout it builds from.
+    pub checkout: PathBuf,
+    pub target_dir: PathBuf,
+}
+
+/// How one launch starts: the build, if any, then the app itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LaunchPlan {
+    pub build: Option<BuildStep>,
+    /// The app's binary: what the build produces, or an installed one.
+    pub program: PathBuf,
+    /// Its arguments: `--stdin-loop`, the row's own, then the launch's.
+    pub args: Vec<String>,
+}
+
+/// The workspace member a native app's build selects with the app's crate
+/// (`crates/process-apps`, generated from `native-apps.json`): it carries the
+/// features the app's binary needs (`bin_features`), which cargo cannot be
+/// given for a crate outside the workspace. `--bin` keeps its empty library
+/// out of the build.
+pub const PROCESS_APPS: &str = "octosense-process-apps";
+
+/// A binary's file name on this platform.
+fn exe_name(bin: &str) -> String {
+    if cfg!(windows) { format!("{bin}.exe") } else { bin.to_string() }
+}
+
+/// The Cargo workspace `dir` belongs to: the outermost `Cargo.toml` with a
+/// `[workspace]` table at or above it (`dir` itself when there is none).
+pub fn workspace_root(dir: &Path) -> PathBuf {
+    dir.ancestors()
+        .filter(|at| {
+            std::fs::read_to_string(at.join("Cargo.toml"))
+                .is_ok_and(|toml| toml.lines().any(|line| line.trim() == "[workspace]"))
+        })
+        .last()
+        .unwrap_or(dir)
+        .to_path_buf()
+}
+
+/// `CARGO_TARGET_DIR` as cargo would read it from `dir`.
+fn env_target_dir(dir: &Path) -> Option<PathBuf> {
+    std::env::var_os("CARGO_TARGET_DIR").filter(|v| !v.is_empty()).map(|v| dir.join(v))
+}
+
+/// The launch of `app` (the release-only law: a hosted app is always a
+/// release build).
+///
+/// - **A native app** (`native-apps.json` with a `bin`) in a checkout is
+///   built from the OctoSense workspace, held to its `Cargo.lock`:
+///   `cargo build --release --locked --manifest-path <root>/Cargo.toml -p
+///   octosense-process-apps -p <crate> --bin <bin>`, the crate and binary
+///   the manifest names, with the features its binary needs (never
+///   the catalog row's), into the workspace's target dir, with cargo
+///   running in the workspace. The Terminal's crate is a workspace
+///   dependency, so it builds with the pinned versions the shell does.
+/// - **Any other catalog row** with a manifest builds from that manifest's
+///   checkout the same way; `--locked` only where that checkout has a lock
+///   (Makepad ignores its own, and `--locked` would refuse to create one).
+/// - **No checkout**: the binary beside the shell's own.
+///
+/// Then the built binary itself starts, under the app's sandbox
+/// ([`spawn_client`]); cargo never starts the app.
+pub fn launch_plan(app: &AppDef, root: Option<&Path>, extra_args: &[String]) -> Result<LaunchPlan, String> {
+    let mut args = vec!["--stdin-loop".to_string()];
     args.extend(app.args.iter().cloned());
     args.extend(extra_args.iter().cloned());
-    Ok((program, args))
+    if app.package.is_empty() {
+        let program = resolve_bin(&app.bin).ok_or_else(|| format!("binary not found: {}", app.bin))?;
+        return Ok(LaunchPlan { build: None, program, args });
+    }
+    let native = crate::native_apps::find(&app.id).and_then(|n| Some((crate::native_apps::package_of(n.id)?, n.bin?)));
+    let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent()).map(Path::to_path_buf);
+    let (checkout, manifest, package, bin, target_dir, locked, with) = match (native, root) {
+        (Some((package, bin)), Some(root)) => {
+            // The desktop package lives in the workspace (`desktop/`): build
+            // from the workspace itself, where its lock and target dir are.
+            let root = &workspace_root(root);
+            let target = env_target_dir(root).unwrap_or_else(|| root.join("target"));
+            (root.to_path_buf(), root.join("Cargo.toml"), package.to_string(), bin.to_string(), target, true, Some(PROCESS_APPS))
+        }
+        _ => {
+            let Some(checkout) = manifest_root.clone().or_else(|| root.map(Path::to_path_buf)) else {
+                let program = resolve_bin(&app.bin).ok_or_else(|| format!("binary not found: {}", app.bin))?;
+                return Ok(LaunchPlan { build: None, program, args });
+            };
+            let manifest = match &app.manifest {
+                Some(m) => PathBuf::from(m),
+                None => checkout.join("Cargo.toml"),
+            };
+            let target = app.target_dir.as_ref().map(PathBuf::from).or_else(|| env_target_dir(&checkout)).unwrap_or_else(|| checkout.join("target"));
+            let locked = checkout.join("Cargo.lock").is_file();
+            (checkout, manifest, app.package.clone(), app.bin.clone(), target, locked, None)
+        }
+    };
+    let mut build = vec!["build".to_string(), "--release".to_string()];
+    if locked {
+        build.push("--locked".to_string());
+    }
+    build.push("--manifest-path".to_string());
+    build.push(manifest.to_string_lossy().into_owned());
+    if let Some(with) = with {
+        build.push("-p".to_string());
+        build.push(with.to_string());
+    }
+    for arg in ["-p".to_string(), package, "--bin".into(), bin.clone()] {
+        build.push(arg);
+    }
+    build.push("--target-dir".to_string());
+    build.push(target_dir.to_string_lossy().into_owned());
+    let program = target_dir.join("release").join(exe_name(&bin));
+    Ok(LaunchPlan {
+        build: Some(BuildStep { cargo: cargo_bin(), args: build, dir: checkout.clone(), checkout, target_dir }),
+        program,
+        args,
+    })
+}
+
+/// Everything cargo reads configuration or a toolchain from on the way from
+/// `dir` to the root: `.cargo/` (config and credentials) and
+/// `rust-toolchain(.toml)` in `dir` and each of its ancestors.
+pub fn cargo_config_paths(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for at in dir.ancestors() {
+        out.push(at.join(".cargo"));
+        out.push(at.join("rust-toolchain"));
+        out.push(at.join("rust-toolchain.toml"));
+    }
+    out
+}
+
+/// The build's `PATH`: the shell's, without the entries inside the
+/// person's home a sandboxed app could write (the Terminal's `home:rw`),
+/// except the toolchain's own read-only homes (`keep`). A build never runs a
+/// program such an app could have put there.
+pub fn build_path(path: &std::ffi::OsStr, home: &Path, keep: &[PathBuf]) -> std::ffi::OsString {
+    let kept: Vec<PathBuf> = std::env::split_paths(path)
+        .filter(|entry| !entry.starts_with(home) || keep.iter().any(|k| entry.starts_with(k)))
+        .collect();
+    std::env::join_paths(kept).unwrap_or_default()
+}
+
+/// The toolchain's homes: `CARGO_HOME` and `RUSTUP_HOME` (or their
+/// defaults under the person's home).
+fn toolchain_homes(home: &Path) -> (PathBuf, PathBuf) {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+    (var("CARGO_HOME").unwrap_or_else(|| home.join(".cargo")), var("RUSTUP_HOME").unwrap_or_else(|| home.join(".rustup")))
+}
+
+/// The build's command: in its checkout, with the shell's allow-listed
+/// environment and a `PATH` no sandboxed app can have written to.
+fn build_command(build: &BuildStep) -> Command {
+    let mut cmd = Command::new(&build.cargo);
+    cmd.args(&build.args).current_dir(&build.dir);
+    // Cargo colors its output when it thinks a terminal is watching; the
+    // pipe already turns that off, and this makes it certain.
+    cmd.env("CARGO_TERM_COLOR", "never");
+    if let Some(home) = crate::sandbox::person_home() {
+        let (cargo_home, rustup_home) = toolchain_homes(&home);
+        if let Some(path) = std::env::var_os("PATH") {
+            cmd.env("PATH", build_path(&path, &home, &[cargo_home, rustup_home]));
+        }
+    }
+    // rustc beside the cargo it runs (both read-only to every app), not
+    // whichever `rustc` a PATH lookup finds.
+    if std::env::var_os("RUSTC").is_none() {
+        if let Some(rustc) = build.cargo.parent().map(|d| d.join(exe_name("rustc"))).filter(|r| r.is_file()) {
+            cmd.env("RUSTC", rustc);
+        }
+    }
+    crate::sandbox::scrub_env(&mut cmd);
+    cmd
 }
 
 /// The sandbox of a native app's process launch (`None` for a catalog app
 /// that is not in `native-apps.json`). Its jail and secrets folders are
-/// created first; its program and resources are the checkout, the target
-/// dir and cargo's source cache (crate resources) or, installed, the
-/// binary's own directory.
-pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_port: u16) -> Option<crate::sandbox::Policy> {
+/// created first. Its program and resources (readable, never writable) are
+/// the checkout it was built from, the target dir and cargo's source cache
+/// (crate resources) or, installed, the binary's own directory. Everything
+/// the next build reads or runs is kept read-only whatever the manifest
+/// grants ([`crate::sandbox::Policy::read_only`]): the checkout, the target
+/// dir, the cargo and rustup homes, every `.cargo/` and toolchain file on
+/// the way up from the build's directory, and the shell's own directory.
+pub fn sandbox_policy(app: &AppDef, plan: &LaunchPlan, hub_port: u16) -> Option<crate::sandbox::Policy> {
     let native = crate::native_apps::find(&app.id)?;
     let layout = match crate::app_storage::host() {
         Some(host) => host.layout().clone(),
@@ -960,44 +1237,99 @@ pub fn sandbox_policy(app: &AppDef, root: Option<&Path>, program: &Path, hub_por
     }
     let home = crate::sandbox::person_home().unwrap_or_else(|| PathBuf::from("/nonexistent"));
     let mut roots: Vec<PathBuf> = Vec::new();
-    let manifest_root = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf));
-    if let Some(checkout) = manifest_root.or_else(|| root.map(Path::to_path_buf)) {
-        roots.push(checkout.clone());
-        roots.push(app.target_dir.as_ref().map(PathBuf::from).or_else(|| std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from)).unwrap_or_else(|| checkout.join("target")));
-        let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".cargo"));
+    let mut read_only: Vec<PathBuf> = Vec::new();
+    if let Some(build) = &plan.build {
+        let (cargo_home, rustup_home) = toolchain_homes(&home);
+        roots.push(build.checkout.clone());
+        roots.push(build.target_dir.clone());
         roots.push(cargo_home.join("git"));
         roots.push(cargo_home.join("registry"));
+        read_only.extend([build.checkout.clone(), build.target_dir.clone(), cargo_home, rustup_home]);
+        read_only.extend(cargo_config_paths(&build.dir));
     }
-    if let Some(dir) = program.parent() {
+    if let Some(dir) = plan.program.parent() {
         roots.push(dir.to_path_buf());
+        read_only.push(dir.to_path_buf());
     }
-    // The shell's own directory: an installed launch's sibling binary.
+    // The shell's own directory: an installed launch's sibling binary, and
+    // the shell's binary itself.
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        roots.push(dir);
+        roots.push(dir.clone());
+        read_only.push(dir);
     }
     roots.sort();
     roots.dedup();
+    read_only.sort();
+    read_only.dedup();
     let mut policy = crate::sandbox::Policy::for_app(native, paths.jail, paths.secrets, &home, roots, hub_port);
     // The host's private directories stay closed whatever the manifest
     // grants (G6): the OctoSense home (peer host tokens, every app's jail
     // and secrets), the storage roots and the kernel's core dir.
     let core = crate::ai_host::core_dir(None);
     policy.private = crate::sandbox::host_private_dirs(&crate::octosense::paths::home(), layout.apps_root(), layout.secrets_root(), core.as_deref());
-    // Cargo reads `.cargo/config.toml` from its working directory up (the
-    // manifest's directory, else the checkout): every `[env]` host variable
-    // it would hand the app is taken back out.
-    let cargo_cwd = app.manifest.as_ref().and_then(|m| Path::new(m).parent().map(Path::to_path_buf)).or_else(|| root.map(Path::to_path_buf));
-    if let Some(cwd) = cargo_cwd {
-        for dir in cwd.ancestors() {
-            let config = std::fs::read_to_string(dir.join(".cargo/config.toml")).unwrap_or_default();
-            for name in crate::sandbox::cargo_env_host_vars(&config) {
-                if !policy.cargo_env_unset.contains(&name) {
-                    policy.cargo_env_unset.push(name);
-                }
-            }
-        }
-    }
+    policy.read_only = read_only;
     Some(if crate::sandbox::narrowed_by_env(native.id) { policy.narrowed() } else { policy })
+}
+
+/// The app a launch starts once its build has finished: its command, ready
+/// (sandbox, environment, working directory), and where its output goes.
+struct PendingApp {
+    cmd: Command,
+    spawner: ThreadSpawner,
+    lines: Sender<ClientLine>,
+    log: Option<std::fs::File>,
+    /// The hub's secret for this launch, written to the app's stdin.
+    launch_token: String,
+}
+
+impl std::fmt::Debug for PendingApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingApp").field("cmd", &self.cmd).finish_non_exhaustive()
+    }
+}
+
+/// Start `cmd` at the head of its own process group with both streams
+/// piped into the client's log and tile. `stdin_line`: the app's hub
+/// secret, written as the only line of its stdin (then EOF); `None` (a
+/// build): no stdin at all.
+fn start_piped(
+    mut cmd: Command,
+    spawner: &ThreadSpawner,
+    id: ClientId,
+    log: Option<std::fs::File>,
+    lines: Sender<ClientLine>,
+    stdin_line: Option<&str>,
+) -> std::io::Result<ProcessGroup> {
+    // Its own group (unix): whatever it forks (rustc under a build) shares
+    // one fresh pgid, so `kill_child_group` reaches the whole tree.
+    #[cfg(unix)]
+    own_process_group(&mut cmd);
+    // Both streams are piped so a reader thread can put the newest line on
+    // the tile while the app builds — cargo talks on stderr.
+    cmd.stdin(if stdin_line.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    if let (Some(line), Some(mut stdin)) = (stdin_line, child.stdin.take()) {
+        use std::io::Write;
+        // One line, then EOF (the pipe closes here): the app reads nothing
+        // else from us.
+        let _ = stdin.write_all(format!("{line}\n").as_bytes());
+    }
+    if let Some(out) = child.stdout.take() {
+        pump(spawner, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        pump(spawner, id, err, log, lines);
+    }
+    Ok(ProcessGroup::new(child))
+}
+
+/// Where a client's output is kept: `<OctoSense home>/logs/clients/`,
+/// which no sandboxed app can read or write (it was the shared temp dir).
+pub fn client_log_path(id: ClientId) -> PathBuf {
+    let dir = crate::octosense::paths::private_dir("logs/clients").unwrap_or_else(|_| host::homeless_root());
+    dir.join(format!("octosense-{}-client-{}.log", std::process::id(), id))
 }
 
 /// Spawn an app as a hub client.
@@ -1013,7 +1345,7 @@ pub fn spawn_client(
     // with `--preview` in front of it for a Quick-Look popup.
     extra_args: &[String],
     // A DORMANT warm-pool instance: same launch in every other way — same
-    // cargo, same env, same log — plus `WARM_ENV`, which tells the app to
+    // build, same env, same log — plus `WARM_ENV`, which tells the app to
     // come up and then idle until it is adopted.
     warm: bool,
     // Every output line the child writes is forwarded here, so the tile
@@ -1021,13 +1353,12 @@ pub fn spawn_client(
     lines: Sender<ClientLine>,
 ) -> Result<ClientSlot, String> {
     let root = repo_root();
-    let via_cargo = !app.package.is_empty() && (app.manifest.is_some() || root.is_some());
-    let (program, args) = launch_argv(app, root.as_deref(), extra_args)?;
+    let plan = launch_plan(app, root.as_deref(), extra_args)?;
+    let via_cargo = plan.build.is_some();
     // A native app runs under the OS sandbox its manifest entry builds
-    // (ADR 0004 §3, sandbox/); through cargo only the app is sandboxed
-    // where the platform lets the build stay outside.
-    let policy = sandbox_policy(app, root.as_deref(), &program, hub_port);
-    let (mut cmd, applied) = crate::sandbox::command(&program, &args, policy.as_ref(), via_cargo);
+    // (ADR 0004 §3, sandbox/): the built binary itself, never the build.
+    let policy = sandbox_policy(app, &plan, hub_port);
+    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref());
     // A sandboxed app's Makepad home is its own jail (ADR 0004 §11): the
     // OctoSense home is closed to it (G6), so settings it kept under
     // `<OctoSense home>/<app id>/` could no longer be written. Its old data
@@ -1041,34 +1372,28 @@ pub fn spawn_client(
         Some(crate::sandbox::Applied::Unavailable(why)) => makepad_widgets::log!("sandbox: UNSANDBOXED {why}"),
         None => {}
     }
-    // Give the process its own group (unix): `cargo run` does not
-    // exec-replace itself, so the compiled app (and, mid-build, rustc) are
-    // further children of the process we hold, not exec'd into it. Sharing
-    // one fresh pgid lets `kill_child_group` reach the whole tree.
-    #[cfg(unix)]
-    own_process_group(&mut cmd);
+    crate::sandbox::note_launch(&app.id, applied.as_ref());
+    // The hub admits this launch's socket only with this secret (ADR 0004
+    // §5, hub.rs): it goes to the APP on its stdin (never to the build),
+    // never in its environment or command line.
+    let launch_token = crate::hub::issue_launch_token(id);
     cmd.env("STUDIO_HOST", format!("http://127.0.0.1:{}", hub_port))
         .env("STUDIO_BUILD", id.to_string())
         .env("STUDIO_CRATE", &app.bin)
-        .stdin(Stdio::null())
-        // Both streams are piped so a reader thread can put the newest
-        // line on the tile while the app builds — cargo talks on stderr.
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // Cargo colors its output when it thinks a terminal is watching; the
-    // pipe already turns that off, and this makes it certain.
-    cmd.env("CARGO_TERM_COLOR", "never");
-    if let Some(cwd) = cwd {
+        .env(crate::hub::HANDSHAKE_STDIN_ENV, "1");
+    // The directory the app opens in is the app's alone: the build runs in
+    // its checkout whatever this is.
+    if let Some(cwd) = cwd.filter(|dir| dir.is_dir()) {
         // The terminal's Omarchy behavior: open where the focused one is.
         cmd.arg("--cwd").arg(cwd);
         cmd.current_dir(cwd);
-    } else if let Some(dir) = app.manifest.as_ref().and_then(|m| Path::new(m).parent()) {
-        cmd.current_dir(dir);
+    } else if let Some(build) = &plan.build {
+        // Apps resolve their data (resources) relative to the checkout,
+        // like a `cargo run` from it.
+        cmd.current_dir(&build.checkout);
     } else if !app.dir.is_empty() {
         cmd.current_dir(&app.dir);
     } else if let Some(root) = &root {
-        // Apps resolve their data (route's local/maps/, resources)
-        // relative to the checkout root, like a `cargo run` from the repo.
         cmd.current_dir(root);
     }
     if let Some(colors) = term_colors {
@@ -1091,26 +1416,42 @@ pub fn spawn_client(
     // No child inherits the kernel's descriptors or the host token: a
     // process app reaches its agent only over the peer link (ADR 0004 §3).
     crate::sandbox::scrub_env(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn {}: {}", app.package, e))?;
     // Child output (and cargo's "Compiling …") goes to a per-client log —
     // silent children are undebuggable — and every line also reaches the
     // UI so the tile can show what the build is doing.
-    let log_path = host::homeless_root().join(format!("octosense-{}-client-{}.log", std::process::id(), id));
+    let log_path = client_log_path(id);
     makepad_widgets::log!("octosense: client {id} log: {}", log_path.display());
     let log = std::fs::File::create(&log_path).ok();
-    if let Some(out) = child.stdout.take() {
-        pump(spawner, id, out, log.as_ref().and_then(|f| f.try_clone().ok()), lines.clone());
-    }
-    if let Some(err) = child.stderr.take() {
-        pump(spawner, id, err, log, lines);
-    }
+    let (child, pending) = match &plan.build {
+        Some(build) => {
+            let pending = PendingApp {
+                cmd,
+                spawner: spawner.clone(),
+                lines: lines.clone(),
+                log: log.as_ref().and_then(|f| f.try_clone().ok()),
+                launch_token,
+            };
+            let child = start_piped(build_command(build), spawner, id, log, lines, None).map_err(|e| {
+                crate::hub::revoke_launch_token(id);
+                format!("build {}: {}", app.package, e)
+            })?;
+            (child, Some(pending))
+        }
+        None => {
+            let child = start_piped(cmd, spawner, id, log, lines, Some(&launch_token)).map_err(|e| {
+                crate::hub::revoke_launch_token(id);
+                format!("spawn {}: {}", app.bin, e)
+            })?;
+            (child, None)
+        }
+    };
     Ok(ClientSlot {
         id,
         app: app.id.to_string(),
         title: String::new(),
         child: Some(child),
+        pending,
+        launch_error: None,
         task_pool: Some(pool.clone()),
         sender: None,
         socket: None,
@@ -1135,6 +1476,59 @@ pub fn spawn_client(
         pane: false,
         stopped: false,
     })
+}
+
+impl ClientSlot {
+    /// A launch whose build is still running, or whose app has not started.
+    pub fn building(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The second half of a launch: once its build has exited, start the
+    /// app (its group replaces the build's), or give up. `None` while there
+    /// is nothing to do (no build pending, or it is still running); the
+    /// tick calls it for every slot before it reaps exits. A launch closed
+    /// while building starts nothing. A failed build or start leaves the
+    /// reaped build as the slot's child, so the tick reports it as a
+    /// failed start, with [`ClientSlot::launch_error`] saying why.
+    pub fn continue_launch(&mut self, id: ClientId) -> Option<Result<(), String>> {
+        self.pending.as_ref()?;
+        let status = match self.child.as_mut()?.try_wait() {
+            Ok(Some(status)) => status,
+            Ok(None) => return None,
+            Err(e) => {
+                self.pending = None;
+                crate::hub::revoke_launch_token(id);
+                let why = format!("could not wait for its build: {e}");
+                self.launch_error = Some(why.clone());
+                return Some(Err(why));
+            }
+        };
+        let pending = self.pending.take()?;
+        if self.closing.is_some() {
+            // Nothing will ever present this launch's secret.
+            crate::hub::revoke_launch_token(id);
+            return Some(Ok(()));
+        }
+        if !status.success() {
+            crate::hub::revoke_launch_token(id);
+            let why = format!("its build failed ({status})");
+            self.launch_error = Some(why.clone());
+            return Some(Err(why));
+        }
+        match start_piped(pending.cmd, &pending.spawner, id, pending.log, pending.lines, Some(&pending.launch_token)) {
+            Ok(app) => {
+                self.child = Some(app);
+                Some(Ok(()))
+            }
+            Err(e) => {
+                crate::hub::revoke_launch_token(id);
+                let why = format!("it could not start: {e}");
+                self.launch_error = Some(why.clone());
+                Some(Err(why))
+            }
+        }
+    }
 }
 
 /// Copies an app's data from where it lived before its jail (`legacy`) to
@@ -1219,19 +1613,13 @@ mod tests {
             Some(Path::new("/cargo/checkouts/makepad-d00a/ad8f372")),
         )
         .unwrap();
-        let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
-        assert!(args
-            .windows(2)
-            .any(|p| p == ["--manifest-path", "/cargo/checkouts/makepad-d00a/ad8f372/Cargo.toml"]));
-        let at = args
-            .iter()
-            .position(|arg| arg == "--target-dir")
-            .expect("builds are redirected out of the cargo cache");
-        assert!(
-            !args[at + 1].starts_with("/cargo/checkouts"),
-            "{}",
-            args[at + 1]
-        );
+        let plan = launch_plan(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
+        let build = plan.build.expect("a checkout row is built first");
+        assert!(build.args.windows(2).any(|p| p == ["--manifest-path", "/cargo/checkouts/makepad-d00a/ad8f372/Cargo.toml"]));
+        let at = build.args.iter().position(|arg| arg == "--target-dir").expect("builds are redirected out of the cargo cache");
+        assert!(!build.args[at + 1].starts_with("/cargo/checkouts"), "{}", build.args[at + 1]);
+        assert_eq!(plan.program, build.target_dir.join("release").join(exe_name("browser")));
+        assert_eq!(build.dir, Path::new("/cargo/checkouts/makepad-d00a/ad8f372"), "cargo runs in its checkout");
     }
 
     #[test]
@@ -1256,18 +1644,20 @@ mod tests {
             {"id":"ref","label":"Reference","manifest":"../apps/reference/Cargo.toml","package":"octosense-reference","bin":"octosense-reference","args":["two words"]},
             {"id":"installed","label":"Installed","executable":"/usr/bin/true","args":["$(literal)"]}
         ]"#, Path::new("/catalog"), None).unwrap();
-        let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
-        assert!(args.windows(2).any(|p| p == ["--bin", "octosense-reference"]));
-        assert!(args.windows(2).any(|p| p == ["--manifest-path", "/catalog/../apps/reference/Cargo.toml"]));
-        assert_eq!(&args[args.len()-2..], ["--stdin-loop", "two words"]);
-        let (program, args) = launch_argv(&apps[1], Some(Path::new("/unrelated")), &[]).unwrap();
-        assert_eq!(program, Path::new("/usr/bin/true"));
-        assert_eq!(args, ["--stdin-loop", "$(literal)"]);
+        let plan = launch_plan(&apps[0], Some(Path::new("/unrelated")), &[]).unwrap();
+        let build = plan.build.unwrap();
+        assert!(build.args.windows(2).any(|p| p == ["--bin", "octosense-reference"]));
+        assert!(build.args.windows(2).any(|p| p == ["--manifest-path", "/catalog/../apps/reference/Cargo.toml"]));
+        assert_eq!(plan.args, ["--stdin-loop", "two words"]);
+        let plan = launch_plan(&apps[1], Some(Path::new("/unrelated")), &[]).unwrap();
+        assert!(plan.build.is_none());
+        assert_eq!(plan.program, Path::new("/usr/bin/true"));
+        assert_eq!(plan.args, ["--stdin-loop", "$(literal)"]);
     }
 
     /// A launch's extra arguments (a URL from `WmRequest::Launch`, a file
     /// to open) come last, after `--stdin-loop` and the app's own args,
-    /// for a cargo launch and an installed binary alike.
+    /// for a built launch and an installed binary alike.
     #[test]
     fn launch_extra_arguments_come_after_the_apps_own() {
         let apps = crate::octosense::catalog::parse_catalog(br#"[
@@ -1275,10 +1665,10 @@ mod tests {
             {"id":"installed","label":"Installed","executable":"/usr/bin/true","args":["--demo"]}
         ]"#, Path::new("/catalog"), None).unwrap();
         let extra = ["https://x/a".to_string()];
-        let (_, args) = launch_argv(&apps[0], Some(Path::new("/unrelated")), &extra).unwrap();
-        assert_eq!(&args[args.len() - 3..], ["--stdin-loop", "two words", "https://x/a"]);
-        let (_, args) = launch_argv(&apps[1], None, &extra).unwrap();
-        assert_eq!(args, ["--stdin-loop", "--demo", "https://x/a"]);
+        let plan = launch_plan(&apps[0], Some(Path::new("/unrelated")), &extra).unwrap();
+        assert_eq!(plan.args, ["--stdin-loop", "two words", "https://x/a"]);
+        let plan = launch_plan(&apps[1], None, &extra).unwrap();
+        assert_eq!(plan.args, ["--stdin-loop", "--demo", "https://x/a"]);
     }
 
     #[test]
@@ -1303,63 +1693,108 @@ mod tests {
         assert_eq!(cargo_progress("error[E0308]: type mismatch"), Some(("build failed — see the app log".into(), false)));
     }
 
+    /// ADR 0004 §3 (review 2026-09-30): a native app is built from the
+    /// OctoSense workspace, held to its lock, with the crate and binary
+    /// `native-apps.json` names, whatever its catalog row says; cargo runs in
+    /// the workspace (whose `.cargo/config.toml` is the one it reads), never
+    /// in the directory the app opens in; and cargo only builds: the app is
+    /// the built binary, started by the shell. USER LAW: a release build.
     #[test]
-    fn children_are_always_release_never_debug() {
-        // USER LAW: a hosted app is a release build, always.
-        let app = AppDef::app("terminal", "Terminal", "makepad-terminal", "apps/terminal", "terminal", LaunchPolicy::AlwaysNew);
-        let root = std::path::PathBuf::from("/checkout");
-        let (program, args) = launch_argv(&app, Some(&root), &[]).unwrap();
-        assert!(program.to_string_lossy().ends_with("cargo"), "{:?}", program);
-        let sep = args.iter().position(|a| a == "--").expect("no -- separator");
-        let release = args
-            .iter()
-            .position(|a| a == "--release")
-            .expect("no --release");
-        assert!(release < sep, "--release must be a cargo flag: {:?}", args);
-        assert!(!args.contains(&"--locked".to_string()), "no lock to hold it to: {:?}", args);
-        assert_eq!(args[0], "run");
+    fn a_native_app_builds_from_the_workspace_locked_and_starts_its_binary() {
+        let mut app = AppDef::app("terminal", "Terminal", "not-the-terminal", "apps/terminal", "not-its-bin", LaunchPolicy::AlwaysNew);
+        app.manifest = Some("/somewhere/else/Cargo.toml".into());
+        app.target_dir = Some("/somewhere/else/target".into());
+        let root = PathBuf::from("/checkout");
+        let plan = launch_plan(&app, Some(&root), &["--preview".to_string(), "/a.png".to_string()]).unwrap();
+        let build = plan.build.clone().expect("built first");
+        let target = env_target_dir(&root).unwrap_or_else(|| root.join("target"));
         assert_eq!(
-            args[sep + 1],
-            "--stdin-loop",
-            "the app's own args start after the separator: {:?}",
-            args
+            build.args,
+            ["build", "--release", "--locked", "--manifest-path", "/checkout/Cargo.toml", "-p", PROCESS_APPS, "-p", "makepad-terminal", "--bin", "terminal", "--target-dir", target.to_str().unwrap()]
         );
-        assert!(args.contains(&"/checkout/Cargo.toml".to_string()), "{:?}", args);
-        assert!(args.contains(&"makepad-terminal".to_string()), "{:?}", args);
-        // A preview's file lands after --stdin-loop, still past the --.
-        let (_, args) = launch_argv(
-            &app,
-            Some(&root),
-            &["--preview".to_string(), "/a.png".to_string()],
-        )
-        .unwrap();
-        assert_eq!(&args[args.len() - 2..], &["--preview", "/a.png"]);
-        // A checkout with a lock is held to it, so a launch never rewrites it.
-        let locked_root = std::env::temp_dir().join(format!("os-locked-{}", std::process::id()));
-        std::fs::create_dir_all(&locked_root).unwrap();
-        std::fs::write(locked_root.join("Cargo.lock"), "").unwrap();
-        let (_, args) = launch_argv(&app, Some(&locked_root), &[]).unwrap();
-        let sep = args.iter().position(|a| a == "--").unwrap();
-        let locked = args.iter().position(|a| a == "--locked").expect("no --locked");
-        assert!(locked < sep, "the checkout's Cargo.lock is never rewritten: {:?}", args);
-        let _ = std::fs::remove_dir_all(&locked_root);
+        assert!(build.cargo.to_string_lossy().ends_with("cargo"), "{:?}", build.cargo);
+        assert_eq!(build.dir, root, "cargo runs in the workspace, not the app's cwd");
+        assert_eq!(build.checkout, root);
+        assert_eq!(plan.program, target.join("release").join(exe_name("terminal")), "the built binary itself starts");
+        assert_eq!(plan.args, ["--stdin-loop", "--preview", "/a.png"]);
+        assert!(!build.args.iter().any(|a| a == "run" || a == "--"), "never `cargo run`: {:?}", build.args);
+    }
+
+    /// The shell runs from the desktop package inside the workspace: the
+    /// build is the workspace's, with its lock and target dir.
+    #[test]
+    fn a_native_app_builds_from_the_workspace_around_the_desktop_package() {
+        let ws = std::env::temp_dir().join(format!("os-ws-{}", std::process::id()));
+        std::fs::create_dir_all(ws.join("desktop")).unwrap();
+        std::fs::write(ws.join("Cargo.toml"), "[workspace]\nmembers = [\"desktop\"]\n").unwrap();
+        std::fs::write(ws.join("desktop/Cargo.toml"), "[package]\nname = \"octosense\"\n").unwrap();
+        assert_eq!(workspace_root(&ws.join("desktop")), ws);
+        let app = AppDef::app("terminal", "Terminal", "makepad-terminal", "", "terminal", LaunchPolicy::AlwaysNew);
+        let plan = launch_plan(&app, Some(&ws.join("desktop")), &[]).unwrap();
+        let build = plan.build.unwrap();
+        assert_eq!(build.dir, ws);
+        assert!(build.args.windows(2).any(|p| p[0] == "--manifest-path" && Path::new(&p[1]) == ws.join("Cargo.toml")), "{:?}", build.args);
+        assert!(plan.program.starts_with(env_target_dir(&ws).unwrap_or_else(|| ws.join("target"))));
+        // The real checkout: the desktop package is inside this workspace.
+        if let Some(root) = repo_root() {
+            let ws = workspace_root(&root);
+            assert!(ws.join("native-apps.json").is_file(), "{}", ws.display());
+        }
+        let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    /// Another catalog row is held to its checkout's lock where it has one
+    /// (Makepad ignores its own, and `--locked` would refuse to create it).
+    #[test]
+    fn a_catalog_row_is_locked_where_its_checkout_has_a_lock() {
+        let app = AppDef::app("files", "Files", "makepad-files", "apps/files", "files", LaunchPolicy::OrFocus);
+        let unlocked = std::env::temp_dir().join(format!("os-unlocked-{}", std::process::id()));
+        let locked = std::env::temp_dir().join(format!("os-locked-{}", std::process::id()));
+        for dir in [&unlocked, &locked] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(locked.join("Cargo.lock"), "").unwrap();
+        let args = |root: &Path| launch_plan(&app, Some(root), &[]).unwrap().build.unwrap().args;
+        assert!(!args(&unlocked).iter().any(|a| a == "--locked"));
+        assert!(args(&locked).iter().any(|a| a == "--locked"));
+        assert_eq!(args(&locked)[..2], ["build", "--release"]);
+        let _ = std::fs::remove_dir_all(&unlocked);
+        let _ = std::fs::remove_dir_all(&locked);
     }
 
     #[test]
     fn the_installed_fallback_execs_the_sibling_binary() {
-        // No checkout: run the binary next to the running wm, which for
-        // a release wm is target/release/<bin>.
+        // No checkout: run the binary next to the running shell, which for
+        // a release shell is target/release/<bin>.
         let app = AppDef::app("terminal", "Terminal", "makepad-terminal", "apps/terminal", "terminal", LaunchPolicy::AlwaysNew);
-        match launch_argv(&app, None, &[]) {
-            Ok((program, args)) => {
+        match launch_plan(&app, None, &[]) {
+            Ok(plan) => {
                 let exe = std::env::current_exe().unwrap();
-                assert_eq!(program.parent(), exe.parent());
-                assert_eq!(program.file_name().unwrap(), "terminal");
-                assert_eq!(args, vec!["--stdin-loop".to_string()]);
+                assert!(plan.build.is_none());
+                assert_eq!(plan.program.parent(), exe.parent());
+                assert_eq!(plan.program.file_name().unwrap(), "terminal");
+                assert_eq!(plan.args, vec!["--stdin-loop".to_string()]);
             }
             // The test binary does not sit next to terminal; the law that
             // matters is that it resolves a SIBLING or fails, never cargo.
             Err(e) => assert!(e.contains("binary not found"), "{}", e),
+        }
+    }
+
+    /// What a sandboxed app could write never decides what the build runs:
+    /// the build's PATH keeps no entry inside the person's home but the
+    /// toolchain's own (read-only) homes; every `.cargo/` and toolchain file
+    /// on the way up from the build's directory is listed for the sandbox.
+    #[test]
+    fn the_build_runs_nothing_a_sandboxed_app_could_have_written() {
+        let home = Path::new("/Users/p");
+        let path = std::env::join_paths(["/Users/p/.local/bin", "/usr/bin", "/Users/p/.cargo/bin", "/opt/homebrew/bin", "/Users/p/bin"]).unwrap();
+        let kept = build_path(&path, home, &[PathBuf::from("/Users/p/.cargo"), PathBuf::from("/Users/p/.rustup")]);
+        let kept: Vec<PathBuf> = std::env::split_paths(&kept).collect();
+        assert_eq!(kept, [PathBuf::from("/usr/bin"), PathBuf::from("/Users/p/.cargo/bin"), PathBuf::from("/opt/homebrew/bin")]);
+        let paths = cargo_config_paths(Path::new("/Users/p/src/OctoSense"));
+        for want in ["/Users/p/src/OctoSense/.cargo", "/Users/p/src/.cargo", "/Users/p/.cargo", "/Users/.cargo", "/.cargo", "/Users/p/src/rust-toolchain.toml", "/Users/p/rust-toolchain"] {
+            assert!(paths.contains(&PathBuf::from(want)), "{want}: {paths:?}");
         }
     }
 
@@ -1642,10 +2077,9 @@ mod tests {
         let mut files = AppDef::app("files", "Files", "makepad-files", "apps/files", "files", LaunchPolicy::OrFocus);
         files.args.push("--demo".into());
         let root = std::path::PathBuf::from("/checkout");
-        let (program, args) = launch_argv(&files, Some(&root), &[]).unwrap();
-        assert!(program.to_string_lossy().ends_with("cargo"));
-        assert!(args.contains(&"makepad-files".to_string()), "{:?}", args);
-        assert_eq!(args.last().map(String::as_str), Some("--demo"), "{:?}", args);
+        let plan = launch_plan(&files, Some(&root), &[]).unwrap();
+        assert!(plan.build.as_ref().unwrap().args.contains(&"makepad-files".to_string()), "{:?}", plan);
+        assert_eq!(plan.args.last().map(String::as_str), Some("--demo"), "{:?}", plan.args);
     }
 
     #[test]
@@ -1678,7 +2112,7 @@ mod tests {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg("sleep 5");
         own_process_group(&mut cmd);
-        let mut child = cmd.spawn().expect("spawn /bin/sh");
+        let mut child = ProcessGroup::new(cmd.spawn().expect("spawn /bin/sh"));
         let pid = child.id() as i32;
         let pgid = unsafe { getpgid(pid) };
         assert_eq!(pgid, pid, "the child should lead its own new group");
@@ -1695,10 +2129,10 @@ mod tests {
         cmd.args(["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec sleep 30' & wait"]);
         own_process_group(&mut cmd);
         cmd.stdout(Stdio::piped());
-        let mut child = cmd.spawn().expect("spawn wrapper");
+        let mut child = ProcessGroup::new(cmd.spawn().expect("spawn wrapper"));
         let group = child.id() as i32;
         let mut line = String::new();
-        BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        BufReader::new(child.child.stdout.take().unwrap()).read_line(&mut line).unwrap();
         let descendant: i32 = line.trim().parse().unwrap();
         let pool = Cx::new(Box::new(|_, _| {})).task_pool();
         kill_child_group(&mut child, std::time::Duration::from_millis(100), &pool);
@@ -1711,6 +2145,115 @@ mod tests {
         // Keep a failing regression from leaving its fixture behind.
         signal::kill_group(group, signal::SIGKILL);
         assert!(!escaped, "the group still needs SIGKILL after its leader has been reaped");
+    }
+
+    /// Review 2026-09-30: a slot dropped after the tick reaped its child
+    /// must not signal that group id again; it may be someone else's. The
+    /// reap itself sweeps what the group still held.
+    #[cfg(unix)]
+    #[test]
+    fn a_reaped_group_is_never_signalled_again() {
+        use std::io::{BufRead, BufReader};
+        // The leader exits at once, leaving a TERM-proof descendant behind.
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "/bin/sh -c 'trap \"\" TERM; echo $$; exec sleep 30' &"]);
+        own_process_group(&mut cmd);
+        cmd.stdout(Stdio::piped());
+        let mut child = ProcessGroup::new(cmd.spawn().unwrap());
+        let group = child.id() as i32;
+        let mut line = String::new();
+        BufReader::new(child.child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        let descendant: i32 = line.trim().parse().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while child.try_wait().unwrap().is_none() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(child.reaped());
+        let swept = child.signals_sent();
+        assert_eq!(swept, 1, "the reap sweeps the group's leftovers once");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while signal::alive(descendant) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let escaped = signal::alive(descendant);
+        if escaped { signal::kill_group(group, signal::SIGKILL); }
+        assert!(!escaped, "nothing of an ended app outlives it");
+        // From here on: no close, kill or drop signals that group id.
+        let pool = Cx::new(Box::new(|_, _| {})).task_pool();
+        kill_child_group(&mut child, std::time::Duration::from_millis(10), &pool);
+        child.kill_now();
+        assert_eq!(child.signals_sent(), swept, "no signal after the reap");
+        let mut slot = ClientSlot::module(3, "terminal", "Terminal");
+        slot.task_pool = Some(pool);
+        slot.child = Some(child);
+        drop(slot);
+    }
+
+    /// A live group's escalation is still delivered, but an escalation
+    /// under way when the leader is reaped does not fire.
+    #[cfg(unix)]
+    #[test]
+    fn an_escalation_under_way_stops_at_the_reap() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "exec sleep 30"]);
+        own_process_group(&mut cmd);
+        let mut child = ProcessGroup::new(cmd.spawn().unwrap());
+        let pool = Cx::new(Box::new(|_, _| {})).task_pool();
+        kill_child_group(&mut child, std::time::Duration::from_millis(300), &pool);
+        assert_eq!(child.signals_sent(), 1, "SIGTERM went out");
+        child.wait().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert_eq!(child.signals_sent(), 1, "the SIGKILL escalation found the leader reaped and sent nothing");
+    }
+
+    /// A launch's second half: a successful build starts the app into the
+    /// same slot; a failed one starts nothing and says why; a launch closed
+    /// while building starts nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_launch_starts_its_app_only_after_a_successful_build() {
+        let spawner = Cx::new(Box::new(|_, _| {})).thread_spawner();
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let slot_for = |build: &str, app: &str| {
+            let mut slot = ClientSlot::module(4, "terminal", "Terminal");
+            slot.ready = false;
+            let mut cmd = Command::new("/bin/sh");
+            cmd.args(["-c", build]);
+            slot.child = Some(start_piped(cmd, &spawner, 4, None, tx.clone(), None).unwrap());
+            let mut app_cmd = Command::new("/bin/sh");
+            app_cmd.args(["-c", app]);
+            slot.pending = Some(PendingApp { cmd: app_cmd, spawner: spawner.clone(), lines: tx.clone(), log: None, launch_token: "the-secret".into() });
+            slot
+        };
+        let settle = |slot: &mut ClientSlot| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if let Some(result) = slot.continue_launch(4) { return result; }
+                assert!(std::time::Instant::now() < deadline, "the build never finished");
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        // The build has no stdin (a read fails at once); the app reads the
+        // hub secret as its stdin's only line (#220).
+        let mut ok = slot_for("read x && exit 1; exit 0", "read t || exit 2; [ \"$t\" = the-secret ] || exit 3; read u && exit 4; exit 7");
+        let build_pid = ok.child.as_ref().unwrap().id();
+        assert!(ok.building());
+        assert_eq!(settle(&mut ok), Ok(()));
+        assert!(!ok.building());
+        assert_ne!(ok.child.as_ref().unwrap().id(), build_pid, "the app's group replaced the build's");
+        assert_eq!(ok.child.as_mut().unwrap().wait().unwrap().code(), Some(7), "the app ran, read the secret, then EOF");
+        assert!(ok.continue_launch(4).is_none(), "nothing left to continue");
+
+        let mut failed = slot_for("exit 101", "exit 0");
+        assert!(settle(&mut failed).unwrap_err().contains("build failed"));
+        let status = failed.child.as_mut().unwrap().try_wait().unwrap().unwrap();
+        let message = failed.exit_failure(status, "Terminal").unwrap();
+        assert!(message.starts_with("Terminal did not start: its build failed"), "{message}");
+
+        let mut closed = slot_for("exit 0", "echo started > /dev/null; exit 3");
+        closed.closing = Some(0.0);
+        assert_eq!(settle(&mut closed), Ok(()));
+        assert!(closed.child.as_ref().unwrap().reaped(), "the reaped build stays; no app started");
     }
 
     #[cfg(unix)]
@@ -1735,7 +2278,7 @@ mod tests {
             let mut ready = String::new();
             BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
             let mut slot = ClientSlot::module(id, "reference", "Reference");
-            slot.child = Some(child);
+            slot.child = Some(ProcessGroup::new(child));
             // Represents an ordinary child still building, with no hub sender.
             slot.ready = false;
             clients.insert(id, slot);
@@ -1775,7 +2318,7 @@ mod tests {
     #[test]
     fn an_unexpected_death_keeps_the_tile_closed_with_restart() {
         let mut slot = ClientSlot::module(9, "terminal", "Terminal");
-        slot.child = Some(std::process::Command::new("/usr/bin/true").spawn().unwrap());
+        slot.child = Some(ProcessGroup::new(std::process::Command::new("/usr/bin/true").spawn().unwrap()));
         assert!(slot.stops_in_place(true));
         assert!(!slot.stops_in_place(false), "a clean exit closes the window");
         slot.closing = Some(0.0);
@@ -1820,10 +2363,10 @@ mod tests {
         cmd.arg("-c").arg("sleep 30 & echo $!; wait");
         own_process_group(&mut cmd);
         cmd.stdout(Stdio::piped());
-        let mut child = cmd.spawn().expect("spawn /bin/sh");
+        let mut child = ProcessGroup::new(cmd.spawn().expect("spawn /bin/sh"));
 
         use std::io::BufRead;
-        let stdout = child.stdout.take().expect("piped stdout");
+        let stdout = child.child.stdout.take().expect("piped stdout");
         let mut reader = std::io::BufReader::new(stdout);
         let mut line = String::new();
         reader.read_line(&mut line).expect("read grandchild pid");
@@ -1855,9 +2398,8 @@ mod tests {
 
 impl Drop for ClientSlot {
     fn drop(&mut self) {
-        // Through cargo the child we hold is `cargo run`, not the app, so
-        // killing the handle would orphan the window. Ask the app to go
-        // first over its own socket, then reap the wrapper.
+        // Ask the app to go first over its own socket, then end and reap
+        // its group (never once the tick has reaped it: ProcessGroup).
         if let Some(sender) = self.sender.take() {
             crate::hub::send_to_app(
                 &sender,
@@ -1868,7 +2410,7 @@ impl Drop for ClientSlot {
             if let Some(pool) = &self.task_pool {
                 reap_child_group(child, GROUP_KILL_GRACE, pool);
             } else {
-                let _ = child.kill();
+                child.kill_now();
             }
         }
     }

@@ -10,8 +10,8 @@
 //!
 //! | OS | Mechanism | Status |
 //! | --- | --- | --- |
-//! | macOS | a Seatbelt profile ([`macos`]) run through `/usr/bin/sandbox-exec`; a `cargo run` launch gets it as cargo's `runner`, so only the app is sandboxed, never the build | built and tested |
-//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec (a `cargo run` launch: by the shell's binary as cargo's runner, so only the app is sandboxed); best-effort, logged per layer when the kernel lacks it | built and tested on Linux 7.0 (Landlock ABI 8) and with Landlock hidden (#138); not in CI, whose shell tests run on macOS |
+//! | macOS | a Seatbelt profile ([`macos`]) run through `/usr/bin/sandbox-exec` around the built binary (the build runs before, outside it: `clients::launch_plan`) | built and tested |
+//! | Linux | Landlock for paths and TCP ports, seccomp for ptrace and friends ([`linux`]), installed between fork and exec; best-effort, logged per layer when the kernel lacks it | built and tested on Linux 7.0 (Landlock ABI 8) and with Landlock hidden (#138); not in CI, whose shell tests run on macOS |
 //! | Windows | AppContainer (design below) | **TODO**: not built; a process app runs unsandboxed and the shell says so in its log |
 //!
 //! **Files.** The person's data roots ([`Policy::protected`]: the home
@@ -21,14 +21,16 @@
 //! readable: a GPU app needs its libraries, fonts, shader caches and the
 //! window server. The app's program and resources (its binary, the
 //! checkout it was built from, cargo's source cache for crate resources)
-//! are readable, never writable.
+//! are readable, never writable, and so is everything the next build reads
+//! or runs ([`Policy::read_only`]), whatever a grant opened.
 //!
-//! **Network.** `none`: no IP network but the shell's hub on loopback (the
-//! socket the app is hosted over). Local Unix-domain sockets reached by path
-//! stay open on every platform (the display server, and on Linux the
-//! session bus), so a `network: none` app can still ask a local service to
-//! act for it; Linux closes abstract Unix sockets outside the sandbox from
-//! Landlock ABI 6. `any`: unrestricted.
+//! **Network.** `none`: no IP network but TCP to the shell's hub port (the
+//! socket the app is hosted over; on Linux the port rule is not bound to an
+//! address, so the hub's port on another host is reachable too). Local
+//! Unix-domain sockets reached by path stay open on every platform (the
+//! display server, and on Linux the session bus), so a `network: none` app
+//! can still ask a local service to act for it; Linux closes abstract Unix
+//! sockets outside the sandbox from Landlock ABI 6. `any`: unrestricted.
 //!
 //! **Child processes.** `processes: false`: no fork and no exec after the
 //! app's own start.
@@ -40,11 +42,10 @@
 //! provider key (`OPENAI_API_KEY`, ...), a token, or the kernel's
 //! descriptors: [`scrub_env`] clears everything else, and a name that looks
 //! like a secret ([`is_secret_var`]: `*_API_KEY`, `*_TOKEN`, `OCTOS*`, ...)
-//! is dropped even from the allow-list and from what the shell sets. On
-//! macOS a `cargo run` launch drops the ones the checkout's
-//! `.cargo/config.toml` `[env]` would hand back (build paths) in its
-//! runner. A process app reaches its agent only over the peer link
-//! (`peer_link`).
+//! is dropped even from the allow-list and from what the shell sets. The
+//! app is started directly, never by cargo, so a checkout's
+//! `.cargo/config.toml` `[env]` never reaches it. A process app reaches its
+//! agent only over the peer link (`peer_link`).
 //!
 //! **macOS deprecation.** `sandbox-exec` and `sandbox_init` are marked
 //! deprecated in Apple's headers (since 10.8) but remain the mechanism the
@@ -74,25 +75,6 @@ use crate::native_apps::{NativeApp, Network};
 
 #[cfg(target_os = "linux")]
 pub mod linux;
-
-/// The `.init_array` entry that lets a binary run sandboxed apps launched
-/// through cargo ([`linux::runner_hook`]). Every shell binary has it
-/// (`octosense_main!`); a Linux binary without it launches such apps
-/// unsandboxed and says so.
-#[macro_export]
-macro_rules! runner_entry {
-    () => {
-        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-        #[used]
-        #[unsafe(link_section = ".init_array")]
-        static OCTOSENSE_SANDBOX_RUNNER: extern "C" fn() = {
-            extern "C" fn entry() {
-                $crate::sandbox::linux::runner_hook();
-            }
-            entry
-        };
-    };
-}
 #[cfg(any(target_os = "macos", test))]
 pub mod macos;
 
@@ -117,6 +99,15 @@ pub struct Policy {
     pub program: Vec<PathBuf>,
     /// The person's data roots: closed except for the grants above.
     pub protected: Vec<PathBuf>,
+    /// Never writable, whatever a grant opened (the Terminal's `home:rw`):
+    /// what the shell's next build of an app reads or runs, outside any
+    /// sandbox. The checkout and its target dir, the cargo and rustup
+    /// homes, every `.cargo/` and `rust-toolchain(.toml)` on the way up from
+    /// the build's directory, and the shell's own directory
+    /// (`clients::sandbox_policy`). A write there would run code unsandboxed
+    /// at the next launch. Closed after every grant; the app's own jail and
+    /// secrets stay writable even inside one.
+    pub read_only: Vec<PathBuf>,
     /// The host's own private directories (the OctoSense home, the apps
     /// and secrets roots, the kernel's core dir): closed LAST, after every
     /// grant, so even a broad grant (the Terminal's `home:rw`) never reaches
@@ -129,8 +120,10 @@ pub struct Policy {
     pub processes: bool,
     /// Host variables a `cargo run` launch would put back from the
     /// checkout's `.cargo/config.toml` `[env]` (build paths such as
-    /// `OCTOSENSE_WORKSPACE`): removed again before the app starts where the
-    /// platform runs it through a runner ([`cargo_env_host_vars`]).
+    /// `OCTOSENSE_WORKSPACE`), for a platform that still starts an app
+    /// through cargo's runner ([`cargo_env_host_vars`]). The shell's own
+    /// launches start the built binary directly, so cargo's `[env]` never
+    /// reaches them and this stays empty.
     pub cargo_env_unset: Vec<String>,
 }
 
@@ -141,6 +134,41 @@ pub enum Applied {
     Sandboxed(String),
     /// No sandbox on this platform or kernel; the app runs without one.
     Unavailable(String),
+}
+
+static LAUNCHES: std::sync::Mutex<Vec<(String, bool)>> = std::sync::Mutex::new(Vec::new());
+
+/// Record what the newest process launch of `app` reported: sandboxed or
+/// not (`None`: no sandbox policy, as unsandboxed). The Terminal's
+/// `terminal.run` exists only while its newest launch was sandboxed
+/// ([`launch_sandboxed`], ADR 0004 §10, §12). A change of the Terminal's
+/// state is synced to the system session's tools at once.
+pub fn note_launch(app: &str, applied: Option<&Applied>) {
+    let sandboxed = matches!(applied, Some(Applied::Sandboxed(_)));
+    let changed = {
+        let mut launches = LAUNCHES.lock().unwrap_or_else(|e| e.into_inner());
+        match launches.iter_mut().find(|(id, _)| id == app) {
+            Some((_, was)) => std::mem::replace(was, sandboxed) != sandboxed,
+            None => {
+                launches.push((app.to_string(), sandboxed));
+                true
+            }
+        }
+    };
+    if changed && app == crate::apps::TERMINAL {
+        crate::system_chat::sync_host_tools();
+    }
+}
+
+/// What the newest process launch of `app` in this run reported: `None`
+/// before its first, `Some(true)` when it ran inside its sandbox.
+pub fn launch_state(app: &str) -> Option<bool> {
+    LAUNCHES.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(id, _)| id == app).map(|(_, s)| *s)
+}
+
+/// Whether the newest process launch of `app` ran inside its sandbox.
+pub fn launch_sandboxed(app: &str) -> bool {
+    launch_state(app) == Some(true)
 }
 
 /// Where a manifest `external` root is, for the person's home `home`.
@@ -205,6 +233,7 @@ impl Policy {
             program,
             protected,
             private: Vec::new(),
+            read_only: Vec::new(),
             network: app.network,
             hub_port,
             processes: app.processes,
@@ -342,10 +371,6 @@ pub fn inherited_var(name: &str) -> bool {
         // Every platform.
         "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "COLORTERM", "TMPDIR", "TMP", "TEMP", "TZ",
         "RUST_BACKTRACE", "RUST_LOG",
-        // Makepad's build switch (`MAKEPAD=vulkan`): a `cargo run` launch
-        // builds the app with the shell's backend, so a Vulkan shell on
-        // Linux gets a Vulkan app whose frames it can share.
-        "MAKEPAD",
         // The display: X11, Wayland and the session bus the GPU stack uses.
         "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "LD_LIBRARY_PATH", "VK_ICD_FILENAMES", "VK_DRIVER_FILES",
         "__GLX_VENDOR_LIBRARY_NAME", "__EGL_VENDOR_LIBRARY_FILENAMES",
@@ -412,20 +437,20 @@ pub fn scrub_env_from(cmd: &mut Command, inherited: impl IntoIterator<Item = (st
 }
 
 /// The command that starts `program args` under `policy` (`None`: no
-/// sandbox, the plain command). `via_cargo`: `program` is cargo and the app
-/// is what `cargo run` runs at the end, so only the app is sandboxed where
-/// the platform allows (macOS, through cargo's `runner`).
-pub fn command(program: &Path, args: &[String], policy: Option<&Policy>, via_cargo: bool) -> (Command, Option<Applied>) {
+/// sandbox, the plain command). `program` is the built binary itself: the
+/// shell builds first, outside any sandbox (`clients::launch_plan`), and
+/// never sandboxes a build.
+pub fn command(program: &Path, args: &[String], policy: Option<&Policy>) -> (Command, Option<Applied>) {
     let Some(policy) = policy else {
         let mut cmd = Command::new(program);
         cmd.args(args);
         return (cmd, None);
     };
-    platform_command(program, args, policy, via_cargo)
+    platform_command(program, args, policy)
 }
 
 #[cfg(target_os = "macos")]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let plain = || {
         let mut cmd = Command::new(program);
         cmd.args(args);
@@ -438,28 +463,13 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo:
         Ok(p) => p,
         Err(e) => return (plain(), Some(Applied::Unavailable(format!("{}: {e}", policy.app)))),
     };
-    let how = if via_cargo {
-        let mut cmd = plain();
-        // cargo re-adds its `[env]` to the app: `env -u` takes the host's
-        // back out, outside the sandbox, before sandbox-exec starts the app.
-        let unset: String = policy.cargo_env_unset.iter().map(|v| format!("-u {v} ")).collect();
-        let runner = if unset.is_empty() {
-            format!("{} -f {}", macos::SANDBOX_EXEC, profile.display())
-        } else {
-            format!("/usr/bin/env {unset}{} -f {}", macos::SANDBOX_EXEC, profile.display())
-        };
-        cmd.env(macos::runner_var(), runner);
-        (cmd, "as cargo's runner")
-    } else {
-        let mut cmd = Command::new(macos::SANDBOX_EXEC);
-        cmd.arg("-f").arg(&profile).arg(program).args(args);
-        (cmd, "via sandbox-exec")
-    };
-    (how.0, Some(Applied::Sandboxed(format!("{} ({}, profile {})", policy.summary(), how.1, profile.display()))))
+    let mut cmd = Command::new(macos::SANDBOX_EXEC);
+    cmd.arg("-f").arg(&profile).arg(program).args(args);
+    (cmd, Some(Applied::Sandboxed(format!("{} (via sandbox-exec, profile {})", policy.summary(), profile.display()))))
 }
 
 #[cfg(target_os = "linux")]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);
     // The program itself is readable and executable wherever it really
@@ -468,17 +478,16 @@ fn platform_command(program: &Path, args: &[String], policy: &Policy, via_cargo:
     // `/usr/lib/cargo/bin/coreutils/cat` on Ubuntu 26.04, an installed
     // binary linked from `~/.local/bin`) would otherwise fail to start
     // with EACCES.
-    // Through cargo the program is cargo, which runs outside the sandbox.
     let mut policy = policy.clone();
-    if !via_cargo && program.is_absolute() && !policy.program.iter().any(|p| p == program) {
+    if program.is_absolute() && !policy.program.iter().any(|p| p == program) {
         policy.program.push(program.to_path_buf());
     }
-    let applied = linux::apply(&mut cmd, &policy, via_cargo);
+    let applied = linux::apply(&mut cmd, &policy);
     (cmd, Some(applied))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform_command(program: &Path, args: &[String], policy: &Policy, _via_cargo: bool) -> (Command, Option<Applied>) {
+fn platform_command(program: &Path, args: &[String], policy: &Policy) -> (Command, Option<Applied>) {
     let mut cmd = Command::new(program);
     cmd.args(args);
     let why = format!("{}: no process sandbox on this platform yet (Windows AppContainer is a TODO, sandbox/mod.rs); running unsandboxed", policy.app);

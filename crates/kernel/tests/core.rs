@@ -307,3 +307,49 @@ async fn a_tool_policy_that_cannot_be_enforced_starts_no_kernel() {
     let written: Value = serde_json::from_str(&std::fs::read_to_string(&profile).unwrap()).unwrap();
     assert_eq!(written["config"]["tool_policy"], octosense_kernel::system_tools::tool_policy());
 }
+
+/// ADR 0004 §12, plan step 4: every kernel start sets the system agent's
+/// EXACT kernel tool list on its session (octos `session/tool_list/set`,
+/// octos#2648) on the host's own connection, with no token, before any
+/// consumer's frame reaches the kernel; a grant change sets it again on the
+/// running kernel, and a restart sets it again on the new one.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_kernel_start_sets_the_system_agents_exact_tool_list_first() {
+    use octosense_kernel::system_tools::{self, SystemAgentTools};
+    let dir = core_dir("tool-list");
+    let frames = dir.with_extension("frames");
+    let _ = std::fs::remove_file(&frames);
+    let core = Core::new(Options::default().core_dir(&dir).program(fake_kernel())
+        .env("FAKE_KERNEL_FRAMES", frames.to_string_lossy()));
+    let sets = || -> Vec<Value> {
+        std::fs::read_to_string(&frames).unwrap_or_default().lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap()).collect()
+    };
+    let mut conn = core.connect().unwrap();
+    call(&mut conn, "1", "session/list", json!({})).await;
+    let seen = sets();
+    assert_eq!(seen[0]["method"], "session/tool_list/set", "first, before any consumer's frame: {seen:?}");
+    let expected = json!({"session_id": octosense_kernel::SYSTEM_SESSION, "profile_id": "_main",
+        "generic_tools": SystemAgentTools::new().kernel_tools()});
+    assert_eq!(seen[0]["params"], expected, "no host token: the host's own connection");
+    assert_eq!(seen[1]["method"], "session/list");
+
+    // The person's grants change while the kernel runs: set again.
+    let mut granted = SystemAgentTools::new();
+    granted.grant_command_execution(true);
+    system_tools::set_grants(granted.clone());
+    core.apply_system_agent_tool_list();
+    call(&mut conn, "2", "session/list", json!({})).await;
+    let seen = sets();
+    assert_eq!(seen[2]["method"], "session/tool_list/set", "{seen:?}");
+    assert_eq!(seen[2]["params"]["generic_tools"], json!(granted.kernel_tools()));
+    system_tools::set_grants(SystemAgentTools::new());
+
+    // A restart: the new kernel gets the list first too.
+    core.restart();
+    let mut conn = core.connect().unwrap();
+    call(&mut conn, "3", "session/list", json!({})).await;
+    let seen = sets();
+    assert_eq!(seen[4]["method"], "session/tool_list/set", "{seen:?}");
+    assert_eq!(seen[5]["method"], "session/list");
+}
