@@ -187,7 +187,7 @@ Pinned exactly once, in the root `Cargo.toml` and the runtime locks:
 | [makepad (OctoSense fork)](https://github.com/OctoSense-org/makepad) | The UI framework and the `cargo-makepad` packager. Checked out in `.sources/makepad`, plus the reviewed runtime patch. |
 | [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [OctoScript](https://github.com/OctoSense-org/OctoScript) | The runtime release that names the Makepad and OctoScript revisions (`native-runtime.lock.json`). |
 | [OctoSense-App-Hub](https://github.com/OctoSense-org/OctoSense-App-Hub) | The signed catalog, the store, the Card runner that contains every app (`octosense-app-hub-app`). |
-| [octos](https://github.com/octos-org/octos) | The agent kernel. On Android the APK bundles it as `liboctos.so`; on a desktop the kernel service runs the binary named by `OCTOS_APP_CORE_BIN`. |
+| [octos](https://github.com/octos-org/octos) | The agent kernel. On Android the APK bundles it as `liboctos.so`; on a desktop it finds the packaged `octos-kernel` beside the shell; `OCTOS_APP_CORE_BIN` remains an override. |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, hosted as a native module. |
 
 Related, not build inputs: [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) (how apps are built and published), [OctoScript-Android](https://github.com/OctoSense-org/OctoScript-Android) and [OctoScript-OH](https://github.com/OctoSense-org/OctoScript-OH) (other renderers), the [OctoSense website](https://github.com/OctoSense-org/octosense-org.github.io).
@@ -239,6 +239,8 @@ cargo run --release -p octosense
 cargo check --locked -p octosense --features mobile-apps                        # the set phones link
 cargo check --locked -p octosense -p octosense-appcard --features mobile-apps,app-appcard
 ```
+
+For the desktop AI runtime, `tools/build-desktop.py` builds and stages the locked kernel beside the shell. See [desktop build instructions and validation limits](desktop/README.md#build-and-run). Cargo alone does not install the kernel.
 
 **Phone** (from `phone/`, which selects the phone's system apps; details in [phone/README.md](phone/README.md)):
 

@@ -93,8 +93,8 @@ pub enum KernelSource {
     Bundled,
     /// OpenHarmony: the canonical core linked in-process.
     InProcess,
-    /// Desktop: the binary `$OCTOS_APP_CORE_BIN` names; none without it (a
-    /// developer's own `octos serve` is never touched).
+    /// Desktop: `$OCTOS_APP_CORE_BIN`, or the packaged sibling executable.
+    /// The name stays compatible; no developer kernel is attached to.
     Env,
     /// Desktop or Android: this binary.
     Program(PathBuf),
@@ -105,7 +105,7 @@ pub enum KernelSource {
 
 impl KernelSource {
     /// This platform's kernel: bundled on Android, in-process on
-    /// OpenHarmony, `$OCTOS_APP_CORE_BIN` on a desktop, none on iOS.
+    /// OpenHarmony, override/packaged sibling on a desktop, none on iOS.
     pub fn platform() -> Self {
         if cfg!(target_os = "android") {
             KernelSource::Bundled

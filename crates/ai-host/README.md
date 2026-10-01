@@ -36,7 +36,7 @@ ai_host::shutdown();
 ```
 
 `Host` fields: `data_dir`; `kernel: KernelSource` (`Bundled` on Android,
-`InProcess` on OpenHarmony, `Env` = `$OCTOS_APP_CORE_BIN` on a desktop,
+`InProcess` on OpenHarmony, `Env` = `$OCTOS_APP_CORE_BIN` or the packaged sibling on a desktop,
 `Program(path)`, `None`; `KernelSource::platform()` picks); `qr_import:
 QrImport` (`platform()` or `paste_only()`); `policy: Policy`
 (`Policy::shipped()` grants Rinx the `octos.*` services).

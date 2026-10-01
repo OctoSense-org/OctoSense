@@ -41,8 +41,9 @@ How it starts, per platform (`src/launch.rs`):
 - **Desktop**: `<program> serve --stdio --data-dir <core_dir>` (plus
   `--config <core_dir>/config.json` when that file exists) with
   `OCTOS_HOME=<core_dir>`; the program is the shell's `Options::program` or
-  `$OCTOS_APP_CORE_BIN`. With neither there is no kernel: a developer's own
-  `octos serve` is never touched.
+  `$OCTOS_APP_CORE_BIN`, falling back to `octos-kernel[.exe]` beside the shell
+  executable. `tools/build-desktop.py` stages the locked runtime there. No
+  PATH search or attachment to another running kernel occurs.
 - **iOS**: no kernel.
 - **Talk to Octos on** (desktop and Android): the same command with
   `--host 127.0.0.1 --host-managed` instead of `--stdio`, and the listener
