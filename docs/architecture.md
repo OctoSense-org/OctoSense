@@ -126,7 +126,7 @@ How the shell decides at run time (`crates/shell/src/apps.rs`, `AppRegistry::hos
 **Process hosting** is Makepad's window-manager hosting (`crates/shell/src/clients.rs`, `hub.rs`):
 
 - The shell starts the app as a child with `--stdin-loop` (`cargo run … -- --stdin-loop` in a checkout, else the sibling binary), in its own process group, with `STUDIO_HOST=http://127.0.0.1:<hub port>` and its client id.
-- The child connects back to the shell's **hub**, an HTTP/WebSocket server the shell binds on the first free loopback port in 8765–8785 (`WmHub::start`), and speaks Makepad's studio protocol (`AppToStudio` / `StudioToApp`).
+- The child connects back to the shell's **hub**, an HTTP/WebSocket server the shell binds on the first free loopback port in 8765–8785 (`WmHub::start`), and speaks Makepad's studio protocol (`AppToStudio` / `StudioToApp`). The hub admits a socket only with the per-launch secret the shell wrote to that child's stdin, once per launch, and refuses browser origins ([ADR 0004 §5](adr/0004-native-apps-hosting-and-peers.md#5-the-peer-link-for-process-hosted-native-apps)).
 - Frames reach the compositor without copies where the OS allows (implemented in Makepad `platform/src/os`): IOSurface on macOS, D3D11 shared handles on Windows, DMA_BUF on Linux with Vulkan and Wayland; a Linux OpenGL build reads every frame back through the CPU.
 - A process app that dies takes only itself down: an unexpected death of a window the person has keeps its tile, closed with a Restart, and posts "App stopped" ([#130](https://github.com/OctoSense-org/OctoSense/pull/130); `ClientSlot::stops_in_place` in `clients.rs`). A warm instance, the AI pane, a preview or a client being closed goes away as before.
 

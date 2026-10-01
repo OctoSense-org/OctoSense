@@ -126,7 +126,7 @@ Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::host
 **进程托管**使用 Makepad 窗口管理器的托管机制（`crates/shell/src/clients.rs`、`hub.rs`）：
 
 - Shell 以 `--stdin-loop` 启动应用子进程（在源码检出中为 `cargo run … -- --stdin-loop`，否则为同目录下的二进制），放在独立的进程组中，并设置 `STUDIO_HOST=http://127.0.0.1:<hub 端口>` 和其客户端 id。
-- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。
+- 子进程回连 Shell 的 **hub**：Shell 在回环地址 8765–8785 中第一个空闲端口上绑定的 HTTP/WebSocket 服务（`WmHub::start`），使用 Makepad 的 studio 协议（`AppToStudio` / `StudioToApp`）。hub 只接受出示了 Shell 写入该子进程 stdin 的本次启动密钥的连接，每次启动只接受一次，并拒绝浏览器来源（[ADR 0004 §5](adr/0004-native-apps-hosting-and-peers.md#5-the-peer-link-for-process-hosted-native-apps)）。
 - 在操作系统允许时，画面以零拷贝方式到达合成器（在 Makepad `platform/src/os` 中实现）：macOS 上用 IOSurface，Windows 上用 D3D11 共享句柄，Linux 在 Vulkan 加 Wayland 下用 DMA_BUF；Linux 的 OpenGL 构建则每帧经 CPU 回读。
 - 进程应用崩溃只影响它自己：Shell 移除其客户端并显示 “App stopped”。（目前只有进程内模块有 Restart 界面；见[不一致之处](#代码与-adr-不一致之处)。）
 
