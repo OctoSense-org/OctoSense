@@ -74,7 +74,9 @@ pub struct Line {
     pub app_label: String,
     pub tool: String,
     pub caller: String,
-    /// The exact arguments, one printed line each, secrets redacted.
+    /// The exact arguments, every row of them ([`argument_rows`]): one
+    /// printed line each, secrets redacted, hidden characters made
+    /// visible. The view wraps long rows and scrolls, and never cuts one.
     pub args: Vec<String>,
     pub surfaced: Surfaced,
     pub always: Vec<AlwaysChoice>,
@@ -128,7 +130,7 @@ impl Line {
             app_label: app_label(&req.app),
             tool: req.tool.name.clone(),
             caller: caller_label(&req.app, &req.caller),
-            args: facts::pretty(&req.args, &req.tool.secret_fields),
+            args: argument_rows(req),
             surfaced,
             always,
             answer: None,
@@ -138,6 +140,119 @@ impl Line {
     /// "Mail · mail.send".
     pub fn heading(&self) -> String {
         format!("{} \u{00b7} {}", self.app_label, self.tool)
+    }
+}
+
+/// Characters that draw as nothing, or that change how the text around
+/// them reads (bidi overrides and isolates, zero-width characters, line and
+/// paragraph separators, tag characters): shown as their code point.
+fn hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c as u32,
+            0x00AD | 0x034F | 0x061C | 0x115F | 0x1160 | 0x17B4 | 0x17B5 | 0x180B..=0x180F | 0x200B..=0x200F | 0x2028..=0x202E | 0x2060..=0x206F | 0x3164 | 0xFE00..=0xFE0F | 0xFEFF | 0xFFA0 | 0xFFF0..=0xFFFB | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A | 0xE0000..=0xE0FFF)
+}
+
+/// `text` with every control and format character shown as `⟨U+202E⟩`, so
+/// what the sheet draws is what the call carries.
+pub fn visible(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if hidden(c) {
+            out.push_str(&format!("\u{27E8}U+{:04X}\u{27E9}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Every row a sheet shows for a request's arguments. A command tool's
+/// `command` comes first, one numbered row per line of it (`terminal.run`
+/// types every line: a second command after a newline is in plain sight),
+/// then the other arguments; any other tool's arguments are pretty-printed
+/// JSON. Secrets are redacted and hidden characters made [`visible`].
+pub fn argument_rows(req: &Request) -> Vec<String> {
+    let secret = &req.tool.secret_fields;
+    if req.tool.command {
+        if let Some(command) = req.args.get("command").and_then(serde_json::Value::as_str).filter(|_| !facts::is_secret("command", secret)) {
+            let lines: Vec<&str> = command.split('\n').collect();
+            let mut rows = vec![format!("command ({} line{}):", lines.len(), if lines.len() == 1 { "" } else { "s" })];
+            let width = lines.len().to_string().len().max(1);
+            rows.extend(lines.iter().enumerate().map(|(i, l)| format!("  {:>width$} \u{2502} {}", i + 1, visible(l))));
+            let mut rest = req.args.clone();
+            if let Some(map) = rest.as_object_mut() {
+                map.remove("command");
+                if !map.is_empty() {
+                    rows.extend(facts::pretty(&rest, secret).iter().map(|r| visible(r)));
+                }
+            }
+            return rows;
+        }
+    }
+    facts::pretty(&req.args, secret).iter().map(|r| visible(r)).collect()
+}
+
+/// What starts a wrapped row's continuation.
+pub const WRAP_MARK: &str = "\u{21B3} ";
+
+/// `row` in pieces no wider than `max_w`; every piece after the first
+/// starts with [`WRAP_MARK`]. `measure` is asked for single characters
+/// (and the mark), so wrapping a long row costs one measure per distinct
+/// character. Nothing is dropped: the pieces, without the marks, are `row`.
+pub fn wrap(row: &str, max_w: f64, mut measure: impl FnMut(&str) -> f64) -> Vec<String> {
+    let mut widths: std::collections::HashMap<char, f64> = std::collections::HashMap::new();
+    let mut char_w = |c: char, measure: &mut dyn FnMut(&str) -> f64| *widths.entry(c).or_insert_with(|| measure(c.encode_utf8(&mut [0u8; 4])));
+    let mark_w = measure(WRAP_MARK);
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_w = 0.0;
+    for c in row.chars() {
+        let cw = char_w(c, &mut measure);
+        let lead = if out.is_empty() { 0.0 } else { mark_w };
+        if !cur.is_empty() && lead + cur_w + cw > max_w {
+            let prefix = if out.is_empty() { "" } else { WRAP_MARK };
+            out.push(format!("{prefix}{}", std::mem::take(&mut cur)));
+            cur_w = 0.0;
+        }
+        cur.push(c);
+        cur_w += cw;
+    }
+    let prefix = if out.is_empty() { "" } else { WRAP_MARK };
+    if !cur.is_empty() || out.is_empty() {
+        out.push(format!("{prefix}{cur}"));
+    }
+    out
+}
+
+/// Which rows of a line's argument area are on screen, and how far down the
+/// person has seen. Approve is enabled only once every row was on screen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ArgWindow {
+    pub top: usize,
+    /// One past the last row ever on screen.
+    pub seen_to: usize,
+}
+
+impl ArgWindow {
+    /// The rows on screen out of `total`, `visible` at a time (and they
+    /// count as seen).
+    pub fn show(&mut self, total: usize, visible: usize) -> std::ops::Range<usize> {
+        let visible = visible.max(1);
+        self.top = self.top.min(total.saturating_sub(visible));
+        let end = (self.top + visible).min(total);
+        self.seen_to = self.seen_to.max(end);
+        self.top..end
+    }
+    /// Move by `rows` (down when positive).
+    pub fn scroll(&mut self, rows: isize, total: usize, visible: usize) {
+        self.top = if rows < 0 { self.top.saturating_sub(rows.unsigned_abs()) } else { self.top.saturating_add(rows as usize) };
+        self.show(total, visible);
+    }
+    pub fn at_end(&self, total: usize, visible: usize) -> bool {
+        self.top + visible.max(1) >= total
+    }
+    pub fn seen_all(&self, total: usize) -> bool {
+        self.seen_to >= total
     }
 }
 
