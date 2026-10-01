@@ -281,29 +281,69 @@ fn only_declared_hosts_are_reached() {
 }
 
 #[test]
-fn a_failing_source_backs_off_instead_of_retrying() {
+fn a_failing_source_backs_off_on_the_timer() {
     let rig = Rig::new("backoff");
     rig.fixtures.route("https://www.techmeme.com/", 503, "", None);
     rig.refresh();
     let asked = || rig.fixtures.requests_to("https://www.techmeme.com/").len();
     assert_eq!(asked(), 1, "one request, no retry storm");
-    // Later runs leave it alone until its back-off (twice the interval) is over.
-    rig.advance(500);
-    rig.news.refresh().unwrap();
-    rig.advance(500);
-    rig.news.refresh().unwrap();
+    // The timer retries after 30 s, then 1 min, 2 min, …: never sooner.
+    rig.advance(20);
+    rig.news.refresh_due().unwrap();
     assert_eq!(asked(), 1, "backed off");
-    rig.advance(3 * 3600);
+    rig.advance(15);
+    rig.news.refresh_due().unwrap();
+    assert_eq!(asked(), 2, "the first retry, 30 s on");
+    rig.advance(45);
+    rig.news.refresh_due().unwrap();
+    assert_eq!(asked(), 2, "the second waits a minute");
+    rig.advance(20);
+    rig.news.refresh_due().unwrap();
+    assert_eq!(asked(), 3);
+    // However long it failed, the timer tries again within the hour.
+    for _ in 0..12 {
+        rig.advance(3600);
+        rig.news.refresh_due().unwrap();
+    }
+    assert_eq!(asked(), 15);
+    let status = rig.news.source_status().unwrap();
+    let techmeme = status["sources"].as_array().unwrap().iter().find(|s| s["id"] == "techmeme").unwrap().clone();
+    assert!(techmeme["next_due"].as_i64().unwrap() - rig.clock.load(Ordering::SeqCst) <= 3600, "{techmeme}");
     rig.fixtures.route("https://www.techmeme.com/", 200, &fixture("techmeme.xml"), None);
-    let report = rig.refresh();
-    assert_eq!(asked(), 2);
+    rig.advance(3600);
+    let report = rig.news.refresh_due().unwrap().unwrap();
     assert_eq!(report.sources.iter().find(|s| s.id == "techmeme").unwrap().status, "ok");
     // And a source fetched a moment ago is not fetched again on a refresh.
-    let before = rig.fixtures.log.lock().unwrap().len();
     rig.advance(30);
     let report = rig.refresh();
-    assert!(report.sources.iter().all(|s| s.status == "skipped"));
-    assert_eq!(rig.fixtures.log.lock().unwrap().len(), before);
+    assert_eq!(report.sources.iter().find(|s| s.id == "techmeme").unwrap().status, "skipped");
+    assert_eq!(asked(), 16);
+}
+
+/// The device: News's first fetch ran before the network was up (every
+/// source failed), and neither opening News nor Refresh fetched again
+/// until the back-off ended. A Refresh (which News also sends when it
+/// opens) fetches a failed source again at once, at most every 10 s.
+#[test]
+fn refresh_retries_a_failed_source_at_once() {
+    let rig = Rig::new("refresh-retry");
+    for url in ["https://www.techmeme.com/", "https://hn.algolia.com/"] {
+        rig.fixtures.route(url, 503, "", None);
+    }
+    rig.refresh();
+    let asked = || rig.fixtures.requests_to("https://www.techmeme.com/").len();
+    assert_eq!(asked(), 1);
+    rig.advance(2);
+    let report = rig.refresh();
+    assert_eq!(asked(), 1, "not twice within 10 s");
+    assert_eq!(report.sources.iter().find(|s| s.id == "techmeme").unwrap().status, "skipped");
+    // The network came up.
+    rig.fixtures.route("https://www.techmeme.com/", 200, &fixture("techmeme.xml"), None);
+    rig.advance(10);
+    let report = rig.refresh();
+    assert_eq!(asked(), 2, "the person's Refresh fetched it");
+    assert_eq!(report.sources.iter().find(|s| s.id == "techmeme").unwrap().status, "ok");
+    assert!(rig.reports.lock().unwrap().len() >= 2, "each run that fetched is reported (and logged by the shell)");
 }
 
 struct Reader;

@@ -78,6 +78,32 @@ fn the_old_direct_read_is_the_error_the_device_showed() {
     assert!(errors.iter().any(|e| e.contains("not found")), "{errors:?}");
 }
 
+/// A run where a source failed is retried on its own, sooner at first: 15 s,
+/// 30 s, 1 min … at most 15 min (the device's first fetch ran before the
+/// network was up, and nothing fetched again).
+#[test]
+fn a_failed_run_is_retried_with_a_growing_wait() {
+    let code = format!("{}\nlet d = 15\nlet waits = []\nfor i in 8 {{ waits.push(d) d = next_retry_delay(d) }}\nwaits.to_json()", function("next_retry_delay"));
+    let (value, errors, vm) = run(&code);
+    assert!(errors.is_empty(), "{errors:?}");
+    let json = vm.bx.heap.string_with(value, |_, s| s.to_string()).unwrap_or_default();
+    assert_eq!(json, "[15,30,60,120,240,480,900,900]");
+    for call in ["schedule_retry()\n}", "start_timeout(wait, || {", "if !any_failed() {"] {
+        assert!(SCRIPT.contains(call), "{call}");
+    }
+    // Both ends of a run schedule it: the service's list and the own fetch.
+    assert_eq!(SCRIPT.matches("    schedule_retry()\n").count(), 2);
+}
+
+/// Every function of the script parses and defines (all of main.splash up to
+/// its first call at the top level, `start_timeout(…)`).
+#[test]
+fn the_scripts_functions_parse() {
+    let code = SCRIPT.split_once("\nstart_timeout(").expect("the boot call").0;
+    let (_value, errors, _vm) = run(&format!("{code}\nnil"));
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
 #[test]
 fn the_title_follows_the_theme() {
     // Dark hosts draw News on a dark ground: a fixed dark ink disappeared.
