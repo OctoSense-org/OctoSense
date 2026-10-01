@@ -74,6 +74,10 @@ impl PhoneFrame {
 /// overview glass, a tile group's window — and its blur pyramid, kept for the
 /// overlay's whole transition. Recorded on idle home frames too, so the first
 /// moving frame already finds it. `key` is None whenever the scene may differ.
+/// How long the home scene stays still before an idle frame records it for
+/// the overlays (phone.rs `record`).
+const SCENE_RECORD_QUIET: f64 = 0.35;
+
 pub(super) struct PhoneSceneBackdrop {
     frame: WindowFrame,
     key: Option<(Rect, Rect, f64, crate::desktop::DesktopStyle, bool)>,
@@ -376,7 +380,20 @@ impl WmDesk {
         // Record on idle frames and under an overlay the cache does not fit;
         // a home animation without an overlay (the island, a settling tile)
         // draws live and may change the scene, so it drops the key.
-        let record=!hit && cache.is_some() && (!moving || overlay);
+        // An idle home records once it has been still for a moment: a
+        // settling scene draws several idle frames in a row, and each record
+        // is a whole scene plus its pyramid (57 ms of GPU at the floor clock
+        // on a Snapdragon 685), so recording each one stalled the phone
+        // after every swipe. A timer brings the frame that records. An
+        // overlay still records at once when it finds no current scene.
+        let now=cx.seconds_since_app_start();
+        if moving {self.phone_scene_moved_at=now;}
+        let still=now-self.phone_scene_moved_at>=SCENE_RECORD_QUIET;
+        if cache_scene && !moving && !still {
+            cx.stop_timer(self.phone_scene_record_timer);
+            self.phone_scene_record_timer=cx.start_timeout(SCENE_RECORD_QUIET-(now-self.phone_scene_moved_at)+0.01);
+        }
+        let record=!hit && cache.is_some() && (overlay || !moving && still);
         if let Some(cached)=cache.as_mut() {if !hit && !record {cached.key=None;}}
         if perf || crate::mobile_perf::trace_on() {
             crate::mobile_perf::trace_phone_scene(if hit {"hit"} else if record {"record"} else {"live"},
@@ -608,6 +625,8 @@ impl WmDesk {
         }
     }
     pub(super) fn handle_phone_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
+        // The home has been still long enough: its next frame records it.
+        if self.phone_scene_record_timer.is_event(event).is_some() {cx.redraw_area(self.area);}
         let state=scope.data.get_mut::<WmState>().unwrap();
         let input=matches!(event,Event::TouchUpdate(_)|Event::MouseDown(_)|Event::MouseUp(_)|Event::MouseMove(_)|Event::Scroll(_)|Event::KeyDown(_)|Event::KeyUp(_)|Event::TextInput(_));
         let client=state.phone.client;
