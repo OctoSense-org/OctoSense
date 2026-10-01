@@ -98,8 +98,10 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
     Ok(loaded)
 }
 
-/// The owning app of a tool another app asks for: whoever declares it, else
-/// the system app of its namespace (`mail.send` → `os.mail`).
+/// The owning app of a tool another app asks for, by its namespace
+/// ([`super::relay::Catalog::owner_of`]): the native app of that id, the
+/// toolbox, else the system app (`mail.send` → `os.mail`); never whichever
+/// app declared the name first.
 fn owner_for(tool: &str) -> String {
     super::owner_of(tool).unwrap_or_else(|| format!("{}{}", octosense_appstore::system::SYSTEM_ID_PREFIX, tool.split('.').next().unwrap_or(tool)))
 }
