@@ -4,14 +4,15 @@
     "base_revision": "e29a0eaa68781231eb9ec582e5f02648c6dad7e9",
     "patch": "tools/runtime-patches/makepad-settings.patch",
     "sha256": "1bf3c9d5367bb35a0e2ab0eb92b614507817066d31d8030404cbb0655c758268",
-    "tree": "8f5a0fadcf0133e93e9324da3490e64a93c70ab6",
+    "tree": "e9520ccb3740f3af8629d981d06d7e53aad48c06",
     "product_fixes": [
       "Settings integration: Android IME synchronization, accessibility and reduced motion, GLES program-cache validation, obscured-gesture cancellation and scroll-position observation.",
       "Contained-app isolation and secret-input restrictions come from the pinned upstream runtime; the Settings overlay preserves those gates.",
       "System Back callback owners suppress compatibility Back keys to avoid duplicate navigation on Android 13+.",
       "A cancelled search's keyboard hides once: an editor session going inactive retires its input connection without restarting input, which brought the keyboard back empty while it was hiding (Android 11).",
       "Windows remote grabs send raw RGBA pixels to the bounded PNG worker before presenting, keeping full-size encoding off the UI thread and scaling before encoding.",
-      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire."
+      "Windows frame completion: backport Makepad work c508ab0c8 GPU completion polls around native and hosted repaint so upload buffers can retire.",
+      "A map that is not drawn (Maps sent to the background) no longer asks for a frame and a full redraw every frame, nor ticks its tile fades every 16 ms, while it waits to draw (OctoSense-org/makepad#79)."
     ],
     "stacked": [
       {
@@ -29,6 +30,10 @@
       {
         "patch": "tools/runtime-patches/makepad-windows-frame-completion.patch",
         "sha256": "8d58e16bc12aae5f4313fdc5c9d3f6944b96ee20e609fe5ff069fe2403954595"
+      },
+      {
+        "patch": "tools/runtime-patches/makepad-map-hidden-no-frame-loop.patch",
+        "sha256": "e89a4776c617d48242c4a33495972e1566036016584c81f58f8cb4affc535d8f"
       }
     ]
   }
