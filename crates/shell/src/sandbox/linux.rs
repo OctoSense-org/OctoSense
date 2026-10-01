@@ -19,11 +19,20 @@
 //! a split directory after the app started (a new file directly in `~`) are
 //! not covered, and the directories on the way cannot be listed.
 //!
+//! **What the next build reads or runs** ([`Policy::read_only`]: the
+//! checkout, its target dir, `~/.cargo`, `~/.rustup`, `.cargo/` and
+//! `rust-toolchain` files on the way up, the shell's own directory) is split
+//! out of a writable grant the same way and granted again read and execute
+//! only, as macOS's profile makes it read-only after every grant.
+//!
 //! seccomp refuses, with `EPERM`, what no process app needs: `ptrace`,
 //! `process_vm_readv/writev`, `perf_event_open`, `bpf`, `userfaultfd`,
 //! `kexec_load`, mounts, namespaces and the kernel keyring; with
 //! `processes: false` also `fork`, `vfork` and a `clone` that is not a
-//! thread (and `clone3`, which libc then retries as `clone`).
+//! thread (and `clone3`, which libc then retries as `clone`). Every system
+//! call of another ABI of the kernel (i386 through `int 0x80` and x32 on
+//! x86_64, AArch32 on arm64) is refused whole, or its own numbers would get
+//! past these rules.
 //!
 //! **Best-effort.** The parent probes the kernel's Landlock ABI before the
 //! spawn and says in [`Applied`] which layers took (a kernel before 5.13, or
@@ -198,7 +207,40 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
             around_private(rule, &private, &mut split);
         }
     }
-    split
+    around_read_only(split, policy, abi)
+}
+
+/// What the shell's next build reads or runs ([`Policy::read_only`]: the
+/// checkout and its target dir, `~/.cargo`, `~/.rustup`, the `.cargo/` and
+/// `rust-toolchain` files on the way up, the shell's own directory) stays
+/// read and execute only, whatever a grant opened (the Terminal's
+/// `home:rw`); a write there would run code outside the sandbox at the next
+/// launch. Landlock cannot take a right back beneath a granted directory,
+/// so a writable rule that contains one is split around it the way the
+/// private dirs are, and the read-only path is granted again with read and
+/// execute. The app's own jail and secrets keep their rights.
+fn around_read_only(rules: Vec<Rule>, policy: &Policy, abi: u32) -> Vec<Rule> {
+    let rx = read() | FS_EXECUTE;
+    let writes = handled_fs(abi) & !rx;
+    let read_only: Vec<PathBuf> = policy.read_only.iter().map(|p| super::resolved(p)).collect();
+    let own = [super::resolved(&policy.jail), super::resolved(&policy.secrets)];
+    let mut out = Vec::new();
+    for rule in rules {
+        if rule.access & writes == 0 || own.contains(&rule.path) {
+            out.push(rule);
+        } else if read_only.iter().any(|ro| rule.path.starts_with(ro)) {
+            out.push(Rule { path: rule.path, access: rule.access & rx });
+        } else if read_only.iter().any(|ro| ro.starts_with(&rule.path)) {
+            for ro in read_only.iter().filter(|ro| ro.starts_with(&rule.path) && ro.exists()) {
+                let access = if ro.is_dir() { rule.access } else { rule.access & FILE_RIGHTS };
+                out.push(Rule { path: ro.clone(), access: access & rx });
+            }
+            around_private(rule, &read_only, &mut out);
+        } else {
+            out.push(rule);
+        }
+    }
+    out
 }
 
 /// `rule`, minus the private directories: dropped when it lies inside one;
@@ -259,15 +301,25 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         const ALLOW: u32 = 0x7fff_0000;
         const ERRNO: u32 = 0x0005_0000;
         const CLONE_THREAD: u32 = 0x0001_0000;
+        const X32_SYSCALL_BIT: u32 = 0x4000_0000;
         let st = |code: u16, jt: u8, jf: u8, k: u32| libc::sock_filter { code, jt, jf, k };
         let eperm = ERRNO | libc::EPERM as u32;
         let enosys = ERRNO | libc::ENOSYS as u32;
         let mut f = vec![
             st(LD_W_ABS, 0, 0, 4), // arch
             st(JEQ_K, 1, 0, arch),
-            st(RET_K, 0, 0, ALLOW), // an unexpected arch: not ours to judge
-            st(LD_W_ABS, 0, 0, 0),  // nr
+            // Another ABI of the same kernel (i386 through `int 0x80` on
+            // x86_64, AArch32 compat on arm64): refused whole, or its own
+            // syscall numbers (i386 fork is 2) would pass every rule below.
+            st(RET_K, 0, 0, eperm),
+            st(LD_W_ABS, 0, 0, 0), // nr
         ];
+        // x32 shares x86_64's arch value and marks its numbers with bit 30:
+        // refused whole for the same reason.
+        if cfg!(target_arch = "x86_64") {
+            f.push(st(JSET_K, 0, 1, X32_SYSCALL_BIT));
+            f.push(st(RET_K, 0, 0, eperm));
+        }
         let deny = |f: &mut Vec<libc::sock_filter>, nr: u32, ret: u32| {
             f.push(st(JEQ_K, 0, 1, nr));
             f.push(st(RET_K, 0, 0, ret));

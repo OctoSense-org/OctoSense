@@ -31,7 +31,8 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 
 use crate::ai_host::app_peers::host_tools::{HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
-use octosense_app_policy::{AgentBundle, AppManifest, ImplementedBy, ToolSpec, MANIFEST_FILE};
+use octosense_app_contract::{AppManifest, MANIFEST_FILE};
+use octosense_app_policy::{AgentBundle, ImplementedBy, ToolSpec};
 use octosense_appstore::services::{ServiceCall, ServiceHost};
 
 /// What one script app's bundle gives the host.
@@ -97,8 +98,10 @@ pub fn from_bundle(bundle: &Path) -> Result<Loaded, String> {
     Ok(loaded)
 }
 
-/// The owning app of a tool another app asks for: whoever declares it, else
-/// the system app of its namespace (`mail.send` → `os.mail`).
+/// The owning app of a tool another app asks for, by its namespace
+/// ([`super::relay::Catalog::owner_of`]): the native app of that id, the
+/// toolbox, else the system app (`mail.send` → `os.mail`); never whichever
+/// app declared the name first.
 fn owner_for(tool: &str) -> String {
     super::owner_of(tool).unwrap_or_else(|| format!("{}{}", octosense_appstore::system::SYSTEM_ID_PREFIX, tool.split('.').next().unwrap_or(tool)))
 }
@@ -188,7 +191,7 @@ impl ToolExecutor for HostServiceExecutor {
         }
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { reply });
-        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false, host_dir: self.host_dir.clone() };
+        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false, may_prompt: true, host_dir: self.host_dir.clone() };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
     }
 
@@ -239,7 +242,7 @@ pub(crate) mod tests {
         }
         let mut manifest: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap()).unwrap();
         edit(&dir, &mut manifest);
-        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_policy::digest_dir(&dir).unwrap());
+        manifest["integrity"]["bundle_blake3"] = json!(octosense_app_contract::digest_dir(&dir).unwrap());
         std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
         dir
     }

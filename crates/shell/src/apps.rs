@@ -306,7 +306,7 @@ pub fn script_agent_app(manifest_path: &Path, id: &str, name: &str) -> Option<Ag
 /// Whether the bundle beside a manifest ships an agent App Hub admits.
 #[cfg(any(feature = "app-hub", native_mobile))]
 fn bundle_ships_agent(bundle: &Path, manifest: &str) -> bool {
-    let Ok(parsed) = octosense_app_policy::AppManifest::parse(manifest) else { return false };
+    let Ok(parsed) = octosense_app_contract::AppManifest::parse(manifest) else { return false };
     matches!(octosense_app_policy::AgentBundle::load(bundle, &parsed), Ok(Some(_)))
 }
 

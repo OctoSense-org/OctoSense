@@ -197,6 +197,7 @@ fn ask(app: &str, service: &str, args: Value, from_sheet: bool) -> Result<Value,
         service: service.to_owned(),
         args,
         from_sheet,
+        may_prompt: true,
         host_dir: std::env::temp_dir().join("octosense-contained-tests"),
     };
     dispatch(call, heap, 1, &mut NoSheets);

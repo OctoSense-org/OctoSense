@@ -808,7 +808,7 @@ mod tests {
     /// isolate of its own, so answers cannot cross.
     fn send(dir: &Path, app: &str, service: &str, args: Value, from_sheet: bool, host: &mut Host) -> usize {
         let heap = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, host_dir: dir.into() };
+        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, may_prompt: true, host_dir: dir.into() };
         octosense_appstore::services::dispatch(call, heap, 1, host);
         heap
     }
