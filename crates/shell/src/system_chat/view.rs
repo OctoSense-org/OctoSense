@@ -9,13 +9,27 @@
 //! Send (Stop while a turn runs); above it New conversation and Close.
 //!
 //! The shell gives it pointer events first while it is open
-//! ([`ShellSystemChat::pointer`]) and the keyboard (`super::key`).
+//! ([`ShellSystemChat::pointer`]), the keyboard (`super::key`) and text
+//! input (`super::text_input`, [`ShellSystemChat::ime`]).
+//!
+//! - **Scrolling**: the wheel, and a touch drag with its fling
+//!   ([`TouchScroll`]): a phone sends no scroll events for a drag. A drag
+//!   that starts on a button scrolls and presses nothing.
+//! - **The keyboard of a phone**: a press in the prompt takes the key focus
+//!   and asks for the input method, as makepad's `TextInput` does; taking
+//!   the focus again is what brings back a keyboard the person dismissed
+//!   (the platform ignores a request after a dismissal until then). While
+//!   the prompt holds the focus, the pane answers the input method's state
+//!   query with the prompt's text ([`super::composer`]).
 //!
 //! The same pane is the "Ask <app>" panel (`app_panel: true`,
 //! [`crate::app_chat`]): an app agent's conversation, both lanes with their
-//! speakers, its composer and Stop. On a desktop it stands left of the
-//! system chat when both are open, so the two lanes show side by side; on a
-//! phone it is a full-screen sheet.
+//! speakers, and its composer. The two lanes are independent: Send shows
+//! whenever the PERSON's lane is idle, even while the system agent's turn
+//! runs, and Stop stops the person's own turn. The system agent's running
+//! turn has its own row with "Stop the system agent's task". On a desktop
+//! the panel stands left of the system chat when both are open, so the two
+//! lanes show side by side; on a phone it is a full-screen sheet.
 
 use makepad_widgets::*;
 
@@ -50,6 +64,8 @@ enum Hit {
     New,
     Send,
     Stop,
+    /// "Ask <app>": stop the system agent's turn in this conversation.
+    StopSystemAgent,
     Option { question: String, count: usize, label: String },
     OpenProviders,
     Field,
@@ -75,6 +91,116 @@ pub fn phase_text(phase: &Phase) -> String {
         Phase::Ready => "The system agent \u{00b7} ready".into(),
         Phase::Running { .. } => "Working\u{2026}".into(),
         Phase::Reconnecting(why) => format!("{why}; reconnecting\u{2026}"),
+    }
+}
+
+/// The composer's button: Send, or Stop while the person's own turn runs.
+/// `person_running`: the turn the person started (in "Ask <app>" the
+/// person's lane only; the system agent's lane never turns Send into Stop).
+/// The label, what a press does, and whether it is enabled.
+fn composer_button(person_running: bool, usable: bool, draft: &str) -> (&'static str, Hit, bool) {
+    if person_running {
+        ("Stop", Hit::Stop, usable)
+    } else {
+        ("Send", Hit::Send, usable && !draft.trim().is_empty())
+    }
+}
+
+/// The label of the system agent's running row's control.
+pub const STOP_SYSTEM_AGENT: &str = "Stop the system agent's task";
+
+/// Touch scrolling: a drag past a small slop scrolls, and a lift while
+/// moving flings, slowing down. Positions in pixels, times in seconds;
+/// deltas in the pane's units (positive: back, toward older lines: a finger
+/// moving down).
+#[derive(Clone, Debug, Default)]
+pub struct TouchScroll {
+    /// The finger (uid), where it went down, its last y and time.
+    touch: Option<(u64, Vec2d, f64, f64)>,
+    dragging: bool,
+    /// Pixels per second, smoothed over the drag.
+    velocity: f64,
+    /// The fling's speed and the time of its last step.
+    fling: Option<(f64, f64)>,
+}
+
+impl TouchScroll {
+    /// How far a finger moves before a press becomes a drag.
+    pub const SLOP: f64 = 8.0;
+    /// Slower than this, a fling stops.
+    const MIN_SPEED: f64 = 30.0;
+    /// The fling's speed halves about every 0.17 s.
+    const DECAY: f64 = 4.0;
+
+    pub fn start(&mut self, uid: u64, at: Vec2d, time: f64) {
+        self.touch = Some((uid, at, at.y, time));
+        self.dragging = false;
+        self.velocity = 0.0;
+        self.fling = None;
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.dragging
+    }
+
+    /// The finger moved: the scroll delta, once it is a drag.
+    pub fn moved(&mut self, uid: u64, at: Vec2d, time: f64) -> Option<f64> {
+        let (id, start, last_y, last_t) = self.touch?;
+        if id != uid {
+            return None;
+        }
+        if !self.dragging && (at - start).length() < Self::SLOP {
+            return None;
+        }
+        let first = !self.dragging;
+        self.dragging = true;
+        // The first step of a drag starts where the slop ended, so the
+        // content does not jump by the slop.
+        let dy = if first { 0.0 } else { at.y - last_y };
+        let dt = time - last_t;
+        if dt > 0.0 && !first {
+            self.velocity = self.velocity * 0.3 + (dy / dt) * 0.7;
+        }
+        self.touch = Some((id, start, at.y, time));
+        Some(dy)
+    }
+
+    /// The finger lifted: true when it was a drag (so no press). A drag
+    /// still moving starts a fling.
+    pub fn stop(&mut self, uid: u64, time: f64) -> bool {
+        let Some((id, _, _, last_t)) = self.touch else { return false };
+        if id != uid {
+            return false;
+        }
+        self.touch = None;
+        let dragged = std::mem::take(&mut self.dragging);
+        // A finger that rested before lifting does not fling.
+        if dragged && time - last_t < 0.1 && self.velocity.abs() > Self::MIN_SPEED {
+            self.fling = Some((self.velocity, time));
+        }
+        dragged
+    }
+
+    pub fn is_flinging(&self) -> bool {
+        self.fling.is_some()
+    }
+
+    pub fn cancel_fling(&mut self) {
+        self.fling = None;
+    }
+
+    /// One frame of a fling at `time`: the delta to scroll by.
+    pub fn fling_step(&mut self, time: f64) -> Option<f64> {
+        let (speed, last) = self.fling?;
+        // A frame's time from another clock, or a long pause: one frame.
+        let dt = if time > last && time - last <= 0.05 { time - last } else { 1.0 / 60.0 };
+        let next = speed * (-Self::DECAY * dt).exp();
+        if next.abs() < Self::MIN_SPEED {
+            self.fling = None;
+        } else {
+            self.fling = Some((next, time));
+        }
+        Some(speed * dt)
     }
 }
 
@@ -122,6 +248,19 @@ pub struct ShellSystemChat {
     /// How far the transcript can scroll back.
     #[rust]
     max_scroll: f64,
+    #[rust]
+    touch: TouchScroll,
+    #[rust]
+    fling_frame: NextFrame,
+    /// The prompt's rect (the input method's anchor).
+    #[rust]
+    field: Rect,
+    /// The prompt's text the input method was last told.
+    #[rust]
+    ime_text: Option<String>,
+    /// The prompt could be typed into at the last frame.
+    #[rust]
+    usable: bool,
     /// What the last frame showed, one string per line (for tests and the
     /// hidden-window runs' logs).
     #[rust]
@@ -152,6 +291,25 @@ impl Source {
         match self {
             Source::System => super::draft(),
             Source::App => crate::app_chat::draft(),
+        }
+    }
+    fn draft_state(self) -> makepad_widgets::makepad_platform::event::FullTextState {
+        match self {
+            Source::System => super::draft_state(),
+            Source::App => crate::app_chat::draft_state(),
+        }
+    }
+    fn text_input(self, event: &makepad_widgets::makepad_platform::event::TextInputEvent) -> bool {
+        match self {
+            Source::System => super::text_input(event),
+            Source::App => crate::app_chat::text_input(event),
+        }
+    }
+    /// The person's own turn runs (Stop instead of Send).
+    fn person_running(self, model: &ChatModel) -> bool {
+        match self {
+            Source::System => model.phase().running_turn().is_some(),
+            Source::App => crate::app_chat::person_running(),
         }
     }
     fn scroll(self) -> f64 {
@@ -192,7 +350,7 @@ impl Source {
             Source::System => "Ask the system agent anything: it can read and write its own workspace, search the web and brief your apps' agents. It asks you before anything outward.".into(),
             Source::App => {
                 let name = crate::app_chat::app().map(|a| a.name).unwrap_or_default();
-                format!("Talk to {name}'s agent. The system agent can ask it things too: both show here, each with who spoke, and each side sees the other's recent turns. Stop stops both.")
+                format!("Talk to {name}'s agent. The system agent can ask it things too: both show here, each with who spoke, and each side sees the other's recent turns. You can send while the system agent works; Stop stops your own request.")
             }
         }
     }
@@ -229,6 +387,7 @@ impl ShellSystemChat {
         }
         match event {
             Event::Scroll(e) if contains(self.pane, e.abs) => {
+                self.touch.cancel_fling();
                 source.scroll_by(e.scroll.y, self.max_scroll);
                 self.redraw(cx);
                 return Outcome::Taken;
@@ -241,40 +400,143 @@ impl ShellSystemChat {
                 }
                 return if contains(self.pane, e.abs) { Outcome::Taken } else { Outcome::Ignored };
             }
+            Event::MouseDown(e) => return self.press(cx, source, e.abs),
+            Event::MouseUp(e) => return self.release(cx, source, e.abs),
+            Event::TouchUpdate(e) => {
+                use makepad_widgets::makepad_platform::event::TouchState;
+                let mut outcome = Outcome::Ignored;
+                for t in &e.touches {
+                    let this = match t.state {
+                        TouchState::Start => {
+                            let taken = self.press(cx, source, t.abs);
+                            if taken != Outcome::Ignored {
+                                self.touch.start(t.uid, t.abs, t.time);
+                            }
+                            taken
+                        }
+                        TouchState::Move => match self.touch.moved(t.uid, t.abs, t.time) {
+                            Some(dy) => {
+                                // A drag presses nothing.
+                                self.down = None;
+                                source.scroll_by(dy, self.max_scroll);
+                                self.redraw(cx);
+                                Outcome::Taken
+                            }
+                            None if contains(self.pane, t.abs) => Outcome::Taken,
+                            None => Outcome::Ignored,
+                        },
+                        TouchState::Stop => {
+                            if self.touch.stop(t.uid, t.time) {
+                                self.down = None;
+                                if self.touch.is_flinging() {
+                                    self.fling_frame = cx.new_next_frame();
+                                }
+                                Outcome::Taken
+                            } else {
+                                self.release(cx, source, t.abs)
+                            }
+                        }
+                        _ => Outcome::Ignored,
+                    };
+                    if outcome == Outcome::Ignored {
+                        outcome = this;
+                    }
+                }
+                return outcome;
+            }
             _ => {}
         }
-        let (down, up) = match event {
-            Event::MouseDown(e) => (Some(e.abs), None),
-            Event::MouseUp(e) => (None, Some(e.abs)),
-            Event::TouchUpdate(e) => (
-                e.touches.iter().find(|t| t.state == makepad_widgets::makepad_platform::event::TouchState::Start).map(|t| t.abs),
-                e.touches.iter().find(|t| t.state == makepad_widgets::makepad_platform::event::TouchState::Stop).map(|t| t.abs),
-            ),
-            _ => (None, None),
-        };
-        if let Some(p) = down {
-            if !contains(self.pane, p) {
-                return Outcome::Ignored;
-            }
-            self.down = self.hit_at(p);
-            // A press in a pane gives it the keyboard.
-            crate::app_chat::focus(source == Source::App);
-            if self.down == Some(Hit::Field) {
-                cx.show_text_ime(self.area, dvec2(self.pane.pos.x + PAD, self.pane.pos.y + self.pane.size.y - PAD - FIELD_H));
-            }
-            return Outcome::Taken;
-        }
-        if let Some(p) = up {
-            let hit = self.hit_at(p);
-            let pressed = self.down.take();
-            if hit.is_none() || hit != pressed {
-                return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
-            }
-            let outcome = act(source, hit.unwrap());
-            self.redraw(cx);
-            return outcome;
-        }
         Outcome::Ignored
+    }
+
+    /// A press (mouse down, a finger's start).
+    fn press(&mut self, cx: &mut Cx, source: Source, p: Vec2d) -> Outcome {
+        if !contains(self.pane, p) {
+            return Outcome::Ignored;
+        }
+        self.touch.cancel_fling();
+        self.down = self.hit_at(p);
+        // A press in a pane gives it the keyboard.
+        crate::app_chat::focus(source == Source::App);
+        if self.down == Some(Hit::Field) {
+            self.take_keyboard(cx);
+        }
+        Outcome::Taken
+    }
+
+    /// A release (mouse up, a finger's lift that was no drag).
+    fn release(&mut self, cx: &mut Cx, source: Source, p: Vec2d) -> Outcome {
+        let hit = self.hit_at(p);
+        let pressed = self.down.take();
+        if hit.is_none() || hit != pressed {
+            return if contains(self.pane, p) { Outcome::Taken } else { Outcome::Ignored };
+        }
+        let outcome = act(source, hit.unwrap());
+        self.redraw(cx);
+        outcome
+    }
+
+    /// The prompt takes the key focus and the input method, as makepad's
+    /// `TextInput` does on a press: the new focus also clears a dismissal,
+    /// so a keyboard the person put away comes back on this tap.
+    fn take_keyboard(&mut self, cx: &mut Cx) {
+        if self.area.is_empty() {
+            return;
+        }
+        cx.set_key_focus(self.area);
+        self.ime_text = None;
+        self.show_ime(cx);
+    }
+
+    fn show_ime(&mut self, cx: &mut Cx) {
+        use makepad_widgets::makepad_platform::ime::{ReturnKeyType, SoftKeyboardConfig, TextInputConfig};
+        let config = TextInputConfig {
+            soft_keyboard: SoftKeyboardConfig { return_key_type: ReturnKeyType::Send, ..SoftKeyboardConfig::default() },
+            submit_on_enter: true,
+            ..TextInputConfig::default()
+        };
+        cx.show_text_ime_with_config(self.area, self.field, config);
+    }
+
+    /// This is the "Ask <app>" panel.
+    pub fn is_app_panel(&self) -> bool {
+        self.app_panel
+    }
+
+    /// The prompt holds the key focus.
+    pub fn has_keyboard(&self, cx: &Cx) -> bool {
+        !self.area.is_empty() && self.source().is_open() && cx.has_key_focus(self.area)
+    }
+
+    /// Text input and the input method's state query, while the prompt
+    /// holds the key focus. True when the event was the pane's.
+    pub fn ime(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        if !self.has_keyboard(cx) {
+            return false;
+        }
+        match event {
+            Event::TextInputStateQuery(response) => {
+                *response.borrow_mut() = Some((self.uid.0, self.source().draft_state()));
+                true
+            }
+            Event::TextInput(t) => {
+                let taken = self.source().text_input(t);
+                // What the input method sent is what it holds already.
+                self.ime_text = Some(self.source().draft());
+                self.redraw(cx);
+                taken
+            }
+            _ => false,
+        }
+    }
+
+    /// Give up the key focus (the pane closed).
+    pub fn release_keyboard(&mut self, cx: &mut Cx) {
+        if !self.area.is_empty() && cx.has_key_focus(self.area) {
+            cx.set_key_focus(Area::Empty);
+            cx.hide_text_ime();
+        }
+        self.ime_text = None;
     }
 
     fn transcript(&mut self, cx: &mut Cx2d, model: &ChatModel, width: f64, tok: &ShellTokens) -> Vec<Line> {
@@ -405,15 +667,17 @@ impl ShellSystemChat {
         // Composer at the bottom.
         let bottom = pane.pos.y + pane.size.y - PAD;
         let field_y = bottom - FIELD_H;
-        let running = model.phase().running_turn().is_some();
-        let (label, hit) = if running { ("Stop", Hit::Stop) } else { ("Send", Hit::Send) };
         let usable = source.usable(&model);
+        self.usable = usable;
+        let (label, hit, enabled) = composer_button(source.person_running(&model), usable, &draft);
         {
             let mut b = Buttons { d: &mut self.d, tok, hover };
             let bw = b.width(cx, label);
-            let button = b.draw(cx, x + cw - bw, field_y + (FIELD_H - 28.0) * 0.5, bw, label, usable && (running || !draft.trim().is_empty()));
+            let button = b.draw(cx, x + cw - bw, field_y + (FIELD_H - 28.0) * 0.5, bw, label, enabled);
             hits.push((button, hit));
+            shown.push(format!("button: {label}"));
             let field = rect(x, field_y, cw - bw - 8.0, FIELD_H);
+            self.field = field;
             let placeholder = source.placeholder(model.open_question().is_some());
             b.d.text_field(cx, field, &tok, &draft, &placeholder, true, hover == Some(field), ink);
             hits.push((field, Hit::Field));
@@ -439,6 +703,20 @@ impl ShellSystemChat {
                 }
                 list_bottom = row_y - 8.0;
             }
+        }
+
+        // "Ask <app>": the system agent's running turn, on its own row with
+        // its own Stop (never in the Send button's place).
+        if source == Source::App && crate::app_chat::system_agent_running() {
+            let mut b = Buttons { d: &mut self.d, tok, hover };
+            let row_y = list_bottom - 30.0;
+            let w = b.width(cx, STOP_SYSTEM_AGENT).min(cw);
+            let r = b.draw(cx, x + cw - w, row_y, w, STOP_SYSTEM_AGENT, false);
+            hits.push((r, Hit::StopSystemAgent));
+            let note = "The system agent is working here\u{2026}";
+            b.d.label_elided(cx, rect(x, row_y + 5.0, (cw - w - 8.0).max(0.0), 18.0), false, tok.font.body_small, dim, HAlign::Left, note);
+            shown.push(format!("{note} [{STOP_SYSTEM_AGENT}]"));
+            list_bottom = row_y - 8.0;
         }
 
         // No provider: say so, with the way to fix it.
@@ -490,6 +768,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
             Hit::Close => crate::app_chat::close(),
             Hit::Send => crate::app_chat::send_draft(),
             Hit::Stop => crate::app_chat::stop(),
+            Hit::StopSystemAgent => crate::app_chat::stop_system_agent(),
             Hit::Option { question, count, label } => crate::app_chat::answer_option(&question, count, &label),
             Hit::New | Hit::OpenProviders | Hit::Field | Hit::Pane => {}
         }
@@ -500,6 +779,7 @@ fn act(source: Source, hit: Hit) -> Outcome {
         Hit::New => super::new_conversation(),
         Hit::Send => super::send_draft(),
         Hit::Stop => super::interrupt(),
+        Hit::StopSystemAgent => {}
         Hit::Option { question, count, label } => super::answer_option(&question, count, &label),
         Hit::OpenProviders => return Outcome::OpenProviders,
         Hit::Field | Hit::Pane => {}
@@ -515,8 +795,112 @@ impl Widget for ShellSystemChat {
         self.draw_pane(cx, screen);
         self.d.end_surface(cx);
         cx.end_turtle_with_area(&mut self.area);
+        // While the prompt holds the key focus, keep the input method up
+        // (the platform dedups the request, and ignores it after the
+        // person dismissed the keyboard until the next press) and tell it
+        // about text it did not type (Backspace, Send's clearing).
+        if self.has_keyboard(cx) {
+            if self.usable {
+                self.show_ime(cx);
+                let state = self.source().draft_state();
+                if self.ime_text.as_deref() != Some(state.text.as_str()) {
+                    self.ime_text = Some(state.text.clone());
+                    cx.sync_ime_state(state.text, state.selection, state.composition);
+                }
+            }
+        } else if !self.source().is_open() {
+            // Closed with the keyboard: it goes with the pane.
+            self.release_keyboard(cx);
+        }
         DrawStep::done()
     }
 
-    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {}
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, _scope: &mut Scope) {
+        // A fling goes on frame by frame.
+        if let Some(ne) = self.fling_frame.is_event(event) {
+            if let Some(dy) = self.touch.fling_step(ne.time) {
+                self.source().scroll_by(dy, self.max_scroll);
+                self.redraw(cx);
+                if self.touch.is_flinging() {
+                    self.fling_frame = cx.new_next_frame();
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// "Ask <app>" while the system agent's turn runs: the person's lane is
+    /// idle, so the button is Send (enabled once there is text), never Stop.
+    #[test]
+    fn send_shows_whenever_the_persons_lane_is_idle() {
+        assert_eq!(composer_button(false, true, ""), ("Send", Hit::Send, false));
+        assert_eq!(composer_button(false, true, "why?"), ("Send", Hit::Send, true));
+        assert_eq!(composer_button(false, false, "why?"), ("Send", Hit::Send, false), "not before the conversation is ready");
+        assert_eq!(composer_button(true, true, "why?"), ("Stop", Hit::Stop, true), "the person's own turn");
+    }
+
+    #[test]
+    fn a_touch_drag_scrolls_and_presses_nothing() {
+        let mut t = TouchScroll::default();
+        t.start(1, dvec2(100.0, 400.0), 0.0);
+        assert_eq!(t.moved(1, dvec2(101.0, 404.0), 0.01), None, "within the slop: still a press");
+        assert_eq!(t.moved(2, dvec2(100.0, 500.0), 0.02), None, "another finger");
+        assert_eq!(t.moved(1, dvec2(100.0, 420.0), 0.02), Some(0.0), "the drag starts where the slop ended");
+        assert_eq!(t.moved(1, dvec2(100.0, 450.0), 0.03), Some(30.0), "a finger moving down scrolls back");
+        assert_eq!(t.moved(1, dvec2(100.0, 440.0), 0.04), Some(-10.0));
+        assert!(t.is_dragging());
+        assert!(t.stop(1, 0.2), "a drag's lift presses nothing");
+        assert!(!t.is_flinging(), "a finger that rested does not fling");
+        // A tap is a press.
+        t.start(1, dvec2(100.0, 400.0), 1.0);
+        assert!(!t.stop(1, 1.05));
+    }
+
+    #[test]
+    fn a_quick_lift_flings_and_slows_down() {
+        let mut t = TouchScroll::default();
+        t.start(7, dvec2(0.0, 400.0), 0.0);
+        let mut y = 400.0;
+        let mut time = 0.0;
+        for _ in 0..8 {
+            y -= 20.0;
+            time += 0.016;
+            t.moved(7, dvec2(0.0, y), time);
+        }
+        assert!(t.stop(7, time + 0.01));
+        assert!(t.is_flinging());
+        let first = t.fling_step(time + 0.026).unwrap();
+        assert!(first < 0.0, "on toward the newest lines: {first}");
+        let mut last = first;
+        let mut frames = 0;
+        while let Some(dy) = t.fling_step(time + 0.026 + frames as f64 * 0.016) {
+            assert!(dy.abs() <= last.abs() + 1e-9, "slows down");
+            last = dy;
+            frames += 1;
+            assert!(frames < 400, "a fling ends");
+        }
+        assert!(!t.is_flinging());
+        // A press stops a fling.
+        t.start(8, dvec2(0.0, 0.0), 10.0);
+        assert!(!t.is_flinging());
+    }
+
+    /// A frame clock that is not the touch clock still ends the fling.
+    #[test]
+    fn a_fling_ends_whatever_the_frame_clock() {
+        let mut t = TouchScroll::default();
+        t.start(1, dvec2(0.0, 0.0), 100.0);
+        t.moved(1, dvec2(0.0, 20.0), 100.01);
+        t.moved(1, dvec2(0.0, 60.0), 100.02);
+        assert!(t.stop(1, 100.03));
+        let mut frames = 0;
+        while t.fling_step(0.0).is_some() {
+            frames += 1;
+            assert!(frames < 1000);
+        }
+    }
 }

@@ -17,21 +17,27 @@
 //!   (If a later reading of §12 makes octos's `shell` grantable too, this is
 //!   the one line to change: TODO(ADR 0004 §12).)
 //!
-//! **What is enforced today, and what is not.** octos (the pinned rev) has no
-//! tool list the host can set for one session; the only roster control a
-//! host has is the profile's `tool_policy` (allow/deny, deny wins), which
-//! octos re-applies to every turn's finished registry (after the per-turn
-//! `peer_*`, `spawn` and `send_file` tools) and to kernel wake continuations
-//! alike. So before every kernel start ([`enforce`], from `launch::prepare`)
-//! the host writes [`tool_policy`] into its OWN profile. Consequently:
+//! **What is enforced.** Two layers:
 //!
-//! - **§12's "exactly its grants" is NOT yet enforced for the system
-//!   agent.** It is bounded by the grantable ceiling: no octos shell, but
-//!   every other tool octos registers for it. octos#2567's host session set
-//!   could narrow it with `generic_tools`, but that list narrows every
-//!   client's turns on the session, so the shell registers without it; the
-//!   exact list waits for a durable host-only list (octos#2605). The
-//!   real-kernel exact-list test is kept, ignored until then.
+//! - The profile's `tool_policy` (allow/deny, deny wins), which octos
+//!   re-applies to every turn's finished registry (after the per-turn
+//!   `peer_*`, `spawn` and `send_file` tools) and to kernel wake
+//!   continuations alike: the ceiling for every `_main` session. Before
+//!   every kernel start ([`enforce`], from `launch::prepare`) the host
+//!   writes [`tool_policy`] into its OWN profile. It also denies octos's
+//!   `peer_close` ([`PEER_CLOSE`]): no agent may close an app peer (only
+//!   the host erases one, with `peer/purge`).
+//! - **The system agent's exact list (§12, plan step 4).** Every kernel
+//!   start sets the system session's kernel tool list to
+//!   [`SystemAgentTools::kernel_tools`] (octos `session/tool_list/set`,
+//!   octos#2648: durable, host-only, narrowing every turn on the session,
+//!   whoever drives it), on the host's own connection before any
+//!   consumer's frame; a change of the person's grants sets it again
+//!   ([`set_grants`]). Its host tools (granted toolbox, cross-app and
+//!   command execution tools) are registered on the session by the shell's
+//!   system chat and are not filtered by the list. The `spawn` family
+//!   ([`SPAWN_FAMILY`]) is never on it: a child agent builds its own roster
+//!   from octos's built-in tools, not from this list.
 //! - **App peers are narrowed to their grants**: the shell registers each
 //!   with `generic_tools`, exactly the kernel tools its manifest declares
 //!   and the person granted (`native-apps.json` `agent.generic_tools`, a
@@ -60,14 +66,16 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-/// The octos tools the system agent gets by default (not yet enforced as
-/// exact: see the module docs).
+/// The octos tools the system agent gets by default: its exact kernel tool
+/// list (see the module docs).
 ///
 /// - **Supervision** of app peers (ADR 0004 §6): `peer_send_input` briefs
 ///   and asks, `peer_gather` / `peer_list` read the blackboard,
 ///   `peer_respond` answers a peer's question (never its approvals, which
-///   octos refuses), `peer_close` retires one. Not `peer_handoff`: app peers
-///   are prepared by the host (`peer/prepare`).
+///   octos refuses). Not `peer_handoff`: app peers are prepared by the host
+///   (`peer/prepare`). Not `peer_close`: octos cannot resume a closed peer
+///   or make a new one for its (app, account), so closing one would erase
+///   an app's agent for good; [`tool_policy`] denies it too.
 /// - **Its workspace**, fenced by octos to the session's working directory:
 ///   read, search and edit files there.
 /// - **The person**: `ask_user_question`, media viewing.
@@ -85,7 +93,6 @@ pub const SYSTEM_AGENT_TOOLS: &[&str] = &[
     "peer_gather",
     "peer_list",
     "peer_respond",
-    "peer_close",
     // Its workspace (octos fences these to the session's working directory).
     "read_file",
     "write_file",
@@ -154,11 +161,27 @@ pub const EXTERNAL_TURN_TOOLS: &[&str] = &[
     "tool_search",
 ];
 
+/// octos's tools that start or drive a child agent (its `group:sessions`
+/// and `group:delegated` spawn entry points) and `peer_handoff`. Never on
+/// the system agent's list: a child builds its roster from octos's
+/// built-in tools, not from the session's list (octos#2648, "Not covered").
+pub const SPAWN_FAMILY: &[&str] = &[
+    "spawn",
+    "spawn_agent",
+    "send_input",
+    "resume_agent",
+    "wait_agent",
+    "close_agent",
+    "delegate",
+    "delegate_task",
+    "peer_handoff",
+];
+
 /// The system agent's tool set: [`SYSTEM_AGENT_TOOLS`] plus what it is
 /// granted. Granted tools are host-routed: the shell's system chat registers
 /// the ones it is granted on the system session (octos#2567's host session
-/// target; today command execution's [`COMMAND_EXECUTION_TOOL`]). Narrowing
-/// the session to this set waits for a durable host-only list (octos#2605).
+/// target; today command execution's [`COMMAND_EXECUTION_TOOL`]). The kernel
+/// tools are the session's exact list ([`Self::kernel_tools`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemAgentTools {
     toolbox: BTreeSet<String>,
@@ -213,6 +236,20 @@ impl SystemAgentTools {
         tools
     }
 
+    /// The system session's exact KERNEL tool list (octos
+    /// `session/tool_list/set` `generic_tools`): [`SYSTEM_AGENT_TOOLS`],
+    /// never the [`SPAWN_FAMILY`] nor octos's shell. No grant adds a kernel
+    /// tool today (every grant is a host tool), so it is the same for every
+    /// set of grants; it is still derived from them, so a grant that is a
+    /// kernel tool lands here.
+    pub fn kernel_tools(&self) -> Vec<String> {
+        SYSTEM_AGENT_TOOLS
+            .iter()
+            .filter(|t| !SPAWN_FAMILY.contains(t))
+            .map(|t| t.to_string())
+            .collect()
+    }
+
     /// Every tool name a system-agent turn is meant to be offered: its octos
     /// tools and its host tools.
     pub fn names(&self) -> BTreeSet<String> {
@@ -234,10 +271,32 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// The shell hands over the person's grants (at startup, and whenever a
 /// Settings switch changes). Only the shell calls this, from its Settings
-/// handler, which requires the person's gesture to turn a grant on.
+/// handler, which requires the person's gesture to turn a grant on. A
+/// running kernel gets the system session's tool list again at once.
 pub fn set_grants(tools: SystemAgentTools) {
     *lock(&GRANTS) = Some(tools);
+    crate::apply_system_agent_tool_list();
 }
+
+/// The `session/tool_list/set` request that fixes the system session's
+/// exact kernel tool list (octos#2648), sent on the host's own connection
+/// (the private pipe or the host-token WebSocket), which needs no token.
+pub(crate) fn tool_list_request(id: &str, tools: &SystemAgentTools) -> String {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "session/tool_list/set",
+        "params": {
+            "session_id": crate::SYSTEM_SESSION,
+            "profile_id": SYSTEM_PROFILE,
+            "generic_tools": tools.kernel_tools(),
+        },
+    })
+    .to_string()
+}
+
+/// The system agent's kernel profile.
+pub const SYSTEM_PROFILE: &str = "_main";
 
 /// The person's current grants ([`SystemAgentTools::new`] until the shell
 /// sets them).
@@ -262,8 +321,13 @@ pub fn grants_at_start() -> Option<SystemAgentTools> {
 /// can give (an empty allowlist is octos's "allow all") except octos's
 /// shell, marked as OctoSense's.
 pub fn tool_policy() -> Value {
-    json!({ "allow": [], "deny": [OCTOS_SHELL], "owner": POLICY_OWNER })
+    json!({ "allow": [], "deny": [OCTOS_SHELL, PEER_CLOSE], "owner": POLICY_OWNER })
 }
+
+/// octos's tool that retires a peer for good (ADR 0004 gap 8: a closed peer
+/// cannot be resumed or replaced for its (app, account)). No agent gets it;
+/// only the host decides a peer's life (it never closes one today).
+pub const PEER_CLOSE: &str = "peer_close";
 
 /// What [`enforce`] did.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -357,16 +421,44 @@ mod tests {
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     }
 
+    /// ADR 0004 gap 8: octos cannot resume a closed peer or make a new one
+    /// for its (app, account), so no agent may close one: not in the system
+    /// agent's defaults, and denied by the profile whatever else it has.
+    #[test]
+    fn no_agent_may_close_an_app_peer() {
+        assert!(!SYSTEM_AGENT_TOOLS.contains(&"peer_close"));
+        assert!(tool_policy()["deny"].as_array().unwrap().contains(&json!("peer_close")));
+        assert!(!SystemAgentTools::new().names().iter().any(|t| t == "peer_close"));
+    }
+
     #[test]
     fn only_octos_shell_is_excluded_and_the_system_agent_default_has_none_of_it() {
         let policy = tool_policy();
         assert_eq!(policy["allow"], json!([]), "everything a grant can give");
-        assert_eq!(policy["deny"], json!(["group:runtime"]), "octos's shell, and nothing else");
+        assert_eq!(policy["deny"], json!(["group:runtime", "peer_close"]), "octos's shell and closing a peer, and nothing else");
         for shell in ["shell", "bash", "exec_command", "write_stdin"] {
             assert!(!SYSTEM_AGENT_TOOLS.contains(&shell));
             assert!(!EXTERNAL_TURN_TOOLS.contains(&shell), "external clients lose nothing");
         }
         assert!(!SYSTEM_AGENT_TOOLS.contains(&"peer_handoff"));
+    }
+
+    #[test]
+    fn the_exact_kernel_list_is_the_default_list_without_spawn_or_shell() {
+        let mut granted = SystemAgentTools::new();
+        granted.grant_command_execution(true).grant_toolbox("toolbox.search").grant_cross_app("mail.send");
+        for tools in [SystemAgentTools::new(), granted] {
+            let list = tools.kernel_tools();
+            assert_eq!(list, SYSTEM_AGENT_TOOLS.iter().map(|t| t.to_string()).collect::<Vec<_>>());
+            for t in SPAWN_FAMILY.iter().chain(&["shell", "bash", "exec_command", "write_stdin", "peer_close"]) {
+                assert!(!list.iter().any(|l| l == t), "{t} on the list");
+            }
+            assert!(list.iter().all(|t| !t.contains('.')), "kernel tools only: host tools are registered");
+        }
+        let request: Value = serde_json::from_str(&tool_list_request("x", &SystemAgentTools::new())).unwrap();
+        assert_eq!(request["method"], "session/tool_list/set");
+        assert_eq!(request["params"]["session_id"], crate::SYSTEM_SESSION);
+        assert!(request["params"].get("host_token").is_none(), "the host's own connection needs none");
     }
 
     #[test]
