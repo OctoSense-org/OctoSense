@@ -80,7 +80,13 @@ service.release();                            // app closed
   (`ContextOp::Approval`); the system agent never approves for an app.
 - **Background work after close**: `release()` closes every context and
   interrupts the peer's running turn. The peer and its memory stay for the
-  next launch.
+  next launch. The app's last instance then releases the peer's route
+  (`peer/tools/unregister`, octos#2658): the shell's consumers share one
+  kernel connection that stays open, so without it the kernel would still
+  accept the system agent's input for the closed app; now the system
+  agent's `peer_send_input` fails ("not connected"). An input that reaches
+  the released broker first is refused (`other`, "the app was closed").
+  The next launch registers the route again.
 - **Nobody answers**: an approval or question on the peer's session or a
   context expires after `BrokerConfig::prompt_deadline` (10 min;
   `OCTOSENSE_PROMPT_DEADLINE_SECS` overrides it): denied or declined with
