@@ -91,7 +91,9 @@ service.release();                            // app closed
   an answer).
 - **Stop**: `ContextOp::Interrupt` on a conversation stops whatever turn
   runs on the peer, the system agent's included (the person owns the
-  device); the shell's own surfaces use `broker::interrupt_where`. A turn
+  device); the shell's own surfaces use `broker::interrupt_where`, and the
+  "Ask <app>" panel `broker::interrupt_lane_where` (one lane: its Stop is
+  the person's own turn, the system agent's has its own control). A turn
   that ends before the host answered its `host_tool` approval withdraws it
   from the host (`ToolHost::host_tool_approval_closed`), as its questions
   are closed (`ToolHost::user_question_closed`).

@@ -10,7 +10,7 @@
 //! - **Open**: `session/open {session_id: SYSTEM_SESSION, profile_id:
 //!   "_main"}`, then `session/hydrate {include: ["messages"]}` for the
 //!   history (the `session/messages_page` fallback when hydrate is
-//!   refused).
+//!   refused). Every reopen of the pane loads the history again.
 //! - **Send**: `turn/start` with a fresh turn id; **Stop**:
 //!   `turn/interrupt`; **New conversation**: the kernel's `/new` (it clears
 //!   the conversation without calling the model), then the history again.
@@ -360,6 +360,12 @@ impl Driver {
                 if self.link.is_none() {
                     self.retry_at = None;
                     self.try_connect();
+                } else if self.opened && self.model.phase().running_turn().is_none() {
+                    // Reopened on a connection a running turn kept: the
+                    // history again, so the pane shows what the session
+                    // holds now (a running turn's live rows are kept as
+                    // they stream instead).
+                    self.load_history();
                 }
             }
             Command::Close => {

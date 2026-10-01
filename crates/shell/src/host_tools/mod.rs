@@ -312,6 +312,24 @@ pub fn interrupt_agent(app: &str) -> Vec<String> {
     }
 }
 
+/// Stop only the turns of one `lane` of `app`'s agent's conversation
+/// (`person` or `system_agent`, as the broker names them): the Stop of the
+/// "Ask <app>" panel stops the person's own turn and leaves the system
+/// agent's running; stopping the system agent's is a separate gesture.
+/// The turns stopped.
+pub fn interrupt_agent_lane(app: &str, lane: &str) -> Vec<String> {
+    #[cfg(kernel)]
+    {
+        let app = app.to_string();
+        crate::ai_host::app_peers::broker::interrupt_lane_where(move |peer_app| app_of_peer(peer_app) == app, lane)
+    }
+    #[cfg(not(kernel))]
+    {
+        let _ = (app, lane);
+        Vec::new()
+    }
+}
+
 /// A script app's agent block, loaded from its admitted bundle the first
 /// time its peer registers (a native app's is in the shipped catalog).
 fn ensure_loaded(app_id: &str) {

@@ -66,6 +66,15 @@ impl Connector for CoreConnector {
         self.owned
     }
 
+    /// The shell's process kernel is one for every broker of the process;
+    /// a [`octosense_kernel::Core`] is the one on its core dir.
+    fn kernel_id(&self) -> Option<String> {
+        match &self.core {
+            None => Some("octosense-kernel:shell".to_owned()),
+            Some(core) => core.core_dir().map(|dir| format!("octosense-kernel:{}", dir.display())),
+        }
+    }
+
     fn shutdown(&self) {
         if let (true, Some(core)) = (self.owned, &self.core) {
             core.shutdown_within(std::time::Duration::from_secs(5));
