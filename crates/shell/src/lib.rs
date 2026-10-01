@@ -699,6 +699,11 @@ impl App {
         // An installed app opens only while the App Hub catalog still admits
         // it. A system app (`os.*`) ships with the build and answers to no
         // catalog.
+        // No script app runs under a native app's name (ADR 0004 §3).
+        if let Some(Err(error)) = apps::card_manifest_id(app).map(apps::check_script_app_id) {
+            self.notify(cx, "Could not open app", &error);
+            return;
+        }
         #[cfg(any(feature = "app-hub", native_mobile))]
         if let Some(manifest_id) = apps::card_manifest_id(app).filter(|id| !id.starts_with("os.")) {
             if let Err(error) = octosense_app_hub_app::catalog::try_may_open_from_environment(
@@ -1638,9 +1643,18 @@ impl App {
         // refuses and asks the person in its own root. Its tile stays, in
         // front so the question is seen; a yes arrives as the root's
         // `ModuleCloseAction::Confirmed` (handle_actions), a no as nothing.
-        if !stopped && self.module_host.is_module(client) && self.module_host.ask_close(cx, client) == CloseDecision::Veto {
+        // Insisting ends it whatever it would answer (process_close.rs,
+        // `Insistence`): an instance that keeps refusing is never unclosable.
+        let module = !stopped && self.module_host.is_module(client);
+        let forced = module && ask && self.module_host.close_gate_mut().insist(client, host::now());
+        if forced {
+            log!("wm: client {client} was closed {} times in {}s; ending it", process_close::FORCE_CLOSES, process_close::FORCE_WINDOW);
+        } else if module && self.module_host.ask_close(cx, client) == CloseDecision::Veto {
             let app = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|s| s.app.clone()).unwrap_or_default();
             log!("wm: {app} (client {client}) asks before closing; its tile stays until the person confirms");
+            if self.module_host.close_gate_mut().next_close_forces(client) {
+                self.hint_force_close(cx, client);
+            }
             self.activate_client(cx, client);
             self.update_bar(cx);
             self.redraw_all(cx);
@@ -1672,6 +1686,9 @@ impl App {
                 process_close::CloseStep::Ask => {
                     let app = self.state_mut().clients.get(&client).map(|s| s.app.clone()).unwrap_or_default();
                     log!("wm: asking {app} (client {client}) to close; it answers before anything ends");
+                    if self.process_close.next_close_forces(client) {
+                        self.hint_force_close(cx, client);
+                    }
                     self.send_wm_event(client, WmEvent::CloseRequested);
                     self.activate_client(cx, client);
                     self.update_bar(cx);
@@ -1680,7 +1697,7 @@ impl App {
                 }
                 process_close::CloseStep::Wait => return,
                 process_close::CloseStep::Force => {
-                    log!("wm: client {client} was closed again before it answered; ending it");
+                    log!("wm: client {client} was closed again (before it answered, or insisting); ending it");
                     self.end_process_client(cx, client);
                     return;
                 }
@@ -1779,6 +1796,14 @@ impl App {
         }
     }
 
+    /// The close before the one that ends an app that keeps refusing: say
+    /// so, so the person knows another close ends it (and its unsaved work).
+    fn hint_force_close(&mut self, cx: &mut Cx, client: ClientId) {
+        let app = self.state.as_ref().and_then(|s| s.clients.get(&client)).map(|s| s.app.clone()).unwrap_or_default();
+        let label = clients::find_app(&app).map(|a| a.label).unwrap_or(app);
+        self.notify(cx, &format!("{label} is asking before it closes"), "Close it once more to end it now, without its answer.");
+    }
+
     /// Whether `client` is answering a close or asking the person about
     /// one (a hosted module or a process app).
     fn close_pending(&self, client: ClientId) -> bool {
@@ -1813,6 +1838,15 @@ impl App {
     /// forced end (a termination signal, a kill) never asks.
     fn ask_before_quit(&mut self, cx: &mut Cx) -> bool {
         let refused = self.module_host.ask_quit(cx);
+        // An instance that refused this quit as often as insisting takes
+        // (process_close::Insistence) is ended; the rest are waited on.
+        let now = host::now();
+        let (forced, refused): (Vec<ClientId>, Vec<ClientId>) =
+            refused.into_iter().partition(|client| self.module_host.close_gate_mut().insist(*client, now));
+        for client in forced {
+            log!("wm: client {client} refused the quit {} times; ending it", process_close::FORCE_CLOSES);
+            self.remove_client(cx, client);
+        }
         // Process apps that answer closes themselves are asked the same way
         // (process_close.rs); the rest end with the shell, as always.
         let windows: Vec<ClientId> = self
@@ -2111,6 +2145,21 @@ impl App {
                 }
             }
         }
+        // A launch whose build finished starts its app now (or fails; the
+        // reaping below reports it). Launches closed while building start
+        // nothing.
+        let started: Vec<(ClientId, Result<(), String>)> = self
+            .state_mut()
+            .clients
+            .iter_mut()
+            .filter_map(|(id, slot)| slot.continue_launch(*id).map(|r| (*id, r)))
+            .collect();
+        for (id, result) in started {
+            match result {
+                Ok(()) => log!("wm: client {id}: built; the app starts"),
+                Err(why) => log!("wm: client {id}: {why}"),
+            }
+        }
         // An app that quits while a close of it is pending gave its answer
         // (yes): a close, not a crash.
         let mut answering: Vec<ClientId> = self.state_mut().clients.keys().copied().collect();
@@ -2121,6 +2170,11 @@ impl App {
             .clients
             .iter_mut()
             .filter_map(|(id, slot)| {
+                // A build whose app has not started is not the app's exit
+                // (`continue_launch` above takes it, next tick at the latest).
+                if slot.building() {
+                    return None;
+                }
                 let status = slot.child.as_mut()?.try_wait().ok()??;
                 if answering.contains(id) && slot.closing.is_none() {
                     slot.closing = Some(now);
@@ -5089,7 +5143,7 @@ mod hub_binding_tests {
 
     fn process_slot(id: ClientId) -> clients::ClientSlot {
         let mut slot = clients::ClientSlot::module(id, "terminal", "Terminal");
-        slot.child = Some(std::process::Command::new("true").spawn().expect("spawn true"));
+        slot.child = Some(clients::ProcessGroup::new(std::process::Command::new("true").spawn().expect("spawn true")));
         slot
     }
 

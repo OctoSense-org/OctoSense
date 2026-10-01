@@ -103,6 +103,17 @@ fn the_account_hash_is_stable_normalized_and_opaque() {
     assert_eq!(normalize_account(" X@Y "), "x@y");
 }
 
+/// One account key: the folder name and the agent's memory tag agree on
+/// which ids are one account.
+#[test]
+fn should_key_the_folder_and_the_memory_tag_the_same_way_when_ids_differ_in_case() {
+    use crate::ai_host::app_peers::broker::account_tag;
+    for (a, b) in [("Alice@Example.org", "alice@example.org"), (" @bob:x ", "@bob:x"), ("alice@example.org", "bob@example.org")] {
+        assert_eq!(account_hash(a) == account_hash(b), account_tag(a) == account_tag(b), "{a:?} / {b:?}");
+    }
+    assert_eq!(normalize_account(" X@Y "), crate::ai_host::app_peers::storage::normalize_account(" X@Y "));
+}
+
 /// `SHA-256("octosense.account.v1\0alice@example.org")`, first 16 bytes.
 const PINNED_ALICE: &str = "d0c3ec9a8159479a7cf0933b0a539aa2";
 

@@ -146,9 +146,10 @@ pub fn set_executor(app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
     with_relay(|r| r.set_executor(app, executor));
 }
 
-/// The owning app of a declared tool.
+/// The owning app of a tool another app is granted ([`relay::Catalog::owner_of`]:
+/// by its namespace, never the first app that declares the name).
 pub fn owner_of(tool: &str) -> Option<String> {
-    with_relay(|r| r.catalog.owner_of(tool).map(str::to_string))
+    with_relay(|r| r.catalog.owner_of(tool))
 }
 
 /// A tool's declaration, as a host registers it (the system chat).

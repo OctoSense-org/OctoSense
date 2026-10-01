@@ -19,11 +19,12 @@
 //!   offers the restart.
 //! - **Persisted** per OctoSense home in [`GRANTS_FILE`], owner-only.
 //!
-//! **Only with a process Terminal** (G12): `terminal.run` exists only where
-//! the Terminal runs as its own process on this device
-//! (`crate::apps::terminal_runs_as_process`); elsewhere it is not
-//! registered even when granted, and Setup says it
-//! [`NEEDS_PROCESS_TERMINAL`].
+//! **Only with a sandboxed process Terminal** (G12): `terminal.run` exists
+//! only where the Terminal runs as its own process on this device
+//! (`crate::apps::terminal_runs_as_process`) and its newest launch reported
+//! its OS sandbox applied (`crate::sandbox::launch_sandboxed`,
+//! [`terminal_target`]); elsewhere it is not registered even when granted,
+//! and Setup says it [`NEEDS_PROCESS_TERMINAL`].
 //!
 //! **Registered on the system session** (octos#2567's host session target):
 //! while the switch is on, the system chat registers `terminal.run` on its
@@ -170,19 +171,28 @@ pub fn command_execution() -> bool {
 /// registers on its session (`peer/tools/register` without `peer`,
 /// UPCR-2026-035) and the relay checks every call against.
 pub fn host_tools() -> std::collections::BTreeSet<String> {
-    host_tools_given(command_execution(), crate::apps::terminal_runs_as_process())
+    host_tools_given(command_execution(), terminal_target())
+}
+
+/// Whether `terminal.run` has a target: the Terminal runs as its own
+/// process on this device AND its newest launch reported its sandbox
+/// applied (`sandbox::Applied::Sandboxed`). Before the first launch there
+/// is nothing to type into, and a launch that ran unsandboxed (Windows
+/// today, a missing `sandbox-exec`, a kernel without Landlock) withdraws it.
+pub fn terminal_target() -> bool {
+    crate::apps::terminal_runs_as_process() && crate::sandbox::launch_sandboxed(COMMAND_APP)
 }
 
 /// [`host_tools`] for a switch and a Terminal: `terminal.run` only when the
 /// person turned command execution on AND the Terminal runs as its own
-/// process on this device (ADR 0004 §10, §12, G12). Granted but without a
-/// process Terminal, it is not registered at all.
-pub fn host_tools_given(command_execution: bool, terminal_process: bool) -> std::collections::BTreeSet<String> {
-    (command_execution && terminal_process).then(|| COMMAND_TOOL.to_string()).into_iter().collect()
+/// sandboxed process on this device (ADR 0004 §10, §12, G12). Granted but
+/// without one, it is not registered at all.
+pub fn host_tools_given(command_execution: bool, terminal_sandboxed_process: bool) -> std::collections::BTreeSet<String> {
+    (command_execution && terminal_sandboxed_process).then(|| COMMAND_TOOL.to_string()).into_iter().collect()
 }
 
 /// What Setup says when command execution cannot take effect here.
-pub const NEEDS_PROCESS_TERMINAL: &str = "needs Terminal as a process on this device";
+pub const NEEDS_PROCESS_TERMINAL: &str = "needs Terminal as a sandboxed process on this device";
 
 /// Settings' switch. On needs the person's gesture; off never does.
 pub fn set_command_execution(on: bool, gesture: Option<CommandGesture>) -> Result<(), String> {

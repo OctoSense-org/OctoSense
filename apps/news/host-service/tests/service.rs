@@ -343,7 +343,7 @@ impl ServiceHost for NoSheets {
 
 fn ask(app: &str, dir: &std::path::Path, service: &str, args: Value) -> Result<Value, String> {
     let heap = NEXT.fetch_add(1, Ordering::SeqCst);
-    let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, host_dir: dir.to_path_buf() };
+    let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet: false, may_prompt: true, host_dir: dir.to_path_buf() };
     dispatch(call, heap, 1, &mut NoSheets);
     for _ in 0..500 {
         if let Some((_, _, answer)) = take_replies_for(&[heap]).pop() {
