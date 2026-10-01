@@ -12,6 +12,7 @@
 //! | `peer/input` | admitted here (consent, a suspended account); the broker starts the turn |
 //! | `user_question/requested` on an app peer (octos's `ask_user_question`) | [`crate::questions`]: the app's conversation, or the system chat for a `peer/input` turn; answered only by the person on a shell surface |
 //! | the system session's `terminal.run` (Setup › Assistant › Command execution) | [`crate::system_chat`] registers it; its calls come here |
+//! | `files.list`, `files.read`, `files.search` on every app peer with a workspace (ADR 0004 §11) | declared as the app's own tools, run by the shell over the calling account's folder, never another context's ([`files`]) |
 //! | `dev.run` on a covered app's peer (developer mode, ADR 0004 §13) | offered as the app's own tool, run by the shell ([`dev_run`]); registered again on every peer when the mode changes ([`developer_mode_changed`]) |
 //! | the system toolbox's tools (feature `toolbox-peers`) | the `toolbox` owner: its tools declared once, granted per app, offered after consent, run by its executor ([`toolbox`]) |
 //!
@@ -33,6 +34,7 @@
 //! router here ([`SheetBridge`]).
 
 pub mod dev_run;
+pub mod files;
 pub mod relay;
 pub mod schema;
 #[cfg(feature = "toolbox-peers")]
@@ -63,7 +65,36 @@ static INBOX: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 
 fn with_relay<R>(f: impl FnOnce(&mut Relay) -> R) -> R {
     let mut guard = RELAY.lock().unwrap_or_else(|e| e.into_inner());
-    f(guard.get_or_insert_with(Relay::default))
+    f(guard.get_or_insert_with(|| {
+        let mut relay = Relay::default();
+        relay.set_audit(Arc::new(|entry| AUDIT.lock().unwrap_or_else(|e| e.into_inner()).push(entry)));
+        relay
+    }))
+}
+
+/// The relay's audit lines, queued (an executor may answer on any thread,
+/// under any lock) and written by [`pump`].
+static AUDIT: Mutex<Vec<relay::CallAudit>> = Mutex::new(Vec::new());
+
+/// Write the queued audit lines to the home's `logs/tool-calls.jsonl`
+/// (`approvals::audit::CALLS_FILE`, owner-only). Without a home (tests, an
+/// unset one) they are only logged.
+fn flush_audit() {
+    let entries = std::mem::take(&mut *AUDIT.lock().unwrap_or_else(|e| e.into_inner()));
+    if entries.is_empty() {
+        return;
+    }
+    let home = approvals::with(|a| a.router.audit.home()).flatten();
+    for entry in entries {
+        match &home {
+            Some(home) => {
+                if let Err(e) = approvals::audit::append_call(home, &entry) {
+                    makepad_widgets::log!("host tools: could not write the tool-call audit: {e}");
+                }
+            }
+            None => makepad_widgets::log!("host tools: audit {} {} {} {} {}", entry.caller, entry.owner, entry.tool, entry.phase, entry.outcome),
+        }
+    }
 }
 
 /// Queue an event for [`pump`], and wake the UI thread.
@@ -80,7 +111,7 @@ pub fn pump() {
     for _ in 0..8 {
         let events = std::mem::take(&mut *INBOX.lock().unwrap_or_else(|e| e.into_inner()));
         if events.is_empty() {
-            return;
+            break;
         }
         let mut env = ShellEnv;
         with_relay(|r| {
@@ -89,6 +120,7 @@ pub fn pump() {
             }
         });
     }
+    flush_audit();
 }
 
 /// At startup, after `approvals::init`: install the host (every broker's),
@@ -100,7 +132,7 @@ pub fn init() {
         approvals::set_relay(Box::new(DecisionRelay));
         peer_link::set_tool_relay(Box::new(LinkRelay));
         // The tools the shell runs itself for an app's own agent (`dev.run`).
-        with_relay(|r| r.set_executor(relay::HOST_EXECUTOR, Some(Arc::new(dev_run::DevRunExecutor::new(agent_workspace)))));
+        with_relay(|r| r.set_executor(relay::HOST_EXECUTOR, Some(Arc::new(HostExecutor::new(agent_workspace)))));
         #[cfg(feature = "toolbox-peers")]
         toolbox::init();
     });
@@ -197,14 +229,21 @@ pub fn bus_result(call_id: &str, outcome: ToolOutcome) {
 pub struct ShellToolHost;
 
 impl ToolHost for ShellToolHost {
-    fn declarations(&self, app_id: &str, _account: &str) -> Result<Vec<Value>, String> {
+    fn declarations(&self, app_id: &str, account: &str) -> Result<Vec<Value>, String> {
         let app = app_of_peer(app_id).to_string();
         ensure_loaded(app_id);
         let dev = crate::dev_mode::grants_all(&app);
         // The toolbox's tools only once the person allowed this app's agent
         // (ADR 0004 §4); its calls are refused before that too (the relay).
         let consented = approvals::consent_granted(&app) || dev;
-        Ok(with_relay(|r| r.catalog.offered(&app, dev, consented)))
+        let mut tools = with_relay(|r| r.catalog.offered(&app, dev, consented));
+        // The host read tools (ADR 0004 §11) on every consented peer whose
+        // agent has a workspace: how its request contexts read the
+        // account's data (Unix only, files.rs).
+        if files::SUPPORTED && consented && agent_workspace(app_id, account).is_some() {
+            tools.extend(files::declarations(&app));
+        }
+        Ok(tools)
     }
 
     fn generic_tools(&self, app_id: &str, _account: &str) -> Option<Vec<String>> {
@@ -220,6 +259,10 @@ impl ToolHost for ShellToolHost {
 
     fn suspended(&self, app_id: &str, account: &str) -> bool {
         suspended(app_id, Some(account))
+    }
+
+    fn context_reads_account(&self, app_id: &str, account: &str) -> bool {
+        context_reads_account(app_id, account)
     }
 
     fn workspace_refused(&self, app_id: &str, account: &str) -> Option<String> {
@@ -292,6 +335,44 @@ pub fn developer_mode_changed() -> usize {
     #[cfg(not(kernel))]
     {
         0
+    }
+}
+
+/// The shell's executor for the tools it runs itself for an app's own
+/// agent: `dev.run` ([`dev_run`]) and the host read tools ([`files`]), each
+/// over the calling account's workspace.
+pub struct HostExecutor {
+    dev_run: dev_run::DevRunExecutor,
+    workspace: fn(&str, &str) -> Option<PathBuf>,
+}
+
+impl HostExecutor {
+    pub fn new(workspace: fn(&str, &str) -> Option<PathBuf>) -> HostExecutor {
+        HostExecutor { dev_run: dev_run::DevRunExecutor::new(workspace), workspace }
+    }
+}
+
+impl ToolExecutor for HostExecutor {
+    fn execute(&self, call: HostToolCall, reply: ToolReply) {
+        if call.name == relay::DEV_RUN {
+            return self.dev_run.execute(call, reply);
+        }
+        let Some(root) = (self.workspace)(&call.calling_app, call.account.as_deref().unwrap_or("device")) else {
+            reply.finish(ToolOutcome::error("no_workspace", "this agent has no data folder"));
+            return;
+        };
+        // Off the UI thread: a search reads many files.
+        std::thread::spawn(move || {
+            let scope = files::Scope { root: &root, context: call.context_id.as_deref() };
+            reply.finish(match files::run(&call.name, &scope, &call.args) {
+                Ok(data) => ToolOutcome::Ok(data),
+                Err((kind, message)) => ToolOutcome::error(&kind, message),
+            });
+        });
+    }
+
+    fn cancel(&self, call_id: &str) {
+        self.dev_run.cancel(call_id);
     }
 }
 
@@ -405,13 +486,21 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
 
 /// Whether `app_id`'s agents are per account: a native app's entry says so,
 /// a script app's (`card.<id>`) manifest `storage.accounts` (Mail); else it
-/// acts for the device.
+/// acts for the device. The one rule every per-account decision here uses
+/// ([`account_key`]).
 fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
     let app = app_of_peer(app_id);
     match crate::native_apps::find(app) {
         Some(entry) => entry.accounts,
         None => app_id != app && storage.spec(app).accounts,
     }
+}
+
+/// The account `app_id`'s storage is keyed by for `account`: the account
+/// for an app that keeps accounts ([`keeps_accounts`]), else the device
+/// (`None`). Workspace, suspension, refusal and `read_parent` all use it.
+fn account_key<'a>(storage: &crate::app_storage::Storage, app_id: &str, account: Option<&'a str>) -> Option<&'a str> {
+    account.filter(|_| keeps_accounts(storage, app_id))
 }
 
 /// [`agent_workspace`] on `storage`.
@@ -424,7 +513,7 @@ pub fn agent_workspace_in(storage: &crate::app_storage::Storage, app_id: &str, a
     if !has_files {
         return None;
     }
-    let account = keeps_accounts(storage, app_id).then_some(account);
+    let account = account_key(storage, app_id, Some(account));
     if storage.is_signed_out(app, account) || storage.refused(app, account).is_some() {
         return None;
     }
@@ -435,16 +524,35 @@ pub fn agent_workspace_in(storage: &crate::app_storage::Storage, app_id: &str, a
 
 /// [`suspended`] on `storage`.
 pub fn suspended_in(storage: &crate::app_storage::Storage, app_id: &str, account: Option<&str>) -> bool {
-    let account = if keeps_accounts(storage, app_id) { account } else { None };
-    storage.is_signed_out(app_of_peer(app_id), account)
+    storage.is_signed_out(app_of_peer(app_id), account_key(storage, app_id, account))
+}
+
+/// Whether the app's conversation reads its account's folder (octos
+/// `read_parent`, ADR 0004 §11): the manifest's `storage.agent_workspace`
+/// is `"account"` and the agent has that folder as its workspace now
+/// ([`agent_workspace`]: files, not suspended, not refused, keyed by
+/// [`account_key`]).
+pub fn context_reads_account(app_id: &str, account: &str) -> bool {
+    let Some(storage) = crate::app_storage::host() else { return false };
+    context_reads_account_in(storage, app_id, account)
+}
+
+/// [`context_reads_account`] on `storage`.
+pub fn context_reads_account_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> bool {
+    reads_account(&storage.spec(app_of_peer(app_id)), agent_workspace_in(storage, app_id, account).as_deref())
+}
+
+/// [`context_reads_account`]'s rule, on the app's declared storage and the
+/// agent's workspace now.
+pub(crate) fn reads_account(spec: &crate::app_storage::StorageSpec, workspace: Option<&std::path::Path>) -> bool {
+    spec.agent_workspace == crate::app_storage::AgentWorkspace::Account && workspace.is_some()
 }
 
 /// Why the startup check refused the workspace of `app_id`'s `account`,
-/// keyed like [`agent_workspace`] ([`keeps_accounts`]): the account for an
-/// app that keeps accounts, native or script (Mail), else the device folder.
+/// keyed like [`agent_workspace`] ([`account_key`]): the account for an app
+/// that keeps accounts, native or script (Mail), else the device folder.
 pub fn workspace_refused_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<String> {
-    let app = app_of_peer(app_id);
-    storage.refused(app, keeps_accounts(storage, app_id).then_some(account))
+    storage.refused(app_of_peer(app_id), account_key(storage, app_id, Some(account)))
 }
 
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).

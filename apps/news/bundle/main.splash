@@ -27,9 +27,33 @@ let reading = nil
 let use_service = false
 let service_waiting = 0
 let service_relist = false
+// A run where a source failed (the network not up yet, say) is tried again
+// on its own: after 15 s, then 30 s, 1 min … at most every 15 min.
+let retry_delay = 15
+let retry_armed = false
 let months = ["January" "February" "March" "April" "May" "June" "July" "August" "September" "October" "November" "December"]
 let days = ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"]
 let specials = ["\\" "." "*" "+" "?" "(" ")" "[" "]" "{" "}" "|" "^" "$"]
+
+// ADR 0004 §11: the app's data is its account folder (a system app acts for
+// the device), the folder its agent works in; what it can fetch again is
+// cache/. A file an earlier build kept at the top of the jail moves on first
+// use: the old one is removed only once the copy reads back the same; if the
+// copy fails the app keeps using the old file and tries again next time.
+let DATA = "accounts/device/"
+fn moved(name, path){
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
+        fs.remove(name)
+        return path
+    }
+    if fs.exists(path) { fs.remove(path) }
+    return name
+}
+fn data_path(name){ return moved(name, DATA + name) }
+fn cache_path(name){ return moved(name, "cache/" + name) }
 
 fn fetch(url){
     let p = promise()
@@ -87,12 +111,49 @@ fn load_source(s){
     }
     rows_by[s.id] = rows
     failed_by[s.id] = false
-    fs.write("cache_" + s.id + ".json", rows.to_json())
+    fs.write(cache_path("cache_" + s.id + ".json"), rows.to_json())
 }
 
-fn refresh(){
+// The wait before the next retry after `delay`: twice as long, at most
+// 15 minutes.
+fn next_retry_delay(delay){
+    let next = delay * 2
+    if next > 900 { next = 900 }
+    next
+}
+
+fn any_failed(){
+    for s in sources { if failed_by[s.id] { return true } }
+    false
+}
+
+// After a run: a failed source is fetched again later, sooner at first.
+fn schedule_retry(){
+    if !any_failed() {
+        retry_delay = 15
+        return
+    }
+    if retry_armed { return }
+    retry_armed = true
+    let wait = retry_delay
+    retry_delay = next_retry_delay(retry_delay)
+    start_timeout(wait, || {
+        retry_armed = false
+        refresh_due()
+    })
+}
+
+// The person's Refresh (and News opening): the service fetches a failed
+// source again at once.
+fn refresh(){ refresh_with(false) }
+
+// A timer's run (the retry, the 15-minute interval): only what is due, so a
+// failing or rate-limited source keeps its back-off.
+fn refresh_due(){ refresh_with(true) }
+
+fn refresh_with(due){
     if busy { return }
-    if use_service { refresh_service(); return }
+    if use_service { refresh_service(due); return }
     busy = true
     sync_status()
     for s in sources {
@@ -103,6 +164,7 @@ fn refresh(){
     updated = time_now()
     sync_status()
     ui.tile_list.render()
+    schedule_retry()
 }
 
 // A story as the news service keeps it, in this script's row shape. The
@@ -132,7 +194,7 @@ fn list_service(){
                 for it in r.data.items { rows.push(service_row(it)) }
                 if rows.len() > 0 {
                     rows_by[s.id] = rows
-                    fs.write("cache_" + s.id + ".json", rows.to_json())
+                    fs.write(cache_path("cache_" + s.id + ".json"), rows.to_json())
                 }
                 failed_by[s.id] = r.data.feed_error != nil
                 if r.data.updated > updated { updated = r.data.updated }
@@ -155,6 +217,7 @@ fn listed_service(){
     ui.list.render()
     sync_status()
     ui.tile_list.render()
+    schedule_retry()
     if service_relist {
         service_relist = false
         busy = true
@@ -163,11 +226,11 @@ fn listed_service(){
 }
 
 // Show what the service has now, ask it to fetch what is due, then show that.
-fn refresh_service(){
+fn refresh_service(due){
     busy = true
     sync_status()
     list_service()
-    host.request("news.refresh", {}, fn(r){
+    host.request("news.refresh", {due: due}, fn(r){
         if !use_service { return }
         if busy { service_relist = true }
         else {
@@ -178,14 +241,14 @@ fn refresh_service(){
 }
 
 fn load_state(){
-    if fs.exists("saved.json") {
-        let v = fs.read("saved.json").parse_json()
+    if fs.exists(data_path("saved.json")) {
+        let v = fs.read(data_path("saved.json")).parse_json()
         if v != nil { saved = v }
     }
     for s in sources {
-        let path = "cache_" + s.id + ".json"
-        if fs.exists(path) {
-            let v = fs.read(path).parse_json()
+        let name = "cache_" + s.id + ".json"
+        if fs.exists(cache_path(name)) {
+            let v = fs.read(cache_path(name)).parse_json()
             if v != nil { rows_by[s.id] = v }
         }
     }
@@ -277,7 +340,7 @@ fn is_saved(link){
 
 fn toggle_save(r){
     if is_saved(r.link) { saved.retain(|s| s.link != r.link) } else { saved.push(r) }
-    fs.write("saved.json", saved.to_json())
+    fs.write(data_path("saved.json"), saved.to_json())
     sync_reader_bar()
     if tab == "saved" { ui.list.render() }
 }
@@ -325,7 +388,7 @@ fn boot(){
     refresh()
 }
 start_timeout(0.05, || boot())
-start_interval(900, || refresh())
+start_interval(900, || refresh_due())
 
 let ink = #x1c1c1e
 let secondary = #x8e8e93

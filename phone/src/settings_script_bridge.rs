@@ -44,7 +44,7 @@ pub fn observation(state: &SettingsSnapshot, pending: bool) -> Result<Value, Str
         dnd_settings, dnd_error, permissions, permissions_error, roles, roles_error,
         display_options, display_error, advanced_network, network_error, sounds,
         sounds_loading, sounds_error, notification_history, history_loading, history_error,
-        ai_providers);
+        ai_providers, developer);
     fields.push(("theme".into(), state.theme.encode()));
     fields.push(("pending".into(), Value::Bool(pending)));
     // Allocate transport lease identities without exposing a native effect to scripts.
@@ -451,6 +451,30 @@ pub fn basic_request(value: &Value, observed: &SettingsSnapshot) -> Option<Setti
             let app = SystemApp::ALL.into_iter().find(|app| Some(app.wire()) == text(value, "app"))?;
             if !observed.system_app(app) { return None; }
             SettingsRequest::OpenSystemApp(app)
+        }
+        "developer_tap" => {
+            // Home's own gesture, counted and checked by the shell: no
+            // Android requirement.
+            exact(value, &["kind"])?;
+            SettingsRequest::DeveloperTap
+        }
+        "developer_choose" => {
+            // `all`, or an app the host listed.
+            exact(value, &["kind", "app"])?;
+            let app = text(value, "app")?;
+            let options = observed.developer.as_ref()?;
+            if app == "all" { SettingsRequest::DeveloperChoose(None) }
+            else { SettingsRequest::DeveloperChoose(Some(options.apps.iter().find(|a| a.id == app)?.id.clone())) }
+        }
+        "developer_on" => {
+            exact(value, &["kind"])?;
+            if observed.developer.as_ref()?.on { return None; }
+            SettingsRequest::DeveloperOn
+        }
+        "developer_off" => {
+            exact(value, &["kind"])?;
+            if !observed.developer.as_ref()?.on { return None; }
+            SettingsRequest::DeveloperOff
         }
         "device_access" => {
             exact(value, &["kind"])?;

@@ -98,6 +98,7 @@ entries! {
     About, "About phone", "About", "about phone device model manufacturer 关于手机 关于设备 型号 厂商";
     About, "Android and build version", "About", "android build version security patch kernel rom 版本 系统版本 安全补丁 内核";
     About, "Memory", "About", "memory ram available total 内存 运行内存 可用内存";
+    About, "Build number", "About", "build number developer options developer mode tap seven times 版本号 开发者选项 开发者模式";
     Updates, "System updates", "System / System updates", "update updates ota rom upgrade download install restart reboot 系统更新 软件更新 升级 下载 重启";
     System, "System", "System", "system settings preferences 系统 设置 系统设置";
 }
