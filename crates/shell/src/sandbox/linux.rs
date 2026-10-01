@@ -34,17 +34,35 @@
 //! x86_64, AArch32 on arm64) is refused whole, or its own numbers would get
 //! past these rules.
 //!
+//! **`network: none`** is Landlock's TCP port rule (ABI 4: connect to the
+//! hub's port only, no bind) and, in seccomp, an allow-list of socket
+//! families: Unix and netlink, and IP only as a plain TCP stream (no UDP,
+//! raw, SCTP or MPTCP; no vsock, Bluetooth, TIPC, RDS, packet or any other
+//! family; no io_uring, which creates sockets out of seccomp's sight). The
+//! port rule is not bound to an address: TCP to the hub's port on any host
+//! is allowed, not only loopback (neither Landlock nor seccomp can see a
+//! connect's address). From ABI 6 abstract Unix sockets outside the sandbox
+//! are closed too. Unix sockets reached by path are not: the display server
+//! needs them, and neither layer can tell the session bus
+//! (`/run/user/<uid>/bus`) from it.
+//!
+//! **Signals.** From ABI 6 an app with `processes: false` cannot signal any
+//! process outside its sandbox (the shell, the kernel, the person's other
+//! programs). One that may start processes (the Terminal) still can, so
+//! `kill` in it works as in any terminal; ptrace stays refused to both.
+//!
 //! **Best-effort.** The parent probes the kernel's Landlock ABI before the
 //! spawn and says in [`Applied`] which layers took (a kernel before 5.13, or
 //! one without Landlock enabled, gets seccomp only; before ABI 4, no port
 //! rules). A layer that fails in the child is skipped, never fatal: the app
 //! still starts.
 //!
-//! **A launch through cargo** (a dev run from a checkout) sandboxes the
-//! build as well: the build's own paths (the checkout, the target dir,
-//! cargo's and rustup's homes) are added and child processes are allowed so
-//! cargo can run rustc. An installed launch gets exactly the manifest's
-//! sandbox.
+//! **Only the app is sandboxed, never a build.** The shell builds a dev
+//! app first, outside any sandbox (`clients::launch_plan`), and starts the
+//! built binary here with exactly the manifest's sandbox. (A build inside
+//! the sandbox needed the checkout, the target dir, cargo's home and `/tmp`
+//! writable, which let the app rewrite what the next build runs; found on a
+//! real kernel, #138.)
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -78,7 +96,13 @@ const FILE_RIGHTS: u64 = FS_EXECUTE | FS_WRITE_FILE | FS_READ_FILE | FS_TRUNCATE
 struct RulesetAttr {
     handled_access_fs: u64,
     handled_access_net: u64,
+    /// ABI 6: what the domain may not reach outside itself.
+    scoped: u64,
 }
+
+/// ABI 6 scopes: abstract Unix sockets and signals outside the domain.
+const SCOPE_ABSTRACT_UNIX_SOCKET: u64 = 1 << 0;
+const SCOPE_SIGNAL: u64 = 1 << 1;
 
 #[repr(C, packed)]
 struct PathBeneathAttr {
@@ -129,12 +153,11 @@ fn read() -> u64 {
     FS_READ_FILE | FS_READ_DIR
 }
 
-/// The path rules for `policy` at `abi` (`via_cargo`: the build's paths too).
-pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
+/// The path rules for `policy` at `abi`.
+pub fn rules(policy: &Policy, abi: u32) -> Vec<Rule> {
     let all = handled_fs(abi);
     let rx = read() | FS_EXECUTE;
-    let processes = policy.processes || via_cargo;
-    let system_exec = if processes { rx } else { read() };
+    let system_exec = if policy.processes { rx } else { read() };
     let mut out = Vec::new();
     let mut add = |path: PathBuf, access: u64| {
         if path.as_os_str().is_empty() {
@@ -170,17 +193,6 @@ pub fn rules(policy: &Policy, abi: u32, via_cargo: bool) -> Vec<Rule> {
     add(policy.secrets.clone(), all);
     for (path, access) in &policy.external {
         add(path.clone(), if *access == Access::Read { read() } else { all });
-    }
-    if via_cargo {
-        let home = super::person_home().unwrap_or_default();
-        let cargo_home = std::env::var_os("CARGO_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".cargo"));
-        let rustup_home = std::env::var_os("RUSTUP_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".rustup"));
-        add(cargo_home, all);
-        add(rustup_home, rx);
-        add(PathBuf::from("/tmp"), all);
-        for program in &policy.program {
-            add(program.clone(), all);
-        }
     }
     // Compare real paths: Landlock follows links when it opens a rule's
     // path, so a linked checkout or grant must not slip past the private
@@ -268,28 +280,34 @@ pub fn around_private(rule: Rule, private: &[PathBuf], out: &mut Vec<Rule>) {
     }
 }
 
-/// The seccomp program for `processes` on this architecture, `None` where
-/// the table below has no numbers for it.
-pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
+/// The seccomp program for `processes` and `no_network` (`network: none`)
+/// on this architecture, `None` where the table below has no numbers for it.
+pub fn seccomp_filter(processes: bool, no_network: bool) -> Option<Vec<libc::sock_filter>> {
+    // ... plus socket(2) and io_uring_setup(2) (io_uring creates sockets
+    // without socket(2), out of seccomp's sight).
     #[cfg(target_arch = "x86_64")]
-    let (arch, denied, forks, clone, clone3): (u32, &[u32], &[u32], u32, u32) = (
+    let (arch, denied, forks, clone, clone3, socket, io_uring): (u32, &[u32], &[u32], u32, u32, u32, u32) = (
         0xC000_003E,
         &[101, 310, 311, 298, 246, 321, 323, 165, 166, 155, 250, 248, 249, 272, 308],
         &[57, 58],
         56,
         435,
+        41,
+        425,
     );
     #[cfg(target_arch = "aarch64")]
-    let (arch, denied, forks, clone, clone3): (u32, &[u32], &[u32], u32, u32) = (
+    let (arch, denied, forks, clone, clone3, socket, io_uring): (u32, &[u32], &[u32], u32, u32, u32, u32) = (
         0xC000_00B7,
         &[117, 270, 271, 241, 104, 280, 282, 40, 39, 41, 219, 217, 218, 97, 268],
         &[],
         220,
         435,
+        198,
+        425,
     );
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     {
-        let _ = processes;
+        let _ = (processes, no_network);
         return None;
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -297,6 +315,7 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         const LD_W_ABS: u16 = 0x20;
         const JEQ_K: u16 = 0x15;
         const JSET_K: u16 = 0x45;
+        const AND_K: u16 = 0x54;
         const RET_K: u16 = 0x06;
         const ALLOW: u32 = 0x7fff_0000;
         const ERRNO: u32 = 0x0005_0000;
@@ -327,6 +346,34 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
         for &nr in denied {
             deny(&mut f, nr, eperm);
         }
+        if no_network {
+            // `network: none`: an allow-list of socket families. Unix and
+            // netlink stay (the display server, the session's services);
+            // IP only as a plain TCP stream, the one kind Landlock's port
+            // rule governs (the hub); every other family (UDP, raw, SCTP,
+            // MPTCP, vsock, Bluetooth, TIPC, RDS, packet, ...) is refused.
+            deny(&mut f, io_uring, eperm);
+            let (unix, netlink) = (libc::AF_UNIX as u32, libc::AF_NETLINK as u32);
+            let (inet, inet6) = (libc::AF_INET as u32, libc::AF_INET6 as u32);
+            let (stream, tcp) = (libc::SOCK_STREAM as u32, libc::IPPROTO_TCP as u32);
+            f.extend([
+                st(JEQ_K, 0, 14, socket), // not socket(2): past this block
+                st(LD_W_ABS, 0, 0, 16),   // args[0]: the family
+                st(JEQ_K, 11, 0, unix),
+                st(JEQ_K, 10, 0, netlink),
+                st(JEQ_K, 2, 0, inet),
+                st(JEQ_K, 1, 0, inet6),
+                st(RET_K, 0, 0, eperm),   // any other family
+                st(LD_W_ABS, 0, 0, 24),   // args[1]: the type, with flags
+                st(AND_K, 0, 0, 0xf),
+                st(JEQ_K, 0, 3, stream),
+                st(LD_W_ABS, 0, 0, 32),   // args[2]: the protocol
+                st(JEQ_K, 2, 0, 0),
+                st(JEQ_K, 1, 0, tcp),
+                st(RET_K, 0, 0, eperm),   // IP but not plain TCP
+                st(RET_K, 0, 0, ALLOW),
+            ]);
+        }
         if !processes {
             for &nr in forks {
                 deny(&mut f, nr, eperm);
@@ -345,27 +392,36 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
 }
 
 /// Put Landlock and seccomp on `cmd` (installed in the child before exec).
-pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
+pub fn apply(cmd: &mut Command, policy: &Policy) -> Applied {
     let abi = landlock_abi();
-    let processes = policy.processes || via_cargo;
+    let processes = policy.processes;
     // Everything the child does is prepared here: between fork and exec it
     // only opens paths and makes system calls.
     let prepared: Vec<(CString, u64)> = if abi == 0 {
         Vec::new()
     } else {
-        rules(policy, abi, via_cargo)
+        rules(policy, abi)
             .into_iter()
             .filter(|r| r.path.exists())
             .filter_map(|r| CString::new(r.path.as_os_str().as_bytes()).ok().map(|c| (c, r.access)))
             .collect()
     };
-    let net = abi >= 4 && policy.network == Network::None && !via_cargo;
+    let net = abi >= 4 && policy.network == Network::None;
     let hub_port = policy.hub_port;
-    let filter = seccomp_filter(processes);
+    let no_network = policy.network == Network::None;
+    let filter = seccomp_filter(processes, no_network);
     let handled = handled_fs(abi);
+    // ABI 6 scopes: an app without processes signals nothing outside its
+    // sandbox (the shell, the kernel, the person's other programs); one with
+    // `network: none` reaches no abstract Unix socket outside it.
+    let scoped = if abi >= 6 {
+        (if processes { 0 } else { SCOPE_SIGNAL }) | if no_network { SCOPE_ABSTRACT_UNIX_SOCKET } else { 0 }
+    } else {
+        0
+    };
     let mut layers = Vec::new();
     if abi > 0 {
-        layers.push(format!("landlock abi {abi}{}", if net { " + ports" } else { "" }));
+        layers.push(format!("landlock abi {abi}{}{}", if net { " + ports" } else { "" }, if scoped != 0 { " + scopes" } else { "" }));
     } else {
         layers.push("no landlock (kernel lacks it): paths are not restricted".to_string());
     }
@@ -373,16 +429,17 @@ pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
         layers.push("network not restricted (landlock < 4)".into());
     }
     layers.push(if filter.is_some() { "seccomp".into() } else { "no seccomp on this architecture".to_string() });
-    if via_cargo {
-        layers.push("launched through cargo: the build's paths and processes added".into());
-    }
     unsafe {
         cmd.pre_exec(move || {
             // Landlock and seccomp both need no_new_privs.
             libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
             if abi > 0 {
-                let attr = RulesetAttr { handled_access_fs: handled, handled_access_net: if net { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 } };
-                let size = if abi >= 4 { std::mem::size_of::<RulesetAttr>() } else { 8 };
+                let attr = RulesetAttr { handled_access_fs: handled, handled_access_net: if net { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 }, scoped };
+                let size = match abi {
+                    0..=3 => 8,
+                    4 | 5 => 16,
+                    _ => std::mem::size_of::<RulesetAttr>(),
+                };
                 let ruleset = libc::syscall(SYS_LANDLOCK_CREATE_RULESET, &attr as *const RulesetAttr, size, 0u32) as i32;
                 if ruleset >= 0 {
                     for (path, access) in &prepared {

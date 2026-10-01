@@ -808,6 +808,10 @@ pub struct WmDesk {
     #[live] draw_phone: DrawPhoneApp,
     #[rust] phone_frames: HashMap<ClientId, PhoneFrame>,
     #[rust] phone_scene_backdrop: Option<phone::PhoneSceneBackdrop>,
+    /// When the phone scene last moved (seconds since app start), and the
+    /// timer that brings the idle frame recording it (phone.rs `record`).
+    #[rust] phone_scene_moved_at: f64,
+    #[rust] phone_scene_record_timer: Timer,
     #[rust] desktop_frames: HashMap<ClientId, WindowFrame>,
     #[rust] pub wallpaper: WidgetRef,
     #[rust] pub compositor: Option<BackdropCompositor>,
