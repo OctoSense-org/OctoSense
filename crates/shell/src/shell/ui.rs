@@ -1069,7 +1069,7 @@ impl ShellDraw {
     pub fn set_text_scale(&mut self, scale: f64) {
         self.text_scale = if scale > 0.0 { scale.clamp(0.85, 1.25) } else { 0.0 };
     }
-    fn text_scale(&self) -> f64 {
+    pub(crate) fn text_scale(&self) -> f64 {
         if self.text_scale > 0.0 { self.text_scale } else { 1.0 }
     }
     pub fn label(

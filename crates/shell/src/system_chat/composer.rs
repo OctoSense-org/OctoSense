@@ -125,6 +125,49 @@ impl Composer {
     }
 }
 
+/// The soft keyboard's action key (Enter, shown as Send) sends: the prompt
+/// is one line. Next and Previous move between fields instead; a keyboard
+/// that names no action (or Done, Go, Search) still means "this is it".
+pub fn ime_action_sends(action: makepad_widgets::makepad_platform::event::ImeAction) -> bool {
+    use makepad_widgets::makepad_platform::event::ImeAction;
+    !matches!(action, ImeAction::Next | ImeAction::Previous)
+}
+
+/// A chat pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pane {
+    App,
+    System,
+}
+
+/// Which pane the keyboard's action key sends: only one whose prompt holds
+/// the key focus. With another field focused (an app's, a host sheet's)
+/// the action is that field's, never the chat's.
+pub fn ime_target(app_has_focus: bool, system_has_focus: bool) -> Option<Pane> {
+    if app_has_focus {
+        Some(Pane::App)
+    } else if system_has_focus {
+        Some(Pane::System)
+    } else {
+        None
+    }
+}
+
+/// Which pane plain typed text goes to when no prompt holds the key focus
+/// (the pane opened by F8, no press yet): only when no other field holds
+/// it either.
+pub fn text_target(nothing_focused: bool, app_focused: bool, system_open: bool) -> Option<Pane> {
+    if !nothing_focused {
+        None
+    } else if app_focused {
+        Some(Pane::App)
+    } else if system_open {
+        Some(Pane::System)
+    } else {
+        None
+    }
+}
+
 /// A key press in a pane's prompt: what the pane does with it. Characters
 /// are text input's (see the module); a printable key is only swallowed so
 /// it reaches nothing behind the pane.
@@ -260,6 +303,55 @@ mod tests {
         c.text_input(&typed("a\nb"));
         assert_eq!(c.text(), "ab");
         assert!(c.take_submit());
+    }
+
+    /// The soft keyboard's Enter (its Send action) sends, in either pane,
+    /// even when no pane holds the key focus at that moment.
+    #[test]
+    fn the_soft_keyboards_enter_sends() {
+        use makepad_widgets::makepad_platform::event::ImeAction;
+        for action in [ImeAction::Send, ImeAction::Done, ImeAction::Go, ImeAction::Search, ImeAction::Unspecified, ImeAction::None] {
+            assert!(ime_action_sends(action), "{action:?}");
+        }
+        assert!(!ime_action_sends(ImeAction::Next));
+        assert!(!ime_action_sends(ImeAction::Previous));
+        assert_eq!(ime_target(false, true), Some(Pane::System), "the system chat's prompt");
+        assert_eq!(ime_target(true, false), Some(Pane::App), "the Ask panel's prompt");
+    }
+
+    /// With the system chat open but ANOTHER field focused (an app's text
+    /// input, a host sheet), that field's Send and typing are its own: the
+    /// chat's draft is not sent and nothing is swallowed.
+    #[test]
+    fn another_focused_field_keeps_its_keyboard() {
+        assert_eq!(ime_target(false, false), None, "no chat prompt holds the focus");
+        assert_eq!(text_target(false, false, true), None, "another field is focused");
+        assert_eq!(text_target(false, true, true), None);
+        assert_eq!(text_target(true, false, true), Some(Pane::System), "nothing focused: the open chat");
+        assert_eq!(text_target(true, true, true), Some(Pane::App));
+        assert_eq!(text_target(true, false, false), None);
+    }
+
+    /// The first character after the prompt takes the focus is kept (the
+    /// ROM's Home once dropped it): the input method asks for the empty
+    /// state, then its first edit lands whole, by full state or by text.
+    #[test]
+    fn the_first_character_after_focus_is_kept() {
+        let mut c = Composer::default();
+        let asked = c.state();
+        assert_eq!((asked.text.as_str(), asked.selection.clone(), asked.composition.clone()), ("", CharOffset(0)..CharOffset(0), None));
+        assert!(c.text_input(&ime_state("H", Some(0..1))));
+        assert_eq!(c.text(), "H");
+        c.text_input(&ime_state("Hi", Some(0..2)));
+        assert_eq!(c.text(), "Hi");
+        let mut c = Composer::default();
+        assert!(c.text_input(&typed("H")));
+        assert_eq!(c.text(), "H");
+        // A composing first character, committed.
+        let mut c = Composer::default();
+        c.text_input(&composing("H"));
+        c.text_input(&typed("H"));
+        assert_eq!(c.text(), "H");
     }
 
     #[test]
