@@ -24,8 +24,13 @@
 //! are readable, never writable, and so is everything the next build reads
 //! or runs ([`Policy::read_only`]), whatever a grant opened.
 //!
-//! **Network.** `none`: nothing but the shell's hub on loopback (the socket
-//! the app is hosted over). `any`: unrestricted.
+//! **Network.** `none`: no IP network but TCP to the shell's hub port (the
+//! socket the app is hosted over; on Linux the port rule is not bound to an
+//! address, so the hub's port on another host is reachable too). Local
+//! Unix-domain sockets reached by path stay open on every platform (the
+//! display server, and on Linux the session bus), so a `network: none` app
+//! can still ask a local service to act for it; Linux closes abstract Unix
+//! sockets outside the sandbox from Landlock ABI 6. `any`: unrestricted.
 //!
 //! **Child processes.** `processes: false`: no fork and no exec after the
 //! app's own start.
