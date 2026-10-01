@@ -45,9 +45,10 @@
 //!   to the host ([`crate::host_tools::ToolHost`]); `peer/tool/cancel` and a
 //!   closed link end calls before they run. `peer/input` (the system agent's
 //!   input) starts the peer's turn on the same link with the kernel's turn
-//!   id, once per input, queued while the peer is busy; `host_tool`
-//!   approvals go to the host, never to the app, and are withdrawn there
-//!   when their turn ends before an answer;
+//!   id, once per input, queued while the peer is busy; every approval
+//!   (a `host_tool` one and octos's own tools', a `peer/input` turn's
+//!   included) goes to the host, never to the app, and is withdrawn there
+//!   when its turn ends, or its link closes, before an answer;
 //! - routes the agent's questions (`user_question/requested`, octos's
 //!   `ask_user_question`) on the peer's session and its contexts to the
 //!   host with the turn's origin (a context's, the peer's own, or a
@@ -999,7 +1000,7 @@ impl Inner {
     /// request, or by the rebind this schedules. Tool calls that came on the
     /// link end now: the kernel fails them, and the host never runs them.
     fn link_closed(self: &Arc<Self>, epoch: u64, why: &str) {
-        let (pending, waiters, calls, rebind) = {
+        let (pending, waiters, calls, rebind, approvals, questions) = {
             let mut st = self.lock();
             if st.link_epoch != epoch {
                 return;
@@ -1015,16 +1016,30 @@ impl Inner {
             st.occurrences.retain(|_, o| matches!(o, Occurrence::Done(_)));
             // Queued inputs are the kernel's to fail with the connection.
             st.queue.clear();
-            // What waited on the link can no longer be answered there.
+            // What waited on the link can no longer be answered there: what
+            // the host holds unanswered is withdrawn from its sheets too.
+            let approvals: Vec<String> = st
+                .prompts
+                .iter()
+                .filter(|(_, p)| matches!(&p.answer, PromptAnswer::HostApproval(answer) if !answer.is_sent()))
+                .map(|(id, _)| id.clone())
+                .collect();
             st.prompts.clear();
+            let questions: Vec<String> = st.questions.drain().map(|(id, _)| id).collect();
             let rebind = (had_peer && !st.released && st.account.is_some()).then_some(st.generation);
-            (pending, contexts, calls, rebind)
+            (pending, contexts, calls, rebind, approvals, questions)
         };
         let host = self.tool_host();
         for (call_id, reply) in calls {
             if reply.cancel() {
                 host.tool_cancel(&self.cfg.app_id, &call_id, "disconnected");
             }
+        }
+        for id in approvals {
+            host.host_tool_approval_closed(&self.cfg.app_id, &id);
+        }
+        for id in questions {
+            host.user_question_closed(&self.cfg.app_id, &id);
         }
         if let Some(generation) = rebind {
             self.schedule_rebind(generation);

@@ -1065,6 +1065,66 @@ fn octos_own_approvals_on_a_context_or_the_peers_session_go_to_the_host() {
     drop(broker);
 }
 
+/// ADR 0004 §8 (the 2026-09-29 review's first gap): a kernel tool's
+/// approval on the system agent's `peer/input` turn reaches the host (the
+/// person decides; the system agent never answers it), stamped as the
+/// system agent's turn, and the app only hears that the host has it. When
+/// its turn ends unanswered it is withdrawn from the host.
+#[test]
+fn a_kernel_tool_approval_on_a_peer_input_turn_goes_to_the_host_and_ends_with_its_turn() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    let conversation = broker.open_conversation(spec("@a:x", "ask#1", &ALL)).unwrap();
+    let (sink, rx) = collect();
+    conversation.subscribe(Some(sink));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls",
+        "risk_level": "high"}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 1);
+    let (approval, answer) = host.approvals.lock().unwrap()[0].clone();
+    assert!(approval.octos, "a kernel tool, not a host tool");
+    assert_eq!((approval.app.as_str(), approval.tool.as_str(), approval.turn_id.as_str()), ("rinx", "shell", "turn-i1"));
+    assert_eq!(approval.trigger, TurnTrigger::SystemAgent, "the system agent's turn: its rules, never 'the person'");
+    assert_eq!(approval.calling_kind, octosense_app_peers::host_tools::CallerKind::AppPeer, "the app's own agent calls; the person decides");
+    assert!(approval.context_id.is_none() && approval.client.is_none());
+    let seen: Vec<String> = events(&rx, Duration::from_millis(300)).iter().map(|d| d["method"].as_str().unwrap_or("").to_owned()).collect();
+    assert!(seen.iter().any(|m| m == host_tools::HANDLED_BY_HOST), "{seen:?}");
+    assert!(!seen.iter().any(|m| m == "approval/requested"), "the app never answers it: {seen:?}");
+    assert!(position(&script, "approval/respond").is_none(), "nobody answered for the person");
+    // The turn ends before anyone answered: the host's sheet stops asking,
+    // and the next queued input starts.
+    notify(&script, "turn/completed", json!({"session_id": session, "turn_id": "turn-i1"}));
+    wait_for("withdrawn", || host.closed_approvals.lock().unwrap().contains(&"k1".to_string()));
+    assert!(!answer.is_sent());
+    wait_for("the queued input", || calls_of(&script, "turn/start").len() == 2);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
+/// The link an approval or question came on closed (a kernel restart, the
+/// app released): nothing can answer it there any more, so the host
+/// withdraws what it holds instead of asking until the deadline.
+#[test]
+fn a_closed_link_withdraws_the_approvals_and_questions_the_host_holds() {
+    let host = Arc::new(RecordingHost::default());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), None);
+    let (_slug, session) = busy_peer(&broker, &script);
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k1", "turn_id": "turn-i1", "tool_name": "shell", "title": "Run", "body": "ls"}));
+    notify(&script, "approval/requested", json!({"session_id": session, "approval_id": "k2", "turn_id": "turn-i1", "tool_name": "write_file", "title": "Write", "body": "b"}));
+    notify(&script, "user_question/requested", json!({"session_id": session, "question_id": "q1", "turn_id": "turn-i1", "title": "Which?", "body": "",
+        "questions": [{"header": "H", "question": "Which?", "options": [], "allow_free_text": true}]}));
+    wait_for("the host", || host.approvals.lock().unwrap().len() == 2 && host.questions.lock().unwrap().len() == 1);
+    // One answered before the link went: that one is not withdrawn.
+    assert!(host.approvals.lock().unwrap()[1].1.respond(true));
+    kill_link(&script);
+    wait_for("withdrawn", || !host.closed_approvals.lock().unwrap().is_empty() && !host.closed_questions.lock().unwrap().is_empty());
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(*host.closed_approvals.lock().unwrap(), ["k1"]);
+    assert_eq!(*host.closed_questions.lock().unwrap(), ["q1"]);
+    assert_eq!(broker.pending_prompts(), 0);
+    drop(broker);
+}
+
 
 /// octos#2621: a `peer/input` the host will not act on is refused on the
 /// connection it came on, with the reason (signed_out, no_consent, busy,
