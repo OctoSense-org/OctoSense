@@ -178,7 +178,7 @@ impl ToolExecutor for HostServiceExecutor {
         }
         let key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         WAITING.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, Waiting { reply });
-        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false, host_dir: self.host_dir.clone() };
+        let service_call = ServiceCall { app_id: self.app.clone(), service: call.name.clone(), args: call.args.clone(), from_sheet: false, may_prompt: true, host_dir: self.host_dir.clone() };
         octosense_appstore::services::dispatch(service_call, key, 0, &mut NoSheet);
     }
 

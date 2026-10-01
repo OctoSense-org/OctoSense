@@ -71,7 +71,7 @@ impl Rig {
 
     fn send(&mut self, app: &str, service: &str, args: Value, from_sheet: bool) -> usize {
         let heap = NEXT.fetch_add(1, Ordering::Relaxed);
-        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, host_dir: self.dir.clone() };
+        let call = ServiceCall { app_id: app.into(), service: service.into(), args, from_sheet, may_prompt: true, host_dir: self.dir.clone() };
         dispatch(call, heap, 1, &mut self.host);
         heap
     }
