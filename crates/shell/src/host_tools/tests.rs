@@ -937,3 +937,29 @@ fn a_grants_owner_is_the_namespaces_app_never_the_first_declarer() {
     assert!(c.may_call("com.example.trip", "os.mail", "mail.send", false));
     assert!(!c.may_call("com.example.trip", "com.evil.mail", "mail.send", false));
 }
+
+#[test]
+fn should_run_a_modules_tools_on_its_executor_when_it_also_holds_a_peer_link() {
+    // #142: a module that opens Makepad's OctosPeer only to talk keeps its
+    // tools on its executor; nothing reroutes them to the link.
+    let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.room.list", false, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("rinx".into());
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    assert_eq!(exec.0.lock().unwrap().len(), 1, "the executor ran it");
+    assert!(w.link_calls.is_empty(), "nothing went down the link");
+}
+
+#[test]
+fn should_send_a_modules_tools_down_its_link_when_it_has_no_executor() {
+    // A module that serves its tools over its peer link, like a process app.
+    let mut relay = Relay::default();
+    relay.catalog.declare("probe", vec![decl("probe.ping", false, "host")]);
+    let mut w = World::new(FixedDevMode::off());
+    w.links.push("probe".into());
+    let (r, _) = reply("c1");
+    relay.handle(Event::Call { call: call("c1", "probe.ping", "probe"), reply: r }, &mut w);
+    assert_eq!(w.link_calls.len(), 1);
+    assert_eq!(w.link_calls[0].0, "probe");
+}

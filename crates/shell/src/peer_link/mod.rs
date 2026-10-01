@@ -175,8 +175,10 @@ pub fn on_frame(client: ClientId, app: &str, frame: &str, sender: Option<std::sy
 /// socket, with `out` writing to the instance's channel. `client` is the
 /// instance's own client id and `app` its module id, never a claim of the
 /// module.
-pub fn module_connected(client: ClientId, app: &str, out: FrameOut) {
-    with(|l| l.connected(client, app, out));
+/// False when the link is refused (no granted agent, or the instance
+/// already holds one).
+pub fn module_connected(client: ClientId, app: &str, out: FrameOut) -> bool {
+    with(|l| l.connected(client, app, out))
 }
 
 /// A frame an in-process instance sent on its link (see [`on_frame`]).

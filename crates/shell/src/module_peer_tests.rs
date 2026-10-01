@@ -67,12 +67,14 @@ impl Widget for PeerProbe {
     }
 }
 
-struct PeerProbeModule;
+/// A probe under an id: `peer-probe` is not in native-apps.json (granted
+/// no agent); `rinx` is granted `octos.*` there (the probe never asks
+/// anything, so no consent sheet or peer is involved).
+struct PeerProbeModule(&'static str);
 
 impl AppModule for PeerProbeModule {
     fn id(&self) -> &'static str {
-        // Not in native-apps.json: granted no agent.
-        "peer-probe"
+        self.0
     }
     fn label(&self) -> &'static str {
         "Peer probe"
@@ -102,7 +104,8 @@ impl ServiceExecutor for NoTools {
     }
 }
 
-static PROBE: PeerProbeModule = PeerProbeModule;
+static PROBE: PeerProbeModule = PeerProbeModule("peer-probe");
+static GRANTED: PeerProbeModule = PeerProbeModule("rinx");
 
 fn setup() -> (Cx, ModuleHost) {
     let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -111,7 +114,11 @@ fn setup() -> (Cx, ModuleHost) {
 }
 
 fn create(cx: &mut Cx, host: &mut ModuleHost, client: u64) {
-    host.create(cx, client, &PROBE, PROBE.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
+    create_as(cx, host, client, &PROBE);
+}
+
+fn create_as(cx: &mut Cx, host: &mut ModuleHost, client: u64, module: &'static PeerProbeModule) {
+    host.create(cx, client, module, module.open_schema().empty_open().unwrap(), dvec2(400.0, 700.0)).unwrap();
 }
 
 /// A host message to the instance, then the shell's after-event pump.
@@ -125,15 +132,13 @@ fn seen(cx: &mut Cx, host: &mut ModuleHost, client: u64) -> Vec<PeerEvent> {
 }
 
 #[test]
-fn should_serve_a_modules_peer_link_like_a_process_socket_when_the_module_opens_one() {
+fn should_answer_no_agent_and_hold_no_link_when_the_module_is_granted_no_agent() {
     let (mut cx, mut host) = setup();
     create(&mut cx, &mut host, 901);
-    create(&mut cx, &mut host, 902);
     tell(&mut cx, &mut host, 901, "open");
-    assert!(host.has_peer_link(901), "the link is the instance's that opened it");
-    assert!(!host.has_peer_link(902), "and no other instance's");
-    // Its request reaches the shell's peer link, which answers it as it
-    // answers a process of an app with no granted agent.
+    assert!(!host.has_peer_link(901), "refused: not a link");
+    // Its request still reaches the shell's peer link, which answers it as
+    // it answers a process of an app with no granted agent.
     tell(&mut cx, &mut host, 901, "session");
     tell(&mut cx, &mut host, 901, "read");
     let events = seen(&mut cx, &mut host, 901);
@@ -141,13 +146,15 @@ fn should_serve_a_modules_peer_link_like_a_process_socket_when_the_module_opens_
         [PeerEvent::Reply { result: Err(error), .. }] => assert!(error.starts_with("no_agent"), "{error}"),
         other => panic!("one reply, from the shell's peer link: {other:?}"),
     }
-    assert!(host.teardown(&mut cx, 901) && host.teardown(&mut cx, 902));
+    assert!(host.teardown(&mut cx, 901));
 }
 
 #[test]
-fn should_drop_a_link_when_no_instance_or_a_second_one_opened_it() {
+fn should_attribute_a_link_to_the_instance_that_opened_it_and_drop_strays_and_seconds() {
+    let _rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let (mut cx, mut host) = setup();
-    create(&mut cx, &mut host, 911);
+    create_as(&mut cx, &mut host, 911, &GRANTED);
+    create(&mut cx, &mut host, 912);
     // Parked while no module code ran: nobody's, dropped before the next
     // module call can be blamed for it.
     let (_peer, stray) = OctosPeer::in_process();
@@ -155,10 +162,34 @@ fn should_drop_a_link_when_no_instance_or_a_second_one_opened_it() {
     tell(&mut cx, &mut host, 911, "hello");
     assert!(!host.has_peer_link(911));
     assert!(cx.global::<PendingPeerLinks>().links.is_empty());
-    // One link per instance.
     tell(&mut cx, &mut host, 911, "open");
+    assert!(host.has_peer_link(911), "the instance whose code opened it");
+    assert!(!host.has_peer_link(912), "and no other");
+    // One link per instance.
     tell(&mut cx, &mut host, 911, "open-again");
     assert!(host.has_peer_link(911));
     assert!(host.teardown(&mut cx, 911));
     assert!(!host.has_peer_link(911));
+    assert!(host.teardown(&mut cx, 912));
+}
+
+#[test]
+fn should_keep_the_outer_modules_link_when_a_nested_call_runs_another_module() {
+    let _rinx = crate::module_host::RINX_INSTANCE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let (mut cx, mut host) = setup();
+    create_as(&mut cx, &mut host, 921, &GRANTED);
+    create(&mut cx, &mut host, 922);
+    let inner = host.get(922).unwrap().vm_id;
+    // The outer module opens its link, then (still inside its call) the
+    // host runs the other module's code: the link stays the outer's.
+    host.dispatch(&mut cx, 921, "a nested test call", |cx, root| {
+        let peer = OctosPeer::open(cx);
+        crate::module_host::contain(cx, inner, "a nested call", |_| ());
+        root.borrow_mut::<PeerProbe>().unwrap().peer = Some(peer);
+    })
+    .unwrap();
+    host.pump_peer_links(&mut cx);
+    assert!(host.has_peer_link(921), "the outer instance's");
+    assert!(!host.has_peer_link(922), "not the nested one's");
+    assert!(host.teardown(&mut cx, 921) && host.teardown(&mut cx, 922));
 }

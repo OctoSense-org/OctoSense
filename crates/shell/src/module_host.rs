@@ -126,12 +126,34 @@ pub struct OpenedPeerLinks {
     links: Vec<(SplashVmId, makepad_ai_services::peer::PeerLink)>,
 }
 
-/// Links parked while no module code ran belong to no instance: dropped
-/// (before a module runs), so nothing can be attributed to the wrong one.
-fn drop_stray_peer_links(cx: &mut Cx) {
-    let stray = cx.global::<makepad_ai_services::peer::PendingPeerLinks>().take();
-    if !stray.is_empty() {
-        log!("wm: {} peer link(s) opened outside any module instance dropped", stray.len());
+/// The isolates whose module code is running now, innermost last: a
+/// `contain` inside another (a host call a module's code made) must not
+/// take the outer module's links as stray or as its own.
+#[derive(Default)]
+pub struct RunningIsolates(Vec<SplashVmId>);
+
+/// Before module code of `vm_id` runs: links parked so far are the
+/// enclosing module's (claimed for it), or, outside any module, nobody's
+/// (dropped), so nothing can be attributed to the wrong instance.
+fn enter_isolate(cx: &mut Cx, vm_id: SplashVmId) {
+    match cx.global::<RunningIsolates>().0.last().copied() {
+        Some(outer) => claim_peer_links(cx, outer),
+        None => {
+            let stray = cx.global::<makepad_ai_services::peer::PendingPeerLinks>().take();
+            if !stray.is_empty() {
+                log!("wm: {} peer link(s) opened outside any module instance dropped", stray.len());
+            }
+        }
+    }
+    cx.global::<RunningIsolates>().0.push(vm_id);
+}
+
+/// After module code of `vm_id` ran: what it parked is its own.
+fn leave_isolate(cx: &mut Cx, vm_id: SplashVmId) {
+    claim_peer_links(cx, vm_id);
+    let running = &mut cx.global::<RunningIsolates>().0;
+    if let Some(at) = running.iter().rposition(|v| *v == vm_id) {
+        running.remove(at);
     }
 }
 
@@ -152,9 +174,9 @@ pub fn contain<C: IsolateCx, R>(cx: &mut C, vm_id: SplashVmId, what: &'static st
     if is_failed(cx.isolate_cx(), vm_id) {
         return None;
     }
-    drop_stray_peer_links(cx.isolate_cx());
+    enter_isolate(cx.isolate_cx(), vm_id);
     let ran = catch_unwind(AssertUnwindSafe(|| with_isolate(cx, vm_id, f)));
-    claim_peer_links(cx.isolate_cx(), vm_id);
+    leave_isolate(cx.isolate_cx(), vm_id);
     match ran {
         Ok(out) => Some(out),
         Err(payload) => {
@@ -170,9 +192,9 @@ pub fn contain_outside<R>(cx: &mut Cx, vm_id: SplashVmId, what: &'static str, f:
     if is_failed(cx, vm_id) {
         return None;
     }
-    drop_stray_peer_links(cx);
+    enter_isolate(cx, vm_id);
     let ran = catch_unwind(AssertUnwindSafe(|| f(cx)));
-    claim_peer_links(cx, vm_id);
+    leave_isolate(cx, vm_id);
     match ran {
         Ok(out) => Some(out),
         Err(payload) => {
@@ -276,6 +298,9 @@ pub struct AppInstance {
     /// Its peer link, when its code opened Makepad's `OctosPeer` (#142):
     /// served by `crate::peer_link` exactly as a process's socket.
     peer: Option<crate::ai_host::module_peer::ModulePeerLink>,
+    /// A link it opened without a granted agent: not served, but each of
+    /// its requests is answered `no_agent` (not a link: [`ModuleHost::has_peer_link`] is false).
+    refused_peer: Option<crate::ai_host::module_peer::ModulePeerLink>,
     /// The executor's manifest, read once (contained) at creation: the
     /// shell asks for it again after a failure, when the executor is gone.
     manifest: ServiceManifest,
@@ -587,6 +612,7 @@ impl ModuleHost {
                 windows,
                 assistant,
                 peer: None,
+                refused_peer: None,
                 manifest,
                 failed: None,
                 released: false,
@@ -771,19 +797,26 @@ impl ModuleHost {
                 log!("wm: a peer link opened in isolate {vm_id:?}, which hosts no live instance, dropped");
                 continue;
             };
-            if instance.peer.is_some() {
+            if instance.peer.is_some() || instance.refused_peer.is_some() {
                 log!("wm: {} opened a second peer link; one per instance, dropped", instance.label());
                 continue;
             }
             let link = crate::ai_host::module_peer::ModulePeerLink::new(link);
-            crate::peer_link::module_connected(instance.client, instance.module.id(), link.frames_down());
-            log!("wm: {} opened its peer link", instance.label());
-            instance.peer = Some(link);
+            if crate::peer_link::module_connected(instance.client, instance.module.id(), link.frames_down()) {
+                log!("wm: {} opened its peer link", instance.label());
+                instance.peer = Some(link);
+            } else {
+                // No granted agent: not a link, but its requests are still
+                // answered (`no_agent`), so the app can say so.
+                log!("wm: {} opened a peer link but has no agent; its requests are refused", instance.label());
+                instance.refused_peer = Some(link);
+            }
         }
         for instance in self.instances.values().filter(|i| i.failed.is_none()) {
-            let Some(link) = &instance.peer else { continue };
-            for frame in link.take_up() {
-                crate::peer_link::on_module_frame(instance.client, instance.module.id(), &frame, link.frames_down());
+            for link in instance.peer.iter().chain(instance.refused_peer.iter()) {
+                for frame in link.take_up() {
+                    crate::peer_link::on_module_frame(instance.client, instance.module.id(), &frame, link.frames_down());
+                }
             }
         }
     }
@@ -1050,6 +1083,7 @@ impl ModuleHost {
 /// The instance's peer link goes as a process's does when it exits: its
 /// calls fail, its contexts close, its app's peer stays.
 fn close_peer_link(instance: &mut AppInstance) {
+    instance.refused_peer = None;
     if instance.peer.take().is_some() {
         crate::peer_link::process_gone(instance.client);
     }
