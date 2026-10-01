@@ -410,9 +410,9 @@ impl PhoneSurface {
             PhoneHit::Home=>"Home".into(),
             PhoneHit::Recents=>"Recents".into(),
             PhoneHit::Floating(hit)=>match hit {
-                crate::mobile_navigation::NavigationHit::Bubble=>if phone.navigation.open {"收起快捷操作"}else{"悬浮球，点按打开快捷操作，拖动调整位置"}.into(),
-                crate::mobile_navigation::NavigationHit::Home=>"返回首页".into(),
-                crate::mobile_navigation::NavigationHit::Recents=>"最近应用".into(),
+                crate::mobile_navigation::NavigationHit::Bubble=>if phone.navigation.open {"Close quick actions"}else{"Floating button: tap for quick actions, drag to move"}.into(),
+                crate::mobile_navigation::NavigationHit::Home=>"Home".into(),
+                crate::mobile_navigation::NavigationHit::Recents=>"Recents".into(),
                 crate::mobile_navigation::NavigationHit::Dismiss=>return None,
             },
             PhoneHit::Drawer=>"All apps".into(),
@@ -1005,10 +1005,10 @@ impl PhoneSurface {
             self.d.text_bold.text_style=self.navigation_font.clone();
             let panel=layout.panel;
             self.navigation_card(cx,panel,22.0,face,amount);
-            self.d.label_elided(cx,rect(panel.pos.x+16.0,panel.pos.y+6.0,panel.size.x-32.0,24.0),true,11.0,alpha(ink,0.55*amount),HAlign::Left,"快捷操作");
+            self.d.label_elided(cx,rect(panel.pos.x+16.0,panel.pos.y+6.0,panel.size.x-32.0,24.0),true,11.0,alpha(ink,0.55*amount),HAlign::Left,"Quick actions");
             for (button,hit,label) in [
-                (layout.home,NavigationHit::Home,"返回首页"),
-                (layout.recents,NavigationHit::Recents,"最近应用"),
+                (layout.home,NavigationHit::Home,"Home"),
+                (layout.recents,NavigationHit::Recents,"Recents"),
             ] {
                 let pressed=nav.pressed()==Some(hit);
                 self.rounded(cx,button,15.0,alpha(accent,if pressed {0.17*amount}else{0.055*amount}));
