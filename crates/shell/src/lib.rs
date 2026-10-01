@@ -3688,32 +3688,37 @@ impl App {
     }
 
     /// Text input, the input method's state query and its action key for
-    /// the chat panes. True when a pane took the event.
+    /// the chat panes. True when a pane took the event. Only a pane whose
+    /// prompt holds the key focus takes the input method's events; another
+    /// focused field (an app's text input, a host sheet) keeps its own.
     fn chat_text_input(&mut self, cx: &mut Cx, event: &Event) -> bool {
-        for pane in [ids!(shell_app_chat), ids!(shell_system_chat)] {
+        let mut focused = [false; 2];
+        for (i, pane) in [ids!(shell_app_chat), ids!(shell_system_chat)].into_iter().enumerate() {
             let pane = self.ui.widget(cx, pane);
             let Some(mut pane) = pane.borrow_mut::<system_chat::view::ShellSystemChat>() else { continue };
-            if let Event::ImeAction(action) = event {
-                use makepad_widgets::makepad_platform::event::ImeAction;
-                if pane.has_keyboard(cx) && matches!(action.action, ImeAction::Send | ImeAction::Done | ImeAction::Go) {
-                    if pane.is_app_panel() { app_chat::send_draft() } else { system_chat::send_draft() }
-                    return true;
-                }
-                continue;
-            }
-            if pane.ime(cx, event) {
+            focused[i] = pane.has_keyboard(cx);
+            if !matches!(event, Event::ImeAction(_)) && pane.ime(cx, event) {
                 return true;
             }
         }
-        // Typed text with no pane focused by a press (F8 opened it): the
-        // pane that has the keyboard. Never an input method's whole editor
-        // state: that belongs to the field it was asked of.
-        if let Event::TextInput(t) = event {
-            if t.full_state_sync.is_none() {
-                return app_chat::text_input(t) || system_chat::text_input(t);
-            }
+        use system_chat::composer::{text_target, Pane};
+        let target = match event {
+            Event::ImeAction(action) if system_chat::composer::ime_action_sends(action.action) => system_chat::composer::ime_target(focused[0], focused[1]),
+            // Typed text with no field focused (F8 opened the pane without
+            // a press): the pane that has the keyboard. Never an input
+            // method's whole editor state: that belongs to the field it was
+            // asked of.
+            Event::TextInput(t) if t.full_state_sync.is_none() => text_target(cx.key_focus().is_empty(), app_chat::is_focused(), system_chat::is_open()),
+            _ => None,
+        };
+        match (event, target) {
+            (Event::ImeAction(_), Some(Pane::App)) => app_chat::send_draft(),
+            (Event::ImeAction(_), Some(Pane::System)) => system_chat::send_draft(),
+            (Event::TextInput(t), Some(Pane::App)) => return app_chat::text_input(t),
+            (Event::TextInput(t), Some(Pane::System)) => return system_chat::text_input(t),
+            _ => return false,
         }
-        false
+        true
     }
 
     /// The system chat's pane owns the pointer inside its rect while open.
