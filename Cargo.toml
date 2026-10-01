@@ -26,6 +26,7 @@ members = [
     "crates/ai-host",
     "crates/shell",
     "crates/toolbox",
+    "crates/process-apps",
     "apps/reference",
     "apps/news/host-service",
     "apps/mail/host-service",

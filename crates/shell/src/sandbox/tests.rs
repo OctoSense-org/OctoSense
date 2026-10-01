@@ -543,3 +543,88 @@ fn a_linked_checkout_into_the_octosense_home_is_not_reopened() {
         assert!(linux::rules(&p, 3, true).iter().all(|r| r.path != real), "Landlock never grants the home through a link");
     }
 }
+
+// ------------------------------------------------ what the next build reads (ADR 0004 §3, review 2026-09-30)
+
+/// The Terminal's `home:rw` with a checkout, target dir and cargo home
+/// under the same home: all of them read-only after every grant.
+fn home_rw_with_a_build(root: &Path) -> Policy {
+    let mut p = home_rw_with_octosense_home(root);
+    p.program = vec![root.join("src/OctoSense"), root.join("src/OctoSense/target/release")];
+    p.read_only = vec![root.join("src/OctoSense"), root.join("src/OctoSense/target"), root.join(".cargo"), root.join(".rustup"), root.join("src/.cargo")];
+    p
+}
+
+#[test]
+fn the_macos_profile_keeps_the_build_read_only_after_every_grant() {
+    let root = Path::new("/nonexistent/home");
+    let text = macos::profile(&home_rw_with_a_build(root));
+    let grant = text.find("(subpath \"/nonexistent/home\"))").expect(&text);
+    let ro = text.find(";; what the next build reads or runs stays read-only").expect(&text);
+    assert!(grant < ro, "the read-only rule comes after home:rw (the last match wins)\n{text}");
+    for dir in [".cargo", ".rustup", "src/.cargo", "src/OctoSense", "src/OctoSense/target"] {
+        assert!(text[ro..].contains(&format!("(subpath \"/nonexistent/home/{dir}\")")), "{dir}\n{text}");
+    }
+    // Login items not writable, last of all.
+    let agents = text.find("(deny file-write* (subpath \"/nonexistent/home/Library/LaunchAgents\"))").expect(&text);
+    assert!(ro < agents, "{text}");
+    // A jail inside a read-only path stays writable.
+    let mut inside = home_rw_with_a_build(root);
+    inside.read_only.push(root.join(".octosense"));
+    let text = macos::profile(&inside);
+    assert!(text.contains(";; its own jail and secrets even there\n(allow file-write* (subpath \"/nonexistent/home/.octosense/apps/probe\")"), "{text}");
+}
+
+/// Proved on this machine: from inside the broad sandbox, nothing the next
+/// build reads or runs can be written (the review's `.cargo/config.toml`
+/// build wrapper), and login items cannot be added; the person's other
+/// files still can.
+#[cfg(target_os = "macos")]
+#[test]
+fn inside_the_terminals_sandbox_the_build_toolchain_and_login_items_are_out_of_reach() {
+    if !sandbox_works_here() {
+        eprintln!("no process sandbox on this machine; skipped");
+        return;
+    }
+    let scratch = Scratch::new("buildro");
+    let root = &scratch.0;
+    for dir in ["src/OctoSense/target/release", "src/OctoSense/.cargo", ".cargo/bin", ".rustup", "Library/LaunchAgents", "Documents", ".octosense/apps/probe", ".octosense/secrets/probe"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    std::fs::write(root.join("src/OctoSense/Cargo.toml"), "[workspace]").unwrap();
+    let policy = home_rw_with_a_build(root);
+    let sh = |script: String| run("/bin/sh", &["-c", &script], &policy);
+    for target in [
+        "src/OctoSense/.cargo/config.toml",
+        "src/.cargo/config.toml",
+        ".cargo/config.toml",
+        ".cargo/bin/cargo",
+        ".rustup/settings.toml",
+        "src/OctoSense/target/release/terminal",
+        "src/OctoSense/Cargo.toml",
+        "Library/LaunchAgents/evil.plist",
+    ] {
+        let (ok, out) = sh(format!("echo '[build]\nrustc-wrapper = \"/tmp/x\"' > {}", root.join(target).display()));
+        assert!(!ok, "{target} must not be writable: {out}");
+    }
+    let (ok, out) = sh(format!("mkdir {}", root.join("src/.cargo").display()));
+    assert!(!ok, "no .cargo directory can be made above the checkout either: {out}");
+    let (ok, out) = sh(format!("cat {}/src/OctoSense/Cargo.toml", root.display()));
+    assert!(ok && out.contains("workspace"), "the checkout stays readable: {out}");
+    let (ok, out) = sh(format!("echo x > {}/Documents/note.txt", root.display()));
+    assert!(ok, "the person's own files stay writable under home:rw: {out}");
+}
+
+/// `terminal.run` follows what the Terminal's newest launch reported
+/// (ADR 0004 §10, §12): not before a launch, not after an unsandboxed one.
+#[test]
+fn the_newest_launch_says_whether_an_app_ran_sandboxed() {
+    assert_eq!(launch_state("probe-launches"), None);
+    assert!(!launch_sandboxed("probe-launches"), "no launch yet: nothing to vouch for");
+    note_launch("probe-launches", Some(&Applied::Sandboxed("ok".into())));
+    assert!(launch_sandboxed("probe-launches"));
+    note_launch("probe-launches", Some(&Applied::Unavailable("sandbox-exec is missing".into())));
+    assert_eq!(launch_state("probe-launches"), Some(false), "an unsandboxed launch withdraws it");
+    note_launch("probe-launches", None);
+    assert!(!launch_sandboxed("probe-launches"), "no policy is no sandbox");
+}
