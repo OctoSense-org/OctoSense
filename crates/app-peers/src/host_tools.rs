@@ -974,6 +974,15 @@ pub trait ToolHost: Send + Sync {
         false
     }
 
+    /// Why the host's startup check refused `app_id`'s `account` workspace
+    /// (ADR 0004 §11: it contains or reaches the host's secrets), if it
+    /// did. A refused account's peer is neither prepared nor resumed, its
+    /// `peer/input` is rejected and its calls are answered
+    /// `workspace_refused`, until a later start finds the folder clean.
+    fn workspace_refused(&self, _app_id: &str, _account: &str) -> Option<String> {
+        None
+    }
+
     /// One call, stamped. Answer through `reply`, once.
     fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
         reply.finish(ToolOutcome::error("no_executor", format!("nothing on this host runs {}", call.name)));

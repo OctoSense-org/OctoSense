@@ -507,3 +507,22 @@ fn a_platform_host_in_tests_keeps_secrets_in_files() {
     host.uninstall("probe").unwrap();
     assert!(!home.0.join("secrets/probe").exists());
 }
+
+/// The host's answer to the broker: a refused workspace is refused for the
+/// account the relay keys it by (an app with accounts: that account; a
+/// script app's `card.<id>` peer: the device), for prepare, resume, input
+/// and calls alike.
+#[cfg(unix)]
+#[test]
+fn should_answer_refused_for_the_peers_account_when_the_startup_check_flags_it() {
+    let (home, host, ws, secret) = populated("host-refused");
+    let notes = host.open("notes").unwrap().account_folder(None).unwrap();
+    std::os::unix::fs::symlink(&secret, ws.join("token")).unwrap();
+    std::os::unix::fs::symlink(&secret, notes.join("token")).unwrap();
+    host.startup_check();
+    let why = crate::host_tools::workspace_refused_in(&host, "rinx", "alice");
+    assert!(why.is_some_and(|w| w.contains("secrets")), "rinx keeps accounts: alice's folder is refused");
+    assert!(crate::host_tools::workspace_refused_in(&host, "rinx", "bob").is_none(), "another account is not");
+    assert!(crate::host_tools::workspace_refused_in(&host, "card.notes", "anyone").is_some(), "a script app's peer uses the device folder");
+    drop(home);
+}
