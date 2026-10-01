@@ -431,6 +431,43 @@ fn closing_the_pane_lets_the_kernel_go_unless_a_turn_runs() {
     assert!(d.is_connected(), "a running turn keeps its connection");
 }
 
+/// Closing and reopening the pane shows the conversation again: after an
+/// idle close the reconnect loads the history, and a reopen on a
+/// connection a running turn kept loads it again once nothing runs (the
+/// pane once came back empty until Home restarted).
+#[test]
+fn reopening_the_pane_loads_the_history_again() {
+    let (mut d, fake) = opened();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "earlier"}, {"seq": 2, "role": "assistant", "content": "Earlier answer."}]);
+    d.command(Command::Close);
+    d.model.load_history(&json!([]));
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Earlier answer."], "an idle close: reconnect and history");
+
+    // A turn keeps the connection through a close; the reopen after it
+    // ended loads the history again on the same connection.
+    d.command(Command::Send("go on".into()));
+    let turn = fake.sent("turn/start").last().unwrap()["turn_id"].as_str().unwrap().to_string();
+    d.command(Command::Close);
+    assert!(d.is_connected());
+    fake.notify("turn/completed", json!({"turn_id": turn}));
+    settle(&mut d);
+    let hydrates = fake.sent("session/hydrate").len();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "go on"}, {"seq": 2, "role": "assistant", "content": "Went on."}]);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Went on."]);
+    // While a turn runs, a reopen keeps the live rows instead.
+    d.command(Command::Send("more".into()));
+    d.command(Command::Close);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert!(text_of(&d.model, Role::User).contains(&"more".to_string()));
+}
+
 // ---------------------------------------------------------------- approvals
 
 #[test]
