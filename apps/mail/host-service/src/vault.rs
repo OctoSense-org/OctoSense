@@ -7,9 +7,9 @@
 //!
 //! The files live in the host's secrets folder, `<home>/secrets/os.mail/`
 //! (0700, files 0600; ADR 0004 §11), when the host names it
-//! ([`crate::set_secrets_dir`]), else in `<mail dir>/secrets/`. A file an
-//! earlier build left in `<mail dir>/secrets/` moves there the first time it
-//! is read, and a password kept as a plain file by an earlier build is moved
+//! ([`crate::set_secrets_dir`]), else in `<mail dir>/secrets/`. Every file
+//! an earlier build left in `<mail dir>/secrets/` moves there when the shell
+//! starts ([`migrate_all`]; also on a read, for a host that did not), and a password kept as a plain file by an earlier build is moved
 //! into the store the first time it is read.
 use std::path::{Path, PathBuf};
 
@@ -50,16 +50,22 @@ impl Place {
     /// A password an earlier build left under `<mail dir>/secrets/` moves
     /// (bytes as they are: plain, or Android's sealed form) into the
     /// secrets folder, owner-only, the first time it is needed.
-    fn adopt_legacy(&self, id: &str) {
+    fn adopt_legacy(&self, id: &str) -> bool {
         let (old, new) = (self.legacy_file(id), self.file(id));
-        if old == new || new.exists() {
-            return;
+        if old == new || !std::fs::symlink_metadata(&old).is_ok_and(|m| m.is_file()) {
+            return false;
         }
-        let Ok(bytes) = std::fs::read(&old) else { return };
-        if write_private(&new, &bytes).is_ok() {
-            let _ = std::fs::remove_file(&old);
-            let _ = std::fs::remove_dir(self.mail_dir.join("secrets"));
+        // Moved before, but the old copy could not be deleted then: the new
+        // one is the password (written by this build or a later sign-in).
+        if !new.exists() {
+            let Ok(bytes) = std::fs::read(&old) else { return false };
+            if write_private(&new, &bytes).is_err() {
+                return false;
+            }
         }
+        let gone = std::fs::remove_file(&old).is_ok();
+        let _ = std::fs::remove_dir(self.mail_dir.join("secrets"));
+        gone
     }
 
     /// Both the file and any legacy one.
@@ -69,9 +75,18 @@ impl Place {
     }
 }
 
-/// Stub.
-pub fn migrate_all(_place: &Place) -> usize {
-    0
+/// Move every password an earlier build left in `<mail dir>/secrets/` into
+/// the secrets folder (the shell, at startup), and drop an old copy whose
+/// earlier move could not delete it. How many old files went.
+pub fn migrate_all(place: &Place) -> usize {
+    let Ok(entries) = std::fs::read_dir(place.mail_dir.join("secrets")) else { return 0 };
+    let ids: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|id| !id.ends_with(".tmp"))
+        .collect();
+    ids.iter().filter(|id| place.adopt_legacy(id)).count()
 }
 
 pub trait Vault: Send + Sync {
