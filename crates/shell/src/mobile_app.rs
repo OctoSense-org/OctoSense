@@ -511,6 +511,12 @@ impl App {
                 }
             }
             PhoneHit::Group(name)=>self.open_group(cx,&name),
+            // The system chat, full screen, as F8 opens it (#143).
+            PhoneHit::Assistant=>{
+                crate::system_chat::open();
+                crate::app_chat::focus(false);
+                self.system_chat_changed(cx);
+            }
             PhoneHit::GroupApp(_,app)=>{self.state_mut().phone.groups.close();self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::Glance(app)=>{log!("[phone] glance card opens {}",app);self.phone_action(cx,PhoneHit::App(app));return;}
             PhoneHit::GroupClose=>self.state_mut().phone.groups.close(),

@@ -105,8 +105,15 @@ pub struct ContextSpec {
 /// Never "the person" unless the host saw the person ask.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum TurnTrigger {
-    /// The person asked: a button or composer in the app's UI, the chat.
+    /// The person asked, and the host that started the turn saw it: the
+    /// shell's own composer (the app's conversation, the system chat) or an
+    /// in-process module's own UI. Never what an app says over the wire.
     Person,
+    /// The app says the person asked (`"trigger": "person"` from a script
+    /// or process app's `octos.turn.start`): the person speaks in the
+    /// transcript, but no shell surface saw a gesture, so approval rules see
+    /// the app's run and "when I start it" never answers it (ADR 0004 §8).
+    AppSaysPerson,
     /// The app's own schedule or background work (a timer, a data change).
     App,
     /// Content someone else sent (a message, an email) started it.
@@ -122,10 +129,11 @@ impl TurnTrigger {
     /// The wire form an app may give with `octos.turn.start`:
     /// `"trigger": "person" | "app" | "schedule" | "background" | "incoming"`
     /// and, for incoming content, `"from"`. Anything else is
-    /// [`TurnTrigger::Unknown`]; `system_agent` is the host's alone.
+    /// [`TurnTrigger::Unknown`]; `system_agent` is the host's alone, and
+    /// `person` is only the app's word ([`TurnTrigger::AppSaysPerson`]).
     pub fn from_args(args: &Value) -> TurnTrigger {
         match args.get("trigger").and_then(Value::as_str) {
-            Some("person") => TurnTrigger::Person,
+            Some("person") => TurnTrigger::AppSaysPerson,
             Some("app" | "schedule" | "background") => TurnTrigger::App,
             Some("incoming") => TurnTrigger::Incoming { from: args.get("from").and_then(Value::as_str).map(str::to_owned) },
             _ => TurnTrigger::Unknown,
@@ -134,10 +142,22 @@ impl TurnTrigger {
     pub fn as_str(&self) -> &'static str {
         match self {
             TurnTrigger::Person => "person",
+            TurnTrigger::AppSaysPerson => "app_says_person",
             TurnTrigger::App => "app",
             TurnTrigger::Incoming { .. } => "incoming",
             TurnTrigger::SystemAgent => "system_agent",
             TurnTrigger::Unknown => "unknown",
+        }
+    }
+    /// Who speaks in a person-lane turn this trigger started: the app for
+    /// its own run or content that arrived, the person otherwise (an unsaid
+    /// turn, and one the app says the person started, are labelled the
+    /// person's; the trigger, not the label, is what approval rules read).
+    pub fn speaker(&self) -> crate::host_tools::TurnOrigin {
+        match self {
+            TurnTrigger::SystemAgent => crate::host_tools::TurnOrigin::SystemAgent,
+            TurnTrigger::App | TurnTrigger::Incoming { .. } => crate::host_tools::TurnOrigin::App,
+            TurnTrigger::Person | TurnTrigger::AppSaysPerson | TurnTrigger::Unknown => crate::host_tools::TurnOrigin::Person,
         }
     }
 }
@@ -374,6 +394,19 @@ mod tests {
         assert!(split_origin_marker(" [from the person] hi").is_none());
         assert!(split_origin_marker("[from the moon] hi").is_none());
         assert_eq!(Speaker { kind: TurnOrigin::App, label: None }.to_json(), serde_json::json!({"kind": "app"}));
+    }
+
+    /// ADR 0004 §8: "triggered by the person" is a gesture a shell surface
+    /// saw, never a value the app sends. An app's `"trigger": "person"` is
+    /// its word: the person speaks in the transcript, but approval rules
+    /// see the app's run.
+    #[test]
+    fn an_apps_person_claim_is_not_the_persons_trigger() {
+        use serde_json::json;
+        assert_eq!(TurnTrigger::from_args(&json!({"trigger": "person"})), TurnTrigger::AppSaysPerson);
+        assert_eq!(TurnTrigger::from_args(&json!({"trigger": "system_agent"})), TurnTrigger::Unknown);
+        assert_eq!(TurnTrigger::AppSaysPerson.as_str(), "app_says_person");
+        assert_eq!(TurnTrigger::AppSaysPerson.speaker(), crate::host_tools::TurnOrigin::Person);
     }
 
     #[test]

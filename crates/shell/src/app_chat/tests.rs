@@ -486,13 +486,22 @@ fn reopening_the_panel_keeps_the_persons_rows_and_the_live_follower() {
     assert_eq!(persons_rows(), ["what is new?", "and now?"]);
 
     // The peer went while hidden (the agent turned off, the app released):
-    // a reopen opens a new context.
+    // a reopen opens a new context, for the same instance, so the broker's
+    // history still has the person's earlier rows.
     super::close();
     crate::approvals::with(|a| a.consent.turn_off(APP, 3));
     crate::ai_host::contained::revoke(APP);
     assert!(!context.is_open());
     super::close();
     assert_eq!(super::status(), super::Status::Idle);
+    crate::approvals::with(|a| a.consent.set(&crate::approvals::rules::ApprovalGesture::sheet_tap(), APP, true, 4));
+    super::open_app(app.clone());
+    wait("a new conversation", || super::status() == super::Status::Ready);
+    let instances: Vec<String> = peers.0.lock().unwrap().iter().flat_map(|(_, p)| p.conversations.lock().unwrap().iter().map(|(spec, _)| spec.instance.clone()).collect::<Vec<_>>()).collect();
+    assert_eq!(instances, [super::INSTANCE, super::INSTANCE], "one instance on every open");
+    super::close();
+    crate::approvals::with(|a| a.consent.turn_off(APP, 5));
+    crate::ai_host::contained::revoke(APP);
 }
 
 /// The two lanes are independent: the system agent's running turn does not

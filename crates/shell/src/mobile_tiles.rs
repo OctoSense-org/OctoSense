@@ -19,7 +19,25 @@ pub enum TileKind {
     /// A tile group's face (mobile_groups.rs), named; a chip row under the
     /// app tiles in portrait, one more column in landscape.
     Group(&'static str),
+    /// The system chat's face (#143): a chip beside the group chips that
+    /// opens the assistant. Drawn by the page, like a group; no client.
+    Assistant,
 }
+
+impl TileKind {
+    /// A tile the page draws itself (a group, the assistant), not a face
+    /// of an app's client.
+    pub fn shell_drawn(self) -> bool {
+        matches!(self, TileKind::Group(_) | TileKind::Assistant)
+    }
+}
+
+/// The assistant chip's slot name. [`home_layout_for_apps`] places it when
+/// `apps` names it ([`crate::mobile_surface::PhoneSurface::home_layout`]
+/// does, in a build with an assistant); the Android placements journal
+/// hides it like any tile. Namespaced (`shell:`, like `android:` ids) so
+/// no app id, `assistant` included, can stand for it.
+pub const ASSISTANT_TILE: &str = "shell:assistant";
 
 /// The apps that own a home tile, in tile order. Every id is a launcher
 /// registry entry; the tile launches it through the same cargo path.
@@ -99,9 +117,14 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
     let width = (screen.size.x - m * 2.0).max(1.0);
     let tile_apps: Vec<_> = TILE_APPS.iter().filter(|(id, _)| apps.contains(id) && !tile_hidden(id)).collect();
     let groups = crate::mobile_groups::GroupsState::placed(apps);
+    // The chips: the groups, then the assistant.
+    let mut chips: Vec<(&'static str, TileKind)> = groups.iter().map(|name| (*name, TileKind::Group(name))).collect();
+    if apps.contains(&ASSISTANT_TILE) && !tile_hidden(ASSISTANT_TILE) {
+        chips.push((ASSISTANT_TILE, TileKind::Assistant));
+    }
     let mut tiles = Vec::new();
     if landscape {
-        let count = (tile_apps.len() + groups.len()).max(1) as f64;
+        let count = (tile_apps.len() + chips.len()).max(1) as f64;
         let w = ((width - TILE_GAP * (count - 1.0)) / count).max(1.0);
         // Short enough that a row of favorites still fits above the dock.
         let h = (w * 0.56).min((dock.pos.y - top - 126.0).max(BANNER_MIN)).max(1.0);
@@ -109,9 +132,9 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
             let x = left + index as f64 * (w + TILE_GAP);
             tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
         }
-        for (index, name) in groups.iter().enumerate() {
+        for (index, (name, kind)) in chips.iter().enumerate() {
             let x = left + (tile_apps.len() + index) as f64 * (w + TILE_GAP);
-            tiles.push(TileSlot { app: name, kind: TileKind::Group(name), rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
+            tiles.push(TileSlot { app: name, kind: *kind, rect: Rect { pos: dvec2(x, top), size: dvec2(w, h) } });
         }
     } else {
         let s = ((width - TILE_GAP) / 2.0).max(1.0);
@@ -127,7 +150,7 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
         let banners_top = top + if small_count > 0 { s + TILE_GAP } else { 0.0 };
         // Group chips (two to a row) sit between the app tiles and the
         // favorites, so their rows come out of the banners' budget too.
-        let chip_rows = groups.len().div_ceil(2) as f64;
+        let chip_rows = chips.len().div_ceil(2) as f64;
         let banners_room = dock.pos.y - FAVORITES_STRIP - FAVORITES_CELL_MIN - TILE_GAP - TILE_TO_FAVORITES - banners_top
             - TILE_GAP * (wide_count.max(1) - 1) as f64
             - chip_rows * (crate::mobile_groups::GROUP_TILE_HEIGHT + TILE_GAP);
@@ -147,16 +170,16 @@ pub fn home_layout_for_apps(screen: Rect, top: f64, dock: Rect, apps: &[&str]) -
                     tiles.push(TileSlot { app, kind: *kind, rect: Rect { pos: dvec2(left, y), size: dvec2(width, wide_h) } });
                     wide += 1;
                 }
-                TileKind::Group(_) => {}
+                TileKind::Group(_) | TileKind::Assistant => {}
             }
         }
         // Group chips under the app tiles, two to a row.
         let bottom = tiles.iter().map(|s| s.rect.pos.y + s.rect.size.y + TILE_GAP).fold(top, f64::max);
         let gh = crate::mobile_groups::GROUP_TILE_HEIGHT;
-        for (index, name) in groups.iter().enumerate() {
+        for (index, (name, kind)) in chips.iter().enumerate() {
             let (col, row) = ((index % 2) as f64, (index / 2) as f64);
-            let w = if groups.len() == 1 { width } else { s };
-            tiles.push(TileSlot { app: name, kind: TileKind::Group(name), rect: Rect { pos: dvec2(left + col * (s + TILE_GAP), bottom + row * (gh + TILE_GAP)), size: dvec2(w, gh) } });
+            let w = if chips.len() == 1 { width } else { s };
+            tiles.push(TileSlot { app: name, kind: *kind, rect: Rect { pos: dvec2(left + col * (s + TILE_GAP), bottom + row * (gh + TILE_GAP)), size: dvec2(w, gh) } });
         }
     }
     let columns = grid_columns(landscape);
@@ -490,6 +513,50 @@ mod tests {
         let empty = home_layout_for_apps(screen, top, dock, &[]);
         assert!(empty.tiles.is_empty());
         assert_eq!(empty.favorites.pos.y, top);
+    }
+
+    #[test]
+    fn the_assistant_chip_is_placed_only_when_named_and_keeps_a_row_of_favorites() {
+        // #143: the system chat's home tile, a chip beside the group chips.
+        let screen = Rect { pos: dvec2(0.0, 78.0), size: dvec2(412.0, 768.0) };
+        let top = screen.pos.y + 156.0;
+        let dock = PhoneSurface::home_dock(screen);
+        let chip = |l: &HomeLayout| l.tiles.iter().find(|t| t.kind == TileKind::Assistant).copied();
+        assert!(chip(&home_layout_for_apps(screen, top, dock, &["clock", "photos"])).is_none(), "not named: not placed");
+        // Alone, it spans the row like a lone group chip.
+        let alone = home_layout_for_apps(screen, top, dock, &["clock", "photos", ASSISTANT_TILE]);
+        let only = chip(&alone).expect("the assistant chip");
+        assert_eq!(only.app, ASSISTANT_TILE);
+        assert!(only.kind.shell_drawn());
+        assert!((only.rect.size.x - (screen.size.x - HOME_MARGIN * 2.0)).abs() < 0.01);
+        assert_eq!(only.rect.size.y, crate::mobile_groups::GROUP_TILE_HEIGHT);
+        // With the phone catalog's two wide tiles and two groups it still
+        // leaves a row of favorites, and touches nothing.
+        let full = home_layout_for_apps(screen, top, dock, &["reference", "sheets", "photos", "appcard", ASSISTANT_TILE]);
+        let placed = chip(&full).expect("the assistant chip beside the groups");
+        let groups: Vec<_> = full.tiles.iter().filter(|t| matches!(t.kind, TileKind::Group(_))).collect();
+        assert!(!groups.is_empty());
+        assert!(groups.iter().all(|g| g.rect.pos.y <= placed.rect.pos.y), "after the groups");
+        assert!(full.capacity >= 4, "a row of favorites: {}", full.capacity);
+        for (i, a) in full.tiles.iter().enumerate() {
+            assert!(!overlaps(a.rect, full.favorites) && !overlaps(a.rect, dock), "{}", a.app);
+            for b in &full.tiles[i + 1..] {
+                assert!(!overlaps(a.rect, b.rect), "{} and {}", a.app, b.app);
+            }
+        }
+        // Landscape: one more column in the row.
+        let wide = Rect { pos: dvec2(0.0, 0.0), size: dvec2(900.0, 412.0) };
+        let landscape = home_layout_for_apps(wide, wide.pos.y + 44.0, PhoneSurface::home_dock(wide), &["clock", "photos", ASSISTANT_TILE]);
+        let y = landscape.tiles[0].rect.pos.y;
+        assert!(chip(&landscape).is_some_and(|c| c.rect.pos.y == y));
+        // An app that happens to be called `assistant` is just an app.
+        let named = home_layout_for_apps(screen, top, dock, &["clock", "assistant"]);
+        assert!(chip(&named).is_none(), "an app id never stands for the chip");
+        // Hidden through the placements journal, like any tile.
+        set_hidden_tiles(&[ASSISTANT_TILE.to_string()]);
+        let hidden = chip(&home_layout_for_apps(screen, top, dock, &["clock", ASSISTANT_TILE]));
+        set_hidden_tiles(&[]);
+        assert!(hidden.is_none());
     }
 
     #[test]
