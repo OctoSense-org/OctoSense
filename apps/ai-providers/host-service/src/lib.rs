@@ -555,8 +555,14 @@ fn scan_error(reason: &str) -> String {
 }
 
 impl LlmService {
-    /// Raise `sheet` for `app_id`, replacing any sheet already waiting.
-    fn raise(&mut self, app_id: &str, reply: Replier, kind: Kind, sheet: String, host: &mut dyn ServiceHost) {
+    /// Raise `sheet` for `app_id`, replacing any sheet already waiting. A
+    /// surface that cannot show a sheet (a home-screen tile, an agent's tool
+    /// call) is refused instead, and a sheet already up stays. Whether it rose.
+    fn raise(&mut self, app_id: &str, may_prompt: bool, reply: Replier, kind: Kind, sheet: String, host: &mut dyn ServiceHost) -> bool {
+        if !may_prompt {
+            reply.send(Err("Open AI providers to do this: it needs its sheet.".into()));
+            return false;
+        }
         if let Some(earlier) = self.pending.lock().unwrap().take() {
             earlier.reply.send(Err("Another sheet replaced this one.".into()));
         }
@@ -564,6 +570,7 @@ impl LlmService {
         IMAGE_WAITER.lock().unwrap().take();
         *self.pending.lock().unwrap() = Some(Pending { app_id: app_id.to_string(), reply, kind });
         host.open_sheet(sheet);
+        true
     }
 
     fn pending_kind(&self) -> Option<Kind> {
@@ -738,7 +745,7 @@ impl LlmService {
         });
     }
 
-    fn export(&mut self, app_id: &str, args: &Value, reply: Replier, host: &mut dyn ServiceHost) {
+    fn export(&mut self, app_id: &str, may_prompt: bool, args: &Value, reply: Replier, host: &mut dyn ServiceHost) {
         let store = match self.shared.open() {
             Ok(s) => s,
             Err(e) => return reply.send(Err(e)),
@@ -755,7 +762,9 @@ impl LlmService {
         }
         self.generation += 1;
         let generation = self.generation;
-        self.raise(app_id, reply, Kind::Export(generation), sheets::export_waiting(), host);
+        if !self.raise(app_id, may_prompt, reply, Kind::Export(generation), sheets::export_waiting(), host) {
+            return;
+        }
         *self.export.lock().unwrap() = Some((generation, None));
         let (shared, export, pending, lifetime) = (self.shared.clone(), self.export.clone(), self.pending.clone(), self.qr_lifetime);
         work(move || {
@@ -1064,7 +1073,7 @@ impl HostService for LlmService {
         match call.method() {
             "connect_client" => {
                 if call.app_id != "os.ai-providers" { return reply.send(Err("Open AI providers to connect a client.".into())); }
-                self.raise(&call.app_id, reply, Kind::Connect, sheets::connect_client(), host);
+                self.raise(&call.app_id, call.may_prompt, reply, Kind::Connect, sheets::connect_client(), host);
             }
             method if method.starts_with("sheet.client_") => {
                 // Only the Talk to Octos sheet this app raised, never the app.
@@ -1113,12 +1122,14 @@ impl HostService for LlmService {
             "add_provider" => match self.shared.open() {
                 Ok(store) => {
                     let sheet = sheets::edit(None, !store.list.is_empty());
-                    self.raise(&call.app_id, reply, Kind::Add, sheet, host)
+                    self.raise(&call.app_id, call.may_prompt, reply, Kind::Add, sheet, host);
                 }
                 Err(e) => reply.send(Err(e)),
             },
             "edit_provider" => match self.provider(&id) {
-                Ok(p) => self.raise(&call.app_id, reply, Kind::Edit(id), sheets::edit(Some(&p), true), host),
+                Ok(p) => {
+                    self.raise(&call.app_id, call.may_prompt, reply, Kind::Edit(id), sheets::edit(Some(&p), true), host);
+                }
                 Err(e) => reply.send(Err(e)),
             },
             "set_model" | "move" | "set_primary" | "remove" => {
@@ -1163,10 +1174,10 @@ impl HostService for LlmService {
                     reply.send(answer);
                 });
             }
-            "export_qr" => self.export(&call.app_id, &call.args, reply, host),
+            "export_qr" => self.export(&call.app_id, call.may_prompt, &call.args, reply, host),
             "import_qr" => {
                 let sheet = sheets::import(self.scanner.is_some(), self.image_picker.is_some(), self.image_drops);
-                self.raise(&call.app_id, reply, Kind::Import { scanned: None }, sheet, host)
+                self.raise(&call.app_id, call.may_prompt, reply, Kind::Import { scanned: None }, sheet, host);
             }
             "sheet.cancel" => {
                 host.close_sheet();

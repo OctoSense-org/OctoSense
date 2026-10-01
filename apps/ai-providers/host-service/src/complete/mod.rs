@@ -687,6 +687,13 @@ impl HostService for ModelService {
         FAMILY
     }
 
+    /// Every attempt on one provider, and a margin: the app hears a timeout
+    /// only once no single provider could still answer. A call that falls
+    /// back across several slow providers can outlast it.
+    fn timeout(&self, _call: &ServiceCall) -> Duration {
+        TIMEOUT * ATTEMPTS + Duration::from_secs(30)
+    }
+
     fn call(&mut self, call: ServiceCall, reply: Replier, _host: &mut dyn ServiceHost) {
         if !(self.grants)(&call.app_id, &call.host_dir) {
             return reply.send(Err(Refusal::new(Code::Capability, "This app was not granted the model capability.").to_string()));
@@ -721,4 +728,23 @@ pub fn register_with(options: Options) -> Arc<ModelHost> {
     let grants = options.grants.clone().unwrap_or_else(|| Arc::new(manifest_grants));
     octosense_appstore::services::register_host_service(Box::new(ModelService { host: host.clone(), grants }));
     host
+}
+
+#[cfg(test)]
+mod service_timeout {
+    use super::*;
+
+    #[test]
+    fn a_model_call_may_wait_out_every_attempt_on_a_provider() {
+        let service = ModelService { host: Arc::new(ModelHost::new(&Options::default())), grants: Arc::new(|_, _| true) };
+        let call = ServiceCall {
+            app_id: "os.test".into(),
+            service: "model.complete".into(),
+            args: serde_json::Value::Null,
+            from_sheet: false,
+            may_prompt: true,
+            host_dir: std::env::temp_dir(),
+        };
+        assert!(service.timeout(&call) >= TIMEOUT * ATTEMPTS, "the host must not time out a call its provider is still allowed to answer");
+    }
 }

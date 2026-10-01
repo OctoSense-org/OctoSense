@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -197,6 +198,150 @@ class MergeEvidence(unittest.TestCase):
         body = merge.comment_body(result(), ["phone.yml"])
         self.assertTrue(body.startswith("Local CI passed on " + "b" * 40))
         self.assertIn("| phone.yml / home | Test | PASS |", body)
+
+
+class LinuxHostPlan(unittest.TestCase):
+    def where(self, workflows, linux_host):
+        return {(w, j): where for w, j, _, where in ci.plan_jobs(workflows, linux_host)}
+
+    def test_without_a_host_everything_runs_here_and_nothing_is_added(self):
+        plan = self.where(ci.GROUPS["all"], False)
+        self.assertEqual(set(plan.values()), {"local"})
+        self.assertNotIn(ci.LINUX_HOST, {w for w, _ in plan})
+
+    def test_ubuntu_jobs_go_to_the_host_and_macos_jobs_stay(self):
+        plan = self.where(["apps.yml"], True)
+        self.assertEqual(plan[("apps.yml", "services")], "linux")
+        self.assertEqual(plan[("apps.yml", "kernel-security")], "linux")
+        self.assertEqual(plan[("apps.yml", "apps")], "local")
+        self.assertEqual(plan[(ci.LINUX_HOST, "sandbox")], "linux", "the sandbox tests come with apps")
+        for workflow in ci.GROUPS["all"]:
+            for job_id, job in ci.jobs_of(workflow):
+                expected = "linux" if "ubuntu" in job["runs-on"] else "local"
+                self.assertEqual(self.where([workflow], True)[(workflow, job_id)], expected, (workflow, job_id))
+
+    def test_the_sandbox_tests_follow_the_workflows_that_cover_the_shell(self):
+        self.assertIn((ci.LINUX_HOST, "sandbox"), self.where(["phone.yml"], True))
+        self.assertNotIn((ci.LINUX_HOST, "sandbox"), self.where(["rom.yml"], True),
+                         "rom.yml does not run for a change to the shell")
+        job = ci.job_definition(f"{ci.LINUX_HOST}:sandbox")
+        self.assertIn("octosense-shell", job["steps"][-1]["run"])
+        self.assertEqual(ci.job_definition("apps.yml:services")["runs-on"], "ubuntu-latest")
+
+    def test_a_linux_host_job_whose_source_moved_is_drift(self):
+        moved = {"sandbox": dict(ci.LINUX_HOST_JOBS["sandbox"], source="crates/shell/src/gone.rs")}
+        with patch.object(ci, "LINUX_HOST_JOBS", moved):
+            self.assertTrue(any("gone.rs" in p for p in ci.check_drift()))
+
+    def test_the_host_comes_from_the_flag_the_environment_or_build_env(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env_file = Path(temp) / "build.env"
+            env_file.write_text("OCTOSENSE_BUILD_HOST=someone@build.invalid\nexport OCTOSENSE_BUILD_KEY=\"$HOME/k/id\"\n")
+            clean = {k: v for k, v in os.environ.items() if not k.startswith("OCTOSENSE_BUILD_")}
+            with patch.object(ci, "BUILD_ENV", env_file), patch.dict(os.environ, clean, clear=True):
+                target, key = ci.linux_host_settings("")
+                self.assertEqual(target, "someone@build.invalid")
+                self.assertEqual(key, os.path.expanduser("~/k/id"))
+                self.assertEqual(ci.linux_host_settings("other@x.invalid")[0], "other@x.invalid")
+            with patch.object(ci, "BUILD_ENV", Path(temp) / "none"), patch.dict(os.environ, clean, clear=True):
+                self.assertEqual(ci.linux_host_settings(""), (None, None))
+
+
+def remote_run(temp, target="someone@build.invalid"):
+    args = SimpleNamespace(jobs=1, verbose=False, keep_going=False, linux_settings=(target, "/keys/id_build"))
+    run = ci.Run(args, out_dir=Path(temp))
+    return run
+
+
+def host_result(sha, steps_by_key):
+    return {"sha": sha, "run": f"{sha}-x", "slot": 1, "slots": 4, "system": "Linux", "machine": "x86_64",
+            "cpus": 72, "versions": {}, "seconds": 10, "prepare_seconds": 1,
+            "jobs": {key: {"steps": steps, "actions": [], "notes": []} for key, steps in steps_by_key.items()}}
+
+
+class LinuxHostResults(unittest.TestCase):
+    sha = "d" * 40
+
+    def step(self, job="services", status="PASS", workflow="apps.yml"):
+        return {"workflow": workflow, "job": job, "name": "Kernel service", "status": status, "seconds": 5,
+                "reason": "", "expected_skip": None, "command": "cargo test", "host": "local"}
+
+    def test_remote_steps_join_the_run_marked_linux_and_bound_to_the_commit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = remote_run(temp)
+            self.addCleanup(run.close)
+            keys = ["apps.yml:services", "linux-host:sandbox"]
+            ci.merge_remote_result(run, host_result(self.sha, {
+                keys[0]: [self.step()], keys[1]: [self.step("sandbox", "FAIL", ci.LINUX_HOST)]}), self.sha, keys)
+            self.assertEqual([(s["job"], s["host"], s["sha"], s["status"]) for s in run.steps],
+                             [("services", "linux", self.sha, "PASS"), ("sandbox", "linux", self.sha, "FAIL")])
+            self.assertEqual(run.linux_info["machine"], "x86_64")
+            table = ci.format_table({"steps": run.steps, "notes": []})
+            self.assertIn("apps.yml / services (linux)", table)
+
+    def test_a_result_for_another_commit_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = remote_run(temp)
+            self.addCleanup(run.close)
+            ci.merge_remote_result(run, host_result("e" * 40, {"apps.yml:services": [self.step()]}),
+                                   self.sha, ["apps.yml:services"])
+            self.assertEqual([s["status"] for s in run.steps], ["FAIL"])
+            self.assertIn("stale", run.steps[0]["reason"])
+
+    def test_a_missing_job_or_a_busy_host_never_passes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = remote_run(temp)
+            self.addCleanup(run.close)
+            ci.merge_remote_result(run, host_result(self.sha, {}), self.sha, ["apps.yml:services"])
+            ci.merge_remote_result(run, {"sha": self.sha, "busy": True}, self.sha, ["apps.yml:kernel-security"])
+            ci.merge_remote_result(run, {"sha": self.sha, "error": "setup failed"}, self.sha, ["linux-host:sandbox"])
+            self.assertEqual([(s["status"], s["expected_skip"]) for s in run.steps],
+                             [("FAIL", None), ("SKIPPED", False), ("FAIL", None)])
+
+    def test_the_host_address_and_key_never_reach_the_log(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = remote_run(temp)
+            self.addCleanup(run.close)
+            run.log("ssh: connect to host build.invalid port 22 as someone@build.invalid with /keys/id_build", echo=False)
+            run.remote_fail(["apps.yml:services"], "ssh: Could not resolve hostname build.invalid")
+            run.log_file.flush()
+            text = run.log_path.read_text() + json.dumps(run.steps)
+            self.assertNotIn("build.invalid", text)
+            self.assertNotIn("id_build", text)
+
+    def test_the_remote_environment_is_an_allow_list(self):
+        self.assertTrue(ci.REMOTE_ENV.startswith('HOME="$HOME"'))
+        for name in ("TOKEN", "KEY", "SECRET", "GH_", "GITHUB", "SSH_AUTH"):
+            self.assertNotIn(name, ci.REMOTE_ENV)
+
+
+class MergeLinuxHost(unittest.TestCase):
+    head = "b" * 40
+
+    def remote(self, sha, workflow="apps.yml", job="services", status="PASS"):
+        return {"workflow": workflow, "job": job, "name": "Kernel service", "status": status, "seconds": 3,
+                "reason": "", "expected_skip": None, "host": "linux", "sha": sha}
+
+    def test_a_remote_pass_on_the_head_is_evidence(self):
+        last = result(steps=[self.remote(self.head), self.remote(self.head, ci.LINUX_HOST, "sandbox")],
+                      linux_host={"system": "Linux", "machine": "x86_64"})
+        problems, _ = merge.evidence_problems(last, self.head, ["crates/kernel/src/lib.rs"])
+        self.assertEqual(problems, [])
+        self.assertIn("--linux-host", merge.comment_body(last, ["apps.yml"]))
+        self.assertIn("| apps.yml / services (linux) | Kernel service | PASS |", merge.comment_body(last, ["apps.yml"]))
+
+    def test_a_stale_remote_result_is_refused_even_when_the_run_is_on_the_head(self):
+        problems, _ = merge.evidence_problems(result(steps=[self.remote("c" * 40)]), self.head, ["crates/kernel/src/lib.rs"])
+        self.assertTrue(any(p.startswith("stale: 1 step(s) on the Linux host ran on cccccccccccc") for p in problems), problems)
+        problems, _ = merge.evidence_problems(result(steps=[self.remote(None)]), self.head, ["crates/kernel/src/lib.rs"])
+        self.assertTrue(any("stale" in p for p in problems), "a remote step bound to no commit is stale")
+
+    def test_the_linux_only_checks_block_the_prs_that_trigger_what_they_cover(self):
+        sandbox = self.remote(self.head, ci.LINUX_HOST, "sandbox", "FAIL")
+        problems, _ = merge.evidence_problems(result(steps=[sandbox], passed=False), self.head, ["crates/shell/src/lib.rs"])
+        self.assertTrue(any("failed: linux-host / sandbox" in p for p in problems), problems)
+        problems, _ = merge.evidence_problems(result(steps=[sandbox], passed=False), self.head, ["rom/README.md"])
+        self.assertEqual(problems, [], "a rom-only PR does not run the shell's checks")
 
 
 if __name__ == "__main__":
