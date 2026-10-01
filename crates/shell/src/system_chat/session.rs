@@ -10,7 +10,7 @@
 //! - **Open**: `session/open {session_id: SYSTEM_SESSION, profile_id:
 //!   "_main"}`, then `session/hydrate {include: ["messages"]}` for the
 //!   history (the `session/messages_page` fallback when hydrate is
-//!   refused).
+//!   refused). Every reopen of the pane loads the history again.
 //! - **Send**: `turn/start` with a fresh turn id; **Stop**:
 //!   `turn/interrupt`; **New conversation**: the kernel's `/new` (it clears
 //!   the conversation without calling the model), then the history again.
@@ -25,8 +25,9 @@
 //!   session is open, and after every reconnect, the driver registers the
 //!   system agent's granted host tools on THIS link (`peer/tools/register`
 //!   without `peer`, `generic_tools` omitted; `terminal.run` while Setup's
-//!   command-execution switch is on, an empty set to withdraw it), with the
-//!   host token of an app peer the system session prepared. The kernel then
+//!   command-execution switch is on, an empty set to withdraw it), with no
+//!   token: the host's own connection needs none (octos#2657, #146). The
+//!   kernel then
 //!   sends their calls here (`peer/tool/call`, `caller.kind: "system"`):
 //!   each becomes an [`Effect::ToolCall`] for the shell's relay, answered
 //!   once on this link (`peer/tool/result` without `peer`); a cancel, an
@@ -84,15 +85,11 @@ pub trait Connector: Send {
     fn connect(&mut self) -> Result<Box<dyn Link>, Unavailable>;
 }
 
-/// What the system session is granted, and the credential to register it.
+/// What the system session is granted.
 pub trait SystemHost: Send {
     /// The host tools to register on the system session now (empty: none
     /// granted, or the grant was withdrawn).
     fn declarations(&self) -> Vec<Value>;
-    /// The host token of an app peer the system session prepared (octos
-    /// takes it as the credential of a host session set). `None` until an
-    /// app's agent has been prepared.
-    fn host_token(&self) -> Option<String>;
 }
 
 /// The shell's: Setup's grants and the app peers' host state.
@@ -111,12 +108,6 @@ impl SystemHost for ShellSystemHost {
         // (ADR 0004 §4; answered by the chat itself, `crate::agents`).
         decls.extend(crate::agents::declarations());
         decls
-    }
-    fn host_token(&self) -> Option<String> {
-        #[cfg(kernel)]
-        return crate::ai_host::app_peers::hosted::system_host_token();
-        #[cfg(not(kernel))]
-        None
     }
 }
 
@@ -177,8 +168,6 @@ pub struct Driver {
     /// The set the kernel refused on this link: not asked again until the
     /// set changes or the link does.
     refused: Option<Vec<String>>,
-    /// The credential the registration used (results carry it).
-    token: Option<String>,
     /// `peer/tool/result` fields from the relay's answers, for this link.
     outbox: Arc<Mutex<Vec<Value>>>,
     waker: Option<std::thread::Thread>,
@@ -187,9 +176,6 @@ pub struct Driver {
     /// Turns the person stopped: their late calls are refused.
     interrupted: VecDeque<String>,
 }
-
-/// Said when a grant cannot be registered yet.
-const NO_CREDENTIAL: &str = "Command execution is on, but the assistant cannot offer it yet: it needs an app's agent (Rinx's, for one) to have started first. It is offered as soon as one has.";
 
 impl Driver {
     pub fn new(connector: Box<dyn Connector>) -> Self {
@@ -209,7 +195,6 @@ impl Driver {
             registered: None,
             registering: false,
             refused: None,
-            token: None,
             outbox: Arc::new(Mutex::new(Vec::new())),
             waker: None,
             calls: HashMap::new(),
@@ -217,7 +202,7 @@ impl Driver {
         }
     }
 
-    /// A driver whose grants and credential come from `host` (tests).
+    /// A driver whose grants come from `host` (tests).
     pub fn with_system_host(connector: Box<dyn Connector>, host: Box<dyn SystemHost>) -> Self {
         let mut driver = Driver::new(connector);
         driver.system_host = host;
@@ -235,7 +220,7 @@ impl Driver {
     }
 
     /// Register the granted host tools on this link when they differ from
-    /// what it holds. Needs the session open and a host credential.
+    /// what it holds. Needs the session open; no credential (octos#2657).
     fn sync_tools(&mut self) {
         if !self.opened || self.registering || self.link.is_none() {
             return;
@@ -251,19 +236,10 @@ impl Driver {
             None if names.is_empty() => return,
             _ => {}
         }
-        let Some(token) = self.system_host.host_token() else {
-            let told = self.model.items.iter().any(|i| matches!(i, super::model::Item::Notice(n) if n == NO_CREDENTIAL));
-            // Only command execution needs saying: the agents tools wait
-            // quietly for the first app agent (the note says the same).
-            if names.iter().any(|n| n == super::grants::COMMAND_TOOL) && !told {
-                self.model.notice(NO_CREDENTIAL);
-            }
-            return;
-        };
-        self.token = Some(token.clone());
         self.registering = true;
         // `generic_tools` omitted: the system agent keeps its kernel tools.
-        let params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE, "host_token": token, "tools": decls});
+        // No `host_token`: this is the host's own connection (octos#2657).
+        let params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE, "tools": decls});
         if !self.request(host_tools::REGISTER, params, Pending::Register { tools: names }) {
             self.registering = false;
         }
@@ -273,7 +249,7 @@ impl Driver {
     fn flush_results(&mut self) {
         let results = std::mem::take(&mut *self.outbox.lock().unwrap_or_else(|e| e.into_inner()));
         for fields in results {
-            let mut params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE, "host_token": self.token});
+            let mut params = json!({"session_id": SYSTEM_SESSION, "profile_id": SYSTEM_PROFILE});
             for (k, v) in fields.as_object().into_iter().flatten() {
                 params[k] = v.clone();
             }
@@ -360,6 +336,12 @@ impl Driver {
                 if self.link.is_none() {
                     self.retry_at = None;
                     self.try_connect();
+                } else if self.opened && self.model.phase().running_turn().is_none() {
+                    // Reopened on a connection a running turn kept: the
+                    // history again, so the pane shows what the session
+                    // holds now (a running turn's live rows are kept as
+                    // they stream instead).
+                    self.load_history();
                 }
             }
             Command::Close => {

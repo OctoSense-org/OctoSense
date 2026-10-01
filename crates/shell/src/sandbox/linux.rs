@@ -19,6 +19,12 @@
 //! a split directory after the app started (a new file directly in `~`) are
 //! not covered, and the directories on the way cannot be listed.
 //!
+//! **What the next build reads or runs** ([`Policy::read_only`]: the
+//! checkout, its target dir, `~/.cargo`, `~/.rustup`, `.cargo/` and
+//! `rust-toolchain` files on the way up, the shell's own directory) is split
+//! out of a writable grant the same way and granted again read and execute
+//! only, as macOS's profile makes it read-only after every grant.
+//!
 //! seccomp refuses, with `EPERM`, what no process app needs: `ptrace`,
 //! `process_vm_readv/writev`, `perf_event_open`, `bpf`, `userfaultfd`,
 //! `kexec_load`, mounts, namespaces and the kernel keyring; with
@@ -34,14 +40,12 @@
 //! rules). A layer that fails in the child is skipped, never fatal: the app
 //! still starts.
 //!
-//! **A launch through cargo** (a dev run from a checkout) sandboxes only the
-//! app, as macOS does: cargo builds outside the sandbox and starts the app
-//! through its `runner`, which is the shell's own binary in runner mode
-//! ([`RUNNER_FLAG`], entered before `main` by [`runner_entry!`]): it reads the
-//! [`Plan`] prepared here, installs it on itself and execs the app. A build
-//! inside the sandbox needed the checkout, the target dir, cargo's home and
-//! `/tmp` writable, which let the app rewrite the shell's binary, the source
-//! and `~/.cargo` (found on a real kernel, #138).
+//! **Only the app is sandboxed, never a build.** The shell builds a dev
+//! app first, outside any sandbox (`clients::launch_plan`), and starts the
+//! built binary here with exactly the manifest's sandbox. (A build inside
+//! the sandbox needed the checkout, the target dir, cargo's home and `/tmp`
+//! writable, which let the app rewrite what the next build runs; found on a
+//! real kernel, #138.)
 
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
@@ -192,7 +196,40 @@ pub fn rules(policy: &Policy, abi: u32) -> Vec<Rule> {
             around_private(rule, &private, &mut split);
         }
     }
-    split
+    around_read_only(split, policy, abi)
+}
+
+/// What the shell's next build reads or runs ([`Policy::read_only`]: the
+/// checkout and its target dir, `~/.cargo`, `~/.rustup`, the `.cargo/` and
+/// `rust-toolchain` files on the way up, the shell's own directory) stays
+/// read and execute only, whatever a grant opened (the Terminal's
+/// `home:rw`); a write there would run code outside the sandbox at the next
+/// launch. Landlock cannot take a right back beneath a granted directory,
+/// so a writable rule that contains one is split around it the way the
+/// private dirs are, and the read-only path is granted again with read and
+/// execute. The app's own jail and secrets keep their rights.
+fn around_read_only(rules: Vec<Rule>, policy: &Policy, abi: u32) -> Vec<Rule> {
+    let rx = read() | FS_EXECUTE;
+    let writes = handled_fs(abi) & !rx;
+    let read_only: Vec<PathBuf> = policy.read_only.iter().map(|p| super::resolved(p)).collect();
+    let own = [super::resolved(&policy.jail), super::resolved(&policy.secrets)];
+    let mut out = Vec::new();
+    for rule in rules {
+        if rule.access & writes == 0 || own.contains(&rule.path) {
+            out.push(rule);
+        } else if read_only.iter().any(|ro| rule.path.starts_with(ro)) {
+            out.push(Rule { path: rule.path, access: rule.access & rx });
+        } else if read_only.iter().any(|ro| ro.starts_with(&rule.path)) {
+            for ro in read_only.iter().filter(|ro| ro.starts_with(&rule.path) && ro.exists()) {
+                let access = if ro.is_dir() { rule.access } else { rule.access & FILE_RIGHTS };
+                out.push(Rule { path: ro.clone(), access: access & rx });
+            }
+            around_private(rule, &read_only, &mut out);
+        } else {
+            out.push(rule);
+        }
+    }
+    out
 }
 
 /// `rule`, minus the private directories: dropped when it lies inside one;
@@ -296,122 +333,45 @@ pub fn seccomp_filter(processes: bool) -> Option<Vec<libc::sock_filter>> {
     }
 }
 
-/// Everything a sandboxed start installs, prepared before it (between fork
-/// and exec the child only opens paths and makes system calls; the runner
-/// reads it from a file).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Plan {
-    /// The kernel's Landlock ABI (0: none).
-    pub abi: u32,
-    /// Path rules, existing paths only.
-    pub rules: Vec<(CString, u64)>,
-    /// Restrict TCP to the hub port (`network: none`, ABI 4 and later).
-    pub net: bool,
-    pub hub_port: u16,
-    pub processes: bool,
-    /// Variables to remove before the app starts (the runner's; cargo hands
-    /// the checkout's `[env]` back).
-    pub unset: Vec<String>,
-}
-
-impl Plan {
-    /// The plan for `policy` on this kernel.
-    pub fn new(policy: &Policy) -> Plan {
-        let abi = landlock_abi();
-        let rules = if abi == 0 {
-            Vec::new()
-        } else {
-            rules(policy, abi)
-                .into_iter()
-                .filter(|r| r.path.exists())
-                .filter_map(|r| CString::new(r.path.as_os_str().as_bytes()).ok().map(|c| (c, r.access)))
-                .collect()
-        };
-        Plan {
-            abi,
-            rules,
-            net: abi >= 4 && policy.network == Network::None,
-            hub_port: policy.hub_port,
-            processes: policy.processes,
-            unset: policy.cargo_env_unset.clone(),
-        }
+/// Put Landlock and seccomp on `cmd` (installed in the child before exec).
+pub fn apply(cmd: &mut Command, policy: &Policy) -> Applied {
+    let abi = landlock_abi();
+    let processes = policy.processes;
+    // Everything the child does is prepared here: between fork and exec it
+    // only opens paths and makes system calls.
+    let prepared: Vec<(CString, u64)> = if abi == 0 {
+        Vec::new()
+    } else {
+        rules(policy, abi)
+            .into_iter()
+            .filter(|r| r.path.exists())
+            .filter_map(|r| CString::new(r.path.as_os_str().as_bytes()).ok().map(|c| (c, r.access)))
+            .collect()
+    };
+    let net = abi >= 4 && policy.network == Network::None;
+    let hub_port = policy.hub_port;
+    let filter = seccomp_filter(processes);
+    let handled = handled_fs(abi);
+    let mut layers = Vec::new();
+    if abi > 0 {
+        layers.push(format!("landlock abi {abi}{}", if net { " + ports" } else { "" }));
+    } else {
+        layers.push("no landlock (kernel lacks it): paths are not restricted".to_string());
     }
-
-    /// One line per field; paths hex-encoded (they may hold any byte).
-    pub fn to_text(&self) -> String {
-        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-        let mut out = format!("octosense-sandbox-plan 1\nabi {}\nnet {}\nport {}\nprocesses {}\n", self.abi, self.net as u8, self.hub_port, self.processes as u8);
-        for name in &self.unset {
-            out.push_str(&format!("unset {}\n", hex(name.as_bytes())));
-        }
-        for (path, access) in &self.rules {
-            out.push_str(&format!("rule {access:x} {}\n", hex(path.as_bytes())));
-        }
-        out
+    if abi > 0 && abi < 4 && policy.network == Network::None {
+        layers.push("network not restricted (landlock < 4)".into());
     }
-
-    /// The plan [`Self::to_text`] wrote; `None` for anything else.
-    pub fn from_text(text: &str) -> Option<Plan> {
-        let unhex = |s: &str| -> Option<Vec<u8>> {
-            (0..s.len()).step_by(2).map(|i| s.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok())).collect()
-        };
-        let mut lines = text.lines();
-        if lines.next()? != "octosense-sandbox-plan 1" {
-            return None;
-        }
-        let mut plan = Plan { abi: 0, rules: Vec::new(), net: false, hub_port: 0, processes: false, unset: Vec::new() };
-        for line in lines {
-            let (key, rest) = line.split_once(' ')?;
-            match key {
-                "abi" => plan.abi = rest.parse().ok()?,
-                "net" => plan.net = rest == "1",
-                "port" => plan.hub_port = rest.parse().ok()?,
-                "processes" => plan.processes = rest == "1",
-                "unset" => plan.unset.push(String::from_utf8(unhex(rest)?).ok()?),
-                "rule" => {
-                    let (access, path) = rest.split_once(' ')?;
-                    plan.rules.push((CString::new(unhex(path)?).ok()?, u64::from_str_radix(access, 16).ok()?));
-                }
-                _ => return None,
-            }
-        }
-        Some(plan)
-    }
-
-    /// What [`Applied`] says about the layers.
-    fn layers(&self, network: Network, filter: bool) -> Vec<String> {
-        let mut layers = Vec::new();
-        if self.abi > 0 {
-            layers.push(format!("landlock abi {}{}", self.abi, if self.net { " + ports" } else { "" }));
-        } else {
-            layers.push("no landlock (kernel lacks it): paths are not restricted".to_string());
-        }
-        if self.abi > 0 && self.abi < 4 && network == Network::None {
-            layers.push("network not restricted (landlock < 4)".into());
-        }
-        layers.push(if filter { "seccomp".into() } else { "no seccomp on this architecture".to_string() });
-        layers
-    }
-
-    /// Install it on the calling thread (then exec): no_new_privs, the
-    /// Landlock ruleset, the seccomp `filter`. Best-effort: a layer the
-    /// kernel refuses is skipped.
-    ///
-    /// # Safety
-    /// Only system calls and no allocation: callable between fork and exec.
-    unsafe fn install(&self, filter: Option<&[libc::sock_filter]>) {
-        unsafe {
+    layers.push(if filter.is_some() { "seccomp".into() } else { "no seccomp on this architecture".to_string() });
+    unsafe {
+        cmd.pre_exec(move || {
             // Landlock and seccomp both need no_new_privs.
             libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
-            if self.abi > 0 {
-                let attr = RulesetAttr {
-                    handled_access_fs: handled_fs(self.abi),
-                    handled_access_net: if self.net { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 },
-                };
-                let size = if self.abi >= 4 { std::mem::size_of::<RulesetAttr>() } else { 8 };
+            if abi > 0 {
+                let attr = RulesetAttr { handled_access_fs: handled, handled_access_net: if net { NET_BIND_TCP | NET_CONNECT_TCP } else { 0 } };
+                let size = if abi >= 4 { std::mem::size_of::<RulesetAttr>() } else { 8 };
                 let ruleset = libc::syscall(SYS_LANDLOCK_CREATE_RULESET, &attr as *const RulesetAttr, size, 0u32) as i32;
                 if ruleset >= 0 {
-                    for (path, access) in &self.rules {
+                    for (path, access) in &prepared {
                         let fd = libc::open(path.as_ptr(), libc::O_PATH | libc::O_CLOEXEC);
                         if fd < 0 {
                             continue;
@@ -420,135 +380,20 @@ impl Plan {
                         libc::syscall(SYS_LANDLOCK_ADD_RULE, ruleset, LANDLOCK_RULE_PATH_BENEATH, &rule as *const PathBeneathAttr, 0u32);
                         libc::close(fd);
                     }
-                    if self.net {
-                        let rule = NetPortAttr { allowed_access: NET_CONNECT_TCP, port: self.hub_port as u64 };
+                    if net {
+                        let rule = NetPortAttr { allowed_access: NET_CONNECT_TCP, port: hub_port as u64 };
                         libc::syscall(SYS_LANDLOCK_ADD_RULE, ruleset, LANDLOCK_RULE_NET_PORT, &rule as *const NetPortAttr, 0u32);
                     }
                     libc::syscall(SYS_LANDLOCK_RESTRICT_SELF, ruleset, 0u32);
                     libc::close(ruleset);
                 }
             }
-            if let Some(filter) = filter {
+            if let Some(filter) = &filter {
                 let prog = libc::sock_fprog { len: filter.len() as u16, filter: filter.as_ptr() as *mut libc::sock_filter };
                 libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &prog as *const libc::sock_fprog);
             }
-        }
-    }
-}
-
-/// The argument that puts the shell's binary in runner mode:
-/// `<shell> --octosense-sandbox-runner <plan file> <app> [args...]`.
-pub const RUNNER_FLAG: &str = "--octosense-sandbox-runner";
-
-static RUNNER_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// The cargo `runner` variable for this host's target triple.
-pub fn runner_var() -> &'static str {
-    if cfg!(target_arch = "aarch64") {
-        "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER"
-    } else {
-        "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER"
-    }
-}
-
-/// Before `main` (an `.init_array` entry, [`runner_entry!`]): marks this
-/// binary as able to run sandboxed apps and, in runner mode, becomes the
-/// app. Reads its arguments from `/proc/self/cmdline`, so it does not rely
-/// on the C library passing them to init functions.
-pub fn runner_hook() {
-    RUNNER_READY.store(true, std::sync::atomic::Ordering::Relaxed);
-    let Ok(cmdline) = std::fs::read("/proc/self/cmdline") else { return };
-    let mut args: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
-    if args.last().is_some_and(|a| a.is_empty()) {
-        args.pop();
-    }
-    if args.get(1).copied() != Some(RUNNER_FLAG.as_bytes()) {
-        return;
-    }
-    let error = match (args.get(2), args.get(3)) {
-        (Some(plan), Some(_)) => run_as_runner(std::ffi::OsStr::from_bytes(plan).as_ref(), &args[3..]),
-        _ => "usage: <shell> --octosense-sandbox-runner <plan> <program> [args...]".to_string(),
-    };
-    eprintln!("octosense sandbox runner: {error}; the app did not start");
-    std::process::exit(126);
-}
-
-/// Install the plan at `plan` on this process and exec `argv`; returns only
-/// on failure, with why.
-pub fn run_as_runner(plan: &std::path::Path, argv: &[&[u8]]) -> String {
-    let text = match std::fs::read_to_string(plan) {
-        Ok(t) => t,
-        Err(e) => return format!("read {}: {e}", plan.display()),
-    };
-    let _ = std::fs::remove_file(plan);
-    let Some(plan) = Plan::from_text(&text) else { return "not a sandbox plan".into() };
-    let Ok(argv): Result<Vec<CString>, _> = argv.iter().map(|a| CString::new(a.to_vec())).collect() else {
-        return "an argument holds a NUL".into();
-    };
-    for name in &plan.unset {
-        // Single-threaded, before main: nothing else reads the environment.
-        std::env::remove_var(name);
-    }
-    let filter = seccomp_filter(plan.processes);
-    let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
-    ptrs.push(std::ptr::null());
-    unsafe {
-        plan.install(filter.as_deref());
-        libc::execv(ptrs[0], ptrs.as_ptr());
-    }
-    format!("exec {}: {}", argv[0].to_string_lossy(), std::io::Error::last_os_error())
-}
-
-/// Where a runner's plan is written for a launch through cargo.
-fn write_plan(policy: &Policy, plan: &Plan) -> Result<PathBuf, String> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("octosense-sandbox-{}-{}-{n}.plan", std::process::id(), policy.app));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
-    file.write_all(plan.to_text().as_bytes()).map_err(|e| format!("write {}: {e}", path.display()))?;
-    Ok(path)
-}
-
-/// Put Landlock and seccomp on `cmd`: installed in the child before exec,
-/// or, `via_cargo`, on the app alone through the shell as cargo's runner.
-pub fn apply(cmd: &mut Command, policy: &Policy, via_cargo: bool) -> Applied {
-    let plan = Plan::new(policy);
-    let filter = seccomp_filter(plan.processes);
-    let mut layers = plan.layers(policy.network, filter.is_some());
-    if via_cargo {
-        if !RUNNER_READY.load(std::sync::atomic::Ordering::Relaxed) {
-            return Applied::Unavailable(format!("{}: this binary cannot run a sandboxed app through cargo (no runner entry); running unsandboxed", policy.app));
-        }
-        let exe = match std::env::current_exe() {
-            Ok(exe) => exe,
-            Err(e) => return Applied::Unavailable(format!("{}: {e}", policy.app)),
-        };
-        let file = match write_plan(policy, &plan) {
-            Ok(file) => file,
-            Err(e) => return Applied::Unavailable(format!("{}: {e}", policy.app)),
-        };
-        // cargo splits the runner on whitespace.
-        let runner = format!("{} {RUNNER_FLAG} {}", exe.display(), file.display());
-        if exe.to_string_lossy().chars().chain(file.to_string_lossy().chars()).any(char::is_whitespace) {
-            let _ = std::fs::remove_file(&file);
-            return Applied::Unavailable(format!("{}: a path of the runner has whitespace ({runner})", policy.app));
-        }
-        cmd.env(runner_var(), runner);
-        layers.push("launched through cargo: the build runs outside, the app through the shell as cargo's runner".into());
-    } else {
-        unsafe {
-            cmd.pre_exec(move || {
-                plan.install(filter.as_deref());
-                Ok(())
-            });
-        }
+            Ok(())
+        });
     }
     Applied::Sandboxed(format!("{} ({})", policy.summary(), layers.join(", ")))
 }

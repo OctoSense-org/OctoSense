@@ -8,8 +8,6 @@
 use super::*;
 use std::io::Read;
 
-// The test binary is a runner too, so a cargo launch is tested for real.
-crate::runner_entry!();
 use std::net::TcpListener;
 
 struct Scratch(PathBuf);
@@ -62,7 +60,7 @@ fn jail_only(root: &Path, hub_port: u16) -> Policy {
 
 fn run(program: &str, args: &[&str], policy: &Policy) -> (bool, String) {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let (mut cmd, applied) = command(Path::new(program), &args, Some(policy), false);
+    let (mut cmd, applied) = command(Path::new(program), &args, Some(policy));
     assert!(matches!(applied, Some(Applied::Sandboxed(_))), "{applied:?}");
     let out = cmd.output().expect("the probe starts");
     (out.status.success(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
@@ -176,66 +174,16 @@ fn without_landlock_the_app_still_starts_under_seccomp_and_says_so() {
     std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
     let policy = jail_only(root, 1);
     let args = vec![root.join("apps/probe/mine.txt").to_string_lossy().to_string()];
-    let (mut cmd, applied) = command(Path::new("/bin/cat"), &args, Some(&policy), false);
+    let (mut cmd, applied) = command(Path::new("/bin/cat"), &args, Some(&policy));
     let Some(Applied::Sandboxed(how)) = applied else { panic!("{applied:?}") };
     assert!(how.contains("no landlock (kernel lacks it): paths are not restricted") && how.contains("seccomp"), "{how}");
     let out = cmd.output().expect("the app starts without Landlock");
     assert!(out.status.success() && String::from_utf8_lossy(&out.stdout).contains("mine"));
     // seccomp still refuses a child process.
-    let (mut cmd, _) = command(Path::new("/bin/sh"), &["-c".into(), "/bin/echo first; /bin/echo spawned".into()], Some(&policy), false);
+    let (mut cmd, _) = command(Path::new("/bin/sh"), &["-c".into(), "/bin/echo first; /bin/echo spawned".into()], Some(&policy));
     let out = cmd.output().expect("sh starts");
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(!text.contains("spawned"), "no child process without Landlock either: {text}");
-}
-
-/// A launch through cargo sandboxes only the app, as on macOS: the build
-/// (here a shell standing in for cargo) runs outside, and the app starts
-/// through the binary's runner under the policy (found on a real kernel:
-/// a build inside the sandbox had the checkout, the target dir, the shell's
-/// own binary, `~/.cargo` and `/tmp` writable, and no port rules).
-#[cfg(target_os = "linux")]
-#[test]
-fn a_cargo_launch_sandboxes_the_app_alone_through_the_runner() {
-    if !sandbox_works_here() {
-        eprintln!("no process sandbox on this machine; skipped");
-        return;
-    }
-    let scratch = Scratch::new("runner");
-    let root = &scratch.0;
-    std::fs::write(root.join("apps/probe/mine.txt"), "mine").unwrap();
-    std::fs::write(root.join("outside.txt"), "not yours").unwrap();
-    let mut policy = jail_only(root, 1);
-    policy.cargo_env_unset = vec!["OCTOSENSE_WORKSPACE_FOR_TEST".into()];
-    let runner = linux::runner_var();
-    let script = format!(
-        "cat {out} && echo BUILD-SIDE-READ; echo \"unset=${{OCTOSENSE_WORKSPACE_FOR_TEST:-gone}}\"; exec ${runner} /bin/sh -c 'cat {mine}; cat {out} || echo APP-REFUSED; echo \"app-unset=${{OCTOSENSE_WORKSPACE_FOR_TEST:-gone}}\"'",
-        out = root.join("outside.txt").display(),
-        mine = root.join("apps/probe/mine.txt").display(),
-    );
-    let (mut cmd, applied) = command(Path::new("/bin/sh"), &["-c".into(), script], Some(&Policy { processes: true, ..policy }), true);
-    let Some(Applied::Sandboxed(how)) = applied else { panic!("{applied:?}") };
-    assert!(how.contains("as cargo's runner"), "{how}");
-    let out = cmd.env("OCTOSENSE_WORKSPACE_FOR_TEST", "/x").output().unwrap();
-    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-    assert!(text.contains("BUILD-SIDE-READ") && text.contains("unset=/x"), "the build side runs outside the sandbox: {text}");
-    assert!(text.contains("mine") && text.contains("APP-REFUSED"), "the app runs inside it: {text}");
-    assert!(text.contains("app-unset=gone"), "the checkout's [env] host variables are removed: {text}");
-}
-
-/// A runner plan survives its file: every path byte, the unset list.
-#[cfg(target_os = "linux")]
-#[test]
-fn a_runner_plan_reads_back_what_was_written() {
-    let plan = linux::Plan {
-        abi: 6,
-        rules: vec![(std::ffi::CString::new("/a b/\nc").unwrap(), 0x7), (std::ffi::CString::new("/usr").unwrap(), 0xc)],
-        net: true,
-        hub_port: 8765,
-        processes: false,
-        unset: vec!["OCTOSENSE_WORKSPACE".into()],
-    };
-    assert_eq!(linux::Plan::from_text(&plan.to_text()), Some(plan));
-    assert_eq!(linux::Plan::from_text("abi 3\n"), None, "not a plan");
 }
 
 /// The seccomp program run on one system call, as the kernel would (the
@@ -288,6 +236,45 @@ fn seccomp_refuses_the_other_abis_of_the_kernel() {
     assert_eq!(seccomp_verdict(&broad, X86_64, 57, 0), ALLOW, "fork with processes: true");
     assert_eq!(seccomp_verdict(&broad, I386, 2, 0), EPERM, "never another ABI");
     assert_eq!(seccomp_verdict(&broad, X86_64, 101, 0), EPERM, "ptrace, always");
+}
+
+/// Under `home:rw`, what the next build reads or runs stays read-only on
+/// Linux too (macOS's profile does it after every grant): `~/.cargo`,
+/// `~/.rustup`, the checkout and its target dir, a `rust-toolchain` file,
+/// the shell's own directory. The rest of the home stays writable.
+#[cfg(target_os = "linux")]
+#[test]
+fn home_rw_leaves_the_next_builds_inputs_read_only() {
+    let scratch = Scratch::new("readonly");
+    let root = &scratch.0;
+    for dir in [".cargo/bin", ".rustup", "src/app/target/release", "Documents", "bin/shell", ".octosense/apps/probe", ".octosense/secrets/probe"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    std::fs::write(root.join("src/rust-toolchain.toml"), "[toolchain]\n").unwrap();
+    std::fs::write(root.join("Documents/notes.txt"), "mine").unwrap();
+    let mut p = home_rw_with_octosense_home(root);
+    let read_only = [".cargo", ".rustup", "src/app", "src/rust-toolchain.toml", "bin/shell"].map(|r| root.join(r));
+    p.read_only = read_only.to_vec();
+    let rules = linux::rules(&p, 3);
+    let rx = linux::read_exec();
+    for ro in &read_only {
+        let ro = resolved(ro);
+        let covering: Vec<_> = rules.iter().filter(|r| ro.starts_with(&r.path) || r.path.starts_with(&ro)).collect();
+        assert!(covering.iter().any(|r| r.path == ro && r.access & (1 << 2) != 0), "{} stays readable: {covering:?}", ro.display());
+        assert!(covering.iter().all(|r| r.access & !rx == 0), "{} is never writable: {covering:?}", ro.display());
+    }
+    let documents = resolved(&root.join("Documents"));
+    assert!(rules.iter().any(|r| r.path == documents && r.access & (1 << 1) != 0), "the rest of the home stays writable");
+    if !sandbox_works_here() {
+        return;
+    }
+    let sh = |script: String| run("/bin/sh", &["-c", &script], &Policy { processes: true, ..p.clone() });
+    let (ok, out) = sh(format!("echo x > {}/.cargo/bin/cargo", root.display()));
+    assert!(!ok, "no write into ~/.cargo: {out}");
+    let (ok, out) = sh(format!("echo x > {}/src/app/target/release/app", root.display()));
+    assert!(!ok, "no write into the target dir: {out}");
+    let (ok, out) = sh(format!("cat {0}/src/rust-toolchain.toml && echo x >> {0}/Documents/notes.txt", root.display()));
+    assert!(ok, "reads a build input, writes elsewhere in the home: {out}");
 }
 
 #[test]
@@ -512,7 +499,6 @@ fn a_child_gets_only_the_allow_list_and_never_a_key_or_token() {
         ("DISPLAY", ":0"),
         ("XAUTHORITY", "/home/person/.Xauthority"),
         ("MAKEPAD_WM_THEME_SPLASH", "dark"),
-        ("MAKEPAD", "vulkan"),
         ("OPENAI_API_KEY", fake),
         ("ANTHROPIC_API_KEY", fake),
         ("DEEPSEEK_API_KEY", fake),
@@ -539,7 +525,7 @@ fn a_child_gets_only_the_allow_list_and_never_a_key_or_token() {
         assert!(!secret_shaped(name) && !is_secret_var(name), "the child sees {name}");
     }
     assert!(!out.contains(fake), "no secret value reaches the child");
-    for kept in ["PATH", "HOME", "LANG", "TERM", "TMPDIR", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "MAKEPAD_WM_THEME_SPLASH", "MAKEPAD", "STUDIO_HOST"] {
+    for kept in ["PATH", "HOME", "LANG", "TERM", "TMPDIR", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "MAKEPAD_WM_THEME_SPLASH", "STUDIO_HOST"] {
         assert!(names.contains(&kept), "{kept} is passed on: {names:?}");
     }
     assert!(!names.contains(&"SOME_TOOLS_PRIVATE_SETTING"), "anything not on the list stays with the shell");
@@ -657,4 +643,89 @@ fn a_linked_checkout_into_the_octosense_home_is_not_reopened() {
         let real = crate::sandbox::resolved(&octo);
         assert!(linux::rules(&p, 3).iter().all(|r| r.path != real), "Landlock never grants the home through a link");
     }
+}
+
+// ------------------------------------------------ what the next build reads (ADR 0004 §3, review 2026-09-30)
+
+/// The Terminal's `home:rw` with a checkout, target dir and cargo home
+/// under the same home: all of them read-only after every grant.
+fn home_rw_with_a_build(root: &Path) -> Policy {
+    let mut p = home_rw_with_octosense_home(root);
+    p.program = vec![root.join("src/OctoSense"), root.join("src/OctoSense/target/release")];
+    p.read_only = vec![root.join("src/OctoSense"), root.join("src/OctoSense/target"), root.join(".cargo"), root.join(".rustup"), root.join("src/.cargo")];
+    p
+}
+
+#[test]
+fn the_macos_profile_keeps_the_build_read_only_after_every_grant() {
+    let root = Path::new("/nonexistent/home");
+    let text = macos::profile(&home_rw_with_a_build(root));
+    let grant = text.find("(subpath \"/nonexistent/home\"))").expect(&text);
+    let ro = text.find(";; what the next build reads or runs stays read-only").expect(&text);
+    assert!(grant < ro, "the read-only rule comes after home:rw (the last match wins)\n{text}");
+    for dir in [".cargo", ".rustup", "src/.cargo", "src/OctoSense", "src/OctoSense/target"] {
+        assert!(text[ro..].contains(&format!("(subpath \"/nonexistent/home/{dir}\")")), "{dir}\n{text}");
+    }
+    // Login items not writable, last of all.
+    let agents = text.find("(deny file-write* (subpath \"/nonexistent/home/Library/LaunchAgents\"))").expect(&text);
+    assert!(ro < agents, "{text}");
+    // A jail inside a read-only path stays writable.
+    let mut inside = home_rw_with_a_build(root);
+    inside.read_only.push(root.join(".octosense"));
+    let text = macos::profile(&inside);
+    assert!(text.contains(";; its own jail and secrets even there\n(allow file-write* (subpath \"/nonexistent/home/.octosense/apps/probe\")"), "{text}");
+}
+
+/// Proved on this machine: from inside the broad sandbox, nothing the next
+/// build reads or runs can be written (the review's `.cargo/config.toml`
+/// build wrapper), and login items cannot be added; the person's other
+/// files still can.
+#[cfg(target_os = "macos")]
+#[test]
+fn inside_the_terminals_sandbox_the_build_toolchain_and_login_items_are_out_of_reach() {
+    if !sandbox_works_here() {
+        eprintln!("no process sandbox on this machine; skipped");
+        return;
+    }
+    let scratch = Scratch::new("buildro");
+    let root = &scratch.0;
+    for dir in ["src/OctoSense/target/release", "src/OctoSense/.cargo", ".cargo/bin", ".rustup", "Library/LaunchAgents", "Documents", ".octosense/apps/probe", ".octosense/secrets/probe"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    std::fs::write(root.join("src/OctoSense/Cargo.toml"), "[workspace]").unwrap();
+    let policy = home_rw_with_a_build(root);
+    let sh = |script: String| run("/bin/sh", &["-c", &script], &policy);
+    for target in [
+        "src/OctoSense/.cargo/config.toml",
+        "src/.cargo/config.toml",
+        ".cargo/config.toml",
+        ".cargo/bin/cargo",
+        ".rustup/settings.toml",
+        "src/OctoSense/target/release/terminal",
+        "src/OctoSense/Cargo.toml",
+        "Library/LaunchAgents/evil.plist",
+    ] {
+        let (ok, out) = sh(format!("echo '[build]\nrustc-wrapper = \"/tmp/x\"' > {}", root.join(target).display()));
+        assert!(!ok, "{target} must not be writable: {out}");
+    }
+    let (ok, out) = sh(format!("mkdir {}", root.join("src/.cargo").display()));
+    assert!(!ok, "no .cargo directory can be made above the checkout either: {out}");
+    let (ok, out) = sh(format!("cat {}/src/OctoSense/Cargo.toml", root.display()));
+    assert!(ok && out.contains("workspace"), "the checkout stays readable: {out}");
+    let (ok, out) = sh(format!("echo x > {}/Documents/note.txt", root.display()));
+    assert!(ok, "the person's own files stay writable under home:rw: {out}");
+}
+
+/// `terminal.run` follows what the Terminal's newest launch reported
+/// (ADR 0004 §10, §12): not before a launch, not after an unsandboxed one.
+#[test]
+fn the_newest_launch_says_whether_an_app_ran_sandboxed() {
+    assert_eq!(launch_state("probe-launches"), None);
+    assert!(!launch_sandboxed("probe-launches"), "no launch yet: nothing to vouch for");
+    note_launch("probe-launches", Some(&Applied::Sandboxed("ok".into())));
+    assert!(launch_sandboxed("probe-launches"));
+    note_launch("probe-launches", Some(&Applied::Unavailable("sandbox-exec is missing".into())));
+    assert_eq!(launch_state("probe-launches"), Some(false), "an unsandboxed launch withdraws it");
+    note_launch("probe-launches", None);
+    assert!(!launch_sandboxed("probe-launches"), "no policy is no sandbox");
 }
