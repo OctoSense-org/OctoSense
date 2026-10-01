@@ -1054,6 +1054,11 @@ fn strict(script: &Arc<Mutex<Script>>, bound: &[(&str, &str)]) {
 
 /// The slug the fake kernel gives the Rinx peer of `account`.
 fn slug_of(account: &str) -> String {
+    format!("rinx-{}", account_tag(account))
+}
+
+/// The slug of a peer recorded before names carried the whole tag.
+fn short_slug_of(account: &str) -> String {
     format!("rinx-{}", &account_tag(account)[..8])
 }
 
@@ -1101,7 +1106,7 @@ fn should_resume_from_the_legacy_token_and_cwd_files_and_migrate_them_to_one_rec
     let host = Arc::new(RecordingHost::default());
     *host.workspace.lock().unwrap() = Some(root.join("elsewhere"));
     let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
-    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    strict(&script, &[(short_slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
     let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
@@ -1127,7 +1132,7 @@ fn should_resume_with_the_account_folder_when_no_workspace_was_saved() {
     let host = Arc::new(RecordingHost::default());
     *host.workspace.lock().unwrap() = Some(ws.clone());
     let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
-    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    strict(&script, &[(short_slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
     let prepares = calls_of(&script, "peer/prepare");
@@ -1149,7 +1154,7 @@ fn should_fall_back_to_the_kernels_workspace_when_a_legacy_peer_was_made_there()
     let host = Arc::new(RecordingHost::default());
     *host.workspace.lock().unwrap() = Some(ws.clone());
     let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
-    strict(&script, &[(slug_of("@a:x").as_str(), "/kernel/ws")]);
+    strict(&script, &[(short_slug_of("@a:x").as_str(), "/kernel/ws")]);
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
     let prepares = calls_of(&script, "peer/prepare");
@@ -1159,11 +1164,60 @@ fn should_fall_back_to_the_kernels_workspace_when_a_legacy_peer_was_made_there()
     drop(broker);
     // Saved: the next run resumes at once.
     let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
-    strict(&script, &[(slug_of("@a:x").as_str(), "/kernel/ws")]);
+    strict(&script, &[(short_slug_of("@a:x").as_str(), "/kernel/ws")]);
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
     assert_eq!(calls_of(&script, "peer/prepare").len(), 1);
     drop(broker);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// FNV-1a of the raw bytes: the tag before accounts were normalized.
+fn raw_tag(account: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in account.bytes() {
+        hash ^= u64::from(b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// A new peer's name carries the whole 64-bit tag (it is what a resume
+/// finds the peer by), not 32 bits of it.
+#[test]
+fn should_name_a_new_peer_with_the_whole_account_tag() {
+    let (broker, script) = new_broker(&ALL);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert_eq!(calls_of(&script, "peer/prepare")[0].1["names"][0], format!("Rinx {}", account_tag("@a:x")));
+}
+
+/// A peer recorded before names were widened resumes under its old name;
+/// one made under an un-normalized account keeps its namespace, and the
+/// record keeps both.
+#[test]
+fn should_resume_an_older_peer_under_its_own_name_and_namespace() {
+    let root = scratch("oldname");
+    let dir = root.join("peers");
+    let raw = "@A:X ";
+    let old_ns = format!("app/rinx/acct-{}", raw_tag(raw));
+    assert_ne!(old_ns, app_namespace("rinx", raw), "the tag changed for this id");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{}.token", old_ns.replace('/', "_"))), "fixture-host-token").unwrap();
+    for run in 0..2 {
+        let (broker, script) = new_broker_with(&ALL, None, Some(dir.clone()));
+        broker.set_account(Some(raw));
+        wait_for("the peer", || broker.availability() == Availability::Ready);
+        let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
+        assert_eq!(prepare["host_token"], "fixture-host-token", "run {run}");
+        assert_eq!(prepare["memory_namespace"], old_ns.as_str(), "run {run}");
+        assert_eq!(prepare["names"][0], format!("Rinx {}", &raw_tag(raw)[..8]), "run {run}");
+        drop(broker);
+    }
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "one record: {files:?}");
+    let record: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(&files[0])).unwrap()).unwrap();
+    assert_eq!(record["namespace"], old_ns.as_str());
     let _ = std::fs::remove_dir_all(&root);
 }
 

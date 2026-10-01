@@ -209,8 +209,17 @@ impl BrokerConfig {
     }
 }
 
-/// A stable, non-secret account tag for names and namespaces.
+/// A stable, non-secret account tag for names and namespaces: FNV-1a of
+/// the account as the host keys it ([`crate::storage::normalize_account`],
+/// like the account folder's name), so one account has one memory. An id
+/// that was already normal keeps the tag it had before; a peer made under
+/// another spelling keeps its namespace through its record.
 pub fn account_tag(account: &str) -> String {
+    raw_tag(&crate::storage::normalize_account(account))
+}
+
+/// FNV-1a of the bytes (the tag before accounts were normalized).
+fn raw_tag(account: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in account.bytes() {
         hash ^= u64::from(b);
@@ -1445,9 +1454,31 @@ impl Inner {
             self.fail(&err);
             return Err(err);
         }
-        let tag = account_tag(&account);
-        let namespace = app_namespace(&self.cfg.app_id, &account);
-        let name = format!("{} {}", self.cfg.app_label, &tag[..8]);
+        // The record is kept under the account's namespace; a peer made
+        // before accounts were normalized is found under the raw one.
+        let key = app_namespace(&self.cfg.app_id, &account);
+        let mut known = self.load_record(&key);
+        let raw_namespace = format!("app/{}/acct-{}", self.cfg.app_id, raw_tag(&account));
+        let mut moved_from = None;
+        if known.is_none() && raw_namespace != key {
+            if let Some(mut record) = self.load_record(&raw_namespace) {
+                record.namespace.get_or_insert_with(|| raw_namespace.clone());
+                record.legacy = true;
+                known = Some(record);
+                moved_from = Some(raw_namespace);
+            }
+        }
+        // The kernel's memory namespace and the name a resume finds the peer
+        // by are the ones it was made with: a new peer's name carries the
+        // whole 64-bit tag; one recorded before, 32 bits of its own.
+        let namespace = known.as_ref().and_then(|r| r.namespace.clone()).unwrap_or_else(|| key.clone());
+        let name = match &known {
+            Some(record) => record.name.clone().unwrap_or_else(|| {
+                let tag = namespace.rsplit("acct-").next().unwrap_or_default();
+                format!("{} {}", self.cfg.app_label, &tag[..tag.len().min(8)])
+            }),
+            None => format!("{} {}", self.cfg.app_label, account_tag(&account)),
+        };
         // The owner session is live before its peer exists, so the kernel
         // can wake it when the peer asks a question.
         self.request(
@@ -1463,7 +1494,6 @@ impl Inner {
             "memory_namespace": namespace,
             "resume": true,
         });
-        let known = self.load_record(&namespace);
         // The agent's workspace is the account's folder (ADR 0004 §11) for
         // a peer created now; a resume names the workspace the peer was
         // created with (the kernel refuses any other). A record without one
@@ -1525,8 +1555,14 @@ impl Inner {
         // workspace, before anything else.
         let token = match result["host_token"].as_str() {
             Some(token) => {
-                let record = PeerRecord { token: token.to_owned(), cwd: chosen_cwd.map(|chosen| kernel_cwd.unwrap_or(chosen)), legacy: false };
-                if let Err(err) = self.save_record(&namespace, record) {
+                let record = PeerRecord {
+                    token: token.to_owned(),
+                    cwd: chosen_cwd.map(|chosen| kernel_cwd.unwrap_or(chosen)),
+                    namespace: Some(namespace.clone()),
+                    name: Some(name.clone()),
+                    legacy: false,
+                };
+                if let Err(err) = self.save_record(&key, record) {
                     let err = format!("could not keep the assistant's peer credential: {err}");
                     self.fail(&err);
                     return Err(err);
@@ -1540,9 +1576,16 @@ impl Inner {
                     if unknown_cwd && kernel_cwd.is_some() {
                         record.cwd = kernel_cwd;
                     }
-                    if record.legacy || unknown_cwd {
-                        if let Err(err) = self.save_record(&namespace, record) {
-                            eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run");
+                    if record.legacy || unknown_cwd || record.name.is_none() || record.namespace.is_none() {
+                        record.namespace = Some(namespace.clone());
+                        record.name = Some(name.clone());
+                        match self.save_record(&key, record) {
+                            Ok(()) => {
+                                if let (Some(old), Some(dir)) = (&moved_from, &self.cfg.state_dir) {
+                                    crate::peer_record::remove(dir, old);
+                                }
+                            }
+                            Err(err) => eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run"),
                         }
                     }
                 }
@@ -3379,5 +3422,15 @@ mod tests {
         assert!(a.starts_with("app/rinx/acct-"));
         assert!(!a.contains("alice"));
         assert_eq!(a, app_namespace("rinx", "@alice:example.org"));
+    }
+
+    /// One account key (ADR 0004 §11): the memory tag normalizes an account
+    /// the way the host's folder name does (`storage::normalize_account`).
+    #[test]
+    fn should_tag_one_account_once_when_its_case_or_spaces_differ() {
+        assert_eq!(account_tag("  @Alice:Example.ORG\n"), account_tag("@alice:example.org"));
+        assert_ne!(account_tag("@bob:example.org"), account_tag("@alice:example.org"));
+        // An already-normal id keeps its tag: existing namespaces stay put.
+        assert_eq!(account_tag("@a:x"), "82c93996fd659248");
     }
 }
