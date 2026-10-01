@@ -483,6 +483,16 @@ impl WmDesk {
         }
         if perf {crate::mobile_perf::span(cx.cx,ch.glass,clock);clock=std::time::Instant::now();}
         let mut excluded:Vec<Rect>=Vec::new();
+        // Apps out of sight sleep (module_view.rs `set_asleep`): an app is
+        // awake while it shows or opens, sits in a split on screen, under
+        // Recents, or as a live home tile.
+        for (client,item) in self.items.iter() {
+            let shown=phone.client==Some(*client) && phone.openness>0.001
+                || phone.screen==PhoneScreen::App && phone.groups.in_split(*client)
+                || phone.overview>0.001
+                || phone.tiles.get(*client).is_some();
+            if let Some(mut view)=item.borrow_mut::<MpModuleView>() {view.set_asleep(cx.cx,!shown);}
+        }
         let mut order=phone.order.clone();
         order.reverse();
         // Foreground paints last during launch/return transitions.
