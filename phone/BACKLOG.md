@@ -652,7 +652,7 @@ Found in the review of the second sync from mobile on 2026-09-25
   `App::installed_app_changed`, which bumps the generation. App Hub has no
   removal path yet; when one lands, it must bump the generation too.
 
-- [ ] **HUB-03 — P3: `find_app("card")` answers the first installed Hub app.**
+- [x] **HUB-03 — P3: `find_app("card")` answers the first installed Hub app.**
 
   `clients::find_app` falls back to matching the binary name, and every
   installed Hub row has `bin == "card"`, so `"card"` resolves to whichever
@@ -660,6 +660,12 @@ Found in the review of the second sync from mobile on 2026-09-25
 
   Acceptance: skip `bin == "card"` rows in the binary-name fallback, with a
   test.
+
+  Fixed on 2026-09-26 (`930f1b2`): the fallback in `clients::find_app`
+  (`crates/shell/src/clients.rs`) skips `bin == "card"` rows. The test came
+  on 2026-09-30: `the_card_binary_names_no_card_runner_app` checks the
+  lookup (`find_app_in`, split out of `find_app` so it takes the rows), and
+  fails with the guard removed.
 
 - [ ] **HUB-04 — P3: Migrate persisted `appstore` ids to `apphub`.**
 
@@ -669,24 +675,34 @@ Found in the review of the second sync from mobile on 2026-09-25
 
 - [ ] **HUB-05 — P3: Small cleanups after the App Hub merge.**
 
-  - `launch_module_as` (`home/src/main.rs`) returns silently for a `card`
-    app without a `hub:` id; log why.
-  - `apps::is_linked` (`home/src/apps.rs`) has no callers.
-  - `bundled_catalog()` (`home/src/apps.rs`) repeats
-    `retain(|a| a.id != "card")`, which `bundled_modules_catalog()` already
-    does.
-  - In the non-floating navigation branch of `home/src/mobile_surface.rs`,
-    `android` is always false (Android uses floating navigation), so its
-    band and pill conditions are dead.
+  - `apps::is_linked` (`crates/shell/src/apps.rs`) is called only by its
+    test.
+  - In the non-floating navigation branch of
+    `crates/shell/src/mobile_surface.rs`, `android` is always false (Android
+    uses floating navigation: `mobile_navigation::ENABLED`), so its band and
+    pill conditions are dead.
 
-- [ ] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
+  Done by 2026-09-30: `launch_module_as` (`crates/shell/src/lib.rs`) logs
+  why a `card` app without a manifest id does not open (`apps::module_open`:
+  `<id> names no app for the card runner`), and `bundled_catalog()` filters
+  its rows once, through `catalog_visible`.
+
+- [x] **CAL-01 — P2: Host the Calendar module from mobile PR #11.**
 
   Everything else in PR #11 (`feat/calendar-module`) is present; Calendar
   module hosting is not. Its source is in OctoScript-App-Design-Flow
   (formerly Octoscript-AppCard) at [`apps/calendar/native`](https://github.com/OctoSense-org/OctoScript-App-Design-Flow/tree/cbbda4da0a9d0fbf13497335dd3342b71f35e71f/apps/calendar/native). Planned separately (Task 14 of
   `docs/plans/2026-09-25-sync-mobile-into-home.md`).
 
-- [ ] **RUNTIME-01 — P2: `init_cx_os()` traps off the main thread on macOS 14.**
+  Closed on 2026-09-30 as obsolete: first-party apps ship as contained
+  script apps (home [ADR 0004](../docs/adr/home/0004-system-apps-are-contained-script-apps.md)),
+  and a native app is added only by a reviewed `native-apps.json` change
+  ([ADR 0004](../docs/adr/0004-native-apps-hosting-and-peers.md)). The
+  native Calendar source named above is no longer on
+  OctoScript-App-Design-Flow's `main` (its `apps/` became `examples/`,
+  without it). A calendar would be a new script app, `apps/<name>/bundle/`.
+
+- [x] **RUNTIME-01 — P2: `init_cx_os()` traps off the main thread on macOS 14.**
 
   Makepad's macOS `init_cx_os()` calls `AppleGameInput::init`, whose
   `+[GCController setShouldMonitorBackgroundEvents:]` starts GameController's
@@ -703,3 +719,13 @@ Found in the review of the second sync from mobile on 2026-09-25
   dispatches its GameController setup to the main queue when called off the
   main thread; the runtime lock picks up that Makepad revision; CI runs all
   of `octosense-maps` without `--skip`.
+
+  Closed on 2026-09-30 as obsolete: Maps is a script app
+  (`apps/maps/bundle`); its native crate, with those tests, was deleted in
+  [#113](https://github.com/OctoSense-org/OctoSense/pull/113). No test here
+  calls `init_cx_os()`, and no workflow skips a test for it. The framework
+  call is unchanged: at the pinned makepad `a1c81312`,
+  `AppleGameInput::init` (`platform/src/os/apple/apple_game_input.rs`)
+  still calls `setShouldMonitorBackgroundEvents:` without checking the
+  thread, so a new test that calls `init_cx_os()` off the main thread on
+  macOS 14 would trap again.

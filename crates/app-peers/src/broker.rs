@@ -683,6 +683,13 @@ struct State {
     queue: VecDeque<PeerInput>,
     /// Conversations opened: each gets a new kernel context id.
     conversations: u64,
+    /// The person's lane of every conversation handle bound so far, by the
+    /// account and instance that opened it, oldest first: a handle opened
+    /// again for the same account and instance (a shell panel reopened)
+    /// shows the earlier ones' history too. Cleared with the contexts (an
+    /// account change, a release); a lane the kernel no longer has is
+    /// dropped when its history is read.
+    person_lanes: HashMap<(String, String), Vec<String>>,
     /// Approval and question ids the host took: only the host answers them.
     host_held: VecDeque<String>,
     /// Questions the host holds, by id: the turn that asked.
@@ -749,6 +756,7 @@ impl Broker {
                 requests: VecDeque::new(),
                 queue: VecDeque::new(),
                 conversations: 0,
+                person_lanes: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
                 prompts: HashMap::new(),
@@ -2185,7 +2193,7 @@ impl Inner {
                 question.turn_origin = match (st.speaker_of(&question.turn_id), st.trigger_of(&question.turn_id), question.origin) {
                     (Some(speaker), _, _) => speaker.kind,
                     (None, TurnTrigger::SystemAgent, _) | (None, _, CallOrigin::PeerInput) => host_tools::TurnOrigin::SystemAgent,
-                    (None, TurnTrigger::Person, _) => host_tools::TurnOrigin::Person,
+                    (None, TurnTrigger::Person | TurnTrigger::AppSaysPerson, _) => host_tools::TurnOrigin::Person,
                     (None, TurnTrigger::App | TurnTrigger::Incoming { .. }, _) => host_tools::TurnOrigin::App,
                     (None, TurnTrigger::Unknown, CallOrigin::Context) => host_tools::TurnOrigin::Person,
                     (None, TurnTrigger::Unknown, _) => host_tools::TurnOrigin::App,
@@ -2472,6 +2480,7 @@ impl Inner {
             let mut st = self.lock();
             let contexts = st.contexts.drain(..).filter_map(|c| c.upgrade()).collect();
             st.routes.clear();
+            st.person_lanes.clear();
             contexts
         };
         for context in contexts {
@@ -2920,6 +2929,16 @@ impl ContextInner {
                 context: Arc::downgrade(self),
             },
         );
+        if self.conversation {
+            let mut st = inner.lock();
+            let lanes = st.person_lanes.entry((self.account.clone(), self.instance.clone())).or_default();
+            if !lanes.contains(&session) {
+                lanes.push(session.clone());
+                if lanes.len() > 16 {
+                    lanes.remove(0);
+                }
+            }
+        }
         *self.bound.lock().unwrap_or_else(|e| e.into_inner()) = Some(Bound {
             session: session.clone(),
             peer_slug: peer.slug,
@@ -2941,14 +2960,13 @@ impl ContextInner {
         if text.is_empty() || text.len() > 32 * 1024 {
             return Err("Provide text (at most 32 KiB)".into());
         }
-        let kind = match trigger {
+        let kind = match &trigger {
             // The system agent speaks only through its own `peer/input`.
             TurnTrigger::SystemAgent => return Err("Only the system agent's own input speaks for it".into()),
             // The app itself started the run (its schedule, content that
-            // arrived): the app speaks.
-            TurnTrigger::App | TurnTrigger::Incoming { .. } => host_tools::TurnOrigin::App,
-            // The person in the app's UI or its cards.
-            TurnTrigger::Person | TurnTrigger::Unknown => host_tools::TurnOrigin::Person,
+            // arrived): the app speaks; otherwise the person in the app's UI
+            // or its cards (the label only: rules read the trigger).
+            other => other.speaker(),
         };
         let label = inner.cfg.app_label.trim();
         let speaker = Speaker { kind, label: (!label.is_empty()).then(|| label.to_owned()) };
@@ -3063,12 +3081,41 @@ impl ContextInner {
                     .await;
                 if self.conversation {
                     // Both lanes: the person's context and the peer's session.
+                    // The person's lane includes the earlier handles of this
+                    // instance (each handle is a new kernel context).
+                    let key = (self.account.clone(), self.instance.clone());
+                    let earlier: Vec<String> = inner.lock().person_lanes.get(&key).map(|l| l.iter().filter(|s| **s != session).cloned().collect()).unwrap_or_default();
+                    let mut history = history;
+                    if let Ok(person) = &mut history {
+                        let mut rows = Vec::new();
+                        for lane in &earlier {
+                            match inner.request("session/hydrate", json!({"session_id": lane, "include": ["messages"]})).await {
+                                Ok(mut old) => {
+                                    if let Value::Array(old) = old["messages"].take() {
+                                        rows.extend(old);
+                                    }
+                                }
+                                // Gone (purged): forget it.
+                                Err(_) => {
+                                    if let Some(lanes) = inner.lock().person_lanes.get_mut(&key) {
+                                        lanes.retain(|l| l != lane);
+                                    }
+                                }
+                            }
+                        }
+                        if !rows.is_empty() {
+                            if let Value::Array(now) = person["messages"].take() {
+                                rows.extend(now);
+                            }
+                            person["messages"] = Value::Array(rows);
+                        }
+                    }
                     let peer_session = inner.lock().peer.as_ref().map(|(_, p)| p.session.clone());
                     let system_agent = match peer_session.clone() {
                         Some(peer) => inner.request("session/hydrate", json!({"session_id": peer, "include": ["messages"]})).await?,
                         None => json!({"messages": []}),
                     };
-                    let requests: Vec<Request> = inner.lock().requests.iter().filter(|r| r.session == session || peer_session.as_deref() == Some(r.session.as_str())).cloned().collect();
+                    let requests: Vec<Request> = inner.lock().requests.iter().filter(|r| r.session == session || earlier.contains(&r.session) || peer_session.as_deref() == Some(r.session.as_str())).cloned().collect();
                     history.map(|person| merged_history(person, system_agent, &requests))
                 } else {
                     history
