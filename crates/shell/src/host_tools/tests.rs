@@ -431,7 +431,7 @@ fn the_shipped_catalog_is_the_native_apps_agent_blocks() {
     let catalog = Catalog::shipped();
     for tool in ["terminal.run", "terminal.read_screen", "terminal.read_scrollback"] {
         assert!(catalog.entry("terminal", tool).is_some(), "{tool}");
-        assert_eq!(catalog.owner_of(tool), Some("terminal"));
+        assert_eq!(catalog.owner_of(tool).as_deref(), Some("terminal"));
     }
     let rinx = crate::native_apps::find("rinx").unwrap();
     assert_eq!(catalog.generic("rinx", false), rinx.generic_tools.iter().map(|t| t.to_string()).collect::<Vec<_>>());
@@ -914,4 +914,26 @@ fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
         }
         assert_eq!(answers.lock().unwrap().as_slice(), if answered { &[true][..] } else { &[][..] });
     }
+}
+
+/// ADR 0004 §7: a grant names its owning app explicitly, by the tool's
+/// namespace (the native app of that id, else the system app `os.<ns>`, the
+/// toolbox for its own), never whichever app declared the name first.
+#[test]
+fn a_grants_owner_is_the_namespaces_app_never_the_first_declarer() {
+    let mut c = Catalog::shipped();
+    c.declare("os.mail", vec![decl("mail.send", true, "host")]);
+    c.declare("com.evil.mail", vec![decl("mail.send", true, "host")]);
+    assert_eq!(c.owner_of("mail.send"), Some("os.mail".to_string()), "com.evil.mail sorts first but owns nothing");
+    c.declare("com.evil.news", vec![decl("news.list", true, "host")]);
+    assert_eq!(c.owner_of("news.list"), Some("os.news".to_string()), "whoever declares it, not yet loaded");
+    c.declare("com.evil.terminal", vec![decl("terminal.run", true, "host")]);
+    assert_eq!(c.owner_of("terminal.run"), Some("terminal".to_string()), "a native app owns its namespace");
+    assert_eq!(c.owner_of("toolbox.search"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("workflow.run"), Some(super::TOOLBOX.to_string()));
+    assert_eq!(c.owner_of("search"), None, "a kernel tool has no owning app");
+    // A grant resolved so reaches only the owner's tool.
+    c.grant("com.example.trip", &c.owner_of("mail.send").unwrap(), "mail.send");
+    assert!(c.may_call("com.example.trip", "os.mail", "mail.send", false));
+    assert!(!c.may_call("com.example.trip", "com.evil.mail", "mail.send", false));
 }
