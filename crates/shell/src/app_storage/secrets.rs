@@ -164,6 +164,15 @@ pub fn purge(secrets_root: &Path, app_id: &str) -> bool {
     !secrets_root.join(app_id).join(KEYCHAIN_INDEX).exists()
 }
 
+/// Stub.
+pub fn purge_leftovers_with(_secrets_root: &Path, _uninstalled: impl Fn(&str) -> bool, _purge: impl Fn(&str) -> bool) {}
+
+/// Stub.
+pub fn purge_keys(keys: &[String], _delete: impl Fn(&str) -> Result<(), String>) -> Vec<String> {
+    let _ = keys;
+    Vec::new()
+}
+
 /// A run with the keychain deletes the items an earlier headless uninstall
 /// could not: `secrets/<app id>/` holding nothing but the index, of an app
 /// no longer installed (`uninstalled`: it has no jail; a reinstalled app's

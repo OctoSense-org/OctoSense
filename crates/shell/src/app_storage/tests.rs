@@ -271,6 +271,72 @@ fn should_keep_the_keychain_index_when_an_uninstall_cannot_purge_it() {
     assert!(!home.0.join("secrets/mail/a").exists(), "every other secret goes");
 }
 
+/// An uninstall never follows a symlinked `secrets/<app id>`: the link goes,
+/// whatever it points at stays.
+#[cfg(unix)]
+#[test]
+fn should_remove_only_the_link_when_an_apps_secrets_folder_is_a_symlink() {
+    let home = Scratch::new("secrets-link");
+    let host = storage(&home.0);
+    host.open("org.example.x").unwrap();
+    let victim = home.0.join("victim");
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join("precious"), "keep").unwrap();
+    std::fs::write(victim.join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+    let link = home.0.join("secrets/org.example.x");
+    std::fs::remove_dir_all(&link).unwrap();
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+    host.uninstall("org.example.x").unwrap();
+    assert_eq!(std::fs::read_to_string(victim.join("precious")).unwrap(), "keep", "the target is untouched");
+    assert!(victim.join(secrets::KEYCHAIN_INDEX).is_file());
+    assert!(std::fs::symlink_metadata(&link).is_err(), "the link itself is gone");
+}
+
+/// What a keychain run purges at startup: only `secrets/<id>/` holding the
+/// index and nothing else, of an app with no jail; never an empty folder,
+/// a symlink, or a host-owned `os.*` folder; kept when the purge failed.
+#[test]
+fn should_purge_leftovers_only_for_an_index_alone_of_an_uninstalled_store_app() {
+    let home = Scratch::new("leftovers");
+    let root = home.0.join("secrets");
+    let dir = |id: &str| root.join(id);
+    for id in ["org.gone", "org.empty", "org.installed", "os.mail", "org.failing", "org.more"] {
+        std::fs::create_dir_all(dir(id)).unwrap();
+    }
+    for id in ["org.gone", "org.installed", "os.mail", "org.failing", "org.more"] {
+        std::fs::write(dir(id).join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+    }
+    std::fs::write(dir("org.more").join("token"), "t").unwrap();
+    #[cfg(unix)]
+    {
+        std::fs::create_dir_all(home.0.join("elsewhere")).unwrap();
+        std::fs::write(home.0.join("elsewhere").join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+        std::os::unix::fs::symlink(home.0.join("elsewhere"), dir("org.linked")).unwrap();
+    }
+    let asked = std::cell::RefCell::new(Vec::new());
+    secrets::purge_leftovers_with(&root, |id| id != "org.installed", |id| {
+        asked.borrow_mut().push(id.to_owned());
+        id != "org.failing"
+    });
+    let mut asked = asked.into_inner();
+    asked.sort();
+    assert_eq!(asked, ["org.failing", "org.gone"]);
+    assert!(!dir("org.gone").exists(), "purged and removed");
+    assert!(dir("org.failing").join(secrets::KEYCHAIN_INDEX).is_file(), "a failed purge keeps its index");
+    for id in ["org.empty", "org.installed", "os.mail", "org.more"] {
+        assert!(dir(id).is_dir(), "{id} untouched");
+    }
+    #[cfg(unix)]
+    assert!(home.0.join("elsewhere").join(secrets::KEYCHAIN_INDEX).is_file());
+}
+
+/// A keychain purge keeps, in the index, every key it could not delete.
+#[test]
+fn should_keep_the_keys_a_purge_could_not_delete() {
+    let left = secrets::purge_keys(&["a".into(), "b".into(), "c".into()], |k| if k == "b" { Err("locked".into()) } else { Ok(()) });
+    assert_eq!(left, ["b"]);
+}
+
 // ---- the manifest block ---------------------------------------------------
 
 #[test]

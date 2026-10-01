@@ -1676,6 +1676,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A symlinked legacy home is never followed (it could point anywhere).
+    #[cfg(unix)]
+    #[test]
+    fn should_not_adopt_a_legacy_home_that_is_a_symlink() {
+        let root = std::env::temp_dir().join(format!("octosense-adopt-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("elsewhere")).unwrap();
+        std::fs::write(root.join("elsewhere/secret.conf"), "x").unwrap();
+        std::fs::create_dir_all(root.join("home")).unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere"), root.join("home/terminal")).unwrap();
+        let jail = root.join("home/apps/terminal/terminal");
+        super::adopt_legacy_app_home(&root.join("home/terminal"), &jail);
+        super::adopt_legacy_app_home_later(root.join("home/terminal"), jail.clone());
+        super::wait_adopted(&jail);
+        assert!(!jail.exists(), "nothing copied through the link");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The copy runs off the UI thread; a launch waits only for a copy
     /// still running.
     #[test]
