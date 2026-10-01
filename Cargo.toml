@@ -71,6 +71,8 @@ octosense-app-hub-app = { git = "https://github.com/OctoSense-org/OctoSense-App-
 # --- Makepad (OctoSense-org/makepad), the revision Octoscript-Makepad's
 # runtime.json pins (native-runtime.lock.json); resolved to .sources/makepad.
 makepad-widgets = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
+# The script VM alone: system apps' script tests (News's main.splash).
+makepad-script = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
 makepad-code-editor = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
 makepad-ai = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }
 makepad-studio-protocol = { git = "https://github.com/OctoSense-org/makepad.git", rev = "e29a0eaa68781231eb9ec582e5f02648c6dad7e9" }

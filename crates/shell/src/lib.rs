@@ -3633,6 +3633,35 @@ impl App {
         }
     }
 
+    /// Text input, the input method's state query and its action key for
+    /// the chat panes. True when a pane took the event.
+    fn chat_text_input(&mut self, cx: &mut Cx, event: &Event) -> bool {
+        for pane in [ids!(shell_app_chat), ids!(shell_system_chat)] {
+            let pane = self.ui.widget(cx, pane);
+            let Some(mut pane) = pane.borrow_mut::<system_chat::view::ShellSystemChat>() else { continue };
+            if let Event::ImeAction(action) = event {
+                use makepad_widgets::makepad_platform::event::ImeAction;
+                if pane.has_keyboard(cx) && matches!(action.action, ImeAction::Send | ImeAction::Done | ImeAction::Go) {
+                    if pane.is_app_panel() { app_chat::send_draft() } else { system_chat::send_draft() }
+                    return true;
+                }
+                continue;
+            }
+            if pane.ime(cx, event) {
+                return true;
+            }
+        }
+        // Typed text with no pane focused by a press (F8 opened it): the
+        // pane that has the keyboard. Never an input method's whole editor
+        // state: that belongs to the field it was asked of.
+        if let Event::TextInput(t) = event {
+            if t.full_state_sync.is_none() {
+                return app_chat::text_input(t) || system_chat::text_input(t);
+            }
+        }
+        false
+    }
+
     /// The system chat's pane owns the pointer inside its rect while open.
     fn system_chat_pointer(&mut self, cx: &mut Cx, event: &Event) -> bool {
         if !system_chat::is_open() {
@@ -6090,12 +6119,14 @@ impl App {
                 self.pump_warm(cx);
             }
         }
-        // The phone's input method types into the system chat's prompt.
-        if let Event::TextInput(t) = event {
-            if cfg!(native_mobile) && self.state.is_some() && (app_chat::text_input(&t.input) || system_chat::text_input(&t.input)) {
-                self.system_chat_changed(cx);
-                return;
-            }
+        // The chat panes' prompts: text input and the input method (see
+        // system_chat/composer.rs). A pane whose prompt holds the key focus
+        // takes its text and answers the input method's state query; plain
+        // typed text (a desktop's) goes to the pane that has the keyboard.
+        // Characters are typed only here, never on KeyDown.
+        if self.state.is_some() && matches!(event, Event::TextInput(_) | Event::TextInputStateQuery(_) | Event::ImeAction(_)) && self.chat_text_input(cx, event) {
+            self.system_chat_changed(cx);
+            return;
         }
         if let Event::Signal = event {
             if self.state.is_some() {
