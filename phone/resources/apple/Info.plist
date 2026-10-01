@@ -14,6 +14,8 @@
 -->
 <plist version="1.0">
 <dict>
+  <key>CFBundleDisplayName</key>
+  <string>OctoSense</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoadsInWebContent</key>
