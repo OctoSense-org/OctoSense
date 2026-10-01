@@ -555,8 +555,7 @@ async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections
 /// ADR 0004 §12, what is enforced today: a system-agent turn, whoever starts
 /// it, is offered none of octos's shell (`group:runtime`: `shell`, `bash`,
 /// `exec_command`, `write_stdin`), never `peer_close`, and every tool of its own list octos
-/// registers; beyond that it is bounded only by the grantable ceiling
-/// (everything else), not its exact list. A Talk to Octos external client's
+/// registers (the exact list is the next test). A Talk to Octos external client's
 /// turn keeps octos's external allowlist.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_system_agent_turn_is_offered_no_octos_shell() {
@@ -582,13 +581,11 @@ async fn a_system_agent_turn_is_offered_no_octos_shell() {
     assert_eq!(external_tools, &stdio & &allowlist, "external clients keep every allowlisted tool the kernel offers");
 }
 
-/// ADR 0004 §12, the target, NOT yet enforced: a system-agent turn is
-/// offered EXACTLY its grants (its default list; nothing granted here).
-/// Needs session-targeted registration and tool lists in octos (octos#2567,
-/// reviewer item M1; our item 5); until then the grantable ceiling bounds it
-/// (above).
+/// ADR 0004 §12, plan step 4: a system-agent turn is offered EXACTLY its
+/// list (its default kernel tools; nothing granted here), on the private
+/// pipe and over Talk to Octos alike. Each kernel start sets it on the
+/// system session (`session/tool_list/set`, octos#2648).
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs session-targeted tool lists in octos (octos#2567 M1, our item 5); today the system agent is bounded by the grantable ceiling"]
 async fn a_system_agent_turn_is_offered_exactly_the_system_agent_tools() {
     use octosense_kernel::system_tools::SystemAgentTools;
     use std::collections::BTreeSet;
