@@ -312,6 +312,13 @@ struct State {
     uninstalled: HashMap<String, HashSet<String>>,
     /// (app id, account folder name) the startup check refused, and why.
     refused: HashMap<(String, String), String>,
+    /// Suspended accounts whose agent was erased (`peer/purge`): still
+    /// suspended (a broker bound to the removed account must not make a new
+    /// agent for it), but no memory remains. Cleared when the account signs
+    /// in again.
+    erased: HashSet<(String, String)>,
+    /// Uninstalled apps whose every agent was erased.
+    erased_apps: HashSet<String>,
 }
 
 /// The host's own record of suspensions, beside (never inside) the apps'
@@ -363,6 +370,14 @@ impl Storage {
             let resumed = resumed.as_array().into_iter().flatten().filter_map(|f| f.as_str()).map(str::to_owned).collect();
             state.uninstalled.insert(app.clone(), resumed);
         }
+        for pair in saved["erased"].as_array().into_iter().flatten() {
+            if let (Some(app), Some(folder)) = (pair[0].as_str(), pair[1].as_str()) {
+                state.erased.insert((app.to_owned(), folder.to_owned()));
+            }
+        }
+        for app in saved["erased_apps"].as_array().into_iter().flatten().filter_map(|a| a.as_str()) {
+            state.erased_apps.insert(app.to_owned());
+        }
     }
 
     /// Write the suspensions (owner-only, atomically). A failure is logged:
@@ -379,7 +394,11 @@ impl Storage {
                 (app.clone(), serde_json::json!(resumed))
             })
             .collect();
-        let body = serde_json::json!({ "signed_out": signed_out, "uninstalled": uninstalled });
+        let mut erased: Vec<_> = state.erased.iter().map(|(a, f)| serde_json::json!([a, f])).collect();
+        erased.sort_by_key(|v| v.to_string());
+        let mut erased_apps: Vec<_> = state.erased_apps.iter().cloned().collect();
+        erased_apps.sort();
+        let body = serde_json::json!({ "signed_out": signed_out, "uninstalled": uninstalled, "erased": erased, "erased_apps": erased_apps });
         let path = self.suspended_file();
         let write = || -> io::Result<()> {
             let dir = path.parent().expect("a file under .host");
@@ -450,6 +469,7 @@ impl Storage {
         let mut state = self.state();
         let key = Self::key(app_id, account);
         let mut changed = state.signed_out.remove(&key);
+        changed |= state.erased.remove(&key);
         if let Some(resumed) = state.uninstalled.get_mut(app_id) {
             changed |= resumed.insert(key.1);
         }
@@ -469,8 +489,8 @@ impl Storage {
     /// removed; every one of an uninstalled app's counts as at least one).
     pub fn suspended_accounts(&self, app_id: &str) -> usize {
         let state = self.state();
-        let count = state.signed_out.iter().filter(|(app, _)| app == app_id).count();
-        if state.uninstalled.contains_key(app_id) { count.max(1) } else { count }
+        let count = state.signed_out.iter().filter(|k| k.0 == app_id && !state.erased.contains(*k)).count();
+        if state.uninstalled.contains_key(app_id) && !state.erased_apps.contains(app_id) { count.max(1) } else { count }
     }
 
     /// The app is installed (again, after [`Storage::uninstall`]): an app
@@ -483,8 +503,37 @@ impl Storage {
         }
     }
 
+    /// The removed account's agent was erased (`peer/purge`, after
+    /// [`Storage::remove_account`]). The account STAYS suspended (a broker
+    /// still bound to it must not make a new agent for it) until it is added
+    /// again; only Settings' "memory remains" goes. A no-op when the
+    /// account was added again while the purge ran. Thread-safe (the purge
+    /// reports from a background thread).
+    pub fn mark_erased(&self, app_id: &str, account: Option<&str>) {
+        let mut state = self.state();
+        let key = Self::key(app_id, account);
+        if state.signed_out.contains(&key) && state.erased.insert(key) {
+            self.save_suspended(&state);
+        }
+    }
+
+    /// Every agent of an uninstalled app was erased (`peer/purge`, after
+    /// [`Storage::uninstall`]). Its accounts stay suspended until each
+    /// signs in again after a reinstall; no memory remains. A no-op when
+    /// the app is not uninstalled (installed again meanwhile).
+    pub fn mark_app_erased(&self, app_id: &str) {
+        let mut state = self.state();
+        if !state.uninstalled.contains_key(app_id) {
+            return;
+        }
+        let keys: Vec<_> = state.signed_out.iter().filter(|k| k.0 == app_id).cloned().collect();
+        state.erased.extend(keys);
+        state.erased_apps.insert(app_id.to_owned());
+        self.save_suspended(&state);
+    }
+
     /// Removing an account: its folder goes and its agent is suspended
-    /// (octos keeps the peer's memory until it has a `peer/purge`).
+    /// until the shell has erased it (`peer/purge`, [`lifecycle`]).
     pub fn remove_account(&self, app_id: &str, account: Option<&str>) -> Result<(), StorageError> {
         let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
         self.sign_out(app_id, account);
@@ -492,7 +541,8 @@ impl Storage {
     }
 
     /// Uninstalling: `apps/<app id>/` and `secrets/<app id>/` go (vault
-    /// items too) and every account of the app stays suspended.
+    /// items too) and every account of the app stays suspended until the
+    /// shell has erased its agents (`peer/purge`, [`lifecycle`]).
     pub fn uninstall(&self, app_id: &str) -> Result<(), StorageError> {
         let paths = self.layout.app(app_id).map_err(StorageError::Io)?;
         {
@@ -503,6 +553,7 @@ impl Storage {
                 }
             }
             state.uninstalled.insert(app_id.to_owned(), HashSet::new());
+            state.erased_apps.remove(app_id);
             self.save_suspended(&state);
         }
         let purged = secrets::purge(self.layout.secrets_root(), app_id);

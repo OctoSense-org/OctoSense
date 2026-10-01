@@ -971,6 +971,19 @@ pub trait ToolHost: Send + Sync {
         None
     }
 
+    /// Whether the app's conversation (the person's lane, ADR 0004 §6) on
+    /// `account` reads the account's folder: its request context is opened
+    /// with octos's `read_parent` (a read-only view of the peer's folder,
+    /// never another context's; octos#2647). ADR 0004 §11: yes where the
+    /// agent reads the account folder (the manifest's
+    /// `storage.agent_workspace` is `"account"` and the agent has that
+    /// workspace). `false` (the default): fenced to its own folder. A plain
+    /// request context (an app's client, a Rinx mini app) never gets it: it
+    /// reads account data through the host's per-client read tools.
+    fn context_reads_account(&self, _app_id: &str, _account: &str) -> bool {
+        false
+    }
+
     /// Whether `app_id`'s `account` is suspended (signed out, removed):
     /// its calls are answered `signed_out` and no turn starts for it.
     fn suspended(&self, _app_id: &str, _account: &str) -> bool {

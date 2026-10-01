@@ -27,6 +27,17 @@ pub struct Response {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub location: Option<String>,
+    /// `Retry-After`, in seconds (a 429's or a 503's).
+    pub retry_after: Option<i64>,
+}
+
+/// A `Retry-After` value: seconds, or an HTTP date (`now` in Unix seconds).
+pub fn retry_after_secs(value: &str, now: i64) -> Option<i64> {
+    let value = value.trim();
+    if let Ok(secs) = value.parse::<i64>() {
+        return Some(secs.max(0));
+    }
+    chrono::DateTime::parse_from_rfc2822(value).ok().map(|at| (at.timestamp() - now).max(0))
 }
 
 /// The network, or a fixture in tests. Called on the service's fetch thread.
@@ -69,6 +80,7 @@ impl Fetcher for HttpFetcher {
         let status = response.status();
         let header = |name: &str| response.header(name).map(str::to_string);
         let (etag, last_modified, location) = (header("ETag"), header("Last-Modified"), header("Location"));
+        let retry_after = header("Retry-After").and_then(|v| retry_after_secs(&v, chrono::Utc::now().timestamp()));
         if response.header("Content-Length").and_then(|l| l.parse::<u64>().ok()).is_some_and(|l| l > MAX_BYTES) {
             return Err("the feed is larger than the service reads".into());
         }
@@ -79,6 +91,6 @@ impl Fetcher for HttpFetcher {
                 return Err("the feed is larger than the service reads".into());
             }
         }
-        Ok(Response { status, body: String::from_utf8_lossy(&bytes).into_owned(), etag, last_modified, location })
+        Ok(Response { status, body: String::from_utf8_lossy(&bytes).into_owned(), etag, last_modified, location, retry_after })
     }
 }

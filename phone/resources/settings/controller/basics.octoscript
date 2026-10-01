@@ -116,6 +116,28 @@ fn settings_basics_event(s,e,o,out) {
     }
     if e.kind=="release" { s.pressed["basic"]=nil; return false }
     if e.kind!="click" { return false }
+    // Build number: each tap goes to the shell, which counts seven in a row;
+    // the seventh reveals Developer options (Home's own, not Android's; no
+    // Android requirement). It turns nothing on.
+    if s.page=="About" && e.id=="build_number" { settings_request(out,{kind:"developer_tap"}); return true }
+    // Developer options (once revealed): which apps it covers, Turn on with
+    // a confirmation that shows them, and Turn off.
+    if s.page=="About" && o.developer!=nil {
+        let dev=o.developer
+        if e.id=="developer_all" { settings_request(out,{kind:"developer_choose",app:"all"}); return true }
+        if e.id=="developer_off" && dev.on { settings_request(out,{kind:"developer_off"}); return true }
+        if e.id=="developer_turn_on" && !dev.on { s.developer_confirm=true; return true }
+        if e.id=="developer_cancel" { s.developer_confirm=false; return true }
+        if e.id=="developer_confirm" && s.developer_confirm && !dev.on { s.developer_confirm=false; settings_request(out,{kind:"developer_on"}); return true }
+        if e.id=="developer_apps_next" && s.developer_offset+8<dev.apps.len() { s.developer_offset=s.developer_offset+8; return true }
+        if e.id=="developer_apps_previous" && s.developer_offset>0 { s.developer_offset=settings_max(0,s.developer_offset-8); return true }
+        let i=0
+        while i<8 {
+            let at=s.developer_offset+i
+            if e.id=="developer_app_"+i && at<dev.apps.len() { settings_request(out,{kind:"developer_choose",app:dev.apps[at].id}); return true }
+            i=i+1
+        }
+    }
     if s.page=="Appearance" && !s.pending {
         if settings_has(["octosense","minimal","paper","vivid"],e.id) { s.theme_draft.preset=e.id; return true }
         for pair in [["mode_system","system"],["mode_light","light"],["mode_dark","dark"]] {
@@ -192,6 +214,34 @@ fn settings_basics_refresh(s,o,out) {
         settings_enabled(out,id,enabled)
     }
     settings_device_labels(s,o,out)
+    settings_developer_labels(s,o,out)
+}
+// About phone › Developer options: hidden unless the host offers them.
+fn settings_developer_labels(s,o,out) {
+    let dev=o.developer
+    settings_visible(out,"developer_section",dev!=nil)
+    if dev==nil { s.developer_confirm=false; return }
+    if s.developer_offset>=dev.apps.len() { s.developer_offset=0 }
+    if dev.on { s.developer_confirm=false }
+    settings_text(out,"developer_status",dev.summary)
+    let all="All apps"; if dev.all { all="✓ All apps" }
+    settings_text(out,"developer_all",all)
+    let i=0
+    while i<8 {
+        let id="developer_app_"+i
+        let at=s.developer_offset+i
+        if at<dev.apps.len() {
+            let label=dev.apps[at].name; if dev.apps[at].covered { label="✓ "+label }
+            settings_visible(out,id,true); settings_text(out,id,label)
+        } else { settings_visible(out,id,false) }
+        i=i+1
+    }
+    settings_visible(out,"developer_apps_previous",s.developer_offset>0)
+    settings_visible(out,"developer_apps_next",s.developer_offset+8<dev.apps.len())
+    settings_visible(out,"developer_turn_on",!dev.on && !s.developer_confirm)
+    settings_visible(out,"developer_confirm_section",!dev.on && s.developer_confirm)
+    settings_text(out,"developer_confirm_text","Developer mode gives "+dev.covers+" every grant and approves everything they ask, without asking you, including with your real accounts (it ends after 8 hours or at restart unless this is a developer profile). Turn it on?")
+    settings_visible(out,"developer_off",dev.on)
 }
 fn settings_device_labels(s,o,out) {
     let d=settings_or(o["device"],{})

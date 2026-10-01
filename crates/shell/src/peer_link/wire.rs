@@ -83,7 +83,9 @@ pub enum Down {
     /// `person` or `system_agent`), for a context opened without a
     /// `client` (the app's conversation): every turn, whoever speaks
     /// (`event.speaker`), after the request that opened it answered.
-    /// A client that does not know the frame ignores it.
+    /// Makepad's client (`makepad_ai_services::peer`) surfaces it as
+    /// `PeerEvent::Conversation`; a client that does not know the frame
+    /// ignores it.
     Conversation { context: String, event: Value },
 }
 

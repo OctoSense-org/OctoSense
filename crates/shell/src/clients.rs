@@ -175,7 +175,11 @@ pub fn available_apps() -> Vec<AppDef> {
 /// process form) is still an app: its bundled definition answers, and the
 /// hosting rules decide whether it may open (`--module <id>` on a desktop).
 pub fn find_app(id: &str) -> Option<AppDef> {
-    let apps = registry();
+    find_app_in(&registry(), id)
+}
+
+/// Every Card runner row has the binary `card`, so that name is no alias.
+fn find_app_in(apps: &[AppDef], id: &str) -> Option<AppDef> {
     apps.iter().find(|a| a.id == id)
         .or_else(|| apps.iter().find(|a| a.bin == id && a.bin != "card")).cloned()
 }
@@ -1358,7 +1362,7 @@ pub fn spawn_client(
     // A native app runs under the OS sandbox its manifest entry builds
     // (ADR 0004 §3, sandbox/): the built binary itself, never the build.
     let policy = sandbox_policy(app, &plan, hub_port);
-    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref(), false);
+    let (mut cmd, applied) = crate::sandbox::command(&plan.program, &plan.args, policy.as_ref());
     // A sandboxed app's Makepad home is its own jail (ADR 0004 §11): the
     // OctoSense home is closed to it (G6), so settings it kept under
     // `<OctoSense home>/<app id>/` could no longer be written. Its old data
@@ -1755,6 +1759,16 @@ mod tests {
         );
         // The system Mail took the example's place, not its name only.
         assert_eq!((merged[1].label.as_str(), merged[1].bin.as_str()), ("Mail", "card"));
+    }
+
+    /// Every Card runner row shares the binary `card`, so the binary-name
+    /// fallback must not hand `"card"` to whichever of them is listed first.
+    #[test]
+    fn the_card_binary_names_no_card_runner_app() {
+        let app = |id: &str, bin: &str| AppDef::app(id, id, "", "", bin, LaunchPolicy::OrFocus);
+        let rows = vec![app("hub:demo", "card"), app("news", "card"), app("browser", "firefox")];
+        assert_eq!(find_app_in(&rows, "card"), None);
+        assert_eq!(find_app_in(&rows, "firefox").map(|a| a.id), Some("browser".to_string()));
     }
 
     /// Cargo's checkout is Cargo's to manage: a build there is invisible to

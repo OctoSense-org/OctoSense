@@ -46,6 +46,9 @@ use crate::apps::AgentApp;
 use crate::system_chat::model::{ChatModel, Item, Phase};
 use model::Conversation;
 
+/// The panel's client instance on the app's peer (the same on every open).
+pub const INSTANCE: &str = "shell-ask";
+
 /// The id prefix of the app's questions in the panel.
 pub const ROUTED_PREFIX: &str = "routed:";
 
@@ -205,7 +208,10 @@ fn connect(app: &AgentApp) {
     };
     let app = app.clone();
     let _ = std::thread::Builder::new().name("ask-app".into()).spawn(move || {
-        let instance = format!("shell-ask-{epoch}");
+        // One instance for every open: the broker gives each handle a new
+        // kernel context, and its history keeps the person's rows of the
+        // earlier ones of the same instance.
+        let instance = INSTANCE.to_string();
         let context = match crate::agents::conversation(&app, &instance) {
             Ok(context) => context,
             Err(e) => {
