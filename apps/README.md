@@ -356,7 +356,7 @@ octos UI Protocol v1.
   kernel, a WebSocket or REST) and `octos-app-render` (streaming-markdown
   renderer).
 - **octos**: every octos crate comes from git `octos-org/octos` at the one
-  rev in the root `Cargo.toml` `[workspace.dependencies]` (today `fe08d8e6`,
+  rev in the root `Cargo.toml` `[workspace.dependencies]` (today `4a3ec9f9`,
   octos `main`), shared with `crates/kernel` and the shells. AppCard starts no kernel of its
   own: it connects to the shell's ([The octos kernel](#the-octos-kernel)).
 - **Makepad**: not vendored. Makepad, Octoscript and Octoscript-Makepad are
@@ -440,7 +440,7 @@ plus an entry in each shell's `system-apps.json`.
 | [OctoScript-App-Design-Flow](https://github.com/OctoSense-org/OctoScript-App-Design-Flow) | how to design, build, check and publish an app |
 | [OctoScript](https://github.com/OctoSense-org/OctoScript), [OctoScript-Makepad](https://github.com/OctoSense-org/OctoScript-Makepad), [makepad](https://github.com/OctoSense-org/makepad) | the language and runtime |
 | [Rinx](https://github.com/hagency-org/Rinx) | Matrix chats and mini apps, a native module; reaches the assistant through `crates/app-peers` |
-| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/kernel`, configured by AI providers, used by AppCard and other consumers (one rev, `fe08d8e6`) |
+| [octos](https://github.com/octos-org/octos) | the agent kernel: run as a shell service by `crates/kernel`, configured by AI providers, used by AppCard and other consumers (one rev, `4a3ec9f9`) |
 
 ## Contributing
 

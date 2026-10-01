@@ -350,6 +350,15 @@ impl crate::peer_link::PeerHost for ProcessHost {
 /// speaker: `turn/started` with the request, streamed text, and the end,
 /// without the app asking for history. The frames are printed
 /// (`[peer-link frame]`) as the fixtures of Makepad's client.
+///
+/// Like the other tests here it needs `OCTOS_SHELL_TEST_KERNEL` (else it
+/// says so and passes). CI runs it: `phone.yml` builds the pinned octos
+/// with `tools/kernel-artifact.py --host` (cached per revision) and sets
+/// `OCTOS_SHELL_TEST_KERNEL` for the shell's tests (the `home` job). Locally:
+/// `OCTOS_SHELL_TEST_KERNEL=<octos> cargo test --locked --features
+/// mobile-apps -p octosense-shell real_kernel_a_process -- --nocapture`
+/// from `phone/`. Its kernel, model, broker, link and temporary files are
+/// released by a drop guard, whether it passes or fails.
 #[test]
 fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     let Some(program) = kernel() else { return };
@@ -362,6 +371,8 @@ fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     let core_dir = dir.join("octos-home/.octos");
     write_profile(&core_dir, model.1);
     let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    // Everything below is released on the way out, pass or fail.
+    let mut guard = Cleanup { core: core.clone(), model: Some(model), dirs: vec![dir.clone()], broker: None, links: None };
     let home = dir.join("home");
     std::fs::create_dir_all(&home).unwrap();
     if crate::approvals::with(|_| ()).is_none() {
@@ -374,18 +385,20 @@ fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     std::fs::create_dir_all(&host_dir).unwrap();
     octosense_news_service::register_with(octosense_news_service::Options::default().host_dir(&host_dir).timer(false));
     let bundle = super::script_apps::tests::stamped_bundle("news", "peer-link", |_, _| {});
+    guard.dirs.push(bundle.clone());
     super::script_apps::install("os.news", super::script_apps::from_bundle(&bundle).unwrap(), host_dir.clone());
     let services = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
     let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "card.os.news", "News", services);
     cfg.state_dir = Some(dir.join("host-state"));
     cfg.tool_host = Some(ToolHostHandle(Arc::new(super::ShellToolHost) as Arc<dyn ToolHost>));
     let broker = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+    guard.broker = Some(broker.clone());
 
     // The app's process connects its hub socket; its frames are recorded.
     let frames: Arc<Mutex<Vec<String>>> = Arc::default();
     let f = frames.clone();
     let out: crate::peer_link::FrameOut = Arc::new(move |json: String| f.lock().unwrap().push(json));
-    let mut links = crate::peer_link::PeerLinks::new(Box::new(ProcessHost(broker.clone())), Box::new(crate::peer_link::RecordingToolRelay::default()));
+    let links = guard.links.insert(crate::peer_link::PeerLinks::new(Box::new(ProcessHost(broker.clone())), Box::new(crate::peer_link::RecordingToolRelay::default())));
     assert!(links.connected(7, "os.news", out));
     let downs = |frames: &Arc<Mutex<Vec<String>>>| frames.lock().unwrap().iter().filter_map(|f| crate::peer_link::wire::Down::parse(f)).collect::<Vec<_>>();
     // Its conversation, as Makepad's client opens it (no `client`).
@@ -435,13 +448,8 @@ fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     for frame in frames.lock().unwrap().iter() {
         eprintln!("[peer-link frame] {frame}");
     }
-    links.process_gone(7);
     drop(chat);
-    broker.release();
-    let _ = std::fs::remove_dir_all(&bundle);
-    core.shutdown_within(Duration::from_secs(5));
-    let _ = std::fs::remove_dir_all(&dir);
-    drop(model);
+    drop(guard);
 
     // Live: the turn's start (with its request and speaker) came before its
     // end, the system agent's words and the answer streamed, each event with
@@ -458,6 +466,33 @@ fn real_kernel_a_process_app_hears_the_system_agents_lane_live() {
     );
     assert!(lane.iter().filter(|e| e["method"] != "session/orchestration" && e["method"] != "context/normalization_reported").all(|e| e["speaker"]["kind"] == "system_agent"), "{lane:?}");
     assert!(!frames.lock().unwrap().iter().any(|f| f.contains("octos.session.history")), "no history request");
+}
+
+/// Releases a real-kernel test's resources when it ends, pass or fail: the
+/// process's link (its contexts close), the broker, the kernel, the
+/// scripted model and the temporary directories.
+struct Cleanup {
+    core: Core,
+    model: Option<Model>,
+    dirs: Vec<PathBuf>,
+    broker: Option<Broker>,
+    links: Option<crate::peer_link::PeerLinks>,
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        if let Some(links) = self.links.as_mut() {
+            links.process_gone(7);
+        }
+        if let Some(broker) = self.broker.take() {
+            broker.release();
+        }
+        self.core.shutdown_within(Duration::from_secs(5));
+        self.model.take();
+        for dir in &self.dirs {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 struct SystemLink(Core);

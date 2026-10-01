@@ -1,0 +1,272 @@
+//! The prompt of a chat pane (the system chat and "Ask <app>"): the text
+//! being typed, fed the way makepad's `TextInput` widget is fed.
+//!
+//! - **Characters come only from text input** (`Event::TextInput`): a
+//!   desktop's typed characters, a paste, and every edit of a phone's input
+//!   method. A key press never adds one: the platform sends the character
+//!   as text input as well, and adding it on the key too typed every
+//!   character twice.
+//! - **Keys** are the pane's commands only: Return sends, Backspace
+//!   deletes, Escape closes (see `super::key`, `crate::app_chat::key`).
+//! - **Android's input method** edits a whole editor state: before an edit
+//!   it asks the focused editor for its text, selection and composition
+//!   (`Event::TextInputStateQuery`, answered with [`Composer::state`]), and
+//!   then sends the new state (`TextInputEvent::full_state_sync`), which
+//!   replaces the text. Without the answer the platform drops the edit.
+//! - **Composition** (a word being composed, `replace_last`) replaces the
+//!   previous preview until it is committed, as the widget does.
+//! - **A line break sends**: the prompt is one line, so a newline an input
+//!   method types (its Enter key) is taken out and asks to send
+//!   ([`Composer::take_submit`]).
+//!
+//! The caret is always at the end: the pane has no cursor of its own.
+
+use makepad_widgets::makepad_platform::event::{CharOffset, FullTextState, TextInputEvent};
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Composer {
+    text: String,
+    /// The characters (not bytes) being composed, if a word is.
+    composition: Option<std::ops::Range<usize>>,
+    /// A line break was typed: send.
+    submit: bool,
+}
+
+impl Composer {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    /// Empty the prompt (after Send) and give back what it held.
+    pub fn take(&mut self) -> String {
+        self.composition = None;
+        std::mem::take(&mut self.text)
+    }
+
+    pub fn clear(&mut self) {
+        self.take();
+    }
+
+    /// Backspace: the last character (a composition ends with it).
+    pub fn backspace(&mut self) -> bool {
+        self.composition = None;
+        self.text.pop().is_some()
+    }
+
+    fn chars(&self) -> usize {
+        self.text.chars().count()
+    }
+
+    fn byte(&self, chars: usize) -> usize {
+        CharOffset(chars).to_byte_index(&self.text)
+    }
+
+    /// One text-input event. True when the text changed.
+    pub fn text_input(&mut self, event: &TextInputEvent) -> bool {
+        let before = self.text.clone();
+        self.apply(event);
+        if self.text.contains(['\n', '\r']) {
+            self.text.retain(|c| c != '\n' && c != '\r');
+            self.composition = None;
+            self.submit = true;
+        }
+        self.text != before
+    }
+
+    /// A line break was typed since the last call (the caller sends).
+    pub fn take_submit(&mut self) -> bool {
+        std::mem::take(&mut self.submit)
+    }
+
+    fn apply(&mut self, event: &TextInputEvent) {
+        if let Some(state) = &event.full_state_sync {
+            // The input method's whole editor state.
+            self.text = state.text.clone();
+            let end = self.chars();
+            self.composition = state.composition.as_ref().map(|c| c.start.0.min(end)..c.end.0.min(end)).filter(|c| c.start < c.end);
+            return;
+        }
+        if let Some((start, end)) = event.replace_range {
+            // A replacement of a range (iOS autocorrect, a paste over it).
+            let (a, b) = (start.0.min(end.0), start.0.max(end.0));
+            let (a, b) = (self.byte(a), self.byte(b));
+            self.text.replace_range(a..b, &event.input);
+            self.composition = None;
+            return;
+        }
+        let input = event.input.as_str();
+        match self.composition.clone() {
+            // A composition preview replaces the one before it; a commit
+            // replaces it for good.
+            Some(c) => {
+                let (a, b) = (self.byte(c.start), self.byte(c.end));
+                self.text.replace_range(a..b, input);
+                let len = input.chars().count();
+                self.composition = (event.replace_last && len > 0).then(|| c.start..c.start + len);
+            }
+            None => {
+                let start = self.chars();
+                self.text.push_str(input);
+                let len = input.chars().count();
+                self.composition = (event.replace_last && len > 0).then(|| start..start + len);
+            }
+        }
+    }
+
+    /// The editor state the input method asks for: the text, the caret at
+    /// its end, and the composition.
+    pub fn state(&self) -> FullTextState {
+        let end = CharOffset(self.chars());
+        FullTextState { text: self.text.clone(), selection: end..end, composition: self.composition.clone().map(|c| CharOffset(c.start)..CharOffset(c.end)) }
+    }
+}
+
+/// A key press in a pane's prompt: what the pane does with it. Characters
+/// are text input's (see the module); a printable key is only swallowed so
+/// it reaches nothing behind the pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    Close,
+    Send,
+    Backspace,
+    /// Command+N / Control+N.
+    New,
+    /// Command+. / Control+.
+    Stop,
+    /// A printable key: its character arrives as text input.
+    Swallow,
+    /// Not the pane's (function keys, other shortcuts).
+    Pass,
+}
+
+pub fn key(e: &makepad_widgets::KeyEvent) -> Key {
+    use makepad_widgets::KeyCode;
+    let command_key = e.modifiers.logo || e.modifiers.control;
+    match e.key_code {
+        KeyCode::Escape => Key::Close,
+        KeyCode::ReturnKey if !e.modifiers.shift => Key::Send,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::KeyN if command_key => Key::New,
+        KeyCode::Period if command_key => Key::Stop,
+        other if !command_key && other.to_char(e.modifiers.shift).is_some() => Key::Swallow,
+        _ => Key::Pass,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use makepad_widgets::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn typed(text: &str) -> TextInputEvent {
+        TextInputEvent { input: text.into(), ..Default::default() }
+    }
+
+    fn composing(text: &str) -> TextInputEvent {
+        TextInputEvent { input: text.into(), replace_last: true, ..Default::default() }
+    }
+
+    fn ime_state(text: &str, composition: Option<std::ops::Range<usize>>) -> TextInputEvent {
+        let end = CharOffset(text.chars().count());
+        TextInputEvent { full_state_sync: Some(FullTextState { text: text.into(), selection: end..end, composition: composition.map(|c| CharOffset(c.start)..CharOffset(c.end)) }), ..Default::default() }
+    }
+
+    fn press(key_code: KeyCode) -> KeyEvent {
+        KeyEvent { key_code, ..Default::default() }
+    }
+
+    /// A desktop sends each character twice: KeyDown, then TextInput. The
+    /// prompt holds it once (the bug: "hheelllloo").
+    #[test]
+    fn a_desktop_keystroke_types_its_character_once() {
+        let mut c = Composer::default();
+        for (code, ch) in [(KeyCode::KeyH, "h"), (KeyCode::KeyI, "i")] {
+            assert_eq!(key(&press(code)), Key::Swallow, "the key is the pane's, its character is not typed");
+            c.text_input(&typed(ch));
+        }
+        assert_eq!(key(&KeyEvent { key_code: KeyCode::Key1, modifiers: KeyModifiers { shift: true, ..Default::default() }, ..Default::default() }), Key::Swallow);
+        c.text_input(&typed("!"));
+        assert_eq!(c.text(), "hi!");
+        assert_eq!(key(&press(KeyCode::Backspace)), Key::Backspace);
+        assert!(c.backspace());
+        assert_eq!(c.text(), "hi");
+        assert_eq!(key(&press(KeyCode::ReturnKey)), Key::Send);
+        assert_eq!(c.take(), "hi");
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn keys_are_commands_and_function_keys_pass() {
+        assert_eq!(key(&press(KeyCode::Escape)), Key::Close);
+        assert_eq!(key(&press(KeyCode::F8)), Key::Pass);
+        let shifted = |k| KeyEvent { key_code: k, modifiers: KeyModifiers { shift: true, ..Default::default() }, ..Default::default() };
+        assert_ne!(key(&shifted(KeyCode::ReturnKey)), Key::Send, "Shift+Return is no Send key");
+        let command = |k| KeyEvent { key_code: k, modifiers: KeyModifiers { logo: true, ..Default::default() }, ..Default::default() };
+        assert_eq!(key(&command(KeyCode::KeyN)), Key::New);
+        assert_eq!(key(&command(KeyCode::Period)), Key::Stop);
+        assert_eq!(key(&command(KeyCode::KeyV)), Key::Pass, "paste arrives as text input");
+    }
+
+    /// Android's input method: the editor state is asked for, then the new
+    /// state replaces the text (composing, committing, deleting).
+    #[test]
+    fn the_phones_input_method_edits_the_whole_state() {
+        let mut c = Composer::default();
+        assert_eq!(c.state().text, "");
+        assert!(c.text_input(&ime_state("Hel", Some(0..3))));
+        assert_eq!(c.state().composition, Some(CharOffset(0)..CharOffset(3)));
+        c.text_input(&ime_state("Hello", Some(0..5)));
+        c.text_input(&ime_state("Hello ", None));
+        assert_eq!(c.text(), "Hello ");
+        let state = c.state();
+        assert_eq!((state.selection.clone(), state.composition), (CharOffset(6)..CharOffset(6), None), "the caret at the end");
+        c.text_input(&ime_state("Hello wö", Some(6..8)));
+        assert_eq!(c.state().selection, CharOffset(8)..CharOffset(8), "characters, not bytes");
+        c.text_input(&ime_state("Hello w", Some(6..7)));
+        assert_eq!(c.text(), "Hello w");
+        assert!(!c.take_submit());
+    }
+
+    #[test]
+    fn a_composition_replaces_its_preview_until_committed() {
+        let mut c = Composer::default();
+        c.text_input(&typed("I "));
+        c.text_input(&composing("ni"));
+        c.text_input(&composing("nih"));
+        assert_eq!(c.text(), "I nih");
+        c.text_input(&typed("你好"));
+        assert_eq!(c.text(), "I 你好");
+        c.text_input(&typed("!"));
+        assert_eq!(c.text(), "I 你好!");
+        // A cancelled composition leaves nothing.
+        c.text_input(&composing("x"));
+        c.text_input(&composing(""));
+        assert_eq!(c.text(), "I 你好!");
+    }
+
+    #[test]
+    fn an_input_methods_enter_sends_and_is_not_typed() {
+        let mut c = Composer::default();
+        c.text_input(&ime_state("ask", None));
+        c.text_input(&ime_state("ask\n", None));
+        assert_eq!(c.text(), "ask");
+        assert!(c.take_submit());
+        assert!(!c.take_submit());
+        let mut c = Composer::default();
+        c.text_input(&typed("a\nb"));
+        assert_eq!(c.text(), "ab");
+        assert!(c.take_submit());
+    }
+
+    #[test]
+    fn a_range_replacement_edits_in_place() {
+        let mut c = Composer::default();
+        c.text_input(&typed("teh cat"));
+        c.text_input(&TextInputEvent { input: "the".into(), replace_range: Some((CharOffset(0), CharOffset(3))), ..Default::default() });
+        assert_eq!(c.text(), "the cat");
+    }
+}
