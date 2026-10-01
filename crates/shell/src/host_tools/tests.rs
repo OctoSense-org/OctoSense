@@ -919,6 +919,69 @@ fn dev_runs_approval_is_a_command_developer_mode_answers_for_a_covered_app() {
     }
 }
 
+// ---------------------------------------------------------------- the audit (ADR 0004 §8, §12, §13)
+
+/// Every tool call is audited when the relay receives it and when it ends
+/// (answered, refused or cancelled): caller, owning app, tool, a digest of
+/// the exact arguments (never the arguments), and the outcome.
+#[test]
+fn every_tool_call_is_audited_when_it_arrives_and_when_it_ends() {
+    use super::relay::CallAudit;
+    let (mut relay, exec) = relay_with("rinx", vec![decl("rinx.room.list", false, "host")]);
+    let log: Arc<Mutex<Vec<CallAudit>>> = Arc::default();
+    let sink = log.clone();
+    relay.set_audit(Arc::new(move |e| sink.lock().unwrap().push(e)));
+    let mut w = World::new(FixedDevMode::off());
+    // Answered.
+    let (r, _) = reply("a1");
+    relay.handle(Event::Call { call: call("a1", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    exec.0.lock().unwrap()[0].1.finish(ToolOutcome::Ok(json!({"rooms": []})));
+    // Refused (not granted).
+    let (r, _) = reply("a2");
+    relay.handle(Event::Call { call: call("a2", "rinx.admin.wipe", "rinx"), reply: r }, &mut w);
+    // Cancelled while it runs.
+    let (r, _) = reply("a3");
+    relay.handle(Event::Call { call: call("a3", "rinx.room.list", "rinx"), reply: r }, &mut w);
+    relay.handle(Event::Cancel { call_id: "a3".into(), reason: "interrupted".into() }, &mut w);
+    let got: Vec<(String, String, String)> = log.lock().unwrap().iter().map(|e| (e.call_id.clone(), e.phase.clone(), e.outcome.clone())).collect();
+    let want = [
+        ("a1", "call", "received"),
+        ("a1", "done", "ok"),
+        ("a2", "call", "received"),
+        ("a2", "done", "error:not_granted"),
+        ("a3", "call", "received"),
+        ("a3", "done", "cancelled"),
+    ];
+    assert_eq!(got, want.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect::<Vec<_>>());
+    let e = log.lock().unwrap()[0].clone();
+    assert_eq!((e.caller.as_str(), e.owner.as_str(), e.tool.as_str()), ("own_agent/mini.news", "rinx", "rinx.room.list"));
+    assert_eq!(e.args_digest, crate::approvals::facts::digest(&json!({"to": ["ana@example.org"], "text": "hi"})));
+    let line = serde_json::to_string(&e).unwrap();
+    assert!(!line.contains("ana@example.org"), "never the arguments: {line}");
+}
+
+/// The shell's audit of tool calls is one owner-only JSON-lines file in the
+/// home, beside the approvals audit.
+#[test]
+fn the_tool_call_audit_is_an_owner_only_file_in_the_home() {
+    use super::relay::CallAudit;
+    let home = std::env::temp_dir().join(format!("octosense-callaudit-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let e = CallAudit { ts: 1, call_id: "c1".into(), caller: "system_agent".into(), owner: "terminal".into(), tool: "terminal.run".into(), args_digest: "sha256:x".into(), phase: "call".into(), outcome: "received".into() };
+    crate::approvals::audit::append_call(&home, &e).unwrap();
+    crate::approvals::audit::append_call(&home, &e).unwrap();
+    let path = home.join(crate::approvals::audit::CALLS_FILE);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.lines().count(), 2);
+    assert_eq!(serde_json::from_str::<CallAudit>(text.lines().next().unwrap()).unwrap(), e);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+    let _ = std::fs::remove_dir_all(home);
+}
+
 /// ADR 0004 §7: a grant names its owning app explicitly, by the tool's
 /// namespace (the native app of that id, else the system app `os.<ns>`, the
 /// toolbox for its own), never whichever app declared the name first.
