@@ -12,7 +12,7 @@ How these decisions fit together in the code on `main`, and which parts are stil
 | [0002](0002-event-driven-app-agents.md) | Event-driven app agents: apps think on their own triggers and publish cards to the glance screen | Proposed |
 | [0003](0003-shared-octos-client-access.md) | Talk to Octos: one kernel for native and external clients (opt-in) | Implemented; Android unverified |
 | [0004](0004-native-apps-hosting-and-peers.md) | Native apps, app agents and cross-app work: one manifest, hosting per target, an agent for every app, approvals by the person | Implemented |
-| [0005](0005-app-contract.md) | The app contract: one small, versioned interface between App Hub and every app | Accepted |
+| [0005](0005-app-contract.md) | The app contract: one small, versioned interface between App Hub and every app | Implemented |
 
 ## Home (phone shell) decisions, 2026-09-16 to 2026-09-25
 

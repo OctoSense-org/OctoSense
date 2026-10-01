@@ -1,7 +1,7 @@
 # ADR 0005: The app contract: one small, versioned interface between App Hub and every app
 
 - **Date:** 2026-09-30
-- **Status:** Accepted (2026-09-30)
+- **Status:** Accepted (2026-09-30); **Implemented** (2026-10-01): `octosense-app-contract` 1.0.0 on crates.io (App Hub [#46](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/46), [#47](https://github.com/OctoSense-org/OctoSense-App-Hub/pull/47)); Rinx 1.1.0 depends on it and on no App Hub commit (hagency-org/Rinx [#49](https://github.com/hagency-org/Rinx/pull/49), tag `v1.1.0`); OctoSense takes the contract from crates.io, pins Rinx by tag and has no App Hub host alias ([#243](https://github.com/OctoSense-org/OctoSense/pull/243)). Not yet exercised on a device: Rinx's own mini-app catalog and sandbox (they sit behind a Matrix sign-in).
 - **Scope:** What an app (a mini app, a script app, or a native app that runs other apps, such as Rinx) may depend on from App Hub; how that interface is versioned and kept stable; how OctoSense and apps depend on it so that App Hub changes never force an app release.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (app manifests and agents); [ADR 0004](0004-native-apps-hosting-and-peers.md) (native apps, storage contract); App Hub `crates/app-policy`; hagency-org/Rinx#37 (Rinx release tags, point 6: break the App Hub lockstep).
 
