@@ -932,7 +932,7 @@ fn a_new_conversation_turn_is_the_chats_own() {
 }
 
 #[test]
-fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
+fn the_chats_own_turns_calls_are_the_persons_and_other_turns_calls_are_the_system_agents() {
     use crate::ai_host::app_peers::TurnTrigger;
     let (mut d, fake) = opened();
     d.command(Command::Send("list my files".into()));
@@ -944,11 +944,60 @@ fn only_the_chats_own_turns_calls_are_triggered_by_the_person() {
     fake.notify("peer/tool/call", call("c2", "talk-to-octos-1"));
     settle(&mut d);
     let triggers: Vec<(String, TurnTrigger)> = d.effects.iter().filter_map(|e| match e { Effect::ToolCall { call, .. } => Some((call.call_id.clone(), call.trigger.clone())), _ => None }).collect();
-    // Another client's turn's call is not relayed at all: refused to the
-    // kernel (ADR 0004 §8: the system session relays only its own turns).
-    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person)]);
+    // octos routes a host-session call only for a turn this connection drove
+    // (never a kernel continuation, an external client or another device):
+    // a turn the chat did not record is still its connection's, so it is
+    // relayed as the system agent's own work, never the person's.
+    assert_eq!(triggers, vec![("c1".to_string(), TurnTrigger::Person), ("c2".to_string(), TurnTrigger::SystemAgent)]);
+}
+
+/// A call that is not for this host's session (another session, or an app
+/// peer's set) is refused to the kernel at once, never relayed or left to
+/// time out.
+#[test]
+fn a_call_for_another_session_is_refused_not_relayed() {
+    let (mut d, fake) = opened();
+    d.command(Command::Send("hi".into()));
+    let own = fake.sent("turn/start")[0]["turn_id"].as_str().unwrap().to_string();
+    let call = |id: &str, session: &str, peer: Value| json!({"peer": peer, "session_id": session, "context_id": null, "turn_id": own, "call_id": id, "tool_call_id": format!("tc-{id}"), "args_digest": "d",
+        "name": "terminal.run", "app": "terminal", "caller": {"kind": "system", "peer": null, "session_id": session, "turn_id": own},
+        "args": {"command": "ls"}, "risk": "destructive", "confirm_required": false, "timeout_ms": 30000, "tools_version": 1});
+    // `notify` stamps the system session; this one keeps its own.
+    fake.s().inbox.push_back(json!({"jsonrpc": "2.0", "method": "peer/tool/call", "params": call("x1", "api:octosense#other", Value::Null)}).to_string());
+    fake.notify("peer/tool/call", call("x2", SYSTEM_SESSION, json!("os-news-1")));
+    settle(&mut d);
+    assert!(!d.effects.iter().any(|e| matches!(e, Effect::ToolCall { .. })), "nothing relayed");
     let refused = fake.sent("peer/tool/result");
-    assert!(refused.iter().any(|r| r["call_id"] == "c2" && r["error"]["kind"] == "not_this_hosts_turn"), "{refused:?}");
+    for id in ["x1", "x2"] {
+        assert!(refused.iter().any(|r| r["call_id"] == id && r["error"]["kind"] == "not_this_hosts_session"), "{id}: {refused:?}");
+    }
+}
+
+/// The open app questions routed to the system chat are bounded: past the
+/// cap a new one waits, said visibly, and comes in when one settles; none
+/// is dropped.
+#[test]
+fn open_routed_questions_are_capped_and_the_rest_wait_visibly() {
+    use super::model::Item;
+    let q = |n: u64, open: bool| Item::Question { id: format!("routed:{n}"), turn: "t".into(), title: "?".into(), body: String::new(), options: Vec::new(), count: 1, answered: (!open).then(|| "yes".to_string()) };
+    let mut list = super::Routed::default();
+    for n in 1..=20 {
+        list.place(n, q(n, true));
+    }
+    let open = |l: &super::Routed| l.shown.iter().filter(|(_, i)| matches!(i, Item::Question { answered: None, .. })).count();
+    assert_eq!(open(&list), super::ROUTED_OPEN_MAX);
+    assert_eq!(list.waiting.len(), 20 - super::ROUTED_OPEN_MAX);
+    let items = list.items();
+    assert!(matches!(items.last(), Some(Item::Notice(t)) if t.contains("4 more")), "{:?}", items.last());
+    // One is answered: the next waiting one comes in.
+    list.place(1, q(1, false));
+    assert_eq!(open(&list), super::ROUTED_OPEN_MAX);
+    assert_eq!(list.waiting.len(), 20 - super::ROUTED_OPEN_MAX - 1);
+    assert!(list.shown.iter().any(|(n, _)| *n == super::ROUTED_OPEN_MAX as u64 + 1));
+    // A waiting one that expires is shown as settled, not lost.
+    list.place(20, q(20, false));
+    assert!(list.shown.iter().any(|(n, i)| *n == 20 && matches!(i, Item::Question { answered: Some(_), .. })));
+    assert!(!list.waiting.iter().any(|(n, _)| *n == 20));
 }
 
 
@@ -991,7 +1040,7 @@ fn an_open_routed_question_is_never_dropped() {
     let mut routed: Vec<(u64, Item)> = vec![q(1, true)];
     routed.extend((2..=40).map(|n| q(n, false)));
     super::trim_routed(&mut routed, super::ROUTED_KEPT);
-    assert_eq!(routed.len(), super::ROUTED_KEPT);
+    assert_eq!(routed.len(), super::ROUTED_KEPT, "settled ones go first");
     assert_eq!(routed[0].0, 1, "the oldest, still open, stays");
     let mut all_open: Vec<(u64, Item)> = (1..=40).map(|n| q(n, true)).collect();
     super::trim_routed(&mut all_open, super::ROUTED_KEPT);
