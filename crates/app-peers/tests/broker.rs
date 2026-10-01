@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use octosense_app_peers::broker::{BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
+use octosense_app_peers::broker::{account_tag, app_namespace, BoxFuture, Broker, BrokerConfig, Connector, Link, ToolHostHandle};
 use octosense_app_peers::host_tools::{AgentQuestion, ApprovalAnswer, CallOrigin, HostToolApproval, HostToolCall, InputRefusal, PeerInput, QuestionAnswer, QuestionReply, ToolHost, ToolOutcome, ToolReply, TurnOrigin};
 use octosense_app_peers::*;
 use serde_json::{json, Value};
@@ -38,6 +38,10 @@ struct Script {
     /// peer/context/open ignores `share_history` (a kernel before it).
     no_share_history: bool,
     connects: usize,
+    /// Like octos: each staged peer's workspace by name; a resume must name
+    /// the same one (no `cwd`: the kernel's `/kernel/ws`), and a `cwd` must
+    /// exist. `None`: nothing is checked.
+    bindings: Option<std::collections::HashMap<String, String>>,
     /// Each connection's kernel-to-broker half (`None`: closed).
     out: Vec<Option<mpsc::UnboundedSender<String>>>,
 }
@@ -138,6 +142,26 @@ impl Connector for FakeConnector {
                                 .to_lowercase()
                                 .replace(' ', "-");
                             let cwd = params["cwd"].as_str().unwrap_or("/kernel/ws").to_owned();
+                            let checked = {
+                                let mut s = script.lock().unwrap();
+                                let resume = params.get("host_token").is_some();
+                                match s.bindings.as_mut() {
+                                    Some(_) if params.get("cwd").is_some() && cwd != "/kernel/ws" && !std::path::Path::new(&cwd).is_dir() => Err("invalid_params"),
+                                    Some(b) if resume => match b.get(&name) {
+                                        Some(bound) if *bound != cwd => Err("peer_binding_mismatch"),
+                                        _ => Ok(()),
+                                    },
+                                    Some(b) => {
+                                        b.insert(name.clone(), cwd.clone());
+                                        Ok(())
+                                    }
+                                    None => Ok(()),
+                                }
+                            };
+                            if let Err(kind) = checked {
+                                send(refuse(kind));
+                                continue;
+                            }
                             let mut result = json!({"slug": name, "cwd": cwd, "model": {"lane": "primary"}});
                             if !legacy {
                                 result["memory_namespace"] = params["memory_namespace"].clone();
@@ -997,18 +1021,177 @@ fn a_new_peers_workspace_is_the_account_folder_and_a_resume_keeps_the_one_it_was
     assert_eq!(prepare["host_token"], "fixture-host-token");
     assert_eq!(prepare["cwd"], "/home/apps/rinx/accounts/abc");
     drop(broker);
-    // A peer created before (a token, no recorded workspace) keeps the kernel's.
-    for entry in std::fs::read_dir(&dir).unwrap().flatten() {
-        if entry.path().extension().is_some_and(|e| e == "cwd") {
-            std::fs::remove_file(entry.path()).unwrap();
-        }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn scratch(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("app-peers-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::canonicalize(&dir).unwrap()
+}
+
+/// The files a broker kept before one record held both (`<ns>.token`,
+/// `<ns>.cwd`).
+fn legacy_files(dir: &std::path::Path, account: &str, cwd: Option<&str>) {
+    let stem = app_namespace("rinx", account).replace('/', "_");
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(dir.join(format!("{stem}.token")), "fixture-host-token").unwrap();
+    if let Some(cwd) = cwd {
+        std::fs::write(dir.join(format!("{stem}.cwd")), cwd).unwrap();
     }
-    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+}
+
+fn files_in(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    names
+}
+
+fn strict(script: &Arc<Mutex<Script>>, bound: &[(&str, &str)]) {
+    script.lock().unwrap().bindings = Some(bound.iter().map(|(n, c)| (n.to_string(), c.to_string())).collect());
+}
+
+/// The slug the fake kernel gives the Rinx peer of `account`.
+fn slug_of(account: &str) -> String {
+    format!("rinx-{}", &account_tag(account)[..8])
+}
+
+#[cfg(unix)]
+fn mode(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+/// ADR 0004 §11: the host token and the workspace are one record, written
+/// at once, owner-only, so a resume never finds one without the other.
+#[test]
+fn should_keep_the_token_and_workspace_in_one_owner_only_record_when_a_peer_is_created() {
+    let root = scratch("record");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, _script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
     broker.set_account(Some("@a:x"));
     wait_for("the peer", || broker.availability() == Availability::Ready);
-    assert!(calls_of(&script, "peer/prepare")[0].1.get("cwd").is_none());
     drop(broker);
-    let _ = std::fs::remove_dir_all(&dir);
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "one record, no token or cwd files: {files:?}");
+    assert!(files[0].ends_with(".peer"), "{files:?}");
+    let record: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(&files[0])).unwrap()).unwrap();
+    assert_eq!(record["token"], "fixture-host-token");
+    assert_eq!(record["cwd"], ws.to_string_lossy().as_ref());
+    #[cfg(unix)]
+    {
+        assert_eq!(mode(&dir), 0o700, "the state directory is owner-only");
+        assert_eq!(mode(&dir.join(&files[0])), 0o600, "the record is owner-only");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn should_resume_from_the_legacy_token_and_cwd_files_and_migrate_them_to_one_record() {
+    let root = scratch("migrate");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", Some(&ws.to_string_lossy()));
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(root.join("elsewhere"));
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepare = calls_of(&script, "peer/prepare")[0].1.clone();
+    assert_eq!(prepare["host_token"], "fixture-host-token");
+    assert_eq!(prepare["cwd"], ws.to_string_lossy().as_ref());
+    drop(broker);
+    let files = files_in(&dir);
+    assert_eq!(files.len(), 1, "migrated: {files:?}");
+    assert!(files[0].ends_with(".peer"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A token with no saved workspace: the account folder first (a peer made
+/// there whose cwd was never recorded), else the kernel's own (a peer made
+/// before the account folder was its workspace). Either way it is saved.
+#[test]
+fn should_resume_with_the_account_folder_when_no_workspace_was_saved() {
+    let root = scratch("nocwd");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", None);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepares = calls_of(&script, "peer/prepare");
+    assert_eq!(prepares.len(), 1);
+    assert_eq!(prepares[0].1["cwd"], ws.to_string_lossy().as_ref());
+    drop(broker);
+    let record = std::fs::read_to_string(dir.join(&files_in(&dir)[0])).unwrap();
+    assert!(record.contains(&*ws.to_string_lossy()), "{record}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn should_fall_back_to_the_kernels_workspace_when_a_legacy_peer_was_made_there() {
+    let root = scratch("kernelws");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    legacy_files(&dir, "@a:x", None);
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), "/kernel/ws")]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    let prepares = calls_of(&script, "peer/prepare");
+    assert_eq!(prepares.len(), 2, "the account folder, then the kernel's");
+    assert_eq!(prepares[0].1["cwd"], ws.to_string_lossy().as_ref());
+    assert!(prepares[1].1.get("cwd").is_none());
+    drop(broker);
+    // Saved: the next run resumes at once.
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), "/kernel/ws")]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert_eq!(calls_of(&script, "peer/prepare").len(), 1);
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Removing an account deletes its folder; adding it again resumes the same
+/// peer, whose workspace must exist first.
+#[test]
+fn should_recreate_the_account_folder_before_resuming_when_it_was_removed() {
+    let root = scratch("recreate");
+    let dir = root.join("peers");
+    let ws = root.join("ws");
+    std::fs::create_dir_all(&ws).unwrap();
+    let host = Arc::new(RecordingHost::default());
+    *host.workspace.lock().unwrap() = Some(ws.clone());
+    let (broker, script) = new_broker_with(&ALL, Some(host.clone()), Some(dir.clone()));
+    strict(&script, &[]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    drop(broker);
+    std::fs::remove_dir_all(&ws).unwrap();
+    let (broker, script) = new_broker_with(&ALL, Some(host), Some(dir.clone()));
+    strict(&script, &[(slug_of("@a:x").as_str(), &*ws.to_string_lossy())]);
+    broker.set_account(Some("@a:x"));
+    wait_for("the peer", || broker.availability() == Availability::Ready);
+    assert!(ws.is_dir(), "recreated");
+    #[cfg(unix)]
+    assert_eq!(mode(&ws), 0o700);
+    drop(broker);
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// ADR 0004 §11: a workspace the startup check refused stays refused for a

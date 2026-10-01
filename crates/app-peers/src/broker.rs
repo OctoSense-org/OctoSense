@@ -82,6 +82,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
+use crate::peer_record::PeerRecord;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
 
@@ -634,8 +635,9 @@ struct State {
     routes: HashMap<String, Route>,
     peer: Option<(u64, PeerInfo)>,
     peer_turn: Option<String>,
-    /// Host tokens by memory namespace, when no state dir persists them.
-    tokens: HashMap<String, String>,
+    /// Each peer's host token and workspace by memory namespace, also when
+    /// no state dir persists them.
+    records: HashMap<String, PeerRecord>,
     contexts: Vec<Weak<ContextInner>>,
     model: Option<ModelInfo>,
     last_error: Option<String>,
@@ -667,8 +669,6 @@ struct State {
     queue: VecDeque<PeerInput>,
     /// Conversations opened: each gets a new kernel context id.
     conversations: u64,
-    /// Workspaces new peers were created with, when no state dir keeps them.
-    cwds: HashMap<String, String>,
     /// Approval and question ids the host took: only the host answers them.
     host_held: VecDeque<String>,
     /// Questions the host holds, by id: the turn that asked.
@@ -719,7 +719,7 @@ impl Broker {
                 routes: HashMap::new(),
                 peer: None,
                 peer_turn: None,
-                tokens: HashMap::new(),
+                records: HashMap::new(),
                 contexts: Vec::new(),
                 model: None,
                 last_error: None,
@@ -735,7 +735,6 @@ impl Broker {
                 requests: VecDeque::new(),
                 queue: VecDeque::new(),
                 conversations: 0,
-                cwds: HashMap::new(),
                 host_held: VecDeque::new(),
                 questions: HashMap::new(),
                 prompts: HashMap::new(),
@@ -944,39 +943,40 @@ impl Inner {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn token_path(&self, namespace: &str) -> Option<std::path::PathBuf> {
-        let dir = self.cfg.state_dir.as_ref()?;
-        Some(dir.join(format!("{}.token", namespace.replace('/', "_"))))
+    /// The peer's record: this run's, else the state dir's
+    /// ([`crate::peer_record`]).
+    fn load_record(&self, namespace: &str) -> Option<PeerRecord> {
+        if let Some(record) = self.lock().records.get(namespace) {
+            return Some(record.clone());
+        }
+        crate::peer_record::load(self.cfg.state_dir.as_ref()?, namespace)
     }
 
-    fn load_token(&self, namespace: &str) -> Option<String> {
-        if let Some(token) = self.lock().tokens.get(namespace) {
-            return Some(token.clone());
+    /// Keep the peer's token and workspace together, in memory and (with a
+    /// state dir) in one owner-only file written at once.
+    fn save_record(&self, namespace: &str, record: PeerRecord) -> Result<(), String> {
+        let record = PeerRecord { legacy: false, ..record };
+        self.lock().records.insert(namespace.to_owned(), record.clone());
+        match &self.cfg.state_dir {
+            Some(dir) => crate::peer_record::save(dir, namespace, &record),
+            None => Ok(()),
         }
-        let text = std::fs::read_to_string(self.token_path(namespace)?).ok()?;
-        let token = text.trim().to_owned();
-        (!token.is_empty()).then_some(token)
     }
 
-    fn save_token(&self, namespace: &str, token: &str) -> Result<(), String> {
-        self.lock()
-            .tokens
-            .insert(namespace.to_owned(), token.to_owned());
-        let Some(path) = self.token_path(namespace) else {
-            return Ok(());
-        };
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    /// A resumed peer's workspace must exist (octos refuses a missing
+    /// `cwd`): an account folder deleted with its account is made again,
+    /// by the host when it is still the account's folder.
+    fn ensure_workspace(&self, host: &dyn ToolHost, account: &str, cwd: &str) {
+        let path = std::path::Path::new(cwd);
+        if path.is_dir() {
+            return;
         }
-        let tmp = path.with_extension("token.tmp");
-        std::fs::write(&tmp, token).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| e.to_string())?;
+        let ours = host.agent_workspace(&self.cfg.app_id, account);
+        if ours.as_deref() == Some(path) && !path.is_dir() {
+            if let Err(err) = crate::peer_record::private_dir(path) {
+                eprintln!("app-peers: could not recreate the workspace {cwd}: {err}");
+            }
         }
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
     fn tool_host(&self) -> Arc<dyn ToolHost> {
@@ -984,29 +984,6 @@ impl Inner {
             Some(handle) => handle.0.clone(),
             None => host_tools::host(),
         }
-    }
-
-    /// The workspace a peer was created with (`<namespace>.cwd` beside its
-    /// token): a resume must name the same one. None for a peer the kernel
-    /// provisioned.
-    fn load_cwd(&self, namespace: &str) -> Option<String> {
-        if let Some(cwd) = self.lock().cwds.get(namespace) {
-            return Some(cwd.clone());
-        }
-        let path = self.token_path(namespace)?.with_extension("cwd");
-        let text = std::fs::read_to_string(path).ok()?;
-        let cwd = text.trim().to_owned();
-        (!cwd.is_empty()).then_some(cwd)
-    }
-
-    fn save_cwd(&self, namespace: &str, cwd: &str) -> Result<(), String> {
-        self.lock().cwds.insert(namespace.to_owned(), cwd.to_owned());
-        let Some(path) = self.token_path(namespace).map(|p| p.with_extension("cwd")) else {
-            return Ok(());
-        };
-        let tmp = path.with_extension("cwd.tmp");
-        std::fs::write(&tmp, cwd).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 
     fn fail(&self, error: &str) {
@@ -1486,16 +1463,27 @@ impl Inner {
             "memory_namespace": namespace,
             "resume": true,
         });
-        let known_token = self.load_token(&namespace);
+        let known = self.load_record(&namespace);
         // The agent's workspace is the account's folder (ADR 0004 §11) for
         // a peer created now; a resume names the workspace the peer was
-        // created with (the kernel refuses any other), so peers created
-        // before keep the one the kernel provisioned.
+        // created with (the kernel refuses any other). A record without one
+        // (a peer from before the record) tries the account folder, then
+        // the kernel's own workspace, and records whichever the kernel took.
         let mut chosen_cwd = None;
-        if let Some(token) = &known_token {
-            params["host_token"] = json!(token);
-            if let Some(cwd) = self.load_cwd(&namespace) {
-                params["cwd"] = json!(cwd);
+        let mut unknown_cwd = false;
+        if let Some(record) = &known {
+            params["host_token"] = json!(record.token);
+            match &record.cwd {
+                Some(cwd) => {
+                    self.ensure_workspace(host.as_ref(), &account, cwd);
+                    params["cwd"] = json!(cwd);
+                }
+                None => {
+                    unknown_cwd = true;
+                    if let Some(cwd) = host.agent_workspace(&self.cfg.app_id, &account) {
+                        params["cwd"] = json!(cwd.to_string_lossy());
+                    }
+                }
             }
         } else if let Some(cwd) = host.agent_workspace(&self.cfg.app_id, &account) {
             let cwd = cwd.to_string_lossy().into_owned();
@@ -1505,7 +1493,14 @@ impl Inner {
         if let Some(lane) = &self.cfg.model_lane {
             params["model"] = json!(lane);
         }
-        let result = match self.request("peer/prepare", params).await {
+        let mut result = self.request("peer/prepare", params.clone()).await;
+        if unknown_cwd && params.get("cwd").is_some() && result.as_ref().is_err_and(|e| e.contains("peer_binding_mismatch")) {
+            if let Some(obj) = params.as_object_mut() {
+                obj.remove("cwd");
+            }
+            result = self.request("peer/prepare", params).await;
+        }
+        let result = match result {
             Ok(result) => result,
             Err(err) => {
                 self.fail(&err);
@@ -1525,25 +1520,34 @@ impl Inner {
             .as_str()
             .ok_or("peer/prepare returned no slug")?
             .to_owned();
-        // A new peer's credential arrives once; keep it before anything else.
+        let kernel_cwd = result["cwd"].as_str().map(str::to_owned);
+        // A new peer's credential arrives once; keep it, with its
+        // workspace, before anything else.
         let token = match result["host_token"].as_str() {
             Some(token) => {
-                if let Err(err) = self.save_token(&namespace, token) {
+                let record = PeerRecord { token: token.to_owned(), cwd: chosen_cwd.map(|chosen| kernel_cwd.unwrap_or(chosen)), legacy: false };
+                if let Err(err) = self.save_record(&namespace, record) {
                     let err = format!("could not keep the assistant's peer credential: {err}");
                     self.fail(&err);
                     return Err(err);
                 }
-                if chosen_cwd.is_some() {
-                    let cwd = result["cwd"].as_str().map(str::to_owned).or(chosen_cwd);
-                    if let Some(cwd) = cwd {
-                        if let Err(err) = self.save_cwd(&namespace, &cwd) {
+                Some(token.to_owned())
+            }
+            None => {
+                // A resume: learn a workspace not recorded yet, and move a
+                // legacy record into one file.
+                if let Some(mut record) = known.clone() {
+                    if unknown_cwd && kernel_cwd.is_some() {
+                        record.cwd = kernel_cwd;
+                    }
+                    if record.legacy || unknown_cwd {
+                        if let Err(err) = self.save_record(&namespace, record) {
                             eprintln!("app-peers: could not record the peer's workspace ({err}); it resumes only in this run");
                         }
                     }
                 }
-                Some(token.to_owned())
+                known.map(|r| r.token)
             }
-            None => known_token,
         };
         let session = format!(
             "{}#peer-{slug}",

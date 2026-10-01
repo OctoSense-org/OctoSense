@@ -105,16 +105,21 @@ pub fn system_host_token() -> Option<String> {
     newest_token(&dir)
 }
 
-/// The newest `*.token` under `dir`.
+/// The newest peer's token under `dir`: a peer record (`*.peer`,
+/// [`crate::peer_record`]) or an older `*.token` file.
 pub fn newest_token(dir: &std::path::Path) -> Option<String> {
     let mut best: Option<(std::time::SystemTime, String)> = None;
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("token") {
-            continue;
-        }
         let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let token = text.trim().to_owned();
+        let token = match path.extension().and_then(|e| e.to_str()) {
+            Some("token") => text.trim().to_owned(),
+            Some("peer") => serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v["token"].as_str().map(|t| t.trim().to_owned()))
+                .unwrap_or_default(),
+            _ => continue,
+        };
         if token.is_empty() {
             continue;
         }
@@ -191,6 +196,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(dir.join("app_card.news_acct-2.token"), "new").unwrap();
         assert_eq!(newest_token(&dir).as_deref(), Some("new"));
+        // A peer record (token and workspace in one file) counts the same.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("app_notes_acct-3.peer"), r#"{"token":"newest","cwd":"/w"}"#).unwrap();
+        assert_eq!(newest_token(&dir).as_deref(), Some("newest"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
