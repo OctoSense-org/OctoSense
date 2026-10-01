@@ -554,7 +554,7 @@ async fn offered_to_system_turns(program: &Path, tag: &str) -> [std::collections
 
 /// ADR 0004 §12, what is enforced today: a system-agent turn, whoever starts
 /// it, is offered none of octos's shell (`group:runtime`: `shell`, `bash`,
-/// `exec_command`, `write_stdin`) and every tool of its own list octos
+/// `exec_command`, `write_stdin`), never `peer_close`, and every tool of its own list octos
 /// registers; beyond that it is bounded only by the grantable ceiling
 /// (everything else), not its exact list. A Talk to Octos external client's
 /// turn keeps octos's external allowlist.
@@ -572,6 +572,8 @@ async fn a_system_agent_turn_is_offered_no_octos_shell() {
         for shell in ["shell", "bash", "exec_command", "write_stdin"] {
             assert!(!offered.contains(shell), "{how}: {shell} offered: {offered:?}");
         }
+        // A closed app peer cannot be resumed or replaced: no agent closes one.
+        assert!(!offered.contains("peer_close"), "{how}: peer_close offered: {offered:?}");
         assert!(own.is_subset(offered), "{how}: missing its own tools: {:?}", &own - offered);
     }
     assert_eq!(stdio, host, "the same set over Talk to Octos");

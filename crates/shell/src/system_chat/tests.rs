@@ -431,6 +431,43 @@ fn closing_the_pane_lets_the_kernel_go_unless_a_turn_runs() {
     assert!(d.is_connected(), "a running turn keeps its connection");
 }
 
+/// Closing and reopening the pane shows the conversation again: after an
+/// idle close the reconnect loads the history, and a reopen on a
+/// connection a running turn kept loads it again once nothing runs (the
+/// pane once came back empty until Home restarted).
+#[test]
+fn reopening_the_pane_loads_the_history_again() {
+    let (mut d, fake) = opened();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "earlier"}, {"seq": 2, "role": "assistant", "content": "Earlier answer."}]);
+    d.command(Command::Close);
+    d.model.load_history(&json!([]));
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Earlier answer."], "an idle close: reconnect and history");
+
+    // A turn keeps the connection through a close; the reopen after it
+    // ended loads the history again on the same connection.
+    d.command(Command::Send("go on".into()));
+    let turn = fake.sent("turn/start").last().unwrap()["turn_id"].as_str().unwrap().to_string();
+    d.command(Command::Close);
+    assert!(d.is_connected());
+    fake.notify("turn/completed", json!({"turn_id": turn}));
+    settle(&mut d);
+    let hydrates = fake.sent("session/hydrate").len();
+    fake.s().history = json!([{"seq": 1, "role": "user", "content": "go on"}, {"seq": 2, "role": "assistant", "content": "Went on."}]);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert_eq!(text_of(&d.model, Role::Assistant), ["Went on."]);
+    // While a turn runs, a reopen keeps the live rows instead.
+    d.command(Command::Send("more".into()));
+    d.command(Command::Close);
+    d.command(Command::Open);
+    settle(&mut d);
+    assert_eq!(fake.sent("session/hydrate").len(), hydrates + 1);
+    assert!(text_of(&d.model, Role::User).contains(&"more".to_string()));
+}
+
 // ---------------------------------------------------------------- approvals
 
 #[test]
@@ -868,4 +905,20 @@ fn terminal_run_needs_a_process_terminal_even_when_granted() {
     assert!(host_tools_given(true, false).is_empty(), "granted, but the Terminal runs in-process here");
     assert!(host_tools_given(false, true).is_empty());
     assert!(host_tools_given(false, false).is_empty());
+}
+
+/// Review 2026-09-30: `terminal.run` needs the Terminal's newest launch to
+/// have reported its sandbox applied, not only a process Terminal. Its
+/// declared description no longer calls it unsandboxed.
+#[test]
+fn terminal_run_needs_a_launch_that_reported_its_sandbox() {
+    use super::grants::terminal_target;
+    use crate::sandbox::{note_launch, Applied};
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Unavailable("no sandbox here".into())));
+    assert!(!terminal_target(), "an unsandboxed Terminal is no target");
+    note_launch(crate::apps::TERMINAL, Some(&Applied::Sandboxed("ok".into())));
+    assert_eq!(terminal_target(), crate::apps::terminal_runs_as_process(), "sandboxed: as the hosting says");
+    let run = crate::native_apps::find("terminal").unwrap().tools_json;
+    assert!(!run.contains("unsandboxed"), "{run}");
+    assert!(run.contains("inside the Terminal's own sandbox"), "{run}");
 }
