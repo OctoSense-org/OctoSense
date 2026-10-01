@@ -1364,6 +1364,21 @@ fn the_apps_conversation_reads_the_account_folder_and_a_client_context_does_not(
     let text = answer["text"].as_str().unwrap_or("").to_owned();
     assert!(text.starts_with("TOOL SAID"), "{answer}");
     assert!(!text.contains("ACCOUNT_NOTE_42"), "a client's context stays fenced: {answer}");
+
+    // The conversation's view stops at other contexts: a mini app's
+    // context folder (`contexts/<its id>/`) is refused to it.
+    let other = std::fs::read_dir(ws.join("contexts")).unwrap().flatten()
+        .map(|e| e.path()).find(|p| p.file_name().unwrap().to_string_lossy().contains("mini-notes"))
+        .expect("the mini app's context folder");
+    std::fs::write(other.join("private.txt"), "MINI_APP_SECRET_7").unwrap();
+    let ask_other = format!("CALL_TOOL:read_file {}", json!({"path": other.join("private.txt")}));
+    let answer = run(&chat, ContextOp::TurnFrom { text: ask_other, trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the conversation's second turn");
+    let text = answer["text"].as_str().unwrap_or("").to_owned();
+    assert!(text.starts_with("TOOL SAID"), "{answer}");
+    assert!(!text.contains("MINI_APP_SECRET_7"), "another context's folder is refused to the conversation: {answer}");
+    assert!(text.contains("outside session scope"), "refused by octos's scope check: {answer}");
     drop((chat, client));
     rinx.release();
     drop(rinx);
