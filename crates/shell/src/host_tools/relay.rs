@@ -701,7 +701,12 @@ impl Relay {
             }
             return self.run(call, reply, Target::Executor(HOST_EXECUTOR.to_string()), env);
         }
-        if env.has_link(&owner) {
+        // An app with its own executor (an in-process module's, a script
+        // app's host service) runs its tools there, even when it also holds
+        // a peer link for its conversation (#142): the link serves the tools
+        // of an app that has nothing else, a process app or a module that
+        // serves its tools over the link.
+        if env.has_link(&owner) && !self.executors.contains_key(&owner) {
             let kernel_call = KernelToolCall {
                 call_id: call.call_id.clone(),
                 name: tool.clone(),

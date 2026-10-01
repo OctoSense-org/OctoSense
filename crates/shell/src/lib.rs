@@ -53,6 +53,8 @@ pub mod module_host;
 mod module_close_tests;
 #[cfg(test)]
 mod module_panic_tests;
+#[cfg(test)]
+mod module_peer_tests;
 pub mod module_view;
 pub mod native_apps;
 pub mod sandbox;
@@ -5859,6 +5861,9 @@ impl App {
         // or draw, or in a call the shell made — is contained by now; show
         // it closed and free it before the next event (module_host.rs).
         self.contain_module_faults(cx);
+        // Modules' peer links (#142): the links opened during this event,
+        // and what the instances sent on theirs, to the shell's peer link.
+        self.module_host.pump_peer_links(cx);
         // A quit that waited on instances asking the person goes ahead once
         // the last of them confirmed (or failed and has nothing left to ask).
         if self.take_quit_ready() {
