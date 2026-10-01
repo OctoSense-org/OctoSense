@@ -94,7 +94,7 @@ flowchart LR
 
 | 平台 | 内核 | 如何启动 |
 | --- | --- | --- |
-| 桌面端（macOS；Windows 和 Linux 未经测试） | 子进程：`OCTOS_APP_CORE_BIN`（或嵌入方的 `Options::program`）指定的 `octos` 二进制 | `serve --stdio --data-dir <core 目录>`；没有二进制就没有内核（不在 `PATH` 中查找）。随桌面端一起发布该二进制正在进行中（[#85](https://github.com/OctoSense-org/OctoSense/pull/85)）。 |
+| 桌面端（macOS；Windows 和 Linux 未经测试） | 子进程：嵌入方的 `Options::program`，否则为 `OCTOS_APP_CORE_BIN` 指定的 `octos` 二进制，否则为 Shell 旁随附的 `octos-kernel`（只有收据中的版本与固定的 octos 版本一致时才运行） | `serve --stdio --data-dir <core 目录>`；没有二进制就没有内核（不在 `PATH` 或工作目录中查找）。 |
 | Android（Home） | 子进程：APK 中打包的 `liboctos.so`，由 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按锁定的 octos 版本构建 | `serve --stdio`，在应用的原生库目录中、`libmakepad.so` 旁边找到 |
 | OpenHarmony | 进程内：`octos_cli::embedded::serve_io` 作为一个任务运行在内存中的双工流上（HAP 不允许 exec） | 同样的协议，没有子进程 |
 | iOS | 无 | 提供方配置会保存；没有应用能用上助手 |
@@ -140,7 +140,7 @@ Shell 在运行时如何决定（`crates/shell/src/apps.rs`，`AppRegistry::host
 flowchart TB
   subgraph desktop["桌面端（macOS）"]
     ds["OctoSense 进程<br/>Shell + App Hub + Card runner + Rinx"]
-    dk["octos 子进程<br/>OCTOS_APP_CORE_BIN serve --stdio"]
+    dk["octos 子进程<br/>octos-kernel serve --stdio"]
     dt["Terminal 子进程<br/>--stdin-loop"]
     ds -- "stdin/stdout" --> dk
     dt -- "hub WebSocket、IOSurface 画面" --> ds

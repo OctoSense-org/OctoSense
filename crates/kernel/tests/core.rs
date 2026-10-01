@@ -270,11 +270,14 @@ fn no_kernel_binary_means_no_connection() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_kernel_that_cannot_start_fails_the_connection() {
-    // A file that is not executable: resolvable, but the spawn fails.
-    let dir = core_dir("noexec");
+    use std::os::unix::fs::PermissionsExt;
+    // Executable, so it resolves (a non-executable file is refused before
+    // any start); a missing interpreter makes the spawn itself fail.
+    let dir = core_dir("bad-interpreter");
     std::fs::create_dir_all(&dir).unwrap();
     let program = dir.join("octos");
-    std::fs::write(&program, "not a program").unwrap();
+    std::fs::write(&program, "#!/nonexistent/octos-interpreter\n").unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
     let core = Core::new(Options::default().core_dir(dir.join("core")).program(&program));
     let mut a = core.connect().unwrap();
     assert!(matches!(next(&mut a).await, Err(CloseReason::Failed(_))));

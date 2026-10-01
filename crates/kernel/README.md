@@ -42,8 +42,17 @@ How it starts, per platform (`src/launch.rs`):
   with 8 MiB worker stacks (HAP native libraries may not exec).
 - **Desktop**: `<program> serve --stdio --data-dir <core_dir>` (plus
   `--config <core_dir>/config.json` when that file exists) with
-  `OCTOS_HOME=<core_dir>`; the program is the shell's `Options::program` or
-  `$OCTOS_APP_CORE_BIN`. With neither there is no kernel: a developer's own
+  `OCTOS_HOME=<core_dir>`; the program is the shell's `Options::program`,
+  `$OCTOS_APP_CORE_BIN`, or the packaged `octos-kernel[.exe]` beside the
+  shell executable (in a macOS `.app`, `Contents/MacOS` or
+  `Contents/Resources`), in that order. The packaged kernel runs only when
+  its receipt `octos-kernel.json` (beside it, in the `.app`'s
+  `Contents/Resources`, or a Linux package's `usr/lib/octosense`) names the
+  octos revision this build pins (`build.rs` reads it from `Cargo.lock`) and
+  its SHA-256 matches; otherwise the connection fails with the reason.
+  `tools/kernel-artifact.py --host --stage <dir>` builds and stages it;
+  `OCTOSENSE_KERNEL_ANY_REVISION=1` accepts another revision while
+  developing. No `PATH` search, no working directory, and a developer's own
   `octos serve` is never touched.
 - **iOS**: no kernel.
 - **Talk to Octos on** (desktop and Android): the same command with

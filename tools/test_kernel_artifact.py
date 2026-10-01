@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -130,6 +131,82 @@ class PlanTests(unittest.TestCase):
             self.assertFalse((Path(temp) / "w").exists(), "a plan creates nothing")
             with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 kernel.main(["--kernel", "/k/octos", "--no-kernel"])
+
+
+@unittest.skipIf(os.name == "nt", "the stand-in kernel is a POSIX shell script")
+class StageTests(unittest.TestCase):
+    """--stage: the desktop's packaged kernel and the receipt
+    crates/kernel/src/launch.rs checks before running it."""
+
+    def stand_in(self, directory, version):
+        program = Path(directory) / "octos"
+        program.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n")
+        program.chmod(0o755)
+        return program
+
+    def test_the_version_must_name_the_locked_revision(self):
+        self.assertTrue(kernel.version_matches(f"octos 2.0.3-rc.13 ({REV[:7]} 2026-10-01)", REV))
+        self.assertTrue(kernel.version_matches(f"octos 2.0.3 ({REV[:9]})", REV))
+        self.assertFalse(kernel.version_matches("octos 2.0.3-rc.13 (0000000 2026-10-01)", REV))
+        self.assertFalse(kernel.version_matches("octos 2.0.3", REV))
+        self.assertFalse(kernel.version_matches(f"something else ({REV[:7]})", REV))
+
+    def test_a_staged_kernel_carries_its_revision_and_hash(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = self.stand_in(temp, f"octos 2.0.3-rc.13 ({REV[:7]} 2026-10-01)")
+            out = Path(temp) / "target dir/release"
+            record = kernel.stage(source, out, REV)
+            staged = out / kernel.STAGED_NAME
+            self.assertTrue(os.access(staged, os.X_OK))
+            on_disk = json.loads((out / kernel.RECEIPT_NAME).read_text())
+            self.assertEqual(on_disk, record)
+            self.assertEqual(on_disk["revision"], REV)
+            self.assertEqual(on_disk["source"], f"{kernel.OCTOS_URL}@{REV}")
+            self.assertEqual(on_disk["sha256"], hashlib.sha256(staged.read_bytes()).hexdigest())
+            self.assertEqual(sorted(p.name for p in out.iterdir()), sorted([kernel.STAGED_NAME, kernel.RECEIPT_NAME]))
+
+    def test_a_kernel_of_another_revision_replaces_nothing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp) / "release"
+            out.mkdir()
+            (out / kernel.STAGED_NAME).write_bytes(b"previous")
+            (out / kernel.RECEIPT_NAME).write_text("previous receipt")
+            wrong = self.stand_in(temp, "octos 2.0.3-rc.13 (0000000 2026-09-01)")
+            with self.assertRaisesRegex(RuntimeError, "not the locked octos revision"):
+                kernel.stage(wrong, out, REV)
+            self.assertEqual((out / kernel.STAGED_NAME).read_bytes(), b"previous")
+            self.assertEqual((out / kernel.RECEIPT_NAME).read_text(), "previous receipt")
+            self.assertEqual(len(list(out.iterdir())), 2, "no temporary file is left behind")
+            garbage = Path(temp) / "garbage"
+            garbage.write_bytes(b"\x00\x01 not a program")
+            with self.assertRaisesRegex(RuntimeError, "does not run here"):
+                kernel.stage(garbage, out, REV)
+
+    def test_the_cli_stages_only_a_desktop_kernel(self):
+        with tempfile.TemporaryDirectory() as temp:
+            lock = Path(temp) / "Cargo.lock"
+            lock.write_text(lock_with(REV))
+            source = self.stand_in(temp, f"octos 2.0.3 ({REV[:7]} 2026-10-01)")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                kernel.main(["--lock", str(lock), "--kernel", str(source), "--stage", str(Path(temp) / "rel")])
+            self.assertIn("staged:", out.getvalue())
+            self.assertEqual(json.loads((Path(temp) / "rel" / kernel.RECEIPT_NAME).read_text())["source"], "prebuilt")
+            plan = io.StringIO()
+            with contextlib.redirect_stdout(plan):
+                kernel.main(["--lock", str(lock), "--host", "--work", str(Path(temp) / "w"), "--stage", str(Path(temp) / "x"), "--plan"])
+            printed = json.loads(plan.getvalue())
+            self.assertEqual(Path(printed["stage"]).name, kernel.STAGED_NAME)
+            self.assertIn("--target-dir", printed["steps"][-1]["argv"], "no `env` wrapper: Windows runs it too")
+            self.assertFalse((Path(temp) / "x").exists(), "a plan stages nothing")
+            for argv in (["--sdk", "/sdk", "--stage", "x"], ["--no-kernel", "--stage", "x"]):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    kernel.main(["--lock", str(lock), *argv])
+
+    def test_the_names_are_the_ones_the_desktop_looks_for(self):
+        launch = (ROOT / "crates/kernel/src/launch.rs").read_text()
+        self.assertIn('"octos-kernel"', launch)
+        self.assertIn(f'"{kernel.RECEIPT_NAME}"', launch)
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@
 
 | 组成部分 | 状态 | 位置 |
 | --- | --- | --- |
-| 每个 Shell 进程一个 octos 内核，首次使用时启动，提供方变更后重启 | 目前可用（设置了 `OCTOS_APP_CORE_BIN` 的桌面端、Android、OpenHarmony；iOS 没有） | [`crates/kernel`](../crates/kernel/README.md) |
+| 每个 Shell 进程一个 octos 内核，首次使用时启动，提供方变更后重启 | 目前可用（有随附 `octos-kernel` 或设置了 `OCTOS_APP_CORE_BIN` 的桌面端、Android、OpenHarmony；iOS 没有） | [`crates/kernel`](../crates/kernel/README.md) |
 | AI providers：用户的模型提供方和密钥，密钥只在宿主面板上输入 | 目前可用 | [`apps/ai-providers`](../apps/ai-providers/host-service/README.md) |
 | Shell 的 AI 入口（`start`、策略、按实例提供服务、QR 导入） | 目前可用 | [`crates/ai-host`](../crates/ai-host/README.md) |
 | 宿主拥有的应用 peer：每个获授权的应用/账号一个 octos peer，归系统 Agent 所有 | 已实现：原生模块（Rinx）及经过按应用同意的隔离脚本应用 | [`crates/app-peers`](../crates/app-peers/README.md)、[Rinx ADR 0007](https://github.com/hagency-org/Rinx/blob/main/docs/adr/0007-host-owned-octos-app-peers.md) |
@@ -89,7 +89,7 @@ flowchart TB
 
 | 平台 | 内核 | Core 目录（octos home） |
 | --- | --- | --- |
-| 桌面端（macOS；Windows 和 Linux 未测试） | `$OCTOS_APP_CORE_BIN serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`）。**未显式指定内核程序或 `OCTOS_APP_CORE_BIN` 时没有桌面内核**，开发者自己运行的 `octos serve` 永远不会被动到。[#85](https://github.com/OctoSense-org/OctoSense/pull/85) 是内核打包的历史跟踪；此配方显式指定二进制。 | `$OCTOS_APP_CORE_DIR`，否则为 `<OctoSense 状态目录>/octos-home/.octos`（`~/.octosense/octos-home/.octos`）：OctoSense 自己的目录，不再是用户的 `~/octos-home/.octos`（只从中复制一次提供商设置） |
+| 桌面端（macOS；Windows 和 Linux 未测试） | `<内核> serve --stdio --data-dir <core 目录>`（存在 `<core 目录>/config.json` 时再加 `--config`），内核为显式指定的内核程序（`Options::program`），否则为 `$OCTOS_APP_CORE_BIN`，再否则为 Shell 旁随附的 `octos-kernel`；后者只有在收据中的版本与固定的 octos 版本一致且 SHA-256 相符时才运行（[desktop/README.zh-CN.md，构建与运行](../desktop/README.zh-CN.md#构建与运行)）。**三者都没有时没有桌面内核**，开发者自己运行的 `octos serve` 永远不会被动到。 | `$OCTOS_APP_CORE_DIR`，否则为 `<OctoSense 状态目录>/octos-home/.octos`（`~/.octosense/octos-home/.octos`）：OctoSense 自己的目录，不再是用户的 `~/octos-home/.octos`（只从中复制一次提供商设置） |
 | Android（Home） | APK 中的 `liboctos.so serve --stdio`，由 [`tools/kernel-artifact.py`](../tools/kernel-artifact.py) 按根 `Cargo.toml` 锁定的 octos 版本构建 | `<应用数据目录>/octos-home/.octos` |
 | OpenHarmony | 进程内运行（`octos_cli::embedded::serve_io`），因为 HAP 不能 exec | `<应用数据目录>/octos-home/.octos` |
 | iOS | **没有。** 提供方仍会保存；没有应用能获得助手 | – |
@@ -217,7 +217,7 @@ flowchart TB
 | 参数超出规则的 `octos.*` | `r.error`：`Unsupported Octos arguments` 或 `Provide text (at most 32 KiB)` |
 | 设备为应用关闭了助手时（`OCTOSENSE_CONTAINED_APPS=0`）的 `octos.*` | `r.error`：`The assistant is turned off for apps on this device` |
 | 用户尚未允许该应用的 Agent 时的 `octos.*` | `r.error`：`Waiting for the person to allow this app's agent (OctoSense asks the first time)`，同时 Shell 显示首次使用面板（在 `contained.rs` 和 `approvals/mod.rs` 中读到；未在运行的 Shell 中验证，**unverified**） |
-| 在未设置 `OCTOS_APP_CORE_BIN` 的桌面端调用 `octos.*` | `r.error`：`no octos kernel: no kernel binary configured (OCTOS_APP_CORE_BIN)` |
+| 在既无随附内核又未设置 `OCTOS_APP_CORE_BIN` 的桌面端调用 `octos.*` | `r.error`：`no octos kernel: no packaged octos-kernel beside <目录> and no OCTOS_APP_CORE_BIN override; …`（随附内核版本过旧时：`no octos kernel: refusing the packaged kernel …`） |
 | 在不链接内核的构建（iOS）中调用 `octos.*` | `r.error`：`no service answers "octos" on this device`（**未验证**） |
 | 获得 `llm` 授权的商店应用调用 `llm.*` | `llm is for OctoSense's own apps.` |
 | 在 App Hub 的 `card-host` 中调用任何服务 | `no service answers "<family>" on this device`（`card-host` 不注册任何服务） |
@@ -271,7 +271,7 @@ manifest 的 `agent` 和已准入 `tools.json` 已参与 Shell 的 Agent 发现�
      cargo run --release -p octosense
    ```
 
-   日志中会出现 `octos: kernel service ready (starts on first use), core dir …`。没有 `OCTOS_APP_CORE_BIN` 时日志会说明没有内核，AI providers 仍会保存提供方。
+   日志中会出现 `octos: kernel service ready (starts on first use), core dir …`。没有 `OCTOS_APP_CORE_BIN` 时使用 Shell 旁随附的 `octos-kernel`（`python3 tools/kernel-artifact.py --host --stage target/release`），两者都没有时日志会说明没有内核，AI providers 仍会保存提供方。
 
 3. 打开 **Start → Settings → AI providers**，添加一个模型（family、模型、路由、密钥、**Test connection**、保存）。配置文件是 `$T/octos-home/.octos/profiles/_main.json`；使用文件密钥库时密钥就在其中，用完后请删除 `$T`。
 4. 通过某个使用者来使用助手：Rinx（默认链接并在进程内运行；从启动器打开它；登录 Matrix，在首次使用面板上允许它的 Agent，然后使用它的助手），或 AppCard（`--features app-appcard`）。隔离运行的应用通过 `octos` 宿主服务访问它（[见上文](#隔离运行的脚本应用系统应用和商店应用)）；保持 `OCTOSENSE_CONTAINED_APPS` 未设置，并在 Shell 询问时同意。F8 也可打开系统聊天；`agents.ask` 用于同意/准备，`peer_send_input` 才委派任务。
