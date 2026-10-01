@@ -160,6 +160,111 @@ fn mails_accounts_open_and_remove_their_folders() {
     assert_eq!(memory_notice(&host, "os.mail"), None);
 }
 
+/// ADR 0004 §11 end to end with the Mail bundle this repository ships: its
+/// manifest declares accounts, so each Mail account is its own agent, with
+/// its own folder as its workspace; removing the account suspends that
+/// agent (its calls `signed_out`, no turn) and deletes the folder.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_suspend_mails_agent_and_delete_its_folder_when_its_account_is_removed() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("mail-e2e");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/mail/bundle/manifest.json")).unwrap()).unwrap();
+    write_json(&root.join(".system/os.mail/0001/manifest.json"), &manifest);
+    assert!(prepare_script_app(&host, &root, "os.mail").unwrap().accounts, "Mail's manifest declares accounts");
+
+    let added = AccountEvent::Added { app_id: "os.mail".into(), account: "acct-1".into() };
+    let Change::SignedIn { folder, .. } = mail_account(&host, &added) else { panic!("signed in") };
+    // Mail's agent is the contained peer `card.os.mail`, keyed by the account.
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "acct-1"), Some(folder.clone()));
+    assert!(!crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-1")));
+
+    let removed = AccountEvent::Removed { app_id: "os.mail".into(), account: "acct-1".into() };
+    mail_account(&host, &removed);
+    assert!(!folder.exists(), "the account's folder is deleted");
+    assert!(crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-1")), "its agent is suspended");
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "acct-1"), None);
+    assert!(!crate::host_tools::suspended_in(&host, "card.os.mail", Some("acct-2")), "another account is not");
+}
+
+/// A Mail account whose folder the startup check refused is refused for
+/// its own agent (the refusal is keyed by the account, as its workspace is),
+/// so its `peer/input` and calls are refused.
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[test]
+fn should_refuse_a_mail_accounts_agent_when_its_folder_reaches_the_secrets() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("mail-refused");
+    let host = storage(&home.0);
+    host.set_spec("os.mail", StorageSpec { accounts: true, ..Default::default() });
+    let Change::SignedIn { folder, .. } = mail_account(&host, &AccountEvent::Added { app_id: "os.mail".into(), account: "acct-1".into() }) else { panic!() };
+    host.open("os.mail").unwrap().secrets().put("pw", b"x").unwrap();
+    std::os::unix::fs::symlink(home.0.join("secrets/os.mail/pw"), folder.join("pw")).unwrap();
+    host.startup_check();
+    assert!(crate::host_tools::workspace_refused_in(&host, "card.os.mail", "acct-1").is_some(), "keyed by the account");
+    assert!(crate::host_tools::workspace_refused_in(&host, "card.os.mail", "acct-2").is_none());
+}
+
+/// One rule for a script app that keeps accounts: Mail's conversation
+/// reads its account's folder (`read_parent`) for an account whose folder
+/// is clean and not for one the startup check refused or that was removed;
+/// an app without accounts is keyed by its device folder.
+#[cfg(all(unix, any(feature = "app-hub", native_mobile)))]
+#[test]
+fn should_decide_read_parent_per_mail_account_with_the_same_rule_as_its_workspace() {
+    use octosense_mail_service::AccountEvent;
+    let home = Scratch::new("read-parent-mail");
+    let host = storage(&home.0);
+    host.set_spec("os.mail", StorageSpec { accounts: true, ..Default::default() });
+    let add = |a: &str| AccountEvent::Added { app_id: "os.mail".into(), account: a.into() };
+    let Change::SignedIn { folder: bad, .. } = mail_account(&host, &add("bad")) else { panic!() };
+    mail_account(&host, &add("good"));
+    mail_account(&host, &add("gone"));
+    host.open("os.mail").unwrap().secrets().put("pw", b"x").unwrap();
+    std::os::unix::fs::symlink(home.0.join("secrets/os.mail/pw"), bad.join("pw")).unwrap();
+    host.startup_check();
+    mail_account(&host, &AccountEvent::Removed { app_id: "os.mail".into(), account: "gone".into() });
+    assert!(crate::host_tools::context_reads_account_in(&host, "card.os.mail", "good"));
+    assert!(!crate::host_tools::context_reads_account_in(&host, "card.os.mail", "bad"), "refused for that account");
+    assert!(!crate::host_tools::context_reads_account_in(&host, "card.os.mail", "gone"), "removed: suspended");
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.mail", "good"), Some(host.layout().app("os.mail").unwrap().account(Some("good"))));
+    // An app without accounts: the device folder, whatever the account.
+    host.open("os.notes").unwrap();
+    assert_eq!(crate::host_tools::agent_workspace_in(&host, "card.os.notes", "x"), Some(host.layout().app("os.notes").unwrap().account(None)));
+}
+
+/// Preparing a script app's agent reads its manifest's storage block first,
+/// so an agent prepared before the app was ever opened (the system chat
+/// prepares every allowed agent) already acts per account.
+#[test]
+fn should_record_the_storage_block_before_an_agent_is_prepared() {
+    let home = Scratch::new("spec-first");
+    let host = storage(&home.0);
+    let root = host.layout().apps_root().to_path_buf();
+    write_json(&root.join(".system/os.mail/0001/manifest.json"), &json!({"id": "os.mail", "storage": {"accounts": true}}));
+    let seen = prepare_agent_with(&host, &root, "os.mail", |storage: &Storage| storage.spec("os.mail").accounts);
+    assert!(seen, "the spec is recorded before the agent is prepared");
+}
+
+/// The account a contained app's agent acts for: the device without
+/// accounts; with them, the one Mail says is active, or none yet.
+#[cfg(any(feature = "app-hub", native_mobile))]
+#[test]
+fn should_bind_a_contained_agent_to_the_active_account_when_the_app_keeps_accounts() {
+    let home = Scratch::new("contained-account");
+    let host = storage(&home.0);
+    assert_eq!(contained_account_in(&host, "os.notes").as_deref(), Some("device"));
+    host.set_spec("os.mail", StorageSpec { accounts: true, ..Default::default() });
+    assert_eq!(contained_account_in(&host, "os.mail"), None, "no account yet");
+    write_json(&host.layout().apps_root().join(".host/mail/accounts.json"), &json!([
+        {"id": "late", "apps": ["os.mail"], "signed_in": 20},
+        {"id": "early", "apps": ["os.mail"], "signed_in": 10},
+    ]));
+    assert_eq!(contained_account_in(&host, "os.mail").as_deref(), Some("late"));
+}
+
 // ---- script manifests, install and uninstall -----------------------------
 
 #[test]
@@ -374,6 +479,7 @@ fn recording_purger(prefix: &'static str, erased: bool) -> Arc<Mutex<Vec<PurgeRe
 /// STAYS suspended (a broker still bound to it must not make a new agent)
 /// until it is added again. An erase that failed says the memory remains.
 /// Uninstalling erases every account's agent the same way.
+#[cfg(any(feature = "app-hub", native_mobile))]
 #[test]
 fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
     let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());
@@ -427,6 +533,7 @@ fn removing_an_account_or_uninstalling_erases_the_agents_after_the_folders() {
 /// The account is added again while its agent's purge still runs: it
 /// stays signed in when the purge ends (the purge's late success marks
 /// nothing), and is not reported as holding memory.
+#[cfg(any(feature = "app-hub", native_mobile))]
 #[test]
 fn an_account_added_again_while_its_purge_runs_stays_signed_in() {
     let _one = PURGER_TESTS.lock().unwrap_or_else(|e| e.into_inner());

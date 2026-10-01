@@ -481,17 +481,39 @@ impl approvals::AppConfirm for SheetBridge {
 /// under the app's jail, when the host's storage is set up, the app's agent
 /// has files, and the account is not suspended or refused.
 pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
-    let storage = crate::app_storage::host()?;
+    agent_workspace_in(crate::app_storage::host()?, app_id, account)
+}
+
+/// Whether `app_id`'s agents are per account: a native app's entry says so,
+/// a script app's (`card.<id>`) manifest `storage.accounts` (Mail); else it
+/// acts for the device. The one rule every per-account decision here uses
+/// ([`account_key`]).
+fn keeps_accounts(storage: &crate::app_storage::Storage, app_id: &str) -> bool {
     let app = app_of_peer(app_id);
-    let (keeps_accounts, has_files) = match crate::native_apps::find(app) {
-        Some(entry) => (entry.accounts, !entry.octos.is_empty() || crate::dev_mode::grants_all(app)),
-        // A script app (`card.<id>`) acts for the device.
-        None => (false, app_id != app),
+    match crate::native_apps::find(app) {
+        Some(entry) => entry.accounts,
+        None => app_id != app && storage.spec(app).accounts,
+    }
+}
+
+/// The account `app_id`'s storage is keyed by for `account`: the account
+/// for an app that keeps accounts ([`keeps_accounts`]), else the device
+/// (`None`). Workspace, suspension, refusal and `read_parent` all use it.
+fn account_key<'a>(storage: &crate::app_storage::Storage, app_id: &str, account: Option<&'a str>) -> Option<&'a str> {
+    account.filter(|_| keeps_accounts(storage, app_id))
+}
+
+/// [`agent_workspace`] on `storage`.
+pub fn agent_workspace_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<PathBuf> {
+    let app = app_of_peer(app_id);
+    let has_files = match crate::native_apps::find(app) {
+        Some(entry) => !entry.octos.is_empty() || crate::dev_mode::grants_all(app),
+        None => app_id != app && storage.spec(app).agent_workspace != crate::app_storage::AgentWorkspace::None,
     };
     if !has_files {
         return None;
     }
-    let account = keeps_accounts.then_some(account);
+    let account = account_key(storage, app_id, Some(account));
     if storage.is_signed_out(app, account) || storage.refused(app, account).is_some() {
         return None;
     }
@@ -500,13 +522,24 @@ pub fn agent_workspace(app_id: &str, account: &str) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// [`suspended`] on `storage`.
+pub fn suspended_in(storage: &crate::app_storage::Storage, app_id: &str, account: Option<&str>) -> bool {
+    storage.is_signed_out(app_of_peer(app_id), account_key(storage, app_id, account))
+}
+
 /// Whether the app's conversation reads its account's folder (octos
 /// `read_parent`, ADR 0004 §11): the manifest's `storage.agent_workspace`
 /// is `"account"` and the agent has that folder as its workspace now
-/// ([`agent_workspace`]: files, not suspended, not refused).
+/// ([`agent_workspace`]: files, not suspended, not refused, keyed by
+/// [`account_key`]).
 pub fn context_reads_account(app_id: &str, account: &str) -> bool {
     let Some(storage) = crate::app_storage::host() else { return false };
-    reads_account(&storage.spec(app_of_peer(app_id)), agent_workspace(app_id, account).as_deref())
+    context_reads_account_in(storage, app_id, account)
+}
+
+/// [`context_reads_account`] on `storage`.
+pub fn context_reads_account_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> bool {
+    reads_account(&storage.spec(app_of_peer(app_id)), agent_workspace_in(storage, app_id, account).as_deref())
 }
 
 /// [`context_reads_account`]'s rule, on the app's declared storage and the
@@ -516,25 +549,16 @@ pub(crate) fn reads_account(spec: &crate::app_storage::StorageSpec, workspace: O
 }
 
 /// Why the startup check refused the workspace of `app_id`'s `account`,
-/// keyed like [`agent_workspace`]: the account for an app that keeps
-/// accounts, else the device folder (a script app's `card.<id>` peer too).
+/// keyed like [`agent_workspace`] ([`account_key`]): the account for an app
+/// that keeps accounts, native or script (Mail), else the device folder.
 pub fn workspace_refused_in(storage: &crate::app_storage::Storage, app_id: &str, account: &str) -> Option<String> {
-    let app = app_of_peer(app_id);
-    storage.refused(app, workspace_account(app_id, account))
-}
-
-/// The account a peer's workspace is keyed by: `account` for a native app
-/// that keeps accounts, else the device (`None`).
-fn workspace_account<'a>(app_id: &str, account: &'a str) -> Option<&'a str> {
-    crate::native_apps::find(app_of_peer(app_id)).is_some_and(|e| e.accounts).then_some(account)
+    storage.refused(app_of_peer(app_id), account_key(storage, app_id, Some(account)))
 }
 
 /// Whether `app_id`'s `account` is signed out or removed (ADR 0004 §11).
 pub fn suspended(app_id: &str, account: Option<&str>) -> bool {
     let Some(storage) = crate::app_storage::host() else { return false };
-    let app = app_of_peer(app_id);
-    let keeps_accounts = crate::native_apps::find(app).is_some_and(|e| e.accounts);
-    storage.is_signed_out(app, if keeps_accounts { account } else { None })
+    suspended_in(storage, app_id, account)
 }
 
 // ------------------------------------------------------------ the env

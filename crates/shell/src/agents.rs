@@ -153,7 +153,11 @@ pub fn prepare(app: &AgentApp) {
     set_prepared(&app.id, Some(Prepared::Preparing));
     let id = app.id.clone();
     let spawned = std::thread::Builder::new().name(format!("prepare-{id}")).spawn(move || {
-        let outcome = crate::ai_host::contained::prepare(&id);
+        // Its manifest's storage block first: which account it acts for.
+        let outcome = match crate::app_storage::host() {
+            Some(storage) => crate::app_storage::lifecycle::prepare_agent_with(storage, storage.layout().apps_root(), &id, |_| crate::ai_host::contained::prepare(&id)),
+            None => crate::ai_host::contained::prepare(&id),
+        };
         match &outcome {
             Ok(()) => makepad_widgets::log!("agents: {id}'s agent is prepared (its peer is listed for the system agent)"),
             Err(e) => makepad_widgets::log!("agents: {id}'s agent could not be prepared: {e}"),

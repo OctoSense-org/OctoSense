@@ -166,9 +166,58 @@ pub fn account_changed(storage: &Arc<Storage>, service_app: &str, previous: Opti
     }
 }
 
-/// Mail's host service gave an app an account, or took it away.
+/// Before a script app's agent is prepared (`agents::prepare`, which the
+/// system chat runs for every allowed agent before the app was ever
+/// opened): record its manifest's storage block, so its agent acts for the
+/// right account and its suspension is keyed right; then `prepare`.
+pub fn prepare_agent_with<R>(storage: &Storage, root: &Path, app_id: &str, prepare: impl FnOnce(&Storage) -> R) -> R {
+    if let Some(manifest) = script_manifest(root, app_id) {
+        match StorageSpec::from_manifest(&manifest, AppKind::Script) {
+            Ok(spec) => storage.set_spec(app_id, spec),
+            Err(e) => makepad_widgets::log!("app storage: {app_id}: {e}"),
+        }
+    }
+    prepare(storage)
+}
+
+/// The account a contained app's agent acts for (`contained::set_account_of`).
+pub fn contained_account(app: &str) -> Option<String> {
+    match super::host() {
+        Some(storage) => contained_account_in(storage, app),
+        None => Some(crate::ai_host::contained::ACCOUNT.to_owned()),
+    }
+}
+
+/// The device for an app without accounts; for one that keeps accounts
+/// (Mail), its active account (the one the person signed in to last, from
+/// Mail's host service), or none yet. One agent is live per app at a time,
+/// bound to that account (ADR 0004 §11).
+pub fn contained_account_in(storage: &Storage, app: &str) -> Option<String> {
+    if !storage.spec(app).accounts {
+        return Some(crate::ai_host::contained::ACCOUNT.to_owned());
+    }
+    #[cfg(any(feature = "app-hub", native_mobile))]
+    {
+        octosense_mail_service::active_account(&storage.layout().apps_root().join(".host"), app)
+    }
+    #[cfg(not(any(feature = "app-hub", native_mobile)))]
+    None
+}
+
+/// Mail's host service gave an app an account, or took it away; its live
+/// agent is then bound to the account it acts for now.
 #[cfg(any(feature = "app-hub", native_mobile))]
 pub fn mail_account(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
+    let change = mail_account_storage(storage, event);
+    let (octosense_mail_service::AccountEvent::Added { app_id, .. } | octosense_mail_service::AccountEvent::Removed { app_id, .. }) = event;
+    if storage.spec(app_id).accounts {
+        crate::ai_host::contained::account_changed(app_id);
+    }
+    change
+}
+
+#[cfg(any(feature = "app-hub", native_mobile))]
+fn mail_account_storage(storage: &Arc<Storage>, event: &octosense_mail_service::AccountEvent) -> Change {
     use octosense_mail_service::AccountEvent;
     match event {
         AccountEvent::Added { app_id, account } => account_changed(storage, app_id, None, Some(account)),
@@ -297,6 +346,7 @@ pub fn memory_notice(storage: &Storage, app_id: &str) -> Option<String> {
 /// host storage is set up): the brokers' account changes and Mail's.
 pub fn install(storage: &'static Arc<Storage>) {
     register_native_specs(storage);
+    crate::ai_host::contained::set_account_of(Some(contained_account));
     #[cfg(kernel)]
     set_purger(Some(kernel_purger()));
     crate::ai_host::app_peers::storage::observe_accounts(Some(Arc::new(move |app: &str, previous: Option<&str>, current: Option<&str>| {
