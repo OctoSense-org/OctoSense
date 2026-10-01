@@ -174,6 +174,45 @@ fn seccomp_refuses_the_other_abis_of_the_kernel() {
     assert_eq!(seccomp_verdict(&broad, X86_64, 101, 0), EPERM, "ptrace, always");
 }
 
+/// Under `home:rw`, what the next build reads or runs stays read-only on
+/// Linux too (macOS's profile does it after every grant): `~/.cargo`,
+/// `~/.rustup`, the checkout and its target dir, a `rust-toolchain` file,
+/// the shell's own directory. The rest of the home stays writable.
+#[cfg(target_os = "linux")]
+#[test]
+fn home_rw_leaves_the_next_builds_inputs_read_only() {
+    let scratch = Scratch::new("readonly");
+    let root = &scratch.0;
+    for dir in [".cargo/bin", ".rustup", "src/app/target/release", "Documents", "bin/shell", ".octosense/apps/probe", ".octosense/secrets/probe"] {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+    }
+    std::fs::write(root.join("src/rust-toolchain.toml"), "[toolchain]\n").unwrap();
+    std::fs::write(root.join("Documents/notes.txt"), "mine").unwrap();
+    let mut p = home_rw_with_octosense_home(root);
+    let read_only = [".cargo", ".rustup", "src/app", "src/rust-toolchain.toml", "bin/shell"].map(|r| root.join(r));
+    p.read_only = read_only.to_vec();
+    let rules = linux::rules(&p, 3, false);
+    let rx = linux::read_exec();
+    for ro in &read_only {
+        let ro = resolved(ro);
+        let covering: Vec<_> = rules.iter().filter(|r| ro.starts_with(&r.path) || r.path.starts_with(&ro)).collect();
+        assert!(covering.iter().any(|r| r.path == ro && r.access & (1 << 2) != 0), "{} stays readable: {covering:?}", ro.display());
+        assert!(covering.iter().all(|r| r.access & !rx == 0), "{} is never writable: {covering:?}", ro.display());
+    }
+    let documents = resolved(&root.join("Documents"));
+    assert!(rules.iter().any(|r| r.path == documents && r.access & (1 << 1) != 0), "the rest of the home stays writable");
+    if !sandbox_works_here() {
+        return;
+    }
+    let sh = |script: String| run("/bin/sh", &["-c", &script], &Policy { processes: true, ..p.clone() });
+    let (ok, out) = sh(format!("echo x > {}/.cargo/bin/cargo", root.display()));
+    assert!(!ok, "no write into ~/.cargo: {out}");
+    let (ok, out) = sh(format!("echo x > {}/src/app/target/release/app", root.display()));
+    assert!(!ok, "no write into the target dir: {out}");
+    let (ok, out) = sh(format!("cat {0}/src/rust-toolchain.toml && echo x >> {0}/Documents/notes.txt", root.display()));
+    assert!(ok, "reads a build input, writes elsewhere in the home: {out}");
+}
+
 #[test]
 fn the_terminals_manifest_gives_a_broad_sandbox_and_narrowing_only_takes_away() {
     let terminal = crate::native_apps::find("terminal").unwrap();
