@@ -11,21 +11,113 @@
 //! | amount | `amount`, `total`, `price` (a number or a numeric string) |
 //! | count | `count`, else the number of `items`, else the number of recipients |
 //!
-//! Nothing here guesses in the call's favour: a missing fact fails the
-//! condition that needs it.
+//! **Fail closed.** Nothing here guesses in the call's favour: a missing
+//! fact fails the condition that needs it, and so does one the reader
+//! cannot make out. An argument anywhere in the call (at any depth) whose
+//! name looks like the fact under a name the table does not list
+//! (`attachment`, `file_path`, `quantity`, `share_with`, `cost`, a nested
+//! `cc`), a value in a shape the reader does not know (a recipient object
+//! without an address, a count that is not a whole number), or two amounts
+//! that disagree: the fact is unreadable ([`Unreadable`]), and the rule
+//! does not answer; the person does.
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 const RECIPIENT_KEYS: &[&str] = &["to", "cc", "bcc", "recipients", "invitees", "attendees"];
 const ATTACHMENT_KEYS: &[&str] = &["attachments", "files"];
 const AMOUNT_KEYS: &[&str] = &["amount", "total", "price"];
+/// Words that make an argument name look like one of the facts. A name is
+/// split on `_`, `-`, `.` and camel case; one word matching (or starting
+/// with the stem, for `attach*`) is enough.
+const RECIPIENT_WORDS: &[&str] = &[
+    "to", "cc", "bcc", "recipient", "recipients", "invitee", "invitees", "attendee", "attendees", "participant", "participants", "guest", "guests", "member", "members", "email", "emails",
+    "address", "addresses", "phone", "phones", "contact", "contacts", "share", "notify", "user", "users", "people", "person",
+];
+const ATTACHMENT_WORDS: &[&str] = &["attachment", "attachments", "file", "files", "path", "paths", "upload", "uploads", "document", "documents", "media", "image", "images", "photo", "photos", "blob", "blobs"];
+const AMOUNT_WORDS: &[&str] = &["amount", "amounts", "total", "totals", "price", "prices", "cost", "costs", "fee", "fees", "sum", "payment", "subtotal", "charge"];
+const COUNT_WORDS: &[&str] = &["count", "counts", "quantity", "quantities", "qty", "number", "times", "repeat", "repeats", "copies", "batch", "limit", "max", "n"];
 /// Argument names redacted even when the schema does not type them.
 const SECRET_NAMES: &[&str] = &["password", "passphrase", "secret", "token", "api_key", "apikey", "pin", "otp", "one_time_code", "private_key", "access_token", "refresh_token", "client_secret"];
 pub const REDACTED: &str = "••••••";
 
-fn addresses(v: &Value, out: &mut Vec<String>) {
+/// A fact the call carries in a shape (or under a name) the reader does
+/// not know: every condition that needs it fails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Unreadable;
+
+/// The words of an argument name: `shareWith` → `share`, `with`.
+fn words(name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if c == '_' || c == '-' || c == '.' || c == ' ' {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if c.is_uppercase() && prev_lower && !cur.is_empty() {
+            out.push(std::mem::take(&mut cur));
+        }
+        prev_lower = c.is_lowercase() || c.is_ascii_digit();
+        cur.extend(c.to_lowercase());
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn named_like(name: &str, vocabulary: &[&str]) -> bool {
+    words(name).iter().any(|w| vocabulary.contains(&w.as_str()) || (vocabulary == ATTACHMENT_WORDS && w.starts_with("attach")))
+}
+
+/// Every (name, value) in the call, at any depth, except the top-level
+/// keys in `skip` (the table's own, read by the fact itself) and, unless
+/// `into_skipped`, what they hold.
+fn walk<'a>(args: &'a Value, skip: &[&str], into_skipped: bool, out: &mut Vec<(&'a str, &'a Value)>) {
+    fn inner<'a>(v: &'a Value, out: &mut Vec<(&'a str, &'a Value)>) {
+        match v {
+            Value::Object(map) => {
+                for (k, v) in map {
+                    out.push((k.as_str(), v));
+                    inner(v, out);
+                }
+            }
+            Value::Array(items) => items.iter().for_each(|i| inner(i, out)),
+            _ => {}
+        }
+    }
+    match args {
+        Value::Object(map) => {
+            for (k, v) in map {
+                if skip.contains(&k.as_str()) {
+                    if into_skipped {
+                        inner(v, out);
+                    }
+                    continue;
+                }
+                out.push((k.as_str(), v));
+                inner(v, out);
+            }
+        }
+        other => inner(other, out),
+    }
+}
+
+/// The other arguments named like a fact (not the table's own keys).
+fn lookalikes<'a>(args: &'a Value, own: &[&str], into_own: bool, vocabulary: &[&str]) -> Vec<(&'a str, &'a Value)> {
+    let mut all = Vec::new();
+    walk(args, own, into_own, &mut all);
+    all.into_iter().filter(|(k, _)| named_like(k, vocabulary)).collect()
+}
+
+fn addresses(v: &Value, out: &mut Vec<String>) -> Result<(), Unreadable> {
     match v {
+        Value::Null => Ok(()),
         Value::String(s) => {
             for part in s.split([',', ';']) {
                 let part = part.trim();
@@ -39,61 +131,97 @@ fn addresses(v: &Value, out: &mut Vec<String>) {
                 };
                 out.push(addr.trim().to_lowercase());
             }
+            Ok(())
         }
-        Value::Array(items) => items.iter().for_each(|i| addresses(i, out)),
-        Value::Object(map) => {
-            if let Some(a) = ["address", "email", "id", "user_id"].iter().find_map(|k| map.get(*k)) {
-                addresses(a, out);
-            }
-        }
-        _ => {}
+        Value::Array(items) => items.iter().try_for_each(|i| addresses(i, out)),
+        Value::Object(map) => match ["address", "email", "id", "user_id"].iter().find_map(|k| map.get(*k)) {
+            Some(a @ Value::String(_)) => addresses(a, out),
+            _ => Err(Unreadable),
+        },
+        Value::Bool(_) | Value::Number(_) => Err(Unreadable),
     }
 }
 
-/// Every recipient the call names, lower-cased.
-pub fn recipients(args: &Value) -> Vec<String> {
+/// Every recipient the call names, lower-cased; unreadable when one of
+/// them is in a shape the reader does not know, or the call names people
+/// under another argument (at any depth).
+pub fn recipients_checked(args: &Value) -> Result<Vec<String>, Unreadable> {
     let mut out = Vec::new();
+    let Some(map) = args.as_object() else { return if args.is_null() { Ok(out) } else { Err(Unreadable) } };
     for key in RECIPIENT_KEYS {
-        if let Some(v) = args.get(*key) {
-            addresses(v, &mut out);
+        if let Some(v) = map.get(*key) {
+            addresses(v, &mut out)?;
         }
+    }
+    if lookalikes(args, RECIPIENT_KEYS, false, RECIPIENT_WORDS).iter().any(|(_, v)| !empty(v)) {
+        return Err(Unreadable);
     }
     out.sort();
     out.dedup();
-    out
+    Ok(out)
 }
 
-/// Whether the call carries attachments.
+/// Whether a value carries nothing.
+fn empty(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Bool(b) => !*b,
+        Value::Array(a) => a.is_empty(),
+        Value::String(s) => s.trim().is_empty(),
+        Value::Object(o) => o.is_empty(),
+        Value::Number(_) => false,
+    }
+}
+
+/// Whether the call carries attachments: the table's keys, or anything
+/// named like an attachment at any depth (`attachment`, `file_path`, a
+/// nested `attachments`), that is not empty. Fails closed: whatever the
+/// reader cannot rule out counts as an attachment.
 pub fn has_attachments(args: &Value) -> bool {
-    ATTACHMENT_KEYS.iter().filter_map(|k| args.get(*k)).any(|v| match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Array(a) => !a.is_empty(),
-        Value::String(s) => !s.trim().is_empty(),
-        Value::Object(o) => !o.is_empty(),
-        Value::Number(_) => true,
-    })
+    let own = args.as_object().map(|m| ATTACHMENT_KEYS.iter().filter_map(|k| m.get(*k)).any(|v| !empty(v))).unwrap_or(false);
+    own || lookalikes(args, ATTACHMENT_KEYS, false, ATTACHMENT_WORDS).iter().any(|(_, v)| !empty(v))
 }
 
-/// The amount the call names, if any.
-pub fn amount(args: &Value) -> Option<f64> {
-    AMOUNT_KEYS.iter().filter_map(|k| args.get(*k)).find_map(|v| match v {
+fn number(v: &Value) -> Result<f64, Unreadable> {
+    let n = match v {
         Value::Number(n) => n.as_f64(),
         Value::String(s) => s.trim().trim_start_matches(['$', '€', '£', '¥']).replace(',', "").parse().ok(),
-        Value::Object(o) => o.get("value").and_then(|v| v.as_f64()),
+        Value::Object(o) => o.get("value").and_then(Value::as_f64),
         _ => None,
-    })
+    };
+    n.filter(|n| n.is_finite()).ok_or(Unreadable)
 }
 
-/// How many things the call acts on.
-pub fn count(args: &Value) -> u64 {
-    if let Some(n) = args.get("count").and_then(|v| v.as_u64()) {
-        return n;
+/// The amount the call names: the largest of every amount it carries
+/// (`amount`, `total`, `price`, and anything named like one at any depth);
+/// `None` when there is none, or one the reader cannot parse.
+pub fn amount(args: &Value) -> Option<f64> {
+    let own: Vec<&Value> = args.as_object().map(|m: &Map<String, Value>| AMOUNT_KEYS.iter().filter_map(|k| m.get(*k)).collect()).unwrap_or_default();
+    let others = lookalikes(args, AMOUNT_KEYS, false, AMOUNT_WORDS);
+    let mut max: Option<f64> = None;
+    for v in own.into_iter().chain(others.into_iter().map(|(_, v)| v)) {
+        let n = number(v).ok()?;
+        max = Some(max.map_or(n, |m| m.max(n)));
     }
-    if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
-        return items.len() as u64;
+    max
+}
+
+/// How many things the call acts on: `count` (a whole number), else the
+/// number of `items`, else the number of recipients (at least one).
+/// Unreadable when `count` or `items` is in another shape, the recipients
+/// are unreadable, or anything else is named like a count (`quantity`, a
+/// nested `repeat`, a `quantity` inside one of the `items`).
+pub fn count_checked(args: &Value) -> Result<u64, Unreadable> {
+    if !lookalikes(args, &["count", "items"], true, COUNT_WORDS).is_empty() {
+        return Err(Unreadable);
     }
-    recipients(args).len().max(1) as u64
+    if let Some(v) = args.get("count") {
+        return v.as_u64().ok_or(Unreadable);
+    }
+    if let Some(v) = args.get("items") {
+        return v.as_array().map(|a| a.len() as u64).ok_or(Unreadable);
+    }
+    Ok(recipients_checked(args)?.len().max(1) as u64)
 }
 
 /// Whether an argument name is a secret: declared by the schema, or named
@@ -159,8 +287,10 @@ mod tests {
     #[test]
     fn recipients_from_every_shape() {
         let args = json!({"to": "Ana <Ana@Example.org>, bo@example.org", "cc": ["chen@example.org"], "attendees": [{"email": "ed@example.org"}]});
-        assert_eq!(recipients(&args), vec!["ana@example.org", "bo@example.org", "chen@example.org", "ed@example.org"]);
-        assert!(recipients(&json!({"subject": "x"})).is_empty());
+        assert_eq!(recipients_checked(&args).unwrap(), vec!["ana@example.org", "bo@example.org", "chen@example.org", "ed@example.org"]);
+        assert!(recipients_checked(&json!({"subject": "x"})).unwrap().is_empty());
+        assert_eq!(recipients_checked(&json!({"to": [{"name": "Eve"}]})), Err(Unreadable));
+        assert_eq!(recipients_checked(&json!({"to": "a@x", "shareWith": "eve@x"})), Err(Unreadable), "camel case splits");
     }
 
     #[test]
@@ -170,9 +300,10 @@ mod tests {
         assert_eq!(amount(&json!({"amount": "$1,250.50"})), Some(1250.5));
         assert_eq!(amount(&json!({"total": 9})), Some(9.0));
         assert_eq!(amount(&json!({})), None);
-        assert_eq!(count(&json!({"count": 7})), 7);
-        assert_eq!(count(&json!({"items": [1, 2, 3]})), 3);
-        assert_eq!(count(&json!({"to": ["a@x", "b@x"]})), 2);
+        assert_eq!(count_checked(&json!({"count": 7})), Ok(7));
+        assert_eq!(count_checked(&json!({"items": [1, 2, 3]})), Ok(3));
+        assert_eq!(count_checked(&json!({"to": ["a@x", "b@x"]})), Ok(2));
+        assert_eq!(count_checked(&json!({"quantity": 2})), Err(Unreadable));
     }
 
     #[test]

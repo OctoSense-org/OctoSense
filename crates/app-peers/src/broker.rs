@@ -2185,7 +2185,7 @@ impl Inner {
                 question.turn_origin = match (st.speaker_of(&question.turn_id), st.trigger_of(&question.turn_id), question.origin) {
                     (Some(speaker), _, _) => speaker.kind,
                     (None, TurnTrigger::SystemAgent, _) | (None, _, CallOrigin::PeerInput) => host_tools::TurnOrigin::SystemAgent,
-                    (None, TurnTrigger::Person, _) => host_tools::TurnOrigin::Person,
+                    (None, TurnTrigger::Person | TurnTrigger::AppSaysPerson, _) => host_tools::TurnOrigin::Person,
                     (None, TurnTrigger::App | TurnTrigger::Incoming { .. }, _) => host_tools::TurnOrigin::App,
                     (None, TurnTrigger::Unknown, CallOrigin::Context) => host_tools::TurnOrigin::Person,
                     (None, TurnTrigger::Unknown, _) => host_tools::TurnOrigin::App,
@@ -2941,14 +2941,13 @@ impl ContextInner {
         if text.is_empty() || text.len() > 32 * 1024 {
             return Err("Provide text (at most 32 KiB)".into());
         }
-        let kind = match trigger {
+        let kind = match &trigger {
             // The system agent speaks only through its own `peer/input`.
             TurnTrigger::SystemAgent => return Err("Only the system agent's own input speaks for it".into()),
             // The app itself started the run (its schedule, content that
-            // arrived): the app speaks.
-            TurnTrigger::App | TurnTrigger::Incoming { .. } => host_tools::TurnOrigin::App,
-            // The person in the app's UI or its cards.
-            TurnTrigger::Person | TurnTrigger::Unknown => host_tools::TurnOrigin::Person,
+            // arrived): the app speaks; otherwise the person in the app's UI
+            // or its cards (the label only: rules read the trigger).
+            other => other.speaker(),
         };
         let label = inner.cfg.app_label.trim();
         let speaker = Speaker { kind, label: (!label.is_empty()).then(|| label.to_owned()) };
