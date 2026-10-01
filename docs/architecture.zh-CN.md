@@ -274,11 +274,11 @@ Agent 的工具来源：
 | 其他应用可共享的工具，由 Shell 路由 | Calendar 的 Agent 调用 `mail.send` | 所属应用，经 Shell | 已在 main 上注册、逐次检查并路由（`relay::Catalog`）；还没有任何授权（App Hub 安装时授权和 `native-apps.json` 授权属于步骤 6） |
 | 命令执行 | `terminal.run`（Terminal 的可共享工具：`confirm: host`、`auto_approvable: false`） | 宿主工具，在用户可见的终端中 | 系统 Agent 已在 main：Setup › Assistant › Command execution 开启时注册在其会话上，每次调用经路由作为命令实时批准，输入到正在运行的 Terminal（macOS 和 Windows 上是进程应用；进程内 Terminal 只提供读取工具）。授予应用 Agent 属于步骤 11 |
 
-**系统 Agent 的工具集**（`crates/kernel/src/system_tools.rs`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)）。**已在 main**，部分生效：
+**系统 Agent 的工具集**（`crates/kernel/src/system_tools.rs`，[#117](https://github.com/OctoSense-org/OctoSense/pull/117)）。**已在 main**，已生效：
 
 - 默认列表 `SYSTEM_AGENT_TOOLS`：监督（`peer_send_input`、`peer_gather`、`peer_list`、`peer_respond`；不含 `peer_handoff`，也不含 `peer_close`，`_main` 配置文件的 `tool_policy` 对所有智能体禁用它）、其工作区的文件工具、`ask_user_question` 和查看媒体、记忆、`web_search` / `web_fetch`、`tool_search`。授权在此基础上增加（`SystemAgentTools`：工具箱工具、其他应用的可共享工具、命令执行）。
 - **从不提供 octos 自己的 shell。** 每次启动内核前，`enforce` 写入 `_main` profile 的 `tool_policy`，拒绝 `group:runtime`（`shell`、`bash`、`exec_command`、`write_stdin`）。它只替换 OctoSense 自己写的策略，并拒绝用户自己的 octos 主目录。
-- **还不是精确列表。** octos#2567 的宿主会话集合可以用 `generic_tools` 收窄会话，但 Shell 注册时不传它（按 #2567 的约定：该列表会收窄该会话上所有客户端的回合），因此系统 Agent 仍会得到 octos 注册的其余所有工具；精确列表的测试已保留但被忽略（持久的宿主专用列表是 octos#2605）。
+- **恰好是它的列表。** 每次内核启动时，在宿主自己的连接上、在任何使用方的帧之前，用 octos 持久的宿主专用 `session/tool_list/set`（octos#2648）把系统会话的内核工具设为 `SystemAgentTools::kernel_tools`；授权变化时再设一次。该会话上的每个回合（无论由谁发起）都被收窄到它；宿主工具（`terminal.run`）在它之外注册，`spawn` 系列工具从不在其中。真实内核测试：`a_system_agent_turn_is_offered_exactly_the_system_agent_tools`。
 - **从 Settings 开启命令执行**（默认关闭，每条命令实时批准）：Setup › Assistant › Command execution 设置授权；开启期间，系统对话在自己的连接上把 `terminal.run` 注册到系统会话（不带 `peer` 的 `peer/tools/register`），关闭时立即撤回。octos 以某个应用 peer 的宿主令牌作为凭据，因此在某个应用的 Agent 启动之前，对话会说明暂时无法提供。
 
 **外部客户端**只有 octos 的固定允许列表（[第 3 节](#内核与客户端之间的-oup)）；宿主路由的工具、开发者授权和 `dev.run` 永远到不了它们。
