@@ -1130,3 +1130,303 @@ fn a_running_turns_request_is_shown_to_the_other_lane() {
         "the running turn's request and status are shown to the person's lane: {shown}"
     );
 }
+
+/// A host that runs `rinx.echo` and counts every execution.
+struct CountHost(Mutex<Vec<HostToolCall>>);
+impl ToolHost for CountHost {
+    fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
+        Ok(vec![json!({"name": "rinx.echo", "description": "Echo a text back.", "risk": "read",
+            "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}})])
+    }
+    fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
+        let text = call.args["text"].as_str().unwrap_or("").to_owned();
+        self.0.lock().unwrap().push(call);
+        reply.finish(ToolOutcome::Ok(json!({"echo": text})));
+    }
+}
+
+/// ADR 0004 §5 ("One driver per app peer") on the real kernel: two
+/// instances of one app on the shell's one kernel connection serve one
+/// peer; the system agent's input runs once and its tool call runs once.
+#[test]
+fn two_instances_of_one_app_run_the_system_agents_input_and_its_call_once() {
+    let Some(program) = kernel() else { return };
+    let dir = temp("two-instances");
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let host = Arc::new(CountHost(Mutex::new(Vec::new())));
+    let instance = || {
+        let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+        let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+        cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+        cfg.tool_host = Some(ToolHostHandle(host.clone() as Arc<dyn ToolHost>));
+        Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())))
+    };
+    let first = instance();
+    first.set_account(Some("@alice:example.org"));
+    first.bind().expect("the first instance bound");
+    let second = instance();
+    second.set_account(Some("@alice:example.org"));
+    second.bind().expect("the second instance bound");
+    let (slug, _) = first.peer().unwrap();
+    assert_eq!(second.peer().unwrap().0, slug, "one peer");
+    assert!(first.drives() && !second.drives(), "the oldest instance drives it");
+    first
+        .host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": format!("TELL_PEER_TOOL:{slug}")}]}),
+        )
+        .expect("system turn");
+    for _ in 0..120 {
+        if !host.0.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    std::thread::sleep(Duration::from_secs(3));
+    let calls = host.0.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "the call ran once: {calls:?}");
+    assert_eq!(calls[0].origin, CallOrigin::PeerInput);
+    first.release();
+    second.release();
+    drop(first);
+    drop(second);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// octos#2658: the shell's consumers share ONE kernel connection that never
+/// closes, so closing an app used to leave its peer's route in place and
+/// the system agent's `peer_send_input` was accepted with nobody to run it.
+/// Now the app's last instance releases the route (`peer/tools/unregister`)
+/// and the system agent's input fails visibly ("not connected"), while the
+/// kernel keeps serving the other consumer.
+#[test]
+fn closing_the_app_releases_its_route_so_the_system_agents_input_fails() {
+    let Some(program) = kernel() else { return };
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("unregister");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    // Another consumer of the shell's one kernel connection stays open.
+    let observer = broker(&core, "observer", "Observer");
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound and its tools registered");
+    let (slug, _) = rinx.peer().unwrap();
+    observer.host_request("session/open", json!({"session_id": "_main:api:octosense#system", "profile_id": "_main"})).expect("the observer's connection");
+    rinx.release();
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(core.status().running, "the kernel keeps serving the other consumer");
+
+    observer
+        .host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": format!("TELL_PEER_AGAIN:{slug}")}]}),
+        )
+        .expect("system turn");
+    let mut transcript = String::new();
+    for _ in 0..120 {
+        transcript = observer
+            .host_request("session/hydrate", json!({"session_id": "_main:api:octosense#system", "include": ["messages"]}))
+            .unwrap_or(Value::Null)
+            .to_string();
+        if transcript.contains("not connected") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    assert!(transcript.contains("is not connected"), "the system agent's input failed visibly: {transcript}");
+    drop(rinx);
+    drop(observer);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ADR 0004 §11 with octos#2649: removing an account erases its agent.
+/// After a turn, `purge::purge_app` purges the recorded peer on the real
+/// kernel and drops the host's record; the same (app, account) then binds
+/// a NEW peer (a new host token), and a second purge of the old record has
+/// nothing left to do.
+#[test]
+fn removing_an_account_purges_its_peer_and_the_account_binds_a_new_one() {
+    let Some(program) = kernel() else { return };
+    let model = start_model();
+    let dir = temp("purge");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let state = core_dir.parent().unwrap().join("host-state");
+    let rinx = broker(&core, "rinx", "Rinx");
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound");
+    let ctx = rinx.open_context(spec("@alice:example.org", "app#1")).unwrap();
+    run(&ctx, ContextOp::Turn { text: "remember PURGE_ME".into() }, Duration::from_secs(60)).expect("a completion").expect("the turn");
+    let key = octosense_app_peers::broker::app_namespace("rinx", "@alice:example.org");
+    let before = octosense_app_peers::peer_record::load(&state, &key).expect("recorded").token;
+
+    let host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", &state);
+    let connector = CoreConnector::shared(core.clone());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let purged = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "rinx", &["Rinx".to_owned()], Some("@alice:example.org")));
+    assert!(purged.ok(), "{purged:?}");
+    assert_eq!(purged.erased, std::slice::from_ref(&key));
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_none(), "the record is dropped");
+    assert!(rinx.peer().is_none(), "the live broker forgot it");
+
+    rinx.bind().expect("the account binds again");
+    let after = octosense_app_peers::peer_record::load(&state, &key).expect("a new record").token;
+    assert_ne!(before, after, "a new peer, not a resume");
+    drop(ctx);
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// ADR 0004 §11 gap 7 with octos#2647: where the agent reads its account
+/// folder, the app's conversation (the person's lane) is opened with
+/// `read_parent` and its `read_file` reads a file in the account folder; a
+/// plain request context (an app's client) stays fenced and cannot.
+#[test]
+fn the_apps_conversation_reads_the_account_folder_and_a_client_context_does_not() {
+    let Some(program) = kernel() else { return };
+    struct ReadHost(PathBuf);
+    impl ToolHost for ReadHost {
+        fn agent_workspace(&self, _app: &str, _account: &str) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+        fn context_reads_account(&self, _app: &str, _account: &str) -> bool {
+            true
+        }
+    }
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let dir = temp("read-parent");
+    let ws = dir.join("apps/rinx/accounts/alice");
+    std::fs::create_dir_all(&ws).unwrap();
+    let ws = std::fs::canonicalize(&ws).unwrap();
+    std::fs::write(ws.join("notes.txt"), "ACCOUNT_NOTE_42").unwrap();
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+    let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+    cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+    cfg.tool_host = Some(ToolHostHandle(Arc::new(ReadHost(ws.clone())) as Arc<dyn ToolHost>));
+    let rinx = Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())));
+    rinx.set_account(Some("@alice:example.org"));
+    rinx.bind().expect("peer bound in the account folder");
+    let ask = format!("CALL_TOOL:read_file {}", json!({"path": ws.join("notes.txt")}));
+
+    let chat = rinx.open_conversation(spec("@alice:example.org", "rinx-ui")).unwrap();
+    let answer = run(&chat, ContextOp::TurnFrom { text: ask.clone(), trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the conversation's turn");
+    assert!(answer["text"].as_str().unwrap_or("").contains("ACCOUNT_NOTE_42"), "the conversation read the account folder: {answer}");
+
+    let client = rinx.open_context(spec("@alice:example.org", "mini.notes#1")).unwrap();
+    let answer = run(&client, ContextOp::Turn { text: ask }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the client's turn");
+    let text = answer["text"].as_str().unwrap_or("").to_owned();
+    assert!(text.starts_with("TOOL SAID"), "{answer}");
+    assert!(!text.contains("ACCOUNT_NOTE_42"), "a client's context stays fenced: {answer}");
+
+    // The conversation's view stops at other contexts: a mini app's
+    // context folder (`contexts/<its id>/`) is refused to it.
+    let other = std::fs::read_dir(ws.join("contexts")).unwrap().flatten()
+        .map(|e| e.path()).find(|p| p.file_name().unwrap().to_string_lossy().contains("mini-notes"))
+        .expect("the mini app's context folder");
+    std::fs::write(other.join("private.txt"), "MINI_APP_SECRET_7").unwrap();
+    let ask_other = format!("CALL_TOOL:read_file {}", json!({"path": other.join("private.txt")}));
+    let answer = run(&chat, ContextOp::TurnFrom { text: ask_other, trigger: TurnTrigger::Person }, Duration::from_secs(60))
+        .expect("a completion")
+        .expect("the conversation's second turn");
+    let text = answer["text"].as_str().unwrap_or("").to_owned();
+    assert!(text.starts_with("TOOL SAID"), "{answer}");
+    assert!(!text.contains("MINI_APP_SECRET_7"), "another context's folder is refused to the conversation: {answer}");
+    assert!(text.contains("outside session scope"), "refused by octos's scope check: {answer}");
+    drop((chat, client));
+    rinx.release();
+    drop(rinx);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A legacy record (saved before records carried the peer's name) on the
+/// real kernel: the peer was staged under the broker's old name
+/// `<label> <8 hex>`. A purge that guesses the wrong label gets
+/// `peer_not_found` and keeps the record (the agent stays suspended); the
+/// right label purges it and drops the record.
+#[test]
+fn a_legacy_unnamed_record_is_kept_on_a_wrong_guess_and_purged_on_the_right_one() {
+    let Some(program) = kernel() else { return };
+    let model = start_model();
+    let dir = temp("purge-legacy");
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let state = core_dir.parent().unwrap().join("host-state");
+    let observer = broker(&core, "observer", "Observer");
+    let account = "@legacy:example.org";
+    let key = octosense_app_peers::broker::app_namespace("legacy.app", account);
+    let tag = octosense_app_peers::broker::account_tag(account);
+    observer.host_request("session/open", json!({"session_id": "_main:api:octosense#system", "profile_id": "_main"})).unwrap();
+    let staged = observer
+        .host_request("peer/prepare", json!({"profile_id": "_main", "session_id": "_main:api:octosense#system",
+            "names": [format!("Legacy {}", &tag[..8])], "brief": "legacy", "memory_namespace": key, "resume": true}))
+        .expect("a peer staged under the old name");
+    let token = staged["host_token"].as_str().expect("a host token").to_owned();
+    octosense_app_peers::peer_record::save(&state, &key, &octosense_app_peers::peer_record::PeerRecord {
+        token, cwd: staged["cwd"].as_str().map(str::to_owned), namespace: None, name: None, legacy: false,
+    }).unwrap();
+
+    let host = octosense_app_peers::purge::PurgeHost::new("_main", "_main:api:octosense#system", &state);
+    let connector = CoreConnector::shared(core.clone());
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let wrong = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &["legacy.app".to_owned()], Some(account)));
+    assert!(wrong.erased.is_empty() && wrong.failed.len() == 1, "{wrong:?}");
+    assert!(wrong.failed[0].1.contains("peer_not_found"), "{wrong:?}");
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_some(), "kept on a wrong guess");
+
+    let labels = ["legacy.app".to_owned(), "Legacy".to_owned()];
+    let right = runtime.block_on(octosense_app_peers::purge::purge_app(&connector, &host, "legacy.app", &labels, Some(account)));
+    assert!(right.ok(), "{right:?}");
+    assert!(octosense_app_peers::peer_record::load(&state, &key).is_none());
+    drop(observer);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}

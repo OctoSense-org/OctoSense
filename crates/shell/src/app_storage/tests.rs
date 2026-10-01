@@ -103,6 +103,19 @@ fn the_account_hash_is_stable_normalized_and_opaque() {
     assert_eq!(normalize_account(" X@Y "), "x@y");
 }
 
+/// One account key: the folder name and the agent's memory tag agree on
+/// which ids are one account. The broker (and its tag) is built only where
+/// the shell hosts the kernel (`cfg(kernel)`: feature `octos-core`).
+#[cfg(kernel)]
+#[test]
+fn should_key_the_folder_and_the_memory_tag_the_same_way_when_ids_differ_in_case() {
+    use crate::ai_host::app_peers::broker::account_tag;
+    for (a, b) in [("Alice@Example.org", "alice@example.org"), (" @bob:x ", "@bob:x"), ("alice@example.org", "bob@example.org")] {
+        assert_eq!(account_hash(a) == account_hash(b), account_tag(a) == account_tag(b), "{a:?} / {b:?}");
+    }
+    assert_eq!(normalize_account(" X@Y "), crate::ai_host::app_peers::storage::normalize_account(" X@Y "));
+}
+
 /// `SHA-256("octosense.account.v1\0alice@example.org")`, first 16 bytes.
 const PINNED_ALICE: &str = "d0c3ec9a8159479a7cf0933b0a539aa2";
 
@@ -241,6 +254,89 @@ fn removing_an_account_or_the_app_deletes_its_folders() {
     assert!(host.is_signed_out("mail", Some("b@x")));
 }
 
+/// A run that cannot reach the keychain (headless, tests) cannot delete
+/// the app's keychain items: it keeps the index that names them, so a
+/// later run with the keychain can, and deletes everything else.
+#[test]
+fn should_keep_the_keychain_index_when_an_uninstall_cannot_purge_it() {
+    let home = Scratch::new("keep-index");
+    let host = storage(&home.0);
+    let mail = host.open("mail").unwrap();
+    mail.secrets().put("a", b"pw").unwrap();
+    let index = home.0.join("secrets/mail").join(secrets::KEYCHAIN_INDEX);
+    std::fs::write(&index, "matrix.token\n").unwrap();
+    host.uninstall("mail").unwrap();
+    assert!(!home.0.join("apps/mail").exists());
+    assert!(index.is_file(), "the index of items this run could not delete stays");
+    assert!(!home.0.join("secrets/mail/a").exists(), "every other secret goes");
+}
+
+/// An uninstall never follows a symlinked `secrets/<app id>`: the link goes,
+/// whatever it points at stays.
+#[cfg(unix)]
+#[test]
+fn should_remove_only_the_link_when_an_apps_secrets_folder_is_a_symlink() {
+    let home = Scratch::new("secrets-link");
+    let host = storage(&home.0);
+    host.open("org.example.x").unwrap();
+    let victim = home.0.join("victim");
+    std::fs::create_dir_all(&victim).unwrap();
+    std::fs::write(victim.join("precious"), "keep").unwrap();
+    std::fs::write(victim.join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+    let link = home.0.join("secrets/org.example.x");
+    std::fs::remove_dir_all(&link).unwrap();
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+    host.uninstall("org.example.x").unwrap();
+    assert_eq!(std::fs::read_to_string(victim.join("precious")).unwrap(), "keep", "the target is untouched");
+    assert!(victim.join(secrets::KEYCHAIN_INDEX).is_file());
+    assert!(std::fs::symlink_metadata(&link).is_err(), "the link itself is gone");
+}
+
+/// What a keychain run purges at startup: only `secrets/<id>/` holding the
+/// index and nothing else, of an app with no jail; never an empty folder,
+/// a symlink, or a host-owned `os.*` folder; kept when the purge failed.
+#[test]
+fn should_purge_leftovers_only_for_an_index_alone_of_an_uninstalled_store_app() {
+    let home = Scratch::new("leftovers");
+    let root = home.0.join("secrets");
+    let dir = |id: &str| root.join(id);
+    for id in ["org.gone", "org.empty", "org.installed", "os.mail", "org.failing", "org.more"] {
+        std::fs::create_dir_all(dir(id)).unwrap();
+    }
+    for id in ["org.gone", "org.installed", "os.mail", "org.failing", "org.more"] {
+        std::fs::write(dir(id).join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+    }
+    std::fs::write(dir("org.more").join("token"), "t").unwrap();
+    #[cfg(unix)]
+    {
+        std::fs::create_dir_all(home.0.join("elsewhere")).unwrap();
+        std::fs::write(home.0.join("elsewhere").join(secrets::KEYCHAIN_INDEX), "k\n").unwrap();
+        std::os::unix::fs::symlink(home.0.join("elsewhere"), dir("org.linked")).unwrap();
+    }
+    let asked = std::cell::RefCell::new(Vec::new());
+    secrets::purge_leftovers_with(&root, |id| id != "org.installed", |id| {
+        asked.borrow_mut().push(id.to_owned());
+        id != "org.failing"
+    });
+    let mut asked = asked.into_inner();
+    asked.sort();
+    assert_eq!(asked, ["org.failing", "org.gone"]);
+    assert!(!dir("org.gone").exists(), "purged and removed");
+    assert!(dir("org.failing").join(secrets::KEYCHAIN_INDEX).is_file(), "a failed purge keeps its index");
+    for id in ["org.empty", "org.installed", "os.mail", "org.more"] {
+        assert!(dir(id).is_dir(), "{id} untouched");
+    }
+    #[cfg(unix)]
+    assert!(home.0.join("elsewhere").join(secrets::KEYCHAIN_INDEX).is_file());
+}
+
+/// A keychain purge keeps, in the index, every key it could not delete.
+#[test]
+fn should_keep_the_keys_a_purge_could_not_delete() {
+    let left = secrets::purge_keys(&["a".into(), "b".into(), "c".into()], |k| if k == "b" { Err("locked".into()) } else { Ok(()) });
+    assert_eq!(left, ["b"]);
+}
+
 // ---- the manifest block ---------------------------------------------------
 
 #[test]
@@ -323,6 +419,53 @@ fn every_system_app_manifest_storage_block_is_valid() {
         }
     }
     assert!(seen >= 5);
+}
+
+/// How every system app moves a file an earlier build left at the top of
+/// its jail: the copy is checked (it exists and reads back the same) before
+/// the old file goes; a failed or short copy is removed and the app keeps
+/// using the old file, so nothing is lost and the move is tried again.
+const MOVED: &str = r#"fn moved(name, path){
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
+        fs.remove(name)
+        return path
+    }
+    if fs.exists(path) { fs.remove(path) }
+    return name
+}"#;
+
+/// ADR 0004 §11: a script app's data is its account folder, the one its
+/// agent works in (a system app acts for the device: `accounts/device/`);
+/// what it can refetch is `cache/`. The Card runner's files are the jail,
+/// so a system app names those folders itself: outside [`MOVED`], every
+/// file it touches goes through `data_path` or `cache_path`, never a bare
+/// name at the jail's top. The one exception is Camera's captured images,
+/// whose paths the camera widget chooses (`ui.cam.last()`).
+#[test]
+fn should_keep_every_system_apps_files_in_its_account_folder_or_cache() {
+    let apps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps");
+    let widget_paths: &[(&str, &[&str])] = &[("camera", &["last)", "old)", "viewing)"])];
+    for app in ["news", "youtube", "photos", "maps", "camera"] {
+        let source = std::fs::read_to_string(apps.join(app).join("bundle/main.splash")).unwrap();
+        assert!(source.contains(r#"let DATA = "accounts/device/""#), "{app}: names its account folder");
+        assert!(source.contains(MOVED), "{app}: moves an old file only once the copy is verified");
+        let rest = source.replacen(MOVED, "", 1);
+        let allowed = widget_paths.iter().find(|(a, _)| *a == app).map(|(_, p)| *p).unwrap_or(&[]);
+        for (n, line) in rest.lines().enumerate() {
+            for call in ["fs.write(", "fs.read(", "fs.read_bytes(", "fs.exists(", "fs.remove("] {
+                let mut at_line = line;
+                while let Some(at) = at_line.find(call) {
+                    let arg = at_line[at + call.len()..].trim_start();
+                    let ok = arg.starts_with("data_path(") || arg.starts_with("cache_path(") || allowed.iter().any(|p| arg.starts_with(p));
+                    assert!(ok, "{app}/main.splash: {call} must go through data_path or cache_path: {line} (line {} outside moved)", n + 1);
+                    at_line = &at_line[at + call.len()..];
+                }
+            }
+        }
+    }
 }
 
 // ---- the startup check ----------------------------------------------------
@@ -506,4 +649,23 @@ fn a_platform_host_in_tests_keeps_secrets_in_files() {
     assert!(home.0.join("secrets/probe/k").is_file());
     host.uninstall("probe").unwrap();
     assert!(!home.0.join("secrets/probe").exists());
+}
+
+/// The host's answer to the broker: a refused workspace is refused for the
+/// account the relay keys it by (an app with accounts: that account; a
+/// script app's `card.<id>` peer: the device), for prepare, resume, input
+/// and calls alike.
+#[cfg(unix)]
+#[test]
+fn should_answer_refused_for_the_peers_account_when_the_startup_check_flags_it() {
+    let (home, host, ws, secret) = populated("host-refused");
+    let notes = host.open("notes").unwrap().account_folder(None).unwrap();
+    std::os::unix::fs::symlink(&secret, ws.join("token")).unwrap();
+    std::os::unix::fs::symlink(&secret, notes.join("token")).unwrap();
+    host.startup_check();
+    let why = crate::host_tools::workspace_refused_in(&host, "rinx", "alice");
+    assert!(why.is_some_and(|w| w.contains("secrets")), "rinx keeps accounts: alice's folder is refused");
+    assert!(crate::host_tools::workspace_refused_in(&host, "rinx", "bob").is_none(), "another account is not");
+    assert!(crate::host_tools::workspace_refused_in(&host, "card.notes", "anyone").is_some(), "a script app's peer uses the device folder");
+    drop(home);
 }

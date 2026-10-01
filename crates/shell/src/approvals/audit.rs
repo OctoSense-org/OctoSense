@@ -3,12 +3,44 @@
 //! the home: append-only, owner-only (0600). Each entry names the rule,
 //! the owning app, the tool, a digest of the exact arguments (never the
 //! arguments), the caller, the time and the result.
+//!
+//! Beside it, [`CALLS_FILE`]: every tool call the relay handles
+//! ([`CallAudit`]), approved or not, whoever made it, `dev.run` included.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Relative to the OctoSense home.
 pub const AUDIT_FILE: &str = "logs/approvals-audit.jsonl";
+/// Every tool call the shell's relay handles (ADR 0004 §8, §12, §13),
+/// relative to the OctoSense home: one line when a call arrives and one
+/// when it ends. Append-only, owner-only (0600).
+pub const CALLS_FILE: &str = "logs/tool-calls.jsonl";
+
+/// One line of [`CALLS_FILE`]: who called which owning app's tool, a digest
+/// of the exact arguments (never the arguments), and what became of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallAudit {
+    /// Unix seconds.
+    pub ts: u64,
+    pub call_id: String,
+    /// `own_agent[/client]`, `app/<id>`, `system_agent` ([`super::Caller::as_audit`]).
+    pub caller: String,
+    /// The owning app.
+    pub owner: String,
+    pub tool: String,
+    pub args_digest: String,
+    /// `call` (received) or `done` (answered, refused or cancelled).
+    pub phase: String,
+    /// `received`; then `ok`, `error:<kind>` or `cancelled`.
+    pub outcome: String,
+}
+
+/// Append one line to `home`'s [`CALLS_FILE`] (created owner-only).
+pub fn append_call(home: &Path, entry: &CallAudit) -> std::io::Result<()> {
+    let line = format!("{}\n", serde_json::to_string(entry).unwrap_or_default());
+    append_private(&home.join(CALLS_FILE), line.as_bytes())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
@@ -62,6 +94,10 @@ impl AuditLog {
     }
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
+    }
+    /// The home this log lives in (`None` for a memory log).
+    pub fn home(&self) -> Option<PathBuf> {
+        self.path.as_deref()?.parent()?.parent().map(Path::to_path_buf)
     }
 
     pub fn append(&mut self, entry: Entry) {

@@ -23,6 +23,13 @@
 //! 4. **Answer once** through the call's [`ToolReply`]; a cancel closes it
 //!    and tells whoever holds the call.
 //!
+//! **Audit** (ADR 0004 §8, §12, §13): every call is recorded when it
+//! arrives and when it ends, answered, refused or cancelled ([`CallAudit`]:
+//! caller, owning app, tool, argument digest, outcome) through the relay's
+//! one audit sink ([`Relay::set_audit`]; the shell's writes
+//! `logs/tool-calls.jsonl`, owner-only). `dev.run` and `terminal.run` are
+//! calls like any other, so they are audited here too.
+//!
 //! `host_tool` approvals (the kernel's `confirm: host` sheets) go to the
 //! router with the owning app, the exact arguments and the caller, and its
 //! decision answers the kernel.
@@ -34,6 +41,7 @@ use serde_json::Value;
 
 use crate::ai_host::app_peers::host_tools::{self, ApprovalAnswer, CallOrigin, CallerKind, HostToolApproval, HostToolCall, ToolExecutor, ToolOutcome, ToolReply};
 use crate::ai_host::app_peers::TurnTrigger;
+pub use crate::approvals::audit::CallAudit;
 use crate::approvals::{Caller, Decision, RequestContext, RequestId, Route, ToolSpec, Trigger};
 use crate::peer_link::{KernelToolCall, Refused, Risk, ToolCallResult};
 
@@ -58,7 +66,15 @@ pub const HOST_EXECUTOR: &str = "@shell";
 /// Whether `tool` is one the shell runs itself, as the calling app's own
 /// tool, whatever its declaration names (never routed to the app).
 pub fn is_host_run(tool: &str) -> bool {
-    tool == DEV_RUN
+    tool == DEV_RUN || super::files::TOOLS.contains(&tool)
+}
+
+/// A tool the shell runs, as `owner` declares it (its schemas).
+fn host_run_declaration(owner: &str, tool: &str) -> Option<Value> {
+    if tool == DEV_RUN {
+        return Some(super::dev_run::declaration(owner));
+    }
+    super::files::declarations(owner).into_iter().find(|d| d["name"] == tool)
 }
 /// The system toolbox (ADR 0002 §6), the owning app of the toolbox tools
 /// (`workflow.run`, `toolbox.search`, …; [`super::toolbox`] with the
@@ -285,9 +301,25 @@ impl Catalog {
         self.tools.get(owner)?.iter().find(|e| e["name"] == tool)
     }
 
-    /// The owning app of a declared tool name.
-    pub fn owner_of(&self, tool: &str) -> Option<&str> {
-        self.tools.iter().find(|(_, entries)| entries.iter().any(|e| e["name"] == tool)).map(|(owner, _)| owner.as_str())
+    /// The owning app of a tool another app is granted, resolved
+    /// explicitly by its namespace (ADR 0004 §7): the toolbox for its own
+    /// (`toolbox.*`, `workflow.*`), the native app of that id (`terminal.run`
+    /// → `terminal`), else the system app of the namespace (`mail.send` →
+    /// `os.mail`). Never whichever app declared the name first: a store app
+    /// may declare `mail.send` for itself, and owns only its own. `None` for
+    /// a name without a namespace (a kernel tool).
+    pub fn owner_of(&self, tool: &str) -> Option<String> {
+        let (ns, _) = tool.split_once('.')?;
+        if ns.is_empty() {
+            return None;
+        }
+        if ns == TOOLBOX || ns == "workflow" {
+            return Some(TOOLBOX.to_string());
+        }
+        if crate::native_apps::find(ns).is_some() {
+            return Some(ns.to_string());
+        }
+        Some(format!("os.{ns}"))
     }
 
     fn shareable(entry: &Value) -> bool {
@@ -372,6 +404,34 @@ struct Pending {
     at: At,
 }
 
+/// Where the relay's audit lines go.
+pub type AuditSink = Arc<dyn Fn(CallAudit) + Send + Sync>;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `reply`, audited: its answer (a result or an error) is recorded once, as
+/// `record` with phase `done`. Acknowledgements pass through.
+fn audited_reply(reply: ToolReply, record: CallAudit, sink: AuditSink) -> ToolReply {
+    let outer = reply.clone();
+    ToolReply::new(reply.call_id().to_string(), move |fields: Value| {
+        if fields.get("status").is_some() {
+            outer.acknowledge();
+            return;
+        }
+        let (outcome, audit) = if fields["ok"] == true {
+            (ToolOutcome::Ok(fields.get("data").cloned().unwrap_or(Value::Null)), "ok".to_string())
+        } else {
+            let kind = fields["error"]["kind"].as_str().unwrap_or("error").to_string();
+            (ToolOutcome::error(&kind, fields["error"]["message"].as_str().unwrap_or("").to_string()), format!("error:{kind}"))
+        };
+        if outer.finish(outcome) {
+            sink(CallAudit { ts: unix_now(), phase: "done".into(), outcome: audit, ..record.clone() });
+        }
+    })
+}
+
 /// The relay.
 pub struct Relay {
     pub catalog: Catalog,
@@ -382,11 +442,24 @@ pub struct Relay {
     usage: HashMap<String, Usage>,
     /// The caller's own reply for each checked one (a cancel closes both).
     outers: HashMap<String, ToolReply>,
+    /// Every call's audit line (ADR 0004 §8); none in a bare relay.
+    audit: Option<AuditSink>,
+    /// The audit line of each call still open, for its cancel.
+    audited: HashMap<String, CallAudit>,
 }
 
 impl Default for Relay {
     fn default() -> Self {
-        Relay { catalog: Catalog::shipped(), executors: HashMap::new(), calls: HashMap::new(), approvals: HashMap::new(), usage: HashMap::new(), outers: HashMap::new() }
+        Relay {
+            catalog: Catalog::shipped(),
+            executors: HashMap::new(),
+            calls: HashMap::new(),
+            approvals: HashMap::new(),
+            usage: HashMap::new(),
+            outers: HashMap::new(),
+            audit: None,
+            audited: HashMap::new(),
+        }
     }
 }
 
@@ -429,7 +502,9 @@ fn checked_reply(reply: ToolReply, tool: &str, schema: Option<Value>, max_bytes:
 pub fn trigger_of(stamped: &TurnTrigger) -> Trigger {
     match stamped {
         TurnTrigger::Person => Trigger::Person,
-        TurnTrigger::App => Trigger::App,
+        // The app's word that the person asked: its run, not the person's
+        // (only a shell surface vouches for the person).
+        TurnTrigger::AppSaysPerson | TurnTrigger::App => Trigger::App,
         TurnTrigger::Incoming { from } => Trigger::IncomingContent { from: from.clone() },
         TurnTrigger::SystemAgent => Trigger::SystemAgent,
         TurnTrigger::Unknown => Trigger::Unknown,
@@ -454,6 +529,21 @@ fn error_of(result: &str) -> ToolOutcome {
 }
 
 impl Relay {
+    /// Where every call's audit lines go.
+    pub fn set_audit(&mut self, sink: AuditSink) {
+        self.audit = Some(sink);
+    }
+
+    /// (auto_approvable, command) for `owner`'s `tool`: the host's rule
+    /// (`native-apps.json` `tool_policy`, commands), and a script app's own
+    /// `tools.json` declaration (App Hub's `auto_approvable`), whichever is
+    /// stricter.
+    fn tool_rule(&self, env: &dyn Env, owner: &str, tool: &str) -> (bool, bool) {
+        let (auto, command) = env.tool_rule(owner, tool);
+        let declared = self.catalog.entry(owner, tool).and_then(|e| e.get("auto_approvable")).and_then(Value::as_bool).unwrap_or(true);
+        (auto && declared, command)
+    }
+
     pub fn set_executor(&mut self, app: &str, executor: Option<Arc<dyn ToolExecutor>>) {
         match executor {
             Some(e) => {
@@ -499,6 +589,8 @@ impl Relay {
         self.calls.retain(|_, p| p.reply.is_open());
         let calls = &self.calls;
         self.outers.retain(|id, outer| outer.is_open() && calls.contains_key(id));
+        let outers = &self.outers;
+        self.audited.retain(|id, _| calls.contains_key(id) || outers.contains_key(id));
     }
 
     /// Spend one call of `agent`'s budget in `turn`; why not, when spent.
@@ -540,10 +632,11 @@ impl Relay {
         // 1. Authorize by (owning app, tool) and caller.
         let host_run = is_host_run(&tool);
         let (caller, granted) = match call.caller_kind {
-            // `dev.run`: only the covered app's own agent, on its own peer.
+            // The shell's own: only the app's own agent, on its own peer;
+            // `dev.run` only while developer mode covers the app.
             _ if host_run => (
                 if call.caller_kind == CallerKind::System { Caller::SystemAgent } else { Caller::OwnAgent { client: call.client.clone() } },
-                call.caller_kind == CallerKind::AppPeer && calling == owner && env.grants_all(&calling),
+                call.caller_kind == CallerKind::AppPeer && calling == owner && (tool != DEV_RUN || env.grants_all(&calling)),
             ),
             CallerKind::System => (Caller::SystemAgent, env.system_tools().contains(&tool) || env.grants_all(SYSTEM)),
             CallerKind::AppPeer if calling == owner => (Caller::OwnAgent { client: call.client.clone() }, self.catalog.entry(&owner, &tool).is_some() || env.grants_all(&owner)),
@@ -551,6 +644,27 @@ impl Relay {
                 let dev = env.grants_all(&calling);
                 (Caller::AppAgent { app: calling.clone() }, self.catalog.may_call(&calling, &owner, &tool, dev) || (dev && self.catalog.entry(&owner, &tool).is_none()))
             }
+        };
+        // The kernel's own reply: a cancel closes it (nothing is sent after).
+        let kernel_reply = reply.clone();
+        // Audited from here on: received now, and its end, whatever it is.
+        let reply = match self.audit.clone() {
+            Some(sink) => {
+                let record = CallAudit {
+                    ts: env.now(),
+                    call_id: call.call_id.clone(),
+                    caller: caller.as_audit(),
+                    owner: owner.clone(),
+                    tool: tool.clone(),
+                    args_digest: crate::approvals::facts::digest(&call.args),
+                    phase: "call".into(),
+                    outcome: "received".into(),
+                };
+                sink(record.clone());
+                self.audited.insert(call.call_id.clone(), record.clone());
+                audited_reply(reply, record, sink)
+            }
+            None => reply,
         };
         let refuse = |reply: &ToolReply, kind: &str, message: String| {
             reply.finish(ToolOutcome::error(kind, message));
@@ -568,7 +682,7 @@ impl Relay {
             }
         }
         // 0. The arguments against the declared schema (G8).
-        let entry = if host_run { Some(super::dev_run::declaration(&owner)) } else { self.catalog.entry(&owner, &tool).cloned() };
+        let entry = if host_run { host_run_declaration(&owner, &tool) } else { self.catalog.entry(&owner, &tool).cloned() };
         let size = call.args.to_string().len();
         if size > MAX_ARGS_BYTES {
             return refuse(&reply, "invalid_args", format!("{tool}'s arguments are {size} bytes, over the {MAX_ARGS_BYTES}-byte cap"));
@@ -586,18 +700,22 @@ impl Relay {
             return refuse(&reply, "budget_exceeded", why);
         }
         // The result is checked on its way back.
-        let outer = reply.clone();
         let reply = checked_reply(reply, &tool, entry.as_ref().and_then(|e| e.get("output_schema")).filter(|s| !s.is_null()).cloned(), MAX_RESULT_BYTES);
-        self.outers.insert(call.call_id.clone(), outer);
+        self.outers.insert(call.call_id.clone(), kernel_reply);
         // 2. Route to the owning app's executor (the shell's own for
-        // `dev.run`).
+        // `dev.run` and the host read tools).
         if host_run {
             if !self.executors.contains_key(HOST_EXECUTOR) {
                 return refuse(&reply, "app_not_running", format!("nothing on this host runs {tool}"));
             }
             return self.run(call, reply, Target::Executor(HOST_EXECUTOR.to_string()), env);
         }
-        if env.has_link(&owner) {
+        // An app with its own executor (an in-process module's, a script
+        // app's host service) runs its tools there, even when it also holds
+        // a peer link for its conversation (#142): the link serves the tools
+        // of an app that has nothing else, a process app or a module that
+        // serves its tools over the link.
+        if env.has_link(&owner) && !self.executors.contains_key(&owner) {
             let kernel_call = KernelToolCall {
                 call_id: call.call_id.clone(),
                 name: tool.clone(),
@@ -641,7 +759,7 @@ impl Relay {
         // 3. `confirm: app`: acknowledge, then the owning app's own sheet.
         if call.confirm_required {
             reply.acknowledge();
-            let (auto, _) = env.tool_rule(&owner, &tool);
+            let (auto, _) = self.tool_rule(&*env, &owner, &tool);
             let mut spec = ToolSpec::app(&tool);
             spec.auto_approvable = auto;
             let id = format!("{CONFIRM_PREFIX}{}", call.call_id);
@@ -691,8 +809,15 @@ impl Relay {
     }
 
     fn cancel(&mut self, call_id: &str, reason: &str, env: &mut dyn Env) {
+        let mut cancelled = false;
         if let Some(outer) = self.outers.remove(call_id) {
-            outer.cancel();
+            cancelled |= outer.cancel();
+        }
+        if let (Some(record), Some(sink)) = (self.audited.remove(call_id), self.audit.clone()) {
+            let open = self.calls.get(call_id).is_some_and(|p| p.reply.is_open());
+            if cancelled || open {
+                sink(CallAudit { ts: env.now(), phase: "done".into(), outcome: "cancelled".into(), ..record });
+            }
         }
         let Some(p) = self.calls.remove(call_id) else { return };
         p.reply.cancel();
@@ -715,7 +840,7 @@ impl Relay {
         // agent's call on a tool the app owns; a `host_tool` one names its
         // owning app.
         let owner = if approval.octos { calling.clone() } else { approval.app.clone() };
-        let (auto, command) = env.tool_rule(&owner, &approval.tool);
+        let (auto, command) = self.tool_rule(&*env, &owner, &approval.tool);
         let mut spec = ToolSpec::host(&approval.tool);
         spec.auto_approvable = auto;
         if command || approval.tool == TERMINAL_RUN || approval.tool == DEV_RUN || (approval.octos && OCTOS_COMMANDS.contains(&approval.tool.as_str())) {

@@ -132,6 +132,31 @@
         ]},
         {t: "column", id: "about_page", fillw: 1, spacing: 12, c: [
             {t: "text", id: "about_summary", text: "Device information unavailable", fillw: 1},
+            {t: "button", id: "build_number", text: "Build number", fillw: 1},
+            {t: "column", id: "developer_section", fillw: 1, spacing: 8, c: [
+                {t: "text", id: "developer_status", text: "Developer options", fillw: 1},
+                {t: "text", text: "Apps developer mode covers:", fillw: 1},
+                {t: "button", id: "developer_all", text: "All apps", fillw: 1},
+                {t: "button", id: "developer_app_0", text: "", fillw: 1},
+                {t: "button", id: "developer_app_1", text: "", fillw: 1},
+                {t: "button", id: "developer_app_2", text: "", fillw: 1},
+                {t: "button", id: "developer_app_3", text: "", fillw: 1},
+                {t: "button", id: "developer_app_4", text: "", fillw: 1},
+                {t: "button", id: "developer_app_5", text: "", fillw: 1},
+                {t: "button", id: "developer_app_6", text: "", fillw: 1},
+                {t: "button", id: "developer_app_7", text: "", fillw: 1},
+                {t: "row", fillw: 1, spacing: 8, c: [
+                    {t: "button", id: "developer_apps_previous", text: "Previous apps", fillw: 1},
+                    {t: "button", id: "developer_apps_next", text: "More apps", fillw: 1}
+                ]},
+                {t: "button", id: "developer_turn_on", text: "Turn on developer mode", fillw: 1},
+                {t: "column", id: "developer_confirm_section", fillw: 1, spacing: 8, c: [
+                    {t: "text", id: "developer_confirm_text", text: "", fillw: 1},
+                    {t: "button", id: "developer_confirm", text: "Turn on", fillw: 1},
+                    {t: "button", id: "developer_cancel", text: "Cancel", fillw: 1}
+                ]},
+                {t: "button", id: "developer_off", text: "Turn off developer mode", fillw: 1}
+            ]},
             {t: "button", id: "about_advanced", text: "Status and legal", fillw: 1}
         ]},
         {t: "column", id: "storage_page", fillw: 1, spacing: 12, c: [

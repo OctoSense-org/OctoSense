@@ -7,13 +7,33 @@ let shots = []              // app-relative paths, newest last
 let viewing = ""
 let keep = 30
 
+// ADR 0004 §11: the app's data is its account folder (a system app acts for
+// the device), the folder its agent works in. A file an earlier build kept
+// at the top of the jail moves on first use: the old one is removed only
+// once the copy reads back the same; if the copy fails the app keeps using
+// the old file and tries again next time. The captured images stay where
+// the camera widget puts them (`ui.cam.last()` names them).
+let DATA = "accounts/device/"
+fn moved(name, path){
+    if fs.exists(path) || !fs.exists(name) { return path }
+    let data = fs.read(name)
+    fs.write(path, data)
+    if fs.exists(path) && fs.read(path) == data {
+        fs.remove(name)
+        return path
+    }
+    if fs.exists(path) { fs.remove(path) }
+    return name
+}
+fn data_path(name){ return moved(name, DATA + name) }
+
 fn load_shots(){
-    if fs.exists("shots.json") {
-        let v = fs.read("shots.json").parse_json()
+    if fs.exists(data_path("shots.json")) {
+        let v = fs.read(data_path("shots.json")).parse_json()
         if v != nil { shots = v }
     }
 }
-fn save_shots(){ fs.write("shots.json", shots.to_json()) }
+fn save_shots(){ fs.write(data_path("shots.json"), shots.to_json()) }
 fn show_thumb(){
     if shots.len() == 0 { ui.thumb_box.set_visible(false); return }
     let last = shots[shots.len() - 1]

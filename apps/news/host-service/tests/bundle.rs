@@ -38,7 +38,7 @@ fn the_bundle_uses_the_service_only_where_it_is_granted() {
     // Granted: read through the service. Not granted (App Hub does not know
     // `news` yet, or a shell does not register it): the script's own fetch.
     assert!(SCRIPT.contains("use_service = host.has(\"news\")"));
-    assert!(SCRIPT.contains("if use_service { refresh_service(); return }"));
+    assert!(SCRIPT.contains("if use_service { refresh_service(due); return }"));
     assert!(SCRIPT.contains("host.request(\"news.list\", {feed: s.id current: true limit: 30}"));
     assert!(SCRIPT.contains("net.http_request("), "the fallback fetch is still there");
     // A granted but unanswered family falls back too.
@@ -64,6 +64,7 @@ fn an_unregistered_service_answers_with_an_error() {
         service: "news.list".into(),
         args: json!({"feed": "hn", "current": true}),
         from_sheet: false,
+        may_prompt: true,
         host_dir: std::env::temp_dir(),
     };
     dispatch(call, 51_000, 1, &mut NoSheets);

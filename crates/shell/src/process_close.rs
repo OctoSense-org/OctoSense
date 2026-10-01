@@ -31,8 +31,16 @@
 //!   question. Closing a tile whose app is asking asks again; a live app
 //!   answers again at once (the terminal re-shows its question), a frozen
 //!   one does not and falls to the fallback above. So an app that is
-//!   visibly showing its question is never killed, and a hung one is
-//!   always closable.
+//!   visibly showing its question is not killed for one close, and a hung
+//!   one is always closable.
+//! - **Insisting ends it** ([`Insistence`]): an app that keeps refusing
+//!   could otherwise never be closed, and would hold a quit forever. The
+//!   [`FORCE_CLOSES`]th close of the same app inside [`FORCE_WINDOW`]
+//!   seconds (clicks inside [`REPEAT_WINDOW`] of each other count once)
+//!   ends it whatever it answers; the shell says so on the close before.
+//!   A quit counts the same way for each app it asks, so pressing Quit
+//!   three times ends the ones still refusing. Hosted modules follow the
+//!   same rule (`module_host::CloseGate`).
 //!
 //! A shell quit (the menu's Quit, Cmd+Q, the window's close button) asks
 //! every declared app the same way and waits while any is answering or
@@ -53,6 +61,47 @@ pub const ANSWER_TIMEOUT: f64 = 5.0;
 /// A second close of the same tile this soon after the first is the same
 /// gesture (a double click), not a demand to force it.
 pub const REPEAT_WINDOW: f64 = 0.5;
+
+/// This many closes of one app inside [`FORCE_WINDOW`] end it, whatever it
+/// answers.
+pub const FORCE_CLOSES: usize = 3;
+
+/// Seconds within which [`FORCE_CLOSES`] closes count as insisting.
+pub const FORCE_WINDOW: f64 = 5.0;
+
+/// The person's closes of each app, to tell insisting from asking once.
+#[derive(Debug, Default)]
+pub struct Insistence {
+    closes: HashMap<ClientId, Vec<f64>>,
+}
+
+impl Insistence {
+    /// The person closes `client` at `now`: how many of their closes of it
+    /// count inside [`FORCE_WINDOW`], this one included. A close inside
+    /// [`REPEAT_WINDOW`] of the last counted one is the same click.
+    pub fn close(&mut self, client: ClientId, now: f64) -> usize {
+        let closes = self.closes.entry(client).or_default();
+        closes.retain(|t| now - *t < FORCE_WINDOW);
+        if closes.last().is_none_or(|last| now - *last >= REPEAT_WINDOW) {
+            closes.push(now);
+        }
+        closes.len()
+    }
+
+    /// Whether that many closes end the app.
+    pub fn forced(closes: usize) -> bool {
+        closes >= FORCE_CLOSES
+    }
+
+    /// The closes counted for `client` so far (for the hint before the last).
+    pub fn count(&self, client: ClientId) -> usize {
+        self.closes.get(&client).map_or(0, Vec::len)
+    }
+
+    pub fn forget(&mut self, client: ClientId) {
+        self.closes.remove(&client);
+    }
+}
 
 /// Where one declared app's close stands.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -118,6 +167,7 @@ pub struct ProcessCloseGate {
     declared: HashSet<ClientId>,
     pending: HashMap<ClientId, Pending>,
     quit_waiting: bool,
+    insistence: Insistence,
 }
 
 impl ProcessCloseGate {
@@ -140,6 +190,13 @@ impl ProcessCloseGate {
     fn step(&mut self, client: ClientId, now: f64) -> CloseStep {
         if !self.declared.contains(&client) {
             return CloseStep::Legacy;
+        }
+        // Insisting ends it, whatever it answered (an app that keeps
+        // refusing is never unclosable).
+        if Insistence::forced(self.insistence.close(client, now)) {
+            self.pending.remove(&client);
+            self.insistence.forget(client);
+            return CloseStep::Force;
         }
         match self.pending.get(&client) {
             Some(Pending::Awaiting { since }) if now - since < REPEAT_WINDOW => CloseStep::Wait,
@@ -190,7 +247,14 @@ impl ProcessCloseGate {
     /// was pending: that was its answer, not a crash.
     pub fn gone(&mut self, client: ClientId) -> bool {
         self.declared.remove(&client);
+        self.insistence.forget(client);
         self.pending.remove(&client).is_some()
+    }
+
+    /// Whether the next close of `client` ends it (the shell says so when
+    /// it asks this time).
+    pub fn next_close_forces(&self, client: ClientId) -> bool {
+        self.declared.contains(&client) && Insistence::forced(self.insistence.count(client) + 1)
     }
 
     /// Whether a close of `client` is waiting on its answer or its person.
@@ -351,6 +415,56 @@ mod tests {
         assert_eq!(gate.close(3, 41.0), CloseStep::Force);
         gate.close(3, 50.0);
         assert_eq!(gate.overdue(50.0 + ANSWER_TIMEOUT), vec![3]);
+    }
+
+    /// An app that keeps refusing is never unclosable: the third close
+    /// inside the window ends it, and the one before says so.
+    #[test]
+    fn an_app_that_keeps_refusing_is_ended_by_the_third_close() {
+        let mut gate = declared(&[3]);
+        assert_eq!(gate.close(3, 0.0), CloseStep::Ask);
+        assert!(gate.refused(3));
+        assert!(!gate.next_close_forces(3));
+        assert_eq!(gate.close(3, 1.0), CloseStep::Ask, "asked again: a live app re-answers");
+        assert!(gate.refused(3));
+        assert!(gate.next_close_forces(3), "the shell warns before the last one");
+        assert_eq!(gate.close(3, 2.0), CloseStep::Force, "the third close ends it");
+        assert!(!gate.is_pending(3) && gate.idle());
+    }
+
+    #[test]
+    fn closes_spread_out_or_double_clicked_do_not_force() {
+        let mut gate = declared(&[3]);
+        // A double click counts once.
+        assert_eq!(gate.close(3, 0.0), CloseStep::Ask);
+        gate.refused(3);
+        assert_eq!(gate.close(3, 0.1), CloseStep::Ask);
+        gate.refused(3);
+        assert_eq!(gate.close(3, 0.2), CloseStep::Ask, "one click, not three");
+        gate.refused(3);
+        // Closes further apart than the window never add up.
+        for t in [10.0, 16.0, 22.0, 28.0] {
+            assert_eq!(gate.close(3, t), CloseStep::Ask, "{t}");
+            gate.refused(3);
+        }
+        // An app that went starts from nothing if its id came back.
+        gate.gone(3);
+        gate.declare(3);
+        assert!(!gate.next_close_forces(3));
+    }
+
+    #[test]
+    fn pressing_quit_three_times_ends_the_apps_still_refusing() {
+        let mut gate = declared(&[1, 2]);
+        assert_eq!(gate.quit([1, 2], 0.0).asked, vec![1, 2]);
+        gate.refused(1);
+        gate.refused(2);
+        assert_eq!(gate.quit([1, 2], 1.0).asked, vec![1, 2]);
+        gate.refused(1);
+        gate.gone(2); // the person said yes in 2
+        let third = gate.quit([1], 2.0);
+        assert_eq!(third, QuitAsk { asked: vec![], forced: vec![1] });
+        assert!(gate.idle(), "nothing holds the quit now");
     }
 
     #[test]

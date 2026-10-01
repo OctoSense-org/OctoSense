@@ -32,7 +32,13 @@ pub mod storage;
 #[cfg(feature = "broker")]
 pub mod broker;
 #[cfg(feature = "broker")]
+pub mod peer_record;
+#[cfg(feature = "broker")]
 pub mod connectors;
+/// Erasing an app's agent when its account is removed or the app is
+/// uninstalled (octos `peer/purge`, ADR 0004 §11).
+#[cfg(feature = "broker")]
+pub mod purge;
 #[cfg(feature = "octos-core")]
 pub mod hosted;
 
