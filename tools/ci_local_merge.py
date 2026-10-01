@@ -10,7 +10,9 @@ Refuses unless target/ci-local/last.json (from tools/ci-local.sh) shows:
   rebase main into the branch, push, and run tools/ci-local.sh again);
 - every workflow GitHub would run for the PR's files (its pull_request
   paths), with no FAIL, no step left NOT RUN and no unexpected SKIP in them;
-  a workflow GitHub would not run for the PR does not block it.
+  a workflow GitHub would not run for the PR does not block it;
+- no workflow ci-local cannot run (`ci_local.GITHUB_ONLY`, such as
+  release-desktop.yml) among them: those PRs wait for GitHub.
 
 It also refuses while the last completed push run of a workflow on main
 failed: a red main is fixed first (--fixes-main for the PR that fixes it).
@@ -61,6 +63,8 @@ def evidence_problems(last, head, changed_files):
     if missing:
         problems.append(f"the run did not cover {', '.join(missing)} (GitHub runs them for this PR): "
                         f"run tools/ci-local.sh --only all")
+    for name in ci_local.triggered_workflows(changed_files, list(ci_local.GITHUB_ONLY)):
+        problems.append(f"{name} runs for this PR on GitHub only ({ci_local.GITHUB_ONLY[name]}): wait for GitHub's run")
     scope = set(required) | {"ci-local"}
     for step in last.get("steps", []):
         where = f"{step['workflow']} / {step['job']}: {step['name']}"

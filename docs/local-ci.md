@@ -32,7 +32,7 @@ tools/ci-local-merge.sh <PR number>          # --dry-run to preview
 
 - passed on the PR's exact head commit, with a clean tree;
 - comes from a head that contains the current `origin/main`;
-- covers every workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, no NOT RUN and no unexpected SKIP in them. A workflow GitHub would not run for the PR does not block it, so `--only desktop,phone` is enough evidence for a PR that only triggers those two.
+- covers every workflow GitHub would run for the PR's files (their `pull_request` `paths`), with no FAIL, no NOT RUN and no unexpected SKIP in them. A workflow GitHub would not run for the PR does not block it, so `--only desktop,phone` is enough evidence for a PR that only triggers those two. A workflow ci-local cannot run (`GITHUB_ONLY` in `tools/ci_local.py`: `release-desktop.yml`, which packages and signs on three operating systems) is never run locally; a PR that triggers it waits for GitHub's run.
 
 It also refuses while the latest completed GitHub run of a workflow on `main` has failed. Pass `--fixes-main` only for the PR that fixes it. Once every check passes, it posts the summary table as a PR comment ("Local CI passed on `<sha>` …") and runs `gh pr merge <n> --admin --merge --match-head-commit <sha>`, with the subject `Merge pull request #<n> from <owner>/<branch>`.
 

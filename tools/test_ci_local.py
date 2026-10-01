@@ -169,6 +169,12 @@ class MergeEvidence(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertIn("phone.yml", required)
 
+    def test_a_github_only_workflow_waits_for_github(self):
+        problems, required = merge.evidence_problems(result(), "b" * 40, ["desktop/scripts/package.py"])
+        self.assertNotIn("release-desktop.yml", required)
+        self.assertTrue(any("release-desktop.yml" in p and "GitHub only" in p for p in problems), problems)
+        self.assertEqual(ci.check_drift(["release-desktop.yml"]), [])
+
     def test_refuses_stale_dirty_and_uncovered_runs(self):
         problems, _ = merge.evidence_problems(result(dirty=True, workflows=["desktop.yml"]), "c" * 40, ["phone/src/main.rs"])
         text = "\n".join(problems)

@@ -48,6 +48,12 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
 GROUPS = {"desktop": ["desktop.yml"], "phone": ["phone.yml"], "apps": ["apps.yml"], "rom": ["rom.yml"]}
 GROUPS["all"] = [w for g in ("desktop", "phone", "apps", "rom") for w in GROUPS[g]]
+# Workflows this machine cannot stand in for, and why. ci-local runs none of
+# their steps and --check-drift leaves them alone; a pull request that
+# triggers one waits for GitHub's run (tools/ci_local_merge.py refuses it).
+GITHUB_ONLY = {
+    "release-desktop.yml": "builds, signs and scans the desktop packages on macOS, Windows and Linux runners",
+}
 KERNEL_BINARY = "octos-kernel/target/release/octos"
 EXIT_BUSY = 75
 
@@ -317,6 +323,8 @@ def check_drift(workflows=None):
     names = workflows or sorted(p.name for p in WORKFLOWS.glob("*.yml"))
     seen_jobs, seen_steps = set(), set()
     for name in names:
+        if name in GITHUB_ONLY:
+            continue
         try:
             data = load_workflow(name)
         except (OSError, YamlError) as error:
@@ -391,10 +399,11 @@ def glob_match(path, pattern):
     return re.fullmatch(regex, path) is not None
 
 
-def triggered_workflows(changed_files):
-    """The workflows GitHub would run on a pull request touching these files."""
+def triggered_workflows(changed_files, workflows=None):
+    """The workflows GitHub would run on a pull request touching these files
+    (of `workflows`, default the ones ci-local runs)."""
     out = []
-    for name in GROUPS["all"]:
+    for name in workflows or GROUPS["all"]:
         paths = pull_request_paths(name)
         if paths is None or any(glob_match(f, p) for f in changed_files for p in paths):
             out.append(name)
