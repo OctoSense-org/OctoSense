@@ -125,7 +125,39 @@ fn lower_report(source: &str, report: octoscript_ui_l0::RealizeReport, l0_ui: bo
     // own properties are the only lines at this indentation.
     let ui = ui.replacen("\n    height: Fill\n", "\n    height: Fit\n", 1);
     let ui = multiline_fields(&ui);
+    let ui = theme_fonts(&ui);
     Ok(format!("width:Fill height:Fit flow:Overlay {ui}"))
+}
+
+/// The card's text in the theme's fonts, as every app's: the backend names
+/// Roboto (its reference renderer's face) for text in no font of its own,
+/// so a glance card would not match the shell and the apps around it. Such
+/// a line takes the theme's bold role at weight 500 and up, its regular one
+/// below, at the same size and spacing. A mood with a font of its own
+/// (atro's Montserrat) keeps it.
+fn theme_fonts(ui: &str) -> String {
+    const BACKEND_FACE: &str = "crate_resource(\"makepad_widgets:resources/Roboto-Regular.ttf\")";
+    const STYLE: &str = "draw_text.text_style: TextStyle{";
+    let number = |line: &str, key: &str| {
+        let rest = line.split(key).nth(1)?;
+        let n: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        (!n.is_empty()).then_some(n)
+    };
+    let mut out: Vec<String> = Vec::new();
+    for line in ui.lines() {
+        let (Some(at), true) = (line.find(STYLE), line.contains(BACKEND_FACE)) else {
+            out.push(line.to_string());
+            continue;
+        };
+        let (Some(weight), Some(size)) = (number(line, "weight: "), number(line, "font_size: ")) else {
+            out.push(line.to_string());
+            continue;
+        };
+        let role = if weight.parse::<f64>().unwrap_or(400.0) >= 500.0 { "font_bold" } else { "font_regular" };
+        let spacing = number(line, "line_spacing: ").unwrap_or_else(|| "1.45".into());
+        out.push(format!("{}draw_text.text_style: mod.theme.{role}{{ line_spacing: {spacing} font_size: {size} }}", &line[..at]));
+    }
+    out.join("\n")
 }
 
 /// The host's additions to the L0 kit, after the kit so they win.
@@ -609,6 +641,23 @@ mod tests {
         assert!(!body.contains("\n    height: Fill\n"), "the tile measures the card: {body}");
         // Every value on the card came from `data`.
         assert!(body.contains("3 stories since this morning") && body.contains("Makepad adds contained script isolates"), "{body}");
+    }
+
+    /// A card's text follows the theme like the apps': none of the backend's
+    /// Roboto is left, the title takes the bold role and the rest regular.
+    #[test]
+    fn a_cards_text_is_in_the_themes_fonts() {
+        for (_, _, source, data) in crate::glance::demo_mail() {
+            let body = lower(&source, &data).expect("lowers");
+            assert!(!body.contains("Roboto-Regular"), "{body}");
+            assert!(body.contains("mod.theme.font_bold{") && body.contains("mod.theme.font_regular{"), "{body}");
+        }
+        assert_eq!(
+            theme_fonts("    draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{res: crate_resource(\"makepad_widgets:resources/Roboto-Regular.ttf\") asc: -0.1 desc: 0.0 weight: 600} } line_spacing: 1.45 font_size: 13.5 }"),
+            "    draw_text.text_style: mod.theme.font_bold{ line_spacing: 1.45 font_size: 13.5 }"
+        );
+        let own = "    draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{res: crate_resource(\"self:resources/atro/Montserrat-Medium.ttf\") asc: -0.1 desc: 0.0 weight: 500} } line_spacing: 1.45 font_size: 12 }";
+        assert_eq!(theme_fonts(own), own, "a mood's own font stays");
     }
 
     /// A system app, registered from a pack made on the fly, whose manifest

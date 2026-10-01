@@ -641,6 +641,9 @@ impl ShellBar {
         let tok = self.d.tokens(self.tokens);
         let fg = tok.bar.text;
         let accent = tok.bar.active;
+        // New glance cards wear the palette's accent (the toasts' colour),
+        // not the bar's alert one.
+        let news = tok.notifications.countdown;
         let slot = self.icon_slot();
         let canvas = tok.bar.icon_canvas;
         self.hits.clear();
@@ -870,12 +873,12 @@ impl ShellBar {
             let glance = if *module == BarModule::Glance { self.data.glance } else { None };
             if let Some((_, new)) = glance {
                 if new > 0 {
-                    color = accent;
+                    color = news;
                 }
             }
             self.d.icon_centered(cx, *ico, cell, canvas, color);
             // The glance button's count, at the bell's corner: a tag in the
-            // accent while some cards are new.
+            // palette's accent while some cards are new.
             if let Some((count, new)) = glance.filter(|(count, _)| *count > 0) {
                 let text = if count > 9 { "9+".to_string() } else { count.to_string() };
                 let px = tok.font.caption * 0.8;
@@ -883,7 +886,7 @@ impl ShellBar {
                 let w = (self.d.measure(cx, true, px, &text) + 4.0).max(h);
                 let badge = rect((cell.pos.x + cell.size.x * 0.5 + canvas * 0.15).round(), (cell.pos.y + cell.size.y * 0.5 - canvas * 0.6).round(), w, h);
                 if new > 0 {
-                    self.d.solid(cx, badge, accent);
+                    self.d.solid(cx, badge, news);
                     self.d.label(cx, badge, true, px, tok.bar.background, super::ui::HAlign::Center, &text);
                 } else {
                     self.d.label(cx, badge, true, px, fade(fg, 0.7), super::ui::HAlign::Center, &text);

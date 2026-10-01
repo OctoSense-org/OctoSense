@@ -499,46 +499,25 @@ script_mod! {
     }
 
     // ------------------------------------------------------------------
-    // The kit. `Style.font.family` is "monospace", which on an omarchy box
-    // is JetBrains Mono — the variable cut is the one makepad ships, so
-    // `bold` is the same face at weight 700 (never a different family).
+    // The kit. Its text follows the theme, as every app's does: the theme's
+    // regular and bold roles (makepad's font policy: IBM Plex Sans, LXGW
+    // WenKai for CJK, Noto Color Emoji, unless a style names its own), and
+    // its code role for code (`ShellDraw::with_code`).
     // ------------------------------------------------------------------
     set_type_default() do #(ShellDraw::script_component(vm)) {
         fill +: {}
         chrome +: {}
         glass +: {}
         text +: {
-            text_style: TextStyle{
-                font_family: FontFamily{
-                    latin := FontMember{
-                        res: crate_resource("makepad_widgets:resources/jetbrains_mono_variable.ttf")
-                        asc: 0.0 desc: 0.0 weight: 400.0
-                    }
-                    emoji := FontMember{
-                        res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf")
-                        asc: 0.0 desc: 0.0
-                    }
-                }
-                font_size: 9.0
-                line_spacing: 1.2
-            }
+            text_style: theme.font_regular{font_size: 9.0 line_spacing: 1.2}
             color: #ffffff
         }
         text_bold +: {
-            text_style: TextStyle{
-                font_family: FontFamily{
-                    latin := FontMember{
-                        res: crate_resource("makepad_widgets:resources/jetbrains_mono_variable.ttf")
-                        asc: 0.0 desc: 0.0 weight: 700.0
-                    }
-                    emoji := FontMember{
-                        res: crate_resource("makepad_widgets:resources/NotoColorEmoji.ttf")
-                        asc: 0.0 desc: 0.0
-                    }
-                }
-                font_size: 9.0
-                line_spacing: 1.2
-            }
+            text_style: theme.font_bold{font_size: 9.0 line_spacing: 1.2}
+            color: #ffffff
+        }
+        text_code +: {
+            text_style: theme.font_code{font_size: 9.0 line_spacing: 1.2}
             color: #ffffff
         }
         icons +: {
@@ -863,6 +842,11 @@ pub struct ShellDraw {
     pub text: DrawText,
     #[live]
     pub text_bold: DrawText,
+    /// The theme's code face ([`Self::with_code`]).
+    #[live]
+    pub text_code: DrawText,
+    #[rust]
+    code_face: bool,
     #[live]
     pub icons: ShellIcons,
     /// The material every surface drawn through this kit paints with —
@@ -938,11 +922,23 @@ impl ShellDraw {
     // ------------------------------------------------------------- text
 
     fn face(&mut self, bold: bool) -> &mut DrawText {
-        if bold {
+        if self.code_face {
+            &mut self.text_code
+        } else if bold {
             &mut self.text_bold
         } else {
             &mut self.text
         }
+    }
+
+    /// Measure and draw in the theme's code face while `f` runs (code
+    /// blocks, inline code); every other label uses the theme's regular and
+    /// bold faces.
+    pub fn with_code<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let was = std::mem::replace(&mut self.code_face, true);
+        let out = f(self);
+        self.code_face = was;
+        out
     }
 
     /// Width of one line at a px size — QML's `Text.implicitWidth`.

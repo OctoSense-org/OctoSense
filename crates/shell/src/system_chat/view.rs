@@ -451,7 +451,8 @@ struct TranscriptKey {
 /// (the drawn size).
 fn wrap_runs(d: &mut ShellDraw, cx: &mut Cx2d, runs: &md::Runs, width: f64, px: f64, bold: bool) -> Vec<md::Runs> {
     let runs: Vec<(&str, md::Style)> = runs.iter().map(|(t, s)| (t.as_str(), *s)).collect();
-    wrap_styled(&runs, width, |t, s| d.measure(cx, bold || s.bold, px, t))
+    // Code runs in the theme's code face, the rest in its regular or bold.
+    wrap_styled(&runs, width, |t, s| if s.code { d.with_code(|d| d.measure(cx, false, px, t)) } else { d.measure(cx, bold || s.bold, px, t) })
 }
 
 /// A code line wrapped to `width` between characters, its spaces kept (a
@@ -462,7 +463,7 @@ fn wrap_code(d: &mut ShellDraw, cx: &mut Cx2d, text: &str, width: f64, px: f64) 
     let mut w = 0.0;
     for c in text.chars() {
         let piece = if c == '\t' { "    ".to_string() } else { c.to_string() };
-        let cw = d.measure(cx, false, px, &piece);
+        let cw = d.with_code(|d| d.measure(cx, false, px, &piece));
         if !line.is_empty() && w + cw > width {
             lines.push(std::mem::take(&mut line));
             w = 0.0;
@@ -1285,7 +1286,12 @@ impl ShellSystemChat {
             }
             let lx = x + line.indent;
             if line.runs.is_empty() {
-                self.d.label_elided(cx, rect(lx, line_top, (cw - line.indent).max(0.0), lh), line.bold, px, color, HAlign::Left, &line.text);
+                let r = rect(lx, line_top, (cw - line.indent).max(0.0), lh);
+                if line.kind == LineKind::Code {
+                    self.d.with_code(|d| d.label_elided(cx, r, false, px, color, HAlign::Left, &line.text));
+                } else {
+                    self.d.label_elided(cx, r, line.bold, px, color, HAlign::Left, &line.text);
+                }
                 continue;
             }
             // Styled runs side by side, measured as they are drawn.
@@ -1293,12 +1299,18 @@ impl ShellSystemChat {
             let mut rx = lx;
             for (text, style) in &line.runs {
                 let bold = line.bold || style.bold;
-                let w = self.d.measure(cx, bold, px * ts, text);
-                if style.code {
-                    self.d.solid(cx, rect(rx - 1.0, line_top + lh * 0.1, w + 2.0, lh * 0.8), alpha(ink, 0.1));
-                }
+                let r = rect(rx, line_top, (x + cw - rx).max(0.0) + 2.0, lh);
                 let run_color = if style.link { accent } else { color };
-                self.d.label_elided(cx, rect(rx, line_top, (x + cw - rx).max(0.0) + 2.0, lh), bold, px, run_color, HAlign::Left, text);
+                let w = if style.code {
+                    let w = self.d.with_code(|d| d.measure(cx, false, px * ts, text));
+                    self.d.solid(cx, rect(rx - 1.0, line_top + lh * 0.1, w + 2.0, lh * 0.8), alpha(ink, 0.1));
+                    self.d.with_code(|d| d.label_elided(cx, r, false, px, run_color, HAlign::Left, text));
+                    w
+                } else {
+                    let w = self.d.measure(cx, bold, px * ts, text);
+                    self.d.label_elided(cx, r, bold, px, run_color, HAlign::Left, text);
+                    w
+                };
                 rx += w;
             }
         }
