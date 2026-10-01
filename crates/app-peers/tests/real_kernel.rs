@@ -1130,3 +1130,80 @@ fn a_running_turns_request_is_shown_to_the_other_lane() {
         "the running turn's request and status are shown to the person's lane: {shown}"
     );
 }
+
+/// A host that runs `rinx.echo` and counts every execution.
+struct CountHost(Mutex<Vec<HostToolCall>>);
+impl ToolHost for CountHost {
+    fn declarations(&self, _app: &str, _account: &str) -> Result<Vec<Value>, String> {
+        Ok(vec![json!({"name": "rinx.echo", "description": "Echo a text back.", "risk": "read",
+            "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}})])
+    }
+    fn tool_call(&self, call: HostToolCall, reply: ToolReply) {
+        let text = call.args["text"].as_str().unwrap_or("").to_owned();
+        self.0.lock().unwrap().push(call);
+        reply.finish(ToolOutcome::Ok(json!({"echo": text})));
+    }
+}
+
+/// ADR 0004 §5 ("One driver per app peer") on the real kernel: two
+/// instances of one app on the shell's one kernel connection serve one
+/// peer; the system agent's input runs once and its tool call runs once.
+#[test]
+fn two_instances_of_one_app_run_the_system_agents_input_and_its_call_once() {
+    let Some(program) = kernel() else { return };
+    let dir = temp("two-instances");
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock_agent_llm.py");
+    let mut child = std::process::Command::new("python3")
+        .arg(script)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut line).unwrap();
+    let model = Model(child, line.trim().parse().unwrap());
+    let core_dir = dir.join("octos-home/.octos");
+    write_profile(&core_dir, model.1);
+    let core = Core::new(Options::default().core_dir(&core_dir).program(&program));
+    let host = Arc::new(CountHost(Mutex::new(Vec::new())));
+    let instance = || {
+        let services: BTreeSet<String> = OCTOS_SERVICES.iter().map(|s| s.to_string()).collect();
+        let mut cfg = BrokerConfig::new(Deployment::Hosted, "_main", "_main:api:octosense#system", "rinx", "Rinx", services);
+        cfg.state_dir = core.core_dir().map(|d| d.parent().unwrap().join("host-state"));
+        cfg.tool_host = Some(ToolHostHandle(host.clone() as Arc<dyn ToolHost>));
+        Broker::new(cfg, Arc::new(CoreConnector::shared(core.clone())))
+    };
+    let first = instance();
+    first.set_account(Some("@alice:example.org"));
+    first.bind().expect("the first instance bound");
+    let second = instance();
+    second.set_account(Some("@alice:example.org"));
+    second.bind().expect("the second instance bound");
+    let (slug, _) = first.peer().unwrap();
+    assert_eq!(second.peer().unwrap().0, slug, "one peer");
+    assert!(first.drives() && !second.drives(), "the oldest instance drives it");
+    first
+        .host_request(
+            "turn/start",
+            json!({"session_id": "_main:api:octosense#system", "turn_id": uuid_like(),
+                   "input": [{"kind": "text", "text": format!("TELL_PEER_TOOL:{slug}")}]}),
+        )
+        .expect("system turn");
+    for _ in 0..120 {
+        if !host.0.lock().unwrap().is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    std::thread::sleep(Duration::from_secs(3));
+    let calls = host.0.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1, "the call ran once: {calls:?}");
+    assert_eq!(calls[0].origin, CallOrigin::PeerInput);
+    first.release();
+    second.release();
+    drop(first);
+    drop(second);
+    core.shutdown_within(Duration::from_secs(5));
+    let _ = std::fs::remove_dir_all(&dir);
+}
