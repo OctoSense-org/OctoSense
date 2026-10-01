@@ -73,7 +73,7 @@ const ACCOUNT_HASH_DOMAIN: &[u8] = b"octosense.account.v1\0";
 /// `alice@example.org` are one account. No other folding (no Unicode
 /// normalization): ids reach the host from the app that signed them in.
 pub fn normalize_account(account: &str) -> String {
-    account.trim().to_lowercase()
+    crate::ai_host::app_peers::storage::normalize_account(account)
 }
 
 /// The name of an account's folder: the first [`ACCOUNT_HASH_LEN`] lowercase

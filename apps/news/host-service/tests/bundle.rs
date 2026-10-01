@@ -64,6 +64,7 @@ fn an_unregistered_service_answers_with_an_error() {
         service: "news.list".into(),
         args: json!({"feed": "hn", "current": true}),
         from_sheet: false,
+        may_prompt: true,
         host_dir: std::env::temp_dir(),
     };
     dispatch(call, 51_000, 1, &mut NoSheets);
