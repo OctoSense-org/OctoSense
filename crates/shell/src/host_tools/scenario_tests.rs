@@ -13,8 +13,8 @@
 //! registered from a pack built here, admitted by App Hub's own loader. Its
 //! `tools.json` has one read tool (`news.lookup`) and one that reaches
 //! outside the device (`news.share`: `risk: destructive`, `confirm: host`;
-//! App Hub's tool manifest has no `outward` flag, and octos gates
-//! destructive and outward tools alike); both run on a
+//! octos gates destructive and outward tools alike, and App Hub's
+//! `outward` flag came later); both run on a
 //! recording `news` host service through the real script-app executor
 //! (`script_apps::HostServiceExecutor`), wrapped to count the calls it
 //! runs. Its agent keeps octos's `ask_user_question`, from its manifest's
@@ -169,7 +169,7 @@ fn register_app(dir: &Path) {
     std::fs::create_dir_all(&bundle).unwrap();
     std::fs::write(bundle.join("main.splash"), "View{}").unwrap();
     std::fs::write(bundle.join("tools.json"), serde_json::to_vec_pretty(&tools_json()).unwrap()).unwrap();
-    let digest = octosense_app_policy::digest_dir(&bundle).unwrap();
+    let digest = octosense_app_contract::digest_dir(&bundle).unwrap();
     let manifest = json!({
         "schema": 1, "id": APP, "version": "1", "name": LABEL,
         "integrity": {"bundle_blake3": digest},
