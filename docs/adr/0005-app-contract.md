@@ -1,7 +1,7 @@
 # ADR 0005: The app contract: one small, versioned interface between App Hub and every app
 
 - **Date:** 2026-09-30
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-30)
 - **Scope:** What an app (a mini app, a script app, or a native app that runs other apps, such as Rinx) may depend on from App Hub; how that interface is versioned and kept stable; how OctoSense and apps depend on it so that App Hub changes never force an app release.
 - **Relates to:** [ADR 0002](0002-event-driven-app-agents.md) (app manifests and agents); [ADR 0004](0004-native-apps-hosting-and-peers.md) (native apps, storage contract); App Hub `crates/app-policy`; hagency-org/Rinx#37 (Rinx release tags, point 6: break the App Hub lockstep).
 
