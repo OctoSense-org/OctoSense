@@ -444,6 +444,7 @@ impl PhoneSurface {
             PhoneHit::Island(IslandHit::Collapse)=>return None,
             PhoneHit::Island(IslandHit::Clock)=>"Clock".into(),
             PhoneHit::Group(name)=>format!("{name}, app pair"),
+            PhoneHit::Assistant=>"Assistant, talk to the system agent".into(),
             PhoneHit::GroupClose=>"Close".into(),
             PhoneHit::OpenBoth(_)=>"Open both".into(),
             PhoneHit::Split(_)=>"Split".into(),
@@ -625,7 +626,11 @@ impl PhoneSurface {
     /// The home page's regions for this screen: tiles, favorites, dock.
     pub fn home_layout(style: DesktopStyle, screen: Rect) -> HomeLayout {
         let available = crate::shell::launcher::apps();
-        let ids: Vec<_> = available.iter().map(|app| app.id.trim_start_matches("apps.")).collect();
+        let mut ids: Vec<_> = available.iter().map(|app| app.id.trim_start_matches("apps.")).collect();
+        // The system chat's chip, in a build with an assistant (#143).
+        if cfg!(kernel) {
+            ids.push(mobile_tiles::ASSISTANT_TILE);
+        }
         mobile_tiles::home_layout_for_apps(screen, Self::home_top(style, screen), Self::home_dock(screen), &ids)
     }
     /// Where a window zooms out of and back into: its tile for a tile app,
@@ -680,6 +685,25 @@ impl PhoneSurface {
                 self.label(cx,rect(r.pos.x+10.0,top+icon+50.0,r.size.x-20.0,18.0),detail,9.5,false,alpha(ink,0.55*opacity));
             }
         }
+    }
+    /// The assistant chip on the home page (#143): the assistant's icon
+    /// beside its name, like a group chip; tapping it opens the system chat
+    /// full screen. It shows no live state, so the kept home scene stays
+    /// true.
+    pub fn draw_assistant_tile(&mut self, cx: &mut Cx2d, slot: TileSlot, style: DesktopStyle, dark: bool, opacity: f32) {
+        let (face, ink)=self.card_colors(style, dark);
+        let r=slot.rect;
+        let pressed=self.pressed_hit()==Some(&PhoneHit::Assistant);
+        self.rounded(cx, r, TILE_RADIUS as f32, alpha(face, (if pressed {0.95} else {0.82})*opacity));
+        let icon=(r.size.y-24.0).clamp(24.0,52.0);
+        let ix=r.pos.x+14.0;
+        self.icons.draw(cx,crate::desktop::ASSISTANT_ICON,style,rect(ix,r.pos.y+(r.size.y-icon)*0.5,icon,icon),opacity,alpha(ink,opacity));
+        let text_x=ix+icon+14.0;
+        let text_w=(r.pos.x+r.size.x-text_x-10.0).max(10.0);
+        let mid=r.pos.y+r.size.y*0.5;
+        self.d.label_elided(cx,rect(text_x,mid-22.0,text_w,24.0),true,15.0,alpha(ink,opacity),HAlign::Left,"Assistant");
+        self.d.label_elided(cx,rect(text_x,mid+2.0,text_w,20.0),false,12.0,alpha(ink,0.6*opacity),HAlign::Left,"System agent");
+        self.hits.push((r,PhoneHit::Assistant));
     }
     /// A window opened straight from its tile, before its first full-size
     /// frame: the launch card the zoom-in plays over.
@@ -755,6 +779,9 @@ impl PhoneSurface {
                             // A group chip is drawn by the page (mobile_groups.rs), so it rides the pager like the tiles.
                             let chip=mobile_tiles::TileSlot {rect:shifted,..*slot};
                             self.draw_group_tile(cx,&phone.groups,chip,&available,style,dark,opacity);
+                        } else if slot.kind==mobile_tiles::TileKind::Assistant {
+                            let chip=mobile_tiles::TileSlot {rect:shifted,..*slot};
+                            self.draw_assistant_tile(cx,chip,style,dark,opacity);
                         } else {self.hits.push((shifted,PhoneHit::TileApp(slot.app.into())));}
                     }
                 }
@@ -1369,7 +1396,7 @@ mod tests {
         let available = crate::shell::launcher::apps();
         for style in [DesktopStyle::Ios, DesktopStyle::Android] {
             let layout = PhoneSurface::home_layout(style, rect(0.0, 0.0, 430.0, 900.0));
-            for slot in layout.tiles.into_iter().filter(|s| !matches!(s.kind, mobile_tiles::TileKind::Group(_))) {
+            for slot in layout.tiles.into_iter().filter(|s| !s.kind.shell_drawn()) {
                 assert!(available.iter().any(|app| app.id == format!("apps.{}", slot.app)), "unavailable tile: {}", slot.app);
             }
         }
